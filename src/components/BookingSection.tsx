@@ -165,7 +165,7 @@ const BookingSection = () => {
   };
 
   return (
-    <section id="booking" className="py-16 px-6 md:px-8 bg-background">
+    <section id="booking" className="py-16 px-2 md:px-12 bg-background">
       <div className="max-w-4xl mx-auto">
         <div className="text-center mb-12">
           <h2 className="text-3xl md:text-4xl font-bold text-foreground mb-6">
@@ -176,14 +176,14 @@ const BookingSection = () => {
           </p>
         </div>
         
-        <div className="max-w-2xl mx-auto px-3 md:px-0">
+        <div className="w-full max-w-2xl mx-auto px-0 md:px-0">
           {/* 3-Step Booking Form */}
-          <div className="p-3 md:p-4">
+          <div className="p-0 md:p-4">
             <Card className="bg-card border border-border shadow-sm">
               <CardHeader>
                 <CardTitle className="flex items-center gap-2">
                   <Calendar className="w-5 h-5 text-primary" />
-                  Book RO Service - Step {currentStep} of 5
+                  Book Service
                 </CardTitle>
                 
                 {/* Progress Steps */}
@@ -221,6 +221,12 @@ const BookingSection = () => {
                   {/* Step 1: Basic Information */}
                   {currentStep === 1 && (
                     <div className="space-y-4">
+                      <div className="bg-gray-50 dark:bg-gray-900/20 border border-gray-200 dark:border-gray-800 rounded-lg p-4 mb-4">
+                        <p className="text-sm text-gray-800 dark:text-gray-200">
+                          <strong>Note:</strong> We don't ask you to create an account. Email is only for sending confirmation and service updates.
+                        </p>
+                      </div>
+                      
                       <div className="flex items-center gap-2 mb-3">
                         <User className="w-5 h-5 text-primary" />
                         <h3 className="text-lg font-semibold">Basic Information</h3>
