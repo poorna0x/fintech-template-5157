@@ -10,7 +10,7 @@ const HeroSection = () => {
     }, 300);
     return () => clearTimeout(timer);
   }, []);
-  return <section className="relative w-full py-12 md:py-20 px-6 md:px-12 flex flex-col items-center justify-center overflow-hidden bg-background">
+  return <section id="home" className="relative w-full py-12 md:py-20 px-6 md:px-12 flex flex-col items-center justify-center overflow-hidden bg-background">
       {/* Cosmic particle effect (background dots) */}
       <div className="absolute inset-0 cosmic-grid opacity-30"></div>
       
@@ -28,11 +28,11 @@ const HeroSection = () => {
         </div>
         
         <h1 className="text-4xl md:text-6xl lg:text-7xl font-medium tracking-tighter text-balance text-foreground">
-          Expert Water & <span className="text-foreground">Softener</span> Services
+          Best RO Water Purifier Services in <span className="text-foreground">Bengaluru</span>
         </h1>
         
         <p className="text-lg md:text-xl text-muted-foreground max-w-2xl mx-auto text-balance">
-          Professional RO installation, repair, and maintenance services. Clean, safe water for your home and office with certified technicians and guaranteed satisfaction.
+          Top-rated RO installation, repair & maintenance services across Bengaluru, Karnataka. Expert certified technicians, same-day service, 24/7 emergency support. Trusted by 500+ customers in Bangalore.
         </p>
         
         <div className="flex flex-col sm:flex-row gap-4 justify-center pt-6 items-center">
@@ -40,7 +40,7 @@ const HeroSection = () => {
             Book Your Service Now
           </Button>
           <Button variant="outline" className="border-border text-foreground hover:bg-accent hover:text-accent-foreground text-base h-12 px-8 transition-all duration-200 min-h-[48px]">
-            Call Now: +1 (555) 123-4567
+            Call Now: +91-9876543210
           </Button>
         </div>
         
@@ -60,8 +60,8 @@ const HeroSection = () => {
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19.428 15.428a2 2 0 00-1.022-.547l-2.387-.477a6 6 0 00-3.86.517l-.318.158a6 6 0 01-3.86.517L6.05 15.21a2 2 0 00-1.806.547M8 4h8l-1 1v5.172a2 2 0 00.586 1.414l5 5c1.26 1.26.367 3.414-1.415 3.414H4.828c-1.782 0-2.674-2.154-1.414-3.414l5-5A2 2 0 009 10.172V5L8 4z" />
                 </svg>
               </div>
-              <h3 className="font-semibold text-foreground">RO Installation</h3>
-              <p className="text-sm text-muted-foreground">Professional RO system setup with quality components</p>
+              <h3 className="font-semibold text-foreground">RO Installation Bengaluru</h3>
+              <p className="text-sm text-muted-foreground">Professional RO system setup with quality components across Bangalore</p>
             </div>
 
             {/* Water Softener */}
@@ -71,8 +71,8 @@ const HeroSection = () => {
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
                 </svg>
               </div>
-              <h3 className="font-semibold text-foreground">Water Softening</h3>
-              <p className="text-sm text-muted-foreground">Eliminate hard water issues for your home</p>
+              <h3 className="font-semibold text-foreground">Water Softener Bangalore</h3>
+              <p className="text-sm text-muted-foreground">Eliminate hard water issues for your home in Bengaluru</p>
             </div>
 
             {/* Maintenance */}
@@ -83,8 +83,8 @@ const HeroSection = () => {
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
                 </svg>
               </div>
-              <h3 className="font-semibold text-foreground">Filter Service</h3>
-              <p className="text-sm text-muted-foreground">Regular filter replacement and system maintenance</p>
+              <h3 className="font-semibold text-foreground">RO Filter Replacement</h3>
+              <p className="text-sm text-muted-foreground">Regular filter replacement and system maintenance in Karnataka</p>
             </div>
 
             {/* Emergency */}
@@ -94,8 +94,8 @@ const HeroSection = () => {
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
                 </svg>
               </div>
-              <h3 className="font-semibold text-foreground">Emergency Repair</h3>
-              <p className="text-sm text-muted-foreground">24/7 emergency water system repair services</p>
+              <h3 className="font-semibold text-foreground">Emergency RO Repair</h3>
+              <p className="text-sm text-muted-foreground">24/7 emergency water system repair services in Bengaluru</p>
             </div>
           </div>
         </div>

@@ -9,10 +9,10 @@ const ContactSection = () => {
       <div className="max-w-6xl mx-auto">
         <div className="text-center mb-12">
           <h2 className="text-3xl md:text-4xl font-bold text-foreground mb-6">
-            Contact Us
+            Contact Hydrogen RO - Best RO Service in Bengaluru
           </h2>
           <p className="text-lg text-muted-foreground">
-            Get in touch for all your water treatment needs
+            Get in touch for all your RO water purifier needs across Bangalore, Karnataka. Expert technicians ready to serve you.
           </p>
         </div>
         
@@ -26,8 +26,8 @@ const ContactSection = () => {
                     <Phone className="w-6 h-6 text-primary" />
                   </div>
                   <div>
-                    <h3 className="font-semibold text-foreground">Phone</h3>
-                    <p className="text-muted-foreground">+1 (555) 123-4567</p>
+                    <h3 className="font-semibold text-foreground">RO Service Phone</h3>
+                    <p className="text-muted-foreground">+91-9876543210</p>
                   </div>
                 </div>
                 <Button className="w-full bg-primary text-primary-foreground hover:bg-primary/90">
@@ -43,7 +43,7 @@ const ContactSection = () => {
                     <Mail className="w-6 h-6 text-primary" />
                   </div>
                   <div>
-                    <h3 className="font-semibold text-foreground">Email</h3>
+                    <h3 className="font-semibold text-foreground">RO Service Email</h3>
                     <p className="text-muted-foreground">info@hydrogenro.com</p>
                   </div>
                 </div>
@@ -60,8 +60,8 @@ const ContactSection = () => {
                     <MapPin className="w-6 h-6 text-primary" />
                   </div>
                   <div>
-                    <h3 className="font-semibold text-foreground">Service Area</h3>
-                    <p className="text-muted-foreground">Greater Metropolitan Area & Suburbs</p>
+                    <h3 className="font-semibold text-foreground">RO Service Areas in Bengaluru</h3>
+                    <p className="text-muted-foreground">All areas of Bangalore, Karnataka including Whitefield (560066), Electronic City (560100), Koramangala (560034), Indiranagar (560038), HSR Layout (560102), Marathahalli (560037), BTM Layout (560076), Jayanagar (560011), Malleshwaram (560003), Rajajinagar (560010), and all pincodes from 560001 to 560110</p>
                   </div>
                 </div>
               </CardContent>
@@ -74,11 +74,12 @@ const ContactSection = () => {
                     <Clock className="w-6 h-6 text-primary" />
                   </div>
                   <div>
-                    <h3 className="font-semibold text-foreground">Business Hours</h3>
+                    <h3 className="font-semibold text-foreground">RO Service Hours in Bengaluru</h3>
                     <div className="text-sm text-muted-foreground space-y-1">
                       <p>Mon-Fri: 8AM - 8PM</p>
                       <p>Saturday: 9AM - 6PM</p>
-                      <p>Sunday: Emergency Only</p>
+                      <p>Sunday: Emergency RO Service Only</p>
+                      <p className="text-primary font-medium">24/7 Emergency RO Repair Available</p>
                     </div>
                   </div>
                 </div>
@@ -94,9 +95,9 @@ const ContactSection = () => {
                   <div className="text-center space-y-4">
                     <MapPin className="w-12 h-12 text-primary mx-auto" />
                     <div>
-                      <h3 className="font-semibold text-foreground">Service Coverage Map</h3>
+                      <h3 className="font-semibold text-foreground">RO Service Coverage in Bengaluru</h3>
                       <p className="text-muted-foreground text-sm">
-                        We serve the entire metropolitan area
+                        We serve all areas of Bangalore, Karnataka including Whitefield (560066), Electronic City (560100), Koramangala (560034), Indiranagar (560038), HSR Layout (560102), Marathahalli (560037), BTM Layout (560076), Jayanagar (560011), Malleshwaram (560003), Rajajinagar (560010), and all pincodes from 560001 to 560110
                       </p>
                     </div>
                   </div>
@@ -109,10 +110,10 @@ const ContactSection = () => {
         {/* Quick Links */}
         <div className="mt-12 text-center">
           <div className="flex flex-wrap justify-center gap-4">
-            <Button variant="outline">Emergency Service</Button>
-            <Button variant="outline">Service Areas</Button>
-            <Button variant="outline">Warranty Info</Button>
-            <Button variant="outline">Customer Portal</Button>
+            <Button variant="outline">Emergency RO Service</Button>
+            <Button variant="outline">RO Service Areas Bengaluru</Button>
+            <Button variant="outline">RO Warranty Info</Button>
+            <Button variant="outline">RO Customer Portal</Button>
           </div>
         </div>
       </div>

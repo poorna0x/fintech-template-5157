@@ -34,10 +34,10 @@ const BookingSection = () => {
       <div className="max-w-4xl mx-auto">
         <div className="text-center mb-12">
           <h2 className="text-3xl md:text-4xl font-bold text-foreground mb-6">
-            Book Your Service
+            Book RO Service in Bengaluru
           </h2>
           <p className="text-lg text-muted-foreground">
-            Schedule your water system service with our certified technicians
+            Schedule your RO water purifier service with our certified technicians across Bangalore, Karnataka
           </p>
         </div>
         
@@ -169,7 +169,7 @@ const BookingSection = () => {
                 <div className="space-y-4">
                   <Button className="w-full justify-start gap-3 bg-primary text-primary-foreground hover:bg-primary/90">
                     <Phone className="w-4 h-4" />
-                    Call: +1 (555) 123-4567
+                    Call: +91-9876543210
                   </Button>
                   <Button variant="outline" className="w-full justify-start gap-3">
                     <MessageCircle className="w-4 h-4" />

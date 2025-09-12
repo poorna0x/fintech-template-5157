@@ -1,14 +1,26 @@
+User-agent: *
+Allow: /
+
+# Sitemap
+Sitemap: https://hydrogenro.com/sitemap.xml
+
+# Crawl-delay for better server performance
+Crawl-delay: 1
+
+# Allow all search engines to crawl
 User-agent: Googlebot
 Allow: /
 
 User-agent: Bingbot
 Allow: /
 
-User-agent: Twitterbot
+User-agent: Slurp
 Allow: /
 
-User-agent: facebookexternalhit
-Allow: /
+# Block access to admin areas (if any)
+Disallow: /admin/
+Disallow: /private/
 
-User-agent: *
-Allow: /
+# Allow access to CSS and JS files
+Allow: /src/
+Allow: /public/

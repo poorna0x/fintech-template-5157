@@ -8,7 +8,7 @@ import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
 import { Switch } from '@/components/ui/switch';
 
 const Header = () => {
-  const [activePage, setActivePage] = useState('services');
+  const [activePage, setActivePage] = useState('home');
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [isDarkMode, setIsDarkMode] = useState(false); // Default to light mode
   
@@ -22,13 +22,39 @@ const Header = () => {
       document.documentElement.classList.add('light-mode');
     }
   }, [isDarkMode]);
+
+  // Dynamic navigation focus based on scroll position
+  useEffect(() => {
+    const handleScroll = () => {
+      const sections = ['home', 'about', 'services', 'booking', 'contact'];
+      const scrollPosition = window.scrollY + 200; // Increased offset for better UX
+
+      for (let i = sections.length - 1; i >= 0; i--) {
+        const section = document.getElementById(sections[i]);
+        if (section && section.offsetTop <= scrollPosition) {
+          setActivePage(sections[i]);
+          break;
+        }
+      }
+    };
+
+    window.addEventListener('scroll', handleScroll);
+    return () => window.removeEventListener('scroll', handleScroll);
+  }, []);
   
   const handleNavClick = (page: string) => (e: React.MouseEvent) => {
     e.preventDefault();
     setActivePage(page);
-    const element = document.getElementById(page);
-    if (element) {
-      element.scrollIntoView({ behavior: 'smooth' });
+    
+    if (page === 'home') {
+      // Home button - scroll to top
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    } else {
+      // Other sections - scroll to specific element
+      const element = document.getElementById(page);
+      if (element) {
+        element.scrollIntoView({ behavior: 'smooth' });
+      }
     }
     setMobileMenuOpen(false);
   };
@@ -42,7 +68,7 @@ const Header = () => {
   };
 
   return (
-    <div className="sticky top-0 z-50 pt-8 px-4">
+    <div className="sticky top-0 z-50 pt-8 px-4 bg-background/95 backdrop-blur-md border-b border-border/50">
       <header className="w-full max-w-7xl mx-auto py-3 px-6 md:px-8 flex items-center justify-between">
         <div className="p-3">
           <Logo />
@@ -50,7 +76,7 @@ const Header = () => {
         
         {/* Mobile menu button */}
         <button 
-          className="md:hidden p-3 rounded-2xl text-muted-foreground hover:text-foreground"
+          className="md:hidden p-3 rounded-2xl text-muted-foreground hover:text-foreground bg-card/80 backdrop-blur-sm border border-border/50"
           onClick={toggleMobileMenu}
         >
           {mobileMenuOpen ? <X size={24} /> : <Menu size={24} />}
@@ -61,14 +87,14 @@ const Header = () => {
           <div className="rounded-full px-1 py-1 backdrop-blur-md bg-background/80 border border-border shadow-lg">
             <ToggleGroup type="single" value={activePage} onValueChange={(value) => value && setActivePage(value)}>
               <ToggleGroupItem 
-                value="services"
+                value="home"
                 className={cn(
                   "px-4 py-2 rounded-full transition-colors relative",
-                  activePage === 'services' ? 'text-accent-foreground bg-accent' : 'text-muted-foreground hover:text-foreground hover:bg-muted'
+                  activePage === 'home' ? 'text-accent-foreground bg-accent' : 'text-muted-foreground hover:text-foreground hover:bg-muted'
                 )}
-                onClick={handleNavClick('services')}
+                onClick={handleNavClick('home')}
               >
-                Services
+                Home
               </ToggleGroupItem>
               <ToggleGroupItem 
                 value="about" 
@@ -79,6 +105,16 @@ const Header = () => {
                 onClick={handleNavClick('about')}
               >
                 About
+              </ToggleGroupItem>
+              <ToggleGroupItem 
+                value="services"
+                className={cn(
+                  "px-4 py-2 rounded-full transition-colors relative",
+                  activePage === 'services' ? 'text-accent-foreground bg-accent' : 'text-muted-foreground hover:text-foreground hover:bg-muted'
+                )}
+                onClick={handleNavClick('services')}
+              >
+                Services
               </ToggleGroupItem>
               <ToggleGroupItem 
                 value="booking" 
@@ -106,20 +142,32 @@ const Header = () => {
         
         {/* Mobile navigation */}
         {mobileMenuOpen && (
-          <div className="md:hidden absolute top-20 left-4 right-4 bg-background/95 backdrop-blur-md py-4 px-6 border border-border rounded-2xl shadow-lg z-50">
-            <div className="flex flex-col gap-4">
-              <a 
-                href="#services" 
-                className={`px-3 py-2 text-sm rounded-md transition-colors ${
-                  activePage === 'services' ? 'bg-accent text-accent-foreground' : 'text-muted-foreground hover:text-foreground hover:bg-muted'
-                }`}
-                onClick={handleNavClick('services')}
+          <div className="md:hidden fixed inset-0 bg-background z-50 flex flex-col">
+            {/* Header with logo and close button */}
+            <div className="flex items-center justify-between p-6 border-b border-border bg-background">
+              <Logo />
+              <button 
+                onClick={toggleMobileMenu}
+                className="p-2 rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
               >
-                Services
+                <X size={24} />
+              </button>
+            </div>
+            
+            {/* Navigation links - takes up remaining space */}
+            <div className="flex-1 flex flex-col p-6 space-y-2 bg-background">
+              <a 
+                href="#" 
+                className={`px-4 py-3 text-base rounded-lg transition-colors ${
+                  activePage === 'home' ? 'bg-accent text-accent-foreground' : 'text-muted-foreground hover:text-foreground hover:bg-muted'
+                }`}
+                onClick={handleNavClick('home')}
+              >
+                Home
               </a>
               <a 
                 href="#about" 
-                className={`px-3 py-2 text-sm rounded-md transition-colors ${
+                className={`px-4 py-3 text-base rounded-lg transition-colors ${
                   activePage === 'about' ? 'bg-accent text-accent-foreground' : 'text-muted-foreground hover:text-foreground hover:bg-muted'
                 }`}
                 onClick={handleNavClick('about')}
@@ -127,8 +175,17 @@ const Header = () => {
                 About
               </a>
               <a 
+                href="#services" 
+                className={`px-4 py-3 text-base rounded-lg transition-colors ${
+                  activePage === 'services' ? 'bg-accent text-accent-foreground' : 'text-muted-foreground hover:text-foreground hover:bg-muted'
+                }`}
+                onClick={handleNavClick('services')}
+              >
+                Services
+              </a>
+              <a 
                 href="#booking" 
-                className={`px-3 py-2 text-sm rounded-md transition-colors ${
+                className={`px-4 py-3 text-base rounded-lg transition-colors ${
                   activePage === 'booking' ? 'bg-accent text-accent-foreground' : 'text-muted-foreground hover:text-foreground hover:bg-muted'
                 }`}
                 onClick={handleNavClick('booking')}
@@ -137,16 +194,18 @@ const Header = () => {
               </a>
               <a 
                 href="#contact" 
-                className={`px-3 py-2 text-sm rounded-md transition-colors ${
+                className={`px-4 py-3 text-base rounded-lg transition-colors ${
                   activePage === 'contact' ? 'bg-accent text-accent-foreground' : 'text-muted-foreground hover:text-foreground hover:bg-muted'
                 }`}
                 onClick={handleNavClick('contact')}
               >
                 Contact
               </a>
-              
-              {/* Add theme toggle for mobile */}
-              <div className="flex items-center justify-between px-3 py-2">
+            </div>
+            
+            {/* Theme toggle at bottom */}
+            <div className="p-6 bg-background border-t border-border">
+              <div className="flex items-center justify-between px-4 py-3 bg-card rounded-lg border border-border">
                 <span className="text-sm text-muted-foreground">Theme</span>
                 <div className="flex items-center gap-2">
                   <Moon size={16} className={`${isDarkMode ? 'text-primary' : 'text-muted-foreground'}`} />
@@ -164,7 +223,7 @@ const Header = () => {
         
         <div className="hidden md:flex items-center gap-4">
           {/* Theme toggle for desktop */}
-          <div className="flex items-center gap-2 rounded-full px-3 py-2">
+          <div className="flex items-center gap-2 rounded-full px-3 py-2 bg-card/80 backdrop-blur-sm border border-border/50">
             <Moon size={18} className={`${isDarkMode ? 'text-primary' : 'text-muted-foreground'}`} />
             <Switch 
               checked={!isDarkMode} 
@@ -174,7 +233,7 @@ const Header = () => {
             <Sun size={18} className={`${!isDarkMode ? 'text-primary' : 'text-muted-foreground'}`} />
           </div>
           <div className="rounded-2xl">
-            <Button className="bg-primary text-primary-foreground hover:bg-primary/90">Call Now</Button>
+            <Button className="bg-primary text-primary-foreground hover:bg-primary/90 shadow-lg">Call: +91-9876543210</Button>
           </div>
         </div>
       </header>

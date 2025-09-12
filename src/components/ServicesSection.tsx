@@ -7,27 +7,27 @@ const ServicesSection = () => {
   const services = [
     {
       icon: Filter,
-      title: "RO Installation & Repair",
-      description: "Keep your RO running perfectly with professional installation and expert repair services.",
-      features: ["New RO system setup", "Repair & troubleshooting", "Performance optimization"]
+      title: "RO Installation & Repair in Bengaluru",
+      description: "Keep your RO running perfectly with professional installation and expert repair services across Bangalore, Karnataka.",
+      features: ["New RO system setup in Bengaluru", "RO repair & troubleshooting", "Performance optimization"]
     },
     {
       icon: Wrench,
-      title: "Water Softener Service",
-      description: "Ensure soft water for home & office with comprehensive softener maintenance and repair.",
-      features: ["Softener installation", "Salt level management", "System calibration"]
+      title: "Water Softener Service Bangalore",
+      description: "Ensure soft water for home & office with comprehensive softener maintenance and repair services in Bengaluru.",
+      features: ["Water softener installation in Bangalore", "Salt level management", "System calibration"]
     },
     {
       icon: RefreshCw,
-      title: "Filter Replacement",
-      description: "Healthy water starts with clean filters. Regular replacement keeps your water pure.",
-      features: ["Pre-filter replacement", "Membrane changing", "Carbon filter service"]
+      title: "RO Filter Replacement Bengaluru",
+      description: "Healthy water starts with clean filters. Regular replacement keeps your water pure across Bangalore, Karnataka.",
+      features: ["RO pre-filter replacement", "RO membrane changing", "Carbon filter service"]
     },
     {
       icon: Settings,
-      title: "Maintenance Packages",
-      description: "Regular check-ups for peace of mind with comprehensive maintenance plans.",
-      features: ["Quarterly inspections", "Preventive maintenance", "Priority service"]
+      title: "RO Maintenance Packages Bengaluru",
+      description: "Regular check-ups for peace of mind with comprehensive maintenance plans across Bangalore, Karnataka.",
+      features: ["Quarterly RO inspections", "Preventive maintenance", "Priority service in Bengaluru"]
     }
   ];
 
@@ -36,10 +36,10 @@ const ServicesSection = () => {
       <div className="max-w-6xl mx-auto">
         <div className="text-center mb-12">
           <h2 className="text-3xl md:text-4xl font-bold text-foreground mb-6">
-            Our Services
+            RO Water Purifier Services in Bengaluru
           </h2>
           <p className="text-lg text-muted-foreground max-w-2xl mx-auto">
-            Comprehensive water treatment solutions for homes and offices
+            Comprehensive water treatment solutions for homes and offices across Bangalore, Karnataka. Expert RO installation, repair, and maintenance services.
           </p>
         </div>
         
