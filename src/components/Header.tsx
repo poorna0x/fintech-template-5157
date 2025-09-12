@@ -89,8 +89,8 @@ const Header = () => {
               <ToggleGroupItem 
                 value="home"
                 className={cn(
-                  "px-4 py-2 rounded-full transition-colors relative",
-                  activePage === 'home' ? 'text-accent-foreground bg-accent' : 'text-muted-foreground hover:text-foreground hover:bg-muted'
+                  "px-4 py-2 rounded-full transition-all duration-300 ease-in-out relative transform",
+                  activePage === 'home' ? 'text-accent-foreground bg-accent scale-105 shadow-md' : 'text-muted-foreground hover:text-foreground hover:bg-muted hover:scale-102'
                 )}
                 onClick={handleNavClick('home')}
               >
@@ -99,8 +99,8 @@ const Header = () => {
               <ToggleGroupItem 
                 value="about" 
                 className={cn(
-                  "px-4 py-2 rounded-full transition-colors relative",
-                  activePage === 'about' ? 'text-accent-foreground bg-accent' : 'text-muted-foreground hover:text-foreground hover:bg-muted'
+                  "px-4 py-2 rounded-full transition-all duration-300 ease-in-out relative transform",
+                  activePage === 'about' ? 'text-accent-foreground bg-accent scale-105 shadow-md' : 'text-muted-foreground hover:text-foreground hover:bg-muted hover:scale-102'
                 )}
                 onClick={handleNavClick('about')}
               >
@@ -109,28 +109,28 @@ const Header = () => {
               <ToggleGroupItem 
                 value="services"
                 className={cn(
-                  "px-4 py-2 rounded-full transition-colors relative",
-                  activePage === 'services' ? 'text-accent-foreground bg-accent' : 'text-muted-foreground hover:text-foreground hover:bg-muted'
+                  "px-4 py-2 rounded-full transition-all duration-300 ease-in-out relative transform",
+                  activePage === 'services' ? 'text-accent-foreground bg-accent scale-105 shadow-md' : 'text-muted-foreground hover:text-foreground hover:bg-muted hover:scale-102'
                 )}
                 onClick={handleNavClick('services')}
               >
                 Services
               </ToggleGroupItem>
               <ToggleGroupItem 
-                value="booking" 
+                value="booking"
                 className={cn(
-                  "px-4 py-2 rounded-full transition-colors relative",
-                  activePage === 'booking' ? 'text-accent-foreground bg-accent' : 'text-muted-foreground hover:text-foreground hover:bg-muted'
+                  "px-4 py-2 rounded-full transition-all duration-300 ease-in-out relative transform",
+                  activePage === 'booking' ? 'text-accent-foreground bg-accent scale-105 shadow-md' : 'text-muted-foreground hover:text-foreground hover:bg-muted hover:scale-102'
                 )}
                 onClick={handleNavClick('booking')}
               >
                 Book Now
               </ToggleGroupItem>
               <ToggleGroupItem 
-                value="contact" 
+                value="contact"
                 className={cn(
-                  "px-4 py-2 rounded-full transition-colors relative",
-                  activePage === 'contact' ? 'text-accent-foreground bg-accent' : 'text-muted-foreground hover:text-foreground hover:bg-muted'
+                  "px-4 py-2 rounded-full transition-all duration-300 ease-in-out relative transform",
+                  activePage === 'contact' ? 'text-accent-foreground bg-accent scale-105 shadow-md' : 'text-muted-foreground hover:text-foreground hover:bg-muted hover:scale-102'
                 )}
                 onClick={handleNavClick('contact')}
               >
@@ -158,8 +158,8 @@ const Header = () => {
             <div className="flex-1 flex flex-col p-6 space-y-2 bg-background">
               <a 
                 href="#" 
-                className={`px-4 py-3 text-base rounded-lg transition-colors ${
-                  activePage === 'home' ? 'bg-accent text-accent-foreground' : 'text-muted-foreground hover:text-foreground hover:bg-muted'
+                className={`px-4 py-3 text-base rounded-lg transition-all duration-300 ease-in-out transform ${
+                  activePage === 'home' ? 'bg-accent text-accent-foreground scale-105 shadow-md' : 'text-muted-foreground hover:text-foreground hover:bg-muted hover:scale-102'
                 }`}
                 onClick={handleNavClick('home')}
               >
@@ -167,8 +167,8 @@ const Header = () => {
               </a>
               <a 
                 href="#about" 
-                className={`px-4 py-3 text-base rounded-lg transition-colors ${
-                  activePage === 'about' ? 'bg-accent text-accent-foreground' : 'text-muted-foreground hover:text-foreground hover:bg-muted'
+                className={`px-4 py-3 text-base rounded-lg transition-all duration-300 ease-in-out transform ${
+                  activePage === 'about' ? 'bg-accent text-accent-foreground scale-105 shadow-md' : 'text-muted-foreground hover:text-foreground hover:bg-muted hover:scale-102'
                 }`}
                 onClick={handleNavClick('about')}
               >
@@ -176,8 +176,8 @@ const Header = () => {
               </a>
               <a 
                 href="#services" 
-                className={`px-4 py-3 text-base rounded-lg transition-colors ${
-                  activePage === 'services' ? 'bg-accent text-accent-foreground' : 'text-muted-foreground hover:text-foreground hover:bg-muted'
+                className={`px-4 py-3 text-base rounded-lg transition-all duration-300 ease-in-out transform ${
+                  activePage === 'services' ? 'bg-accent text-accent-foreground scale-105 shadow-md' : 'text-muted-foreground hover:text-foreground hover:bg-muted hover:scale-102'
                 }`}
                 onClick={handleNavClick('services')}
               >
@@ -185,8 +185,8 @@ const Header = () => {
               </a>
               <a 
                 href="#booking" 
-                className={`px-4 py-3 text-base rounded-lg transition-colors ${
-                  activePage === 'booking' ? 'bg-accent text-accent-foreground' : 'text-muted-foreground hover:text-foreground hover:bg-muted'
+                className={`px-4 py-3 text-base rounded-lg transition-all duration-300 ease-in-out transform ${
+                  activePage === 'booking' ? 'bg-accent text-accent-foreground scale-105 shadow-md' : 'text-muted-foreground hover:text-foreground hover:bg-muted hover:scale-102'
                 }`}
                 onClick={handleNavClick('booking')}
               >
@@ -194,8 +194,8 @@ const Header = () => {
               </a>
               <a 
                 href="#contact" 
-                className={`px-4 py-3 text-base rounded-lg transition-colors ${
-                  activePage === 'contact' ? 'bg-accent text-accent-foreground' : 'text-muted-foreground hover:text-foreground hover:bg-muted'
+                className={`px-4 py-3 text-base rounded-lg transition-all duration-300 ease-in-out transform ${
+                  activePage === 'contact' ? 'bg-accent text-accent-foreground scale-105 shadow-md' : 'text-muted-foreground hover:text-foreground hover:bg-muted hover:scale-102'
                 }`}
                 onClick={handleNavClick('contact')}
               >

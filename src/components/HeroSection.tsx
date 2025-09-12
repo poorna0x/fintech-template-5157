@@ -32,15 +32,15 @@ const HeroSection = () => {
         </h1>
         
         <p className="text-lg md:text-xl text-muted-foreground max-w-2xl mx-auto text-balance">
-          Top-rated RO installation, repair & maintenance services across Bengaluru, Karnataka. Expert certified technicians, same-day service, 24/7 emergency support. Trusted by 500+ customers in Bangalore.
+          Professional RO installation, repair & maintenance services in Bengaluru. Same-day service with certified technicians.
         </p>
         
         <div className="flex flex-col sm:flex-row gap-4 justify-center pt-6 items-center">
-          <Button className="bg-primary text-primary-foreground hover:bg-primary/80 hover:text-primary-foreground text-base h-12 px-8 transition-all duration-200 min-h-[48px]">
-            Book Your Service Now
+          <Button className="bg-primary text-primary-foreground hover:bg-primary/80 hover:text-primary-foreground text-sm sm:text-base h-12 w-full max-w-[280px] sm:w-auto sm:min-w-[200px] px-6 sm:px-8 transition-all duration-200 min-h-[48px]">
+            Book Service Now
           </Button>
-          <Button variant="outline" className="border-border text-foreground hover:bg-accent hover:text-accent-foreground text-base h-12 px-8 transition-all duration-200 min-h-[48px]">
-            Call Now: +91-9876543210
+          <Button variant="outline" className="border-border text-foreground hover:bg-accent hover:text-accent-foreground text-sm sm:text-base h-12 w-full max-w-[280px] sm:w-auto sm:min-w-[200px] px-6 sm:px-8 transition-all duration-200 min-h-[48px]">
+            Call: +91-9876543210
           </Button>
         </div>
         

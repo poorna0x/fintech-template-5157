@@ -219,6 +219,15 @@
     pointer-events: none !important;
   }
 
+  /* Custom scale utilities for smooth navigation */
+  .scale-102 {
+    transform: scale(1.02);
+  }
+  
+  .scale-105 {
+    transform: scale(1.05);
+  }
+
   /* Alternative method for hiding content while keeping it accessible to screen readers and SEO */
   .visually-hidden {
     position: absolute !important;
