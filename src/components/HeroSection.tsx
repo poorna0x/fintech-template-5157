@@ -23,138 +23,79 @@ const HeroSection = () => {
         <div className="flex justify-center">
           <span className="inline-flex items-center gap-2 px-3 py-1 text-xs font-medium rounded-full bg-muted text-primary">
             <span className="flex h-2 w-2 rounded-full bg-primary"></span>
-            Launching new payment features
-            <Loader className="h-3 w-3 animate-spin text-primary" />
+            Trusted by 500+ customers
           </span>
         </div>
         
         <h1 className="text-4xl md:text-6xl lg:text-7xl font-medium tracking-tighter text-balance text-foreground">
-          Financial operations for <span className="text-foreground">growth</span> businesses
+          Expert Water & <span className="text-foreground">Softener</span> Services
         </h1>
         
         <p className="text-lg md:text-xl text-muted-foreground max-w-2xl mx-auto text-balance">
-          Streamline your financial workflows with our comprehensive fintech platform. Built for modern businesses who value efficiency, compliance, and scalable growth.
+          Professional RO installation, repair, and maintenance services. Clean, safe water for your home and office with certified technicians and guaranteed satisfaction.
         </p>
         
         <div className="flex flex-col sm:flex-row gap-4 justify-center pt-6 items-center">
           <Button className="bg-primary text-primary-foreground hover:bg-primary/80 hover:text-primary-foreground text-base h-12 px-8 transition-all duration-200 min-h-[48px]">
-            Start for free
+            Book Your Service Now
           </Button>
           <Button variant="outline" className="border-border text-foreground hover:bg-accent hover:text-accent-foreground text-base h-12 px-8 transition-all duration-200 min-h-[48px]">
-            Book a demo
+            Call Now: +1 (555) 123-4567
           </Button>
         </div>
         
         <div className="pt-6 text-sm text-muted-foreground">
-          No credit card required • Free 14-day trial
+          Free consultation • Same-day service available
         </div>
       </div>
       
-      {/* Task Manager UI integrated in hero section with glassmorphic effect */}
-      <div className={`w-full max-w-7xl mt-12 z-10 transition-all duration-1000 delay-500 ${isVisible ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-20'}`}>
-        <div className="cosmic-glow relative rounded-xl overflow-hidden border border-border backdrop-blur-sm bg-card shadow-lg">
-          {/* Dashboard Header */}
-          <div className="bg-card backdrop-blur-md w-full">
-            <div className="flex items-center justify-between p-4 border-b border-border">
-              <div className="flex items-center gap-4">
-                <div className="h-8 w-8 rounded-md bg-muted flex items-center justify-center">
-                  <div className="h-3 w-3 rounded-sm bg-foreground"></div>
-                </div>
-                <span className="text-foreground font-medium">Payment Processing Pipeline</span>
+      {/* Service showcase with glassmorphic effect */}
+      <div className={`w-full max-w-6xl mt-12 z-10 transition-all duration-1000 delay-500 ${isVisible ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-20'}`}>
+        <div className="cosmic-glow relative rounded-xl overflow-hidden border border-border backdrop-blur-sm bg-card shadow-lg p-8">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+            {/* RO Services */}
+            <div className="text-center space-y-4">
+              <div className="w-16 h-16 bg-primary/10 rounded-xl flex items-center justify-center mx-auto">
+                <svg className="w-8 h-8 text-primary" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19.428 15.428a2 2 0 00-1.022-.547l-2.387-.477a6 6 0 00-3.86.517l-.318.158a6 6 0 01-3.86.517L6.05 15.21a2 2 0 00-1.806.547M8 4h8l-1 1v5.172a2 2 0 00.586 1.414l5 5c1.26 1.26.367 3.414-1.415 3.414H4.828c-1.782 0-2.674-2.154-1.414-3.414l5-5A2 2 0 009 10.172V5L8 4z" />
+                </svg>
               </div>
-              
-              <div className="flex items-center gap-3">
-                <div className="flex -space-x-2">
-                  <div className="h-8 w-8 rounded-full bg-muted border-2 border-card"></div>
-                  <div className="h-8 w-8 rounded-full bg-muted/80 border-2 border-card"></div>
-                  <div className="h-8 w-8 rounded-full bg-muted/60 border-2 border-card"></div>
-                  <div className="h-8 w-8 rounded-full bg-muted/40 border-2 border-card flex items-center justify-center text-xs text-foreground">+3</div>
-                </div>
-                
-                <div className="h-8 px-3 rounded-md bg-muted flex items-center justify-center text-foreground text-sm">
-                  Share
-                </div>
-              </div>
+              <h3 className="font-semibold text-foreground">RO Installation</h3>
+              <p className="text-sm text-muted-foreground">Professional RO system setup with quality components</p>
             </div>
-            
-            {/* Dashboard Content */}
-            <div className="flex h-[600px] overflow-hidden">
-              {/* Sidebar */}
-              <div className="w-64 border-r border-border p-4 space-y-4 hidden md:block bg-card">
-                <div className="space-y-2">
-                  <div className="text-xs text-muted-foreground uppercase">Navigation</div>
-                  <div className="space-y-1">
-                    <div className="flex items-center gap-3 px-3 py-2 rounded-md bg-muted text-foreground">
-                      <div className="h-3 w-3 rounded-sm bg-foreground"></div>
-                      <span>Payments</span>
-                    </div>
-                    <div className="flex items-center gap-3 px-3 py-2 rounded-md text-muted-foreground hover:bg-muted/50">
-                      <div className="h-3 w-3 rounded-sm bg-muted-foreground/30"></div>
-                      <span>Analytics</span>
-                    </div>
-                    <div className="flex items-center gap-3 px-3 py-2 rounded-md text-muted-foreground hover:bg-muted/50">
-                      <div className="h-3 w-3 rounded-sm bg-muted-foreground/30"></div>
-                      <span>Compliance</span>
-                    </div>
-                    <div className="flex items-center gap-3 px-3 py-2 rounded-md text-muted-foreground hover:bg-muted/50">
-                      <div className="h-3 w-3 rounded-sm bg-muted-foreground/30"></div>
-                      <span>Reports</span>
-                    </div>
-                  </div>
-                </div>
-                
-                <div className="space-y-2 pt-4">
-                  <div className="text-xs text-muted-foreground uppercase">Departments</div>
-                  <div className="space-y-1">
-                    <div className="flex items-center gap-3 px-3 py-2 rounded-md text-muted-foreground hover:bg-muted/50">
-                      <div className="h-3 w-3 rounded-full bg-muted-foreground/60"></div>
-                      <span>Treasury</span>
-                    </div>
-                    <div className="flex items-center gap-3 px-3 py-2 rounded-md text-muted-foreground hover:bg-muted/50">
-                      <div className="h-3 w-3 rounded-full bg-muted-foreground/50"></div>
-                      <span>Risk</span>
-                    </div>
-                    <div className="flex items-center gap-3 px-3 py-2 rounded-md text-muted-foreground hover:bg-muted/50">
-                      <div className="h-3 w-3 rounded-full bg-muted-foreground/40"></div>
-                      <span>Operations</span>
-                    </div>
-                  </div>
-                </div>
+
+            {/* Water Softener */}
+            <div className="text-center space-y-4">
+              <div className="w-16 h-16 bg-primary/10 rounded-xl flex items-center justify-center mx-auto">
+                <svg className="w-8 h-8 text-primary" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                </svg>
               </div>
-              
-              {/* Main Content */}
-              <div className="flex-1 p-4 bg-background overflow-hidden">
-                {/* Board Header */}
-                <div className="flex items-center justify-between mb-6 min-w-0">
-                  <div className="flex items-center gap-2 flex-shrink-0">
-                    <h3 className="font-medium text-foreground">Transactions</h3>
-                    <span className="text-xs bg-muted px-2 py-1 rounded-full text-muted-foreground">23</span>
-                  </div>
-                  
-                  <div className="flex items-center gap-2 flex-shrink-0">
-                    <div className="h-8 w-8 rounded-md bg-muted flex items-center justify-center text-muted-foreground">
-                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                        <path d="M15 12H9" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
-                        <path d="M12 9L12 15" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
-                      </svg>
-                    </div>
-                    <div className="h-8 w-8 rounded-md bg-muted flex items-center justify-center text-muted-foreground">
-                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                        <path d="M17 9L17 17H9" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-                        <path d="M17 17L7 7" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-                      </svg>
-                    </div>
-                    <div className="h-8 px-3 rounded-md bg-foreground text-background flex items-center justify-center text-sm font-medium whitespace-nowrap">
-                      New Transaction
-                    </div>
-                  </div>
-                </div>
-                
-                {/* Kanban Board */}
-                <div className="overflow-hidden">
-                  <TaskBoard />
-                </div>
+              <h3 className="font-semibold text-foreground">Water Softening</h3>
+              <p className="text-sm text-muted-foreground">Eliminate hard water issues for your home</p>
+            </div>
+
+            {/* Maintenance */}
+            <div className="text-center space-y-4">
+              <div className="w-16 h-16 bg-primary/10 rounded-xl flex items-center justify-center mx-auto">
+                <svg className="w-8 h-8 text-primary" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                </svg>
               </div>
+              <h3 className="font-semibold text-foreground">Filter Service</h3>
+              <p className="text-sm text-muted-foreground">Regular filter replacement and system maintenance</p>
+            </div>
+
+            {/* Emergency */}
+            <div className="text-center space-y-4">
+              <div className="w-16 h-16 bg-primary/10 rounded-xl flex items-center justify-center mx-auto">
+                <svg className="w-8 h-8 text-primary" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                </svg>
+              </div>
+              <h3 className="font-semibold text-foreground">Emergency Repair</h3>
+              <p className="text-sm text-muted-foreground">24/7 emergency water system repair services</p>
             </div>
           </div>
         </div>

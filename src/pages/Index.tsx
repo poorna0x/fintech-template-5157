@@ -2,9 +2,12 @@
 import React from 'react';
 import Header from '@/components/Header';
 import HeroSection from '@/components/HeroSection';
-import Features from '@/components/Features';
+import AboutSection from '@/components/AboutSection';
+import ServicesSection from '@/components/ServicesSection';
+import BookingSection from '@/components/BookingSection';
+import WhyChooseSection from '@/components/WhyChooseSection';
 import Testimonials from '@/components/Testimonials';
-import Pricing from '@/components/Pricing';
+import ContactSection from '@/components/ContactSection';
 import Footer from '@/components/Footer';
 
 const Index = () => {
@@ -13,9 +16,12 @@ const Index = () => {
       <Header />
       <main>
         <HeroSection />
-        <Features />
+        <AboutSection />
+        <ServicesSection />
+        <BookingSection />
+        <WhyChooseSection />
         <Testimonials />
-        <Pricing />
+        <ContactSection />
       </main>
       <Footer />
     </div>
