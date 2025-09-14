@@ -16,84 +16,108 @@ const ServicesSection = () => {
     {
       icon: Filter,
       title: "RO Installation & Repair",
-      description: "Keep your RO running perfectly with professional installation and expert repair services across Bangalore, Karnataka.",
-      features: ["New RO system setup", "RO repair & troubleshooting", "Performance optimization"],
+      description: "Complete RO water purifier installation, re-installation, and expert repair services across Bangalore, Karnataka.",
+      features: ["New RO installation", "RO re-installation", "Complete system repair", "Performance optimization"],
       details: {
         includes: [
-          "Complete RO system installation",
-          "Water quality testing",
-          "System calibration",
-          "User training",
+          "Complete RO system installation & setup",
+          "RO re-installation & relocation",
+          "Water quality testing & calibration",
+          "System programming & user training",
+          "Pipe connections & electrical setup",
+          "UV lamp installation & maintenance",
+          "Pump & motor repair/replacement",
+          "Leakage repair & pipe fixing",
           "Free maintenance for 3 months"
         ],
         benefits: [
-          "Certified technicians",
-          "Same-day service available",
-          "Genuine spare parts",
-          "24/7 emergency support"
+          "Certified installation technicians",
+          "Same-day installation available",
+          "Genuine spare parts & warranty",
+          "24/7 emergency repair support",
+          "All major brands supported",
+          "Professional installation guarantee"
         ]
       }
     },
     {
       icon: Wrench,
       title: "Water Softener Service",
-      description: "Ensure soft water for home & office with comprehensive softener maintenance and repair services in Bengaluru.",
-      features: ["Water softener installation", "Salt level management", "System calibration"],
+      description: "Complete water softener installation, re-installation, resin level management, and maintenance services in Bengaluru.",
+      features: ["Softener installation", "Re-installation", "Resin level management", "Salt level monitoring"],
       details: {
         includes: [
-          "Water softener installation",
-          "Salt tank setup",
-          "System programming",
-          "Water hardness testing",
-          "Maintenance schedule setup"
+          "Water softener installation & setup",
+          "Softener re-installation & relocation",
+          "Resin level checking & replacement",
+          "Salt level monitoring & refilling",
+          "System programming & calibration",
+          "Water hardness testing & analysis",
+          "Bypass valve installation & repair",
+          "Drain line setup & maintenance",
+          "Control valve repair & replacement"
         ],
         benefits: [
-          "Reduces water hardness",
-          "Protects appliances",
-          "Softer skin and hair",
-          "Energy savings"
+          "Reduces water hardness effectively",
+          "Protects appliances from scaling",
+          "Softer skin and hair benefits",
+          "Energy savings on heating",
+          "Extended appliance lifespan",
+          "Professional resin management"
         ]
       }
     },
     {
       icon: RefreshCw,
       title: "RO Filter Replacement",
-      description: "Healthy water starts with clean filters. Regular replacement keeps your water pure across Bangalore, Karnataka.",
-      features: ["RO pre-filter replacement", "RO membrane changing", "Carbon filter service"],
+      description: "Complete filter replacement service for all RO water purifier filters - pre-filters, membranes, carbon filters, and more.",
+      features: ["All filter types", "Pre-filter replacement", "RO membrane changing", "Carbon & post-filters"],
       details: {
         includes: [
-          "Filter replacement",
-          "System sanitization",
-          "Water flow testing",
-          "Filter life monitoring",
-          "Next service reminder"
+          "Pre-filter (PP, sediment) replacement",
+          "RO membrane replacement & cleaning",
+          "Carbon filter (pre & post) replacement",
+          "UV lamp replacement & maintenance",
+          "Mineral filter replacement",
+          "Alkaline filter replacement",
+          "System sanitization & cleaning",
+          "Water flow testing & optimization",
+          "Filter life monitoring & reminders"
         ],
         benefits: [
-          "Improved water quality",
-          "Better taste and odor",
-          "Extended system life",
-          "Cost-effective maintenance"
+          "Improved water quality & purity",
+          "Better taste and odor removal",
+          "Extended RO system lifespan",
+          "Cost-effective filter maintenance",
+          "Genuine filter parts guarantee",
+          "Professional filter installation"
         ]
       }
     },
     {
       icon: Settings,
       title: "RO Maintenance Packages",
-      description: "Regular check-ups for peace of mind with comprehensive maintenance plans across Bangalore, Karnataka.",
-      features: ["Quarterly RO inspections", "Preventive maintenance", "Priority service support"],
+      description: "Comprehensive maintenance packages with different service levels - basic, premium, and full filter service packages.",
+      features: ["Basic maintenance", "Premium packages", "Full filter service", "Annual contracts"],
       details: {
         includes: [
-          "Quarterly system inspection",
-          "Filter cleaning and replacement",
-          "Performance optimization",
-          "Water quality testing",
-          "Priority booking"
+          "Basic Package: Quarterly inspection & cleaning",
+          "Premium Package: Bi-monthly service + filter replacement",
+          "Full Filter Service: Complete filter replacement package",
+          "Annual Contract: Year-round maintenance & support",
+          "System performance optimization",
+          "Water quality testing & analysis",
+          "Priority booking & emergency support",
+          "Filter life monitoring & reminders",
+          "Comprehensive system health check"
         ],
         benefits: [
-          "Prevents major breakdowns",
-          "Optimal water quality",
-          "Extended warranty",
-          "Priority customer support"
+          "Prevents major breakdowns & costly repairs",
+          "Maintains optimal water quality year-round",
+          "Cost-effective maintenance plans",
+          "Extended warranty coverage",
+          "Priority customer support",
+          "Flexible package options"
         ]
       }
     }
