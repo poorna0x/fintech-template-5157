@@ -12,9 +12,6 @@ const ServicesSection = () => {
       description: "Keep your RO running perfectly with professional installation and expert repair services across Bangalore, Karnataka.",
       features: ["New RO system setup", "RO repair & troubleshooting", "Performance optimization"],
       details: {
-        pricing: "Starting from ₹2,500",
-        duration: "2-4 hours",
-        warranty: "1 year warranty",
         includes: [
           "Complete RO system installation",
           "Water quality testing",
@@ -36,9 +33,6 @@ const ServicesSection = () => {
       description: "Ensure soft water for home & office with comprehensive softener maintenance and repair services in Bengaluru.",
       features: ["Water softener installation", "Salt level management", "System calibration"],
       details: {
-        pricing: "Starting from ₹3,500",
-        duration: "3-5 hours",
-        warranty: "2 year warranty",
         includes: [
           "Water softener installation",
           "Salt tank setup",
@@ -60,9 +54,6 @@ const ServicesSection = () => {
       description: "Healthy water starts with clean filters. Regular replacement keeps your water pure across Bangalore, Karnataka.",
       features: ["RO pre-filter replacement", "RO membrane changing", "Carbon filter service"],
       details: {
-        pricing: "Starting from ₹800",
-        duration: "30-60 minutes",
-        warranty: "6 months warranty",
         includes: [
           "Filter replacement",
           "System sanitization",
@@ -84,9 +75,6 @@ const ServicesSection = () => {
       description: "Regular check-ups for peace of mind with comprehensive maintenance plans across Bangalore, Karnataka.",
       features: ["Quarterly RO inspections", "Preventive maintenance", "Priority service support"],
       details: {
-        pricing: "Starting from ₹1,200/quarter",
-        duration: "1-2 hours per visit",
-        warranty: "Service guarantee",
         includes: [
           "Quarterly system inspection",
           "Filter cleaning and replacement",
@@ -161,27 +149,6 @@ const ServicesSection = () => {
                             {service.description}
                           </p>
                           
-                          {/* Service Details Grid */}
-                          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                            <div className="bg-muted/50 rounded-lg p-4 text-center">
-                              <div className="text-2xl font-bold text-primary mb-1">
-                                {service.details.pricing}
-                              </div>
-                              <div className="text-sm text-muted-foreground">Starting Price</div>
-                            </div>
-                            <div className="bg-muted/50 rounded-lg p-4 text-center">
-                              <div className="text-2xl font-bold text-primary mb-1">
-                                {service.details.duration}
-                              </div>
-                              <div className="text-sm text-muted-foreground">Service Duration</div>
-                            </div>
-                            <div className="bg-muted/50 rounded-lg p-4 text-center">
-                              <div className="text-2xl font-bold text-primary mb-1">
-                                {service.details.warranty}
-                              </div>
-                              <div className="text-sm text-muted-foreground">Warranty</div>
-                            </div>
-                          </div>
                           
                           {/* What's Included */}
                           <div>

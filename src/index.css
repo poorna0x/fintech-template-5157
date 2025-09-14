@@ -270,4 +270,18 @@
     white-space: nowrap !important;
     border: 0 !important;
   }
+
+  /* Infinity scroll for testimonials - manual scroll with seamless loop */
+  .infinite-scroll {
+    scroll-behavior: smooth;
+  }
+
+  .infinite-scroll::-webkit-scrollbar {
+    display: none;
+  }
+
+  .infinite-scroll {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
 }
