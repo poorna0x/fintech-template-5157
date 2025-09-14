@@ -6,46 +6,45 @@ import { Menu, X, CircleDot, LayoutDashboard, DollarSign, Sun, Moon } from 'luci
 import { cn } from '@/lib/utils';
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
 import { Switch } from '@/components/ui/switch';
+import { useLocation, useNavigate } from 'react-router-dom';
 
 const Header = () => {
   const [activePage, setActivePage] = useState('home');
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
-  const [isDarkMode, setIsDarkMode] = useState(() => {
-    // Check device preference on initial load
-    if (typeof window !== 'undefined') {
-      return window.matchMedia('(prefers-color-scheme: dark)').matches;
-    }
-    return false; // Fallback to light mode if window is not available
-  });
+  const [isDarkMode, setIsDarkMode] = useState(false); // Always default to light mode
+  const location = useLocation();
+  const navigate = useNavigate();
   
   useEffect(() => {
     // Apply the theme to the document when it changes
     if (isDarkMode) {
-      document.documentElement.classList.remove('light-mode');
-      document.documentElement.classList.add('dark-mode');
+      document.documentElement.classList.add('dark-mode', 'dark');
     } else {
-      document.documentElement.classList.remove('dark-mode');
-      document.documentElement.classList.add('light-mode');
+      document.documentElement.classList.remove('dark-mode', 'dark');
     }
   }, [isDarkMode]);
 
-  // Listen for system theme changes
+  // Initialize with light theme on component mount
   useEffect(() => {
-    const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
-    
-    const handleChange = (e: MediaQueryListEvent) => {
-      setIsDarkMode(e.matches);
-    };
-
-    mediaQuery.addEventListener('change', handleChange);
-    
-    return () => {
-      mediaQuery.removeEventListener('change', handleChange);
-    };
+    // Ensure light theme is applied on initial load
+    document.documentElement.classList.remove('dark-mode', 'dark');
   }, []);
 
-  // Dynamic navigation focus based on scroll position
+  // Set active page based on current route
   useEffect(() => {
+    if (location.pathname === '/') {
+      setActivePage('home');
+    } else if (location.pathname === '/book') {
+      setActivePage('booking');
+    } else if (location.pathname === '/admin') {
+      setActivePage('admin');
+    }
+  }, [location.pathname]);
+
+  // Dynamic navigation focus based on scroll position (only on homepage)
+  useEffect(() => {
+    if (location.pathname !== '/') return;
+
     const handleScroll = () => {
       const sections = ['home', 'about', 'services', 'booking', 'contact'];
       const scrollPosition = window.scrollY + 200; // Increased offset for better UX
@@ -61,21 +60,41 @@ const Header = () => {
 
     window.addEventListener('scroll', handleScroll);
     return () => window.removeEventListener('scroll', handleScroll);
-  }, []);
+  }, [location.pathname]);
   
   const handleNavClick = (page: string) => (e: React.MouseEvent) => {
     e.preventDefault();
     setActivePage(page);
     
     if (page === 'home') {
-      // Home button - scroll to top
-      window.scrollTo({ top: 0, behavior: 'smooth' });
-    } else {
-      // Other sections - scroll to specific element
-      const element = document.getElementById(page);
-      if (element) {
-        element.scrollIntoView({ behavior: 'smooth' });
+      // Navigate to homepage
+      navigate('/');
+    } else if (page === 'booking') {
+      // Navigate to booking page
+      navigate('/book');
+    } else if (page === 'admin') {
+      // Navigate to admin page
+      navigate('/admin');
+    } else if (location.pathname === '/') {
+      // On homepage, scroll to sections
+      if (page === 'home') {
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+      } else {
+        const element = document.getElementById(page);
+        if (element) {
+          element.scrollIntoView({ behavior: 'smooth' });
+        }
       }
+    } else {
+      // On other pages, navigate to homepage and then scroll to section
+      navigate('/');
+      // Small delay to ensure page loads before scrolling
+      setTimeout(() => {
+        const element = document.getElementById(page);
+        if (element) {
+          element.scrollIntoView({ behavior: 'smooth' });
+        }
+      }, 100);
     }
     setMobileMenuOpen(false);
   };

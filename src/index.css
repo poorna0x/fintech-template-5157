@@ -7,6 +7,39 @@
 
 @layer base {
   :root {
+    --background: 0 0% 98%; /* Very light grey */
+    --foreground: 0 0% 20%; /* Dark grey */
+
+    --card: 0 0% 96%; /* Light grey card */
+    --card-foreground: 0 0% 20%;
+
+    --popover: 0 0% 96%;
+    --popover-foreground: 0 0% 20%;
+
+    --primary: 0 0% 25%; /* Dark grey primary */
+    --primary-foreground: 0 0% 98%; /* Very light grey */
+
+    --secondary: 0 0% 92%; /* Light grey secondary */
+    --secondary-foreground: 0 0% 25%;
+
+    --muted: 0 0% 88%; /* Medium light grey */
+    --muted-foreground: 0 0% 45%; /* Medium grey */
+
+    --accent: 0 0% 25%; /* Dark grey accent */
+    --accent-foreground: 0 0% 98%;
+
+    --destructive: 0 84% 60%;
+    --destructive-foreground: 210 40% 98%;
+
+    --border: 0 0% 85%; /* Light grey border */
+    --input: 0 0% 90%;
+    --ring: 0 0% 25%; /* Dark grey ring */
+
+    --radius: 0.5rem;
+  }
+
+  .dark-mode,
+  .dark {
     --background: 0 0% 8%; /* Dark charcoal */
     --foreground: 0 0% 95%; /* Light grey/white */
 
@@ -34,35 +67,6 @@
     --border: 0 0% 22%; /* Medium charcoal border */
     --input: 0 0% 22%;
     --ring: 0 0% 85%; /* Light grey ring */
-
-    --radius: 0.5rem;
-  }
-
-  .light-mode {
-    --background: 0 0% 98%; /* Very light grey */
-    --foreground: 0 0% 20%; /* Dark grey */
-
-    --card: 0 0% 96%; /* Light grey card */
-    --card-foreground: 0 0% 20%;
-
-    --popover: 0 0% 96%;
-    --popover-foreground: 0 0% 20%;
-
-    --primary: 0 0% 25%; /* Dark grey primary */
-    --primary-foreground: 0 0% 98%; /* Very light grey */
-
-    --secondary: 0 0% 92%; /* Light grey secondary */
-    --secondary-foreground: 0 0% 25%;
-
-    --muted: 0 0% 88%; /* Medium light grey */
-    --muted-foreground: 0 0% 45%; /* Medium grey */
-
-    --accent: 0 0% 25%; /* Dark grey accent */
-    --accent-foreground: 0 0% 98%;
-
-    --border: 0 0% 85%; /* Light grey border */
-    --input: 0 0% 90%;
-    --ring: 0 0% 25%; /* Dark grey ring */
   }
 
   * {
@@ -79,11 +83,11 @@
   }
 
   .cosmic-gradient {
-    background: linear-gradient(135deg, rgba(64, 64, 64, 0.2) 0%, rgba(32, 32, 32, 0.4) 100%);
+    background: linear-gradient(135deg, rgba(230, 230, 230, 0.8) 0%, rgba(200, 200, 200, 0.6) 100%);
   }
 
-  .light-mode .cosmic-gradient {
-    background: linear-gradient(135deg, rgba(230, 230, 230, 0.8) 0%, rgba(200, 200, 200, 0.6) 100%);
+  .dark-mode .cosmic-gradient {
+    background: linear-gradient(135deg, rgba(64, 64, 64, 0.2) 0%, rgba(32, 32, 32, 0.4) 100%);
   }
 
   .cosmic-glow {
@@ -102,7 +106,7 @@
     border-radius: inherit;
   }
 
-  .light-mode .cosmic-glow::before {
+  .dark-mode .cosmic-glow::before {
     background: radial-gradient(circle at center, rgba(64, 64, 64, 0.08) 0%, transparent 70%);
   }
 
@@ -113,7 +117,7 @@
     background-size: 30px 30px;
   }
 
-  .light-mode .cosmic-grid {
+  .dark-mode .cosmic-grid {
     background-image: 
       linear-gradient(rgba(64, 64, 64, 0.08) 1px, transparent 1px),
       linear-gradient(90deg, rgba(64, 64, 64, 0.08) 1px, transparent 1px);
@@ -127,7 +131,7 @@
     @apply backdrop-blur-sm bg-card border border-white/10 shadow-[0_0_15px_rgba(255,255,255,0.1)];
   }
 
-  .light-mode .cosmic-glass {
+  .dark-mode .cosmic-glass {
     @apply backdrop-blur-sm bg-card border border-black/10 shadow-[0_0_15px_rgba(0,0,0,0.05)];
   }
   
@@ -156,7 +160,7 @@
     transition: filter 0.3s ease;
   }
 
-  .light-mode .icon-glow {
+  .dark-mode .icon-glow {
     filter: drop-shadow(0 0 6px rgba(64, 64, 64, 0.2));
   }
   
@@ -164,7 +168,7 @@
     filter: drop-shadow(0 0 10px rgba(255, 255, 255, 0.5));
   }
 
-  .light-mode .collapsible-trigger:hover .icon-glow {
+  .dark-mode .collapsible-trigger:hover .icon-glow {
     filter: drop-shadow(0 0 10px rgba(64, 64, 64, 0.3));
   }
 
@@ -228,7 +232,7 @@
     transition: border-color 0.2s ease-in-out !important; /* Smooth transition */
   }
   
-  .light-mode .force-visible-border {
+  .dark-mode .force-visible-border {
     border: 3px solid #d1d5db !important; /* gray-300 - lighter */
     box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.05) !important;
   }
@@ -239,7 +243,7 @@
     box-shadow: 0 0 0 3px rgba(255, 255, 255, 0.2) !important; /* white glow */
   }
   
-  .light-mode .force-visible-border:focus {
+  .dark-mode .force-visible-border:focus {
     border-color: #000000 !important; /* black border when focused in light mode */
     box-shadow: 0 0 0 3px rgba(0, 0, 0, 0.1) !important; /* black glow */
   }

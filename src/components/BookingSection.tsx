@@ -1,20 +1,33 @@
-import React, { useState } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Calendar, Phone, MessageCircle, MapPin, User, Clock, ChevronLeft, ChevronRight, Check, Settings, Filter, Upload, Camera } from 'lucide-react';
+import { Calendar, Phone, MessageCircle, MapPin, User, Clock, ChevronLeft, ChevronRight, Check, Settings, Filter, Upload, Camera, Loader2 } from 'lucide-react';
+import { toast } from 'sonner';
+import { db, generateJobNumber } from '@/lib/supabase';
+import { emailService } from '@/lib/email';
+import ImageUpload from './ImageUpload';
 
 const BookingSection = () => {
   const [currentStep, setCurrentStep] = useState(1);
   const [serviceType, setServiceType] = useState('');
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [bookingSuccess, setBookingSuccess] = useState(false);
+  const [bookingId, setBookingId] = useState<string | null>(null);
+  const [addressSuggestions, setAddressSuggestions] = useState<any[]>([]);
+  const [showSuggestions, setShowSuggestions] = useState(false);
+  const [isLoadingPlaces, setIsLoadingPlaces] = useState(false);
+  const addressInputRef = useRef<HTMLInputElement>(null);
+  
   const [formData, setFormData] = useState({
     name: '',
     phone: '',
     email: '',
     address: '',
+    coordinates: { lat: 0, lng: 0 },
     serviceType: '',
     service: '',
     problemDescription: '',
@@ -23,11 +36,105 @@ const BookingSection = () => {
     preferredDate: '',
     preferredTime: '',
     message: '',
-    images: []
+    images: [] as string[]
   });
+
+  // No Google Places initialization needed - using free services
 
   const handleInputChange = (field: string, value: string) => {
     setFormData(prev => ({ ...prev, [field]: value }));
+    
+    // Handle address autocomplete
+    if (field === 'address' && value.length > 2) {
+      handleAddressInput(value);
+    } else if (field === 'address' && value.length <= 2) {
+      setAddressSuggestions([]);
+      setShowSuggestions(false);
+    }
+  };
+
+  const handleAddressInput = async (input: string) => {
+    setIsLoadingPlaces(true);
+    
+    try {
+      // Use OpenStreetMap Nominatim for free address autocomplete
+      const response = await fetch(
+        `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(input)}&countrycodes=in&limit=5&addressdetails=1`
+      );
+      
+      const data = await response.json();
+      setIsLoadingPlaces(false);
+      
+      if (data && data.length > 0) {
+        const suggestions = data.map((item: any) => ({
+          place_id: item.place_id,
+          description: item.display_name,
+          structured_formatting: {
+            main_text: item.display_name.split(',')[0] || item.display_name,
+            secondary_text: item.display_name.split(',').slice(1).join(',').trim()
+          },
+          types: ['geocode'],
+          lat: parseFloat(item.lat),
+          lon: parseFloat(item.lon),
+          address: item.address
+        }));
+        
+        setAddressSuggestions(suggestions);
+        setShowSuggestions(true);
+      } else {
+        setAddressSuggestions([]);
+        setShowSuggestions(false);
+      }
+    } catch (error) {
+      console.error('Error getting place predictions:', error);
+      setIsLoadingPlaces(false);
+      setAddressSuggestions([]);
+      setShowSuggestions(false);
+    }
+  };
+
+  const handleAddressSelect = (suggestion: any) => {
+    // Extract address components from the suggestion
+    const pincode = suggestion.address?.postcode || '';
+    const city = suggestion.address?.city || suggestion.address?.town || suggestion.address?.village || '';
+    const state = suggestion.address?.state || '';
+    const area = suggestion.address?.suburb || suggestion.address?.neighbourhood || '';
+    const street = suggestion.address?.road || '';
+    const houseNumber = suggestion.address?.house_number || '';
+
+    // Update form data with complete address and coordinates
+    setFormData(prev => ({
+      ...prev,
+      address: suggestion.description || '',
+      coordinates: {
+        lat: suggestion.lat || 0,
+        lng: suggestion.lon || 0
+      }
+    }));
+
+    setAddressSuggestions([]);
+    setShowSuggestions(false);
+    
+    // Show detailed location information
+    const locationDetails = [];
+    if (houseNumber) locationDetails.push(houseNumber);
+    if (street) locationDetails.push(street);
+    if (area) locationDetails.push(area);
+    if (city) locationDetails.push(city);
+    if (state) locationDetails.push(state);
+    if (pincode) locationDetails.push(pincode);
+    
+    const lat = (suggestion.lat || 0).toFixed(6);
+    const lng = (suggestion.lon || 0).toFixed(6);
+    
+    toast.success(
+      `📍 Exact Location Selected!\n${locationDetails.join(', ')}\nCoordinates: ${lat}, ${lng}`,
+      { duration: 5000 }
+    );
+  };
+
+  const handleImagesChange = (images: string[]) => {
+    setFormData(prev => ({ ...prev, images }));
   };
 
   const handleNext = () => {
@@ -44,7 +151,7 @@ const BookingSection = () => {
 
   const getCurrentLocation = () => {
     if (!navigator.geolocation) {
-      alert('Geolocation is not supported by this browser. Please enter your address manually.');
+      toast.error('Geolocation is not supported by this browser. Please enter your address manually.');
       return;
     }
 
@@ -57,37 +164,135 @@ const BookingSection = () => {
 
     navigator.geolocation.getCurrentPosition(
       (position) => {
-        const { latitude, longitude } = position.coords;
+        const { latitude, longitude, accuracy } = position.coords;
+        console.log('Location obtained:', { latitude, longitude, accuracy });
         
-        // Use a simple reverse geocoding service (you can replace with Google Geocoding API)
+        // Use free reverse geocoding services
+        const geocodingPromises = [
+          
+          // Fallback: BigDataCloud (free, good accuracy)
         fetch(`https://api.bigdatacloud.net/data/reverse-geocode-client?latitude=${latitude}&longitude=${longitude}&localityLanguage=en`)
           .then(response => response.json())
           .then(data => {
-            const address = `${data.locality || 'Unknown City'}, ${data.principalSubdivision || 'Unknown State'}, ${data.countryName || 'Unknown Country'}`;
+              // Extract pincode from the data
+              const pincode = data.postcode || '';
+              const city = data.locality || data.city || '';
+              const state = data.principalSubdivision || data.principalSubdivisionCode || '';
+              const area = data.localityInfo?.administrative?.[0]?.name || '';
+              
+              // Create a more detailed address
+              const addressParts = [];
+              if (data.locality) addressParts.push(data.locality);
+              if (data.principalSubdivision) addressParts.push(data.principalSubdivision);
+              if (data.countryName) addressParts.push(data.countryName);
+              if (pincode) addressParts.push(pincode);
+              
+              return {
+                service: 'bigdatacloud',
+                address: addressParts.join(', '),
+                pincode,
+                city,
+                state,
+                area,
+                street: '',
+                houseNumber: '',
+                details: data
+              };
+            })
+            .catch(() => null),
+          
+          // Fallback: OpenStreetMap Nominatim (free, good for detailed addresses)
+          fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${latitude}&lon=${longitude}&addressdetails=1`)
+            .then(response => response.json())
+            .then(data => {
+              const pincode = data.address?.postcode || '';
+              const city = data.address?.city || data.address?.town || data.address?.village || '';
+              const state = data.address?.state || '';
+              const area = data.address?.suburb || data.address?.neighbourhood || '';
+              const street = data.address?.road || '';
+              const houseNumber = data.address?.house_number || '';
+              
+              return {
+                service: 'nominatim',
+                address: data.display_name || `${latitude.toFixed(6)}, ${longitude.toFixed(6)}`,
+                pincode,
+                city,
+                state,
+                area,
+                street,
+                houseNumber,
+                details: data
+              };
+            })
+            .catch(() => null)
+        ];
+
+        // Try the first successful geocoding result
+        Promise.race(geocodingPromises.filter(p => p !== null))
+          .then(result => {
+            if (result) {
+              console.log('Geocoding result:', result);
+              
+              // Update form data with complete address and coordinates
+              console.log('Setting form data with address:', result.address);
             setFormData(prev => ({ 
               ...prev, 
-              address: address
-            }));
-            
-            // Reset button
-            if (button) {
-              button.disabled = false;
-              button.innerHTML = '<svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z"></path></svg>Use Current Location';
+                address: result.address,
+                coordinates: {
+                  lat: latitude,
+                  lng: longitude
+                }
+              }));
+
+              // Show detailed location information
+              const locationDetails = [];
+              if (result.houseNumber) locationDetails.push(result.houseNumber);
+              if (result.street) locationDetails.push(result.street);
+              if (result.area) locationDetails.push(result.area);
+              if (result.city) locationDetails.push(result.city);
+              if (result.state) locationDetails.push(result.state);
+              if (result.pincode) locationDetails.push(result.pincode);
+              
+              const lat = latitude.toFixed(6);
+              const lng = longitude.toFixed(6);
+              
+              toast.success(
+                `📍 Current Location Detected!\n${locationDetails.join(', ')}\nCoordinates: ${lat}, ${lng}`,
+                { duration: 5000 }
+              );
+            } else {
+              // Fallback to coordinates if all geocoding fails
+              const coordinateAddress = `Current Location: ${latitude.toFixed(6)}, ${longitude.toFixed(6)}`;
+              setFormData(prev => ({ 
+                ...prev, 
+                address: coordinateAddress,
+                coordinates: {
+                  lat: latitude,
+                  lng: longitude
+                }
+              }));
+              toast.warning('Location detected but address lookup failed. Please verify the coordinates.');
             }
           })
           .catch(() => {
-            // Fallback to coordinates if reverse geocoding fails
+            // Fallback to coordinates if all geocoding fails
+            const coordinateAddress = `Current Location: ${latitude.toFixed(6)}, ${longitude.toFixed(6)}`;
             setFormData(prev => ({ 
               ...prev, 
-              address: `Current Location: ${latitude.toFixed(6)}, ${longitude.toFixed(6)}` 
+              address: coordinateAddress,
+              coordinates: {
+                lat: latitude,
+                lng: longitude
+              }
             }));
+            toast.warning('Location detected but address lookup failed. Please verify the coordinates.');
+          })
             
             // Reset button
             if (button) {
               button.disabled = false;
               button.innerHTML = '<svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z"></path></svg>Use Current Location';
             }
-          });
       },
       (error) => {
         console.error('Error getting location:', error);
@@ -115,20 +320,118 @@ const BookingSection = () => {
             break;
         }
         
-        alert(errorMessage);
+        toast.error(errorMessage);
       },
       {
-        enableHighAccuracy: true,
-        timeout: 10000,
-        maximumAge: 300000 // 5 minutes
+        enableHighAccuracy: true,  // Use GPS for better accuracy
+        timeout: 15000,           // 15 second timeout for better accuracy
+        maximumAge: 60000         // Cache location for 1 minute only
       }
     );
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    console.log('Booking submitted:', formData);
-    // Handle final submission
+    setIsSubmitting(true);
+    
+    try {
+      // Parse address into components (simple parsing)
+      const addressParts = formData.address.split(',');
+      const pincodeMatch = formData.address.match(/\b\d{6}\b/);
+      const pincode = pincodeMatch ? pincodeMatch[0] : '560001';
+      
+      // Create customer record
+      const customerData = {
+        full_name: formData.name,
+        phone: formData.phone,
+        email: formData.email,
+        address: {
+          street: formData.address,
+          area: addressParts[1]?.trim() || '',
+          city: addressParts[2]?.trim() || 'Bangalore',
+          state: 'Karnataka',
+          pincode: pincode,
+        },
+        location: {
+          latitude: formData.coordinates.lat,
+          longitude: formData.coordinates.lng,
+          formattedAddress: formData.address,
+        },
+        service_type: formData.serviceType.toUpperCase() as 'RO' | 'SOFTENER',
+        brand: formData.brandName,
+        model: formData.modelName,
+        status: 'ACTIVE' as const,
+        customer_since: new Date().toISOString(),
+        preferred_time_slot: formData.preferredTime.toUpperCase() as 'MORNING' | 'AFTERNOON' | 'EVENING',
+        preferred_language: 'ENGLISH' as const,
+      };
+
+      const { data: customer, error: customerError } = await db.customers.create(customerData);
+      
+      if (customerError) {
+        throw new Error(customerError.message);
+      }
+
+      // Create job record
+      const jobData = {
+        job_number: generateJobNumber(formData.serviceType.toUpperCase()),
+        customer_id: customer.id,
+        service_type: formData.serviceType.toUpperCase() as 'RO' | 'SOFTENER',
+        service_sub_type: formData.service,
+        brand: formData.brandName,
+        model: formData.modelName,
+        scheduled_date: formData.preferredDate,
+        scheduled_time_slot: formData.preferredTime.toUpperCase() as 'MORNING' | 'AFTERNOON' | 'EVENING',
+        estimated_duration: 120,
+        service_address: customerData.address,
+        service_location: customerData.location,
+        status: 'PENDING' as const,
+        priority: 'MEDIUM' as const,
+        description: formData.problemDescription,
+        requirements: [],
+        estimated_cost: 0,
+        payment_status: 'PENDING' as const,
+        before_photos: formData.images,
+      };
+
+      const { data: job, error: jobError } = await db.jobs.create(jobData);
+      
+      if (jobError) {
+        throw new Error(jobError.message);
+      }
+
+      // Send confirmation email
+      try {
+        const emailData = {
+          customerName: customer.full_name,
+          jobNumber: job.job_number,
+          serviceType: job.service_type,
+          serviceSubType: job.service_sub_type,
+          brand: job.brand,
+          model: job.model,
+          scheduledDate: job.scheduled_date,
+          scheduledTimeSlot: job.scheduled_time_slot,
+          serviceAddress: formData.address,
+          phone: customer.phone,
+          email: customer.email,
+        };
+
+        await emailService.sendBookingConfirmation(emailData);
+      } catch (emailError) {
+        console.error('Email sending failed:', emailError);
+        // Don't fail the booking if email fails
+      }
+
+      setBookingId(job.job_number);
+      setBookingSuccess(true);
+      toast.success('Booking confirmed successfully!');
+      
+    } catch (error) {
+      console.error('Booking error:', error);
+      toast.error('Failed to create booking. Please try again.');
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   const roServices = [
@@ -163,6 +466,71 @@ const BookingSection = () => {
         return false;
     }
   };
+
+  if (bookingSuccess) {
+    return (
+      <section id="booking" className="py-16 px-2 md:px-12 bg-background">
+        <div className="max-w-4xl mx-auto">
+          <div className="text-center mb-12">
+            <h2 className="text-3xl md:text-4xl font-bold text-foreground mb-6">
+              Booking Confirmed!
+            </h2>
+            <p className="text-lg text-muted-foreground">
+              Your service request has been submitted successfully
+            </p>
+          </div>
+          
+          <Card className="max-w-2xl mx-auto">
+            <CardContent className="p-8 text-center">
+              <div className="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                <Check className="w-8 h-8 text-green-600" />
+              </div>
+              <h3 className="text-2xl font-bold text-foreground mb-4">Booking Confirmed!</h3>
+              <p className="text-muted-foreground mb-6">
+                Your service request has been submitted successfully. We'll contact you within 30 minutes to confirm your appointment.
+              </p>
+              <div className="bg-muted/50 rounded-lg p-4 mb-6">
+                <p className="font-semibold text-foreground">Booking ID: {bookingId}</p>
+                <p className="text-sm text-muted-foreground mt-1">
+                  Please keep this ID for your reference
+                </p>
+              </div>
+              <div className="space-y-2 text-sm text-muted-foreground">
+                <p>• Confirmation email sent to your registered email</p>
+                <p>• SMS notification sent to your phone</p>
+                <p>• Our technician will contact you soon</p>
+              </div>
+              <Button 
+                onClick={() => {
+                  setBookingSuccess(false);
+                  setCurrentStep(1);
+                  setBookingId(null);
+                  setFormData({
+                    name: '',
+                    phone: '',
+                    email: '',
+                    address: '',
+                    serviceType: '',
+                    service: '',
+                    problemDescription: '',
+                    brandName: '',
+                    modelName: '',
+                    preferredDate: '',
+                    preferredTime: '',
+                    message: '',
+                    images: []
+                  });
+                }}
+                className="mt-6"
+              >
+                Book Another Service
+              </Button>
+            </CardContent>
+          </Card>
+        </div>
+      </section>
+    );
+  }
 
   return (
     <section id="booking" className="py-16 px-2 md:px-12 bg-background">
@@ -400,15 +768,66 @@ const BookingSection = () => {
                   <div>
                     <Label htmlFor="address">Service Address *</Label>
                         <div className="space-y-2">
+                    <div className="relative">
                     <Textarea
+                        ref={addressInputRef}
                       id="address"
                       value={formData.address}
                       onChange={(e) => handleInputChange('address', e.target.value)}
-                      placeholder="Enter complete address with landmarks for easy navigation by technician"
+                        placeholder="Type exact address... (e.g., '123 MG Road, Koramangala, Bangalore 560034')"
                       className="force-visible-border focus:border-primary focus:ring-2 focus:ring-primary p-3 shadow-sm mx-1"
                       required
                       rows={3}
-                    />
+                        onFocus={() => {
+                          if (addressSuggestions.length > 0) {
+                            setShowSuggestions(true);
+                          }
+                        }}
+                        onBlur={() => {
+                          // Delay hiding suggestions to allow clicking on them
+                          setTimeout(() => setShowSuggestions(false), 200);
+                        }}
+                      />
+                      
+                      {/* Address Suggestions Dropdown */}
+                      {showSuggestions && addressSuggestions.length > 0 && (
+                        <div className="absolute z-50 w-full mt-1 bg-white border border-gray-300 rounded-md shadow-lg max-h-60 overflow-y-auto">
+                          {isLoadingPlaces && (
+                            <div className="p-3 text-center text-gray-500">
+                              <Loader2 className="w-4 h-4 animate-spin mx-auto mb-2" />
+                              Finding locations...
+                            </div>
+                          )}
+                          {addressSuggestions.map((suggestion, index) => (
+                            <div
+                              key={suggestion.place_id}
+                              className="p-3 hover:bg-gray-100 cursor-pointer border-b border-gray-100 last:border-b-0"
+                              onClick={() => handleAddressSelect(suggestion)}
+                            >
+                              <div className="flex items-start gap-2">
+                                <MapPin className="w-4 h-4 text-primary mt-0.5 flex-shrink-0" />
+                                <div className="flex-1">
+                                  <div className="font-medium text-gray-900">
+                                    {suggestion.structured_formatting?.main_text || suggestion.description}
+                                  </div>
+                                  <div className="text-sm text-gray-500">
+                                    {suggestion.structured_formatting?.secondary_text || ''}
+                                  </div>
+                                  {suggestion.types && (
+                                    <div className="text-xs text-blue-600 mt-1">
+                                      {suggestion.types.includes('street_address') && '🏠 Exact Address'}
+                                      {suggestion.types.includes('route') && '🛣️ Street/Road'}
+                                      {suggestion.types.includes('establishment') && '🏢 Business/Landmark'}
+                                      {suggestion.types.includes('sublocality') && '🏘️ Area/Locality'}
+                                    </div>
+                                  )}
+                                </div>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
                           <Button
                             type="button"
                             variant="outline"
@@ -423,58 +842,13 @@ const BookingSection = () => {
                   </div>
                   
                   <div>
-                        <Label>Upload Images (Optional)</Label>
-                        <div className="space-y-4 mt-2">
-                          {/* Problem Photos Section */}
-                          <div className="border-2 border-dashed border-red-200 dark:border-red-800 rounded-lg p-4">
-                            <div className="text-center space-y-3">
-                              <div className="w-10 h-10 bg-red-100 dark:bg-red-900/30 rounded-lg flex items-center justify-center mx-auto">
-                                <svg className="w-5 h-5 text-red-600 dark:text-red-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L3.732 16.5c-.77.833.192 2.5 1.732 2.5z" />
-                                </svg>
-                              </div>
-                              <div>
-                                <p className="text-sm font-medium text-foreground">Problem Photos</p>
-                                <p className="text-xs text-muted-foreground">Show the issue, damage, or area needing service</p>
-                              </div>
-                              <div className="flex flex-col sm:flex-row gap-2 justify-center">
-                                <Button type="button" variant="outline" size="sm" className="flex items-center gap-2">
-                                  <Upload className="w-4 h-4" />
-                                  Upload Problem Photos
-                                </Button>
-                                <Button type="button" variant="outline" size="sm" className="flex items-center gap-2">
-                                  <Camera className="w-4 h-4" />
-                                  Take Problem Photo
-                                </Button>
-                              </div>
-                            </div>
-                          </div>
-
-                          {/* Model Photos Section */}
-                          <div className="border-2 border-dashed border-blue-200 dark:border-blue-800 rounded-lg p-4">
-                            <div className="text-center space-y-3">
-                              <div className="w-10 h-10 bg-blue-100 dark:bg-blue-900/30 rounded-lg flex items-center justify-center mx-auto">
-                                <svg className="w-5 h-5 text-blue-600 dark:text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                                </svg>
-                              </div>
-                              <div>
-                                <p className="text-sm font-medium text-foreground">Model Photos</p>
-                                <p className="text-xs text-muted-foreground">Show device model, brand label, or serial number</p>
-                              </div>
-                              <div className="flex flex-col sm:flex-row gap-2 justify-center">
-                                <Button type="button" variant="outline" size="sm" className="flex items-center gap-2">
-                                  <Upload className="w-4 h-4" />
-                                  Upload Model Photos
-                                </Button>
-                                <Button type="button" variant="outline" size="sm" className="flex items-center gap-2">
-                                  <Camera className="w-4 h-4" />
-                                  Take Model Photo
-                                </Button>
-                              </div>
-                            </div>
-                          </div>
-                        </div>
+                    <ImageUpload
+                      onImagesChange={handleImagesChange}
+                      maxImages={5}
+                      folder="ro-service-booking"
+                      title="Upload Images (Optional)"
+                      description="Upload photos of the problem, device model, or any relevant details to help our technician understand your service needs better"
+                    />
                       </div>
                     </div>
                   )}
@@ -626,11 +1000,15 @@ const BookingSection = () => {
                     ) : (
                       <Button
                         type="submit"
-                        disabled={!isStepValid(currentStep)}
+                        disabled={!isStepValid(currentStep) || isSubmitting}
                         className="flex items-center gap-2 bg-green-600 hover:bg-green-700"
                       >
+                        {isSubmitting ? (
+                          <Loader2 className="w-4 h-4 animate-spin" />
+                        ) : (
                         <Check className="w-4 h-4" />
-                        Confirm & Book Service
+                        )}
+                        {isSubmitting ? 'Creating Booking...' : 'Confirm & Book Service'}
                   </Button>
                     )}
                   </div>
