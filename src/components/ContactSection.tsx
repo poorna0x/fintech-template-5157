@@ -107,15 +107,6 @@ const ContactSection = () => {
           </div>
         </div>
         
-        {/* Quick Links */}
-        <div className="mt-12 text-center">
-          <div className="flex flex-wrap justify-center gap-4">
-            <Button variant="outline">Emergency RO Service</Button>
-            <Button variant="outline">RO Service Areas Bengaluru</Button>
-            <Button variant="outline">RO Warranty Info</Button>
-            <Button variant="outline">RO Customer Portal</Button>
-          </div>
-        </div>
       </div>
     </section>
   );

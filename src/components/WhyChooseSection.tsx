@@ -34,7 +34,7 @@ const WhyChooseSection = () => {
             Why Choose Hydrogen RO?
           </h2>
           <p className="text-lg text-muted-foreground max-w-2xl mx-auto">
-            Trusted by hundreds of customers for reliable water treatment solutions
+            Trusted by 3000+ customers for reliable water treatment solutions
           </p>
         </div>
         

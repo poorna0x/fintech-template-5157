@@ -47,7 +47,6 @@ const Footer = () => {
               <li><a href="#services" className="text-muted-foreground hover:text-foreground transition-colors">RO Repair & Maintenance</a></li>
               <li><a href="#services" className="text-muted-foreground hover:text-foreground transition-colors">RO Filter Replacement</a></li>
               <li><a href="#services" className="text-muted-foreground hover:text-foreground transition-colors">Water Softener Installation</a></li>
-              <li><a href="#services" className="text-muted-foreground hover:text-foreground transition-colors">Emergency RO Service</a></li>
             </ul>
           </div>
           
@@ -55,7 +54,6 @@ const Footer = () => {
             <h4 className="font-medium text-lg text-foreground">Service Areas & Company</h4>
             <ul className="space-y-3">
               <li><a href="#about" className="text-muted-foreground hover:text-foreground transition-colors">About Hydrogen RO</a></li>
-              <li><a href="#service-areas" className="text-muted-foreground hover:text-foreground transition-colors">RO Service Areas Bengaluru</a></li>
               <li><a href="#testimonials" className="text-muted-foreground hover:text-foreground transition-colors">Customer Reviews</a></li>
               <li><a href="#contact" className="text-muted-foreground hover:text-foreground transition-colors">Contact Hydrogen RO</a></li>
               <li><a href="#why-choose" className="text-muted-foreground hover:text-foreground transition-colors">Why Choose Us</a></li>
@@ -66,9 +64,7 @@ const Footer = () => {
             <h4 className="font-medium text-lg text-foreground">Support & Booking</h4>
             <ul className="space-y-3">
               <li><a href="#booking" className="text-muted-foreground hover:text-foreground transition-colors">Book RO Service</a></li>
-              <li><a href="#services" className="text-muted-foreground hover:text-foreground transition-colors">Emergency RO Service</a></li>
               <li><a href="#about" className="text-muted-foreground hover:text-foreground transition-colors">RO Maintenance Tips</a></li>
-              <li><a href="#contact" className="text-muted-foreground hover:text-foreground transition-colors">RO Warranty Info</a></li>
               <li><a href="#contact" className="text-muted-foreground hover:text-foreground transition-colors">Service Support</a></li>
             </ul>
           </div>

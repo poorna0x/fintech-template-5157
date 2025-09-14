@@ -273,7 +273,12 @@ const Header = () => {
             <Sun size={18} className={`${!isDarkMode ? 'text-primary' : 'text-muted-foreground'}`} />
           </div>
           <div className="rounded-2xl">
-            <Button className="bg-primary text-primary-foreground hover:bg-primary/90 shadow-lg">Call: +91-8884944288</Button>
+            <Button 
+              onClick={() => navigate('/book')}
+              className="bg-primary text-primary-foreground hover:bg-primary/90 shadow-lg"
+            >
+              Book Service
+            </Button>
           </div>
         </div>
       </header>
