@@ -7,28 +7,15 @@ import { cn } from '@/lib/utils';
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
 import { Switch } from '@/components/ui/switch';
 import { useLocation, useNavigate } from 'react-router-dom';
+import { useTheme } from '@/contexts/ThemeContext';
 
 const Header = () => {
   const [activePage, setActivePage] = useState('home');
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
-  const [isDarkMode, setIsDarkMode] = useState(false); // Always default to light mode
+  const { isDarkMode, toggleTheme } = useTheme();
   const location = useLocation();
   const navigate = useNavigate();
   
-  useEffect(() => {
-    // Apply the theme to the document when it changes
-    if (isDarkMode) {
-      document.documentElement.classList.add('dark-mode', 'dark');
-    } else {
-      document.documentElement.classList.remove('dark-mode', 'dark');
-    }
-  }, [isDarkMode]);
-
-  // Initialize with light theme on component mount
-  useEffect(() => {
-    // Ensure light theme is applied on initial load
-    document.documentElement.classList.remove('dark-mode', 'dark');
-  }, []);
 
   // Set active page based on current route
   useEffect(() => {
@@ -103,9 +90,6 @@ const Header = () => {
     setMobileMenuOpen(!mobileMenuOpen);
   };
 
-  const toggleTheme = () => {
-    setIsDarkMode(!isDarkMode);
-  };
 
   return (
     <div className="sticky top-0 z-50 pt-8 px-4 bg-background/95 backdrop-blur-md border-b border-border/50">
