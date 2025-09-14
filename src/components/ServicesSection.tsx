@@ -1,10 +1,17 @@
 import React, { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { Wrench, Filter, RefreshCw, Settings, CheckCircle, Clock, Shield, Phone } from 'lucide-react';
 
 const ServicesSection = () => {
+  const navigate = useNavigate();
+
+  const handleBookService = () => {
+    navigate('/book');
+  };
+
   const services = [
     {
       icon: Filter,
@@ -134,7 +141,7 @@ const ServicesSection = () => {
                           Learn More
                         </Button>
                       </DialogTrigger>
-                      <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto">
+                      <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto w-[calc(100%-2rem)] md:w-full rounded-lg">
                         <DialogHeader>
                           <DialogTitle className="flex items-center gap-3 text-2xl">
                             <div className="w-10 h-10 bg-primary/10 rounded-lg flex items-center justify-center">
@@ -191,7 +198,10 @@ const ServicesSection = () => {
                               Get a free quote and schedule your service today
                             </p>
                             <div className="flex flex-col sm:flex-row gap-3 justify-center">
-                              <Button className="bg-primary text-primary-foreground hover:bg-primary/90">
+                              <Button 
+                                onClick={handleBookService}
+                                className="bg-primary text-primary-foreground hover:bg-primary/90"
+                              >
                                 Book Now
                               </Button>
                               <Button variant="outline" className="flex items-center gap-2">
