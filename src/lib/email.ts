@@ -107,8 +107,8 @@ export const emailTemplates = {
             
             <div class="footer">
               <p>Thank you for choosing our service!</p>
-              <p>Best regards,<br>RO Service Team</p>
-              <p>Phone: +91-8884944288 | Email: support@roservice.com</p>
+              <p>Best regards,<br>Hydrogen RO Team</p>
+              <p>Phone: +91-8884944288 | Email: support@hydrogenro.com</p>
             </div>
           </div>
         </div>
@@ -142,7 +142,7 @@ export const emailTemplates = {
       If you have any questions, please contact us at +91-8884944288
       
       Thank you for choosing our service!
-      RO Service Team
+      Hydrogen RO Team
     `
   })
 };
