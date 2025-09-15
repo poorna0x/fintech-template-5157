@@ -166,69 +166,33 @@ export const emailTemplates = {
             margin: 28px 0;
           }
           .contact-btn {
-            display: inline-flex;
-            align-items: center;
-            justify-content: center;
-            width: 60px;
-            height: 60px;
-            border-radius: 50%;
+            display: inline-block;
+            padding: 12px 24px;
+            border-radius: 8px;
             text-decoration: none;
             font-weight: 600;
-            font-size: 14px;
+            font-size: 16px;
             transition: all 0.3s ease;
             border: 2px solid transparent;
-            position: relative;
-            overflow: hidden;
+            margin: 0 8px;
           }
-          .btn-whatsapp {
-            background: linear-gradient(135deg, #25d366 0%, #20c55a 100%);
+          .btn-phone {
+            background: #3b82f6;
             color: white;
-            box-shadow: 0 4px 12px rgba(37, 211, 102, 0.3);
           }
-          .btn-call {
-            background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
+          .btn-message {
+            background: #25d366;
             color: white;
-            box-shadow: 0 4px 12px rgba(59, 130, 246, 0.3);
-          }
-          .btn-email {
-            background: linear-gradient(135deg, #8b5cf6 0%, #7c3aed 100%);
-            color: white;
-            box-shadow: 0 4px 12px rgba(139, 92, 246, 0.3);
           }
           .contact-btn:hover {
-            transform: translateY(-4px) scale(1.05);
-            box-shadow: 0 8px 24px rgba(0, 0, 0, 0.15);
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
           }
-          .btn-whatsapp:hover {
-            box-shadow: 0 8px 24px rgba(37, 211, 102, 0.4);
+          .btn-phone:hover {
+            background: #2563eb;
           }
-          .btn-call:hover {
-            box-shadow: 0 8px 24px rgba(59, 130, 246, 0.4);
-          }
-          .btn-email:hover {
-            box-shadow: 0 8px 24px rgba(139, 92, 246, 0.4);
-          }
-          .contact-icon {
-            font-size: 16px;
-            font-weight: 700;
-            letter-spacing: 0.5px;
-            line-height: 1;
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-          }
-          .contact-label {
-            position: absolute;
-            bottom: -30px;
-            left: 50%;
-            transform: translateX(-50%);
-            font-size: 12px;
-            font-weight: 500;
-            color: #64748b;
-            white-space: nowrap;
-            opacity: 0;
-            transition: opacity 0.3s ease;
-          }
-          .contact-btn:hover .contact-label {
-            opacity: 1;
+          .btn-message:hover {
+            background: #20c55a;
           }
           .contact-info {
             margin-top: 24px;
@@ -294,16 +258,12 @@ export const emailTemplates = {
               font-size: 16px;
             }
             .contact-buttons { 
-              gap: 16px;
+              gap: 12px;
             }
             .contact-btn { 
-              width: 56px;
-              height: 56px;
-            }
-            .contact-icon {
+              padding: 10px 20px;
               font-size: 14px;
-              font-weight: 700;
-              letter-spacing: 0.5px;
+              margin: 0 4px;
             }
             .detail-row { 
               flex-direction: column; 
@@ -335,13 +295,9 @@ export const emailTemplates = {
               font-size: 24px;
             }
             .contact-btn {
-              width: 52px;
-              height: 52px;
-            }
-            .contact-icon {
-              font-size: 12px;
-              font-weight: 700;
-              letter-spacing: 0.5px;
+              padding: 8px 16px;
+              font-size: 13px;
+              margin: 0 2px;
             }
             .booking-details {
               padding: 20px 16px;
@@ -370,14 +326,12 @@ export const emailTemplates = {
             
             <div class="booking-details">
               <h3>Service Details</h3>
-              <div class="detail-row">
-                <span class="detail-label">Service Type:</span>
-                <span class="detail-value">${data.serviceType || 'RO'} - ${data.serviceSubType || 'Service'}</span>
-              </div>
+              ${data.brand && data.model ? `
               <div class="detail-row">
                 <span class="detail-label">Device:</span>
-                <span class="detail-value">${data.brand || 'RO System'} ${data.model || ''}</span>
+                <span class="detail-value">${data.brand} ${data.model}</span>
               </div>
+              ` : ''}
               <div class="detail-row">
                 <span class="detail-label">Service Date:</span>
                 <span class="detail-value">${new Date(data.scheduledDate).toLocaleDateString('en-IN', { 
@@ -394,10 +348,6 @@ export const emailTemplates = {
               <div class="detail-row">
                 <span class="detail-label">Address:</span>
                 <span class="detail-value">${data.serviceAddress}</span>
-              </div>
-              <div class="detail-row">
-                <span class="detail-label">Status:</span>
-                <span class="detail-value"><span class="status-badge">Confirmed</span></span>
               </div>
             </div>
             
@@ -418,17 +368,11 @@ export const emailTemplates = {
               </p>
               
               <div class="contact-buttons">
-                <a href="https://wa.me/919876543210?text=Hi, I have a booking for ${data.serviceType} service. My name is ${data.customerName}" class="contact-btn btn-whatsapp">
-                  <span class="contact-icon">WA</span>
-                  <span class="contact-label">WhatsApp</span>
+                <a href="tel:+919876543210" class="contact-btn btn-phone">
+                  Phone
                 </a>
-                <a href="tel:+919876543210" class="contact-btn btn-call">
-                  <span class="contact-icon">TEL</span>
-                  <span class="contact-label">Call Now</span>
-                </a>
-                <a href="mailto:info@hydrogenro.com?subject=Service Booking Query - ${data.customerName}" class="contact-btn btn-email">
-                  <span class="contact-icon">@</span>
-                  <span class="contact-label">Email</span>
+                <a href="https://wa.me/919876543210?text=Hi, I have a booking for ${data.serviceType} service. My name is ${data.customerName}" class="contact-btn btn-message">
+                  Message Us
                 </a>
               </div>
               

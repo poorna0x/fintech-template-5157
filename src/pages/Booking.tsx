@@ -107,6 +107,18 @@ const Booking: React.FC = () => {
   });
 
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Helper function to format time slot
+  const formatTimeSlot = (timeSlot: string) => {
+    const timeMap: { [key: string]: string } = {
+      'FIRST_HALF': 'Morning (9 AM - 2 PM)',
+      'SECOND_HALF': 'Afternoon (2 PM - 6 PM)',
+      'MORNING': 'Morning (9 AM - 2 PM)',
+      'AFTERNOON': 'Afternoon (2 PM - 6 PM)',
+      'EVENING': 'Evening (6 PM - 9 PM)'
+    };
+    return timeMap[timeSlot] || timeSlot;
+  };
   const cameraInputRef = useRef<HTMLInputElement>(null);
 
   // Brand and model data - Comprehensive list of popular RO and Softener brands in India
@@ -878,27 +890,27 @@ const Booking: React.FC = () => {
 
       // Create job record
       const jobData = {
-        jobNumber: generateJobNumber(formData.serviceType),
-        customerId: customer.id,
-        serviceType: formData.serviceType,
-        serviceSubType: formData.service === 'Other' ? formData.customService : formData.service,
+        job_number: generateJobNumber(formData.serviceType),
+        customer_id: customer.id,
+        service_type: formData.serviceType,
+        service_sub_type: formData.service === 'Other' ? formData.customService : formData.service,
         brand: formData.brandName || 'Not specified',
         model: formData.modelName || 'Not specified',
         status: 'PENDING' as const,
         priority: 'MEDIUM' as const,
         description: formData.description,
         images: imageUrls,
-        scheduledDate: formData.serviceDate ? new Date(formData.serviceDate).toISOString().split('T')[0] : new Date().toISOString().split('T')[0],
-        scheduledTimeSlot: (formData.preferredTime === 'FIRST_HALF' ? 'MORNING' : 'AFTERNOON') as 'MORNING' | 'AFTERNOON' | 'EVENING',
-        estimatedDuration: 120,
-        serviceAddress: {
+        scheduled_date: formData.serviceDate ? new Date(formData.serviceDate).toISOString().split('T')[0] : new Date().toISOString().split('T')[0],
+        scheduled_time_slot: (formData.preferredTime === 'FIRST_HALF' ? 'MORNING' : 'AFTERNOON') as 'MORNING' | 'AFTERNOON' | 'EVENING',
+        estimated_duration: 120,
+        service_address: {
           street: formData.address,
           area: 'Bangalore',
           city: 'Bangalore',
           state: 'Karnataka',
           pincode: '560001',
         },
-        serviceLocation: {
+        service_location: {
           latitude: formData.coordinates.lat,
           longitude: formData.coordinates.lng,
           formattedAddress: formData.address,
@@ -1457,7 +1469,7 @@ const Booking: React.FC = () => {
                 <CardContent className="space-y-2 text-sm">
                   <div><strong>Address:</strong> {formData.address}</div>
                   <div><strong>Service Date:</strong> {formData.serviceDate ? new Date(formData.serviceDate).toLocaleDateString() : 'Not selected'}</div>
-                  <div><strong>Time Slot:</strong> {formData.preferredTime}</div>
+                  <div><strong>Time Slot:</strong> {formatTimeSlot(formData.preferredTime)}</div>
                   {formData.images.length > 0 && <div><strong>Images:</strong> {formData.images.length} uploaded</div>}
                 </CardContent>
               </Card>
@@ -1598,7 +1610,7 @@ const Booking: React.FC = () => {
                       <div>
                         <Label className="text-sm font-medium text-gray-500 dark:text-gray-400">Preferred Time</Label>
                         <p className="text-foreground font-medium">
-                          {bookingDetails.preferredTime === 'FIRST_HALF' ? 'First Half' : 'Second Half'}
+                          {formatTimeSlot(bookingDetails.preferredTime)}
                         </p>
                       </div>
                     </div>
@@ -1625,7 +1637,7 @@ const Booking: React.FC = () => {
                       <div>
                         <Label className="text-sm font-medium text-gray-500 dark:text-gray-400">Time Slot</Label>
                         <p className="text-foreground font-medium">
-                          {bookingDetails.preferredTime === 'FIRST_HALF' ? 'First Half' : 'Second Half'}
+                          {formatTimeSlot(bookingDetails.preferredTime)}
                         </p>
                       </div>
                     </div>
