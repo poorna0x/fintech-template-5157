@@ -10,5 +10,11 @@
   to = "/.netlify/functions/:splat"
   status = 200
 
+# Handle SPA routing - redirect all non-API requests to index.html
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 200
+
 [build.environment]
   NODE_VERSION = "18"
