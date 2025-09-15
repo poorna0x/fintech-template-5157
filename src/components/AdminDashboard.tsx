@@ -178,7 +178,11 @@ const AdminDashboard = () => {
     return (
       <div className="flex items-center justify-center min-h-screen">
         <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary mx-auto mb-4"></div>
+          <div className="flex justify-center space-x-2 mb-4">
+            <div className="w-3 h-3 bg-primary rounded-full animate-bounce"></div>
+            <div className="w-3 h-3 bg-primary rounded-full animate-bounce" style={{animationDelay: '0.1s'}}></div>
+            <div className="w-3 h-3 bg-primary rounded-full animate-bounce" style={{animationDelay: '0.2s'}}></div>
+          </div>
           <p className="text-muted-foreground">Loading dashboard...</p>
         </div>
       </div>

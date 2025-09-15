@@ -239,7 +239,11 @@ const ImageUpload: React.FC<ImageUploadProps> = ({
               className="flex items-center gap-2"
             >
               {isUploading ? (
-                <Loader2 className="w-4 h-4 animate-spin" />
+                <div className="flex space-x-1">
+                  <div className="w-2 h-2 bg-white rounded-full animate-bounce"></div>
+                  <div className="w-2 h-2 bg-white rounded-full animate-bounce" style={{animationDelay: '0.1s'}}></div>
+                  <div className="w-2 h-2 bg-white rounded-full animate-bounce" style={{animationDelay: '0.2s'}}></div>
+                </div>
               ) : (
                 <Upload className="w-4 h-4" />
               )}
@@ -352,7 +356,11 @@ const ImageUpload: React.FC<ImageUploadProps> = ({
       {/* Upload Progress */}
       {isUploading && (
         <div className="flex items-center gap-2 text-sm text-muted-foreground">
-          <Loader2 className="w-4 h-4 animate-spin" />
+          <div className="flex space-x-1">
+            <div className="w-2 h-2 bg-white rounded-full animate-bounce"></div>
+            <div className="w-2 h-2 bg-white rounded-full animate-bounce" style={{animationDelay: '0.1s'}}></div>
+            <div className="w-2 h-2 bg-white rounded-full animate-bounce" style={{animationDelay: '0.2s'}}></div>
+          </div>
           Uploading images...
         </div>
       )}

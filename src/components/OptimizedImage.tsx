@@ -74,7 +74,11 @@ const OptimizedImage: React.FC<OptimizedImageProps> = ({
           className="absolute inset-0 bg-gray-200 animate-pulse flex items-center justify-center"
           style={{ width, height }}
         >
-          <div className="w-8 h-8 border-2 border-gray-300 border-t-blue-600 rounded-full animate-spin"></div>
+          <div className="flex space-x-1">
+            <div className="w-2 h-2 bg-blue-600 rounded-full animate-bounce"></div>
+            <div className="w-2 h-2 bg-blue-600 rounded-full animate-bounce" style={{animationDelay: '0.1s'}}></div>
+            <div className="w-2 h-2 bg-blue-600 rounded-full animate-bounce" style={{animationDelay: '0.2s'}}></div>
+          </div>
         </div>
       )}
 

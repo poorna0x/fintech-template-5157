@@ -19,7 +19,11 @@ const CookiePolicy = lazy(() => import("./pages/CookiePolicy"));
 // Loading component for lazy-loaded routes
 const LoadingSpinner = () => (
   <div className="min-h-screen flex items-center justify-center">
-    <div className="animate-spin rounded-full h-32 w-32 border-b-2 border-blue-600"></div>
+    <div className="flex justify-center space-x-1">
+      <div className="w-4 h-4 bg-primary rounded-full animate-bounce"></div>
+      <div className="w-4 h-4 bg-primary rounded-full animate-bounce" style={{animationDelay: '0.1s'}}></div>
+      <div className="w-4 h-4 bg-primary rounded-full animate-bounce" style={{animationDelay: '0.2s'}}></div>
+    </div>
   </div>
 );
 

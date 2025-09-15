@@ -794,7 +794,11 @@ const BookingSection = () => {
                         <div className="absolute z-50 w-full mt-1 bg-card border border-border rounded-md shadow-lg max-h-60 overflow-y-auto">
                           {isLoadingPlaces && (
                             <div className="p-3 text-center text-muted-foreground">
-                              <Loader2 className="w-4 h-4 animate-spin mx-auto mb-2" />
+                              <div className="flex justify-center space-x-1 mb-2">
+                                <div className="w-2 h-2 bg-primary rounded-full animate-bounce"></div>
+                                <div className="w-2 h-2 bg-primary rounded-full animate-bounce" style={{animationDelay: '0.1s'}}></div>
+                                <div className="w-2 h-2 bg-primary rounded-full animate-bounce" style={{animationDelay: '0.2s'}}></div>
+                              </div>
                               Finding locations...
                             </div>
                           )}
@@ -1004,7 +1008,11 @@ const BookingSection = () => {
                         className="flex items-center gap-2 bg-green-600 hover:bg-green-700"
                       >
                         {isSubmitting ? (
-                          <Loader2 className="w-4 h-4 animate-spin" />
+                          <div className="flex space-x-1">
+                            <div className="w-2 h-2 bg-white rounded-full animate-bounce"></div>
+                            <div className="w-2 h-2 bg-white rounded-full animate-bounce" style={{animationDelay: '0.1s'}}></div>
+                            <div className="w-2 h-2 bg-white rounded-full animate-bounce" style={{animationDelay: '0.2s'}}></div>
+                          </div>
                         ) : (
                         <Check className="w-4 h-4" />
                         )}

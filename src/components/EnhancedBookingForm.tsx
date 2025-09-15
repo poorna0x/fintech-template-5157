@@ -306,16 +306,19 @@ const EnhancedBookingForm = () => {
     return (
       <div className="fixed inset-0 bg-background/95 backdrop-blur-sm z-50 flex items-center justify-center">
         <div className="text-center">
-          <div className="relative">
-            <Loader2 className="w-20 h-20 animate-spin mx-auto mb-6 text-primary" />
-            <div className="absolute inset-0 w-20 h-20 mx-auto border-4 border-primary/20 rounded-full animate-pulse"></div>
+          <div className="mb-6">
+            <div className="flex justify-center space-x-1">
+              <div className="w-3 h-3 bg-primary rounded-full animate-bounce"></div>
+              <div className="w-3 h-3 bg-primary rounded-full animate-bounce" style={{animationDelay: '0.1s'}}></div>
+              <div className="w-3 h-3 bg-primary rounded-full animate-bounce" style={{animationDelay: '0.2s'}}></div>
+            </div>
           </div>
           <p className="text-2xl font-bold text-foreground mb-3">Booking Confirmed! 🎉</p>
           <p className="text-lg text-muted-foreground mb-4">Your service has been scheduled successfully</p>
-          <div className="mt-6 flex justify-center space-x-2">
-            <div className="w-3 h-3 bg-primary rounded-full animate-bounce"></div>
-            <div className="w-3 h-3 bg-primary rounded-full animate-bounce" style={{animationDelay: '0.1s'}}></div>
-            <div className="w-3 h-3 bg-primary rounded-full animate-bounce" style={{animationDelay: '0.2s'}}></div>
+          <div className="mt-6 flex justify-center space-x-1">
+            <div className="w-2 h-2 bg-primary rounded-full animate-bounce"></div>
+            <div className="w-2 h-2 bg-primary rounded-full animate-bounce" style={{animationDelay: '0.1s'}}></div>
+            <div className="w-2 h-2 bg-primary rounded-full animate-bounce" style={{animationDelay: '0.2s'}}></div>
           </div>
         </div>
       </div>
@@ -452,8 +455,11 @@ const EnhancedBookingForm = () => {
         <div className="absolute inset-0 bg-background/95 backdrop-blur-sm z-50 flex items-center justify-center rounded-lg">
           <div className="text-center">
             <div className="relative">
-              <Loader2 className="w-16 h-16 animate-spin mx-auto mb-4 text-primary" />
-              <div className="absolute inset-0 w-16 h-16 mx-auto border-4 border-primary/20 rounded-full animate-pulse"></div>
+              <div className="flex justify-center space-x-2 mb-4">
+                <div className="w-4 h-4 bg-primary rounded-full animate-bounce"></div>
+                <div className="w-4 h-4 bg-primary rounded-full animate-bounce" style={{animationDelay: '0.1s'}}></div>
+                <div className="w-4 h-4 bg-primary rounded-full animate-bounce" style={{animationDelay: '0.2s'}}></div>
+              </div>
             </div>
             <p className="text-xl font-semibold text-foreground mb-2">Processing Your Booking...</p>
             <p className="text-sm text-muted-foreground">Please wait while we create your service request</p>
@@ -753,7 +759,11 @@ const EnhancedBookingForm = () => {
                   className="w-full"
                 >
                   {locationLoading ? (
-                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                    <div className="flex space-x-1 mr-2">
+                      <div className="w-2 h-2 bg-white rounded-full animate-bounce"></div>
+                      <div className="w-2 h-2 bg-white rounded-full animate-bounce" style={{animationDelay: '0.1s'}}></div>
+                      <div className="w-2 h-2 bg-white rounded-full animate-bounce" style={{animationDelay: '0.2s'}}></div>
+                    </div>
                   ) : (
                     <MapPin className="w-4 h-4 mr-2" />
                   )}

@@ -1219,7 +1219,11 @@ const Booking: React.FC = () => {
               >
                 {isLoadingLocation ? (
                   <>
-                    <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-primary mr-2"></div>
+                    <div className="flex space-x-1 mr-2">
+                      <div className="w-2 h-2 bg-primary rounded-full animate-bounce"></div>
+                      <div className="w-2 h-2 bg-primary rounded-full animate-bounce" style={{animationDelay: '0.1s'}}></div>
+                      <div className="w-2 h-2 bg-primary rounded-full animate-bounce" style={{animationDelay: '0.2s'}}></div>
+                    </div>
                     Getting Location...
                   </>
                 ) : (
@@ -1235,7 +1239,11 @@ const Booking: React.FC = () => {
               {isLoadingLocation && (
                 <div className="mt-2 text-center">
                   <div className="inline-flex items-center text-sm text-gray-600 dark:text-gray-400">
-                    <div className="animate-spin rounded-full h-3 w-3 border-b-2 border-primary mr-2"></div>
+                    <div className="flex space-x-1 mr-2">
+                      <div className="w-1.5 h-1.5 bg-primary rounded-full animate-bounce"></div>
+                      <div className="w-1.5 h-1.5 bg-primary rounded-full animate-bounce" style={{animationDelay: '0.1s'}}></div>
+                      <div className="w-1.5 h-1.5 bg-primary rounded-full animate-bounce" style={{animationDelay: '0.2s'}}></div>
+                    </div>
                     Fetching your location...
                   </div>
                 </div>
@@ -1490,16 +1498,19 @@ const Booking: React.FC = () => {
     return (
       <div className="fixed inset-0 bg-background/95 backdrop-blur-sm z-50 flex items-center justify-center">
         <div className="text-center">
-          <div className="relative">
-            <div className="w-20 h-20 animate-spin mx-auto mb-6 border-4 border-primary border-t-transparent rounded-full"></div>
-            <div className="absolute inset-0 w-20 h-20 mx-auto border-4 border-primary/20 rounded-full animate-pulse"></div>
+          <div className="mb-6">
+            <div className="flex justify-center space-x-1">
+              <div className="w-3 h-3 bg-primary rounded-full animate-bounce"></div>
+              <div className="w-3 h-3 bg-primary rounded-full animate-bounce" style={{animationDelay: '0.1s'}}></div>
+              <div className="w-3 h-3 bg-primary rounded-full animate-bounce" style={{animationDelay: '0.2s'}}></div>
+            </div>
           </div>
           <p className="text-2xl font-bold text-foreground mb-3">Booking Confirmed! 🎉</p>
           <p className="text-lg text-muted-foreground mb-4">Your service has been scheduled successfully</p>
-          <div className="mt-6 flex justify-center space-x-2">
-            <div className="w-3 h-3 bg-primary rounded-full animate-bounce"></div>
-            <div className="w-3 h-3 bg-primary rounded-full animate-bounce" style={{animationDelay: '0.1s'}}></div>
-            <div className="w-3 h-3 bg-primary rounded-full animate-bounce" style={{animationDelay: '0.2s'}}></div>
+          <div className="mt-6 flex justify-center space-x-1">
+            <div className="w-2 h-2 bg-primary rounded-full animate-bounce"></div>
+            <div className="w-2 h-2 bg-primary rounded-full animate-bounce" style={{animationDelay: '0.1s'}}></div>
+            <div className="w-2 h-2 bg-primary rounded-full animate-bounce" style={{animationDelay: '0.2s'}}></div>
           </div>
         </div>
       </div>
