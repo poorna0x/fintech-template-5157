@@ -890,27 +890,27 @@ const Booking: React.FC = () => {
 
       // Create job record
       const jobData = {
-        jobNumber: generateJobNumber(formData.serviceType),
-        customerId: customer.id,
-        serviceType: formData.serviceType,
-        serviceSubType: formData.service === 'Other' ? formData.customService : formData.service,
+        job_number: generateJobNumber(formData.serviceType),
+        customer_id: customer.id,
+        service_type: formData.serviceType,
+        service_sub_type: formData.service === 'Other' ? formData.customService : formData.service,
         brand: formData.brandName || 'Not specified',
         model: formData.modelName || 'Not specified',
         status: 'PENDING' as const,
         priority: 'MEDIUM' as const,
         description: formData.description,
         images: imageUrls,
-        scheduledDate: formData.serviceDate ? new Date(formData.serviceDate).toISOString().split('T')[0] : new Date().toISOString().split('T')[0],
-        scheduledTimeSlot: (formData.preferredTime === 'FIRST_HALF' ? 'MORNING' : 'AFTERNOON') as 'MORNING' | 'AFTERNOON' | 'EVENING',
-        estimatedDuration: 120,
-        serviceAddress: {
+        scheduled_date: formData.serviceDate ? new Date(formData.serviceDate).toISOString().split('T')[0] : new Date().toISOString().split('T')[0],
+        scheduled_time_slot: (formData.preferredTime === 'FIRST_HALF' ? 'MORNING' : 'AFTERNOON') as 'MORNING' | 'AFTERNOON' | 'EVENING',
+        estimated_duration: 120,
+        service_address: {
           street: formData.address,
           area: 'Bangalore',
           city: 'Bangalore',
           state: 'Karnataka',
           pincode: '560001',
         },
-        serviceLocation: {
+        service_location: {
           latitude: formData.coordinates.lat,
           longitude: formData.coordinates.lng,
           formattedAddress: formData.address,
@@ -920,7 +920,7 @@ const Booking: React.FC = () => {
         payment_status: 'PENDING' as const,
       };
 
-      const { data: job, error: jobError } = await db.jobs.create(jobData);
+      const { data: job, error: jobError } = await db.jobs.create(jobData as any);
       
       if (jobError) {
         throw new Error(jobError.message);
