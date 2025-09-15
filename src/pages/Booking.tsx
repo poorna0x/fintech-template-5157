@@ -463,12 +463,22 @@ const Booking: React.FC = () => {
     setIsLoadingLocation(true);
     console.log('Loading state set to true, current state:', isLoadingLocation);
     
+    // Show waiting message in address field immediately
+    setFormData(prev => ({ 
+      ...prev, 
+      address: 'Please wait a few seconds while we get your location...'
+    }));
+    
     // Add a small delay to ensure the loading state is visible
     await new Promise(resolve => setTimeout(resolve, 100));
     
     try {
       if (!navigator.geolocation) {
         toast.error('Geolocation is not supported by this browser.');
+        setFormData(prev => ({ 
+          ...prev, 
+          address: 'Geolocation not supported. Please enter your address manually.'
+        }));
         loadingRef.current = false;
         setIsLoadingLocation(false);
         return;
@@ -478,6 +488,10 @@ const Booking: React.FC = () => {
       const isSecure = window.location.protocol === 'https:' || window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
       if (!isSecure) {
         toast.error('Location access requires HTTPS. Please use a secure connection.');
+        setFormData(prev => ({ 
+          ...prev, 
+          address: 'HTTPS required for location access. Please enter your address manually.'
+        }));
         loadingRef.current = false;
         setIsLoadingLocation(false);
         return;
@@ -488,6 +502,10 @@ const Booking: React.FC = () => {
       
       if (permissionStatus === 'denied') {
         toast.error('Location permission denied. Please enable location access in your browser settings and refresh the page.');
+        setFormData(prev => ({ 
+          ...prev, 
+          address: 'Location permission denied. Please enable location access and try again, or enter your address manually.'
+        }));
         loadingRef.current = false;
         setIsLoadingLocation(false);
         return;
@@ -747,6 +765,12 @@ const Booking: React.FC = () => {
       console.error('Error getting location:', error);
       const errorMessage = error instanceof Error ? error.message : 'Failed to get current location.';
       toast.error(`${errorMessage} Please try manual entry or check your browser settings.`, { duration: 8000 });
+      
+      // Show error message in address field
+      setFormData(prev => ({ 
+        ...prev, 
+        address: 'Failed to get location. Please enter your address manually.'
+      }));
       
       // Show helpful instructions
       setTimeout(() => {
@@ -1263,6 +1287,10 @@ const Booking: React.FC = () => {
                     className={`mt-1 min-h-[100px] ${
                       showValidation && !formData.address 
                         ? 'border-2 border-black dark:border-white' 
+                        : ''
+                    } ${
+                      formData.address === 'Please wait a few seconds while we get your location...'
+                        ? 'text-blue-600 dark:text-blue-400 font-medium'
                         : ''
                     }`}
                     disabled={isLoadingLocation}
