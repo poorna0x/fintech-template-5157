@@ -183,11 +183,11 @@ export const emailTemplates = {
           }
           .btn-phone {
             background: #6b7280;
-            color: white;
+            color: #3b82f6;
           }
           .btn-message {
             background: #6b7280;
-            color: white;
+            color: #3b82f6;
           }
           .contact-btn:hover {
             transform: translateY(-2px);
@@ -264,6 +264,7 @@ export const emailTemplates = {
               padding: 10px 20px;
               font-size: 14px;
               width: 180px;
+              color: white !important;
             }
             .summary-card {
               padding: 24px 20px;
@@ -296,6 +297,7 @@ export const emailTemplates = {
               padding: 8px 16px;
               font-size: 13px;
               width: 160px;
+              color: white !important;
             }
             .summary-card {
               padding: 20px 16px;

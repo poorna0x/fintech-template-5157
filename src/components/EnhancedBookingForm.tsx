@@ -977,7 +977,7 @@ const EnhancedBookingForm = () => {
               <Button
                 type="submit"
                 disabled={isSubmitting}
-                className="flex items-center gap-2 bg-black dark:bg-white hover:bg-gray-800 dark:hover:bg-gray-200 text-white dark:text-black"
+                className="flex items-center gap-2 bg-black dark:bg-white text-white dark:text-black hover:scale-105 transition-transform duration-300"
               >
                 <Check className="w-4 h-4" />
                 Confirm & Book Service

@@ -1005,7 +1005,7 @@ const BookingSection = () => {
                       <Button
                         type="submit"
                         disabled={!isStepValid(currentStep) || isSubmitting}
-                        className="flex items-center gap-2 bg-green-600 hover:bg-green-700"
+                        className="flex items-center gap-2 bg-green-600 hover:scale-105 transition-transform duration-300"
                       >
                         {isSubmitting ? (
                           <div className="flex space-x-1">
