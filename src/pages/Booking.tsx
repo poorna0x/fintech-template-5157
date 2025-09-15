@@ -690,6 +690,10 @@ const Booking: React.FC = () => {
             }));
             toast.warning('Location detected but detailed address lookup failed. Please verify the coordinates.');
           }
+          
+          // Turn off loading state after address is updated
+          loadingRef.current = false;
+          setIsLoadingLocation(false);
         })
         .catch(() => {
           const coordinateAddress = `Current Location: ${latitude.toFixed(6)}, ${longitude.toFixed(6)}`;
@@ -699,6 +703,10 @@ const Booking: React.FC = () => {
             coordinates: { lat: latitude, lng: longitude }
           }));
           toast.warning('Location detected but address lookup failed. Please verify the coordinates.');
+          
+          // Turn off loading state after address is updated
+          loadingRef.current = false;
+          setIsLoadingLocation(false);
         });
     } catch (error) {
       console.error('Error getting location:', error);
@@ -710,9 +718,13 @@ const Booking: React.FC = () => {
         toast.info('💡 Alternative: Start typing your address above for suggestions, or enter manually with full details including pincode.', { duration: 10000 });
       }, 2000);
     } finally {
-      console.log('Location fetch completed, setting loading to false');
-      loadingRef.current = false;
-      setIsLoadingLocation(false);
+      // Loading state is now managed in the promise callbacks
+      // Only turn off loading if there was an error in the try block
+      if (loadingRef.current) {
+        console.log('Location fetch failed, setting loading to false');
+        loadingRef.current = false;
+        setIsLoadingLocation(false);
+      }
     }
   };
 
