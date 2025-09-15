@@ -107,70 +107,84 @@ const Booking: React.FC = () => {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const cameraInputRef = useRef<HTMLInputElement>(null);
 
-  // Brand and model data - Real-world popular RO and Softener brands in India
+  // Brand and model data - Comprehensive list of popular RO and Softener brands in India
   const brandData = {
     'K': ['Kent'],
-    'A': ['Aquaguard', 'AO Smith'],
-    'P': ['Pureit'],
+    'A': ['Aquaguard', 'AO Smith', 'Aqua Fresh'],
+    'P': ['Pureit', 'Protek'],
     'L': ['Livpure', 'LG'],
     'B': ['Blue Star'],
     'T': ['Tata Swach'],
     'E': ['Eureka Forbes'],
     'S': ['Samsung', 'Supreme'],
     'W': ['Whirlpool'],
-    'H': ['Hindware']
+    'H': ['Havells', 'Hindware']
   };
 
   const modelData = {
     'RO': {
       'Kent': [
-        'Grand Plus RO + UV + UF',
-        'Supreme Extra RO + UV + UF', 
-        'Pearl RO + UV',
-        'Gold RO + UV + UF'
+        'Ace Plus 8 L RO+UV+UF+TDS',
+        'Ace Copper 8 L RO+UV+UF+TDS',
+        'Ace 8 L',
+        'Pearl ZW 8 L RO+UV+UF+TDS',
+        'Pride Plus 8 L',
+        'Prime Plus 9 L RO+UV+UF+TDS',
+        'Sterling Plus 6 L',
+        'Grand 8 L RO',
+        'Grand Plus 9 L RO+UV+UF+TDS',
+        'Grand Star 9 L',
+        'Excell Plus 7 L RO+UV+UF+TDS',
+        'Elegant Copper 8 L',
+        'Marvel',
+        'Sapphire'
       ],
       'Aquaguard': [
-        'Delight RO + UV + Mineral Guard',
-        'Geneus RO + UV + UF',
-        'Crystal Plus RO + UV',
-        'Amaze RO + UV'
-      ],
-      'AO Smith': [
-        'Z1',
-        'Z8', 
-        'Delight RO + UV'
+        'Delight NXT RO+UV+UF Aquasaver',
+        'Delight RO+UV+UF 2X',
+        'Aura 2X RO+UV + Copper',
+        'Glory RO+UV+UF + Active Copper',
+        'Designo NXT Under-counter RO+UV Copper',
+        'Blaze Insta WS RO+UV Hot & Ambient',
+        'SlimGlass RO+UV'
       ],
       'Pureit': [
-        'Classic RO + UV',
-        'Advanced RO + UV + MF',
-        'Ultima RO + UV',
-        'Copper+ RO + UV'
+        'Marvella 10 L RO+UV',
+        'Eco Water Saver RO+UV+MF+Mineral',
+        'RO+UV+MF+Copper+Minerial',
+        'Classic RO variants'
       ],
       'Livpure': [
-        'Glo RO + UV + Mineral',
-        'Smart RO + UV + UF',
-        'Pep Pro RO + UV + UF'
-      ],
-      'LG': [
-        'Puricare RO + UV + UF',
-        'WW180EP RO + UV',
-        'Puricare Hot & Cold RO',
-        'Puricare Alkaline RO'
+        'Pep Pro 7 L RO+UF',
+        'Glitz 7 L RO+UF',
+        'Glo Star RO+In-Tank UV+UF+Mineraliser',
+        'Allura Premia'
       ],
       'Blue Star': [
-        'Aristo RO + UV + Mineral Cartridge',
-        'Stella RO + UV',
-        'Majesto RO + UV + UF'
+        'Aristo 7 L RO+UV+UF with Pre-Filter',
+        'Mid-range models with taste boosters'
+      ],
+      'Havells': [
+        'Max Alkaline RO+UV',
+        'Fab Alkaline RO+UV'
+      ],
+      'AO Smith': [
+        'Z9 Pro Instant Hot & Ambient Purifier',
+        'Models with SCMT'
       ],
       'Tata Swach': [
-        'Standard RO',
-        'Advanced RO + UV',
-        'Premium RO + UV + UF'
+        'Cristella Plus RO Water Purifier',
+        'Other RO combo models'
       ],
-      'Eureka Forbes': [
-        'Aquasure RO + UV',
-        'Aquasure Delight RO + UV',
-        'Aquasure Geneus RO + UV + UF'
+      'LG': [
+        'Puricare WW180EP RO model',
+        'Models with mineral booster'
+      ],
+      'Protek': [
+        'Elite Plus 12 L RO+UV+UF'
+      ],
+      'Aqua Fresh': [
+        'Swift 15 L RO+UV+TDS'
       ],
       'Samsung': [
         'PURE RO + UV + UF',
@@ -238,10 +252,15 @@ const Booking: React.FC = () => {
         'Advanced Softener 50L',
         'Premium Softener 30L'
       ],
-      'Eureka Forbes': [
-        'Aquasure Softener 25L',
-        'Aquasure Delight Softener 50L',
-        'Aquasure Geneus Softener 30L'
+      'Havells': [
+        'Max Alkaline Softener',
+        'Fab Alkaline Softener'
+      ],
+      'Protek': [
+        'Elite Plus Softener'
+      ],
+      'Aqua Fresh': [
+        'Swift Softener'
       ],
       'Samsung': [
         'PURE Softener 25L',
@@ -587,7 +606,7 @@ const Booking: React.FC = () => {
         .then(results => {
           const successfulResults = results
             .filter(r => r.status === 'fulfilled' && r.value)
-            .map(r => r.value);
+            .map(r => (r as PromiseFulfilledResult<any>).value);
           
           
           // Find the best result based on address detail and length
@@ -595,7 +614,7 @@ const Booking: React.FC = () => {
             const currentScore = current.address.length + (current.address.includes(',') ? 10 : 0) + (current.street ? 20 : 0);
             const bestScore = best.address.length + (best.address.includes(',') ? 10 : 0) + (best.street ? 20 : 0);
             return currentScore > bestScore ? current : best;
-          }, successfulResults[0]);
+          }, successfulResults[0] as any);
           
           if (bestResult) {
             console.log('Setting address to:', bestResult.address);
@@ -738,6 +757,7 @@ const Booking: React.FC = () => {
           alternate_phone: formData.alternatePhone,
           address: {
             street: formData.address,
+            area: 'Bangalore',
             city: 'Bangalore',
             state: 'Karnataka',
             pincode: '560001',
@@ -751,10 +771,10 @@ const Booking: React.FC = () => {
           updated_at: new Date().toISOString(),
         };
         
-        console.log('Updating customer with ID:', existingCustomer.id);
+        console.log('Updating customer with ID:', (existingCustomer as any).id);
         console.log('Update data:', updateData);
         
-        const { data: updatedCustomer, error: updateError } = await db.customers.update(existingCustomer.id, updateData);
+        const { data: updatedCustomer, error: updateError } = await db.customers.update((existingCustomer as any).id, updateData);
         
         console.log('Update result:', { updatedCustomer, updateError });
         
@@ -773,12 +793,13 @@ const Booking: React.FC = () => {
         // Customer doesn't exist, create new one
         console.log('Customer does not exist, creating new customer');
         const customerData = {
-          full_name: formData.fullName,
+          fullName: formData.fullName,
           phone: formData.phone,
           email: formData.email,
           alternate_phone: formData.alternatePhone,
           address: {
             street: formData.address,
+            area: 'Bangalore',
             city: 'Bangalore',
             state: 'Karnataka',
             pincode: '560001',
@@ -788,11 +809,11 @@ const Booking: React.FC = () => {
             longitude: formData.coordinates.lng,
             formattedAddress: formData.address,
           },
-          service_type: formData.serviceType,
-          brand: formData.brandName,
-          model: formData.modelName,
+          serviceType: formData.serviceType,
+          brand: formData.brandName || 'Not specified',
+          model: formData.modelName || 'Not specified',
           status: 'ACTIVE' as const,
-          customer_since: new Date().toISOString(),
+          customerSince: new Date().toISOString(),
           preferred_time_slot: formData.preferredTime,
           preferred_language: 'ENGLISH' as const,
         };
@@ -813,33 +834,34 @@ const Booking: React.FC = () => {
 
       // Create job record
       const jobData = {
-        job_number: generateJobNumber(formData.serviceType),
-        customer_id: customer.id,
-        service_type: formData.serviceType,
-        service_sub_type: formData.service === 'Other' ? formData.customService : formData.service,
-        brand: formData.brandName,
-        model: formData.modelName,
+        jobNumber: generateJobNumber(formData.serviceType),
+        customerId: customer.id,
+        serviceType: formData.serviceType,
+        serviceSubType: formData.service === 'Other' ? formData.customService : formData.service,
+        brand: formData.brandName || 'Not specified',
+        model: formData.modelName || 'Not specified',
         status: 'PENDING' as const,
         priority: 'MEDIUM' as const,
         description: formData.description,
         images: imageUrls,
-        scheduled_date: formData.serviceDate ? new Date(formData.serviceDate).toISOString().split('T')[0] : new Date().toISOString().split('T')[0],
-        scheduled_time_slot: formData.preferredTime || 'MORNING',
-        estimated_duration: 120,
-        service_address: {
+        scheduledDate: formData.serviceDate ? new Date(formData.serviceDate).toISOString().split('T')[0] : new Date().toISOString().split('T')[0],
+        scheduledTimeSlot: (formData.preferredTime === 'FIRST_HALF' ? 'MORNING' : 'AFTERNOON') as 'MORNING' | 'AFTERNOON' | 'EVENING',
+        estimatedDuration: 120,
+        serviceAddress: {
           street: formData.address,
+          area: 'Bangalore',
           city: 'Bangalore',
           state: 'Karnataka',
           pincode: '560001',
         },
-        service_location: {
+        serviceLocation: {
           latitude: formData.coordinates.lat,
           longitude: formData.coordinates.lng,
           formattedAddress: formData.address,
         },
         requirements: [],
-        estimated_cost: 0,
-        payment_status: 'PENDING' as const,
+        estimatedCost: 0,
+        paymentStatus: 'PENDING' as const,
       };
 
       const { data: job, error: jobError } = await db.jobs.create(jobData);
@@ -851,17 +873,16 @@ const Booking: React.FC = () => {
       // Send confirmation email
       await emailService.sendBookingConfirmation({
         customerName: formData.fullName,
-        customerEmail: formData.email,
-        jobNumber: job.job_number,
+        email: formData.email,
+        jobNumber: (job as any)?.jobNumber || 'N/A',
         serviceType: formData.serviceType,
         serviceSubType: formData.service === 'Other' ? formData.customService : formData.service,
-        brand: formData.brandName,
-        model: formData.modelName,
+        brand: formData.brandName || 'Not specified',
+        model: formData.modelName || 'Not specified',
         scheduledDate: new Date().toISOString(),
         scheduledTimeSlot: formData.preferredTime,
         serviceAddress: formData.address,
         phone: formData.phone,
-        email: formData.email,
       });
 
       const customerAction = isExistingCustomer ? 'updated' : 'created';
@@ -873,8 +894,8 @@ const Booking: React.FC = () => {
         email: formData.email,
         serviceType: formData.serviceType,
         service: formData.service === 'Other' ? formData.customService : formData.service,
-        brandName: formData.brandName,
-        modelName: formData.modelName,
+        brandName: formData.brandName || 'Not specified',
+        modelName: formData.modelName || 'Not specified',
         address: formData.address,
         serviceDate: formData.serviceDate,
         preferredTime: formData.preferredTime,
@@ -1014,7 +1035,7 @@ const Booking: React.FC = () => {
               )}
               
               <div className="relative">
-                <Label htmlFor="brandName">Brand Name *</Label>
+                <Label htmlFor="brandName">Brand Name (Optional)</Label>
                 <Input
                   id="brandName"
                   value={formData.brandName}
@@ -1028,7 +1049,7 @@ const Booking: React.FC = () => {
                     }
                   }}
                   onBlur={() => setTimeout(() => setShowBrandSuggestions(false), 200)}
-                  placeholder="e.g., Kent, Aquaguard, Pureit"
+                  placeholder="e.g., Kent, Aquaguard, Pureit, Havells, LG, etc."
                   className="mt-1"
                 />
                 {showBrandSuggestions && brandSuggestions.length > 0 && (
@@ -1336,7 +1357,7 @@ const Booking: React.FC = () => {
                 <CardContent className="space-y-2 text-sm">
                   <div><strong>Type:</strong> {formData.serviceType}</div>
                   <div><strong>Service:</strong> {formData.service === 'Other' ? formData.customService : formData.service}</div>
-                  <div><strong>Brand:</strong> {formData.brandName}</div>
+                  {formData.brandName && <div><strong>Brand:</strong> {formData.brandName}</div>}
                   {formData.modelName && <div><strong>Model:</strong> {formData.modelName}</div>}
                   {formData.description && <div><strong>Details:</strong> {formData.description}</div>}
                 </CardContent>
@@ -1371,7 +1392,7 @@ const Booking: React.FC = () => {
         return formData.fullName && formData.phone && formData.email;
       case 2:
         const serviceValid = formData.service && (formData.service !== 'Other' || formData.customService);
-        return serviceValid && formData.brandName; // Model name is now optional
+        return serviceValid; // Brand name and model name are now optional
       case 3:
         return formData.address;
       case 4:
@@ -1471,13 +1492,15 @@ const Booking: React.FC = () => {
                           {bookingDetails.service.charAt(0).toUpperCase() + bookingDetails.service.slice(1).toLowerCase()}
                         </p>
                       </div>
-                      <div>
-                        <Label className="text-sm font-medium text-gray-500 dark:text-gray-400">Brand</Label>
-                        <p className="text-foreground font-medium">
-                          {bookingDetails.brandName.charAt(0).toUpperCase() + bookingDetails.brandName.slice(1).toLowerCase()}
-                        </p>
-                      </div>
-                      {bookingDetails.modelName && (
+                      {bookingDetails.brandName && bookingDetails.brandName !== 'Not specified' && (
+                        <div>
+                          <Label className="text-sm font-medium text-gray-500 dark:text-gray-400">Brand</Label>
+                          <p className="text-foreground font-medium">
+                            {bookingDetails.brandName.charAt(0).toUpperCase() + bookingDetails.brandName.slice(1).toLowerCase()}
+                          </p>
+                        </div>
+                      )}
+                      {bookingDetails.modelName && bookingDetails.modelName !== 'Not specified' && (
                         <div>
                           <Label className="text-sm font-medium text-gray-500 dark:text-gray-400">Model</Label>
                           <p className="text-foreground font-medium">
