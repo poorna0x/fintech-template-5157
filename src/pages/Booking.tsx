@@ -719,7 +719,7 @@ const Booking: React.FC = () => {
               setTimeout(() => {
                 loadingRef.current = false;
                 setIsLoadingLocation(false);
-              }, 300); // Shorter delay after DOM update
+              }, 1000); // Increased delay to ensure address field is fully updated
             });
           });
         })
@@ -739,7 +739,7 @@ const Booking: React.FC = () => {
               setTimeout(() => {
                 loadingRef.current = false;
                 setIsLoadingLocation(false);
-              }, 300); // Shorter delay after DOM update
+              }, 1000); // Increased delay to ensure address field is fully updated
             });
           });
         });
@@ -1312,7 +1312,7 @@ const Booking: React.FC = () => {
                       <div className="w-1.5 h-1.5 bg-primary rounded-full animate-bounce" style={{animationDelay: '0.1s'}}></div>
                       <div className="w-1.5 h-1.5 bg-primary rounded-full animate-bounce" style={{animationDelay: '0.2s'}}></div>
                     </div>
-                    Getting your exact location and address... (This may take up to 45 seconds on mobile)
+                    Getting your exact location and address...
                   </div>
                 </div>
               )}
