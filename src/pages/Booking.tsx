@@ -1752,7 +1752,7 @@ const Booking: React.FC = () => {
                 <Button
                   onClick={handleSubmit}
                   disabled={!canProceed() || isSubmitting}
-                  className="flex items-center bg-black dark:bg-white hover:bg-gray-800 dark:hover:bg-gray-200 text-white dark:text-black"
+                  className="flex items-center bg-black dark:bg-white hover:bg-gray-800 dark:hover:bg-gray-200 text-white dark:text-black transition-all duration-300 hover:scale-105 hover:shadow-lg disabled:hover:scale-100 disabled:hover:shadow-none"
                 >
                   {isSubmitting ? 'Submitting...' : 'Submit Booking'}
                   <Check className="w-4 h-4 ml-1" />
