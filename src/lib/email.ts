@@ -163,14 +163,11 @@ export const emailTemplates = {
             letter-spacing: -0.2px;
           }
           .contact-buttons {
-            display: flex;
-            flex-direction: column;
-            gap: 12px;
-            align-items: center;
+            text-align: center;
             margin: 28px 0;
           }
           .contact-btn {
-            display: inline-block;
+            display: block;
             padding: 12px 24px;
             border-radius: 8px;
             text-decoration: none;
@@ -180,14 +177,15 @@ export const emailTemplates = {
             border: 2px solid transparent;
             width: 200px;
             text-align: center;
+            margin: 8px auto;
           }
           .btn-phone {
             background: #6b7280;
-            color: #3b82f6;
+            color: white;
           }
           .btn-message {
             background: #6b7280;
-            color: #3b82f6;
+            color: white;
           }
           .contact-btn:hover {
             transform: translateY(-2px);
@@ -257,14 +255,11 @@ export const emailTemplates = {
             .header p {
               font-size: 16px;
             }
-            .contact-buttons { 
-              gap: 10px;
-            }
             .contact-btn { 
               padding: 10px 20px;
               font-size: 14px;
               width: 180px;
-              color: white !important;
+              margin: 6px auto;
             }
             .summary-card {
               padding: 24px 20px;
@@ -297,7 +292,7 @@ export const emailTemplates = {
               padding: 8px 16px;
               font-size: 13px;
               width: 160px;
-              color: white !important;
+              margin: 4px auto;
             }
             .summary-card {
               padding: 20px 16px;
