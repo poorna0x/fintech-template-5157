@@ -313,13 +313,8 @@ const EnhancedBookingForm = () => {
               <div className="w-3 h-3 bg-primary rounded-full animate-bounce" style={{animationDelay: '0.2s'}}></div>
             </div>
           </div>
-          <p className="text-2xl font-bold text-foreground mb-3">Booking Confirmed! 🎉</p>
-          <p className="text-lg text-muted-foreground mb-4">Your service has been scheduled successfully</p>
-          <div className="mt-6 flex justify-center space-x-1">
-            <div className="w-2 h-2 bg-primary rounded-full animate-bounce"></div>
-            <div className="w-2 h-2 bg-primary rounded-full animate-bounce" style={{animationDelay: '0.1s'}}></div>
-            <div className="w-2 h-2 bg-primary rounded-full animate-bounce" style={{animationDelay: '0.2s'}}></div>
-          </div>
+          <p className="text-2xl font-bold text-foreground mb-3">Booking...</p>
+          <p className="text-lg text-muted-foreground mb-4">Processing your request</p>
         </div>
       </div>
     );

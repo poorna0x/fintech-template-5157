@@ -209,8 +209,11 @@ export const emailTemplates = {
             box-shadow: 0 8px 24px rgba(139, 92, 246, 0.4);
           }
           .contact-icon {
-            font-size: 24px;
+            font-size: 16px;
+            font-weight: 700;
+            letter-spacing: 0.5px;
             line-height: 1;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
           }
           .contact-label {
             position: absolute;
@@ -298,7 +301,9 @@ export const emailTemplates = {
               height: 56px;
             }
             .contact-icon {
-              font-size: 22px;
+              font-size: 14px;
+              font-weight: 700;
+              letter-spacing: 0.5px;
             }
             .detail-row { 
               flex-direction: column; 
@@ -334,7 +339,9 @@ export const emailTemplates = {
               height: 52px;
             }
             .contact-icon {
-              font-size: 20px;
+              font-size: 12px;
+              font-weight: 700;
+              letter-spacing: 0.5px;
             }
             .booking-details {
               padding: 20px 16px;
@@ -412,15 +419,15 @@ export const emailTemplates = {
               
               <div class="contact-buttons">
                 <a href="https://wa.me/919876543210?text=Hi, I have a booking for ${data.serviceType} service. My name is ${data.customerName}" class="contact-btn btn-whatsapp">
-                  <span class="contact-icon">💬</span>
+                  <span class="contact-icon">WA</span>
                   <span class="contact-label">WhatsApp</span>
                 </a>
                 <a href="tel:+919876543210" class="contact-btn btn-call">
-                  <span class="contact-icon">📞</span>
+                  <span class="contact-icon">TEL</span>
                   <span class="contact-label">Call Now</span>
                 </a>
                 <a href="mailto:info@hydrogenro.com?subject=Service Booking Query - ${data.customerName}" class="contact-btn btn-email">
-                  <span class="contact-icon">✉️</span>
+                  <span class="contact-icon">@</span>
                   <span class="contact-label">Email</span>
                 </a>
               </div>

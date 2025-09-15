@@ -878,27 +878,27 @@ const Booking: React.FC = () => {
 
       // Create job record
       const jobData = {
-        job_number: generateJobNumber(formData.serviceType),
-        customer_id: customer.id,
-        service_type: formData.serviceType,
-        service_sub_type: formData.service === 'Other' ? formData.customService : formData.service,
+        jobNumber: generateJobNumber(formData.serviceType),
+        customerId: customer.id,
+        serviceType: formData.serviceType,
+        serviceSubType: formData.service === 'Other' ? formData.customService : formData.service,
         brand: formData.brandName || 'Not specified',
         model: formData.modelName || 'Not specified',
         status: 'PENDING' as const,
         priority: 'MEDIUM' as const,
         description: formData.description,
         images: imageUrls,
-        scheduled_date: formData.serviceDate ? new Date(formData.serviceDate).toISOString().split('T')[0] : new Date().toISOString().split('T')[0],
-        scheduled_time_slot: (formData.preferredTime === 'FIRST_HALF' ? 'MORNING' : 'AFTERNOON') as 'MORNING' | 'AFTERNOON' | 'EVENING',
-        estimated_duration: 120,
-        service_address: {
+        scheduledDate: formData.serviceDate ? new Date(formData.serviceDate).toISOString().split('T')[0] : new Date().toISOString().split('T')[0],
+        scheduledTimeSlot: (formData.preferredTime === 'FIRST_HALF' ? 'MORNING' : 'AFTERNOON') as 'MORNING' | 'AFTERNOON' | 'EVENING',
+        estimatedDuration: 120,
+        serviceAddress: {
           street: formData.address,
           area: 'Bangalore',
           city: 'Bangalore',
           state: 'Karnataka',
           pincode: '560001',
         },
-        service_location: {
+        serviceLocation: {
           latitude: formData.coordinates.lat,
           longitude: formData.coordinates.lng,
           formattedAddress: formData.address,
@@ -919,8 +919,8 @@ const Booking: React.FC = () => {
         customerName: formData.fullName,
         email: formData.email,
         jobNumber: (job as any)?.jobNumber || 'N/A',
-        service_type: formData.serviceType,
-        service_sub_type: formData.service === 'Other' ? formData.customService : formData.service,
+        serviceType: formData.serviceType,
+        serviceSubType: formData.service === 'Other' ? formData.customService : formData.service,
         brand: formData.brandName || 'Not specified',
         model: formData.modelName || 'Not specified',
         scheduledDate: new Date().toISOString(),
@@ -1505,13 +1505,8 @@ const Booking: React.FC = () => {
               <div className="w-3 h-3 bg-primary rounded-full animate-bounce" style={{animationDelay: '0.2s'}}></div>
             </div>
           </div>
-          <p className="text-2xl font-bold text-foreground mb-3">Booking Confirmed! 🎉</p>
-          <p className="text-lg text-muted-foreground mb-4">Your service has been scheduled successfully</p>
-          <div className="mt-6 flex justify-center space-x-1">
-            <div className="w-2 h-2 bg-primary rounded-full animate-bounce"></div>
-            <div className="w-2 h-2 bg-primary rounded-full animate-bounce" style={{animationDelay: '0.1s'}}></div>
-            <div className="w-2 h-2 bg-primary rounded-full animate-bounce" style={{animationDelay: '0.2s'}}></div>
-          </div>
+          <p className="text-2xl font-bold text-foreground mb-3">Booking...</p>
+          <p className="text-lg text-muted-foreground mb-4">Processing your request</p>
         </div>
       </div>
     );
