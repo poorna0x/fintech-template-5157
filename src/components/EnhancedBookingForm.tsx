@@ -327,7 +327,7 @@ const EnhancedBookingForm = () => {
           <div className="w-16 h-16 bg-gray-100 dark:bg-white rounded-full flex items-center justify-center mx-auto mb-4">
             <Check className="w-8 h-8 text-black" />
           </div>
-          <h2 className="text-2xl font-bold text-foreground mb-4">Booking Confirmed! 🎉</h2>
+          <h2 className="text-2xl font-bold text-foreground mb-4">Booking... 🎉</h2>
           <p className="text-muted-foreground mb-6">
             Your service has been scheduled successfully
           </p>

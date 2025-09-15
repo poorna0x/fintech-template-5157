@@ -1527,7 +1527,7 @@ const Booking: React.FC = () => {
                   <Check className="w-10 h-10 text-black" />
                 </div>
                 <h1 className="text-3xl font-bold text-gray-900 dark:text-white mb-2">
-                  Booking Confirmed! 🎉
+                  Booking... 🎉
                 </h1>
                 <p className="text-gray-600 dark:text-gray-300">
                   Your service has been scheduled successfully

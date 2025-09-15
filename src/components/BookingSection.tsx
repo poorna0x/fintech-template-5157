@@ -473,7 +473,7 @@ const BookingSection = () => {
         <div className="max-w-4xl mx-auto">
           <div className="text-center mb-12">
             <h2 className="text-3xl md:text-4xl font-bold text-foreground mb-6">
-              Booking Confirmed!
+              Booking...
             </h2>
             <p className="text-lg text-muted-foreground">
               Your service request has been submitted successfully
@@ -485,7 +485,7 @@ const BookingSection = () => {
               <div className="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-4">
                 <Check className="w-8 h-8 text-green-600" />
               </div>
-              <h3 className="text-2xl font-bold text-foreground mb-4">Booking Confirmed!</h3>
+              <h3 className="text-2xl font-bold text-foreground mb-4">Booking...</h3>
               <p className="text-muted-foreground mb-6">
                 Your service request has been submitted successfully. We'll contact you within 30 minutes to confirm your appointment.
               </p>
