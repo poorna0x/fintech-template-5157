@@ -2,7 +2,7 @@
 import React, { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import Logo from './Logo';
-import { Menu, X, CircleDot, LayoutDashboard, DollarSign, Sun, Moon } from 'lucide-react';
+import { Menu, X, CircleDot, LayoutDashboard, DollarSign, Sun, Moon, Phone } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
 import { Switch } from '@/components/ui/switch';
@@ -256,14 +256,28 @@ const Header = () => {
             />
             <Sun size={18} className={`${!isDarkMode ? 'text-primary' : 'text-muted-foreground'}`} />
           </div>
-          <div className="rounded-2xl">
-            <Button 
-              onClick={() => navigate('/book')}
-              className="bg-primary text-primary-foreground hover:bg-primary/90 shadow-lg"
-            >
-              Book Service
-            </Button>
-          </div>
+          
+          {/* Show phone number on booking page, Book Service button on other pages */}
+          {location.pathname === '/book' ? (
+            <div className="rounded-2xl">
+              <Button 
+                onClick={() => window.open('tel:+918884944288', '_self')}
+                className="bg-primary text-primary-foreground hover:bg-primary/90 shadow-lg flex items-center gap-2"
+              >
+                <Phone size={18} />
+                +91-8884944288
+              </Button>
+            </div>
+          ) : (
+            <div className="rounded-2xl">
+              <Button 
+                onClick={() => navigate('/book')}
+                className="bg-primary text-primary-foreground hover:bg-primary/90 shadow-lg"
+              >
+                Book Service
+              </Button>
+            </div>
+          )}
         </div>
       </header>
     </div>
