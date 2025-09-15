@@ -1,6 +1,7 @@
 
 import React from 'react';
 import { Link } from 'react-router-dom';
+import { Mail, Phone } from 'lucide-react';
 import Logo from './Logo';
 
 const Footer = () => {
@@ -13,6 +14,22 @@ const Footer = () => {
             <p className="text-muted-foreground max-w-xs">
               Expert RO water purifier solutions for homes and offices across Bengaluru, Karnataka. Clean, safe water guaranteed with professional installation and maintenance services.
             </p>
+            
+            {/* Contact Information */}
+            <div className="space-y-3">
+              <div className="flex items-center gap-3">
+                <Phone className="w-4 h-4 text-primary" />
+                <a href="tel:+918884944288" className="text-muted-foreground hover:text-foreground transition-colors">
+                  +91-8884944288
+                </a>
+              </div>
+              <div className="flex items-center gap-3">
+                <Mail className="w-4 h-4 text-primary" />
+                <a href="mailto:mail@hydrogenro.com" className="text-muted-foreground hover:text-foreground transition-colors">
+                  mail@hydrogenro.com
+                </a>
+              </div>
+            </div>
             <div className="flex items-center gap-4">
               <a href="#" className="h-10 w-10 rounded-full bg-muted flex items-center justify-center text-muted-foreground hover:text-foreground transition-colors">
                 <svg width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">

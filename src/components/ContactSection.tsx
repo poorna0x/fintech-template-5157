@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { Phone, MessageCircle, MapPin, Clock } from 'lucide-react';
+import { Phone, MessageCircle, MapPin, Clock, Mail } from 'lucide-react';
 
 const ContactSection = () => {
   const [showCallOptions, setShowCallOptions] = useState(false);
@@ -13,6 +13,10 @@ const ContactSection = () => {
 
   const handleWhatsApp = () => {
     window.open('https://wa.me/918884944288', '_blank');
+  };
+
+  const handleEmail = () => {
+    window.open('mailto:mail@hydrogenro.com', '_self');
   };
 
   return (
@@ -28,7 +32,7 @@ const ContactSection = () => {
         </div>
         
         {/* Main Contact Actions */}
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-12">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-12">
           {/* Call Button */}
           <Card className="cosmic-card">
             <CardContent className="p-8 text-center">
@@ -92,6 +96,24 @@ const ContactSection = () => {
               </Button>
             </CardContent>
           </Card>
+
+          {/* Email Button */}
+          <Card className="cosmic-card">
+            <CardContent className="p-8 text-center">
+              <div className="w-16 h-16 bg-gray-100 dark:bg-white rounded-full flex items-center justify-center mx-auto mb-4">
+                <Mail className="w-8 h-8 text-gray-600 dark:text-black" />
+              </div>
+              <h3 className="font-semibold text-foreground mb-2">Email Us</h3>
+              <p className="text-muted-foreground mb-4">Send us your queries and requirements</p>
+              <Button 
+                onClick={handleEmail}
+                className="w-full bg-black dark:bg-white hover:scale-105 transition-transform duration-200 text-white dark:text-black"
+              >
+                <Mail className="w-5 h-5 mr-2" />
+                mail@hydrogenro.com
+              </Button>
+            </CardContent>
+          </Card>
         </div>
 
         {/* SEO Content - Hidden but accessible */}
@@ -103,7 +125,7 @@ const ContactSection = () => {
           <p>Mon-Fri: 8AM - 8PM, Saturday: 9AM - 6PM, Sunday: Emergency RO Service Only, 24/7 Emergency RO Repair Available</p>
           
           <h3>Contact Information</h3>
-          <p>Phone: +91-8884944288, +91-9448944288, Email: info@hydrogenro.com, WhatsApp: +91-8884944288</p>
+          <p>Phone: +91-8884944288, +91-9448944288, Email: mail@hydrogenro.com, WhatsApp: +91-8884944288</p>
         </div>
       </div>
     </section>
