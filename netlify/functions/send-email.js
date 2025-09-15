@@ -90,13 +90,28 @@ exports.handler = async (event, context) => {
       }
     });
 
-    // Email options
+    // Email options with spam prevention
     const mailOptions = {
-      from: process.env.HOSTINGER_EMAIL_USER, // Your Hostinger email
+      from: {
+        name: 'Hydrogen RO - Water Purifier Services',
+        address: process.env.HOSTINGER_EMAIL_USER
+      },
       to: to,
       subject: subject,
       html: html,
       text: text || html.replace(/<[^>]*>/g, ''), // Strip HTML for text version
+      headers: {
+        'X-Mailer': 'Hydrogen RO Service',
+        'X-Priority': '3',
+        'X-MSMail-Priority': 'Normal',
+        'Importance': 'Normal',
+        'X-Report-Abuse': 'Please report abuse to abuse@hydrogenro.com',
+        'List-Unsubscribe': '<mailto:unsubscribe@hydrogenro.com>',
+        'Precedence': 'bulk'
+      },
+      replyTo: 'info@hydrogenro.com',
+      // Add message ID for better deliverability
+      messageId: `<${Date.now()}.${Math.random().toString(36).substr(2, 9)}@hydrogenro.com>`
     };
 
     // Send email

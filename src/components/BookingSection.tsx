@@ -881,9 +881,9 @@ const BookingSection = () => {
                           <SelectValue placeholder="Select time slot" />
                         </SelectTrigger>
                         <SelectContent>
-                          <SelectItem value="morning">Morning (9AM - 12PM)</SelectItem>
-                          <SelectItem value="afternoon">Afternoon (12PM - 5PM)</SelectItem>
-                          <SelectItem value="evening">Evening (5PM - 8PM)</SelectItem>
+                          <SelectItem value="morning">Morning (9 AM - 12 PM)</SelectItem>
+                          <SelectItem value="afternoon">Afternoon (12 PM - 5 PM)</SelectItem>
+                          <SelectItem value="evening">Evening (5 PM - 8 PM)</SelectItem>
                         </SelectContent>
                       </Select>
                     </div>

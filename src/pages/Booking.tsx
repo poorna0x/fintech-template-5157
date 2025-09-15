@@ -1379,8 +1379,8 @@ const Booking: React.FC = () => {
                     <SelectValue placeholder="Select preferred time" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="FIRST_HALF">First Half (9 AM - 2 PM)</SelectItem>
-                    <SelectItem value="SECOND_HALF">Second Half (2 PM - 8 PM)</SelectItem>
+                    <SelectItem value="FIRST_HALF">Morning (9 AM - 2 PM)</SelectItem>
+                    <SelectItem value="SECOND_HALF">Afternoon (2 PM - 8 PM)</SelectItem>
                   </SelectContent>
                 </Select>
               </div>

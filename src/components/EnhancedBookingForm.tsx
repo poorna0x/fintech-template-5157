@@ -791,9 +791,9 @@ const EnhancedBookingForm = () => {
                         <SelectValue placeholder="Select time slot" />
                       </SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="MORNING">Morning (9AM - 12PM)</SelectItem>
-                        <SelectItem value="AFTERNOON">Afternoon (12PM - 5PM)</SelectItem>
-                        <SelectItem value="EVENING">Evening (5PM - 8PM)</SelectItem>
+                        <SelectItem value="MORNING">Morning (9 AM - 12 PM)</SelectItem>
+                        <SelectItem value="AFTERNOON">Afternoon (12 PM - 5 PM)</SelectItem>
+                        <SelectItem value="EVENING">Evening (5 PM - 8 PM)</SelectItem>
                       </SelectContent>
                     </Select>
                     {errors.preferredTimeSlot && (
