@@ -68,7 +68,7 @@ export const emailTemplates = {
             border: 1px solid #e5e7eb;
           }
           .header { 
-            background: linear-gradient(135deg, #000000 0%, #333333 100%);
+            background: linear-gradient(135deg, #1e293b 0%, #334155 100%);
             color: white; 
             padding: 48px 32px; 
             text-align: center; 
@@ -133,7 +133,7 @@ export const emailTemplates = {
             line-height: 1.4;
           }
           .status-badge { 
-            background: #000000; 
+            background: linear-gradient(135deg, #059669 0%, #047857 100%); 
             color: white; 
             padding: 8px 20px; 
             border-radius: 24px; 
@@ -141,75 +141,91 @@ export const emailTemplates = {
             font-weight: 700;
             display: inline-block;
             letter-spacing: 0.5px;
+            box-shadow: 0 2px 8px rgba(5, 150, 105, 0.3);
           }
           .contact-section {
-            background: linear-gradient(135deg, #f8f9fa 0%, #ffffff 100%);
+            background: linear-gradient(135deg, #f8fafc 0%, #ffffff 100%);
             padding: 40px 32px;
-            border-radius: 16px;
+            border-radius: 20px;
             margin: 32px 0;
             text-align: center;
-            border: 2px solid #e5e7eb;
+            border: 1px solid #e2e8f0;
           }
           .contact-section h4 {
-            font-size: 24px;
-            font-weight: 700;
-            color: #1a1a1a;
-            margin-bottom: 20px;
-            letter-spacing: -0.3px;
+            font-size: 22px;
+            font-weight: 600;
+            color: #334155;
+            margin-bottom: 16px;
+            letter-spacing: -0.2px;
           }
           .contact-buttons {
             display: flex;
-            gap: 16px;
+            gap: 20px;
             justify-content: center;
             flex-wrap: wrap;
-            margin: 24px 0;
+            margin: 28px 0;
           }
           .contact-btn {
             display: inline-flex;
             align-items: center;
             justify-content: center;
-            gap: 8px;
-            padding: 16px 24px;
-            border-radius: 12px;
+            width: 60px;
+            height: 60px;
+            border-radius: 50%;
             text-decoration: none;
-            font-weight: 700;
-            font-size: 16px;
+            font-weight: 600;
+            font-size: 14px;
             transition: all 0.3s ease;
             border: 2px solid transparent;
-            min-width: 140px;
-            letter-spacing: 0.3px;
+            position: relative;
+            overflow: hidden;
           }
           .btn-whatsapp {
-            background: #25d366;
+            background: linear-gradient(135deg, #25d366 0%, #20c55a 100%);
             color: white;
-            border-color: #25d366;
+            box-shadow: 0 4px 12px rgba(37, 211, 102, 0.3);
           }
           .btn-call {
-            background: #000000;
+            background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
             color: white;
-            border-color: #000000;
+            box-shadow: 0 4px 12px rgba(59, 130, 246, 0.3);
           }
           .btn-email {
-            background: #ffffff;
-            color: #1a1a1a;
-            border-color: #1a1a1a;
+            background: linear-gradient(135deg, #8b5cf6 0%, #7c3aed 100%);
+            color: white;
+            box-shadow: 0 4px 12px rgba(139, 92, 246, 0.3);
           }
           .contact-btn:hover {
-            transform: translateY(-3px);
-            box-shadow: 0 8px 24px rgba(0, 0, 0, 0.2);
+            transform: translateY(-4px) scale(1.05);
+            box-shadow: 0 8px 24px rgba(0, 0, 0, 0.15);
           }
           .btn-whatsapp:hover {
-            background: #20c55a;
-            border-color: #20c55a;
+            box-shadow: 0 8px 24px rgba(37, 211, 102, 0.4);
           }
           .btn-call:hover {
-            background: #333333;
-            border-color: #333333;
+            box-shadow: 0 8px 24px rgba(59, 130, 246, 0.4);
           }
           .btn-email:hover {
-            background: #1a1a1a;
-            color: white;
-            border-color: #1a1a1a;
+            box-shadow: 0 8px 24px rgba(139, 92, 246, 0.4);
+          }
+          .contact-icon {
+            font-size: 24px;
+            line-height: 1;
+          }
+          .contact-label {
+            position: absolute;
+            bottom: -30px;
+            left: 50%;
+            transform: translateX(-50%);
+            font-size: 12px;
+            font-weight: 500;
+            color: #64748b;
+            white-space: nowrap;
+            opacity: 0;
+            transition: opacity 0.3s ease;
+          }
+          .contact-btn:hover .contact-label {
+            opacity: 1;
           }
           .contact-info {
             margin-top: 24px;
@@ -275,16 +291,14 @@ export const emailTemplates = {
               font-size: 16px;
             }
             .contact-buttons { 
-              flex-direction: column; 
-              align-items: center; 
-              gap: 12px;
+              gap: 16px;
             }
             .contact-btn { 
-              width: 100%; 
-              max-width: 280px; 
-              justify-content: center;
-              padding: 18px 24px;
-              font-size: 16px;
+              width: 56px;
+              height: 56px;
+            }
+            .contact-icon {
+              font-size: 22px;
             }
             .detail-row { 
               flex-direction: column; 
@@ -316,8 +330,11 @@ export const emailTemplates = {
               font-size: 24px;
             }
             .contact-btn {
-              padding: 16px 20px;
-              font-size: 15px;
+              width: 52px;
+              height: 52px;
+            }
+            .contact-icon {
+              font-size: 20px;
             }
             .booking-details {
               padding: 20px 16px;
@@ -395,13 +412,16 @@ export const emailTemplates = {
               
               <div class="contact-buttons">
                 <a href="https://wa.me/919876543210?text=Hi, I have a booking for ${data.serviceType} service. My name is ${data.customerName}" class="contact-btn btn-whatsapp">
-                  WhatsApp
+                  <span class="contact-icon">💬</span>
+                  <span class="contact-label">WhatsApp</span>
                 </a>
                 <a href="tel:+919876543210" class="contact-btn btn-call">
-                  Call Now
+                  <span class="contact-icon">📞</span>
+                  <span class="contact-label">Call Now</span>
                 </a>
                 <a href="mailto:info@hydrogenro.com?subject=Service Booking Query - ${data.customerName}" class="contact-btn btn-email">
-                  Email
+                  <span class="contact-icon">✉️</span>
+                  <span class="contact-label">Email</span>
                 </a>
               </div>
               
