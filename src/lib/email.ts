@@ -53,8 +53,8 @@ export const emailTemplates = {
           body { 
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif; 
             line-height: 1.6; 
-            color: #1f2937; 
-            background-color: #f9fafb;
+            color: #1a1a1a; 
+            background-color: #f8f9fa;
             -webkit-text-size-adjust: 100%;
             -ms-text-size-adjust: 100%;
           }
@@ -62,171 +62,269 @@ export const emailTemplates = {
             max-width: 600px; 
             margin: 0 auto; 
             background: white;
-            border-radius: 12px;
+            border-radius: 16px;
             overflow: hidden;
-            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
+            border: 1px solid #e5e7eb;
           }
           .header { 
-            background: linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%);
+            background: linear-gradient(135deg, #000000 0%, #333333 100%);
             color: white; 
-            padding: 40px 30px; 
+            padding: 48px 32px; 
             text-align: center; 
           }
           .header h1 { 
-            font-size: 28px; 
+            font-size: 32px; 
             font-weight: 700; 
-            margin-bottom: 8px;
+            margin-bottom: 12px;
             line-height: 1.2;
+            letter-spacing: -0.5px;
           }
           .header p { 
-            font-size: 16px; 
+            font-size: 18px; 
             opacity: 0.9;
+            font-weight: 400;
           }
           .content { 
-            padding: 40px 30px; 
+            padding: 48px 32px; 
           }
           .greeting {
-            font-size: 18px;
-            margin-bottom: 20px;
-            color: #374151;
+            font-size: 20px;
+            margin-bottom: 24px;
+            color: #1a1a1a;
+            font-weight: 600;
           }
           .booking-details { 
-            background: #f8fafc; 
-            padding: 30px; 
-            border-radius: 12px; 
-            margin: 30px 0;
+            background: #f8f9fa; 
+            padding: 32px; 
+            border-radius: 16px; 
+            margin: 32px 0;
             border: 1px solid #e5e7eb;
           }
           .booking-details h3 {
-            font-size: 20px;
-            font-weight: 600;
-            color: #1f2937;
-            margin-bottom: 20px;
+            font-size: 24px;
+            font-weight: 700;
+            color: #1a1a1a;
+            margin-bottom: 24px;
             text-align: center;
+            letter-spacing: -0.3px;
           }
           .detail-row { 
             display: flex; 
             justify-content: space-between; 
-            align-items: center;
-            margin: 16px 0; 
-            padding: 12px 0; 
+            align-items: flex-start;
+            margin: 20px 0; 
+            padding: 16px 0; 
             border-bottom: 1px solid #e5e7eb; 
           }
           .detail-row:last-child { border-bottom: none; }
           .detail-label { 
-            font-weight: 600; 
-            color: #374151;
-            font-size: 14px;
+            font-weight: 700; 
+            color: #1a1a1a;
+            font-size: 16px;
+            min-width: 120px;
           }
           .detail-value { 
-            color: #6b7280; 
-            font-size: 14px;
+            color: #4a4a4a; 
+            font-size: 16px;
             text-align: right;
             max-width: 60%;
+            font-weight: 500;
+            line-height: 1.4;
           }
           .status-badge { 
-            background: #10b981; 
+            background: #000000; 
             color: white; 
-            padding: 6px 16px; 
-            border-radius: 20px; 
-            font-size: 12px; 
-            font-weight: 600;
+            padding: 8px 20px; 
+            border-radius: 24px; 
+            font-size: 14px; 
+            font-weight: 700;
             display: inline-block;
+            letter-spacing: 0.5px;
           }
           .contact-section {
-            background: linear-gradient(135deg, #f0f9ff 0%, #e0f2fe 100%);
-            padding: 30px;
-            border-radius: 12px;
-            margin: 30px 0;
+            background: linear-gradient(135deg, #f8f9fa 0%, #ffffff 100%);
+            padding: 40px 32px;
+            border-radius: 16px;
+            margin: 32px 0;
             text-align: center;
+            border: 2px solid #e5e7eb;
           }
           .contact-section h4 {
-            font-size: 20px;
-            font-weight: 600;
-            color: #1e40af;
-            margin-bottom: 16px;
+            font-size: 24px;
+            font-weight: 700;
+            color: #1a1a1a;
+            margin-bottom: 20px;
+            letter-spacing: -0.3px;
           }
           .contact-buttons {
             display: flex;
-            gap: 12px;
+            gap: 16px;
             justify-content: center;
             flex-wrap: wrap;
-            margin: 20px 0;
+            margin: 24px 0;
           }
           .contact-btn {
             display: inline-flex;
             align-items: center;
+            justify-content: center;
             gap: 8px;
-            padding: 12px 20px;
-            border-radius: 8px;
+            padding: 16px 24px;
+            border-radius: 12px;
             text-decoration: none;
-            font-weight: 600;
-            font-size: 14px;
-            transition: all 0.2s;
+            font-weight: 700;
+            font-size: 16px;
+            transition: all 0.3s ease;
             border: 2px solid transparent;
+            min-width: 140px;
+            letter-spacing: 0.3px;
           }
           .btn-whatsapp {
             background: #25d366;
             color: white;
+            border-color: #25d366;
           }
           .btn-call {
-            background: #3b82f6;
+            background: #000000;
             color: white;
+            border-color: #000000;
           }
           .btn-email {
-            background: #6b7280;
-            color: white;
+            background: #ffffff;
+            color: #1a1a1a;
+            border-color: #1a1a1a;
           }
           .contact-btn:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+            transform: translateY(-3px);
+            box-shadow: 0 8px 24px rgba(0, 0, 0, 0.2);
+          }
+          .btn-whatsapp:hover {
+            background: #20c55a;
+            border-color: #20c55a;
+          }
+          .btn-call:hover {
+            background: #333333;
+            border-color: #333333;
+          }
+          .btn-email:hover {
+            background: #1a1a1a;
+            color: white;
+            border-color: #1a1a1a;
           }
           .contact-info {
-            margin-top: 20px;
-            font-size: 14px;
-            color: #6b7280;
+            margin-top: 24px;
+            font-size: 16px;
+            color: #4a4a4a;
+            font-weight: 500;
+          }
+          .contact-info p {
+            margin-bottom: 8px;
           }
           .footer { 
             text-align: center; 
-            margin-top: 40px; 
-            padding-top: 30px;
-            border-top: 1px solid #e5e7eb;
-            color: #6b7280; 
-            font-size: 14px; 
+            margin-top: 48px; 
+            padding-top: 32px;
+            border-top: 2px solid #e5e7eb;
+            color: #4a4a4a; 
+            font-size: 16px; 
           }
           .footer p {
-            margin-bottom: 8px;
+            margin-bottom: 12px;
           }
           .company-name {
-            font-weight: 600;
-            color: #1f2937;
+            font-weight: 700;
+            color: #1a1a1a;
+            font-size: 18px;
           }
           .next-steps {
-            background: #fef3c7;
-            padding: 20px;
-            border-radius: 8px;
-            margin: 20px 0;
-            border-left: 4px solid #f59e0b;
+            background: #f8f9fa;
+            padding: 24px;
+            border-radius: 12px;
+            margin: 24px 0;
+            border-left: 4px solid #000000;
           }
           .next-steps h4 {
-            color: #92400e;
-            margin-bottom: 12px;
-            font-size: 16px;
+            color: #1a1a1a;
+            margin-bottom: 16px;
+            font-size: 18px;
+            font-weight: 700;
           }
           .next-steps ul {
-            color: #92400e;
+            color: #4a4a4a;
             padding-left: 20px;
+            font-weight: 500;
           }
           .next-steps li {
-            margin-bottom: 8px;
+            margin-bottom: 12px;
+            line-height: 1.5;
           }
           @media (max-width: 600px) {
-            .container { margin: 0; border-radius: 0; }
-            .header, .content { padding: 30px 20px; }
-            .contact-buttons { flex-direction: column; align-items: center; }
-            .contact-btn { width: 100%; max-width: 200px; justify-content: center; }
-            .detail-row { flex-direction: column; align-items: flex-start; gap: 4px; }
-            .detail-value { text-align: left; max-width: 100%; }
+            .container { 
+              margin: 0; 
+              border-radius: 0; 
+              border-left: none;
+              border-right: none;
+            }
+            .header, .content { 
+              padding: 32px 20px; 
+            }
+            .header h1 {
+              font-size: 28px;
+            }
+            .header p {
+              font-size: 16px;
+            }
+            .contact-buttons { 
+              flex-direction: column; 
+              align-items: center; 
+              gap: 12px;
+            }
+            .contact-btn { 
+              width: 100%; 
+              max-width: 280px; 
+              justify-content: center;
+              padding: 18px 24px;
+              font-size: 16px;
+            }
+            .detail-row { 
+              flex-direction: column; 
+              align-items: flex-start; 
+              gap: 8px; 
+            }
+            .detail-value { 
+              text-align: left; 
+              max-width: 100%; 
+            }
+            .detail-label {
+              min-width: auto;
+            }
+            .booking-details {
+              padding: 24px 20px;
+            }
+            .contact-section {
+              padding: 32px 20px;
+            }
+            .contact-section h4 {
+              font-size: 20px;
+            }
+          }
+          @media (max-width: 480px) {
+            .header, .content { 
+              padding: 24px 16px; 
+            }
+            .header h1 {
+              font-size: 24px;
+            }
+            .contact-btn {
+              padding: 16px 20px;
+              font-size: 15px;
+            }
+            .booking-details {
+              padding: 20px 16px;
+            }
+            .contact-section {
+              padding: 24px 16px;
+            }
           }
         </style>
       </head>
@@ -250,11 +348,11 @@ export const emailTemplates = {
               <h3>Service Details</h3>
               <div class="detail-row">
                 <span class="detail-label">Service Type:</span>
-                <span class="detail-value">${data.serviceType} - ${data.serviceSubType}</span>
+                <span class="detail-value">${data.serviceType || 'RO'} - ${data.serviceSubType || 'Service'}</span>
               </div>
               <div class="detail-row">
                 <span class="detail-label">Device:</span>
-                <span class="detail-value">${data.brand} ${data.model}</span>
+                <span class="detail-value">${data.brand || 'RO System'} ${data.model || ''}</span>
               </div>
               <div class="detail-row">
                 <span class="detail-label">Service Date:</span>
