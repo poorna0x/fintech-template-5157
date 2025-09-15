@@ -2,6 +2,8 @@
 const nodemailer = require('nodemailer');
 
 exports.handler = async (event, context) => {
+  console.log('Email function called:', event.httpMethod, event.body);
+  
   // Handle CORS preflight
   if (event.httpMethod === 'OPTIONS') {
     return {
@@ -30,6 +32,14 @@ exports.handler = async (event, context) => {
 
   try {
     const { to, subject, html, text } = JSON.parse(event.body);
+    console.log('Parsed data:', { to, subject, html: html ? 'HTML present' : 'No HTML' });
+
+    // Check environment variables
+    console.log('Environment check:', {
+      hasUser: !!process.env.HOSTINGER_EMAIL_USER,
+      hasPass: !!process.env.HOSTINGER_EMAIL_PASS,
+      user: process.env.HOSTINGER_EMAIL_USER
+    });
 
     // Validate required fields
     if (!to || !subject || !html) {
@@ -41,6 +51,23 @@ exports.handler = async (event, context) => {
           'Access-Control-Allow-Methods': 'POST, OPTIONS',
         },
         body: JSON.stringify({ error: 'Missing required fields: to, subject, html' }),
+      };
+    }
+
+    // Check if environment variables are set
+    if (!process.env.HOSTINGER_EMAIL_USER || !process.env.HOSTINGER_EMAIL_PASS) {
+      console.error('Missing environment variables');
+      return {
+        statusCode: 500,
+        headers: {
+          'Access-Control-Allow-Origin': '*',
+          'Access-Control-Allow-Headers': 'Content-Type',
+          'Access-Control-Allow-Methods': 'POST, OPTIONS',
+        },
+        body: JSON.stringify({ 
+          error: 'Email configuration missing',
+          details: 'Environment variables not set'
+        }),
       };
     }
 
