@@ -106,8 +106,8 @@ export const db = {
       const { data, error } = await supabase
         .from('jobs')
         .select('*')
-        .eq('customerId', customerId)
-        .order('createdAt', { ascending: false });
+        .eq('customer_id', customerId)
+        .order('created_at', { ascending: false });
       
       return { data, error };
     },

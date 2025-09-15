@@ -214,23 +214,23 @@ const EnhancedBookingForm = () => {
 
       // Create job record
       const jobData = {
-        jobNumber: generateJobNumber(data.serviceType),
-        customerId: customer.id,
-        serviceType: data.serviceType,
-        serviceSubType: data.serviceSubType,
+        job_number: generateJobNumber(data.serviceType),
+        customer_id: customer.id,
+        service_type: data.serviceType,
+        service_sub_type: data.serviceSubType,
         brand: data.brand,
         model: data.model,
-        scheduledDate: data.preferredDate,
-        scheduledTimeSlot: data.preferredTimeSlot,
-        estimatedDuration: 120, // 2 hours default
-        serviceAddress: data.address,
-        serviceLocation: data.location,
+        scheduled_date: data.preferredDate,
+        scheduled_time_slot: data.preferredTimeSlot,
+        estimated_duration: 120, // 2 hours default
+        service_address: data.address,
+        service_location: data.location,
         status: 'PENDING' as const,
         priority: data.urgency,
         description: data.description,
         requirements: [],
-        estimatedCost: 0, // Will be updated by admin
-        paymentStatus: 'PENDING' as const,
+        estimated_cost: 0, // Will be updated by admin
+        payment_status: 'PENDING' as const,
       };
 
       const { data: job, error: jobError } = await db.jobs.create(jobData);
