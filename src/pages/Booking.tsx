@@ -1331,19 +1331,6 @@ const Booking: React.FC = () => {
                 )}
               </Button>
               
-              {/* Additional loading indicator */}
-              {isLoadingLocation && (
-                <div className="mt-2 text-center">
-                  <div className="inline-flex items-center text-sm text-gray-600 dark:text-gray-400">
-                    <div className="flex space-x-1 mr-2">
-                      <div className="w-1.5 h-1.5 bg-primary rounded-full animate-bounce"></div>
-                      <div className="w-1.5 h-1.5 bg-primary rounded-full animate-bounce" style={{animationDelay: '0.1s'}}></div>
-                      <div className="w-1.5 h-1.5 bg-primary rounded-full animate-bounce" style={{animationDelay: '0.2s'}}></div>
-                    </div>
-                    Getting your exact location and address...
-                  </div>
-                </div>
-              )}
               
               
               <div>
