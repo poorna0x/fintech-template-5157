@@ -25,6 +25,7 @@ interface FormData {
   // Service Information
   serviceType: 'RO' | 'SOFTENER';
   service: string;
+  customService: string; // For "Other" option
   brandName: string;
   modelName: string;
   
@@ -69,6 +70,7 @@ const Booking: React.FC = () => {
       alternatePhone: '',
       serviceType: 'RO',
       service: '',
+      customService: '',
       brandName: '',
       modelName: '',
       address: '',
@@ -90,6 +92,7 @@ const Booking: React.FC = () => {
     alternatePhone: '',
     serviceType: 'RO',
     service: '',
+    customService: '',
     brandName: '',
     modelName: '',
     address: '',
@@ -103,7 +106,7 @@ const Booking: React.FC = () => {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const cameraInputRef = useRef<HTMLInputElement>(null);
 
-  // Brand and model data - Real-world popular RO brands in India
+  // Brand and model data - Real-world popular RO and Softener brands in India
   const brandData = {
     'K': ['Kent'],
     'A': ['Aquaguard', 'AO Smith'],
@@ -111,58 +114,173 @@ const Booking: React.FC = () => {
     'L': ['Livpure', 'LG'],
     'B': ['Blue Star'],
     'T': ['Tata Swach'],
-    'E': ['Eureka Forbes']
+    'E': ['Eureka Forbes'],
+    'S': ['Samsung', 'Supreme'],
+    'W': ['Whirlpool'],
+    'H': ['Hindware']
   };
 
   const modelData = {
-    'Kent': [
-      'Grand Plus RO + UV + UF',
-      'Supreme Extra RO + UV + UF', 
-      'Pearl RO + UV',
-      'Gold RO + UV + UF'
+    'RO': {
+      'Kent': [
+        'Grand Plus RO + UV + UF',
+        'Supreme Extra RO + UV + UF', 
+        'Pearl RO + UV',
+        'Gold RO + UV + UF'
+      ],
+      'Aquaguard': [
+        'Delight RO + UV + Mineral Guard',
+        'Geneus RO + UV + UF',
+        'Crystal Plus RO + UV',
+        'Amaze RO + UV'
+      ],
+      'AO Smith': [
+        'Z1',
+        'Z8', 
+        'Delight RO + UV'
+      ],
+      'Pureit': [
+        'Classic RO + UV',
+        'Advanced RO + UV + MF',
+        'Ultima RO + UV',
+        'Copper+ RO + UV'
+      ],
+      'Livpure': [
+        'Glo RO + UV + Mineral',
+        'Smart RO + UV + UF',
+        'Pep Pro RO + UV + UF'
+      ],
+      'LG': [
+        'Puricare RO + UV + UF',
+        'WW180EP RO + UV',
+        'Puricare Hot & Cold RO',
+        'Puricare Alkaline RO'
+      ],
+      'Blue Star': [
+        'Aristo RO + UV + Mineral Cartridge',
+        'Stella RO + UV',
+        'Majesto RO + UV + UF'
+      ],
+      'Tata Swach': [
+        'Standard RO',
+        'Advanced RO + UV',
+        'Premium RO + UV + UF'
+      ],
+      'Eureka Forbes': [
+        'Aquasure RO + UV',
+        'Aquasure Delight RO + UV',
+        'Aquasure Geneus RO + UV + UF'
+      ],
+      'Samsung': [
+        'PURE RO + UV + UF',
+        'PURE RO + UV + Mineral',
+        'PURE RO + UV + Alkaline'
+      ],
+      'Supreme': [
+        'Supreme RO + UV',
+        'Supreme RO + UV + UF',
+        'Supreme RO + UV + Mineral'
+      ],
+      'Whirlpool': [
+        'Whirlpool RO + UV',
+        'Whirlpool RO + UV + UF',
+        'Whirlpool RO + UV + Mineral'
+      ],
+      'Hindware': [
+        'Hindware RO + UV',
+        'Hindware RO + UV + UF',
+        'Hindware RO + UV + Mineral'
+      ]
+    },
+    'SOFTENER': {
+      'Kent': [
+        'Grand Softener 25L',
+        'Supreme Softener 50L',
+        'Pearl Softener 30L',
+        'Gold Softener 40L'
+      ],
+      'Aquaguard': [
+        'Delight Softener 25L',
+        'Geneus Softener 50L',
+        'Crystal Softener 30L',
+        'Amaze Softener 40L'
+      ],
+      'AO Smith': [
+        'Z1 Softener 25L',
+        'Z8 Softener 50L',
+        'Delight Softener 30L'
+      ],
+      'Pureit': [
+        'Classic Softener 25L',
+        'Advanced Softener 50L',
+        'Ultima Softener 30L',
+        'Copper+ Softener 40L'
+      ],
+      'Livpure': [
+        'Glo Softener 25L',
+        'Smart Softener 50L',
+        'Pep Pro Softener 30L'
+      ],
+      'LG': [
+        'Puricare Softener 25L',
+        'WW180EP Softener 50L',
+        'Puricare Hot & Cold Softener 30L',
+        'Puricare Alkaline Softener 40L'
+      ],
+      'Blue Star': [
+        'Aristo Softener 25L',
+        'Stella Softener 50L',
+        'Majesto Softener 30L'
+      ],
+      'Tata Swach': [
+        'Standard Softener 25L',
+        'Advanced Softener 50L',
+        'Premium Softener 30L'
+      ],
+      'Eureka Forbes': [
+        'Aquasure Softener 25L',
+        'Aquasure Delight Softener 50L',
+        'Aquasure Geneus Softener 30L'
+      ],
+      'Samsung': [
+        'PURE Softener 25L',
+        'PURE Softener 50L',
+        'PURE Softener 30L'
+      ],
+      'Supreme': [
+        'Supreme Softener 25L',
+        'Supreme Softener 50L',
+        'Supreme Softener 30L'
+      ],
+      'Whirlpool': [
+        'Whirlpool Softener 25L',
+        'Whirlpool Softener 50L',
+        'Whirlpool Softener 30L'
+      ],
+      'Hindware': [
+        'Hindware Softener 25L',
+        'Hindware Softener 50L',
+        'Hindware Softener 30L'
+      ]
+    }
+  };
+
+  // Service options based on service type
+  const serviceOptions = {
+    'RO': [
+      'Installation',
+      'Reinstallation', 
+      'Repair',
+      'General Maintenance',
+      'Full Filter Change',
+      'Other'
     ],
-    'Aquaguard': [
-      'Delight RO + UV + Mineral Guard',
-      'Geneus RO + UV + UF',
-      'Crystal Plus RO + UV',
-      'Amaze RO + UV'
-    ],
-    'AO Smith': [
-      'Z1',
-      'Z8', 
-      'Delight RO + UV'
-    ],
-    'Pureit': [
-      'Classic RO + UV',
-      'Advanced RO + UV + MF',
-      'Ultima RO + UV',
-      'Copper+ RO + UV'
-    ],
-    'Livpure': [
-      'Glo RO + UV + Mineral',
-      'Smart RO + UV + UF',
-      'Pep Pro RO + UV + UF'
-    ],
-    'LG': [
-      'Puricare RO + UV + UF',
-      'WW180EP RO + UV',
-      'Puricare Hot & Cold RO',
-      'Puricare Alkaline RO'
-    ],
-    'Blue Star': [
-      'Aristo RO + UV + Mineral Cartridge',
-      'Stella RO + UV',
-      'Majesto RO + UV + UF'
-    ],
-    'Tata Swach': [
-      'Standard RO',
-      'Advanced RO + UV',
-      'Premium RO + UV + UF'
-    ],
-    'Eureka Forbes': [
-      'Aquasure RO + UV',
-      'Aquasure Delight RO + UV',
-      'Aquasure Geneus RO + UV + UF'
+    'SOFTENER': [
+      'Installation',
+      'Reinstallation',
+      'General Service',
+      'Resin Change',
+      'Other'
     ]
   };
 
@@ -179,6 +297,11 @@ const Booking: React.FC = () => {
 
   const handleInputChange = (field: keyof FormData, value: any) => {
     setFormData(prev => ({ ...prev, [field]: value }));
+    
+    // Reset service when service type changes
+    if (field === 'serviceType') {
+      setFormData(prev => ({ ...prev, service: '', customService: '' }));
+    }
     
     // Handle address autocomplete
   };
@@ -204,12 +327,13 @@ const Booking: React.FC = () => {
     setFormData(prev => ({ ...prev, modelName: value }));
     
     if (value.length > 0 && formData.brandName) {
-      const brandKey = Object.keys(modelData).find(key => 
+      const serviceTypeData = modelData[formData.serviceType];
+      const brandKey = Object.keys(serviceTypeData).find(key => 
         key.toLowerCase() === formData.brandName.toLowerCase()
       );
       
       if (brandKey) {
-        const suggestions = modelData[brandKey as keyof typeof modelData] || [];
+        const suggestions = serviceTypeData[brandKey as keyof typeof serviceTypeData] || [];
         const filtered = suggestions.filter(model => 
           model.toLowerCase().includes(value.toLowerCase())
         );
@@ -690,7 +814,7 @@ const Booking: React.FC = () => {
         job_number: generateJobNumber(formData.serviceType),
         customer_id: customer.id,
         service_type: formData.serviceType,
-        service_sub_type: formData.service,
+        service_sub_type: formData.service === 'Other' ? formData.customService : formData.service,
         brand: formData.brandName,
         model: formData.modelName,
         status: 'PENDING' as const,
@@ -728,7 +852,7 @@ const Booking: React.FC = () => {
         customerEmail: formData.email,
         jobNumber: job.job_number,
         serviceType: formData.serviceType,
-        serviceSubType: formData.service,
+        serviceSubType: formData.service === 'Other' ? formData.customService : formData.service,
         brand: formData.brandName,
         model: formData.modelName,
         scheduledDate: new Date().toISOString(),
@@ -746,7 +870,7 @@ const Booking: React.FC = () => {
         phone: formData.phone,
         email: formData.email,
         serviceType: formData.serviceType,
-        service: formData.service,
+        service: formData.service === 'Other' ? formData.customService : formData.service,
         brandName: formData.brandName,
         modelName: formData.modelName,
         address: formData.address,
@@ -860,14 +984,28 @@ const Booking: React.FC = () => {
                     <SelectValue placeholder="Select service" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="INSTALLATION">Installation</SelectItem>
-                    <SelectItem value="REPAIR">Repair</SelectItem>
-                    <SelectItem value="MAINTENANCE">Maintenance</SelectItem>
-                    <SelectItem value="REPLACEMENT">Replacement</SelectItem>
-                    <SelectItem value="SERVICE">General Service</SelectItem>
+                    {serviceOptions[formData.serviceType].map((option) => (
+                      <SelectItem key={option} value={option}>
+                        {option}
+                      </SelectItem>
+                    ))}
                   </SelectContent>
                 </Select>
               </div>
+              
+              {/* Show custom service input when "Other" is selected */}
+              {formData.service === 'Other' && (
+                <div>
+                  <Label htmlFor="customService">Please specify the service *</Label>
+                  <Input
+                    id="customService"
+                    value={formData.customService}
+                    onChange={(e) => handleInputChange('customService', e.target.value)}
+                    placeholder="Describe the specific service you need..."
+                    className="mt-1"
+                  />
+                </div>
+              )}
               
               <div className="relative">
                 <Label htmlFor="brandName">Brand Name *</Label>
@@ -903,25 +1041,26 @@ const Booking: React.FC = () => {
               </div>
               
               <div className="relative">
-                <Label htmlFor="modelName">Model Name *</Label>
+                <Label htmlFor="modelName">Model Name (Optional)</Label>
                 <Input
                   id="modelName"
                   value={formData.modelName}
                   onChange={(e) => handleModelInput(e.target.value)}
                   onFocus={() => {
                     if (formData.modelName.length > 0 && formData.brandName) {
-                      const brandKey = Object.keys(modelData).find(key => 
+                      const serviceTypeData = modelData[formData.serviceType];
+                      const brandKey = Object.keys(serviceTypeData).find(key => 
                         key.toLowerCase() === formData.brandName.toLowerCase()
                       );
                       if (brandKey) {
-                        const suggestions = modelData[brandKey as keyof typeof modelData] || [];
+                        const suggestions = serviceTypeData[brandKey as keyof typeof serviceTypeData] || [];
                         setModelSuggestions(suggestions);
                         setShowModelSuggestions(true);
                       }
                     }
                   }}
                   onBlur={() => setTimeout(() => setShowModelSuggestions(false), 200)}
-                  placeholder="e.g., Grand Plus, Max, Ultra"
+                  placeholder={formData.serviceType === 'RO' ? "e.g., Grand Plus, Max, Ultra" : "e.g., Grand Softener 25L, Supreme Softener 50L"}
                   className="mt-1"
                 />
                 {showModelSuggestions && modelSuggestions.length > 0 && (
@@ -1191,9 +1330,9 @@ const Booking: React.FC = () => {
                 </CardHeader>
                 <CardContent className="space-y-2 text-sm">
                   <div><strong>Type:</strong> {formData.serviceType}</div>
-                  <div><strong>Service:</strong> {formData.service}</div>
+                  <div><strong>Service:</strong> {formData.service === 'Other' ? formData.customService : formData.service}</div>
                   <div><strong>Brand:</strong> {formData.brandName}</div>
-                  <div><strong>Model:</strong> {formData.modelName}</div>
+                  {formData.modelName && <div><strong>Model:</strong> {formData.modelName}</div>}
                   {formData.description && <div><strong>Details:</strong> {formData.description}</div>}
                 </CardContent>
               </Card>
@@ -1226,7 +1365,8 @@ const Booking: React.FC = () => {
       case 1:
         return formData.fullName && formData.phone && formData.email;
       case 2:
-        return formData.service && formData.brandName && formData.modelName;
+        const serviceValid = formData.service && (formData.service !== 'Other' || formData.customService);
+        return serviceValid && formData.brandName; // Model name is now optional
       case 3:
         return formData.address;
       case 4:
@@ -1305,10 +1445,12 @@ const Booking: React.FC = () => {
                         <Label className="text-sm font-medium text-gray-500 dark:text-gray-400">Brand</Label>
                         <p className="text-foreground font-medium">{bookingDetails.brandName}</p>
                       </div>
-                      <div>
-                        <Label className="text-sm font-medium text-gray-500 dark:text-gray-400">Model</Label>
-                        <p className="text-foreground font-medium">{bookingDetails.modelName}</p>
-                      </div>
+                      {bookingDetails.modelName && (
+                        <div>
+                          <Label className="text-sm font-medium text-gray-500 dark:text-gray-400">Model</Label>
+                          <p className="text-foreground font-medium">{bookingDetails.modelName}</p>
+                        </div>
+                      )}
                       <div>
                         <Label className="text-sm font-medium text-gray-500 dark:text-gray-400">Preferred Time</Label>
                         <p className="text-foreground font-medium">{bookingDetails.preferredTime}</p>
