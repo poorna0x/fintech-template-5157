@@ -77,7 +77,7 @@ exports.handler = async (event, context) => {
     }
 
     // Create transporter using Hostinger SMTP
-    const transporter = nodemailer.createTransporter({
+    const transporter = nodemailer.createTransport({
       host: 'smtp.hostinger.com',
       port: 587,
       secure: false, // true for 465, false for other ports
