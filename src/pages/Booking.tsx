@@ -904,8 +904,8 @@ const Booking: React.FC = () => {
           formattedAddress: formData.address,
         },
         requirements: [],
-        estimatedCost: 0,
-        paymentStatus: 'PENDING' as const,
+        estimated_cost: 0,
+        payment_status: 'PENDING' as const,
       };
 
       const { data: job, error: jobError } = await db.jobs.create(jobData);

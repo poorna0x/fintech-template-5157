@@ -1,0 +1,12 @@
+{
+  "name": "hydrogen-ro-email-api",
+  "version": "1.0.0",
+  "description": "Email API for Hydrogen RO booking confirmations",
+  "main": "send-email.js",
+  "dependencies": {
+    "nodemailer": "^6.9.7"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}

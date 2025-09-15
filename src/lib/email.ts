@@ -149,20 +149,17 @@ export const emailTemplates = {
 
 // Email service class
 export class EmailService {
-  private apiKey: string;
+  private apiUrl: string;
   private fromEmail: string;
 
   constructor() {
-    this.apiKey = import.meta.env.VITE_EMAIL_SERVICE_API_KEY || '';
-    this.fromEmail = import.meta.env.VITE_EMAIL_FROM || 'noreply@roservice.com';
+    // Use your deployed API URL (Netlify Functions, Vercel, etc.)
+    this.apiUrl = import.meta.env.VITE_EMAIL_API_URL || '/.netlify/functions/send-email';
+    this.fromEmail = import.meta.env.VITE_EMAIL_FROM || 'noreply@hydrogenro.com';
   }
 
   async sendEmail(emailData: EmailData): Promise<boolean> {
     try {
-      // This is a placeholder implementation
-      // You would integrate with your preferred email service here
-      // Examples: SendGrid, Resend, AWS SES, etc.
-      
       console.log('Sending email:', {
         to: emailData.to,
         subject: emailData.subject,
@@ -176,31 +173,29 @@ export class EmailService {
         return true;
       }
 
-      // Example with a hypothetical email service API
-      /*
-      const response = await fetch('https://api.emailservice.com/send', {
+      // Send email via API
+      const response = await fetch(this.apiUrl, {
         method: 'POST',
         headers: {
-          'Authorization': `Bearer ${this.apiKey}`,
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
           to: emailData.to,
-          from: this.fromEmail,
           subject: emailData.subject,
-          html: emailData.html,
-          text: emailData.text,
+          html: emailData.data.html,
+          text: emailData.data.text,
         }),
       });
 
       if (!response.ok) {
-        throw new Error(`Email service error: ${response.statusText}`);
+        const errorData = await response.json();
+        throw new Error(`Email service error: ${errorData.error || response.statusText}`);
       }
 
+      const result = await response.json();
+      console.log('Email sent successfully:', result);
       return true;
-      */
 
-      return true;
     } catch (error) {
       console.error('Error sending email:', error);
       return false;

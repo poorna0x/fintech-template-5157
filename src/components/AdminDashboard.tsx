@@ -69,10 +69,10 @@ const AdminDashboard = () => {
   const handleAssignTechnician = async (jobId: string, technicianId: string) => {
     try {
       const { error } = await db.jobs.update(jobId, {
-        assignedTechnicianId: technicianId,
+        assigned_technician_id: technicianId,
         status: 'ASSIGNED',
-        assignedDate: new Date().toISOString(),
-        assignedBy: 'admin' // In real app, this would be the actual admin user ID
+        assigned_date: new Date().toISOString(),
+        assigned_by: 'admin' // In real app, this would be the actual admin user ID
       });
 
       if (error) {
@@ -91,7 +91,7 @@ const AdminDashboard = () => {
     try {
       const { error } = await db.jobs.update(jobId, {
         status: status as any,
-        ...(status === 'COMPLETED' && { completedAt: new Date().toISOString() })
+        ...(status === 'COMPLETED' && { completed_at: new Date().toISOString() })
       });
 
       if (error) {
