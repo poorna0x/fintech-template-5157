@@ -158,6 +158,7 @@ const AdminDashboard = () => {
 
   // Filter data based on search term
   const filteredCustomers = customers.filter(customer =>
+    customer.customerId?.toLowerCase().includes(searchTerm.toLowerCase()) ||
     customer.fullName.toLowerCase().includes(searchTerm.toLowerCase()) ||
     customer.phone.includes(searchTerm) ||
     customer.email.toLowerCase().includes(searchTerm.toLowerCase())
@@ -205,7 +206,7 @@ const AdminDashboard = () => {
           <div className="relative max-w-md">
             <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground w-4 h-4" />
             <Input
-              placeholder="Search customers, jobs, or technicians..."
+              placeholder="Search by customer ID (C0001), name, phone, email..."
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
               className="pl-10"
@@ -441,6 +442,7 @@ const AdminDashboard = () => {
                 <Table>
                   <TableHeader>
                     <TableRow>
+                      <TableHead>Customer ID</TableHead>
                       <TableHead>Name</TableHead>
                       <TableHead>Contact</TableHead>
                       <TableHead>Service Type</TableHead>
@@ -453,6 +455,9 @@ const AdminDashboard = () => {
                   <TableBody>
                     {filteredCustomers.map((customer) => (
                       <TableRow key={customer.id}>
+                        <TableCell className="font-mono font-bold text-blue-600">
+                          {customer.customerId || 'N/A'}
+                        </TableCell>
                         <TableCell className="font-medium">{customer.fullName}</TableCell>
                         <TableCell>
                           <div>

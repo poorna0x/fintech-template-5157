@@ -7,6 +7,7 @@ CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 -- Create customers table
 CREATE TABLE customers (
     id UUID DEFAULT uuid_generate_v4() PRIMARY KEY,
+    customer_id VARCHAR(10) NOT NULL UNIQUE, -- Format: C0001, C0002, etc.
     full_name VARCHAR(255) NOT NULL,
     phone VARCHAR(15) NOT NULL UNIQUE,
     alternate_phone VARCHAR(15),
@@ -193,7 +194,28 @@ CREATE TABLE admin_users (
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
+-- Create function to generate customer ID
+CREATE OR REPLACE FUNCTION generate_customer_id()
+RETURNS TEXT AS $$
+DECLARE
+    next_id INTEGER;
+    customer_id TEXT;
+BEGIN
+    -- Get the next sequential number
+    SELECT COALESCE(MAX(CAST(SUBSTRING(customer_id FROM 2) AS INTEGER)), 0) + 1
+    INTO next_id
+    FROM customers
+    WHERE customer_id ~ '^C[0-9]+$';
+    
+    -- Format as C0001, C0002, etc.
+    customer_id := 'C' || LPAD(next_id::TEXT, 4, '0');
+    
+    RETURN customer_id;
+END;
+$$ LANGUAGE plpgsql;
+
 -- Create indexes for better performance
+CREATE INDEX idx_customers_customer_id ON customers(customer_id);
 CREATE INDEX idx_customers_phone ON customers(phone);
 CREATE INDEX idx_customers_email ON customers(email);
 CREATE INDEX idx_customers_service_type ON customers(service_type);

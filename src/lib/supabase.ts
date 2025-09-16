@@ -16,6 +16,18 @@ export const db = {
   // Customer operations
   customers: {
     async create(customer: Database['public']['Tables']['customers']['Insert']) {
+      // Generate customer ID if not provided
+      if (!customer.customer_id) {
+        const { data: generatedId, error: idError } = await supabase
+          .rpc('generate_customer_id');
+        
+        if (idError) {
+          return { data: null, error: idError };
+        }
+        
+        customer.customer_id = generatedId;
+      }
+
       const { data, error } = await supabase
         .from('customers')
         .insert(customer)
@@ -72,6 +84,26 @@ export const db = {
         .from('customers')
         .select('*')
         .order('createdAt', { ascending: false });
+      
+      return { data, error };
+    },
+
+    async search(query: string) {
+      const { data, error } = await supabase
+        .from('customers')
+        .select('*')
+        .or(`customer_id.ilike.%${query}%,full_name.ilike.%${query}%,phone.ilike.%${query}%,email.ilike.%${query}%`)
+        .order('created_at', { ascending: false });
+      
+      return { data, error };
+    },
+
+    async getByCustomerId(customerId: string) {
+      const { data, error } = await supabase
+        .from('customers')
+        .select('*')
+        .eq('customer_id', customerId)
+        .single();
       
       return { data, error };
     }

@@ -1,6 +1,7 @@
 // Customer Types
 export interface Customer {
   id: string;
+  customerId: string; // Format: C0001, C0002, etc.
   fullName: string;
   phone: string;
   alternatePhone?: string;
