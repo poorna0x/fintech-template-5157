@@ -202,10 +202,10 @@ DECLARE
     customer_id TEXT;
 BEGIN
     -- Get the next sequential number
-    SELECT COALESCE(MAX(CAST(SUBSTRING(customer_id FROM 2) AS INTEGER)), 0) + 1
+    SELECT COALESCE(MAX(CAST(SUBSTRING(customers.customer_id FROM 2) AS INTEGER)), 0) + 1
     INTO next_id
     FROM customers
-    WHERE customer_id ~ '^C[0-9]+$';
+    WHERE customers.customer_id ~ '^C[0-9]+$';
     
     -- Format as C0001, C0002, etc.
     customer_id := 'C' || LPAD(next_id::TEXT, 4, '0');

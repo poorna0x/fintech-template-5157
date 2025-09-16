@@ -126,7 +126,29 @@ export const db = {
         .from('jobs')
         .select(`
           *,
-          customer:customers(*)
+          customer:customers(
+            id,
+            customer_id,
+            full_name,
+            phone,
+            email,
+            alternate_phone,
+            address,
+            location,
+            service_type,
+            brand,
+            model,
+            installation_date,
+            warranty_expiry,
+            status,
+            customer_since,
+            last_service_date,
+            notes,
+            preferred_time_slot,
+            preferred_language,
+            created_at,
+            updated_at
+          )
         `)
         .eq('id', id)
         .single();
@@ -149,7 +171,29 @@ export const db = {
         .from('jobs')
         .select(`
           *,
-          customer:customers(*)
+          customer:customers(
+            id,
+            customer_id,
+            full_name,
+            phone,
+            email,
+            alternate_phone,
+            address,
+            location,
+            service_type,
+            brand,
+            model,
+            installation_date,
+            warranty_expiry,
+            status,
+            customer_since,
+            last_service_date,
+            notes,
+            preferred_time_slot,
+            preferred_language,
+            created_at,
+            updated_at
+          )
         `)
         .order('created_at', { ascending: false });
       
