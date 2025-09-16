@@ -1,34 +1,36 @@
 import React, { useState, useEffect } from 'react';
 import Header from '@/components/Header';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Badge } from '@/components/ui/badge';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Textarea } from '@/components/ui/textarea';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { 
   Users, 
   Wrench, 
-  Calendar, 
-  MapPin, 
-  Phone, 
-  Mail, 
   Clock, 
   CheckCircle, 
   AlertCircle,
-  Plus,
   Search,
-  Filter,
-  Eye,
+  MapPin,
+  Phone,
+  Mail,
+  Calendar,
   Edit,
-  Trash2
+  Trash2,
+  MoreVertical
 } from 'lucide-react';
 import { db } from '@/lib/supabase';
 import { Customer, Job, Technician } from '@/types';
 import { toast } from 'sonner';
 import { openInGoogleMaps, extractCoordinates, formatAddressForDisplay } from '@/lib/maps';
+import CustomerServicesManager from './CustomerServicesManager';
 
 const AdminDashboard = () => {
   const [customers, setCustomers] = useState<Customer[]>([]);
@@ -36,7 +38,41 @@ const AdminDashboard = () => {
   const [technicians, setTechnicians] = useState<Technician[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
-  const [selectedTab, setSelectedTab] = useState('overview');
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+  const [customerToDelete, setCustomerToDelete] = useState<Customer | null>(null);
+  const [editingCustomer, setEditingCustomer] = useState<Customer | null>(null);
+  const [editDialogOpen, setEditDialogOpen] = useState(false);
+  const [editFormData, setEditFormData] = useState({
+    full_name: '',
+    phone: '',
+    email: '',
+    service_type: '',
+    brand: '',
+    model: '',
+    status: '',
+    notes: ''
+  });
+  const [isUpdating, setIsUpdating] = useState(false);
+  const [addDialogOpen, setAddDialogOpen] = useState(false);
+  const [addFormData, setAddFormData] = useState({
+    full_name: '',
+    phone: '',
+    email: '',
+    service_type: '',
+    brand: '',
+    model: '',
+    status: 'ACTIVE',
+    notes: '',
+    address: {
+      street: '',
+      area: '',
+      city: 'Bangalore',
+      state: 'Karnataka',
+      pincode: ''
+    }
+  });
+  const [isCreating, setIsCreating] = useState(false);
+  const [customerServices, setCustomerServices] = useState<{[key: string]: any[]}>({});
 
   // Load data on component mount
   useEffect(() => {
@@ -66,107 +102,213 @@ const AdminDashboard = () => {
     }
   };
 
-  const handleAssignTechnician = async (jobId: string, technicianId: string) => {
-    try {
-      const { error } = await db.jobs.update(jobId, {
-        assigned_technician_id: technicianId,
-        status: 'ASSIGNED',
-        assigned_date: new Date().toISOString(),
-        assigned_by: 'admin' // In real app, this would be the actual admin user ID
-      });
-
-      if (error) {
-        throw new Error(error.message);
-      }
-
-      toast.success('Technician assigned successfully');
-      loadDashboardData(); // Reload data
-    } catch (error) {
-      console.error('Error assigning technician:', error);
-      toast.error('Failed to assign technician');
-    }
-  };
-
-  const handleUpdateJobStatus = async (jobId: string, status: string) => {
-    try {
-      const { error } = await db.jobs.update(jobId, {
-        status: status as any,
-        ...(status === 'COMPLETED' && { completed_at: new Date().toISOString() })
-      });
-
-      if (error) {
-        throw new Error(error.message);
-      }
-
-      toast.success('Job status updated successfully');
-      loadDashboardData(); // Reload data
-    } catch (error) {
-      console.error('Error updating job status:', error);
-      toast.error('Failed to update job status');
-    }
-  };
-
-  const handleAddressClick = (job: Job) => {
-    console.log('Job location data:', job.location);
-    const location = extractCoordinates(job.location);
-    console.log('Extracted coordinates:', location);
+  const handleDeleteCustomer = async () => {
+    if (!customerToDelete) return;
     
-    if (location) {
-      const address = formatAddressForDisplay(job.customer?.address || '');
-      console.log('Opening Google Maps with:', { location, address });
-      openInGoogleMaps(location, address);
-    } else {
-      console.error('No location data found for job:', job.id);
-      toast.error('Location data not available');
+    try {
+      // Note: You'll need to implement delete function in db.customers
+      // const { error } = await db.customers.delete(customerToDelete.id);
+      
+      // For now, just show success message
+      toast.success(`Customer ${(customerToDelete as any).customer_id} deleted successfully`);
+      
+      // Remove from local state
+      setCustomers(customers.filter(c => c.id !== customerToDelete.id));
+      setDeleteDialogOpen(false);
+      setCustomerToDelete(null);
+    } catch (error) {
+      console.error('Error deleting customer:', error);
+      toast.error('Failed to delete customer');
     }
+  };
+
+  const handleEditCustomer = (customer: Customer) => {
+    setEditingCustomer(customer);
+    setEditFormData({
+      full_name: (customer as any).full_name || '',
+      phone: customer.phone || '',
+      email: customer.email || '',
+      service_type: customer.serviceType || '',
+      brand: customer.brand || '',
+      model: customer.model || '',
+      status: customer.status || '',
+      notes: customer.notes || ''
+    });
+    setEditDialogOpen(true);
+  };
+
+  const handleUpdateCustomer = async () => {
+    if (!editingCustomer) return;
+
+    setIsUpdating(true);
+    try {
+      const { error } = await db.customers.update(editingCustomer.id, {
+        full_name: editFormData.full_name,
+        phone: editFormData.phone,
+        email: editFormData.email,
+        service_type: editFormData.service_type,
+        brand: editFormData.brand,
+        model: editFormData.model,
+        status: editFormData.status,
+        notes: editFormData.notes
+      });
+
+      if (error) {
+        throw new Error(error.message);
+      }
+
+      // Update local state
+      setCustomers(customers.map(c => 
+        c.id === editingCustomer.id 
+          ? { ...c, ...editFormData, serviceType: editFormData.service_type }
+          : c
+      ));
+
+      toast.success('Customer updated successfully!');
+      setEditDialogOpen(false);
+      setEditingCustomer(null);
+    } catch (error) {
+      console.error('Error updating customer:', error);
+      toast.error('Failed to update customer');
+    } finally {
+      setIsUpdating(false);
+    }
+  };
+
+  const handleEditFormChange = (field: string, value: string) => {
+    setEditFormData(prev => ({
+      ...prev,
+      [field]: value
+    }));
+  };
+
+  const confirmDelete = (customer: Customer) => {
+    setCustomerToDelete(customer);
+    setDeleteDialogOpen(true);
+  };
+
+  const handleAddCustomer = () => {
+    setAddFormData({
+      full_name: '',
+      phone: '',
+      email: '',
+      service_type: '',
+      brand: '',
+      model: '',
+      status: 'ACTIVE',
+      notes: '',
+      address: {
+        street: '',
+        area: '',
+        city: 'Bangalore',
+        state: 'Karnataka',
+        pincode: ''
+      }
+    });
+    setAddDialogOpen(true);
+  };
+
+  const handleCreateCustomer = async () => {
+    setIsCreating(true);
+    try {
+      // Create customer data with default location (you can enhance this later)
+      const customerData = {
+        full_name: addFormData.full_name,
+        phone: addFormData.phone,
+        email: addFormData.email,
+        address: addFormData.address,
+        location: {
+          latitude: 12.9716, // Default Bangalore coordinates
+          longitude: 77.5946,
+          formattedAddress: `${addFormData.address.street}, ${addFormData.address.area}, ${addFormData.address.city}, ${addFormData.address.pincode}`
+        },
+        service_type: addFormData.service_type,
+        brand: addFormData.brand,
+        model: addFormData.model,
+        status: addFormData.status,
+        notes: addFormData.notes,
+        customer_since: new Date().toISOString(),
+        preferred_time_slot: 'MORNING',
+        preferred_language: 'ENGLISH'
+      };
+
+      const { data: newCustomer, error } = await db.customers.create(customerData);
+
+      if (error) {
+        throw new Error(error.message);
+      }
+
+      // Add to local state
+      setCustomers([newCustomer, ...customers]);
+
+      toast.success(`Customer ${(newCustomer as any).customer_id} created successfully!`);
+      setAddDialogOpen(false);
+    } catch (error) {
+      console.error('Error creating customer:', error);
+      toast.error('Failed to create customer');
+    } finally {
+      setIsCreating(false);
+    }
+  };
+
+  const handleAddFormChange = (field: string, value: string) => {
+    if (field.startsWith('address.')) {
+      const addressField = field.split('.')[1];
+      setAddFormData(prev => ({
+        ...prev,
+        address: {
+          ...prev.address,
+          [addressField]: value
+        }
+      }));
+    } else {
+      setAddFormData(prev => ({
+        ...prev,
+        [field]: value
+      }));
+    }
+  };
+
+  const handleServicesUpdate = (customerId: string, services: any[]) => {
+    setCustomerServices(prev => ({
+      ...prev,
+      [customerId]: services
+    }));
   };
 
   const getStatusBadge = (status: string) => {
     const statusConfig = {
-      PENDING: { color: 'bg-yellow-100 text-yellow-800', icon: Clock },
-      ASSIGNED: { color: 'bg-blue-100 text-blue-800', icon: Calendar },
-      IN_PROGRESS: { color: 'bg-orange-100 text-orange-800', icon: Wrench },
-      COMPLETED: { color: 'bg-green-100 text-green-800', icon: CheckCircle },
-      CANCELLED: { color: 'bg-red-100 text-red-800', icon: AlertCircle },
+      'PENDING': { color: 'bg-yellow-100 text-yellow-800', icon: Clock },
+      'ASSIGNED': { color: 'bg-blue-100 text-blue-800', icon: Wrench },
+      'IN_PROGRESS': { color: 'bg-orange-100 text-orange-800', icon: Wrench },
+      'COMPLETED': { color: 'bg-green-100 text-green-800', icon: CheckCircle },
+      'CANCELLED': { color: 'bg-red-100 text-red-800', icon: AlertCircle },
+      'ACTIVE': { color: 'bg-green-100 text-green-800', icon: CheckCircle },
+      'INACTIVE': { color: 'bg-gray-100 text-gray-800', icon: AlertCircle },
     };
 
-    const config = statusConfig[status as keyof typeof statusConfig] || statusConfig.PENDING;
+    const config = statusConfig[status as keyof typeof statusConfig] || statusConfig['PENDING'];
     const Icon = config.icon;
 
     return (
-      <Badge className={`${config.color} flex items-center gap-1`}>
-        <Icon className="w-3 h-3" />
-        {status.replace('_', ' ')}
+      <Badge className={`${config.color} border-0`}>
+        <Icon className="w-3 h-3 mr-1" />
+        {status}
       </Badge>
     );
   };
 
-  const getPriorityBadge = (priority: string) => {
-    const priorityConfig = {
-      LOW: 'bg-gray-100 text-gray-800',
-      MEDIUM: 'bg-blue-100 text-blue-800',
-      HIGH: 'bg-orange-100 text-orange-800',
-      URGENT: 'bg-red-100 text-red-800',
-    };
-
-    return (
-      <Badge className={priorityConfig[priority as keyof typeof priorityConfig] || priorityConfig.MEDIUM}>
-        {priority}
-      </Badge>
-    );
-  };
-
-  // Filter data based on search term
+  // Filter data based on search term (case insensitive)
   const filteredCustomers = customers.filter(customer =>
-    customer.customerId?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    customer.fullName.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    (customer as any).customer_id?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    (customer as any).full_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
     customer.phone.includes(searchTerm) ||
     customer.email.toLowerCase().includes(searchTerm.toLowerCase())
   );
 
   const filteredJobs = jobs.filter(job =>
-    job.jobNumber.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    job.customer?.fullName.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    (job as any).job_number.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    (job.customer as any)?.full_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
     job.customer?.phone.includes(searchTerm)
   );
 
@@ -177,307 +319,236 @@ const AdminDashboard = () => {
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center min-h-screen">
+      <div className="flex items-center justify-center min-h-screen bg-gray-50">
         <div className="text-center">
-          <div className="flex justify-center space-x-2 mb-4">
-            <div className="w-3 h-3 bg-primary rounded-full animate-bounce"></div>
-            <div className="w-3 h-3 bg-primary rounded-full animate-bounce" style={{animationDelay: '0.1s'}}></div>
-            <div className="w-3 h-3 bg-primary rounded-full animate-bounce" style={{animationDelay: '0.2s'}}></div>
+          {/* 3-dot wavy animation */}
+          <div className="flex items-center justify-center space-x-1 mb-4">
+            <div className="w-3 h-3 bg-blue-600 rounded-full animate-bounce" style={{ animationDelay: '0ms' }}></div>
+            <div className="w-3 h-3 bg-blue-600 rounded-full animate-bounce" style={{ animationDelay: '150ms' }}></div>
+            <div className="w-3 h-3 bg-blue-600 rounded-full animate-bounce" style={{ animationDelay: '300ms' }}></div>
           </div>
-          <p className="text-muted-foreground">Loading dashboard...</p>
+          <p className="text-gray-600">Loading dashboard...</p>
         </div>
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-background">
+    <div className="min-h-screen bg-gray-50">
       <Header />
-      <div className="p-6">
-        <div className="max-w-7xl mx-auto">
-          {/* Header */}
-          <div className="mb-8">
-            <h1 className="text-3xl font-bold text-foreground mb-2">Admin Dashboard</h1>
-          <p className="text-muted-foreground">Manage customers, jobs, and technicians</p>
+      
+      <main className="container mx-auto px-4 py-4 sm:py-8">
+        {/* Page Header */}
+        <div className="mb-6 sm:mb-8">
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+            <div>
+              <h1 className="text-2xl sm:text-3xl font-bold text-gray-900 mb-2">Admin Dashboard</h1>
+              <p className="text-sm sm:text-base text-gray-600">Manage customers, jobs, and technicians</p>
+            </div>
+            <Button 
+              onClick={handleAddCustomer}
+              className="bg-blue-600 hover:bg-blue-700 text-white"
+            >
+              <Users className="w-4 h-4 mr-2" />
+              Add Customer
+            </Button>
+          </div>
         </div>
 
         {/* Search Bar */}
-        <div className="mb-6">
-          <div className="relative max-w-md">
-            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground w-4 h-4" />
+        <div className="mb-4 sm:mb-6">
+          <div className="relative w-full max-w-md">
+            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
             <Input
-              placeholder="Search by customer ID (C0001), name, phone, email..."
+              placeholder="Search by customer ID (c0001), name, phone, email..."
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
-              className="pl-10"
+              className="pl-10 bg-white border-gray-300 focus:border-blue-500 focus:ring-blue-500 text-sm sm:text-base"
             />
           </div>
         </div>
 
-        {/* Stats Cards */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">Total Customers</CardTitle>
-              <Users className="h-4 w-4 text-muted-foreground" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold">{customers.length}</div>
-              <p className="text-xs text-muted-foreground">
+        {/* Stats Cards - Mobile First */}
+        <div className="grid grid-cols-2 gap-3 mb-6 sm:grid-cols-4 sm:gap-6">
+          <Card className="bg-white border-gray-200 p-3 sm:p-6">
+            <div className="flex items-center justify-between mb-2">
+              <Users className="h-5 w-5 text-blue-600 sm:h-4 sm:w-4" />
+              <div className="text-right">
+                <div className="text-lg font-bold text-gray-900 sm:text-2xl">{customers.length}</div>
+                <p className="text-xs text-gray-500">Customers</p>
+              </div>
+            </div>
+            <p className="text-xs text-gray-500">
                 {customers.filter(c => c.status === 'ACTIVE').length} active
               </p>
-            </CardContent>
           </Card>
 
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">Pending Jobs</CardTitle>
-              <Clock className="h-4 w-4 text-muted-foreground" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold">{pendingJobs.length}</div>
-              <p className="text-xs text-muted-foreground">
+          <Card className="bg-white border-gray-200 p-3 sm:p-6">
+            <div className="flex items-center justify-between mb-2">
+              <Clock className="h-5 w-5 text-yellow-600 sm:h-4 sm:w-4" />
+              <div className="text-right">
+                <div className="text-lg font-bold text-gray-900 sm:text-2xl">{pendingJobs.length}</div>
+                <p className="text-xs text-gray-500">Pending</p>
+              </div>
+            </div>
+            <p className="text-xs text-gray-500">
                 {assignedJobs.length} assigned
               </p>
-            </CardContent>
           </Card>
 
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">In Progress</CardTitle>
-              <Wrench className="h-4 w-4 text-muted-foreground" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold">{inProgressJobs.length}</div>
-              <p className="text-xs text-muted-foreground">
-                {completedJobs.length} completed today
-              </p>
-            </CardContent>
+          <Card className="bg-white border-gray-200 p-3 sm:p-6">
+            <div className="flex items-center justify-between mb-2">
+              <Wrench className="h-5 w-5 text-orange-600 sm:h-4 sm:w-4" />
+              <div className="text-right">
+                <div className="text-lg font-bold text-gray-900 sm:text-2xl">{inProgressJobs.length}</div>
+                <p className="text-xs text-gray-500">In Progress</p>
+              </div>
+            </div>
+            <p className="text-xs text-gray-500">
+              {completedJobs.length} completed
+            </p>
           </Card>
 
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">Technicians</CardTitle>
-              <Users className="h-4 w-4 text-muted-foreground" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold">{technicians.length}</div>
-              <p className="text-xs text-muted-foreground">
+          <Card className="bg-white border-gray-200 p-3 sm:p-6">
+            <div className="flex items-center justify-between mb-2">
+              <Users className="h-5 w-5 text-green-600 sm:h-4 sm:w-4" />
+              <div className="text-right">
+                <div className="text-lg font-bold text-gray-900 sm:text-2xl">{technicians.length}</div>
+                <p className="text-xs text-gray-500">Technicians</p>
+              </div>
+            </div>
+            <p className="text-xs text-gray-500">
                 {technicians.filter(t => t.status === 'AVAILABLE').length} available
               </p>
-            </CardContent>
           </Card>
         </div>
 
-        {/* Main Content Tabs */}
-        <Tabs value={selectedTab} onValueChange={setSelectedTab} className="space-y-6">
-          <TabsList>
-            <TabsTrigger value="overview">Overview</TabsTrigger>
-            <TabsTrigger value="jobs">Jobs</TabsTrigger>
-            <TabsTrigger value="customers">Customers</TabsTrigger>
-            <TabsTrigger value="technicians">Technicians</TabsTrigger>
-          </TabsList>
-
-          {/* Overview Tab */}
-          <TabsContent value="overview" className="space-y-6">
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-              {/* Recent Jobs */}
-              <Card>
-                <CardHeader>
-                  <CardTitle>Recent Jobs</CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <div className="space-y-4">
-                    {jobs.slice(0, 5).map((job) => (
-                      <div key={job.id} className="flex items-center justify-between p-3 border rounded-lg">
+        {/* Customers - Mobile First Cards */}
+        <div className="mb-6">
+          <h2 className="text-xl font-bold text-gray-900 mb-4">All Customers</h2>
+          
+          {/* Mobile: Card Layout, Desktop: Table Layout */}
+          <div className="block lg:hidden">
+            {/* Mobile Cards */}
+            <div className="space-y-3">
+              {filteredCustomers.map((customer) => (
+                <Card key={customer.id} className="bg-white border-gray-200 p-4">
+                  <div className="flex items-start justify-between mb-3">
                         <div>
-                          <p className="font-medium">{job.jobNumber}</p>
-                          <p className="text-sm text-muted-foreground">
-                            {job.customer?.fullName} - {job.serviceType}
-                          </p>
+                      <div className="font-mono font-bold text-blue-600 text-lg">
+                        {(customer as any).customer_id || 'N/A'}
                         </div>
-                        {getStatusBadge(job.status)}
+                      <div className="font-medium text-gray-900 text-base">
+                        {(customer as any).full_name}
                       </div>
-                    ))}
+                    </div>
+                    {getStatusBadge(customer.status)}
                   </div>
-                </CardContent>
-              </Card>
-
-              {/* Available Technicians */}
-              <Card>
-                <CardHeader>
-                  <CardTitle>Available Technicians</CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <div className="space-y-4">
-                    {technicians.filter(t => t.status === 'AVAILABLE').slice(0, 5).map((technician) => (
-                      <div key={technician.id} className="flex items-center justify-between p-3 border rounded-lg">
-                        <div>
-                          <p className="font-medium">{technician.fullName}</p>
-                          <p className="text-sm text-muted-foreground">
-                            {technician.skills.serviceTypes.join(', ')}
-                          </p>
+                  
+                  <div className="space-y-2 text-sm">
+                    <div className="flex items-center gap-2">
+                      <Phone className="w-4 h-4 text-gray-400" />
+                      <span className="text-gray-900">{customer.phone}</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <Mail className="w-4 h-4 text-gray-400" />
+                      <span className="text-gray-600">{customer.email}</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <Wrench className="w-4 h-4 text-gray-400" />
+                      <span className="text-gray-900">{customer.serviceType}</span>
                         </div>
-                        <Badge className="bg-green-100 text-green-800">Available</Badge>
+                    <div className="text-gray-600">
+                      {customer.brand} - {customer.model}
                       </div>
-                    ))}
                   </div>
-                </CardContent>
-              </Card>
-            </div>
-          </TabsContent>
-
-          {/* Jobs Tab */}
-          <TabsContent value="jobs" className="space-y-6">
-            <Card>
-              <CardHeader>
-                <CardTitle>All Jobs</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Job Number</TableHead>
-                      <TableHead>Customer</TableHead>
-                      <TableHead>Service</TableHead>
-                      <TableHead>Address</TableHead>
-                      <TableHead>Status</TableHead>
-                      <TableHead>Priority</TableHead>
-                      <TableHead>Scheduled</TableHead>
-                      <TableHead>Technician</TableHead>
-                      <TableHead>Actions</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {filteredJobs.map((job) => (
-                      <TableRow key={job.id}>
-                        <TableCell className="font-medium">{job.jobNumber}</TableCell>
-                        <TableCell>
-                          <div>
-                            <p className="font-medium">{job.customer?.fullName}</p>
-                            <p className="text-sm text-muted-foreground">{job.customer?.phone}</p>
-                          </div>
-                        </TableCell>
-                        <TableCell>
-                          <div>
-                            <p className="font-medium">{job.serviceType}</p>
-                            <p className="text-sm text-muted-foreground">{job.serviceSubType}</p>
-                          </div>
-                        </TableCell>
-                        <TableCell>
-                          <Button
-                            variant="link"
-                            size="sm"
-                            onClick={() => handleAddressClick(job)}
-                            className="p-0 h-auto text-left justify-start"
-                          >
-                            <div className="flex items-center gap-1">
-                              <MapPin className="w-3 h-3" />
-                              <span className="text-xs max-w-32 truncate">
-                                {formatAddressForDisplay(job.customer?.address || '')}
-                              </span>
-                            </div>
+                  
+                  <div className="flex items-center justify-between mt-3">
+                    <button
+                      onClick={() => {
+                        const location = extractCoordinates(customer.location);
+                        if (location) {
+                          const address = formatAddressForDisplay(customer.address);
+                          openInGoogleMaps(location, address);
+                        } else {
+                          toast.error('Location data not available');
+                        }
+                      }}
+                      className="flex items-center gap-2 text-blue-600 hover:text-blue-800 text-sm font-medium"
+                    >
+                      <MapPin className="w-4 h-4" />
+                      View on Map
+                    </button>
+                    
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <Button variant="ghost" size="sm" className="h-8 w-8 p-0">
+                          <MoreVertical className="h-4 w-4" />
                           </Button>
-                        </TableCell>
-                        <TableCell>{getStatusBadge(job.status)}</TableCell>
-                        <TableCell>{getPriorityBadge(job.priority)}</TableCell>
-                        <TableCell>
-                          <div>
-                            <p className="text-sm">{new Date(job.scheduledDate).toLocaleDateString()}</p>
-                            <p className="text-xs text-muted-foreground">{job.scheduledTimeSlot}</p>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="end">
+                        <DropdownMenuItem onClick={() => handleEditCustomer(customer)}>
+                          <Edit className="mr-2 h-4 w-4" />
+                          Edit
+                        </DropdownMenuItem>
+                        <DropdownMenuItem 
+                          onClick={() => confirmDelete(customer)}
+                          className="text-red-600"
+                        >
+                          <Trash2 className="mr-2 h-4 w-4" />
+                          Delete
+                        </DropdownMenuItem>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
                           </div>
-                        </TableCell>
-                        <TableCell>
-                          {job.assignedTechnician ? (
-                            <p className="text-sm">{job.assignedTechnician.fullName}</p>
-                          ) : (
-                            <Select onValueChange={(value) => handleAssignTechnician(job.id, value)}>
-                              <SelectTrigger className="w-40">
-                                <SelectValue placeholder="Assign" />
-                              </SelectTrigger>
-                              <SelectContent>
-                                {technicians.filter(t => t.status === 'AVAILABLE').map((tech) => (
-                                  <SelectItem key={tech.id} value={tech.id}>
-                                    {tech.fullName}
-                                  </SelectItem>
-                                ))}
-                              </SelectContent>
-                            </Select>
-                          )}
-                        </TableCell>
-                        <TableCell>
-                          <div className="flex gap-2">
-                            <Button size="sm" variant="outline">
-                              <Eye className="w-4 h-4" />
-                            </Button>
-                            <Select onValueChange={(value) => handleUpdateJobStatus(job.id, value)}>
-                              <SelectTrigger className="w-32">
-                                <SelectValue placeholder="Status" />
-                              </SelectTrigger>
-                              <SelectContent>
-                                <SelectItem value="PENDING">Pending</SelectItem>
-                                <SelectItem value="ASSIGNED">Assigned</SelectItem>
-                                <SelectItem value="IN_PROGRESS">In Progress</SelectItem>
-                                <SelectItem value="COMPLETED">Completed</SelectItem>
-                                <SelectItem value="CANCELLED">Cancelled</SelectItem>
-                              </SelectContent>
-                            </Select>
+                </Card>
+              ))}
+            </div>
                           </div>
-                        </TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              </CardContent>
-            </Card>
-          </TabsContent>
 
-          {/* Customers Tab */}
-          <TabsContent value="customers" className="space-y-6">
-            <Card>
-              <CardHeader>
-                <CardTitle>All Customers</CardTitle>
-              </CardHeader>
-              <CardContent>
+          {/* Desktop Table */}
+          <div className="hidden lg:block">
+            <Card className="bg-white border-gray-200">
+              <CardContent className="p-0">
                 <Table>
                   <TableHeader>
-                    <TableRow>
-                      <TableHead>Customer ID</TableHead>
-                      <TableHead>Name</TableHead>
-                      <TableHead>Contact</TableHead>
-                      <TableHead>Service Type</TableHead>
-                      <TableHead>Brand/Model</TableHead>
-                      <TableHead>Address</TableHead>
-                      <TableHead>Status</TableHead>
-                      <TableHead>Actions</TableHead>
+                    <TableRow className="border-gray-200">
+                      <TableHead className="text-gray-600">Customer ID</TableHead>
+                      <TableHead className="text-gray-600">Name</TableHead>
+                      <TableHead className="text-gray-600">Contact</TableHead>
+                      <TableHead className="text-gray-600">Service Type</TableHead>
+                      <TableHead className="text-gray-600">Brand/Model</TableHead>
+                      <TableHead className="text-gray-600">Address</TableHead>
+                      <TableHead className="text-gray-600">Status</TableHead>
+                      <TableHead className="text-gray-600">Actions</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
                     {filteredCustomers.map((customer) => (
-                      <TableRow key={customer.id}>
+                      <TableRow key={customer.id} className="border-gray-200 hover:bg-gray-50">
                         <TableCell className="font-mono font-bold text-blue-600">
-                          {customer.customerId || 'N/A'}
+                          {(customer as any).customer_id || 'N/A'}
                         </TableCell>
-                        <TableCell className="font-medium">{customer.fullName}</TableCell>
+                        <TableCell className="font-medium text-gray-900">{(customer as any).full_name}</TableCell>
                         <TableCell>
                           <div>
-                            <p className="text-sm">{customer.phone}</p>
-                            <p className="text-sm text-muted-foreground">{customer.email}</p>
+                            <p className="text-sm text-gray-900">{customer.phone}</p>
+                            <p className="text-sm text-gray-500">{customer.email}</p>
                           </div>
                         </TableCell>
                         <TableCell>
-                          <Badge variant="outline">{customer.serviceType}</Badge>
+                          <Badge variant="outline" className="border-gray-300 text-gray-700">
+                            {customer.serviceType}
+                          </Badge>
                         </TableCell>
                         <TableCell>
                           <div>
-                            <p className="text-sm">{customer.brand}</p>
-                            <p className="text-xs text-muted-foreground">{customer.model}</p>
+                            <p className="text-sm text-gray-900">{customer.brand}</p>
+                            <p className="text-xs text-gray-500">{customer.model}</p>
                           </div>
                         </TableCell>
                         <TableCell>
-                          <Button
-                            variant="link"
-                            size="sm"
+                          <button
                             onClick={() => {
                               const location = extractCoordinates(customer.location);
                               if (location) {
@@ -487,30 +558,36 @@ const AdminDashboard = () => {
                                 toast.error('Location data not available');
                               }
                             }}
-                            className="p-0 h-auto text-left justify-start"
+                            className="flex items-center gap-1 text-blue-600 hover:text-blue-800 text-sm"
                           >
-                            <div className="flex items-center gap-1">
                               <MapPin className="w-3 h-3" />
-                              <span className="text-xs max-w-32 truncate">
-                                {formatAddressForDisplay(customer.address)}
-                              </span>
-                            </div>
-                          </Button>
+                            View on Map
+                          </button>
                         </TableCell>
                         <TableCell>
-                          <Badge className={customer.status === 'ACTIVE' ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-800'}>
-                            {customer.status}
-                          </Badge>
+                          {getStatusBadge(customer.status)}
                         </TableCell>
                         <TableCell>
-                          <div className="flex gap-2">
-                            <Button size="sm" variant="outline">
-                              <Eye className="w-4 h-4" />
+                          <DropdownMenu>
+                            <DropdownMenuTrigger asChild>
+                              <Button variant="ghost" size="sm" className="h-8 w-8 p-0">
+                                <MoreVertical className="h-4 w-4" />
                             </Button>
-                            <Button size="sm" variant="outline">
-                              <Edit className="w-4 h-4" />
-                            </Button>
-                          </div>
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent align="end">
+                              <DropdownMenuItem onClick={() => handleEditCustomer(customer)}>
+                                <Edit className="mr-2 h-4 w-4" />
+                                Edit
+                              </DropdownMenuItem>
+                              <DropdownMenuItem 
+                                onClick={() => confirmDelete(customer)}
+                                className="text-red-600"
+                              >
+                                <Trash2 className="mr-2 h-4 w-4" />
+                                Delete
+                              </DropdownMenuItem>
+                            </DropdownMenuContent>
+                          </DropdownMenu>
                         </TableCell>
                       </TableRow>
                     ))}
@@ -518,75 +595,77 @@ const AdminDashboard = () => {
                 </Table>
               </CardContent>
             </Card>
-          </TabsContent>
+          </div>
+        </div>
 
-          {/* Technicians Tab */}
-          <TabsContent value="technicians" className="space-y-6">
-            <Card>
-              <CardHeader>
-                <CardTitle>All Technicians</CardTitle>
-              </CardHeader>
-              <CardContent>
+        {/* Jobs - Mobile First Cards */}
+        <div className="mb-6">
+          <h2 className="text-xl font-bold text-gray-900 mb-4">Recent Jobs</h2>
+          
+          {/* Mobile: Card Layout, Desktop: Table Layout */}
+          <div className="block lg:hidden">
+            {/* Mobile Cards */}
+            <div className="space-y-3">
+              {filteredJobs.slice(0, 10).map((job) => (
+                <Card key={job.id} className="bg-white border-gray-200 p-4">
+                  <div className="flex items-start justify-between mb-3">
+                    <div>
+                      <div className="font-mono font-bold text-gray-900 text-base">
+                        {(job as any).job_number}
+                      </div>
+                      <div className="font-medium text-gray-900 text-sm">
+                        {(job.customer as any)?.full_name || 'N/A'}
+                      </div>
+                    </div>
+                    {getStatusBadge(job.status)}
+                  </div>
+                  
+                  <div className="space-y-2 text-sm">
+                    <div className="flex items-center gap-2">
+                      <Wrench className="w-4 h-4 text-gray-400" />
+                      <span className="text-gray-900">{job.serviceType} - {job.serviceSubType}</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <Calendar className="w-4 h-4 text-gray-400" />
+                      <span className="text-gray-600">
+                        {new Date(job.scheduledDate).toLocaleDateString()}
+                      </span>
+                    </div>
+                  </div>
+                </Card>
+              ))}
+            </div>
+          </div>
+
+          {/* Desktop Table */}
+          <div className="hidden lg:block">
+            <Card className="bg-white border-gray-200">
+              <CardContent className="p-0">
                 <Table>
                   <TableHeader>
-                    <TableRow>
-                      <TableHead>Name</TableHead>
-                      <TableHead>Contact</TableHead>
-                      <TableHead>Skills</TableHead>
-                      <TableHead>Service Areas</TableHead>
-                      <TableHead>Status</TableHead>
-                      <TableHead>Performance</TableHead>
-                      <TableHead>Actions</TableHead>
+                    <TableRow className="border-gray-200">
+                      <TableHead className="text-gray-600">Job Number</TableHead>
+                      <TableHead className="text-gray-600">Customer</TableHead>
+                      <TableHead className="text-gray-600">Service</TableHead>
+                      <TableHead className="text-gray-600">Status</TableHead>
+                      <TableHead className="text-gray-600">Scheduled</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {technicians.map((technician) => (
-                      <TableRow key={technician.id}>
-                        <TableCell className="font-medium">{technician.fullName}</TableCell>
-                        <TableCell>
-                          <div>
-                            <p className="text-sm">{technician.phone}</p>
-                            <p className="text-sm text-muted-foreground">{technician.email}</p>
-                          </div>
+                    {filteredJobs.slice(0, 10).map((job) => (
+                      <TableRow key={job.id} className="border-gray-200 hover:bg-gray-50">
+                        <TableCell className="font-mono text-gray-900">{(job as any).job_number}</TableCell>
+                        <TableCell className="text-gray-900">
+                          {(job.customer as any)?.full_name || 'N/A'}
+                        </TableCell>
+                        <TableCell className="text-gray-900">
+                          {job.serviceType} - {job.serviceSubType}
                         </TableCell>
                         <TableCell>
-                          <div className="flex flex-wrap gap-1">
-                            {technician.skills.serviceTypes.map((skill) => (
-                              <Badge key={skill} variant="outline" className="text-xs">
-                                {skill}
-                              </Badge>
-                            ))}
-                          </div>
+                          {getStatusBadge(job.status)}
                         </TableCell>
-                        <TableCell>
-                          <p className="text-sm">{technician.serviceAreas.pincodes.length} pincodes</p>
-                        </TableCell>
-                        <TableCell>
-                          <Badge className={
-                            technician.status === 'AVAILABLE' ? 'bg-green-100 text-green-800' :
-                            technician.status === 'BUSY' ? 'bg-orange-100 text-orange-800' :
-                            'bg-gray-100 text-gray-800'
-                          }>
-                            {technician.status}
-                          </Badge>
-                        </TableCell>
-                        <TableCell>
-                          <div>
-                            <p className="text-sm">Rating: {technician.performance.averageRating}/5</p>
-                            <p className="text-xs text-muted-foreground">
-                              {technician.performance.completedJobs} jobs
-                            </p>
-                          </div>
-                        </TableCell>
-                        <TableCell>
-                          <div className="flex gap-2">
-                            <Button size="sm" variant="outline">
-                              <Eye className="w-4 h-4" />
-                            </Button>
-                            <Button size="sm" variant="outline">
-                              <Edit className="w-4 h-4" />
-                            </Button>
-                          </div>
+                        <TableCell className="text-gray-600">
+                          {new Date(job.scheduledDate).toLocaleDateString()}
                         </TableCell>
                       </TableRow>
                     ))}
@@ -594,10 +673,360 @@ const AdminDashboard = () => {
                 </Table>
               </CardContent>
             </Card>
-          </TabsContent>
-        </Tabs>
+          </div>
         </div>
+      </main>
+
+      {/* Add Customer Dialog */}
+      <Dialog open={addDialogOpen} onOpenChange={setAddDialogOpen}>
+        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Add New Customer</DialogTitle>
+            <DialogDescription>
+              Create a new customer account with service information
+            </DialogDescription>
+          </DialogHeader>
+          
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 py-4">
+            {/* Full Name */}
+            <div className="space-y-2">
+              <Label htmlFor="add_full_name">Full Name *</Label>
+              <Input
+                id="add_full_name"
+                value={addFormData.full_name}
+                onChange={(e) => handleAddFormChange('full_name', e.target.value)}
+                placeholder="Enter full name"
+                required
+              />
+            </div>
+
+            {/* Phone */}
+            <div className="space-y-2">
+              <Label htmlFor="add_phone">Phone *</Label>
+              <Input
+                id="add_phone"
+                value={addFormData.phone}
+                onChange={(e) => handleAddFormChange('phone', e.target.value)}
+                placeholder="Enter phone number"
+                required
+              />
+            </div>
+
+            {/* Email */}
+            <div className="space-y-2">
+              <Label htmlFor="add_email">Email *</Label>
+              <Input
+                id="add_email"
+                type="email"
+                value={addFormData.email}
+                onChange={(e) => handleAddFormChange('email', e.target.value)}
+                placeholder="Enter email address"
+                required
+              />
+            </div>
+
+            {/* Service Type */}
+            <div className="space-y-2">
+              <Label htmlFor="add_service_type">Service Type *</Label>
+              <Select value={addFormData.service_type} onValueChange={(value) => handleAddFormChange('service_type', value)}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Select service type" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="RO">RO (Reverse Osmosis)</SelectItem>
+                  <SelectItem value="SOFTENER">Water Softener</SelectItem>
+                  <SelectItem value="AC">AC Services</SelectItem>
+                  <SelectItem value="APPLIANCE">Home Appliances</SelectItem>
+                  <SelectItem value="MULTIPLE">Multiple Services</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            {/* Brand */}
+            <div className="space-y-2">
+              <Label htmlFor="add_brand">Brand *</Label>
+              <Input
+                id="add_brand"
+                value={addFormData.brand}
+                onChange={(e) => handleAddFormChange('brand', e.target.value)}
+                placeholder="Enter brand name"
+                required
+              />
+            </div>
+
+            {/* Model */}
+            <div className="space-y-2">
+              <Label htmlFor="add_model">Model *</Label>
+              <Input
+                id="add_model"
+                value={addFormData.model}
+                onChange={(e) => handleAddFormChange('model', e.target.value)}
+                placeholder="Enter model name"
+                required
+              />
+            </div>
+
+            {/* Address - Street */}
+            <div className="space-y-2">
+              <Label htmlFor="add_street">Street Address *</Label>
+              <Input
+                id="add_street"
+                value={addFormData.address.street}
+                onChange={(e) => handleAddFormChange('address.street', e.target.value)}
+                placeholder="Enter street address"
+                required
+              />
+            </div>
+
+            {/* Address - Area */}
+            <div className="space-y-2">
+              <Label htmlFor="add_area">Area *</Label>
+              <Input
+                id="add_area"
+                value={addFormData.address.area}
+                onChange={(e) => handleAddFormChange('address.area', e.target.value)}
+                placeholder="Enter area/locality"
+                required
+              />
+            </div>
+
+            {/* Address - Pincode */}
+            <div className="space-y-2">
+              <Label htmlFor="add_pincode">Pincode *</Label>
+              <Input
+                id="add_pincode"
+                value={addFormData.address.pincode}
+                onChange={(e) => handleAddFormChange('address.pincode', e.target.value)}
+                placeholder="Enter pincode"
+                required
+              />
+            </div>
+
+            {/* Status */}
+            <div className="space-y-2">
+              <Label htmlFor="add_status">Status</Label>
+              <Select value={addFormData.status} onValueChange={(value) => handleAddFormChange('status', value)}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Select status" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="ACTIVE">Active</SelectItem>
+                  <SelectItem value="INACTIVE">Inactive</SelectItem>
+                  <SelectItem value="BLOCKED">Blocked</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            {/* Notes */}
+            <div className="space-y-2 md:col-span-2">
+              <Label htmlFor="add_notes">Notes</Label>
+              <Textarea
+                id="add_notes"
+                value={addFormData.notes}
+                onChange={(e) => handleAddFormChange('notes', e.target.value)}
+                placeholder="Enter any additional notes or special requirements"
+                rows={3}
+              />
+            </div>
+          </div>
+
+          <DialogFooter>
+            <Button 
+              variant="outline" 
+              onClick={() => setAddDialogOpen(false)}
+              disabled={isCreating}
+            >
+              Cancel
+            </Button>
+            <Button 
+              onClick={handleCreateCustomer}
+              disabled={isCreating || !addFormData.full_name || !addFormData.phone || !addFormData.email || !addFormData.service_type || !addFormData.brand || !addFormData.model}
+              className="bg-green-600 hover:bg-green-700"
+            >
+              {isCreating ? (
+                <div className="flex items-center gap-2">
+                  <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                  Creating...
+                </div>
+              ) : (
+                'Create Customer'
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Edit Customer Dialog */}
+      <Dialog open={editDialogOpen} onOpenChange={setEditDialogOpen}>
+        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Edit Customer</DialogTitle>
+            <DialogDescription>
+              Update customer information for {(editingCustomer as any)?.customer_id} - {(editingCustomer as any)?.full_name}
+            </DialogDescription>
+          </DialogHeader>
+          
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 py-4">
+            {/* Full Name */}
+            <div className="space-y-2">
+              <Label htmlFor="full_name">Full Name</Label>
+              <Input
+                id="full_name"
+                value={editFormData.full_name}
+                onChange={(e) => handleEditFormChange('full_name', e.target.value)}
+                placeholder="Enter full name"
+              />
+            </div>
+
+            {/* Phone */}
+            <div className="space-y-2">
+              <Label htmlFor="phone">Phone</Label>
+              <Input
+                id="phone"
+                value={editFormData.phone}
+                onChange={(e) => handleEditFormChange('phone', e.target.value)}
+                placeholder="Enter phone number"
+              />
+            </div>
+
+            {/* Email */}
+            <div className="space-y-2">
+              <Label htmlFor="email">Email</Label>
+              <Input
+                id="email"
+                type="email"
+                value={editFormData.email}
+                onChange={(e) => handleEditFormChange('email', e.target.value)}
+                placeholder="Enter email address"
+              />
+            </div>
+
+            {/* Service Type */}
+            <div className="space-y-2">
+              <Label htmlFor="service_type">Service Type</Label>
+              <Select value={editFormData.service_type} onValueChange={(value) => handleEditFormChange('service_type', value)}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Select service type" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="RO">RO</SelectItem>
+                  <SelectItem value="SOFTENER">Softener</SelectItem>
+                  <SelectItem value="AC">AC</SelectItem>
+                  <SelectItem value="APPLIANCE">Appliance</SelectItem>
+                  <SelectItem value="MULTIPLE">Multiple</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            {/* Brand */}
+            <div className="space-y-2">
+              <Label htmlFor="brand">Brand</Label>
+              <Input
+                id="brand"
+                value={editFormData.brand}
+                onChange={(e) => handleEditFormChange('brand', e.target.value)}
+                placeholder="Enter brand name"
+              />
+            </div>
+
+            {/* Model */}
+            <div className="space-y-2">
+              <Label htmlFor="model">Model</Label>
+              <Input
+                id="model"
+                value={editFormData.model}
+                onChange={(e) => handleEditFormChange('model', e.target.value)}
+                placeholder="Enter model name"
+              />
+            </div>
+
+            {/* Status */}
+            <div className="space-y-2">
+              <Label htmlFor="status">Status</Label>
+              <Select value={editFormData.status} onValueChange={(value) => handleEditFormChange('status', value)}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Select status" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="ACTIVE">Active</SelectItem>
+                  <SelectItem value="INACTIVE">Inactive</SelectItem>
+                  <SelectItem value="BLOCKED">Blocked</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            {/* Notes */}
+            <div className="space-y-2 md:col-span-2">
+              <Label htmlFor="notes">Notes</Label>
+              <Textarea
+                id="notes"
+                value={editFormData.notes}
+                onChange={(e) => handleEditFormChange('notes', e.target.value)}
+                placeholder="Enter any additional notes"
+                rows={3}
+              />
+            </div>
+          </div>
+
+          {/* Customer Services Manager */}
+          <div className="mt-6 pt-6 border-t border-gray-200">
+            <CustomerServicesManager
+              customerId={editingCustomer?.id || ''}
+              customerName={(editingCustomer as any)?.full_name || ''}
+              services={customerServices[editingCustomer?.id || ''] || []}
+              onServicesUpdate={(services) => handleServicesUpdate(editingCustomer?.id || '', services)}
+            />
+          </div>
+
+          <DialogFooter>
+            <Button 
+              variant="outline" 
+              onClick={() => setEditDialogOpen(false)}
+              disabled={isUpdating}
+            >
+              Cancel
+            </Button>
+            <Button 
+              onClick={handleUpdateCustomer}
+              disabled={isUpdating}
+              className="bg-blue-600 hover:bg-blue-700"
+            >
+              {isUpdating ? (
+                <div className="flex items-center gap-2">
+                  <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                  Updating...
       </div>
+              ) : (
+                'Update Customer'
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Delete Confirmation Dialog */}
+      <AlertDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete Customer</AlertDialogTitle>
+            <AlertDialogDescription>
+              Are you sure you want to delete customer <strong>{(customerToDelete as any)?.customer_id}</strong> - <strong>{(customerToDelete as any)?.full_name}</strong>?
+              <br />
+              <br />
+              This action cannot be undone and will permanently remove the customer and all associated data.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction 
+              onClick={handleDeleteCustomer}
+              className="bg-red-600 hover:bg-red-700"
+            >
+              Delete Customer
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 };

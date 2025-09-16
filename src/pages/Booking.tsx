@@ -920,7 +920,7 @@ const Booking: React.FC = () => {
         // Customer doesn't exist, create new one
         console.log('Customer does not exist, creating new customer');
         const customerData = {
-          fullName: formData.fullName,
+          full_name: formData.fullName,
           phone: formData.phone,
           email: formData.email,
           alternate_phone: formData.alternatePhone,
@@ -936,11 +936,11 @@ const Booking: React.FC = () => {
             longitude: formData.coordinates.lng,
             formattedAddress: formData.address,
           },
-          serviceType: formData.serviceType,
+          service_type: formData.serviceType,
           brand: formData.brandName || 'Not specified',
           model: formData.modelName || 'Not specified',
           status: 'ACTIVE' as const,
-          customerSince: new Date().toISOString(),
+          customer_since: new Date().toISOString(),
           preferred_time_slot: formData.preferredTime,
           preferred_language: 'ENGLISH' as const,
         };
@@ -1754,7 +1754,7 @@ const Booking: React.FC = () => {
                     <div>
                       <p className="text-foreground font-medium">Confirmation Email</p>
                       <p className="text-sm text-gray-600 dark:text-gray-400">
-                        You'll receive a confirmation email with all the details shortly.
+                        You'll receive a confirmation email with all the details shortly. Please check your spam folder if you don't see it.
                       </p>
                     </div>
                   </div>

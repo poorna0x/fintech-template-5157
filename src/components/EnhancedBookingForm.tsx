@@ -201,9 +201,9 @@ const EnhancedBookingForm = () => {
         brand: data.brand,
         model: data.model,
         status: 'ACTIVE' as const,
-        customerSince: new Date().toISOString(),
-        preferredTimeSlot: data.preferredTimeSlot,
-        preferredLanguage: data.preferredLanguage,
+        customer_since: new Date().toISOString(),
+        preferred_time_slot: data.preferredTimeSlot,
+        preferred_language: data.preferredLanguage,
       };
 
       const { data: customer, error: customerError } = await db.customers.create(customerData);
@@ -249,7 +249,10 @@ const EnhancedBookingForm = () => {
       setTimeout(() => {
         setShowSuccessLoader(false);
         setBookingSuccess(true);
-        toast.success('Booking confirmed successfully!');
+        toast.success('Booking confirmed successfully!', {
+          description: 'Confirmation email sent. Please check your spam folder if you don\'t see it.',
+          duration: 6000,
+        });
       }, 2000);
       
     } catch (error) {
@@ -345,7 +348,7 @@ const EnhancedBookingForm = () => {
                   <span className="w-6 h-6 bg-black dark:bg-white text-white dark:text-black rounded-full flex items-center justify-center text-xs font-bold">1</span>
                   <div>
                     <p className="font-medium text-foreground">Confirmation Email</p>
-                    <p className="text-muted-foreground">You'll receive a confirmation email with all the details shortly.</p>
+                    <p className="text-muted-foreground">You'll receive a confirmation email with all the details shortly. Please check your spam folder if you don't see it.</p>
                   </div>
                 </div>
                 <div className="flex items-start gap-3">

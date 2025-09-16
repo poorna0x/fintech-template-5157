@@ -83,7 +83,7 @@ export const db = {
       const { data, error } = await supabase
         .from('customers')
         .select('*')
-        .order('createdAt', { ascending: false });
+        .order('created_at', { ascending: false });
       
       return { data, error };
     },
@@ -151,7 +151,7 @@ export const db = {
           *,
           customer:customers(*)
         `)
-        .order('createdAt', { ascending: false });
+        .order('created_at', { ascending: false });
       
       return { data, error };
     },
@@ -179,7 +179,7 @@ export const db = {
           customer:customers(*)
         `)
         .eq('status', status)
-        .order('createdAt', { ascending: false });
+        .order('created_at', { ascending: false });
       
       return { data, error };
     }
@@ -211,7 +211,7 @@ export const db = {
       const { data, error } = await supabase
         .from('technicians')
         .select('*')
-        .order('createdAt', { ascending: false });
+        .order('created_at', { ascending: false });
       
       return { data, error };
     },
@@ -221,7 +221,7 @@ export const db = {
         .from('technicians')
         .select('*')
         .eq('status', 'AVAILABLE')
-        .order('createdAt', { ascending: false });
+        .order('created_at', { ascending: false });
       
       return { data, error };
     },

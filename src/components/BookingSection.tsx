@@ -424,7 +424,10 @@ const BookingSection = () => {
 
       setBookingId(job.job_number);
       setBookingSuccess(true);
-      toast.success('Booking confirmed successfully!');
+      toast.success('Booking confirmed successfully!', {
+        description: 'Confirmation email sent. Please check your spam folder if you don\'t see it.',
+        duration: 6000,
+      });
       
     } catch (error) {
       console.error('Booking error:', error);
@@ -496,7 +499,7 @@ const BookingSection = () => {
                 </p>
               </div>
               <div className="space-y-2 text-sm text-muted-foreground">
-                <p>• Confirmation email sent to your registered email</p>
+                <p>• Confirmation email sent to your registered email (check spam folder)</p>
                 <p>• SMS notification sent to your phone</p>
                 <p>• Our technician will contact you soon</p>
               </div>
