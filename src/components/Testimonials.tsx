@@ -111,6 +111,7 @@ const Testimonials = () => {
               size="icon"
               onClick={scrollLeft}
               className="rounded-full bg-background/80 backdrop-blur-sm border-border/50 hover:scale-110 transition-transform duration-200 shadow-lg"
+              style={{ WebkitBackdropFilter: 'blur(4px)' }}
             >
               <ChevronLeft className="h-4 w-4" />
             </Button>
@@ -121,6 +122,7 @@ const Testimonials = () => {
               size="icon"
               onClick={scrollRight}
               className="rounded-full bg-background/80 backdrop-blur-sm border-border/50 hover:scale-110 transition-transform duration-200 shadow-lg"
+              style={{ WebkitBackdropFilter: 'blur(4px)' }}
             >
               <ChevronRight className="h-4 w-4" />
             </Button>
