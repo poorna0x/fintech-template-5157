@@ -1166,8 +1166,6 @@ const Booking: React.FC = () => {
                   className={`mt-1 ${
                     showValidation && (!formData.phone || !validatePhoneNumber(formData.phone))
                       ? 'border-2 border-red-500' 
-                      : formData.phone && validatePhoneNumber(formData.phone)
-                      ? 'border-2 border-green-500'
                       : ''
                   }`}
                 />
@@ -1177,7 +1175,7 @@ const Booking: React.FC = () => {
                   </p>
                 )}
                 {formData.phone && validatePhoneNumber(formData.phone) && (
-                  <p className="text-xs text-green-600 mt-1">
+                  <p className="text-xs text-foreground mt-1">
                     ✓ Valid phone number
                   </p>
                 )}
@@ -1194,8 +1192,6 @@ const Booking: React.FC = () => {
                   className={`mt-1 ${
                     showValidation && (!formData.email || !validateEmail(formData.email))
                       ? 'border-2 border-red-500' 
-                      : formData.email && validateEmail(formData.email)
-                      ? 'border-2 border-green-500'
                       : ''
                   }`}
                 />
@@ -1205,7 +1201,7 @@ const Booking: React.FC = () => {
                   </p>
                 )}
                 {formData.email && validateEmail(formData.email) && (
-                  <p className="text-xs text-green-600 mt-1">
+                  <p className="text-xs text-foreground mt-1">
                     ✓ Valid email address
                   </p>
                 )}
@@ -1222,8 +1218,6 @@ const Booking: React.FC = () => {
                   className={`mt-1 ${
                     formData.alternatePhone && !validatePhoneNumber(formData.alternatePhone)
                       ? 'border-2 border-red-500' 
-                      : formData.alternatePhone && validatePhoneNumber(formData.alternatePhone)
-                      ? 'border-2 border-green-500'
                       : ''
                   }`}
                 />
@@ -1233,7 +1227,7 @@ const Booking: React.FC = () => {
                   </p>
                 )}
                 {formData.alternatePhone && validatePhoneNumber(formData.alternatePhone) && (
-                  <p className="text-xs text-green-600 mt-1">
+                  <p className="text-xs text-foreground mt-1">
                     ✓ Valid phone number
                   </p>
                 )}
