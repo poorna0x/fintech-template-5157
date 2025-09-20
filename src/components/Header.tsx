@@ -167,16 +167,65 @@ const Header = () => {
         
         {/* Mobile navigation */}
         {mobileMenuOpen && (
-          <div className="md:hidden fixed inset-0 bg-background z-50 flex flex-col">
+          <div 
+            className="md:hidden fixed inset-0 bg-background z-50 flex flex-col" 
+            style={{ 
+              WebkitOverflowScrolling: 'touch',
+              position: 'fixed',
+              top: 0,
+              left: 0,
+              right: 0,
+              bottom: 0,
+              zIndex: 50,
+              WebkitTransform: 'translateZ(0)',
+              transform: 'translateZ(0)',
+              WebkitBackfaceVisibility: 'hidden',
+              backfaceVisibility: 'hidden',
+              WebkitPerspective: '1000',
+              perspective: '1000'
+            }}
+          >
             {/* Header with logo and close button */}
-            <div className="flex items-center justify-between p-6 border-b border-border bg-background">
+            <div className="flex items-center justify-between p-6 border-b border-border bg-background relative">
               <Logo />
-              <button 
-                onClick={toggleMobileMenu}
-                className="p-2 rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
+              <div 
+                className="relative w-10 h-10 flex items-center justify-center"
+                style={{ 
+                  position: 'relative',
+                  zIndex: 1000,
+                  isolation: 'isolate',
+                  WebkitTransform: 'translateZ(0)',
+                  transform: 'translateZ(0)',
+                  WebkitBackfaceVisibility: 'hidden',
+                  backfaceVisibility: 'hidden'
+                }}
               >
-                <X size={24} />
-              </button>
+                <div
+                  onClick={toggleMobileMenu}
+                  className="w-full h-full flex items-center justify-center rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted transition-colors cursor-pointer"
+                  style={{ 
+                    WebkitAppearance: 'none',
+                    appearance: 'none',
+                    background: 'transparent',
+                    border: 'none',
+                    outline: 'none',
+                    position: 'relative',
+                    zIndex: 1001,
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    width: '100%',
+                    height: '100%',
+                    isolation: 'isolate',
+                    WebkitTransform: 'translateZ(0)',
+                    transform: 'translateZ(0)',
+                    WebkitBackfaceVisibility: 'hidden',
+                    backfaceVisibility: 'hidden'
+                  }}
+                >
+                  <X size={24} style={{ position: 'relative', zIndex: 1002 }} />
+                </div>
+              </div>
             </div>
             
             {/* Navigation links - takes up remaining space */}

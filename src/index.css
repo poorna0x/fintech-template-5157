@@ -338,4 +338,56 @@
     -ms-overflow-style: none;
     scrollbar-width: none;
   }
+
+  /* Safari mobile fix for double close buttons */
+  @media screen and (max-width: 768px) {
+    button[class*="p-2"] {
+      -webkit-appearance: none !important;
+      appearance: none !important;
+      background: none !important;
+      border: none !important;
+      outline: none !important;
+      position: relative !important;
+      z-index: 10 !important;
+    }
+    
+    button[class*="p-2"]::before,
+    button[class*="p-2"]::after {
+      display: none !important;
+    }
+    
+    /* Prevent any potential duplication from parent elements */
+    .fixed.inset-0 {
+      position: fixed !important;
+      top: 0 !important;
+      left: 0 !important;
+      right: 0 !important;
+      bottom: 0 !important;
+    }
+    
+    /* Ensure close button is unique */
+    button[class*="p-2"] svg {
+      position: relative !important;
+      z-index: 11 !important;
+    }
+    
+    /* Safari mobile scroll fix - prevent visual duplication during scroll */
+    .fixed.inset-0 {
+      -webkit-transform: translateZ(0) !important;
+      transform: translateZ(0) !important;
+      -webkit-backface-visibility: hidden !important;
+      backface-visibility: hidden !important;
+      -webkit-perspective: 1000 !important;
+      perspective: 1000 !important;
+      will-change: transform !important;
+    }
+    
+    /* Prevent scroll-related visual artifacts */
+    .fixed.inset-0 * {
+      -webkit-transform: translateZ(0) !important;
+      transform: translateZ(0) !important;
+      -webkit-backface-visibility: hidden !important;
+      backface-visibility: hidden !important;
+    }
+  }
 }
