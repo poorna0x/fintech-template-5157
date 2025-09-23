@@ -1124,13 +1124,12 @@ const AdminDashboard = () => {
                   <div className="flex items-start justify-between mb-4">
                     <div className="flex items-center gap-4">
                       <div>
-                        <div className="flex items-center gap-3 mb-2">
+                        <div className="flex items-center gap-3">
                           <h3 className="text-2xl font-bold text-gray-900">{(customer as any).full_name}</h3>
                           <div className="bg-gray-500 text-white px-3 py-1 rounded-full font-mono text-sm font-medium">
                             {(customer as any).customer_id || 'N/A'}
                           </div>
                         </div>
-                        <div className="text-sm text-gray-600">{customer.serviceType} • {customer.model}</div>
                       </div>
                     </div>
                     <DropdownMenu>
@@ -1194,42 +1193,37 @@ const AdminDashboard = () => {
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div className="space-y-3">
                       <div className="flex items-center gap-3">
-                        <div className="w-8 h-8 bg-green-100 rounded-full flex items-center justify-center">
-                          <Phone className="w-4 h-4 text-green-600" />
-                        </div>
+                        <Phone className="w-4 h-4 text-gray-600" />
                         <div>
-                          <div className="text-sm font-medium text-gray-900">{customer.phone}</div>
-                          <div className="text-xs text-gray-500">Primary Phone</div>
+                          <a 
+                            href={`tel:${customer.phone}`}
+                            className="text-sm font-medium text-blue-600 hover:text-blue-800 hover:underline cursor-pointer"
+                          >
+                            {customer.phone}
+                          </a>
+                          {(customer as any).alternate_phone && (
+                            <a 
+                              href={`tel:${(customer as any).alternate_phone}`}
+                              className="block text-xs text-gray-500 hover:text-blue-600 hover:underline cursor-pointer"
+                            >
+                              {(customer as any).alternate_phone}
+                            </a>
+                          )}
                         </div>
-                        <Button size="sm" variant="ghost" className="ml-auto">
-                          <PhoneCall className="w-4 h-4" />
-                        </Button>
                       </div>
-                      {(customer as any).alternate_phone && (
-                        <div className="flex items-center gap-3 pl-11">
-                          <div className="w-6 h-6 bg-gray-100 rounded-full flex items-center justify-center">
-                            <Phone className="w-3 h-3 text-gray-600" />
-                          </div>
-                          <div>
-                            <div className="text-sm text-gray-600">{(customer as any).alternate_phone}</div>
-                            <div className="text-xs text-gray-500">Alternate Phone</div>
-                          </div>
-                        </div>
-                      )}
                     </div>
                     
                     <div className="space-y-3">
                       <div className="flex items-center gap-3">
-                        <div className="w-8 h-8 bg-blue-100 rounded-full flex items-center justify-center">
-                          <Mail className="w-4 h-4 text-blue-600" />
-                        </div>
+                        <Mail className="w-4 h-4 text-gray-600" />
                         <div>
-                          <div className="text-sm font-medium text-gray-900">{customer.email}</div>
-                          <div className="text-xs text-gray-500">Email Address</div>
+                          <a 
+                            href={`mailto:${customer.email}`}
+                            className="text-sm font-medium text-blue-600 hover:text-blue-800 hover:underline cursor-pointer"
+                          >
+                            {customer.email}
+                          </a>
                         </div>
-                        <Button size="sm" variant="ghost" className="ml-auto">
-                          <Send className="w-4 h-4" />
-                        </Button>
                       </div>
                     </div>
                   </div>
@@ -1240,11 +1234,9 @@ const AdminDashboard = () => {
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div className="space-y-3">
                       <div className="flex items-center gap-3">
-                        <div className="w-8 h-8 bg-orange-100 rounded-full flex items-center justify-center">
-                          <MapPin className="w-4 h-4 text-orange-600" />
-                        </div>
+                        <MapPin className="w-4 h-4 text-gray-600" />
                         <div className="flex-1">
-                          <div className="text-sm font-medium text-gray-900">Service Location</div>
+                          <div className="text-sm font-medium text-gray-900">Location</div>
                           <div className="text-xs text-gray-500 truncate">{formatAddressForDisplay(customer.address)}</div>
                         </div>
                         <Button 
@@ -1267,12 +1259,9 @@ const AdminDashboard = () => {
                     
                     <div className="space-y-3">
                       <div className="flex items-center gap-3">
-                        <div className="w-8 h-8 bg-purple-100 rounded-full flex items-center justify-center">
-                          <Wrench className="w-4 h-4 text-purple-600" />
-                        </div>
+                        <Wrench className="w-4 h-4 text-gray-600" />
                         <div>
                           <div className="text-sm font-medium text-gray-900">{customer.brand} {customer.model}</div>
-                          <div className="text-xs text-gray-500">Equipment Details</div>
                         </div>
                       </div>
                     </div>
