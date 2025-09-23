@@ -83,6 +83,9 @@ const AdminDashboard = () => {
   const [photoGalleryOpen, setPhotoGalleryOpen] = useState(false);
   const [jobToDelete, setJobToDelete] = useState<Job | null>(null);
   const [deleteJobDialogOpen, setDeleteJobDialogOpen] = useState(false);
+  const [photoToDelete, setPhotoToDelete] = useState<{jobId: string, photoIndex: number, photoUrl: string} | null>(null);
+  const [deletePhotoDialogOpen, setDeletePhotoDialogOpen] = useState(false);
+  const [isDeletingPhoto, setIsDeletingPhoto] = useState(false);
 
   // Load data on component mount
   useEffect(() => {
@@ -620,6 +623,108 @@ const AdminDashboard = () => {
     } catch (error) {
       console.error('Error opening photo gallery:', error);
       toast.error('Failed to open photo gallery');
+    }
+  };
+
+  // Handle photo deletion
+  const handleDeletePhoto = (jobId: string, photoIndex: number, photoUrl: string) => {
+    setPhotoToDelete({ jobId, photoIndex, photoUrl });
+    setDeletePhotoDialogOpen(true);
+  };
+
+  // Confirm photo deletion
+  const confirmDeletePhoto = async () => {
+    if (!photoToDelete) return;
+    
+    setIsDeletingPhoto(true);
+    try {
+      // Find the job and determine if it's a before or after photo
+      const job = jobs.find(j => j.id === photoToDelete.jobId);
+      if (!job) {
+        throw new Error('Job not found');
+      }
+
+      // Get current photos
+      const beforePhotos = Array.isArray((job as any).before_photos) ? (job as any).before_photos : [];
+      const afterPhotos = Array.isArray((job as any).after_photos) ? (job as any).after_photos : [];
+      
+      // Determine which array contains the photo to delete
+      let updatedBeforePhotos = [...beforePhotos];
+      let updatedAfterPhotos = [...afterPhotos];
+      let isBeforePhoto = false;
+      
+      // Check if photo exists in before_photos
+      const beforePhotoIndex = beforePhotos.findIndex(photo => {
+        const url = typeof photo === 'string' ? photo : photo?.secure_url;
+        return url === photoToDelete.photoUrl;
+      });
+      
+      if (beforePhotoIndex !== -1) {
+        updatedBeforePhotos.splice(beforePhotoIndex, 1);
+        isBeforePhoto = true;
+      } else {
+        // Check if photo exists in after_photos
+        const afterPhotoIndex = afterPhotos.findIndex(photo => {
+          const url = typeof photo === 'string' ? photo : photo?.secure_url;
+          return url === photoToDelete.photoUrl;
+        });
+        
+        if (afterPhotoIndex !== -1) {
+          updatedAfterPhotos.splice(afterPhotoIndex, 1);
+        } else {
+          throw new Error('Photo not found in job');
+        }
+      }
+
+      // Update the job in the database
+      const { error } = await db.jobs.update(photoToDelete.jobId, {
+        before_photos: updatedBeforePhotos,
+        after_photos: updatedAfterPhotos
+      });
+
+      if (error) {
+        throw new Error(error.message);
+      }
+
+      // Update local state
+      setJobs(prev => prev.map(j => 
+        j.id === photoToDelete.jobId 
+          ? { ...j, before_photos: updatedBeforePhotos, after_photos: updatedAfterPhotos }
+          : j
+      ));
+
+      // Update customer jobs state
+      setCustomerJobs(prev => {
+        const updated = { ...prev };
+        Object.keys(updated).forEach(customerId => {
+          updated[customerId] = updated[customerId].map(job => 
+            job.id === photoToDelete.jobId 
+              ? { ...job, before_photos: updatedBeforePhotos, after_photos: updatedAfterPhotos }
+              : job
+          );
+        });
+        return updated;
+      });
+
+      // Update selected photos if this job is currently being viewed
+      if (selectedJobPhotos && selectedJobPhotos.jobId === photoToDelete.jobId) {
+        const updatedPhotos = selectedJobPhotos.photos.filter((_, index) => index !== photoToDelete.photoIndex);
+        setSelectedJobPhotos({ ...selectedJobPhotos, photos: updatedPhotos });
+        
+        // Close gallery if no photos left
+        if (updatedPhotos.length === 0) {
+          setPhotoGalleryOpen(false);
+        }
+      }
+
+      toast.success('Photo deleted successfully');
+      setDeletePhotoDialogOpen(false);
+      setPhotoToDelete(null);
+    } catch (error) {
+      console.error('Error deleting photo:', error);
+      toast.error('Failed to delete photo');
+    } finally {
+      setIsDeletingPhoto(false);
     }
   };
 
@@ -1883,6 +1988,38 @@ const AdminDashboard = () => {
         </AlertDialogContent>
       </AlertDialog>
 
+      {/* Delete Photo Confirmation Dialog */}
+      <AlertDialog open={deletePhotoDialogOpen} onOpenChange={setDeletePhotoDialogOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete Photo</AlertDialogTitle>
+            <AlertDialogDescription>
+              Are you sure you want to delete this photo?
+              <br />
+              <br />
+              This action cannot be undone and will permanently remove the photo from the job.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={isDeletingPhoto}>Cancel</AlertDialogCancel>
+            <AlertDialogAction 
+              onClick={confirmDeletePhoto}
+              disabled={isDeletingPhoto}
+              className="bg-red-600 hover:bg-red-700"
+            >
+              {isDeletingPhoto ? (
+                <div className="flex items-center gap-2">
+                  <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                  Deleting...
+                </div>
+              ) : (
+                'Delete Photo'
+              )}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
       {/* Photo Gallery Dialog */}
       <Dialog open={photoGalleryOpen} onOpenChange={setPhotoGalleryOpen}>
         <DialogContent className="max-w-6xl max-h-[95vh] overflow-y-auto">
@@ -1891,7 +2028,7 @@ const AdminDashboard = () => {
               Photos - Job {(selectedJobPhotos as any)?.jobId}
             </DialogTitle>
             <DialogDescription>
-              Click on any photo to view it in full size
+              Click on any photo to view it in full size or use the delete button to remove photos
             </DialogDescription>
           </DialogHeader>
           
@@ -1909,7 +2046,15 @@ const AdminDashboard = () => {
                           src={photo}
                           alt={`Photo ${index + 1}`}
                           className="w-full h-48 object-cover rounded-lg border border-gray-200 cursor-pointer hover:opacity-90 transition-opacity"
-                          onClick={() => window.open(photo, '_blank')}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            console.log('Image clicked, opening URL:', photo);
+                            if (photo && photo.trim()) {
+                              window.open(photo, '_blank', 'noopener,noreferrer');
+                            } else {
+                              toast.error('Invalid photo URL');
+                            }
+                          }}
                           onError={(e) => {
                             console.error('Image failed to load:', photo);
                             e.currentTarget.style.display = 'none';
@@ -1925,9 +2070,31 @@ const AdminDashboard = () => {
                         </div>
                       )}
                       <div className="absolute inset-0 bg-black bg-opacity-0 group-hover:bg-opacity-20 transition-all duration-200 rounded-lg flex items-center justify-center">
-                        <div className="opacity-0 group-hover:opacity-100 transition-opacity">
-                          <Button variant="secondary" size="sm">
+                        <div className="opacity-0 group-hover:opacity-100 transition-opacity flex gap-2">
+                          <Button 
+                            variant="secondary" 
+                            size="sm"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              console.log('Opening photo URL:', photo);
+                              if (photo && photo.trim()) {
+                                window.open(photo, '_blank', 'noopener,noreferrer');
+                              } else {
+                                toast.error('Invalid photo URL');
+                              }
+                            }}
+                          >
                             View Full Size
+                          </Button>
+                          <Button 
+                            variant="destructive" 
+                            size="sm"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleDeletePhoto((selectedJobPhotos as any)?.jobId, index, photo);
+                            }}
+                          >
+                            <Trash2 className="w-4 h-4" />
                           </Button>
                         </div>
                       </div>
