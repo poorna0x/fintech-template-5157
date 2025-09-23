@@ -86,6 +86,8 @@ const AdminDashboard = () => {
   const [photoToDelete, setPhotoToDelete] = useState<{jobId: string, photoIndex: number, photoUrl: string} | null>(null);
   const [deletePhotoDialogOpen, setDeletePhotoDialogOpen] = useState(false);
   const [isDeletingPhoto, setIsDeletingPhoto] = useState(false);
+  const [selectedPhoto, setSelectedPhoto] = useState<{url: string, index: number, total: number} | null>(null);
+  const [photoViewerOpen, setPhotoViewerOpen] = useState(false);
 
   // Load data on component mount
   useEffect(() => {
@@ -630,6 +632,54 @@ const AdminDashboard = () => {
   const handleDeletePhoto = (jobId: string, photoIndex: number, photoUrl: string) => {
     setPhotoToDelete({ jobId, photoIndex, photoUrl });
     setDeletePhotoDialogOpen(true);
+  };
+
+  // Open photo in full-screen viewer
+  const openPhotoViewer = (photoUrl: string, photoIndex: number, totalPhotos: number) => {
+    setSelectedPhoto({ url: photoUrl, index: photoIndex, total: totalPhotos });
+    setPhotoViewerOpen(true);
+  };
+
+  // Navigate to previous photo
+  const goToPreviousPhoto = () => {
+    if (!selectedPhoto || !selectedJobPhotos) return;
+    const newIndex = selectedPhoto.index > 0 ? selectedPhoto.index - 1 : selectedJobPhotos.photos.length - 1;
+    setSelectedPhoto({ 
+      url: selectedJobPhotos.photos[newIndex], 
+      index: newIndex, 
+      total: selectedJobPhotos.photos.length 
+    });
+  };
+
+  // Navigate to next photo
+  const goToNextPhoto = () => {
+    if (!selectedPhoto || !selectedJobPhotos) return;
+    const newIndex = selectedPhoto.index < selectedJobPhotos.photos.length - 1 ? selectedPhoto.index + 1 : 0;
+    setSelectedPhoto({ 
+      url: selectedJobPhotos.photos[newIndex], 
+      index: newIndex, 
+      total: selectedJobPhotos.photos.length 
+    });
+  };
+
+  // Download photo
+  const downloadPhoto = async (photoUrl: string, photoIndex: number) => {
+    try {
+      const response = await fetch(photoUrl);
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `photo-${photoIndex + 1}.jpg`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      window.URL.revokeObjectURL(url);
+      toast.success('Photo downloaded successfully');
+    } catch (error) {
+      console.error('Error downloading photo:', error);
+      toast.error('Failed to download photo');
+    }
   };
 
   // Confirm photo deletion
@@ -2025,7 +2075,7 @@ const AdminDashboard = () => {
         <DialogContent className="max-w-6xl max-h-[95vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>
-              Photos - Job {(selectedJobPhotos as any)?.jobId}
+              Job Photos
             </DialogTitle>
             <DialogDescription>
               Click on any photo to view it in full size or use the delete button to remove photos
@@ -2048,9 +2098,8 @@ const AdminDashboard = () => {
                           className="w-full h-48 object-cover rounded-lg border border-gray-200 cursor-pointer hover:opacity-90 transition-opacity"
                           onClick={(e) => {
                             e.stopPropagation();
-                            console.log('Image clicked, opening URL:', photo);
                             if (photo && photo.trim()) {
-                              window.open(photo, '_blank', 'noopener,noreferrer');
+                              openPhotoViewer(photo, index, selectedJobPhotos.photos.length);
                             } else {
                               toast.error('Invalid photo URL');
                             }
@@ -2076,9 +2125,8 @@ const AdminDashboard = () => {
                             size="sm"
                             onClick={(e) => {
                               e.stopPropagation();
-                              console.log('Opening photo URL:', photo);
                               if (photo && photo.trim()) {
-                                window.open(photo, '_blank', 'noopener,noreferrer');
+                                openPhotoViewer(photo, index, selectedJobPhotos.photos.length);
                               } else {
                                 toast.error('Invalid photo URL');
                               }
@@ -2107,6 +2155,94 @@ const AdminDashboard = () => {
                 <Calendar className="w-12 h-12 mx-auto mb-2 text-gray-300" />
                 <p>No photos available</p>
               </div>
+            )}
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Full-Screen Photo Viewer Modal */}
+      <Dialog open={photoViewerOpen} onOpenChange={setPhotoViewerOpen}>
+        <DialogContent className="max-w-[95vw] max-h-[95vh] p-0 bg-black">
+          <div className="relative w-full h-full flex items-center justify-center">
+            {/* Close button */}
+            <Button
+              variant="ghost"
+              size="sm"
+              className="absolute top-4 right-4 z-10 bg-black/50 text-white hover:bg-black/70"
+              onClick={() => setPhotoViewerOpen(false)}
+            >
+              <span className="text-xl">×</span>
+            </Button>
+
+            {/* Previous button */}
+            {selectedPhoto && selectedPhoto.total > 1 && (
+              <Button
+                variant="ghost"
+                size="sm"
+                className="absolute left-4 top-1/2 transform -translate-y-1/2 z-10 bg-black/50 text-white hover:bg-black/70"
+                onClick={goToPreviousPhoto}
+              >
+                <span className="text-xl">‹</span>
+              </Button>
+            )}
+
+            {/* Next button */}
+            {selectedPhoto && selectedPhoto.total > 1 && (
+              <Button
+                variant="ghost"
+                size="sm"
+                className="absolute right-4 top-1/2 transform -translate-y-1/2 z-10 bg-black/50 text-white hover:bg-black/70"
+                onClick={goToNextPhoto}
+              >
+                <span className="text-xl">›</span>
+              </Button>
+            )}
+
+            {/* Photo counter */}
+            {selectedPhoto && selectedPhoto.total > 1 && (
+              <div className="absolute top-4 left-4 z-10 bg-black/50 text-white px-3 py-1 rounded-full text-sm">
+                {selectedPhoto.index + 1} / {selectedPhoto.total}
+              </div>
+            )}
+
+            {/* Action buttons */}
+            {selectedPhoto && (
+              <div className="absolute bottom-4 left-1/2 transform -translate-x-1/2 z-10 flex gap-2">
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  onClick={() => downloadPhoto(selectedPhoto.url, selectedPhoto.index)}
+                  className="bg-white/90 text-black hover:bg-white"
+                >
+                  <Calendar className="w-4 h-4 mr-2" />
+                  Download
+                </Button>
+                <Button
+                  variant="destructive"
+                  size="sm"
+                  onClick={() => {
+                    setPhotoViewerOpen(false);
+                    handleDeletePhoto((selectedJobPhotos as any)?.jobId, selectedPhoto.index, selectedPhoto.url);
+                  }}
+                  className="bg-red-600/90 text-white hover:bg-red-700"
+                >
+                  <Trash2 className="w-4 h-4 mr-2" />
+                  Delete
+                </Button>
+              </div>
+            )}
+
+            {/* Main photo */}
+            {selectedPhoto && (
+              <img
+                src={selectedPhoto.url}
+                alt={`Photo ${selectedPhoto.index + 1}`}
+                className="max-w-full max-h-full object-contain"
+                onError={(e) => {
+                  console.error('Image failed to load:', selectedPhoto.url);
+                  e.currentTarget.style.display = 'none';
+                }}
+              />
             )}
           </div>
         </DialogContent>
