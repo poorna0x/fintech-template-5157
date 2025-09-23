@@ -913,7 +913,7 @@ const AdminDashboard = () => {
           const bDate = new Date(b.customer.createdAt).getTime();
           return bDate - aDate;
         })
-    : customersWithUpcomingJobs.filter(item => {
+    : customersWithJobs.filter(item => {
       const searchLower = searchTerm.toLowerCase();
       return (
         (item.customer as any).customer_id?.toLowerCase().includes(searchLower) ||
