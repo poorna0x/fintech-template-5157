@@ -903,14 +903,17 @@ const AdminDashboard = () => {
   });
 
 
+  // Filter to only show customers with upcoming active jobs
+  const customersWithUpcomingJobs = customersWithJobs.filter(({ upcomingJobs }) => upcomingJobs.length > 0);
+
   const displayedCustomers = !searchTerm.trim()
-    ? customersWithJobs
+    ? customersWithUpcomingJobs
         .sort((a, b) => {
           const aDate = new Date(a.customer.createdAt).getTime();
           const bDate = new Date(b.customer.createdAt).getTime();
           return bDate - aDate;
         })
-    : customersWithJobs.filter(item => {
+    : customersWithUpcomingJobs.filter(item => {
       const searchLower = searchTerm.toLowerCase();
       return (
         (item.customer as any).customer_id?.toLowerCase().includes(searchLower) ||
@@ -1083,12 +1086,12 @@ const AdminDashboard = () => {
           </Card>
         </div>
 
-        {/* All Customers */}
+        {/* Customers with Upcoming Jobs */}
         <div className="mb-6">
-          <h2 className="text-xl font-bold text-gray-900 mb-1">All Customers</h2>
+          <h2 className="text-xl font-bold text-gray-900 mb-1">Customers with Upcoming Jobs</h2>
           {!searchTerm.trim() && (
             <p className="text-xs text-gray-500 mb-3">
-              Showing {displayedCustomers.length} customers
+              Showing {displayedCustomers.length} customers with pending, assigned, or in-progress jobs
             </p>
           )}
           
