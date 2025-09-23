@@ -605,8 +605,16 @@ const AdminDashboard = () => {
   // Open photo gallery
   const openPhotoGallery = (jobId: string, photos: string[], type: 'before' | 'after' | 'photos') => {
     try {
-      // Ensure photos is an array
-      const validPhotos = Array.isArray(photos) ? photos : [];
+      // Ensure photos is an array and filter out invalid entries
+      const validPhotos = Array.isArray(photos) 
+        ? photos.filter(photo => photo && typeof photo === 'string' && photo.trim() !== '')
+        : [];
+      
+      if (validPhotos.length === 0) {
+        toast.info('No photos available for this job');
+        return;
+      }
+      
       setSelectedJobPhotos({ jobId, photos: validPhotos, type: type as 'before' | 'after' });
       setPhotoGalleryOpen(true);
     } catch (error) {
@@ -1863,67 +1871,51 @@ const AdminDashboard = () => {
           </DialogHeader>
           
           <div className="py-4">
-            {(() => {
-              try {
-                if (selectedJobPhotos?.photos && Array.isArray(selectedJobPhotos.photos) && selectedJobPhotos.photos.length > 0) {
+            {selectedJobPhotos?.photos && Array.isArray(selectedJobPhotos.photos) && selectedJobPhotos.photos.length > 0 ? (
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+                {selectedJobPhotos.photos.map((photo, index) => {
+                  // Check if photo is a valid URL
+                  const isValidUrl = photo && typeof photo === 'string' && (photo.startsWith('http') || photo.startsWith('data:') || photo.startsWith('/'));
+                  
                   return (
-                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-                      {selectedJobPhotos.photos.map((photo, index) => {
-                        // Check if photo is a valid URL
-                        const isValidUrl = photo && typeof photo === 'string' && (photo.startsWith('http') || photo.startsWith('data:') || photo.startsWith('/'));
-                        
-                        return (
-                          <div key={index} className="relative group">
-                            {isValidUrl ? (
-                              <img
-                                src={photo}
-                                alt={`Photo ${index + 1}`}
-                                className="w-full h-48 object-cover rounded-lg border border-gray-200 cursor-pointer hover:opacity-90 transition-opacity"
-                                onClick={() => window.open(photo, '_blank')}
-                                onError={(e) => {
-                                  console.error('Image failed to load:', photo);
-                                  e.currentTarget.style.display = 'none';
-                                }}
-                              />
-                            ) : (
-                              <div className="w-full h-48 bg-gray-100 rounded-lg border border-gray-200 flex items-center justify-center">
-                                <div className="text-center text-gray-500">
-                                  <Calendar className="w-8 h-8 mx-auto mb-2 text-gray-300" />
-                                  <p className="text-sm">Invalid photo URL</p>
-                                  <p className="text-xs text-gray-400">{photo || 'No URL provided'}</p>
-                                </div>
-                              </div>
-                            )}
-                            <div className="absolute inset-0 bg-black bg-opacity-0 group-hover:bg-opacity-20 transition-all duration-200 rounded-lg flex items-center justify-center">
-                              <div className="opacity-0 group-hover:opacity-100 transition-opacity">
-                                <Button variant="secondary" size="sm">
-                                  View Full Size
-                                </Button>
-                              </div>
-                            </div>
+                    <div key={index} className="relative group">
+                      {isValidUrl ? (
+                        <img
+                          src={photo}
+                          alt={`Photo ${index + 1}`}
+                          className="w-full h-48 object-cover rounded-lg border border-gray-200 cursor-pointer hover:opacity-90 transition-opacity"
+                          onClick={() => window.open(photo, '_blank')}
+                          onError={(e) => {
+                            console.error('Image failed to load:', photo);
+                            e.currentTarget.style.display = 'none';
+                          }}
+                        />
+                      ) : (
+                        <div className="w-full h-48 bg-gray-100 rounded-lg border border-gray-200 flex items-center justify-center">
+                          <div className="text-center text-gray-500">
+                            <Calendar className="w-8 h-8 mx-auto mb-2 text-gray-300" />
+                            <p className="text-sm">Invalid photo URL</p>
+                            <p className="text-xs text-gray-400">{photo || 'No URL provided'}</p>
                           </div>
-                        );
-                      })}
+                        </div>
+                      )}
+                      <div className="absolute inset-0 bg-black bg-opacity-0 group-hover:bg-opacity-20 transition-all duration-200 rounded-lg flex items-center justify-center">
+                        <div className="opacity-0 group-hover:opacity-100 transition-opacity">
+                          <Button variant="secondary" size="sm">
+                            View Full Size
+                          </Button>
+                        </div>
+                      </div>
                     </div>
                   );
-                } else {
-                  return (
-                    <div className="text-center py-8 text-gray-500">
-                      <Calendar className="w-12 h-12 mx-auto mb-2 text-gray-300" />
-                      <p>No photos available</p>
-                    </div>
-                  );
-                }
-              } catch (error) {
-                console.error('Error rendering photo gallery:', error);
-                return (
-                  <div className="text-center py-8 text-red-500">
-                    <Calendar className="w-12 h-12 mx-auto mb-2 text-red-300" />
-                    <p>Error loading photos</p>
-                  </div>
-                );
-              }
-            })()}
+                })}
+              </div>
+            ) : (
+              <div className="text-center py-8 text-gray-500">
+                <Calendar className="w-12 h-12 mx-auto mb-2 text-gray-300" />
+                <p>No photos available</p>
+              </div>
+            )}
           </div>
         </DialogContent>
       </Dialog>
