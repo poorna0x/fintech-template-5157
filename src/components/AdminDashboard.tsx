@@ -77,6 +77,12 @@ const AdminDashboard = () => {
   const [formErrors, setFormErrors] = useState<{[key: string]: string}>({});
   const [isCreating, setIsCreating] = useState(false);
   const [customerServices, setCustomerServices] = useState<{[key: string]: any[]}>({});
+  const [customerJobs, setCustomerJobs] = useState<{[customerId: string]: Job[]}>({});
+  const [loadingCustomerJobs, setLoadingCustomerJobs] = useState<{[customerId: string]: boolean}>({});
+  const [selectedJobPhotos, setSelectedJobPhotos] = useState<{jobId: string, photos: string[], type: 'before' | 'after'} | null>(null);
+  const [photoGalleryOpen, setPhotoGalleryOpen] = useState(false);
+  const [jobToDelete, setJobToDelete] = useState<Job | null>(null);
+  const [deleteJobDialogOpen, setDeleteJobDialogOpen] = useState(false);
 
   // Load data on component mount
   useEffect(() => {
@@ -168,16 +174,15 @@ const AdminDashboard = () => {
     setIsUpdating(true);
     try {
       const { error } = await db.customers.update(editingCustomer.id, {
-        full_name: editFormData.full_name,
+        fullName: editFormData.full_name,
         phone: editFormData.phone,
-        alternate_phone: editFormData.alternate_phone,
+        alternatePhone: editFormData.alternate_phone,
         email: editFormData.email,
-        service_type: editFormData.service_types.join(', '),
+        serviceType: editFormData.service_types.join(', ') as 'RO' | 'SOFTENER' | 'AC' | 'RO_AC' | 'SOFTENER_AC' | 'RO_SOFTENER' | 'ALL_SERVICES' | 'APPLIANCE',
         brand: Object.values(editFormData.equipment).map(eq => eq.brand).join(', '),
         model: Object.values(editFormData.equipment).map(eq => eq.model).join(', '),
-        behavior: editFormData.behavior,
-        preferred_language: editFormData.native_language || 'ENGLISH',
-        status: editFormData.status,
+        preferredLanguage: (editFormData.native_language || 'ENGLISH') as 'ENGLISH' | 'HINDI' | 'KANNADA' | 'TAMIL' | 'TELUGU',
+        status: editFormData.status as 'ACTIVE' | 'INACTIVE' | 'BLOCKED',
         notes: editFormData.notes
       });
 
@@ -188,7 +193,16 @@ const AdminDashboard = () => {
       // Update local state
       setCustomers(customers.map(c => 
         c.id === editingCustomer.id 
-          ? { ...c, ...editFormData, serviceType: editFormData.service_type }
+          ? { 
+              ...c, 
+              fullName: editFormData.full_name,
+              alternatePhone: editFormData.alternate_phone,
+              serviceType: editFormData.service_types.join(', ') as 'RO' | 'SOFTENER' | 'AC' | 'RO_AC' | 'SOFTENER_AC' | 'RO_SOFTENER' | 'ALL_SERVICES' | 'APPLIANCE',
+              behavior: editFormData.behavior,
+              preferredLanguage: (editFormData.native_language || 'ENGLISH') as 'ENGLISH' | 'HINDI' | 'KANNADA' | 'TAMIL' | 'TELUGU',
+              status: editFormData.status as 'ACTIVE' | 'INACTIVE' | 'BLOCKED',
+              notes: editFormData.notes
+            }
           : c
       ));
 
@@ -278,9 +292,10 @@ const AdminDashboard = () => {
     try {
       // Create customer data with default location (you can enhance this later)
       const customerData = {
-        full_name: addFormData.full_name,
+        customerId: `CUST-${Date.now()}`, // Generate customer ID
+        fullName: addFormData.full_name,
         phone: addFormData.phone,
-        alternate_phone: addFormData.alternate_phone,
+        alternatePhone: addFormData.alternate_phone,
         email: addFormData.email,
         address: {
           street: addFormData.address,
@@ -294,15 +309,14 @@ const AdminDashboard = () => {
           longitude: 77.5946,
           formattedAddress: addFormData.address
         },
-        service_type: addFormData.service_types.join(', '), // Join multiple service types
+        serviceType: addFormData.service_types.join(', ') as 'RO' | 'SOFTENER' | 'AC' | 'RO_AC' | 'SOFTENER_AC' | 'RO_SOFTENER' | 'ALL_SERVICES' | 'APPLIANCE', // Join multiple service types
         brand: Object.values(addFormData.equipment).map(eq => eq.brand).join(', '), // Join all brands
         model: Object.values(addFormData.equipment).map(eq => eq.model).join(', '), // Join all models
-        behavior: addFormData.behavior,
-        preferred_language: addFormData.native_language || 'ENGLISH',
-        status: addFormData.status,
+        preferredLanguage: (addFormData.native_language || 'ENGLISH') as 'ENGLISH' | 'HINDI' | 'KANNADA' | 'TAMIL' | 'TELUGU',
+        status: addFormData.status as 'ACTIVE' | 'INACTIVE' | 'BLOCKED',
         notes: addFormData.notes,
-        customer_since: new Date().toISOString(),
-        preferred_time_slot: 'MORNING'
+        customerSince: new Date().toISOString(),
+        preferredTimeSlot: 'MORNING' as 'MORNING' | 'AFTERNOON' | 'EVENING'
       };
 
       const { data: newCustomer, error } = await db.customers.create(customerData);
@@ -474,6 +488,133 @@ const AdminDashboard = () => {
     }));
   };
 
+  // Load jobs for a specific customer
+  const loadCustomerJobs = async (customerId: string) => {
+    if (customerJobs[customerId] || loadingCustomerJobs[customerId]) return; // Already loaded or loading
+    
+    setLoadingCustomerJobs(prev => ({
+      ...prev,
+      [customerId]: true
+    }));
+
+    try {
+      const { data, error } = await db.jobs.getByCustomerId(customerId);
+      
+      if (error) {
+        console.error('Error loading customer jobs:', error);
+        return;
+      }
+
+      setCustomerJobs(prev => ({
+        ...prev,
+        [customerId]: data?.slice(0, 3) || [] // Only keep 3 most recent jobs
+      }));
+    } catch (error) {
+      console.error('Error loading customer jobs:', error);
+    } finally {
+      setLoadingCustomerJobs(prev => ({
+        ...prev,
+        [customerId]: false
+      }));
+    }
+  };
+
+  // Handle job status update
+  const handleJobStatusUpdate = async (jobId: string, newStatus: string) => {
+    try {
+      const { error } = await db.jobs.update(jobId, { status: newStatus as 'PENDING' | 'ASSIGNED' | 'IN_PROGRESS' | 'COMPLETED' | 'CANCELLED' | 'RESCHEDULED' });
+      
+      if (error) {
+        throw new Error(error.message);
+      }
+
+      // Update local state
+      setCustomerJobs(prev => {
+        const updated = { ...prev };
+        Object.keys(updated).forEach(customerId => {
+          updated[customerId] = updated[customerId].map(job => 
+            job.id === jobId ? { ...job, status: newStatus as any } : job
+          );
+        });
+        return updated;
+      });
+
+      // Also update the main jobs state
+      setJobs(prev => prev.map(job => 
+        job.id === jobId ? { ...job, status: newStatus as any } : job
+      ));
+
+      toast.success(`Job status updated to ${newStatus}`);
+    } catch (error) {
+      console.error('Error updating job status:', error);
+      toast.error('Failed to update job status');
+    }
+  };
+
+  // Handle job deletion
+  const handleDeleteJob = async () => {
+    if (!jobToDelete) return;
+    
+    try {
+      const { error } = await (db.jobs as any).delete(jobToDelete.id);
+      
+      if (error) {
+        throw new Error(error.message);
+      }
+
+      // Update local state
+      setJobs(prev => prev.filter(job => job.id !== jobToDelete.id));
+      setCustomerJobs(prev => {
+        const updated = { ...prev };
+        Object.keys(updated).forEach(customerId => {
+          updated[customerId] = updated[customerId].filter(job => job.id !== jobToDelete.id);
+        });
+        return updated;
+      });
+
+      toast.success(`Job ${(jobToDelete as any).job_number} deleted successfully`);
+      setDeleteJobDialogOpen(false);
+      setJobToDelete(null);
+    } catch (error) {
+      console.error('Error deleting job:', error);
+      toast.error('Failed to delete job');
+    }
+  };
+
+  // Handle customer status update
+  const handleCustomerStatusUpdate = async (customerId: string, newStatus: 'ACTIVE' | 'INACTIVE' | 'BLOCKED') => {
+    try {
+      const { error } = await db.customers.update(customerId, { status: newStatus });
+      
+      if (error) {
+        throw new Error(error.message);
+      }
+
+      // Update local state
+      setCustomers(prev => prev.map(customer => 
+        customer.id === customerId ? { ...customer, status: newStatus } : customer
+      ));
+
+      toast.success(`Customer status updated to ${newStatus}`);
+    } catch (error) {
+      console.error('Error updating customer status:', error);
+      toast.error('Failed to update customer status');
+    }
+  };
+
+  // Open photo gallery
+  const openPhotoGallery = (jobId: string, photos: string[], type: 'before' | 'after' | 'photos') => {
+    try {
+      // Ensure photos is an array
+      const validPhotos = Array.isArray(photos) ? photos : [];
+      setSelectedJobPhotos({ jobId, photos: validPhotos, type: type as 'before' | 'after' });
+      setPhotoGalleryOpen(true);
+    } catch (error) {
+      console.error('Error opening photo gallery:', error);
+      toast.error('Failed to open photo gallery');
+    }
+  };
+
   const getStatusBadge = (status: string) => {
     const statusConfig = {
       'PENDING': { color: 'bg-yellow-100 text-yellow-800', icon: Clock },
@@ -518,17 +659,48 @@ const AdminDashboard = () => {
     );
   });
 
-  // Determine which customers to display by default (recently added)
-  const RECENT_LIMIT = 25;
+
+  // Group all customers with their jobs (no filtering by status)
+  const customersWithJobs = customers.map(customer => {
+    const customerJobs = jobs
+      .filter(job => {
+        // Check both possible field names for customer ID
+        const jobCustomerId = (job as any).customer_id || job.customerId;
+        return jobCustomerId === customer.id;
+      })
+      .sort((a, b) => {
+        const aDate = new Date((a as any).scheduled_date || a.scheduledDate).getTime();
+        const bDate = new Date((b as any).scheduled_date || b.scheduledDate).getTime();
+        return bDate - aDate; // Most recent first
+      });
+    
+    return {
+      customer,
+      allJobs: customerJobs,
+      upcomingJobs: customerJobs.filter(job => ['PENDING', 'ASSIGNED', 'IN_PROGRESS'].includes(job.status)),
+      completedJobs: customerJobs.filter(job => job.status === 'COMPLETED'),
+      cancelledJobs: customerJobs.filter(job => job.status === 'CANCELLED')
+    };
+  });
+
+
   const displayedCustomers = !searchTerm.trim()
-    ? [...customers]
+    ? customersWithJobs
         .sort((a, b) => {
-          const aDate = new Date(((a as any).created_at || (a as any).createdAt || 0) as any).getTime();
-          const bDate = new Date(((b as any).created_at || (b as any).createdAt || 0) as any).getTime();
+          const aDate = new Date(a.customer.createdAt).getTime();
+          const bDate = new Date(b.customer.createdAt).getTime();
           return bDate - aDate;
         })
-        .slice(0, RECENT_LIMIT)
-    : filteredCustomers;
+    : customersWithJobs.filter(item => {
+      const searchLower = searchTerm.toLowerCase();
+      return (
+        (item.customer as any).customer_id?.toLowerCase().includes(searchLower) ||
+        (item.customer as any).full_name?.toLowerCase().includes(searchLower) ||
+        item.customer.phone?.includes(searchTerm) ||
+        item.customer.email?.toLowerCase().includes(searchLower)
+      );
+    });
+
 
   const filteredJobs = jobs.filter(job => {
     if (!searchTerm.trim()) return true; // Show all jobs if search is empty
@@ -692,143 +864,66 @@ const AdminDashboard = () => {
           </Card>
         </div>
 
-        {/* Customers - Mobile First Cards */}
+        {/* All Customers */}
         <div className="mb-6">
-          <h2 className="text-xl font-bold text-gray-900 mb-1">Customers</h2>
+          <h2 className="text-xl font-bold text-gray-900 mb-1">All Customers</h2>
           {!searchTerm.trim() && (
-            <p className="text-xs text-gray-500 mb-3">Showing latest {displayedCustomers.length} recently added customers</p>
+            <p className="text-xs text-gray-500 mb-3">
+              Showing {displayedCustomers.length} customers
+            </p>
           )}
           
-          {/* Mobile: Card Layout, Desktop: Table Layout */}
-          <div className="block lg:hidden">
-            {/* Mobile Cards */}
-            <div className="space-y-3">
-              {displayedCustomers.map((customer) => (
-                <Card key={customer.id} className="bg-white border-gray-200 p-4">
-                  <div className="flex items-start justify-between mb-3">
-                        <div>
-                      <div className="font-mono font-bold text-blue-600 text-lg">
+          {/* Customer Cards with Jobs */}
+          <div className="space-y-8">
+            {displayedCustomers.map(({ customer, allJobs, upcomingJobs, completedJobs, cancelledJobs }) => (
+              <Card key={customer.id} className="bg-white border-2 border-gray-300 shadow-lg hover:shadow-xl transition-shadow duration-200 overflow-hidden mb-6">
+                {/* Customer Header */}
+                <div className="bg-gradient-to-r from-gray-50 to-gray-100 p-4 sm:p-6 border-b-2 border-gray-300">
+                  <div className="flex items-start justify-between">
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2 sm:gap-3 mb-2">
+                        <div className="font-mono font-bold text-blue-600 text-base sm:text-lg truncate">
                         {(customer as any).customer_id || 'N/A'}
                         </div>
-                      <div className="font-medium text-gray-900 text-base">
-                        {(customer as any).full_name}
-                      </div>
-                    </div>
-                    {getStatusBadge(customer.status)}
-                  </div>
-                  
-                  <div className="space-y-2 text-sm">
-                    <div className="flex items-center gap-2">
-                      <Phone className="w-4 h-4 text-gray-400" />
-                      <span className="text-gray-900">{customer.phone}</span>
-                    </div>
-                    {(customer as any).alternate_phone && (
-                      <div className="flex items-center gap-2">
-                        <Phone className="w-4 h-4 text-gray-400" />
-                        <span className="text-gray-600">{(customer as any).alternate_phone}</span>
-                      </div>
-                    )}
-                    <div className="flex items-center gap-2">
-                      <Mail className="w-4 h-4 text-gray-400" />
-                      <span className="text-gray-600">{customer.email}</span>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <Wrench className="w-4 h-4 text-gray-400" />
-                      <span className="text-gray-900">{customer.serviceType}</span>
-                        </div>
-                    <div className="text-gray-600">
-                      {customer.brand} - {customer.model}
-                      </div>
-                  </div>
-                  
-                  <div className="flex items-center justify-between mt-3">
-                    <button
-                      onClick={() => {
-                        const location = extractCoordinates(customer.location);
-                        if (location) {
-                          const address = formatAddressForDisplay(customer.address);
-                          openInGoogleMaps(location, address);
-                        } else {
-                          toast.error('Location data not available');
-                        }
-                      }}
-                      className="flex items-center gap-2 text-blue-600 hover:text-blue-800 text-sm font-medium"
-                    >
-                      <MapPin className="w-4 h-4" />
-                      View on Map
-                    </button>
-                    
                     <DropdownMenu>
                       <DropdownMenuTrigger asChild>
-                        <Button variant="ghost" size="sm" className="h-8 w-8 p-0">
+                            <Button variant="ghost" size="sm" className="h-8 w-8 p-0 flex-shrink-0">
                           <MoreVertical className="h-4 w-4" />
                           </Button>
                       </DropdownMenuTrigger>
                       <DropdownMenuContent align="end">
                         <DropdownMenuItem onClick={() => handleEditCustomer(customer)}>
                           <Edit className="mr-2 h-4 w-4" />
-                          Edit
+                              Edit Customer
                         </DropdownMenuItem>
                         <DropdownMenuItem 
-                          onClick={() => confirmDelete(customer)}
+                              onClick={() => handleCustomerStatusUpdate(customer.id, 'BLOCKED')}
                           className="text-red-600"
                         >
                           <Trash2 className="mr-2 h-4 w-4" />
-                          Delete
+                              Block Customer
                         </DropdownMenuItem>
                       </DropdownMenuContent>
                     </DropdownMenu>
                           </div>
-                </Card>
-              ))}
-            </div>
-                          </div>
 
-          {/* Desktop Table */}
-          <div className="hidden lg:block">
-            <Card className="bg-white border-gray-200">
-              <CardContent className="p-0">
-                <Table>
-                  <TableHeader>
-                    <TableRow className="border-gray-200">
-                      <TableHead className="text-gray-600">Customer ID</TableHead>
-                      <TableHead className="text-gray-600">Name</TableHead>
-                      <TableHead className="text-gray-600">Contact</TableHead>
-                      <TableHead className="text-gray-600">Service Type</TableHead>
-                      <TableHead className="text-gray-600">Brand/Model</TableHead>
-                      <TableHead className="text-gray-600">Address</TableHead>
-                      <TableHead className="text-gray-600">Status</TableHead>
-                      <TableHead className="text-gray-600">Actions</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {displayedCustomers.map((customer) => (
-                      <TableRow key={customer.id} className="border-gray-200 hover:bg-gray-50">
-                        <TableCell className="font-mono font-bold text-blue-600">
-                          {(customer as any).customer_id || 'N/A'}
-                        </TableCell>
-                        <TableCell className="font-medium text-gray-900">{(customer as any).full_name}</TableCell>
-                        <TableCell>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4 text-sm">
                           <div>
-                            <p className="text-sm text-gray-900">{customer.phone}</p>
+                          <div className="font-medium text-gray-900 truncate">{(customer as any).full_name}</div>
+                          <div className="text-gray-600 truncate">{customer.phone}</div>
                             {(customer as any).alternate_phone && (
-                              <p className="text-sm text-gray-500">{(customer as any).alternate_phone}</p>
+                            <div className="text-gray-500 truncate">{(customer as any).alternate_phone}</div>
                             )}
-                            <p className="text-sm text-gray-500">{customer.email}</p>
                           </div>
-                        </TableCell>
-                        <TableCell>
-                          <Badge variant="outline" className="border-gray-300 text-gray-700">
-                            {customer.serviceType}
-                          </Badge>
-                        </TableCell>
-                        <TableCell>
                           <div>
-                            <p className="text-sm text-gray-900">{customer.brand}</p>
-                            <p className="text-xs text-gray-500">{customer.model}</p>
+                          <div className="text-gray-600 truncate">{customer.email}</div>
+                          <div className="text-gray-500 truncate">{customer.serviceType}</div>
                           </div>
-                        </TableCell>
-                        <TableCell>
+                        <div>
+                          <div className="text-gray-600 truncate">{customer.brand}</div>
+                          <div className="text-gray-500 truncate">{customer.model}</div>
+                        </div>
+                        <div>
                           <button
                             onClick={() => {
                               const location = extractCoordinates(customer.location);
@@ -841,14 +936,110 @@ const AdminDashboard = () => {
                             }}
                             className="flex items-center gap-1 text-blue-600 hover:text-blue-800 text-sm"
                           >
-                              <MapPin className="w-3 h-3" />
-                            View on Map
+                            <MapPin className="w-4 h-4 flex-shrink-0" />
+                            <span className="truncate">View on Map</span>
                           </button>
-                        </TableCell>
-                        <TableCell>
-                          {getStatusBadge(customer.status)}
-                        </TableCell>
-                        <TableCell>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Jobs Section */}
+                <div className="p-4 sm:p-6 bg-gray-50">
+                  <div className="mb-4">
+                    <h3 className="text-base sm:text-lg font-semibold text-gray-900">All Jobs ({allJobs.length})</h3>
+                  </div>
+
+
+                  {allJobs.length === 0 ? (
+                    <div className="text-center py-8 text-gray-500">
+                      <Wrench className="w-12 h-12 mx-auto mb-2 text-gray-300" />
+                      <p>No jobs for this customer</p>
+                    </div>
+                  ) : (
+                    <div className="space-y-3 sm:space-y-4">
+                      {allJobs.map((job) => (
+                        <Card key={job.id} className={`border-2 ${
+                          job.status === 'PENDING' ? 'border-yellow-300 bg-yellow-50' :
+                          job.status === 'ASSIGNED' ? 'border-blue-300 bg-blue-50' :
+                          job.status === 'IN_PROGRESS' ? 'border-orange-300 bg-orange-50' :
+                          job.status === 'COMPLETED' ? 'border-green-300 bg-green-50' :
+                          job.status === 'CANCELLED' ? 'border-red-300 bg-red-50' :
+                          'border-gray-300 bg-gray-50'
+                        } shadow-md hover:shadow-lg transition-shadow duration-200`}>
+                          <div className="p-3 sm:p-4">
+                            <div className="flex items-start justify-between mb-3">
+                              <div className="flex-1 min-w-0">
+                                <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-3 mb-2">
+                                  <span className="font-mono font-bold text-gray-900 text-base sm:text-lg truncate">
+                                    {(job as any).job_number}
+                                  </span>
+                                  <div className="flex items-center gap-2">
+                                    {getStatusBadge(job.status)}
+                                    <span className="text-xs sm:text-sm text-gray-600 truncate">
+                                      {(job as any).service_type || job.serviceType} - {(job as any).service_sub_type || job.serviceSubType}
+                                    </span>
+                                  </div>
+                                  {(() => {
+                                    const beforePhotos = Array.isArray((job as any).before_photos) ? (job as any).before_photos : [];
+                                    const afterPhotos = Array.isArray((job as any).after_photos) ? (job as any).after_photos : [];
+                                    const allPhotos = [...beforePhotos, ...afterPhotos];
+                                    
+                                    return allPhotos.length > 0 && (
+                                      <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium bg-purple-100 text-purple-800">
+                                        📸 Photos ({allPhotos.length})
+                                      </span>
+                                    );
+                                  })()}
+                                </div>
+                                
+                                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-4 text-sm">
+                                  <div>
+                                    <div className="font-medium text-gray-700">Scheduled</div>
+                                    <div className="text-gray-600">
+                                      {new Date((job as any).scheduled_date || job.scheduledDate).toLocaleDateString()} - {(job as any).scheduled_time_slot || job.scheduledTimeSlot}
+                                    </div>
+                                  </div>
+                                  <div>
+                                    <div className="font-medium text-gray-700">Equipment</div>
+                                    <div className="text-gray-600">{job.brand} - {job.model}</div>
+                                  </div>
+                                  <div>
+                                    <div className="font-medium text-gray-700">Description</div>
+                                    <div className="text-gray-600 truncate">{job.description}</div>
+                                  </div>
+                                </div>
+
+                                {/* Photos Section */}
+                                {(() => {
+                                  // Check for photos using the correct database field names
+                                  const beforePhotos = Array.isArray((job as any).before_photos) ? (job as any).before_photos : [];
+                                  const afterPhotos = Array.isArray((job as any).after_photos) ? (job as any).after_photos : [];
+                                  
+                                  // Combine all photos for display
+                                  const allPhotos = [...beforePhotos, ...afterPhotos];
+                                  
+                                  if (allPhotos.length > 0) {
+                                    return (
+                                      <div className="mt-3 pt-3 border-t border-gray-200">
+                                        <button
+                                          onClick={() => openPhotoGallery(job.id, allPhotos, 'photos')}
+                                          className="flex items-center gap-2 text-blue-600 hover:text-blue-800 text-sm font-medium"
+                                        >
+                                          <Calendar className="w-4 h-4" />
+                                          Photos ({allPhotos.length})
+                                        </button>
+                                      </div>
+                                    );
+                                  }
+                                  
+                                  return null;
+                                })()}
+                              </div>
+
+                              {/* Job Actions */}
+                              <div className="flex items-center gap-2">
                           <DropdownMenu>
                             <DropdownMenuTrigger asChild>
                               <Button variant="ghost" size="sm" className="h-8 w-8 p-0">
@@ -856,106 +1047,57 @@ const AdminDashboard = () => {
                             </Button>
                             </DropdownMenuTrigger>
                             <DropdownMenuContent align="end">
-                              <DropdownMenuItem onClick={() => handleEditCustomer(customer)}>
+                                    {job.status === 'PENDING' && (
+                                      <DropdownMenuItem onClick={() => handleJobStatusUpdate(job.id, 'ASSIGNED')}>
+                                        <Wrench className="mr-2 h-4 w-4" />
+                                        Assign Job
+                                      </DropdownMenuItem>
+                                    )}
+                                    {job.status === 'ASSIGNED' && (
+                                      <DropdownMenuItem onClick={() => handleJobStatusUpdate(job.id, 'IN_PROGRESS')}>
+                                        <Clock className="mr-2 h-4 w-4" />
+                                        Start Job
+                                      </DropdownMenuItem>
+                                    )}
+                                    {job.status === 'IN_PROGRESS' && (
+                                      <DropdownMenuItem onClick={() => handleJobStatusUpdate(job.id, 'COMPLETED')}>
+                                        <CheckCircle className="mr-2 h-4 w-4" />
+                                        Complete Job
+                                      </DropdownMenuItem>
+                                    )}
+                                    <DropdownMenuItem 
+                                      onClick={() => {
+                                        toast.info('Job details feature coming soon');
+                                      }}
+                                    >
                                 <Edit className="mr-2 h-4 w-4" />
-                                Edit
+                                      View Details
                               </DropdownMenuItem>
                               <DropdownMenuItem 
-                                onClick={() => confirmDelete(customer)}
+                                      onClick={() => {
+                                        setJobToDelete(job);
+                                        setDeleteJobDialogOpen(true);
+                                      }}
                                 className="text-red-600"
                               >
                                 <Trash2 className="mr-2 h-4 w-4" />
-                                Delete
+                                      Delete Job
                               </DropdownMenuItem>
                             </DropdownMenuContent>
                           </DropdownMenu>
-                        </TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              </CardContent>
-            </Card>
           </div>
-        </div>
-
-        {/* Jobs - Mobile First Cards */}
-        <div className="mb-6">
-          <h2 className="text-xl font-bold text-gray-900 mb-4">Recent Jobs</h2>
-          
-          {/* Mobile: Card Layout, Desktop: Table Layout */}
-          <div className="block lg:hidden">
-            {/* Mobile Cards */}
-            <div className="space-y-3">
-              {filteredJobs.slice(0, 10).map((job) => (
-                <Card key={job.id} className="bg-white border-gray-200 p-4">
-                  <div className="flex items-start justify-between mb-3">
-                    <div>
-                      <div className="font-mono font-bold text-gray-900 text-base">
-                        {(job as any).job_number}
-                      </div>
-                      <div className="font-medium text-gray-900 text-sm">
-                        {(job.customer as any)?.full_name || 'N/A'}
-                      </div>
-                    </div>
-                    {getStatusBadge(job.status)}
-                  </div>
-                  
-                  <div className="space-y-2 text-sm">
-                    <div className="flex items-center gap-2">
-                      <Wrench className="w-4 h-4 text-gray-400" />
-                      <span className="text-gray-900">{job.serviceType} - {job.serviceSubType}</span>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <Calendar className="w-4 h-4 text-gray-400" />
-                      <span className="text-gray-600">
-                        {new Date(job.scheduledDate).toLocaleDateString()}
-                      </span>
                     </div>
                   </div>
                 </Card>
               ))}
             </div>
+                  )}
           </div>
-
-          {/* Desktop Table */}
-          <div className="hidden lg:block">
-            <Card className="bg-white border-gray-200">
-              <CardContent className="p-0">
-                <Table>
-                  <TableHeader>
-                    <TableRow className="border-gray-200">
-                      <TableHead className="text-gray-600">Job Number</TableHead>
-                      <TableHead className="text-gray-600">Customer</TableHead>
-                      <TableHead className="text-gray-600">Service</TableHead>
-                      <TableHead className="text-gray-600">Status</TableHead>
-                      <TableHead className="text-gray-600">Scheduled</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {filteredJobs.slice(0, 10).map((job) => (
-                      <TableRow key={job.id} className="border-gray-200 hover:bg-gray-50">
-                        <TableCell className="font-mono text-gray-900">{(job as any).job_number}</TableCell>
-                        <TableCell className="text-gray-900">
-                          {(job.customer as any)?.full_name || 'N/A'}
-                        </TableCell>
-                        <TableCell className="text-gray-900">
-                          {job.serviceType} - {job.serviceSubType}
-                        </TableCell>
-                        <TableCell>
-                          {getStatusBadge(job.status)}
-                        </TableCell>
-                        <TableCell className="text-gray-600">
-                          {new Date(job.scheduledDate).toLocaleDateString()}
-                        </TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              </CardContent>
             </Card>
+            ))}
           </div>
         </div>
+
       </main>
 
       {/* Add Customer Dialog - Step by Step */}
@@ -1001,7 +1143,7 @@ const AdminDashboard = () => {
                 placeholder="Enter full name"
                     className={formErrors.full_name ? 'border-red-500' : ''}
               />
-                  {formErrors.full_name && (
+                  {formErrors?.full_name && (
                     <p className="text-sm text-red-500">{formErrors.full_name}</p>
                   )}
             </div>
@@ -1016,7 +1158,7 @@ const AdminDashboard = () => {
                       placeholder="Enter primary phone"
                       className={formErrors.phone ? 'border-red-500' : ''}
               />
-                    {formErrors.phone && (
+                    {formErrors?.phone && (
                       <p className="text-sm text-red-500">{formErrors.phone}</p>
                     )}
             </div>
@@ -1042,7 +1184,7 @@ const AdminDashboard = () => {
                 placeholder="Enter email address"
                     className={formErrors.email ? 'border-red-500' : ''}
               />
-                  {formErrors.email && (
+                  {formErrors?.email && (
                     <p className="text-sm text-red-500">{formErrors.email}</p>
                   )}
             </div>
@@ -1062,7 +1204,7 @@ const AdminDashboard = () => {
                     rows={3}
                     className={formErrors.address ? 'border-red-500' : ''}
                   />
-                  {formErrors.address && (
+                  {formErrors?.address && (
                     <p className="text-sm text-red-500">{formErrors.address}</p>
                   )}
             </div>
@@ -1126,7 +1268,7 @@ const AdminDashboard = () => {
                       </div>
                     ))}
                   </div>
-                  {formErrors.service_types && (
+                  {formErrors?.service_types && (
                     <p className="text-sm text-red-500">{formErrors.service_types}</p>
                   )}
                 </div>
@@ -1166,7 +1308,7 @@ const AdminDashboard = () => {
                                 placeholder={`Enter ${serviceType} brand`}
                                 className={formErrors[`equipment.${serviceType}.brand`] ? 'border-red-500' : ''}
                               />
-                              {formErrors[`equipment.${serviceType}.brand`] && (
+                              {formErrors?.[`equipment.${serviceType}.brand`] && (
                                 <p className="text-sm text-red-500">{formErrors[`equipment.${serviceType}.brand`]}</p>
                               )}
             </div>
@@ -1180,7 +1322,7 @@ const AdminDashboard = () => {
                                 placeholder={`Enter ${serviceType} model`}
                                 className={formErrors[`equipment.${serviceType}.model`] ? 'border-red-500' : ''}
                               />
-                              {formErrors[`equipment.${serviceType}.model`] && (
+                              {formErrors?.[`equipment.${serviceType}.model`] && (
                                 <p className="text-sm text-red-500">{formErrors[`equipment.${serviceType}.model`]}</p>
                               )}
             </div>
@@ -1202,11 +1344,11 @@ const AdminDashboard = () => {
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-sm">
                     <div>
                       <span className="font-medium text-gray-600">Name:</span>
-                      <p className="text-gray-900">{addFormData.full_name}</p>
+                      <p className="text-gray-900">{addFormData.full_name || 'Not provided'}</p>
                     </div>
                     <div>
                       <span className="font-medium text-gray-600">Phone:</span>
-                      <p className="text-gray-900">{addFormData.phone}</p>
+                      <p className="text-gray-900">{addFormData.phone || 'Not provided'}</p>
                     </div>
                     {addFormData.alternate_phone && (
                       <div>
@@ -1216,11 +1358,11 @@ const AdminDashboard = () => {
                     )}
                     <div>
                       <span className="font-medium text-gray-600">Email:</span>
-                      <p className="text-gray-900">{addFormData.email}</p>
+                      <p className="text-gray-900">{addFormData.email || 'Not provided'}</p>
                     </div>
                     <div className="sm:col-span-2">
                       <span className="font-medium text-gray-600">Address:</span>
-                      <p className="text-gray-900">{addFormData.address}</p>
+                      <p className="text-gray-900">{addFormData.address || 'Not provided'}</p>
                       {addFormData.google_location && (
                         <div className="mt-1">
                           <span className="font-medium text-gray-600">Google Maps:</span>
@@ -1403,7 +1545,7 @@ const AdminDashboard = () => {
                   <Label htmlFor="edit_full_name">Full Name</Label>
                   <Input
                     id="edit_full_name"
-                    value={editFormData.full_name}
+                    value={editFormData?.full_name || ''}
                     onChange={(e) => handleEditFormChange('full_name', e.target.value)}
                     placeholder="Enter full name"
                   />
@@ -1413,7 +1555,7 @@ const AdminDashboard = () => {
                   <Label htmlFor="edit_phone">Primary Phone</Label>
                   <Input
                     id="edit_phone"
-                    value={editFormData.phone}
+                    value={editFormData?.phone || ''}
                     onChange={(e) => handleEditFormChange('phone', e.target.value)}
                     placeholder="Enter primary phone number"
                   />
@@ -1423,7 +1565,7 @@ const AdminDashboard = () => {
                   <Label htmlFor="edit_alternate_phone">Alternate Phone</Label>
                   <Input
                     id="edit_alternate_phone"
-                    value={editFormData.alternate_phone}
+                    value={editFormData?.alternate_phone || ''}
                     onChange={(e) => handleEditFormChange('alternate_phone', e.target.value)}
                     placeholder="Enter alternate phone number (optional)"
                   />
@@ -1434,7 +1576,7 @@ const AdminDashboard = () => {
                   <Input
                     id="edit_email"
                     type="email"
-                    value={editFormData.email}
+                    value={editFormData?.email || ''}
                     onChange={(e) => handleEditFormChange('email', e.target.value)}
                     placeholder="Enter email address"
                   />
@@ -1463,7 +1605,7 @@ const AdminDashboard = () => {
                       key={service.value}
                       onClick={() => handleEditServiceTypeToggle(service.value)}
                       className={`p-3 border-2 rounded-lg cursor-pointer transition-all ${
-                        editFormData.service_types.includes(service.value)
+                        editFormData?.service_types?.includes(service.value)
                           ? 'border-blue-500 bg-blue-50 text-blue-700'
                           : 'border-gray-200 hover:border-gray-300'
                       }`}
@@ -1478,10 +1620,10 @@ const AdminDashboard = () => {
               </div>
 
               {/* Dynamic Equipment Fields for Each Selected Service Type */}
-              {editFormData.service_types.length > 0 && (
+              {editFormData?.service_types?.length > 0 && (
                 <div className="space-y-4">
                   <Label className="text-base font-semibold">Equipment Details</Label>
-                  {editFormData.service_types.map((serviceType) => {
+                  {editFormData?.service_types?.map((serviceType) => {
                     const serviceInfo = [
                       { value: 'RO', label: 'RO (Reverse Osmosis)', icon: '💧' },
                       { value: 'SOFTENER', label: 'Water Softener', icon: '🧂' },
@@ -1493,7 +1635,7 @@ const AdminDashboard = () => {
                       { value: 'APPLIANCE', label: 'Home Appliances', icon: '🏠' }
                     ].find(s => s.value === serviceType);
                     
-                    const equipment = editFormData.equipment[serviceType] || { brand: '', model: '' };
+                    const equipment = editFormData?.equipment?.[serviceType] || { brand: '', model: '' };
                     
                     return (
                       <div key={serviceType} className="bg-gray-50 p-4 rounded-lg space-y-3">
@@ -1537,7 +1679,7 @@ const AdminDashboard = () => {
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div className="space-y-2">
                   <Label htmlFor="edit_behavior">Customer Behavior</Label>
-                  <Select value={editFormData.behavior} onValueChange={(value) => handleEditFormChange('behavior', value)}>
+                  <Select value={editFormData?.behavior || ''} onValueChange={(value) => handleEditFormChange('behavior', value)}>
                     <SelectTrigger>
                       <SelectValue placeholder="Select customer behavior pattern" />
                     </SelectTrigger>
@@ -1563,7 +1705,7 @@ const AdminDashboard = () => {
 
                 <div className="space-y-2">
                   <Label htmlFor="edit_native_language">Native Language</Label>
-                  <Select value={editFormData.native_language} onValueChange={(value) => handleEditFormChange('native_language', value)}>
+                  <Select value={editFormData?.native_language || ''} onValueChange={(value) => handleEditFormChange('native_language', value)}>
                     <SelectTrigger>
                       <SelectValue placeholder="Select native language" />
                     </SelectTrigger>
@@ -1591,7 +1733,7 @@ const AdminDashboard = () => {
                 <Label htmlFor="edit_notes">Notes</Label>
                 <Textarea
                   id="edit_notes"
-                  value={editFormData.notes}
+                  value={editFormData?.notes || ''}
                   onChange={(e) => handleEditFormChange('notes', e.target.value)}
                   placeholder="Enter any additional notes"
                   rows={3}
@@ -1660,7 +1802,7 @@ const AdminDashboard = () => {
         </DialogContent>
       </Dialog>
 
-      {/* Delete Confirmation Dialog */}
+      {/* Delete Customer Confirmation Dialog */}
       <AlertDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
         <AlertDialogContent>
           <AlertDialogHeader>
@@ -1683,6 +1825,108 @@ const AdminDashboard = () => {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {/* Delete Job Confirmation Dialog */}
+      <AlertDialog open={deleteJobDialogOpen} onOpenChange={setDeleteJobDialogOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete Job</AlertDialogTitle>
+            <AlertDialogDescription>
+              Are you sure you want to delete job <strong>{(jobToDelete as any)?.job_number}</strong>?
+              <br />
+              <br />
+              This action cannot be undone and will permanently remove the job and all associated data.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction 
+              onClick={handleDeleteJob}
+              className="bg-red-600 hover:bg-red-700"
+            >
+              Delete Job
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Photo Gallery Dialog */}
+      <Dialog open={photoGalleryOpen} onOpenChange={setPhotoGalleryOpen}>
+        <DialogContent className="max-w-6xl max-h-[95vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>
+              Photos - Job {(selectedJobPhotos as any)?.jobId}
+            </DialogTitle>
+            <DialogDescription>
+              Click on any photo to view it in full size
+            </DialogDescription>
+          </DialogHeader>
+          
+          <div className="py-4">
+            {(() => {
+              try {
+                if (selectedJobPhotos?.photos && Array.isArray(selectedJobPhotos.photos) && selectedJobPhotos.photos.length > 0) {
+                  return (
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+                      {selectedJobPhotos.photos.map((photo, index) => {
+                        // Check if photo is a valid URL
+                        const isValidUrl = photo && typeof photo === 'string' && (photo.startsWith('http') || photo.startsWith('data:') || photo.startsWith('/'));
+                        
+                        return (
+                          <div key={index} className="relative group">
+                            {isValidUrl ? (
+                              <img
+                                src={photo}
+                                alt={`Photo ${index + 1}`}
+                                className="w-full h-48 object-cover rounded-lg border border-gray-200 cursor-pointer hover:opacity-90 transition-opacity"
+                                onClick={() => window.open(photo, '_blank')}
+                                onError={(e) => {
+                                  console.error('Image failed to load:', photo);
+                                  e.currentTarget.style.display = 'none';
+                                }}
+                              />
+                            ) : (
+                              <div className="w-full h-48 bg-gray-100 rounded-lg border border-gray-200 flex items-center justify-center">
+                                <div className="text-center text-gray-500">
+                                  <Calendar className="w-8 h-8 mx-auto mb-2 text-gray-300" />
+                                  <p className="text-sm">Invalid photo URL</p>
+                                  <p className="text-xs text-gray-400">{photo || 'No URL provided'}</p>
+                                </div>
+                              </div>
+                            )}
+                            <div className="absolute inset-0 bg-black bg-opacity-0 group-hover:bg-opacity-20 transition-all duration-200 rounded-lg flex items-center justify-center">
+                              <div className="opacity-0 group-hover:opacity-100 transition-opacity">
+                                <Button variant="secondary" size="sm">
+                                  View Full Size
+                                </Button>
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  );
+                } else {
+                  return (
+                    <div className="text-center py-8 text-gray-500">
+                      <Calendar className="w-12 h-12 mx-auto mb-2 text-gray-300" />
+                      <p>No photos available</p>
+                    </div>
+                  );
+                }
+              } catch (error) {
+                console.error('Error rendering photo gallery:', error);
+                return (
+                  <div className="text-center py-8 text-red-500">
+                    <Calendar className="w-12 h-12 mx-auto mb-2 text-red-300" />
+                    <p>Error loading photos</p>
+                  </div>
+                );
+              }
+            })()}
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 };

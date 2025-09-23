@@ -226,6 +226,15 @@ export const db = {
         .order('created_at', { ascending: false });
       
       return { data, error };
+    },
+    
+    async delete(id: string) {
+      const { error } = await supabase
+        .from('jobs')
+        .delete()
+        .eq('id', id);
+      
+      return { data: null, error };
     }
   },
   
