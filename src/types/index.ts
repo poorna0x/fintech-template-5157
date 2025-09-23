@@ -26,7 +26,7 @@ export interface Customer {
   };
   
   // Service Information
-  serviceType: 'RO' | 'SOFTENER' | 'AC' | 'APPLIANCE' | 'MULTIPLE';
+  serviceType: 'RO' | 'SOFTENER' | 'AC' | 'RO_AC' | 'SOFTENER_AC' | 'RO_SOFTENER' | 'ALL_SERVICES' | 'APPLIANCE';
   brand: string;
   model: string;
   installationDate?: string;
@@ -57,7 +57,7 @@ export interface Job {
   customer?: Customer;
   
   // Service Details
-  serviceType: 'RO' | 'SOFTENER' | 'AC' | 'APPLIANCE';
+  serviceType: 'RO' | 'SOFTENER' | 'AC' | 'RO_AC' | 'SOFTENER_AC' | 'RO_SOFTENER' | 'ALL_SERVICES' | 'APPLIANCE';
   serviceSubType: string; // 'Installation', 'Repair', 'Maintenance'
   brand: string;
   model: string;
@@ -126,7 +126,7 @@ export interface Technician {
   
   // Skills & Certifications
   skills: {
-    serviceTypes: ('RO' | 'SOFTENER' | 'AC' | 'APPLIANCE')[];
+    serviceTypes: ('RO' | 'SOFTENER' | 'AC' | 'RO_AC' | 'SOFTENER_AC' | 'RO_SOFTENER' | 'ALL_SERVICES' | 'APPLIANCE')[];
     certifications: string[];
     experience: number; // in years
     rating: number; // 1-5 stars
@@ -213,7 +213,7 @@ export interface BookingFormData {
   };
   
   // Service Details
-  serviceType: 'RO' | 'SOFTENER';
+  serviceType: 'RO' | 'SOFTENER' | 'AC' | 'RO_AC' | 'SOFTENER_AC' | 'RO_SOFTENER' | 'ALL_SERVICES';
   serviceSubType: 'Installation' | 'Repair' | 'Maintenance' | 'AMC';
   brand: string;
   model: string;

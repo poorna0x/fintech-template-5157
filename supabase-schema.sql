@@ -20,7 +20,7 @@ CREATE TABLE customers (
     location JSONB NOT NULL,
     
     -- Service information
-    service_type VARCHAR(20) NOT NULL CHECK (service_type IN ('RO', 'SOFTENER', 'AC', 'APPLIANCE', 'MULTIPLE')),
+    service_type VARCHAR(20) NOT NULL CHECK (service_type IN ('RO', 'SOFTENER', 'AC', 'RO_AC', 'SOFTENER_AC', 'RO_SOFTENER', 'ALL_SERVICES', 'APPLIANCE')),
     brand VARCHAR(100) NOT NULL,
     model VARCHAR(100) NOT NULL,
     installation_date DATE,

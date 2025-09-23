@@ -24,7 +24,8 @@ import {
   Calendar,
   Edit,
   Trash2,
-  MoreVertical
+  MoreVertical,
+  Plus
 } from 'lucide-react';
 import { db } from '@/lib/supabase';
 import { Customer, Job, Technician } from '@/types';
@@ -38,6 +39,8 @@ const AdminDashboard = () => {
   const [technicians, setTechnicians] = useState<Technician[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
+  const [searchQuery, setSearchQuery] = useState(''); // For the input field
+  const [isSearching, setIsSearching] = useState(false);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [customerToDelete, setCustomerToDelete] = useState<Customer | null>(null);
   const [editingCustomer, setEditingCustomer] = useState<Customer | null>(null);
@@ -45,10 +48,12 @@ const AdminDashboard = () => {
   const [editFormData, setEditFormData] = useState({
     full_name: '',
     phone: '',
+    alternate_phone: '',
     email: '',
-    service_type: '',
-    brand: '',
-    model: '',
+    service_types: [] as string[],
+    equipment: {} as {[serviceType: string]: {brand: string, model: string}},
+    behavior: '',
+    native_language: '',
     status: '',
     notes: ''
   });
@@ -57,20 +62,19 @@ const AdminDashboard = () => {
   const [addFormData, setAddFormData] = useState({
     full_name: '',
     phone: '',
+    alternate_phone: '',
     email: '',
-    service_type: '',
-    brand: '',
-    model: '',
+    service_types: [] as string[], // Changed to array for multiple selection
+    equipment: {} as {[serviceType: string]: {brand: string, model: string}}, // Equipment per service type
+    behavior: '', // Customer behavior field
+    native_language: '', // Customer native language field
     status: 'ACTIVE',
     notes: '',
-    address: {
-      street: '',
-      area: '',
-      city: 'Bangalore',
-      state: 'Karnataka',
-      pincode: ''
-    }
+    address: '', // Simplified to single address field
+    google_location: '' // For Google Maps integration
   });
+  const [currentStep, setCurrentStep] = useState(1);
+  const [formErrors, setFormErrors] = useState<{[key: string]: string}>({});
   const [isCreating, setIsCreating] = useState(false);
   const [customerServices, setCustomerServices] = useState<{[key: string]: any[]}>({});
 
@@ -124,13 +128,34 @@ const AdminDashboard = () => {
 
   const handleEditCustomer = (customer: Customer) => {
     setEditingCustomer(customer);
+    
+    // Parse service types from the stored string
+    const serviceTypes = (customer as any).service_type ? 
+      (customer as any).service_type.split(',').map((s: string) => s.trim()) : [];
+    
+    // Parse equipment from brands and models
+    const equipment: {[serviceType: string]: {brand: string, model: string}} = {};
+    if (serviceTypes.length > 0 && customer.brand && customer.model) {
+      const brands = customer.brand.split(',').map((s: string) => s.trim());
+      const models = customer.model.split(',').map((s: string) => s.trim());
+      
+      serviceTypes.forEach((serviceType: string, index: number) => {
+        equipment[serviceType] = {
+          brand: brands[index] || '',
+          model: models[index] || ''
+        };
+      });
+    }
+    
     setEditFormData({
       full_name: (customer as any).full_name || '',
       phone: customer.phone || '',
+      alternate_phone: (customer as any).alternate_phone || '',
       email: customer.email || '',
-      service_type: customer.serviceType || '',
-      brand: customer.brand || '',
-      model: customer.model || '',
+      service_types: serviceTypes,
+      equipment: equipment,
+      behavior: (customer as any).behavior || '',
+      native_language: (customer as any).preferred_language || '',
       status: customer.status || '',
       notes: customer.notes || ''
     });
@@ -145,10 +170,13 @@ const AdminDashboard = () => {
       const { error } = await db.customers.update(editingCustomer.id, {
         full_name: editFormData.full_name,
         phone: editFormData.phone,
+        alternate_phone: editFormData.alternate_phone,
         email: editFormData.email,
-        service_type: editFormData.service_type,
-        brand: editFormData.brand,
-        model: editFormData.model,
+        service_type: editFormData.service_types.join(', '),
+        brand: Object.values(editFormData.equipment).map(eq => eq.brand).join(', '),
+        model: Object.values(editFormData.equipment).map(eq => eq.model).join(', '),
+        behavior: editFormData.behavior,
+        preferred_language: editFormData.native_language || 'ENGLISH',
         status: editFormData.status,
         notes: editFormData.notes
       });
@@ -175,10 +203,46 @@ const AdminDashboard = () => {
     }
   };
 
-  const handleEditFormChange = (field: string, value: string) => {
+  const handleEditFormChange = (field: string, value: string | string[]) => {
     setEditFormData(prev => ({
       ...prev,
       [field]: value
+    }));
+  };
+
+  const handleEditServiceTypeToggle = (serviceType: string) => {
+    setEditFormData(prev => {
+      const newServiceTypes = prev.service_types.includes(serviceType)
+        ? prev.service_types.filter(type => type !== serviceType)
+        : [...prev.service_types, serviceType];
+      
+      // Initialize equipment for new service types
+      const newEquipment = { ...prev.equipment };
+      if (!prev.service_types.includes(serviceType)) {
+        newEquipment[serviceType] = { brand: '', model: '' };
+      } else {
+        // Remove equipment data when service type is deselected
+        delete newEquipment[serviceType];
+      }
+      
+      return {
+        ...prev,
+        service_types: newServiceTypes,
+        equipment: newEquipment
+      };
+    });
+  };
+
+  const handleEditEquipmentChange = (serviceType: string, field: 'brand' | 'model', value: string) => {
+    setEditFormData(prev => ({
+      ...prev,
+      equipment: {
+        ...prev.equipment,
+        [serviceType]: {
+          ...prev.equipment[serviceType],
+          [field]: value
+        }
+      }
     }));
   };
 
@@ -191,45 +255,54 @@ const AdminDashboard = () => {
     setAddFormData({
       full_name: '',
       phone: '',
+      alternate_phone: '',
       email: '',
-      service_type: '',
-      brand: '',
-      model: '',
+      service_types: [],
+      equipment: {},
+      behavior: '',
+      native_language: '',
       status: 'ACTIVE',
       notes: '',
-      address: {
-        street: '',
-        area: '',
-        city: 'Bangalore',
-        state: 'Karnataka',
-        pincode: ''
-      }
+      address: '',
+      google_location: ''
     });
+    setCurrentStep(1);
+    setFormErrors({});
     setAddDialogOpen(true);
   };
 
   const handleCreateCustomer = async () => {
+    if (!validateStep(4)) return; // Validate final step
+    
     setIsCreating(true);
     try {
       // Create customer data with default location (you can enhance this later)
       const customerData = {
         full_name: addFormData.full_name,
         phone: addFormData.phone,
+        alternate_phone: addFormData.alternate_phone,
         email: addFormData.email,
-        address: addFormData.address,
+        address: {
+          street: addFormData.address,
+          area: '',
+          city: 'Bangalore',
+          state: 'Karnataka',
+          pincode: ''
+        },
         location: {
           latitude: 12.9716, // Default Bangalore coordinates
           longitude: 77.5946,
-          formattedAddress: `${addFormData.address.street}, ${addFormData.address.area}, ${addFormData.address.city}, ${addFormData.address.pincode}`
+          formattedAddress: addFormData.address
         },
-        service_type: addFormData.service_type,
-        brand: addFormData.brand,
-        model: addFormData.model,
+        service_type: addFormData.service_types.join(', '), // Join multiple service types
+        brand: Object.values(addFormData.equipment).map(eq => eq.brand).join(', '), // Join all brands
+        model: Object.values(addFormData.equipment).map(eq => eq.model).join(', '), // Join all models
+        behavior: addFormData.behavior,
+        preferred_language: addFormData.native_language || 'ENGLISH',
         status: addFormData.status,
         notes: addFormData.notes,
         customer_since: new Date().toISOString(),
-        preferred_time_slot: 'MORNING',
-        preferred_language: 'ENGLISH'
+        preferred_time_slot: 'MORNING'
       };
 
       const { data: newCustomer, error } = await db.customers.create(customerData);
@@ -251,21 +324,146 @@ const AdminDashboard = () => {
     }
   };
 
-  const handleAddFormChange = (field: string, value: string) => {
-    if (field.startsWith('address.')) {
-      const addressField = field.split('.')[1];
+  const handleAddFormChange = (field: string, value: string | string[]) => {
       setAddFormData(prev => ({
         ...prev,
-        address: {
-          ...prev.address,
-          [addressField]: value
+      [field]: value
+    }));
+    
+    // Clear error when user starts typing
+    if (formErrors[field]) {
+      setFormErrors(prev => ({
+        ...prev,
+        [field]: ''
+      }));
+    }
+  };
+
+  const validateStep = (step: number): boolean => {
+    const errors: {[key: string]: string} = {};
+    
+    switch (step) {
+      case 1: // Personal Information
+        if (!addFormData.full_name.trim()) errors.full_name = 'Full name is required';
+        if (!addFormData.phone.trim()) errors.phone = 'Phone number is required';
+        if (!addFormData.email.trim()) errors.email = 'Email is required';
+        if (addFormData.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(addFormData.email)) {
+          errors.email = 'Please enter a valid email address';
         }
-      }));
+        break;
+      case 2: // Address Information
+        if (!addFormData.address.trim()) errors.address = 'Address is required';
+        break;
+      case 3: // Service Information
+        if (addFormData.service_types.length === 0) errors.service_types = 'Please select at least one service type';
+        
+        // Validate equipment for each selected service type
+        addFormData.service_types.forEach(serviceType => {
+          const equipment = addFormData.equipment[serviceType];
+          if (!equipment?.brand?.trim()) {
+            errors[`equipment.${serviceType}.brand`] = `Brand is required for ${serviceType}`;
+          }
+          if (!equipment?.model?.trim()) {
+            errors[`equipment.${serviceType}.model`] = `Model is required for ${serviceType}`;
+          }
+        });
+        break;
+    }
+    
+    setFormErrors(errors);
+    return Object.keys(errors).length === 0;
+  };
+
+  const nextStep = () => {
+    if (validateStep(currentStep)) {
+      setCurrentStep(prev => Math.min(prev + 1, 4));
+    }
+  };
+
+  const prevStep = () => {
+    setCurrentStep(prev => Math.max(prev - 1, 1));
+  };
+
+  const handleServiceTypeToggle = (serviceType: string) => {
+    setAddFormData(prev => {
+      const newServiceTypes = prev.service_types.includes(serviceType)
+        ? prev.service_types.filter(type => type !== serviceType)
+        : [...prev.service_types, serviceType];
+      
+      // Initialize equipment for new service types
+      const newEquipment = { ...prev.equipment };
+      if (!prev.service_types.includes(serviceType)) {
+        newEquipment[serviceType] = { brand: '', model: '' };
     } else {
+        // Remove equipment data when service type is deselected
+        delete newEquipment[serviceType];
+      }
+      
+      return {
+        ...prev,
+        service_types: newServiceTypes,
+        equipment: newEquipment
+      };
+    });
+    
+    // Clear error when user selects a service type
+    if (formErrors.service_types) {
+      setFormErrors(prev => ({
+        ...prev,
+        service_types: ''
+      }));
+    }
+  };
+
+  const handleEquipmentChange = (serviceType: string, field: 'brand' | 'model', value: string) => {
       setAddFormData(prev => ({
         ...prev,
+      equipment: {
+        ...prev.equipment,
+        [serviceType]: {
+          ...prev.equipment[serviceType],
         [field]: value
+        }
+      }
+    }));
+    
+    // Clear error when user starts typing
+    const errorKey = `equipment.${serviceType}.${field}`;
+    if (formErrors[errorKey]) {
+      setFormErrors(prev => ({
+        ...prev,
+        [errorKey]: ''
       }));
+    }
+  };
+
+  const handleGoogleMapsNavigation = () => {
+    if (addFormData.address.trim()) {
+      const encodedAddress = encodeURIComponent(addFormData.address);
+      const googleMapsUrl = `https://www.google.com/maps/search/?api=1&query=${encodedAddress}`;
+      window.open(googleMapsUrl, '_blank');
+    } else {
+      toast.error('Please enter an address first');
+    }
+  };
+
+  const handleSearch = () => {
+    setIsSearching(true);
+    setSearchTerm(searchQuery);
+    // Small delay to show loading state
+    setTimeout(() => {
+      setIsSearching(false);
+    }, 300);
+  };
+
+  const handleClearSearch = () => {
+    setSearchQuery('');
+    setSearchTerm('');
+  };
+
+  const handleSearchKeyPress = (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter') {
+      handleSearch();
     }
   };
 
@@ -299,18 +497,49 @@ const AdminDashboard = () => {
   };
 
   // Filter data based on search term (case insensitive)
-  const filteredCustomers = customers.filter(customer =>
-    (customer as any).customer_id?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    (customer as any).full_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    customer.phone.includes(searchTerm) ||
-    customer.email.toLowerCase().includes(searchTerm.toLowerCase())
-  );
+  const filteredCustomers = customers.filter(customer => {
+    if (!searchTerm.trim()) return true; // Show all customers if search is empty
+    
+    const searchLower = searchTerm.toLowerCase();
+    return (
+      (customer as any).customer_id?.toLowerCase().includes(searchLower) ||
+      (customer as any).full_name?.toLowerCase().includes(searchLower) ||
+      customer.phone?.includes(searchTerm) ||
+      (customer as any).alternate_phone?.includes(searchTerm) ||
+      customer.email?.toLowerCase().includes(searchLower) ||
+      (customer as any).preferred_language?.toLowerCase().includes(searchLower) ||
+      customer.serviceType?.toLowerCase().includes(searchLower) ||
+      customer.brand?.toLowerCase().includes(searchLower) ||
+      customer.model?.toLowerCase().includes(searchLower) ||
+      (customer as any).behavior?.toLowerCase().includes(searchLower) ||
+      (customer.address as any)?.street?.toLowerCase().includes(searchLower) ||
+      (customer.address as any)?.area?.toLowerCase().includes(searchLower) ||
+      (customer.address as any)?.pincode?.includes(searchTerm)
+    );
+  });
 
-  const filteredJobs = jobs.filter(job =>
-    (job as any).job_number.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    (job.customer as any)?.full_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    job.customer?.phone.includes(searchTerm)
-  );
+  // Determine which customers to display by default (recently added)
+  const RECENT_LIMIT = 25;
+  const displayedCustomers = !searchTerm.trim()
+    ? [...customers]
+        .sort((a, b) => {
+          const aDate = new Date(((a as any).created_at || (a as any).createdAt || 0) as any).getTime();
+          const bDate = new Date(((b as any).created_at || (b as any).createdAt || 0) as any).getTime();
+          return bDate - aDate;
+        })
+        .slice(0, RECENT_LIMIT)
+    : filteredCustomers;
+
+  const filteredJobs = jobs.filter(job => {
+    if (!searchTerm.trim()) return true; // Show all jobs if search is empty
+    
+    const searchLower = searchTerm.toLowerCase();
+    return (
+      (job as any).job_number?.toLowerCase().includes(searchLower) ||
+      (job.customer as any)?.full_name?.toLowerCase().includes(searchLower) ||
+      job.customer?.phone?.includes(searchTerm)
+    );
+  });
 
   const pendingJobs = jobs.filter(job => job.status === 'PENDING');
   const assignedJobs = jobs.filter(job => job.status === 'ASSIGNED');
@@ -357,15 +586,55 @@ const AdminDashboard = () => {
 
         {/* Search Bar */}
         <div className="mb-4 sm:mb-6">
-          <div className="relative w-full max-w-md">
+          <div className="flex gap-2 w-full max-w-2xl">
+            <div className="relative flex-1">
             <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
-            <Input
-              placeholder="Search by customer ID (c0001), name, phone, email..."
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
+              <Input
+                placeholder="Search by customer ID, name, phone, email, language, behavior, service type, brand, model, area, pincode..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                onKeyPress={handleSearchKeyPress}
               className="pl-10 bg-white border-gray-300 focus:border-blue-500 focus:ring-blue-500 text-sm sm:text-base"
             />
           </div>
+            <Button
+              onClick={handleSearch}
+              disabled={isSearching || !searchQuery.trim()}
+              className="bg-blue-600 hover:bg-blue-700 text-white px-4"
+            >
+              {isSearching ? (
+                <div className="flex items-center gap-2">
+                  <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                  <span className="hidden sm:inline">Searching...</span>
+                </div>
+              ) : (
+                <div className="flex items-center gap-2">
+                  <Search className="w-4 h-4" />
+                  <span className="hidden sm:inline">Search</span>
+                </div>
+              )}
+            </Button>
+            {searchTerm && (
+              <Button
+                onClick={handleClearSearch}
+                variant="outline"
+                className="border-gray-300 hover:bg-gray-50"
+              >
+                <div className="flex items-center gap-2">
+                  <span className="text-gray-500">×</span>
+                  <span className="hidden sm:inline">Clear</span>
+                </div>
+              </Button>
+            )}
+          </div>
+          {searchTerm && (
+            <div className="mt-2 text-sm text-gray-600">
+              Showing results for: <span className="font-medium">"{searchTerm}"</span>
+              <span className="ml-2 text-gray-500">
+                ({filteredCustomers.length} customer{filteredCustomers.length !== 1 ? 's' : ''} found)
+              </span>
+            </div>
+          )}
         </div>
 
         {/* Stats Cards - Mobile First */}
@@ -425,13 +694,16 @@ const AdminDashboard = () => {
 
         {/* Customers - Mobile First Cards */}
         <div className="mb-6">
-          <h2 className="text-xl font-bold text-gray-900 mb-4">All Customers</h2>
+          <h2 className="text-xl font-bold text-gray-900 mb-1">Customers</h2>
+          {!searchTerm.trim() && (
+            <p className="text-xs text-gray-500 mb-3">Showing latest {displayedCustomers.length} recently added customers</p>
+          )}
           
           {/* Mobile: Card Layout, Desktop: Table Layout */}
           <div className="block lg:hidden">
             {/* Mobile Cards */}
             <div className="space-y-3">
-              {filteredCustomers.map((customer) => (
+              {displayedCustomers.map((customer) => (
                 <Card key={customer.id} className="bg-white border-gray-200 p-4">
                   <div className="flex items-start justify-between mb-3">
                         <div>
@@ -450,6 +722,12 @@ const AdminDashboard = () => {
                       <Phone className="w-4 h-4 text-gray-400" />
                       <span className="text-gray-900">{customer.phone}</span>
                     </div>
+                    {(customer as any).alternate_phone && (
+                      <div className="flex items-center gap-2">
+                        <Phone className="w-4 h-4 text-gray-400" />
+                        <span className="text-gray-600">{(customer as any).alternate_phone}</span>
+                      </div>
+                    )}
                     <div className="flex items-center gap-2">
                       <Mail className="w-4 h-4 text-gray-400" />
                       <span className="text-gray-600">{customer.email}</span>
@@ -524,7 +802,7 @@ const AdminDashboard = () => {
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {filteredCustomers.map((customer) => (
+                    {displayedCustomers.map((customer) => (
                       <TableRow key={customer.id} className="border-gray-200 hover:bg-gray-50">
                         <TableCell className="font-mono font-bold text-blue-600">
                           {(customer as any).customer_id || 'N/A'}
@@ -533,6 +811,9 @@ const AdminDashboard = () => {
                         <TableCell>
                           <div>
                             <p className="text-sm text-gray-900">{customer.phone}</p>
+                            {(customer as any).alternate_phone && (
+                              <p className="text-sm text-gray-500">{(customer as any).alternate_phone}</p>
+                            )}
                             <p className="text-sm text-gray-500">{customer.email}</p>
                           </div>
                         </TableCell>
@@ -677,18 +958,40 @@ const AdminDashboard = () => {
         </div>
       </main>
 
-      {/* Add Customer Dialog */}
+      {/* Add Customer Dialog - Step by Step */}
       <Dialog open={addDialogOpen} onOpenChange={setAddDialogOpen}>
         <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>Add New Customer</DialogTitle>
+            <DialogTitle className="flex items-center gap-3">
+              <div className="flex items-center gap-2">
+                <div className="w-8 h-8 rounded-full bg-blue-100 flex items-center justify-center text-blue-600 font-semibold text-sm">
+                  {currentStep}
+                </div>
+                <span>Add New Customer</span>
+              </div>
+              <div className="flex gap-1 ml-auto">
+                {[1, 2, 3, 4].map((step) => (
+                  <div
+                    key={step}
+                    className={`w-2 h-2 rounded-full ${
+                      step <= currentStep ? 'bg-blue-600' : 'bg-gray-300'
+                    }`}
+                  />
+                ))}
+              </div>
+            </DialogTitle>
             <DialogDescription>
-              Create a new customer account with service information
+              {currentStep === 1 && "Enter customer's personal information"}
+              {currentStep === 2 && "Enter customer's address details"}
+              {currentStep === 3 && "Select services and equipment details"}
+              {currentStep === 4 && "Review and confirm customer information"}
             </DialogDescription>
           </DialogHeader>
           
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 py-4">
-            {/* Full Name */}
+          <div className="py-4">
+            {/* Step 1: Personal Information */}
+            {currentStep === 1 && (
+              <div className="space-y-4">
             <div className="space-y-2">
               <Label htmlFor="add_full_name">Full Name *</Label>
               <Input
@@ -696,141 +999,356 @@ const AdminDashboard = () => {
                 value={addFormData.full_name}
                 onChange={(e) => handleAddFormChange('full_name', e.target.value)}
                 placeholder="Enter full name"
-                required
+                    className={formErrors.full_name ? 'border-red-500' : ''}
               />
+                  {formErrors.full_name && (
+                    <p className="text-sm text-red-500">{formErrors.full_name}</p>
+                  )}
             </div>
 
-            {/* Phone */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div className="space-y-2">
-              <Label htmlFor="add_phone">Phone *</Label>
+                    <Label htmlFor="add_phone">Primary Phone *</Label>
               <Input
                 id="add_phone"
                 value={addFormData.phone}
                 onChange={(e) => handleAddFormChange('phone', e.target.value)}
-                placeholder="Enter phone number"
-                required
+                      placeholder="Enter primary phone"
+                      className={formErrors.phone ? 'border-red-500' : ''}
               />
+                    {formErrors.phone && (
+                      <p className="text-sm text-red-500">{formErrors.phone}</p>
+                    )}
             </div>
 
-            {/* Email */}
             <div className="space-y-2">
-              <Label htmlFor="add_email">Email *</Label>
+                    <Label htmlFor="add_alternate_phone">Alternate Phone</Label>
+              <Input
+                      id="add_alternate_phone"
+                      value={addFormData.alternate_phone}
+                      onChange={(e) => handleAddFormChange('alternate_phone', e.target.value)}
+                      placeholder="Enter alternate phone (optional)"
+              />
+            </div>
+            </div>
+
+            <div className="space-y-2">
+                  <Label htmlFor="add_email">Email Address *</Label>
               <Input
                 id="add_email"
                 type="email"
                 value={addFormData.email}
                 onChange={(e) => handleAddFormChange('email', e.target.value)}
                 placeholder="Enter email address"
-                required
+                    className={formErrors.email ? 'border-red-500' : ''}
               />
+                  {formErrors.email && (
+                    <p className="text-sm text-red-500">{formErrors.email}</p>
+                  )}
+            </div>
+            </div>
+            )}
+
+            {/* Step 2: Address Information */}
+            {currentStep === 2 && (
+              <div className="space-y-4">
+            <div className="space-y-2">
+                  <Label htmlFor="add_address">Complete Address *</Label>
+                  <Textarea
+                    id="add_address"
+                    value={addFormData.address}
+                    onChange={(e) => handleAddFormChange('address', e.target.value)}
+                    placeholder="Enter complete address (street, area, city, state, pincode)"
+                    rows={3}
+                    className={formErrors.address ? 'border-red-500' : ''}
+                  />
+                  {formErrors.address && (
+                    <p className="text-sm text-red-500">{formErrors.address}</p>
+                  )}
             </div>
 
-            {/* Service Type */}
             <div className="space-y-2">
-              <Label htmlFor="add_service_type">Service Type *</Label>
-              <Select value={addFormData.service_type} onValueChange={(value) => handleAddFormChange('service_type', value)}>
-                <SelectTrigger>
-                  <SelectValue placeholder="Select service type" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="RO">RO (Reverse Osmosis)</SelectItem>
-                  <SelectItem value="SOFTENER">Water Softener</SelectItem>
-                  <SelectItem value="AC">AC Services</SelectItem>
-                  <SelectItem value="APPLIANCE">Home Appliances</SelectItem>
-                  <SelectItem value="MULTIPLE">Multiple Services</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-
-            {/* Brand */}
-            <div className="space-y-2">
-              <Label htmlFor="add_brand">Brand *</Label>
+                  <Label htmlFor="add_google_location">Google Maps Location (Optional)</Label>
+                  <div className="flex gap-2">
               <Input
-                id="add_brand"
-                value={addFormData.brand}
-                onChange={(e) => handleAddFormChange('brand', e.target.value)}
-                placeholder="Enter brand name"
-                required
-              />
+                      id="add_google_location"
+                      value={addFormData.google_location}
+                      onChange={(e) => handleAddFormChange('google_location', e.target.value)}
+                      placeholder="Enter Google Maps link or coordinates"
+                    />
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={handleGoogleMapsNavigation}
+                      disabled={!addFormData.address.trim()}
+                      className="flex items-center gap-2 whitespace-nowrap"
+                    >
+                      <MapPin className="w-4 h-4" />
+                      Open in Maps
+                    </Button>
             </div>
+                  <p className="text-xs text-gray-500">
+                    Enter the address above, then click "Open in Maps" to navigate to the location
+                  </p>
+                </div>
+              </div>
+            )}
 
-            {/* Model */}
+            {/* Step 3: Service Information */}
+            {currentStep === 3 && (
+              <div className="space-y-4">
+                <div className="space-y-3">
+                  <Label>Service Types *</Label>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    {[
+                      { value: 'RO', label: 'RO (Reverse Osmosis)', icon: '💧' },
+                      { value: 'SOFTENER', label: 'Water Softener', icon: '🧂' },
+                      { value: 'AC', label: 'AC Services', icon: '❄️' },
+                      { value: 'RO_AC', label: 'RO + AC Services', icon: '💧❄️' },
+                      { value: 'SOFTENER_AC', label: 'Softener + AC', icon: '🧂❄️' },
+                      { value: 'RO_SOFTENER', label: 'RO + Softener', icon: '💧🧂' },
+                      { value: 'ALL_SERVICES', label: 'All Services', icon: '🔧' },
+                      { value: 'APPLIANCE', label: 'Home Appliances', icon: '🏠' }
+                    ].map((service) => (
+                      <div
+                        key={service.value}
+                        onClick={() => handleServiceTypeToggle(service.value)}
+                        className={`p-3 border-2 rounded-lg cursor-pointer transition-all ${
+                          addFormData.service_types.includes(service.value)
+                            ? 'border-blue-500 bg-blue-50 text-blue-700'
+                            : 'border-gray-200 hover:border-gray-300'
+                        }`}
+                      >
+                        <div className="flex items-center gap-2">
+                          <span className="text-lg">{service.icon}</span>
+                          <span className="text-sm font-medium">{service.label}</span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                  {formErrors.service_types && (
+                    <p className="text-sm text-red-500">{formErrors.service_types}</p>
+                  )}
+                </div>
+
+                {/* Dynamic Equipment Fields for Each Selected Service Type */}
+                {addFormData.service_types.length > 0 && (
+                  <div className="space-y-4">
+                    <Label className="text-base font-semibold">Equipment Details *</Label>
+                    {addFormData.service_types.map((serviceType) => {
+                      const serviceInfo = [
+                        { value: 'RO', label: 'RO (Reverse Osmosis)', icon: '💧' },
+                        { value: 'SOFTENER', label: 'Water Softener', icon: '🧂' },
+                        { value: 'AC', label: 'AC Services', icon: '❄️' },
+                        { value: 'RO_AC', label: 'RO + AC Services', icon: '💧❄️' },
+                        { value: 'SOFTENER_AC', label: 'Softener + AC', icon: '🧂❄️' },
+                        { value: 'RO_SOFTENER', label: 'RO + Softener', icon: '💧🧂' },
+                        { value: 'ALL_SERVICES', label: 'All Services', icon: '🔧' },
+                        { value: 'APPLIANCE', label: 'Home Appliances', icon: '🏠' }
+                      ].find(s => s.value === serviceType);
+                      
+                      const equipment = addFormData.equipment[serviceType] || { brand: '', model: '' };
+                      
+                      return (
+                        <div key={serviceType} className="bg-gray-50 p-4 rounded-lg space-y-3">
+                          <div className="flex items-center gap-2">
+                            <span className="text-lg">{serviceInfo?.icon}</span>
+                            <span className="font-medium text-gray-900">{serviceInfo?.label}</span>
+                          </div>
+                          
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div className="space-y-2">
-              <Label htmlFor="add_model">Model *</Label>
+                              <Label htmlFor={`brand_${serviceType}`}>Brand *</Label>
               <Input
-                id="add_model"
-                value={addFormData.model}
-                onChange={(e) => handleAddFormChange('model', e.target.value)}
-                placeholder="Enter model name"
-                required
-              />
+                                id={`brand_${serviceType}`}
+                                value={equipment.brand}
+                                onChange={(e) => handleEquipmentChange(serviceType, 'brand', e.target.value)}
+                                placeholder={`Enter ${serviceType} brand`}
+                                className={formErrors[`equipment.${serviceType}.brand`] ? 'border-red-500' : ''}
+                              />
+                              {formErrors[`equipment.${serviceType}.brand`] && (
+                                <p className="text-sm text-red-500">{formErrors[`equipment.${serviceType}.brand`]}</p>
+                              )}
             </div>
 
-            {/* Address - Street */}
             <div className="space-y-2">
-              <Label htmlFor="add_street">Street Address *</Label>
+                              <Label htmlFor={`model_${serviceType}`}>Model *</Label>
               <Input
-                id="add_street"
-                value={addFormData.address.street}
-                onChange={(e) => handleAddFormChange('address.street', e.target.value)}
-                placeholder="Enter street address"
-                required
-              />
+                                id={`model_${serviceType}`}
+                                value={equipment.model}
+                                onChange={(e) => handleEquipmentChange(serviceType, 'model', e.target.value)}
+                                placeholder={`Enter ${serviceType} model`}
+                                className={formErrors[`equipment.${serviceType}.model`] ? 'border-red-500' : ''}
+                              />
+                              {formErrors[`equipment.${serviceType}.model`] && (
+                                <p className="text-sm text-red-500">{formErrors[`equipment.${serviceType}.model`]}</p>
+                              )}
+            </div>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Step 4: Review & Notes */}
+            {currentStep === 4 && (
+              <div className="space-y-4">
+                <div className="bg-gray-50 p-4 rounded-lg space-y-3">
+                  <h3 className="font-semibold text-gray-900">Customer Information Summary</h3>
+                  
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-sm">
+                    <div>
+                      <span className="font-medium text-gray-600">Name:</span>
+                      <p className="text-gray-900">{addFormData.full_name}</p>
+                    </div>
+                    <div>
+                      <span className="font-medium text-gray-600">Phone:</span>
+                      <p className="text-gray-900">{addFormData.phone}</p>
+                    </div>
+                    {addFormData.alternate_phone && (
+                      <div>
+                        <span className="font-medium text-gray-600">Alternate Phone:</span>
+                        <p className="text-gray-900">{addFormData.alternate_phone}</p>
+                      </div>
+                    )}
+                    <div>
+                      <span className="font-medium text-gray-600">Email:</span>
+                      <p className="text-gray-900">{addFormData.email}</p>
+                    </div>
+                    <div className="sm:col-span-2">
+                      <span className="font-medium text-gray-600">Address:</span>
+                      <p className="text-gray-900">{addFormData.address}</p>
+                      {addFormData.google_location && (
+                        <div className="mt-1">
+                          <span className="font-medium text-gray-600">Google Maps:</span>
+                          <p className="text-blue-600 text-sm break-all">{addFormData.google_location}</p>
+                        </div>
+                      )}
+                    </div>
+                    <div className="sm:col-span-2">
+                      <span className="font-medium text-gray-600">Services & Equipment:</span>
+                      <div className="mt-1 space-y-2">
+                        {addFormData.service_types.map((serviceType) => {
+                          const serviceInfo = [
+                            { value: 'RO', label: 'RO (Reverse Osmosis)', icon: '💧' },
+                            { value: 'SOFTENER', label: 'Water Softener', icon: '🧂' },
+                            { value: 'AC', label: 'AC Services', icon: '❄️' },
+                            { value: 'RO_AC', label: 'RO + AC Services', icon: '💧❄️' },
+                            { value: 'SOFTENER_AC', label: 'Softener + AC', icon: '🧂❄️' },
+                            { value: 'RO_SOFTENER', label: 'RO + Softener', icon: '💧🧂' },
+                            { value: 'ALL_SERVICES', label: 'All Services', icon: '🔧' },
+                            { value: 'APPLIANCE', label: 'Home Appliances', icon: '🏠' }
+                          ].find(s => s.value === serviceType);
+                          
+                          const equipment = addFormData.equipment[serviceType];
+                          
+                          return (
+                            <div key={serviceType} className="flex items-center gap-2 text-sm">
+                              <span>{serviceInfo?.icon}</span>
+                              <span className="font-medium">{serviceInfo?.label}:</span>
+                              <span className="text-gray-700">
+                                {equipment?.brand} - {equipment?.model}
+                              </span>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                    <div>
+                      <span className="font-medium text-gray-600">Native Language:</span>
+                      <p className="text-gray-900">
+                        {addFormData.native_language ? 
+                          addFormData.native_language.charAt(0) + addFormData.native_language.slice(1).toLowerCase() :
+                          'Not specified'}
+                      </p>
+                    </div>
+                    <div>
+                      <span className="font-medium text-gray-600">Behavior:</span>
+                      <p className="text-gray-900">
+                        {addFormData.behavior ? 
+                          addFormData.behavior.replace('_', ' ').toLowerCase().replace(/\b\w/g, l => l.toUpperCase()) 
+                          : 'Not specified'
+                        }
+                      </p>
+                    </div>
+                  </div>
             </div>
 
-            {/* Address - Area */}
-            <div className="space-y-2">
-              <Label htmlFor="add_area">Area *</Label>
-              <Input
-                id="add_area"
-                value={addFormData.address.area}
-                onChange={(e) => handleAddFormChange('address.area', e.target.value)}
-                placeholder="Enter area/locality"
-                required
-              />
-            </div>
+                <div className="space-y-2">
+                  <Label htmlFor="add_behavior">Customer Behavior</Label>
+                  <Select value={addFormData.behavior} onValueChange={(value) => handleAddFormChange('behavior', value)}>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select customer behavior pattern" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="FRIENDLY">Friendly & Cooperative</SelectItem>
+                      <SelectItem value="DEMANDING">Demanding & Particular</SelectItem>
+                      <SelectItem value="QUIET">Quiet & Reserved</SelectItem>
+                      <SelectItem value="CHATTY">Chatty & Social</SelectItem>
+                      <SelectItem value="BUSY">Always Busy</SelectItem>
+                      <SelectItem value="PUNCTUAL">Very Punctual</SelectItem>
+                      <SelectItem value="FLEXIBLE">Flexible & Easy-going</SelectItem>
+                      <SelectItem value="COMPLAINING">Tends to Complain</SelectItem>
+                      <SelectItem value="SATISFIED">Always Satisfied</SelectItem>
+                      <SelectItem value="NEGOTIATING">Price Negotiating</SelectItem>
+                      <SelectItem value="TECH_SAVVY">Tech Savvy</SelectItem>
+                      <SelectItem value="TRADITIONAL">Traditional Approach</SelectItem>
+                      <SelectItem value="URGENT">Always Urgent</SelectItem>
+                      <SelectItem value="PATIENT">Very Patient</SelectItem>
+                      <SelectItem value="OTHER">Other</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
 
-            {/* Address - Pincode */}
-            <div className="space-y-2">
-              <Label htmlFor="add_pincode">Pincode *</Label>
-              <Input
-                id="add_pincode"
-                value={addFormData.address.pincode}
-                onChange={(e) => handleAddFormChange('address.pincode', e.target.value)}
-                placeholder="Enter pincode"
-                required
-              />
-            </div>
+                <div className="space-y-2">
+                  <Label htmlFor="add_native_language">Native Language</Label>
+                  <Select value={addFormData.native_language} onValueChange={(value) => handleAddFormChange('native_language', value)}>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select native language" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="ENGLISH">English</SelectItem>
+                      <SelectItem value="HINDI">Hindi</SelectItem>
+                      <SelectItem value="KANNADA">Kannada</SelectItem>
+                      <SelectItem value="TAMIL">Tamil</SelectItem>
+                      <SelectItem value="TELUGU">Telugu</SelectItem>
+                      <SelectItem value="MARATHI">Marathi</SelectItem>
+                      <SelectItem value="GUJARATI">Gujarati</SelectItem>
+                      <SelectItem value="BENGALI">Bengali</SelectItem>
+                      <SelectItem value="PUNJABI">Punjabi</SelectItem>
+                      <SelectItem value="URDU">Urdu</SelectItem>
+                      <SelectItem value="MALAYALAM">Malayalam</SelectItem>
+                      <SelectItem value="ODIA">Odia</SelectItem>
+                      <SelectItem value="OTHER">Other</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
 
-            {/* Status */}
-            <div className="space-y-2">
-              <Label htmlFor="add_status">Status</Label>
-              <Select value={addFormData.status} onValueChange={(value) => handleAddFormChange('status', value)}>
-                <SelectTrigger>
-                  <SelectValue placeholder="Select status" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="ACTIVE">Active</SelectItem>
-                  <SelectItem value="INACTIVE">Inactive</SelectItem>
-                  <SelectItem value="BLOCKED">Blocked</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
+                <div className="space-y-2">
+                  <Label htmlFor="add_notes">Additional Notes</Label>
+                  <Textarea
+                    id="add_notes"
+                    value={addFormData.notes}
+                    onChange={(e) => handleAddFormChange('notes', e.target.value)}
+                    placeholder="Enter any additional notes or special requirements"
+                    rows={3}
+                  />
+                </div>
 
-            {/* Notes */}
-            <div className="space-y-2 md:col-span-2">
-              <Label htmlFor="add_notes">Notes</Label>
-              <Textarea
-                id="add_notes"
-                value={addFormData.notes}
-                onChange={(e) => handleAddFormChange('notes', e.target.value)}
-                placeholder="Enter any additional notes or special requirements"
-                rows={3}
-              />
             </div>
+            )}
           </div>
 
-          <DialogFooter>
+          <DialogFooter className="flex justify-between">
+            <div className="flex gap-2">
+              {currentStep > 1 && (
+                <Button variant="outline" onClick={prevStep}>
+                  Previous
+                </Button>
+              )}
             <Button 
               variant="outline" 
               onClick={() => setAddDialogOpen(false)}
@@ -838,9 +1356,17 @@ const AdminDashboard = () => {
             >
               Cancel
             </Button>
+            </div>
+            
+            <div>
+              {currentStep < 4 ? (
+                <Button onClick={nextStep} className="bg-blue-600 hover:bg-blue-700">
+                  Next Step
+                </Button>
+              ) : (
             <Button 
               onClick={handleCreateCustomer}
-              disabled={isCreating || !addFormData.full_name || !addFormData.phone || !addFormData.email || !addFormData.service_type || !addFormData.brand || !addFormData.model}
+                  disabled={isCreating}
               className="bg-green-600 hover:bg-green-700"
             >
               {isCreating ? (
@@ -852,13 +1378,15 @@ const AdminDashboard = () => {
                 'Create Customer'
               )}
             </Button>
+              )}
+            </div>
           </DialogFooter>
         </DialogContent>
       </Dialog>
 
       {/* Edit Customer Dialog */}
       <Dialog open={editDialogOpen} onOpenChange={setEditDialogOpen}>
-        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+        <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>Edit Customer</DialogTitle>
             <DialogDescription>
@@ -866,116 +1394,244 @@ const AdminDashboard = () => {
             </DialogDescription>
           </DialogHeader>
           
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 py-4">
-            {/* Full Name */}
-            <div className="space-y-2">
-              <Label htmlFor="full_name">Full Name</Label>
-              <Input
-                id="full_name"
-                value={editFormData.full_name}
-                onChange={(e) => handleEditFormChange('full_name', e.target.value)}
-                placeholder="Enter full name"
+          <div className="py-4 space-y-6">
+            {/* Personal Information */}
+            <div className="space-y-4">
+              <h3 className="text-lg font-semibold text-gray-900">Personal Information</h3>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label htmlFor="edit_full_name">Full Name</Label>
+                  <Input
+                    id="edit_full_name"
+                    value={editFormData.full_name}
+                    onChange={(e) => handleEditFormChange('full_name', e.target.value)}
+                    placeholder="Enter full name"
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="edit_phone">Primary Phone</Label>
+                  <Input
+                    id="edit_phone"
+                    value={editFormData.phone}
+                    onChange={(e) => handleEditFormChange('phone', e.target.value)}
+                    placeholder="Enter primary phone number"
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="edit_alternate_phone">Alternate Phone</Label>
+                  <Input
+                    id="edit_alternate_phone"
+                    value={editFormData.alternate_phone}
+                    onChange={(e) => handleEditFormChange('alternate_phone', e.target.value)}
+                    placeholder="Enter alternate phone number (optional)"
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="edit_email">Email</Label>
+                  <Input
+                    id="edit_email"
+                    type="email"
+                    value={editFormData.email}
+                    onChange={(e) => handleEditFormChange('email', e.target.value)}
+                    placeholder="Enter email address"
+                  />
+                </div>
+              </div>
+            </div>
+
+            {/* Service Information */}
+            <div className="space-y-4">
+              <h3 className="text-lg font-semibold text-gray-900">Service Information</h3>
+              
+              <div className="space-y-3">
+                <Label>Service Types</Label>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  {[
+                    { value: 'RO', label: 'RO (Reverse Osmosis)', icon: '💧' },
+                    { value: 'SOFTENER', label: 'Water Softener', icon: '🧂' },
+                    { value: 'AC', label: 'AC Services', icon: '❄️' },
+                    { value: 'RO_AC', label: 'RO + AC Services', icon: '💧❄️' },
+                    { value: 'SOFTENER_AC', label: 'Softener + AC', icon: '🧂❄️' },
+                    { value: 'RO_SOFTENER', label: 'RO + Softener', icon: '💧🧂' },
+                    { value: 'ALL_SERVICES', label: 'All Services', icon: '🔧' },
+                    { value: 'APPLIANCE', label: 'Home Appliances', icon: '🏠' }
+                  ].map((service) => (
+                    <div
+                      key={service.value}
+                      onClick={() => handleEditServiceTypeToggle(service.value)}
+                      className={`p-3 border-2 rounded-lg cursor-pointer transition-all ${
+                        editFormData.service_types.includes(service.value)
+                          ? 'border-blue-500 bg-blue-50 text-blue-700'
+                          : 'border-gray-200 hover:border-gray-300'
+                      }`}
+                    >
+                      <div className="flex items-center gap-2">
+                        <span className="text-lg">{service.icon}</span>
+                        <span className="text-sm font-medium">{service.label}</span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* Dynamic Equipment Fields for Each Selected Service Type */}
+              {editFormData.service_types.length > 0 && (
+                <div className="space-y-4">
+                  <Label className="text-base font-semibold">Equipment Details</Label>
+                  {editFormData.service_types.map((serviceType) => {
+                    const serviceInfo = [
+                      { value: 'RO', label: 'RO (Reverse Osmosis)', icon: '💧' },
+                      { value: 'SOFTENER', label: 'Water Softener', icon: '🧂' },
+                      { value: 'AC', label: 'AC Services', icon: '❄️' },
+                      { value: 'RO_AC', label: 'RO + AC Services', icon: '💧❄️' },
+                      { value: 'SOFTENER_AC', label: 'Softener + AC', icon: '🧂❄️' },
+                      { value: 'RO_SOFTENER', label: 'RO + Softener', icon: '💧🧂' },
+                      { value: 'ALL_SERVICES', label: 'All Services', icon: '🔧' },
+                      { value: 'APPLIANCE', label: 'Home Appliances', icon: '🏠' }
+                    ].find(s => s.value === serviceType);
+                    
+                    const equipment = editFormData.equipment[serviceType] || { brand: '', model: '' };
+                    
+                    return (
+                      <div key={serviceType} className="bg-gray-50 p-4 rounded-lg space-y-3">
+                        <div className="flex items-center gap-2">
+                          <span className="text-lg">{serviceInfo?.icon}</span>
+                          <span className="font-medium text-gray-900">{serviceInfo?.label}</span>
+                        </div>
+                        
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                          <div className="space-y-2">
+                            <Label htmlFor={`edit_brand_${serviceType}`}>Brand</Label>
+                            <Input
+                              id={`edit_brand_${serviceType}`}
+                              value={equipment.brand}
+                              onChange={(e) => handleEditEquipmentChange(serviceType, 'brand', e.target.value)}
+                              placeholder={`Enter ${serviceType} brand`}
+                            />
+                          </div>
+
+                          <div className="space-y-2">
+                            <Label htmlFor={`edit_model_${serviceType}`}>Model</Label>
+                            <Input
+                              id={`edit_model_${serviceType}`}
+                              value={equipment.model}
+                              onChange={(e) => handleEditEquipmentChange(serviceType, 'model', e.target.value)}
+                              placeholder={`Enter ${serviceType} model`}
+                            />
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+
+            {/* Additional Information */}
+            <div className="space-y-4">
+              <h3 className="text-lg font-semibold text-gray-900">Additional Information</h3>
+              
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label htmlFor="edit_behavior">Customer Behavior</Label>
+                  <Select value={editFormData.behavior} onValueChange={(value) => handleEditFormChange('behavior', value)}>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select customer behavior pattern" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="FRIENDLY">Friendly & Cooperative</SelectItem>
+                      <SelectItem value="DEMANDING">Demanding & Particular</SelectItem>
+                      <SelectItem value="QUIET">Quiet & Reserved</SelectItem>
+                      <SelectItem value="CHATTY">Chatty & Social</SelectItem>
+                      <SelectItem value="BUSY">Always Busy</SelectItem>
+                      <SelectItem value="PUNCTUAL">Very Punctual</SelectItem>
+                      <SelectItem value="FLEXIBLE">Flexible & Easy-going</SelectItem>
+                      <SelectItem value="COMPLAINING">Tends to Complain</SelectItem>
+                      <SelectItem value="SATISFIED">Always Satisfied</SelectItem>
+                      <SelectItem value="NEGOTIATING">Price Negotiating</SelectItem>
+                      <SelectItem value="TECH_SAVVY">Tech Savvy</SelectItem>
+                      <SelectItem value="TRADITIONAL">Traditional Approach</SelectItem>
+                      <SelectItem value="URGENT">Always Urgent</SelectItem>
+                      <SelectItem value="PATIENT">Very Patient</SelectItem>
+                      <SelectItem value="OTHER">Other</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="edit_native_language">Native Language</Label>
+                  <Select value={editFormData.native_language} onValueChange={(value) => handleEditFormChange('native_language', value)}>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select native language" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="ENGLISH">English</SelectItem>
+                      <SelectItem value="HINDI">Hindi</SelectItem>
+                      <SelectItem value="KANNADA">Kannada</SelectItem>
+                      <SelectItem value="TAMIL">Tamil</SelectItem>
+                      <SelectItem value="TELUGU">Telugu</SelectItem>
+                      <SelectItem value="MARATHI">Marathi</SelectItem>
+                      <SelectItem value="GUJARATI">Gujarati</SelectItem>
+                      <SelectItem value="BENGALI">Bengali</SelectItem>
+                      <SelectItem value="PUNJABI">Punjabi</SelectItem>
+                      <SelectItem value="URDU">Urdu</SelectItem>
+                      <SelectItem value="MALAYALAM">Malayalam</SelectItem>
+                      <SelectItem value="ODIA">Odia</SelectItem>
+                      <SelectItem value="OTHER">Other</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="edit_notes">Notes</Label>
+                <Textarea
+                  id="edit_notes"
+                  value={editFormData.notes}
+                  onChange={(e) => handleEditFormChange('notes', e.target.value)}
+                  placeholder="Enter any additional notes"
+                  rows={3}
+                />
+              </div>
+            </div>
+
+            {/* Customer Services Manager */}
+            <div className="pt-6 border-t border-gray-200">
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="text-lg font-semibold text-gray-900">Customer Services</h3>
+                <Button
+                  onClick={() => {
+                    // Navigate to booking page with pre-filled customer data
+                    const customerData = {
+                      customerId: editingCustomer?.id,
+                      customerName: (editingCustomer as any)?.full_name,
+                      phone: editingCustomer?.phone,
+                      email: editingCustomer?.email,
+                      address: (editingCustomer as any)?.address || '',
+                      serviceType: editFormData.service_types.join(', ') || 'RO'
+                    };
+                    // Store customer data in sessionStorage for pre-filling
+                    sessionStorage.setItem('prefillCustomerData', JSON.stringify(customerData));
+                    // Navigate to booking page
+                    window.location.href = '/booking';
+                  }}
+                  className="bg-green-600 hover:bg-green-700 text-white"
+                >
+                  <Plus className="w-4 h-4 mr-2" />
+                  Create New Service
+                </Button>
+              </div>
+              <CustomerServicesManager
+                customerId={editingCustomer?.id || ''}
+                customerName={(editingCustomer as any)?.full_name || ''}
+                services={customerServices[editingCustomer?.id || ''] || []}
+                onServicesUpdate={(services) => handleServicesUpdate(editingCustomer?.id || '', services)}
               />
             </div>
-
-            {/* Phone */}
-            <div className="space-y-2">
-              <Label htmlFor="phone">Phone</Label>
-              <Input
-                id="phone"
-                value={editFormData.phone}
-                onChange={(e) => handleEditFormChange('phone', e.target.value)}
-                placeholder="Enter phone number"
-              />
-            </div>
-
-            {/* Email */}
-            <div className="space-y-2">
-              <Label htmlFor="email">Email</Label>
-              <Input
-                id="email"
-                type="email"
-                value={editFormData.email}
-                onChange={(e) => handleEditFormChange('email', e.target.value)}
-                placeholder="Enter email address"
-              />
-            </div>
-
-            {/* Service Type */}
-            <div className="space-y-2">
-              <Label htmlFor="service_type">Service Type</Label>
-              <Select value={editFormData.service_type} onValueChange={(value) => handleEditFormChange('service_type', value)}>
-                <SelectTrigger>
-                  <SelectValue placeholder="Select service type" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="RO">RO</SelectItem>
-                  <SelectItem value="SOFTENER">Softener</SelectItem>
-                  <SelectItem value="AC">AC</SelectItem>
-                  <SelectItem value="APPLIANCE">Appliance</SelectItem>
-                  <SelectItem value="MULTIPLE">Multiple</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-
-            {/* Brand */}
-            <div className="space-y-2">
-              <Label htmlFor="brand">Brand</Label>
-              <Input
-                id="brand"
-                value={editFormData.brand}
-                onChange={(e) => handleEditFormChange('brand', e.target.value)}
-                placeholder="Enter brand name"
-              />
-            </div>
-
-            {/* Model */}
-            <div className="space-y-2">
-              <Label htmlFor="model">Model</Label>
-              <Input
-                id="model"
-                value={editFormData.model}
-                onChange={(e) => handleEditFormChange('model', e.target.value)}
-                placeholder="Enter model name"
-              />
-            </div>
-
-            {/* Status */}
-            <div className="space-y-2">
-              <Label htmlFor="status">Status</Label>
-              <Select value={editFormData.status} onValueChange={(value) => handleEditFormChange('status', value)}>
-                <SelectTrigger>
-                  <SelectValue placeholder="Select status" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="ACTIVE">Active</SelectItem>
-                  <SelectItem value="INACTIVE">Inactive</SelectItem>
-                  <SelectItem value="BLOCKED">Blocked</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-
-            {/* Notes */}
-            <div className="space-y-2 md:col-span-2">
-              <Label htmlFor="notes">Notes</Label>
-              <Textarea
-                id="notes"
-                value={editFormData.notes}
-                onChange={(e) => handleEditFormChange('notes', e.target.value)}
-                placeholder="Enter any additional notes"
-                rows={3}
-              />
-            </div>
-          </div>
-
-          {/* Customer Services Manager */}
-          <div className="mt-6 pt-6 border-t border-gray-200">
-            <CustomerServicesManager
-              customerId={editingCustomer?.id || ''}
-              customerName={(editingCustomer as any)?.full_name || ''}
-              services={customerServices[editingCustomer?.id || ''] || []}
-              onServicesUpdate={(services) => handleServicesUpdate(editingCustomer?.id || '', services)}
-            />
           </div>
 
           <DialogFooter>
@@ -995,7 +1651,7 @@ const AdminDashboard = () => {
                 <div className="flex items-center gap-2">
                   <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
                   Updating...
-      </div>
+                </div>
               ) : (
                 'Update Customer'
               )}
