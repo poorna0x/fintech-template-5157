@@ -314,7 +314,15 @@ const AdminDashboard = () => {
           longitude: 77.5946,
           formattedAddress: addFormData.address
         },
-        service_type: addFormData.service_types.join(', ') as 'RO' | 'SOFTENER' | 'AC' | 'RO_AC' | 'SOFTENER_AC' | 'RO_SOFTENER' | 'ALL_SERVICES' | 'APPLIANCE', // Join multiple service types
+        service_type: (() => {
+          if (addFormData.service_types.length === 0) return 'RO';
+          if (addFormData.service_types.length === 1) return addFormData.service_types[0];
+          if (addFormData.service_types.includes('RO') && addFormData.service_types.includes('AC')) return 'RO_AC';
+          if (addFormData.service_types.includes('SOFTENER') && addFormData.service_types.includes('AC')) return 'SOFTENER_AC';
+          if (addFormData.service_types.includes('RO') && addFormData.service_types.includes('SOFTENER')) return 'RO_SOFTENER';
+          if (addFormData.service_types.length >= 3) return 'ALL_SERVICES';
+          return addFormData.service_types[0];
+        })() as 'RO' | 'SOFTENER' | 'AC' | 'RO_AC' | 'SOFTENER_AC' | 'RO_SOFTENER' | 'ALL_SERVICES' | 'APPLIANCE',
         brand: Object.values(addFormData.equipment).map(eq => eq.brand).join(', '), // Join all brands
         model: Object.values(addFormData.equipment).map(eq => eq.model).join(', '), // Join all models
         preferred_language: (addFormData.native_language || 'ENGLISH') as 'ENGLISH' | 'HINDI' | 'KANNADA' | 'TAMIL' | 'TELUGU',
