@@ -2280,17 +2280,11 @@ const AdminDashboard = () => {
               <img
                 src={selectedPhoto.url}
                 alt={`Photo ${selectedPhoto.index + 1}`}
-                className="max-w-full max-h-full object-contain cursor-pointer"
+                className="max-w-full max-h-full object-contain"
                 onError={(e) => {
                   console.error('Image failed to load:', selectedPhoto.url);
                   e.currentTarget.style.display = 'none';
                 }}
-                onContextMenu={(e) => {
-                  e.preventDefault();
-                  // Show custom context menu or let browser handle it
-                  toast.info('Right-click and select "Save image as" to download');
-                }}
-                title="Right-click to save image"
               />
             )}
           </div>
