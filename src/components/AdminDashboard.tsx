@@ -1093,13 +1093,6 @@ const AdminDashboard = () => {
                           <Edit className="mr-2 h-4 w-4" />
                               Edit Customer
                         </DropdownMenuItem>
-                        <DropdownMenuItem 
-                              onClick={() => handleCustomerStatusUpdate(customer.id, 'BLOCKED')}
-                          className="text-red-600"
-                        >
-                          <Trash2 className="mr-2 h-4 w-4" />
-                              Block Customer
-                        </DropdownMenuItem>
                       </DropdownMenuContent>
                     </DropdownMenu>
                           </div>
