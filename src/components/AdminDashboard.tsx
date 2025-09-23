@@ -1143,6 +1143,18 @@ const AdminDashboard = () => {
                           <Edit className="mr-2 h-4 w-4" />
                           Edit Profile
                         </DropdownMenuItem>
+                        <DropdownMenuItem onClick={() => toast.info('Billing system coming soon')}>
+                          <Receipt className="mr-2 h-4 w-4" />
+                          Generate Bill
+                        </DropdownMenuItem>
+                        <DropdownMenuItem onClick={() => toast.info('AMC management coming soon')}>
+                          <Star className="mr-2 h-4 w-4" />
+                          AMC
+                        </DropdownMenuItem>
+                        <DropdownMenuItem onClick={() => toast.info('Reports coming soon')}>
+                          <FileText className="mr-2 h-4 w-4" />
+                          Reports
+                        </DropdownMenuItem>
                       </DropdownMenuContent>
                     </DropdownMenu>
                   </div>
@@ -1257,7 +1269,7 @@ const AdminDashboard = () => {
 
                 {/* Business Actions */}
                 <div className="p-6">
-                  <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                  <div className="flex justify-center">
                     <Button 
                       variant="outline" 
                       size="sm" 
@@ -1266,33 +1278,6 @@ const AdminDashboard = () => {
                     >
                       <WhatsAppIcon className="w-4 h-4 text-black" />
                       WhatsApp
-                    </Button>
-                    <Button 
-                      variant="outline" 
-                      size="sm" 
-                      className="flex items-center gap-2 h-10"
-                      onClick={() => toast.info('Billing system coming soon')}
-                    >
-                      <Receipt className="w-4 h-4" />
-                      Generate Bill
-                    </Button>
-                    <Button 
-                      variant="outline" 
-                      size="sm" 
-                      className="flex items-center gap-2 h-10"
-                      onClick={() => toast.info('AMC management coming soon')}
-                    >
-                      <Star className="w-4 h-4" />
-                      AMC
-                    </Button>
-                    <Button 
-                      variant="outline" 
-                      size="sm" 
-                      className="flex items-center gap-2 h-10"
-                      onClick={() => toast.info('Reports coming soon')}
-                    >
-                      <FileText className="w-4 h-4" />
-                      Reports
                     </Button>
                   </div>
                 </div>
