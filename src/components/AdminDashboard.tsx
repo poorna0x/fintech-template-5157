@@ -1248,7 +1248,7 @@ const AdminDashboard = () => {
                         </div>
                         <div className="flex-1">
                           <div className="text-sm font-medium text-gray-900">Service Location</div>
-                          <div className="text-xs text-gray-500 truncate">{customer.address}</div>
+                          <div className="text-xs text-gray-500 truncate">{formatAddressForDisplay(customer.address)}</div>
                         </div>
                         <Button 
                           size="sm" 
