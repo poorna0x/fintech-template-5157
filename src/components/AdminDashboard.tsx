@@ -297,7 +297,7 @@ const AdminDashboard = () => {
     try {
       // Create customer data with default location (you can enhance this later)
       const customerData = {
-        customer_id: `CUST-${Date.now()}`, // Generate customer ID
+        // Don't set customer_id - let the database generate it using the function
         full_name: addFormData.full_name,
         phone: addFormData.phone,
         alternate_phone: addFormData.alternate_phone,
