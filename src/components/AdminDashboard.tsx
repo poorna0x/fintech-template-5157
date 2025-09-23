@@ -1193,21 +1193,13 @@ const AdminDashboard = () => {
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div className="space-y-3">
                       <div className="flex items-center gap-3">
-                        <Phone className="w-4 h-4 text-gray-600" />
+                        <a href={`tel:${customer.phone}`} className="cursor-pointer">
+                          <Phone className="w-4 h-4 text-gray-600 hover:text-black" />
+                        </a>
                         <div>
-                          <a 
-                            href={`tel:${customer.phone}`}
-                            className="text-sm font-medium text-blue-600 hover:text-blue-800 hover:underline cursor-pointer"
-                          >
-                            {customer.phone}
-                          </a>
+                          <div className="text-sm font-medium text-gray-900">{customer.phone}</div>
                           {(customer as any).alternate_phone && (
-                            <a 
-                              href={`tel:${(customer as any).alternate_phone}`}
-                              className="block text-xs text-gray-500 hover:text-blue-600 hover:underline cursor-pointer"
-                            >
-                              {(customer as any).alternate_phone}
-                            </a>
+                            <div className="text-xs text-gray-500">{(customer as any).alternate_phone}</div>
                           )}
                         </div>
                       </div>
@@ -1215,14 +1207,11 @@ const AdminDashboard = () => {
                     
                     <div className="space-y-3">
                       <div className="flex items-center gap-3">
-                        <Mail className="w-4 h-4 text-gray-600" />
+                        <a href={`mailto:${customer.email}`} className="cursor-pointer">
+                          <Mail className="w-4 h-4 text-gray-600 hover:text-black" />
+                        </a>
                         <div>
-                          <a 
-                            href={`mailto:${customer.email}`}
-                            className="text-sm font-medium text-blue-600 hover:text-blue-800 hover:underline cursor-pointer"
-                          >
-                            {customer.email}
-                          </a>
+                          <div className="text-sm font-medium text-gray-900">{customer.email}</div>
                         </div>
                       </div>
                     </div>
