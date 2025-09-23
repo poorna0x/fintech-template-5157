@@ -318,14 +318,19 @@ const AdminDashboard = () => {
           const selectedTypes = addFormData.service_types;
           console.log('Selected service types:', selectedTypes);
           
-          // Based on testing, only basic service types are allowed in the database
-          // Map combined selections to the first selected type
-          if (selectedTypes.length === 0) return 'RO';
-          if (selectedTypes.length === 1) return selectedTypes[0];
+          // Valid service types that are supported by the database
+          const validTypes = ['RO', 'SOFTENER', 'AC', 'APPLIANCE'];
           
-          // For multiple selections, use the first one
-          // TODO: Update database schema to support combined service types
-          return selectedTypes[0];
+          // Filter out any invalid service types
+          const validSelectedTypes = selectedTypes.filter(type => validTypes.includes(type));
+          console.log('Valid selected types:', validSelectedTypes);
+          
+          // Based on testing, only basic service types are allowed in the database
+          if (validSelectedTypes.length === 0) return 'RO';
+          if (validSelectedTypes.length === 1) return validSelectedTypes[0];
+          
+          // For multiple selections, use the first valid one
+          return validSelectedTypes[0];
         })() as 'RO' | 'SOFTENER' | 'AC' | 'APPLIANCE',
         brand: Object.values(addFormData.equipment).map(eq => eq.brand).join(', '), // Join all brands
         model: Object.values(addFormData.equipment).map(eq => eq.model).join(', '), // Join all models
