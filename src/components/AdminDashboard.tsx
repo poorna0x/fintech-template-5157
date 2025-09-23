@@ -37,7 +37,8 @@ import {
   Star,
   Download,
   Eye,
-  PhoneCall
+  PhoneCall,
+  Send
 } from 'lucide-react';
 import { db } from '@/lib/supabase';
 import { Customer, Job, Technician } from '@/types';
@@ -1115,8 +1116,8 @@ const AdminDashboard = () => {
                 <div className="bg-gradient-to-r from-gray-50 to-gray-100 p-6 border-b border-gray-200">
                   <div className="flex items-start justify-between mb-4">
                     <div className="flex items-center gap-4">
-                      <div className="w-16 h-16 bg-black rounded-full flex items-center justify-center">
-                        <User className="w-8 h-8 text-white" />
+                      <div className="w-8 h-8 bg-black rounded-full flex items-center justify-center">
+                        <User className="w-4 h-4 text-white" />
                       </div>
                       <div>
                         <div className="flex items-center gap-3 mb-2">
@@ -1227,7 +1228,7 @@ const AdminDashboard = () => {
                           <div className="text-xs text-gray-500">Email Address</div>
                         </div>
                         <Button size="sm" variant="ghost" className="ml-auto">
-                          <MessageCircle className="w-4 h-4" />
+                          <Send className="w-4 h-4" />
                         </Button>
                       </div>
                     </div>
@@ -1295,7 +1296,7 @@ const AdminDashboard = () => {
                       className="flex items-center gap-2 h-10"
                       onClick={() => toast.info('WhatsApp integration coming soon')}
                     >
-                      <MessageCircle className="w-4 h-4" />
+                      <MessageCircle className="w-4 h-4 text-green-600" />
                       WhatsApp
                     </Button>
                     <Button 
