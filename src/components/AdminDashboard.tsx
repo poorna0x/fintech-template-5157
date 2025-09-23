@@ -665,20 +665,54 @@ const AdminDashboard = () => {
   // Download photo
   const downloadPhoto = async (photoUrl: string, photoIndex: number) => {
     try {
-      const response = await fetch(photoUrl);
-      const blob = await response.blob();
-      const url = window.URL.createObjectURL(blob);
+      // For Cloudinary URLs, try to get the raw image URL
+      let downloadUrl = photoUrl;
+      
+      // If it's a Cloudinary URL, try to get the raw version
+      if (photoUrl.includes('cloudinary.com')) {
+        // Remove any transformations and get the raw image
+        downloadUrl = photoUrl.replace(/\/upload\/[^\/]*\//, '/upload/');
+      }
+      
+      // Method 1: Try direct download
       const link = document.createElement('a');
-      link.href = url;
+      link.href = downloadUrl;
       link.download = `photo-${photoIndex + 1}.jpg`;
+      link.target = '_blank';
+      link.rel = 'noopener noreferrer';
+      
+      // Add to DOM, click, and remove
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
-      window.URL.revokeObjectURL(url);
-      toast.success('Photo downloaded successfully');
+      
+      toast.success('Download started');
     } catch (error) {
       console.error('Error downloading photo:', error);
-      toast.error('Failed to download photo');
+      
+      // Method 2: Fallback - open in new tab for manual save
+      try {
+        const newWindow = window.open(photoUrl, '_blank', 'noopener,noreferrer');
+        if (newWindow) {
+          toast.info('Photo opened in new tab. Right-click and "Save image as" to download.');
+        } else {
+          throw new Error('Popup blocked');
+        }
+      } catch (fallbackError) {
+        console.error('Fallback download failed:', fallbackError);
+        toast.error('Unable to download. Please right-click the photo and select "Save image as"');
+      }
+    }
+  };
+
+  // Copy photo link to clipboard
+  const copyPhotoLink = async (photoUrl: string) => {
+    try {
+      await navigator.clipboard.writeText(photoUrl);
+      toast.success('Photo link copied to clipboard');
+    } catch (error) {
+      console.error('Error copying link:', error);
+      toast.error('Failed to copy link');
     }
   };
 
@@ -2218,6 +2252,15 @@ const AdminDashboard = () => {
                   Download
                 </Button>
                 <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => copyPhotoLink(selectedPhoto.url)}
+                  className="bg-white/90 text-black hover:bg-white border-gray-300"
+                >
+                  <Calendar className="w-4 h-4 mr-2" />
+                  Copy Link
+                </Button>
+                <Button
                   variant="destructive"
                   size="sm"
                   onClick={() => {
@@ -2237,11 +2280,17 @@ const AdminDashboard = () => {
               <img
                 src={selectedPhoto.url}
                 alt={`Photo ${selectedPhoto.index + 1}`}
-                className="max-w-full max-h-full object-contain"
+                className="max-w-full max-h-full object-contain cursor-pointer"
                 onError={(e) => {
                   console.error('Image failed to load:', selectedPhoto.url);
                   e.currentTarget.style.display = 'none';
                 }}
+                onContextMenu={(e) => {
+                  e.preventDefault();
+                  // Show custom context menu or let browser handle it
+                  toast.info('Right-click and select "Save image as" to download');
+                }}
+                title="Right-click to save image"
               />
             )}
           </div>
