@@ -315,19 +315,19 @@ class CashfreeService {
 let cashfreeService: CashfreeService | null = null;
 
 export const initializeCashfree = (config: CashfreeConfig): CashfreeService => {
-  if (!cashfreeService) {
-    // Always use mock implementation to prevent API errors
-    // This ensures the payment flow works without real API calls
-    console.log('🚀 Initializing Cashfree Mock Service (No API calls)');
-    console.log('✅ This prevents "endpoint or method is not valid" errors');
-    cashfreeService = new CashfreeService(config);
-    
-    // NOTE: Real API is disabled to prevent errors
-    // To enable real API later, you need:
-    // 1. Valid Cashfree credentials
-    // 2. Proper API configuration
-    // 3. Uncomment the real API code below
-  }
+  // Force new instance every time to avoid any caching issues
+  console.log('🚀 Initializing Cashfree Mock Service (No API calls)');
+  console.log('✅ This prevents "endpoint or method is not valid" errors');
+  console.log('🔄 Creating fresh instance to avoid cache issues');
+  
+  cashfreeService = new CashfreeService(config);
+  
+  // NOTE: Real API is disabled to prevent errors
+  // To enable real API later, you need:
+  // 1. Valid Cashfree credentials
+  // 2. Proper API configuration
+  // 3. Uncomment the real API code below
+  
   return cashfreeService;
 };
 
