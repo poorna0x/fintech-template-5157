@@ -1,12 +1,26 @@
 {
-  "name": "hydrogen-ro-email-api",
+  "name": "ro-business-payment-api",
   "version": "1.0.0",
-  "description": "Email API for Hydrogen RO booking confirmations",
-  "main": "send-email.js",
-  "dependencies": {
-    "nodemailer": "^7.0.6"
+  "description": "Payment API for RO Business CRM",
+  "main": "payment.js",
+  "scripts": {
+    "start": "node payment.js",
+    "dev": "nodemon payment.js"
   },
-  "engines": {
-    "node": ">=18.0.0"
-  }
+  "dependencies": {
+    "express": "^4.18.2",
+    "cors": "^2.8.5",
+    "dotenv": "^16.3.1"
+  },
+  "devDependencies": {
+    "nodemon": "^3.0.1"
+  },
+  "keywords": [
+    "payment",
+    "cashfree",
+    "api",
+    "ro-business"
+  ],
+  "author": "RO Business CRM",
+  "license": "MIT"
 }

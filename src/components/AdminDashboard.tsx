@@ -40,7 +40,8 @@ import {
   Download,
   Eye,
   PhoneCall,
-  Send
+  Send,
+  CreditCard
 } from 'lucide-react';
 import { db } from '@/lib/supabase';
 import { Customer, Job, Technician } from '@/types';
@@ -48,6 +49,13 @@ import { toast } from 'sonner';
 import { openInGoogleMaps, extractCoordinates, formatAddressForDisplay } from '@/lib/maps';
 import { sendNotification, createJobAssignedNotification, createJobCompletedNotification, createJobCancelledNotification } from '@/lib/notifications';
 import CustomerServicesManager from './CustomerServicesManager';
+import ErrorBoundary from './ErrorBoundary';
+import PaymentModal from './PaymentModal';
+import PaymentStatus from './PaymentStatus';
+import PaymentAnalytics from './PaymentAnalytics';
+import { initializeCashfree, getCashfreeService } from '@/lib/cashfree';
+import { PaymentResponse, JobWithPayment, PaymentAnalytics as PaymentAnalyticsType } from '@/types/payment';
+import { CASHFREE_CONFIG } from '@/config/cashfree';
 
 // WhatsApp Icon Component
 const WhatsAppIcon = ({ className }: { className?: string }) => (
@@ -136,6 +144,33 @@ const AdminDashboard = () => {
   const [assignJobDialogOpen, setAssignJobDialogOpen] = useState(false);
   const [jobToAssign, setJobToAssign] = useState<Job | null>(null);
   const [selectedTechnicianId, setSelectedTechnicianId] = useState('');
+  
+  // Customer Profile Features State
+  const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(null);
+  const [newJobDialogOpen, setNewJobDialogOpen] = useState(false);
+  const [photosDialogOpen, setPhotosDialogOpen] = useState(false);
+  const [historyDialogOpen, setHistoryDialogOpen] = useState(false);
+  const [customerPhotos, setCustomerPhotos] = useState<string[]>([]);
+  const [customerHistory, setCustomerHistory] = useState<Job[]>([]);
+  const [newJobFormData, setNewJobFormData] = useState({
+    serviceType: '',
+    serviceSubType: '',
+    brand: '',
+    model: '',
+    description: '',
+    scheduledDate: '',
+    scheduledTimeSlot: 'MORNING' as 'MORNING' | 'AFTERNOON' | 'EVENING',
+    priority: 'MEDIUM' as 'LOW' | 'MEDIUM' | 'HIGH' | 'URGENT',
+    assignedTechnicianId: '',
+    estimatedCost: 0
+  });
+
+  // Payment Features State
+  const [paymentModalOpen, setPaymentModalOpen] = useState(false);
+  const [selectedJobForPayment, setSelectedJobForPayment] = useState<JobWithPayment | null>(null);
+  const [paymentAnalytics, setPaymentAnalytics] = useState<PaymentAnalyticsType | null>(null);
+  const [showPaymentAnalytics, setShowPaymentAnalytics] = useState(false);
+  const [isLoadingPayments, setIsLoadingPayments] = useState(false);
 
   // Generate employee ID
   const generateEmployeeId = (): string => {
@@ -168,6 +203,18 @@ const AdminDashboard = () => {
   // Load data on component mount
   useEffect(() => {
     loadDashboardData();
+    
+    // Initialize Cashfree payment gateway
+    const initPaymentGateway = async () => {
+      try {
+        await initializeCashfree(CASHFREE_CONFIG);
+        console.log('Cashfree payment gateway initialized successfully');
+      } catch (error) {
+        console.error('Failed to initialize Cashfree:', error);
+      }
+    };
+    
+    initPaymentGateway();
   }, []);
 
   const loadDashboardData = async () => {
@@ -1210,6 +1257,224 @@ const AdminDashboard = () => {
     );
   };
 
+  // Customer Profile Feature Handlers
+  const handleNewJob = (customer: Customer) => {
+    setSelectedCustomer(customer);
+    setNewJobFormData({
+      serviceType: customer.serviceType || 'RO',
+      serviceSubType: '',
+      brand: customer.brand || '',
+      model: customer.model || '',
+      description: '',
+      scheduledDate: new Date().toISOString().split('T')[0],
+      scheduledTimeSlot: 'MORNING' as 'MORNING' | 'AFTERNOON' | 'EVENING',
+      priority: 'MEDIUM' as 'LOW' | 'MEDIUM' | 'HIGH' | 'URGENT',
+      assignedTechnicianId: '',
+      estimatedCost: 0
+    });
+    setNewJobDialogOpen(true);
+  };
+
+  const handlePhotos = async (customer: Customer) => {
+    setSelectedCustomer(customer);
+    setPhotosDialogOpen(true);
+    
+    // Load customer photos from all their jobs
+    try {
+      const { data: customerJobs, error } = await db.jobs.getByCustomerId(customer.id);
+      if (error) throw error;
+      
+      const allPhotos: string[] = [];
+      customerJobs?.forEach(job => {
+        if (job.beforePhotos) {
+          allPhotos.push(...job.beforePhotos);
+        }
+        if (job.afterPhotos) {
+          allPhotos.push(...job.afterPhotos);
+        }
+      });
+      
+      setCustomerPhotos(allPhotos);
+    } catch (error) {
+      console.error('Error loading customer photos:', error);
+      toast.error('Failed to load customer photos');
+    }
+  };
+
+  const handleHistory = async (customer: Customer) => {
+    setSelectedCustomer(customer);
+    setHistoryDialogOpen(true);
+    
+    // Load customer job history
+    try {
+      const { data: customerJobs, error } = await db.jobs.getByCustomerId(customer.id);
+      if (error) throw error;
+      
+      setCustomerHistory(customerJobs || []);
+    } catch (error) {
+      console.error('Error loading customer history:', error);
+      toast.error('Failed to load customer history');
+    }
+  };
+
+  const handleCreateNewJob = async () => {
+    if (!selectedCustomer) {
+      toast.error('No customer selected');
+      return;
+    }
+    
+    // Validate required fields
+    if (!newJobFormData.serviceType || !newJobFormData.serviceSubType || !newJobFormData.brand || !newJobFormData.model) {
+      toast.error('Please fill in all required fields');
+      return;
+    }
+    
+    try {
+      const jobData = {
+        customer_id: selectedCustomer.id,
+        service_type: newJobFormData.serviceType as 'RO' | 'SOFTENER' | 'AC' | 'APPLIANCE',
+        service_sub_type: newJobFormData.serviceSubType,
+        brand: newJobFormData.brand,
+        model: newJobFormData.model,
+        scheduled_date: newJobFormData.scheduledDate,
+        scheduled_time_slot: newJobFormData.scheduledTimeSlot,
+        service_address: selectedCustomer.address,
+        service_location: selectedCustomer.location,
+        description: newJobFormData.description,
+        priority: newJobFormData.priority,
+        estimated_cost: newJobFormData.estimatedCost,
+        status: newJobFormData.assignedTechnicianId ? 'ASSIGNED' : 'PENDING',
+        assigned_technician_id: newJobFormData.assignedTechnicianId || null,
+        assigned_date: newJobFormData.assignedTechnicianId ? new Date().toISOString() : null
+      };
+
+      const { data: newJob, error } = await db.jobs.create(jobData);
+      
+      if (error) throw error;
+      
+      // Update local state
+      setJobs(prev => [newJob, ...prev]);
+      
+      toast.success('New job created successfully!');
+      setNewJobDialogOpen(false);
+      
+      // Send notification if technician assigned
+      if (newJobFormData.assignedTechnicianId) {
+        const technician = technicians.find(t => t.id === newJobFormData.assignedTechnicianId);
+        if (technician) {
+          const notification = createJobAssignedNotification(
+            newJob.job_number,
+            selectedCustomer.fullName,
+            technician.fullName,
+            newJob.id
+          );
+          await sendNotification(notification);
+        }
+      }
+    } catch (error) {
+      console.error('Error creating new job:', error);
+      toast.error('Failed to create new job');
+    }
+  };
+
+  // Payment handler functions
+  const handleProcessPayment = (job: Job) => {
+    const jobWithPayment: JobWithPayment = {
+      ...job,
+      customer: customers.find(c => c.id === job.customerId),
+      estimatedCost: (job as any).estimated_cost || 0,
+      actualCost: (job as any).actual_cost,
+      paymentStatus: (job as any).payment_status || 'PENDING',
+      paymentMethod: (job as any).payment_method,
+      paymentAmount: (job as any).payment_amount,
+      paymentId: (job as any).payment_id,
+      paymentTime: (job as any).payment_time,
+      refundAmount: (job as any).refund_amount,
+      refundStatus: (job as any).refund_status,
+    };
+    
+    setSelectedJobForPayment(jobWithPayment);
+    setPaymentModalOpen(true);
+  };
+
+  const handlePaymentSuccess = async (paymentData: PaymentResponse) => {
+    if (!selectedJobForPayment) return;
+
+    try {
+      // Update job payment status in database
+      const { error } = await db.jobs.update(selectedJobForPayment.id, {
+        payment_status: 'PAID',
+        payment_method: 'CASHFREE',
+        payment_amount: 15000, // Fixed amount
+        payment_id: paymentData.paymentId,
+        payment_time: new Date().toISOString(),
+        payment_gateway: 'CASHFREE',
+        actual_cost: 15000 // Update actual cost to match payment
+      });
+
+      if (error) throw error;
+
+      // Update local state
+      setJobs(prev => prev.map(job => 
+        job.id === selectedJobForPayment.id 
+          ? { 
+              ...job, 
+              payment_status: 'PAID',
+              payment_method: 'CASHFREE',
+              payment_amount: 15000,
+              payment_id: paymentData.paymentId,
+              payment_time: new Date().toISOString(),
+              actual_cost: 15000
+            }
+          : job
+      ));
+
+      toast.success(`Payment of ₹15,000 processed successfully!`);
+      setPaymentModalOpen(false);
+      setSelectedJobForPayment(null);
+    } catch (error) {
+      console.error('Error updating payment status:', error);
+      toast.error('Failed to update payment status');
+    }
+  };
+
+  const handleLoadPaymentAnalytics = async () => {
+    setIsLoadingPayments(true);
+    try {
+      // This would typically call an API endpoint that uses the get_payment_analytics function
+      // For now, we'll create mock data
+      const mockAnalytics: PaymentAnalyticsType = {
+        totalOrders: 150,
+        successfulPayments: 142,
+        failedPayments: 5,
+        pendingPayments: 3,
+        totalAmount: 450000,
+        averageOrderValue: 3000,
+        paymentMethodBreakdown: {
+          'UPI': { count: 80, amount: 240000 },
+          'CARD': { count: 45, amount: 135000 },
+          'NETBANKING': { count: 17, amount: 51000 },
+          'WALLET': { count: 8, amount: 24000 }
+        },
+        dailyStats: [
+          { date: '2024-01-01', orders: 5, amount: 15000 },
+          { date: '2024-01-02', orders: 8, amount: 24000 },
+          { date: '2024-01-03', orders: 12, amount: 36000 },
+          { date: '2024-01-04', orders: 6, amount: 18000 },
+          { date: '2024-01-05', orders: 10, amount: 30000 }
+        ]
+      };
+      
+      setPaymentAnalytics(mockAnalytics);
+      setShowPaymentAnalytics(true);
+    } catch (error) {
+      console.error('Error loading payment analytics:', error);
+      toast.error('Failed to load payment analytics');
+    } finally {
+      setIsLoadingPayments(false);
+    }
+  };
+
   // Filter data based on search term (case insensitive)
   const filteredCustomers = customers.filter(customer => {
     if (!searchTerm.trim()) return true; // Show all customers if search is empty
@@ -1450,7 +1715,17 @@ const AdminDashboard = () => {
           </Card>
         </div>
 
-
+        {/* Payment Analytics Button */}
+        <div className="mb-6 flex justify-end">
+          <Button
+            onClick={handleLoadPaymentAnalytics}
+            disabled={isLoadingPayments}
+            className="bg-green-600 hover:bg-green-700"
+          >
+            <CreditCard className="w-4 h-4 mr-2" />
+            {isLoadingPayments ? 'Loading...' : 'Payment Analytics'}
+          </Button>
+        </div>
 
         {/* Customers with Upcoming Jobs */}
         <div className="mb-6">
@@ -1520,7 +1795,7 @@ const AdminDashboard = () => {
                       variant="outline" 
                       size="sm" 
                       className="flex items-center gap-2 h-10"
-                      onClick={() => toast.info('New job feature coming soon')}
+                      onClick={() => handleNewJob(customer)}
                     >
                       <Plus className="w-4 h-4" />
                       New Job
@@ -1529,7 +1804,7 @@ const AdminDashboard = () => {
                       variant="outline" 
                       size="sm" 
                       className="flex items-center gap-2 h-10"
-                      onClick={() => toast.info('Photos gallery coming soon')}
+                      onClick={() => handlePhotos(customer)}
                     >
                       <Camera className="w-4 h-4" />
                       Photos
@@ -1538,7 +1813,7 @@ const AdminDashboard = () => {
                       variant="outline" 
                       size="sm" 
                       className="flex items-center gap-2 h-10"
-                      onClick={() => toast.info('Service history coming soon')}
+                      onClick={() => handleHistory(customer)}
                     >
                       <History className="w-4 h-4" />
                       History
@@ -1801,6 +2076,10 @@ const AdminDashboard = () => {
                                     >
                                       <Edit className="mr-2 h-4 w-4" />
                                       View Details
+                                    </DropdownMenuItem>
+                                    <DropdownMenuItem onClick={() => handleProcessPayment(job)}>
+                                      <CreditCard className="mr-2 h-4 w-4" />
+                                      Process Payment
                                     </DropdownMenuItem>
                                     <DropdownMenuItem 
                                       onClick={() => {
@@ -3044,6 +3323,344 @@ const AdminDashboard = () => {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* New Job Dialog */}
+      <Dialog open={newJobDialogOpen} onOpenChange={setNewJobDialogOpen}>
+        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Create New Job</DialogTitle>
+            <DialogDescription>
+              Create a new service job for {(selectedCustomer as any)?.customer_id} - {(selectedCustomer as any)?.full_name}
+            </DialogDescription>
+          </DialogHeader>
+          
+          <div className="space-y-6">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <Label htmlFor="serviceType">Service Type</Label>
+                <ErrorBoundary>
+                  <Select 
+                    value={newJobFormData.serviceType || 'RO'} 
+                    onValueChange={(value) => setNewJobFormData(prev => ({ ...prev, serviceType: value }))}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select service type" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="RO">RO (Reverse Osmosis)</SelectItem>
+                      <SelectItem value="SOFTENER">Water Softener</SelectItem>
+                      <SelectItem value="AC">AC Service</SelectItem>
+                      <SelectItem value="APPLIANCE">Appliance Service</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </ErrorBoundary>
+              </div>
+              
+              <div>
+                <Label htmlFor="serviceSubType">Service Sub Type</Label>
+                <Input
+                  id="serviceSubType"
+                  value={newJobFormData.serviceSubType}
+                  onChange={(e) => setNewJobFormData(prev => ({ ...prev, serviceSubType: e.target.value }))}
+                  placeholder="e.g., Installation, Repair, Maintenance"
+                />
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <Label htmlFor="brand">Brand</Label>
+                <Input
+                  id="brand"
+                  value={newJobFormData.brand}
+                  onChange={(e) => setNewJobFormData(prev => ({ ...prev, brand: e.target.value }))}
+                  placeholder="Equipment brand"
+                />
+              </div>
+              
+              <div>
+                <Label htmlFor="model">Model</Label>
+                <Input
+                  id="model"
+                  value={newJobFormData.model}
+                  onChange={(e) => setNewJobFormData(prev => ({ ...prev, model: e.target.value }))}
+                  placeholder="Equipment model"
+                />
+              </div>
+            </div>
+
+            <div>
+              <Label htmlFor="description">Job Description</Label>
+              <Textarea
+                id="description"
+                value={newJobFormData.description}
+                onChange={(e) => setNewJobFormData(prev => ({ ...prev, description: e.target.value }))}
+                placeholder="Describe the service requirements..."
+                rows={3}
+              />
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <div>
+                <Label htmlFor="scheduledDate">Scheduled Date</Label>
+                <Input
+                  id="scheduledDate"
+                  type="date"
+                  value={newJobFormData.scheduledDate}
+                  onChange={(e) => setNewJobFormData(prev => ({ ...prev, scheduledDate: e.target.value }))}
+                />
+              </div>
+              
+              <div>
+                <Label htmlFor="scheduledTimeSlot">Time Slot</Label>
+                <ErrorBoundary>
+                  <Select 
+                    value={newJobFormData.scheduledTimeSlot || 'MORNING'} 
+                    onValueChange={(value) => setNewJobFormData(prev => ({ ...prev, scheduledTimeSlot: value as 'MORNING' | 'AFTERNOON' | 'EVENING' }))}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select time slot" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="MORNING">Morning (9 AM - 12 PM)</SelectItem>
+                      <SelectItem value="AFTERNOON">Afternoon (12 PM - 5 PM)</SelectItem>
+                      <SelectItem value="EVENING">Evening (5 PM - 8 PM)</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </ErrorBoundary>
+              </div>
+              
+              <div>
+                <Label htmlFor="priority">Priority</Label>
+                <ErrorBoundary>
+                  <Select 
+                    value={newJobFormData.priority || 'MEDIUM'} 
+                    onValueChange={(value) => setNewJobFormData(prev => ({ ...prev, priority: value as 'LOW' | 'MEDIUM' | 'HIGH' | 'URGENT' }))}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select priority" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="LOW">Low</SelectItem>
+                      <SelectItem value="MEDIUM">Medium</SelectItem>
+                      <SelectItem value="HIGH">High</SelectItem>
+                      <SelectItem value="URGENT">Urgent</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </ErrorBoundary>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <Label htmlFor="assignedTechnician">Assign Technician (Optional)</Label>
+                <ErrorBoundary>
+                  <Select 
+                    value={newJobFormData.assignedTechnicianId || "none"} 
+                    onValueChange={(value) => setNewJobFormData(prev => ({ ...prev, assignedTechnicianId: value === "none" ? "" : value }))}
+                    disabled={loading}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder={loading ? "Loading technicians..." : "Choose a technician"} />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="none">No assignment</SelectItem>
+                      {!loading && technicians && technicians.length > 0 ? (
+                        technicians
+                          .filter(tech => !tech.account_status || tech.account_status === 'ACTIVE')
+                          .map((technician) => (
+                            <SelectItem key={technician.id} value={technician.id}>
+                              {technician.fullName || 'Unknown'} ({technician.employeeId || 'No ID'})
+                            </SelectItem>
+                          ))
+                      ) : (
+                        <SelectItem value="no-technicians" disabled>
+                          {loading ? "Loading..." : "No technicians available"}
+                        </SelectItem>
+                      )}
+                    </SelectContent>
+                  </Select>
+                </ErrorBoundary>
+              </div>
+              
+              <div>
+                <Label htmlFor="estimatedCost">Estimated Cost (₹)</Label>
+                <Input
+                  id="estimatedCost"
+                  type="number"
+                  value={newJobFormData.estimatedCost}
+                  onChange={(e) => setNewJobFormData(prev => ({ ...prev, estimatedCost: parseFloat(e.target.value) || 0 }))}
+                  placeholder="0"
+                />
+              </div>
+            </div>
+          </div>
+          
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setNewJobDialogOpen(false)}
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={handleCreateNewJob}
+              className="bg-blue-600 hover:bg-blue-700"
+            >
+              Create Job
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Photos Dialog */}
+      <Dialog open={photosDialogOpen} onOpenChange={setPhotosDialogOpen}>
+        <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Customer Photos</DialogTitle>
+            <DialogDescription>
+              All photos from jobs for {(selectedCustomer as any)?.customer_id} - {(selectedCustomer as any)?.full_name}
+            </DialogDescription>
+          </DialogHeader>
+          
+          <div className="space-y-4">
+            {customerPhotos.length === 0 ? (
+              <div className="text-center py-8 text-gray-500">
+                <Camera className="w-12 h-12 mx-auto mb-4 text-gray-300" />
+                <p>No photos available for this customer</p>
+              </div>
+            ) : (
+              <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+                {customerPhotos.map((photo, index) => (
+                  <div key={index} className="relative group">
+                    <img
+                      src={photo}
+                      alt={`Customer photo ${index + 1}`}
+                      className="w-full h-32 object-cover rounded-lg border border-gray-200 cursor-pointer hover:opacity-90 transition-opacity"
+                      onClick={() => {
+                        setSelectedPhoto({ url: photo, index, total: customerPhotos.length });
+                        setPhotoViewerOpen(true);
+                      }}
+                    />
+                    <div className="absolute inset-0 bg-black bg-opacity-0 group-hover:bg-opacity-20 transition-all duration-200 rounded-lg flex items-center justify-center">
+                      <Eye className="w-6 h-6 text-white opacity-0 group-hover:opacity-100 transition-opacity" />
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+          
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setPhotosDialogOpen(false)}
+            >
+              Close
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* History Dialog */}
+      <Dialog open={historyDialogOpen} onOpenChange={setHistoryDialogOpen}>
+        <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Service History</DialogTitle>
+            <DialogDescription>
+              Complete service history for {(selectedCustomer as any)?.customer_id} - {(selectedCustomer as any)?.full_name}
+            </DialogDescription>
+          </DialogHeader>
+          
+          <div className="space-y-4">
+            {customerHistory.length === 0 ? (
+              <div className="text-center py-8 text-gray-500">
+                <History className="w-12 h-12 mx-auto mb-4 text-gray-300" />
+                <p>No service history available for this customer</p>
+              </div>
+            ) : (
+              <div className="space-y-3">
+                {customerHistory.map((job) => (
+                  <Card key={job.id} className="p-4">
+                    <div className="flex items-start justify-between">
+                      <div className="flex-1">
+                        <div className="flex items-center gap-3 mb-2">
+                          <h4 className="font-semibold text-gray-900">
+                            {(job as any).job_number || job.jobNumber}
+                          </h4>
+                          {getStatusBadge(job.status)}
+                        </div>
+                        <div className="text-sm text-gray-600 space-y-1">
+                          <p><strong>Service:</strong> {(job as any).service_type || job.serviceType} - {(job as any).service_sub_type || job.serviceSubType}</p>
+                          <p><strong>Equipment:</strong> {(job as any).brand || job.brand} {(job as any).model || job.model}</p>
+                          <p><strong>Scheduled:</strong> {new Date((job as any).scheduled_date || job.scheduledDate).toLocaleDateString()} - {(job as any).scheduled_time_slot || job.scheduledTimeSlot}</p>
+                          {(job as any).assigned_technician_id && (
+                            <p><strong>Technician:</strong> {job.assignedTechnician?.fullName || 'Assigned'}</p>
+                          )}
+                          {(job as any).description && (
+                            <p><strong>Description:</strong> {(job as any).description}</p>
+                          )}
+                          {(job as any).actual_cost && (
+                            <p><strong>Cost:</strong> ₹{(job as any).actual_cost}</p>
+                          )}
+                        </div>
+                      </div>
+                      <div className="text-right text-sm text-gray-500">
+                        <p>{new Date((job as any).created_at || job.createdAt).toLocaleDateString()}</p>
+                        {(job as any).completed_at && (
+                          <p className="text-green-600">Completed: {new Date((job as any).completed_at).toLocaleDateString()}</p>
+                        )}
+                      </div>
+                    </div>
+                  </Card>
+                ))}
+              </div>
+            )}
+          </div>
+          
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setHistoryDialogOpen(false)}
+            >
+              Close
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Payment Modal */}
+      {selectedJobForPayment && (
+        <PaymentModal
+          isOpen={paymentModalOpen}
+          onClose={() => {
+            setPaymentModalOpen(false);
+            setSelectedJobForPayment(null);
+          }}
+          job={selectedJobForPayment}
+          onPaymentSuccess={handlePaymentSuccess}
+        />
+      )}
+
+      {/* Payment Analytics Modal */}
+      {showPaymentAnalytics && paymentAnalytics && (
+        <Dialog open={showPaymentAnalytics} onOpenChange={setShowPaymentAnalytics}>
+          <DialogContent className="max-w-6xl max-h-[90vh] overflow-y-auto">
+            <DialogHeader>
+              <DialogTitle>Payment Analytics</DialogTitle>
+              <DialogDescription>
+                Comprehensive payment insights and analytics
+              </DialogDescription>
+            </DialogHeader>
+            <PaymentAnalytics analytics={paymentAnalytics} isLoading={isLoadingPayments} />
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setShowPaymentAnalytics(false)}>
+                Close
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+      )}
     </div>
   );
 };

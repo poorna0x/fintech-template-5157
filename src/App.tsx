@@ -20,6 +20,11 @@ const Settings = lazy(() => import("./pages/Settings"));
 const PrivacyPolicy = lazy(() => import("./pages/PrivacyPolicy"));
 const TermsOfService = lazy(() => import("./pages/TermsOfService"));
 const CookiePolicy = lazy(() => import("./pages/CookiePolicy"));
+const PaymentTest = lazy(() => import("./components/PaymentTest"));
+const PaymentRequest = lazy(() => import("./pages/PaymentRequest"));
+const CustomerPayment = lazy(() => import("./pages/CustomerPayment"));
+const PaymentSuccess = lazy(() => import("./pages/PaymentSuccess"));
+const PaymentWebhook = lazy(() => import("./pages/PaymentWebhook"));
 
 // Loading component for lazy-loaded routes
 const LoadingSpinner = () => (
@@ -65,6 +70,11 @@ const App = () => (
                   <Route path="/privacy-policy" element={<PrivacyPolicy />} />
                   <Route path="/terms-of-service" element={<TermsOfService />} />
                   <Route path="/cookie-policy" element={<CookiePolicy />} />
+            <Route path="/payment-test" element={<PaymentTest />} />
+            <Route path="/payment-request" element={<PaymentRequest />} />
+            <Route path="/pay" element={<CustomerPayment />} />
+            <Route path="/payment/success" element={<PaymentSuccess />} />
+            <Route path="/payment/webhook" element={<PaymentWebhook />} />
                   {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
                   <Route path="*" element={<NotFound />} />
                 </Routes>
