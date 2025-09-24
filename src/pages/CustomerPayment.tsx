@@ -86,7 +86,11 @@ const CustomerPayment: React.FC = () => {
     setPaymentStatus('processing');
 
     try {
+      console.log('🚀 Starting payment process...');
+      console.log('🔍 Method:', method);
+      
       const cashfreeService = getCashfreeService();
+      console.log('✅ Cashfree service obtained:', !!cashfreeService);
       
       const orderData: PaymentOrder = {
         orderId: `RO_${paymentData.jobNumber}_${Date.now()}`,
@@ -104,11 +108,11 @@ const CustomerPayment: React.FC = () => {
         }
       };
 
-      console.log('Creating payment order:', orderData);
-      console.log('Cashfree service initialized:', !!cashfreeService);
+      console.log('📋 Order data prepared:', orderData);
+      console.log('🔄 Calling createOrder...');
       
       const response = await cashfreeService.createOrder(orderData);
-      console.log('Payment response:', response);
+      console.log('✅ Payment response received:', response);
       setPaymentResponse(response);
       
         if (response.status === 'SUCCESS') {
@@ -129,9 +133,20 @@ const CustomerPayment: React.FC = () => {
           toast.error(response.message || 'Payment failed');
         }
     } catch (error) {
-      console.error('Payment error:', error);
+      console.error('❌ Payment error occurred:', error);
+      console.error('❌ Error type:', typeof error);
+      console.error('❌ Error message:', (error as Error).message);
+      console.error('❌ Error stack:', (error as Error).stack);
+      
       setPaymentStatus('failed');
-      toast.error('Payment processing failed: ' + (error as Error).message);
+      
+      // Check if it's the specific API error
+      if ((error as Error).message.includes('endpoint or method is not valid')) {
+        console.error('🚨 This is the API endpoint error!');
+        toast.error('API configuration error. Please check console for details.');
+      } else {
+        toast.error('Payment processing failed: ' + (error as Error).message);
+      }
     } finally {
       setIsProcessing(false);
     }

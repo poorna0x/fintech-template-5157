@@ -35,28 +35,33 @@ class CashfreeService {
 
   // Mock implementations for testing
   private async createOrderMock(orderData: any) {
-    console.log('Mock Cashfree: Creating order with data:', orderData);
-    
-    // Simulate API call delay
-    await new Promise(resolve => setTimeout(resolve, 1000));
-    
-    // Generate mock payment ID and URL
-    const paymentId = `cf_pay_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-    const paymentUrl = `https://sandbox.cashfree.com/pg/checkout/${paymentId}`;
-    
-    console.log('Mock Cashfree: Order created successfully', { paymentId, paymentUrl });
-    
-    // Return response in correct Cashfree format
-    return {
-      status: 'SUCCESS',
-      message: 'Order created successfully',
-      order_id: orderData.order_id,
-      order_amount: orderData.order_amount,
-      order_currency: orderData.order_currency,
-      payment_id: paymentId,
-      payment_url: paymentUrl,
-      order_status: 'ACTIVE'
-    };
+    try {
+      console.log('🎭 Mock Cashfree: Creating order with data:', orderData);
+      
+      // Simulate API call delay
+      await new Promise(resolve => setTimeout(resolve, 1000));
+      
+      // Generate mock payment ID and URL
+      const paymentId = `cf_pay_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+      const paymentUrl = `https://sandbox.cashfree.com/pg/checkout/${paymentId}`;
+      
+      console.log('✅ Mock Cashfree: Order created successfully', { paymentId, paymentUrl });
+      
+      // Return response in correct Cashfree format
+      return {
+        status: 'SUCCESS',
+        message: 'Order created successfully',
+        order_id: orderData.order_id,
+        order_amount: orderData.order_amount,
+        order_currency: orderData.order_currency,
+        payment_id: paymentId,
+        payment_url: paymentUrl,
+        order_status: 'ACTIVE'
+      };
+    } catch (error) {
+      console.error('❌ Mock Cashfree: Error in createOrderMock:', error);
+      throw new Error('Mock order creation failed: ' + (error as Error).message);
+    }
   }
 
   private async fetchOrderMock(orderId: string) {
@@ -103,7 +108,7 @@ class CashfreeService {
    */
   async createOrder(orderData: PaymentOrder): Promise<PaymentResponse> {
     try {
-      console.log('CashfreeService: Creating order for:', orderData.orderId);
+      console.log('🔧 CashfreeService: Creating order for:', orderData.orderId);
       
       const order = {
         order_id: orderData.orderId,
@@ -123,9 +128,11 @@ class CashfreeService {
         },
       };
 
-      console.log('CashfreeService: Calling mock create order...');
+      console.log('🔧 CashfreeService: Order prepared:', order);
+      console.log('🔧 CashfreeService: Calling mock create order...');
+      
       const response = await this.cashfree.pg.orders.create(order);
-      console.log('CashfreeService: Mock response received:', response);
+      console.log('✅ CashfreeService: Mock response received:', response);
       
       return {
         status: response.status === 'SUCCESS' ? 'SUCCESS' : 'FAILED',
