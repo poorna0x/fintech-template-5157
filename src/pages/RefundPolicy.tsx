@@ -22,7 +22,7 @@ const RefundPolicy = () => {
             </div>
             <CardTitle className="flex items-center gap-2">
               <Shield className="w-5 h-5 text-blue-600" />
-              Service Policy
+              Refund Policy
             </CardTitle>
             <p className="text-sm text-gray-600">
               Last updated: {new Date().toLocaleDateString()}
@@ -33,122 +33,144 @@ const RefundPolicy = () => {
             <section>
               <h2 className="text-xl font-semibold text-gray-900 mb-3">1. Introduction</h2>
               <p className="text-gray-700 leading-relaxed">
-                At Hydrogen RO Water Purifier Services, we are committed to providing excellent service and customer satisfaction. This page outlines our service policies and terms.
+                At Hydrogen RO Water Purifier Services, we strive to provide excellent service and customer satisfaction. This Refund Policy outlines the terms and conditions for refunds for our water purifier services.
               </p>
             </section>
 
-            {/* Service Information */}
+            {/* Service Refunds */}
             <section>
-              <h2 className="text-xl font-semibold text-gray-900 mb-3">2. Our Services</h2>
+              <h2 className="text-xl font-semibold text-gray-900 mb-3">2. Service Refunds</h2>
+              <div className="space-y-4">
+                <div className="bg-green-50 p-4 rounded-lg">
+                  <h3 className="text-lg font-medium text-green-900 mb-2 flex items-center gap-2">
+                    <CheckCircle className="w-5 h-5" />
+                    Full Refund Eligible
+                  </h3>
+                  <ul className="list-disc list-inside space-y-1 text-green-800 ml-6">
+                    <li>Service not performed due to technician unavailability</li>
+                    <li>Service cancelled by us with less than 24 hours notice</li>
+                    <li>Service performed incorrectly due to our error</li>
+                    <li>Equipment damage caused by our negligence</li>
+                    <li>Service not completed as per agreed specifications</li>
+                  </ul>
+                </div>
+                
+                <div className="bg-yellow-50 p-4 rounded-lg">
+                  <h3 className="text-lg font-medium text-yellow-900 mb-2 flex items-center gap-2">
+                    <Clock className="w-5 h-5" />
+                    Partial Refund Eligible
+                  </h3>
+                  <ul className="list-disc list-inside space-y-1 text-yellow-800 ml-6">
+                    <li>Service cancelled by customer with 24+ hours notice (90% refund)</li>
+                    <li>Service partially completed due to unforeseen circumstances (proportional refund)</li>
+                    <li>Customer not satisfied with service quality (case-by-case evaluation)</li>
+                  </ul>
+                </div>
+
+                <div className="bg-red-50 p-4 rounded-lg">
+                  <h3 className="text-lg font-medium text-red-900 mb-2 flex items-center gap-2">
+                    <XCircle className="w-5 h-5" />
+                    No Refund Eligible
+                  </h3>
+                  <ul className="list-disc list-inside space-y-1 text-red-800 ml-6">
+                    <li>Service cancelled by customer with less than 24 hours notice</li>
+                    <li>Customer not available at scheduled time (no-show)</li>
+                    <li>Service completed successfully as per agreement</li>
+                    <li>Damage caused by customer misuse or negligence</li>
+                    <li>Service performed but customer changed mind after completion</li>
+                  </ul>
+                </div>
+              </div>
+            </section>
+
+            {/* Refund Process */}
+            <section>
+              <h2 className="text-xl font-semibold text-gray-900 mb-3">3. Refund Process</h2>
               <div className="space-y-3">
-                <p className="text-gray-700">We provide comprehensive water treatment solutions:</p>
+                <p className="text-gray-700">To request a refund:</p>
+                <ol className="list-decimal list-inside space-y-2 text-gray-700 ml-4">
+                  <li>Contact our customer service within 48 hours of service completion</li>
+                  <li>Provide your service reference number and reason for refund</li>
+                  <li>Our team will review your request within 2 business days</li>
+                  <li>If approved, refund will be processed within 5-7 business days</li>
+                  <li>Refund will be credited to your original payment method</li>
+                </ol>
+              </div>
+            </section>
+
+            {/* Cancellation Policy */}
+            <section>
+              <h2 className="text-xl font-semibold text-gray-900 mb-3">4. Cancellation Policy</h2>
+              <div className="space-y-4">
+                <div>
+                  <h3 className="text-lg font-medium text-gray-900 mb-2">Service Cancellation</h3>
+                  <ul className="list-disc list-inside space-y-2 text-gray-700 ml-4">
+                    <li><strong>24+ hours notice:</strong> Free cancellation, full refund</li>
+                    <li><strong>12-24 hours notice:</strong> 50% cancellation fee</li>
+                    <li><strong>Less than 12 hours notice:</strong> 100% cancellation fee</li>
+                    <li><strong>No-show:</strong> Full service charge applies</li>
+                  </ul>
+                </div>
+                
+                <div>
+                  <h3 className="text-lg font-medium text-gray-900 mb-2">Emergency Services</h3>
+                  <ul className="list-disc list-inside space-y-2 text-gray-700 ml-4">
+                    <li>Emergency service cancellations incur 25% fee</li>
+                    <li>Technician already dispatched: 50% fee applies</li>
+                    <li>Service in progress: No cancellation allowed</li>
+                  </ul>
+                </div>
+              </div>
+            </section>
+
+            {/* Payment Methods */}
+            <section>
+              <h2 className="text-xl font-semibold text-gray-900 mb-3">5. Payment Methods</h2>
+              <div className="space-y-3">
+                <p className="text-gray-700">Refunds will be processed through:</p>
                 <ul className="list-disc list-inside space-y-2 text-gray-700 ml-4">
-                  <li>RO Water Purifier Installation and Maintenance</li>
-                  <li>Water Softener Installation and Service</li>
-                  <li>Filter Replacement and Repair Services</li>
-                  <li>Emergency Service and Support</li>
-                  <li>Water Quality Testing and Consultation</li>
+                  <li>Original payment method (preferred)</li>
+                  <li>Bank transfer for cash payments</li>
+                  <li>UPI refund for UPI payments</li>
+                  <li>Cheque for large amounts (if requested)</li>
                 </ul>
               </div>
             </section>
 
-            {/* Service Areas */}
+            {/* Dispute Resolution */}
             <section>
-              <h2 className="text-xl font-semibold text-gray-900 mb-3">3. Service Areas</h2>
-              <p className="text-gray-700 leading-relaxed">
-                Our services are currently available in Bengaluru, Karnataka, and surrounding areas. Service availability may vary based on location and technician availability.
-              </p>
-            </section>
-
-            {/* Booking and Scheduling */}
-            <section>
-              <h2 className="text-xl font-semibold text-gray-900 mb-3">4. Booking and Scheduling</h2>
+              <h2 className="text-xl font-semibold text-gray-900 mb-3">6. Dispute Resolution</h2>
               <div className="space-y-3">
-                <p className="text-gray-700">When booking our services:</p>
+                <p className="text-gray-700">If you disagree with our refund decision:</p>
                 <ul className="list-disc list-inside space-y-2 text-gray-700 ml-4">
-                  <li>All bookings are subject to technician availability</li>
-                  <li>We will confirm your appointment within 24 hours</li>
-                  <li>Same-day service may be available for emergency repairs</li>
-                  <li>Rescheduling requires at least 24 hours notice</li>
-                  <li>No-show appointments may incur a cancellation fee</li>
+                  <li>Contact our customer service manager for review</li>
+                  <li>Provide detailed documentation and evidence</li>
+                  <li>We will conduct a thorough investigation</li>
+                  <li>Final decision will be communicated within 7 business days</li>
+                  <li>External mediation available if needed</li>
                 </ul>
               </div>
             </section>
 
-            {/* Pricing and Payment */}
+            {/* Special Circumstances */}
             <section>
-              <h2 className="text-xl font-semibold text-gray-900 mb-3">5. Pricing and Payment</h2>
+              <h2 className="text-xl font-semibold text-gray-900 mb-3">7. Special Circumstances</h2>
               <div className="space-y-3">
-                <p className="text-gray-700">Payment terms:</p>
+                <p className="text-gray-700">We understand that special situations may arise:</p>
                 <ul className="list-disc list-inside space-y-2 text-gray-700 ml-4">
-                  <li>All prices are in Indian Rupees (INR)</li>
-                  <li>Payment is due upon completion of service</li>
-                  <li>We accept cash, UPI, and card payments</li>
-                  <li>Additional charges may apply for emergency services</li>
-                  <li>Warranty terms vary by product and service type</li>
+                  <li>Medical emergencies: Flexible cancellation policy</li>
+                  <li>Natural disasters: Full refund or rescheduling</li>
+                  <li>Technical issues on our end: Full refund</li>
+                  <li>Customer hardship cases: Case-by-case evaluation</li>
                 </ul>
               </div>
-            </section>
-
-            {/* Warranty */}
-            <section>
-              <h2 className="text-xl font-semibold text-gray-900 mb-3">6. Warranty and Guarantee</h2>
-              <div className="space-y-3">
-                <p className="text-gray-700">Our warranty policy:</p>
-                <ul className="list-disc list-inside space-y-2 text-gray-700 ml-4">
-                  <li>Installation work is guaranteed for 1 year</li>
-                  <li>Replacement parts carry manufacturer warranty</li>
-                  <li>Regular maintenance extends warranty coverage</li>
-                  <li>Warranty is void if service is performed by unauthorized personnel</li>
-                  <li>Damage due to misuse or negligence is not covered</li>
-                </ul>
-              </div>
-            </section>
-
-            {/* Customer Responsibilities */}
-            <section>
-              <h2 className="text-xl font-semibold text-gray-900 mb-3">7. Customer Responsibilities</h2>
-              <div className="space-y-3">
-                <p className="text-gray-700">As our customer, you agree to:</p>
-                <ul className="list-disc list-inside space-y-2 text-gray-700 ml-4">
-                  <li>Provide accurate contact and address information</li>
-                  <li>Ensure safe access to service areas</li>
-                  <li>Follow maintenance recommendations</li>
-                  <li>Report issues promptly for warranty coverage</li>
-                  <li>Treat our technicians with respect and courtesy</li>
-                </ul>
-              </div>
-            </section>
-
-            {/* Limitation of Liability */}
-            <section>
-              <h2 className="text-xl font-semibold text-gray-900 mb-3">8. Limitation of Liability</h2>
-              <p className="text-gray-700 leading-relaxed">
-                Hydrogen RO shall not be liable for any indirect, incidental, special, or consequential damages arising from the use of our services. Our total liability shall not exceed the amount paid for the specific service.
-              </p>
-            </section>
-
-            {/* Privacy */}
-            <section>
-              <h2 className="text-xl font-semibold text-gray-900 mb-3">9. Privacy</h2>
-              <p className="text-gray-700 leading-relaxed">
-                Your privacy is important to us. Please review our Privacy Policy to understand how we collect, use, and protect your information.
-              </p>
-            </section>
-
-            {/* Changes to Terms */}
-            <section>
-              <h2 className="text-xl font-semibold text-gray-900 mb-3">10. Changes to Terms</h2>
-              <p className="text-gray-700 leading-relaxed">
-                We reserve the right to modify these terms at any time. Changes will be effective immediately upon posting. Continued use of our services constitutes acceptance of the modified terms.
-              </p>
             </section>
 
             {/* Contact Information */}
             <section className="bg-blue-50 p-6 rounded-lg">
               <h2 className="text-xl font-semibold text-gray-900 mb-3 flex items-center gap-2">
                 <Phone className="w-5 h-5 text-blue-600" />
-                Contact Us
+                Contact Us for Refunds
               </h2>
               <div className="space-y-2 text-gray-700">
                 <p><strong>Refund Department:</strong> refunds@hydrogenro.com</p>
