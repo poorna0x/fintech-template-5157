@@ -47,15 +47,7 @@ const CustomerServicesManager: React.FC<CustomerServicesManagerProps> = ({
 
   const serviceTypes = [
     { value: 'RO', label: 'RO (Reverse Osmosis)' },
-    { value: 'SOFTENER', label: 'Water Softener' },
-    { value: 'AC', label: 'AC Services' },
-    { value: 'APPLIANCE', label: 'Home Appliances' },
-    { value: 'WASHING_MACHINE', label: 'Washing Machine' },
-    { value: 'REFRIGERATOR', label: 'Refrigerator' },
-    { value: 'MICROWAVE', label: 'Microwave' },
-    { value: 'GEYSER', label: 'Geyser' },
-    { value: 'WATER_PURIFIER', label: 'Water Purifier' },
-    { value: 'VACUUM_CLEANER', label: 'Vacuum Cleaner' }
+    { value: 'SOFTENER', label: 'Water Softener' }
   ];
 
   const getServiceTypeLabel = (type: string) => {

@@ -130,9 +130,13 @@ const ServicesSection = () => {
           <h2 className="text-3xl md:text-4xl font-bold text-foreground mb-6">
             RO Water Purifier Services in Bengaluru
           </h2>
-          <p className="text-lg text-muted-foreground max-w-2xl mx-auto">
+          <p className="text-lg text-muted-foreground max-w-2xl mx-auto mb-4">
             Comprehensive water treatment solutions for homes and offices across Bangalore, Karnataka. Expert RO installation, repair, and maintenance services.
           </p>
+          <div className="inline-flex items-center gap-2 bg-primary/10 text-primary px-4 py-2 rounded-full text-sm font-medium">
+            <span className="w-2 h-2 bg-primary rounded-full"></span>
+            Service prices range from ₹400 to ₹15,000
+          </div>
         </div>
         
         <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
@@ -144,9 +148,14 @@ const ServicesSection = () => {
                     <service.icon className="w-6 h-6 text-primary" />
                   </div>
                   <div className="flex-1">
-                    <h3 className="text-xl font-semibold text-foreground mb-3">
-                      {service.title}
-                    </h3>
+                    <div className="flex items-center justify-between mb-3">
+                      <h3 className="text-xl font-semibold text-foreground">
+                        {service.title}
+                      </h3>
+                      <div className="text-sm text-primary font-medium bg-primary/10 px-2 py-1 rounded">
+                        ₹400-15K
+                      </div>
+                    </div>
                     <p className="text-muted-foreground mb-4">
                       {service.description}
                     </p>
@@ -180,6 +189,12 @@ const ServicesSection = () => {
                             {service.description}
                           </p>
                           
+                          {/* Price Range */}
+                          <div className="bg-primary/5 rounded-lg p-4 text-center">
+                            <div className="text-sm text-muted-foreground mb-1">Service Price Range</div>
+                            <div className="text-2xl font-bold text-primary">₹400 - ₹15,000</div>
+                            <div className="text-xs text-muted-foreground mt-1">*Final price depends on service type and requirements</div>
+                          </div>
                           
                           {/* What's Included */}
                           <div>

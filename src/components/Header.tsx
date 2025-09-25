@@ -23,8 +23,6 @@ const Header = () => {
       setActivePage('home');
     } else if (location.pathname === '/book') {
       setActivePage('booking');
-    } else if (location.pathname === '/admin') {
-      setActivePage('admin');
     }
   }, [location.pathname]);
 
@@ -64,9 +62,6 @@ const Header = () => {
     } else if (page === 'booking') {
       // Navigate to booking page
       navigate('/book');
-    } else if (page === 'admin') {
-      // Navigate to admin page
-      navigate('/admin');
     } else if (location.pathname === '/') {
       // On homepage, scroll to sections
       const element = document.getElementById(page);
@@ -297,27 +292,6 @@ const Header = () => {
         
         <div className="hidden md:flex items-center gap-4">
           {/* Theme toggle for desktop */}
-          {/* Technician Login Link */}
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => navigate('/technician/login')}
-            className="hidden sm:flex items-center gap-2 text-muted-foreground hover:text-foreground bg-card/80 backdrop-blur-sm border border-border/50"
-          >
-            <Wrench size={18} />
-            Technician
-          </Button>
-          
-          {/* Admin Dashboard Link */}
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => navigate('/admin')}
-            className="hidden sm:flex items-center gap-2 text-muted-foreground hover:text-foreground bg-card/80 backdrop-blur-sm border border-border/50"
-          >
-            <LayoutDashboard size={18} />
-            Admin
-          </Button>
           
           <div className="flex items-center gap-2 rounded-full px-3 py-2 bg-card/80 backdrop-blur-sm border border-border/50">
             <Moon size={18} className={`${isDarkMode ? 'text-primary' : 'text-muted-foreground'}`} />

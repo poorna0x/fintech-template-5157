@@ -1,221 +1,182 @@
-import React, { useEffect } from 'react';
-import Header from '@/components/Header';
-import Footer from '@/components/Footer';
+import React from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { FileText, Phone, Mail, MapPin, Calendar, AlertTriangle } from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import { ArrowLeft, FileText, Calendar, Shield, Users, Phone, Mail } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
 
-const TermsOfService: React.FC = () => {
-  // Scroll to top when component mounts
-  useEffect(() => {
-    window.scrollTo(0, 0);
-  }, []);
+const TermsOfService = () => {
+  const navigate = useNavigate();
+
   return (
-    <div className="min-h-screen flex flex-col bg-background text-foreground">
-      <Header />
-      
-      <main className="flex-1 py-12">
-        <div className="container mx-auto px-4">
-          <div className="max-w-4xl mx-auto">
-            {/* Header */}
-            <div className="text-center mb-12">
-              <div className="w-16 h-16 bg-primary/10 rounded-full flex items-center justify-center mx-auto mb-4">
-                <FileText className="w-8 h-8 text-primary" />
-              </div>
-              <h1 className="text-4xl font-bold text-foreground mb-4">
-                Terms of Service
-              </h1>
-              <p className="text-lg text-muted-foreground">
-                Terms and conditions for RO water purifier services
-              </p>
-              <p className="text-sm text-muted-foreground mt-2">
-                Last updated: {new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })}
-              </p>
-            </div>
-
-            {/* Content */}
-            <div className="space-y-8">
-              {/* Introduction */}
-              <Card>
-                <CardHeader>
-                  <CardTitle>Agreement to Terms</CardTitle>
-                </CardHeader>
-                <CardContent className="space-y-4">
-                  <p>
-                    Welcome to Hydrogen RO. These Terms of Service ("Terms") govern your use of our RO water purifier installation, repair, and maintenance services. By booking our services, you agree to be bound by these Terms.
-                  </p>
-                  <p>
-                    If you do not agree to these Terms, please do not use our services.
-                  </p>
-                </CardContent>
-              </Card>
-
-              {/* Services */}
-              <Card>
-                <CardHeader>
-                  <CardTitle>Our Services</CardTitle>
-                </CardHeader>
-                <CardContent className="space-y-4">
-                  <p>We provide the following RO water purifier services in Bengaluru:</p>
-                  <ul className="list-disc list-inside space-y-2 text-muted-foreground">
-                    <li>RO system installation and setup</li>
-                    <li>RO system repair and maintenance</li>
-                    <li>Filter replacement and cleaning</li>
-                    <li>Water quality testing</li>
-                    <li>Emergency repair services</li>
-                    <li>Annual maintenance contracts</li>
-                  </ul>
-                </CardContent>
-              </Card>
-
-              {/* Booking and Scheduling */}
-              <Card>
-                <CardHeader>
-                  <CardTitle>Booking and Scheduling</CardTitle>
-                </CardHeader>
-                <CardContent className="space-y-4">
-                  <ul className="list-disc list-inside space-y-2 text-muted-foreground">
-                    <li>All service bookings must be made through our official channels</li>
-                    <li>Service appointments are subject to technician availability</li>
-                    <li>We will confirm your appointment via phone or email</li>
-                    <li>Same-day service is available based on availability</li>
-                    <li>Emergency services may have different pricing</li>
-                  </ul>
-                </CardContent>
-              </Card>
-
-              {/* Pricing and Payment */}
-              <Card>
-                <CardHeader>
-                  <CardTitle>Pricing and Payment</CardTitle>
-                </CardHeader>
-                <CardContent className="space-y-4">
-                  <ul className="list-disc list-inside space-y-2 text-muted-foreground">
-                    <li>Service charges are based on the type of service required</li>
-                    <li>Additional charges may apply for parts and materials</li>
-                    <li>Payment is due upon completion of service</li>
-                    <li>We accept cash, UPI, and digital payments</li>
-                    <li>Prices are subject to change without prior notice</li>
-                  </ul>
-                </CardContent>
-              </Card>
-
-              {/* Customer Responsibilities */}
-              <Card>
-                <CardHeader>
-                  <CardTitle>Customer Responsibilities</CardTitle>
-                </CardHeader>
-                <CardContent className="space-y-4">
-                  <ul className="list-disc list-inside space-y-2 text-muted-foreground">
-                    <li>Provide accurate contact information and service address</li>
-                    <li>Ensure access to the RO system for our technicians</li>
-                    <li>Inform us of any specific requirements or concerns</li>
-                    <li>Make payment as agreed upon service completion</li>
-                    <li>Follow maintenance recommendations provided by our technicians</li>
-                  </ul>
-                </CardContent>
-              </Card>
-
-              {/* Warranty and Guarantee */}
-              <Card>
-                <CardHeader>
-                  <CardTitle>Warranty and Guarantee</CardTitle>
-                </CardHeader>
-                <CardContent className="space-y-4">
-                  <ul className="list-disc list-inside space-y-2 text-muted-foreground">
-                    <li>We provide warranty on our installation and repair work</li>
-                    <li>Warranty period varies based on the type of service</li>
-                    <li>Warranty covers workmanship, not pre-existing issues</li>
-                    <li>Regular maintenance is required to maintain warranty</li>
-                    <li>Warranty terms will be provided at the time of service</li>
-                  </ul>
-                </CardContent>
-              </Card>
-
-              {/* Cancellation and Rescheduling */}
-              <Card>
-                <CardHeader>
-                  <CardTitle>Cancellation and Rescheduling</CardTitle>
-                </CardHeader>
-                <CardContent className="space-y-4">
-                  <ul className="list-disc list-inside space-y-2 text-muted-foreground">
-                    <li>You may cancel or reschedule your appointment with 2 hours notice</li>
-                    <li>No cancellation charges for advance notice</li>
-                    <li>Late cancellations may incur a service charge</li>
-                    <li>We may reschedule due to weather or emergency conditions</li>
-                    <li>Contact us immediately if you need to change your appointment</li>
-                  </ul>
-                </CardContent>
-              </Card>
-
-              {/* Limitation of Liability */}
-              <Card>
-                <CardHeader>
-                  <CardTitle className="flex items-center gap-2">
-                    <AlertTriangle className="w-5 h-5 text-orange-500" />
-                    Limitation of Liability
-                  </CardTitle>
-                </CardHeader>
-                <CardContent className="space-y-4">
-                  <p>
-                    Our liability is limited to the cost of the service provided. We are not responsible for:
-                  </p>
-                  <ul className="list-disc list-inside space-y-2 text-muted-foreground">
-                    <li>Pre-existing damage to your RO system</li>
-                    <li>Damage caused by misuse or neglect</li>
-                    <li>Indirect or consequential damages</li>
-                    <li>Water quality issues beyond our control</li>
-                    <li>Third-party damages or claims</li>
-                  </ul>
-                </CardContent>
-              </Card>
-
-              {/* Contact Information */}
-              <Card>
-                <CardHeader>
-                  <CardTitle>Contact Information</CardTitle>
-                </CardHeader>
-                <CardContent className="space-y-4">
-                  <p>
-                    For questions about these Terms of Service or our services, please contact us:
-                  </p>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div className="flex items-center gap-3">
-                      <Phone className="w-5 h-5 text-primary" />
-                      <span>+91-8884944288</span>
-                    </div>
-                    <div className="flex items-center gap-3">
-                      <Mail className="w-5 h-5 text-primary" />
-                      <span>mail@hydrogenro.com</span>
-                    </div>
-                    <div className="flex items-center gap-3">
-                      <MapPin className="w-5 h-5 text-primary" />
-                      <span>Bengaluru, Karnataka, India</span>
-                    </div>
-                    <div className="flex items-center gap-3">
-                      <Calendar className="w-5 h-5 text-primary" />
-                      <span>Mon-Sun: 8:00 AM - 8:00 PM</span>
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
-
-              {/* Updates */}
-              <Card>
-                <CardHeader>
-                  <CardTitle>Terms Updates</CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <p>
-                    We reserve the right to update these Terms of Service at any time. Changes will be effective immediately upon posting. Your continued use of our services after changes constitutes acceptance of the new Terms.
-                  </p>
-                </CardContent>
-              </Card>
+    <div className="min-h-screen bg-gray-50">
+      {/* Header */}
+      <div className="bg-white border-b">
+        <div className="container mx-auto px-4 py-4">
+          <div className="flex items-center gap-4">
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => navigate(-1)}
+              className="flex items-center gap-2"
+            >
+              <ArrowLeft className="w-4 h-4" />
+              Back
+            </Button>
+            <div className="flex items-center gap-2">
+              <FileText className="w-6 h-6 text-blue-600" />
+              <h1 className="text-2xl font-bold text-gray-900">Terms of Service</h1>
             </div>
           </div>
         </div>
-      </main>
-      
-      <Footer />
+      </div>
+
+      <div className="container mx-auto px-4 py-8 max-w-4xl">
+        <Card>
+          <CardHeader>
+            <div className="text-center mb-4">
+              <h1 className="text-3xl font-bold text-blue-600 mb-2">POORNA</h1>
+              <div className="w-16 h-1 bg-blue-600 mx-auto rounded"></div>
+            </div>
+            <CardTitle className="flex items-center gap-2">
+              <Shield className="w-5 h-5 text-blue-600" />
+              Terms and Conditions
+            </CardTitle>
+            <p className="text-sm text-gray-600">
+              Last updated: {new Date().toLocaleDateString()}
+            </p>
+          </CardHeader>
+          <CardContent className="space-y-6">
+            {/* Introduction */}
+            <section>
+              <h2 className="text-xl font-semibold text-gray-900 mb-3">1. Introduction</h2>
+              <p className="text-gray-700 leading-relaxed">
+                Welcome to Hydrogen RO Water Purifier Services. These Terms of Service ("Terms") govern your use of our website and services. By accessing or using our services, you agree to be bound by these Terms.
+              </p>
+            </section>
+
+            {/* Services */}
+            <section>
+              <h2 className="text-xl font-semibold text-gray-900 mb-3">2. Our Services</h2>
+              <div className="space-y-3">
+                <p className="text-gray-700">We provide the following services:</p>
+                <ul className="list-disc list-inside space-y-2 text-gray-700 ml-4">
+                  <li>RO Water Purifier Installation and Maintenance</li>
+                  <li>Water Softener Installation and Service</li>
+                  <li>Filter Replacement and Repair Services</li>
+                  <li>Emergency Service and Support</li>
+                  <li>Water Quality Testing and Consultation</li>
+                </ul>
+              </div>
+            </section>
+
+            {/* Service Areas */}
+            <section>
+              <h2 className="text-xl font-semibold text-gray-900 mb-3">3. Service Areas</h2>
+              <p className="text-gray-700 leading-relaxed">
+                Our services are currently available in Bengaluru, Karnataka, and surrounding areas. Service availability may vary based on location and technician availability.
+              </p>
+            </section>
+
+            {/* Booking and Scheduling */}
+            <section>
+              <h2 className="text-xl font-semibold text-gray-900 mb-3">4. Booking and Scheduling</h2>
+              <div className="space-y-3">
+                <p className="text-gray-700">When booking our services:</p>
+                <ul className="list-disc list-inside space-y-2 text-gray-700 ml-4">
+                  <li>All bookings are subject to technician availability</li>
+                  <li>We will confirm your appointment within 24 hours</li>
+                  <li>Same-day service may be available for emergency repairs</li>
+                  <li>Rescheduling requires at least 24 hours notice</li>
+                  <li>No-show appointments may incur a cancellation fee</li>
+                </ul>
+              </div>
+            </section>
+
+            {/* Pricing and Payment */}
+            <section>
+              <h2 className="text-xl font-semibold text-gray-900 mb-3">5. Pricing and Payment</h2>
+              <div className="space-y-3">
+                <p className="text-gray-700">Payment terms:</p>
+                <ul className="list-disc list-inside space-y-2 text-gray-700 ml-4">
+                  <li>All prices are in Indian Rupees (INR)</li>
+                  <li>Payment is due upon completion of service</li>
+                  <li>We accept cash, UPI, and card payments</li>
+                  <li>Additional charges may apply for emergency services</li>
+                  <li>Warranty terms vary by product and service type</li>
+                </ul>
+              </div>
+            </section>
+
+            {/* Warranty */}
+            <section>
+              <h2 className="text-xl font-semibold text-gray-900 mb-3">6. Warranty and Guarantee</h2>
+              <div className="space-y-3">
+                <p className="text-gray-700">Our warranty policy:</p>
+                <ul className="list-disc list-inside space-y-2 text-gray-700 ml-4">
+                  <li>Installation work is guaranteed for 1 year</li>
+                  <li>Replacement parts carry manufacturer warranty</li>
+                  <li>Regular maintenance extends warranty coverage</li>
+                  <li>Warranty is void if service is performed by unauthorized personnel</li>
+                  <li>Damage due to misuse or negligence is not covered</li>
+                </ul>
+              </div>
+            </section>
+
+            {/* Customer Responsibilities */}
+            <section>
+              <h2 className="text-xl font-semibold text-gray-900 mb-3">7. Customer Responsibilities</h2>
+              <div className="space-y-3">
+                <p className="text-gray-700">As our customer, you agree to:</p>
+                <ul className="list-disc list-inside space-y-2 text-gray-700 ml-4">
+                  <li>Provide accurate contact and address information</li>
+                  <li>Ensure safe access to service areas</li>
+                  <li>Follow maintenance recommendations</li>
+                  <li>Report issues promptly for warranty coverage</li>
+                  <li>Treat our technicians with respect and courtesy</li>
+                </ul>
+              </div>
+            </section>
+
+            {/* Limitation of Liability */}
+            <section>
+              <h2 className="text-xl font-semibold text-gray-900 mb-3">8. Limitation of Liability</h2>
+              <p className="text-gray-700 leading-relaxed">
+                Hydrogen RO shall not be liable for any indirect, incidental, special, or consequential damages arising from the use of our services. Our total liability shall not exceed the amount paid for the specific service.
+              </p>
+            </section>
+
+            {/* Privacy */}
+            <section>
+              <h2 className="text-xl font-semibold text-gray-900 mb-3">9. Privacy</h2>
+              <p className="text-gray-700 leading-relaxed">
+                Your privacy is important to us. Please review our Privacy Policy to understand how we collect, use, and protect your information.
+              </p>
+            </section>
+
+            {/* Changes to Terms */}
+            <section>
+              <h2 className="text-xl font-semibold text-gray-900 mb-3">10. Changes to Terms</h2>
+              <p className="text-gray-700 leading-relaxed">
+                We reserve the right to modify these Terms at any time. Changes will be effective immediately upon posting. Continued use of our services constitutes acceptance of the modified Terms.
+              </p>
+            </section>
+
+            {/* Contact Information */}
+            <section className="bg-blue-50 p-6 rounded-lg">
+              <h2 className="text-xl font-semibold text-gray-900 mb-3 flex items-center gap-2">
+                <Phone className="w-5 h-5 text-blue-600" />
+                Contact Us
+              </h2>
+              <div className="space-y-2 text-gray-700">
+                <p><strong>Phone:</strong> +91-9876543210</p>
+                <p><strong>Email:</strong> support@hydrogenro.com</p>
+                <p><strong>Address:</strong> Bengaluru, Karnataka, India</p>
+                <p><strong>Business Hours:</strong> Monday - Sunday, 8:00 AM - 8:00 PM</p>
+              </div>
+            </section>
+          </CardContent>
+        </Card>
+      </div>
     </div>
   );
 };

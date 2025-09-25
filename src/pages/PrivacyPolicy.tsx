@@ -1,199 +1,215 @@
-import React, { useEffect } from 'react';
-import Header from '@/components/Header';
-import Footer from '@/components/Footer';
+import React from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Shield, Phone, Mail, MapPin, Calendar } from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import { ArrowLeft, Shield, Calendar, Eye, Lock, Database, Users, Phone, Mail } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
 
-const PrivacyPolicy: React.FC = () => {
-  // Scroll to top when component mounts
-  useEffect(() => {
-    window.scrollTo(0, 0);
-  }, []);
+const PrivacyPolicy = () => {
+  const navigate = useNavigate();
+
   return (
-    <div className="min-h-screen flex flex-col bg-background text-foreground">
-      <Header />
-      
-      <main className="flex-1 py-12">
-        <div className="container mx-auto px-4">
-          <div className="max-w-4xl mx-auto">
-            {/* Header */}
-            <div className="text-center mb-12">
-              <div className="w-16 h-16 bg-primary/10 rounded-full flex items-center justify-center mx-auto mb-4">
-                <Shield className="w-8 h-8 text-primary" />
-              </div>
-              <h1 className="text-4xl font-bold text-foreground mb-4">
-                Privacy Policy
-              </h1>
-              <p className="text-lg text-muted-foreground">
-                How we collect, use, and protect your personal information
-              </p>
-              <p className="text-sm text-muted-foreground mt-2">
-                Last updated: {new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })}
-              </p>
-            </div>
-
-            {/* Content */}
-            <div className="space-y-8">
-              {/* Introduction */}
-              <Card>
-                <CardHeader>
-                  <CardTitle>Introduction</CardTitle>
-                </CardHeader>
-                <CardContent className="space-y-4">
-                  <p>
-                    At Hydrogen RO, we are committed to protecting your privacy and ensuring the security of your personal information. This Privacy Policy explains how we collect, use, disclose, and safeguard your information when you use our RO water purifier services.
-                  </p>
-                  <p>
-                    By using our services or providing your information, you consent to the collection and use of information in accordance with this policy.
-                  </p>
-                </CardContent>
-              </Card>
-
-              {/* Information We Collect */}
-              <Card>
-                <CardHeader>
-                  <CardTitle>Information We Collect</CardTitle>
-                </CardHeader>
-                <CardContent className="space-y-4">
-                  <div>
-                    <h4 className="font-semibold text-foreground mb-2">Personal Information:</h4>
-                    <ul className="list-disc list-inside space-y-1 text-muted-foreground">
-                      <li>Full name and contact details (phone number, email address)</li>
-                      <li>Service address and location coordinates</li>
-                      <li>RO system details (brand, model, service requirements)</li>
-                      <li>Service scheduling preferences</li>
-                      <li>Images of your RO system (if provided)</li>
-                    </ul>
-                  </div>
-                  
-                  <div>
-                    <h4 className="font-semibold text-foreground mb-2">Technical Information:</h4>
-                    <ul className="list-disc list-inside space-y-1 text-muted-foreground">
-                      <li>IP address and browser information</li>
-                      <li>Device information and operating system</li>
-                      <li>Website usage data and analytics</li>
-                    </ul>
-                  </div>
-                </CardContent>
-              </Card>
-
-              {/* How We Use Information */}
-              <Card>
-                <CardHeader>
-                  <CardTitle>How We Use Your Information</CardTitle>
-                </CardHeader>
-                <CardContent className="space-y-4">
-                  <ul className="list-disc list-inside space-y-2 text-muted-foreground">
-                    <li>To schedule and provide RO installation, repair, and maintenance services</li>
-                    <li>To communicate with you about your service appointments</li>
-                    <li>To send service confirmations and updates</li>
-                    <li>To process payments and maintain service records</li>
-                    <li>To improve our services and customer experience</li>
-                    <li>To comply with legal obligations and resolve disputes</li>
-                  </ul>
-                </CardContent>
-              </Card>
-
-              {/* Information Sharing */}
-              <Card>
-                <CardHeader>
-                  <CardTitle>Information Sharing</CardTitle>
-                </CardHeader>
-                <CardContent className="space-y-4">
-                  <p>
-                    We do not sell, trade, or rent your personal information to third parties. We may share your information only in the following circumstances:
-                  </p>
-                  <ul className="list-disc list-inside space-y-2 text-muted-foreground">
-                    <li>With our certified technicians to provide services</li>
-                    <li>With service partners (only when necessary for service delivery)</li>
-                    <li>When required by law or legal process</li>
-                    <li>To protect our rights, property, or safety</li>
-                  </ul>
-                </CardContent>
-              </Card>
-
-              {/* Data Security */}
-              <Card>
-                <CardHeader>
-                  <CardTitle>Data Security</CardTitle>
-                </CardHeader>
-                <CardContent className="space-y-4">
-                  <p>
-                    We implement appropriate security measures to protect your personal information against unauthorized access, alteration, disclosure, or destruction. This includes:
-                  </p>
-                  <ul className="list-disc list-inside space-y-2 text-muted-foreground">
-                    <li>Secure data transmission using SSL encryption</li>
-                    <li>Regular security updates and monitoring</li>
-                    <li>Limited access to personal information</li>
-                    <li>Secure storage of customer data</li>
-                  </ul>
-                </CardContent>
-              </Card>
-
-              {/* Your Rights */}
-              <Card>
-                <CardHeader>
-                  <CardTitle>Your Rights</CardTitle>
-                </CardHeader>
-                <CardContent className="space-y-4">
-                  <p>You have the right to:</p>
-                  <ul className="list-disc list-inside space-y-2 text-muted-foreground">
-                    <li>Access and review your personal information</li>
-                    <li>Request correction of inaccurate information</li>
-                    <li>Request deletion of your personal information</li>
-                    <li>Opt-out of marketing communications</li>
-                    <li>Withdraw consent for data processing</li>
-                  </ul>
-                </CardContent>
-              </Card>
-
-              {/* Contact Information */}
-              <Card>
-                <CardHeader>
-                  <CardTitle>Contact Us</CardTitle>
-                </CardHeader>
-                <CardContent className="space-y-4">
-                  <p>
-                    If you have any questions about this Privacy Policy or wish to exercise your rights, please contact us:
-                  </p>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div className="flex items-center gap-3">
-                      <Phone className="w-5 h-5 text-primary" />
-                      <span>+91-8884944288</span>
-                    </div>
-                    <div className="flex items-center gap-3">
-                      <Mail className="w-5 h-5 text-primary" />
-                      <span>mail@hydrogenro.com</span>
-                    </div>
-                    <div className="flex items-center gap-3">
-                      <MapPin className="w-5 h-5 text-primary" />
-                      <span>Bengaluru, Karnataka, India</span>
-                    </div>
-                    <div className="flex items-center gap-3">
-                      <Calendar className="w-5 h-5 text-primary" />
-                      <span>Mon-Sun: 8:00 AM - 8:00 PM</span>
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
-
-              {/* Updates */}
-              <Card>
-                <CardHeader>
-                  <CardTitle>Policy Updates</CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <p>
-                    We may update this Privacy Policy from time to time. We will notify you of any changes by posting the new Privacy Policy on this page and updating the "Last updated" date. We encourage you to review this Privacy Policy periodically for any changes.
-                  </p>
-                </CardContent>
-              </Card>
+    <div className="min-h-screen bg-gray-50">
+      {/* Header */}
+      <div className="bg-white border-b">
+        <div className="container mx-auto px-4 py-4">
+          <div className="flex items-center gap-4">
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => navigate(-1)}
+              className="flex items-center gap-2"
+            >
+              <ArrowLeft className="w-4 h-4" />
+              Back
+            </Button>
+            <div className="flex items-center gap-2">
+              <Shield className="w-6 h-6 text-blue-600" />
+              <h1 className="text-2xl font-bold text-gray-900">Privacy Policy</h1>
             </div>
           </div>
         </div>
-      </main>
-      
-      <Footer />
+      </div>
+
+      <div className="container mx-auto px-4 py-8 max-w-4xl">
+        <Card>
+          <CardHeader>
+            <div className="text-center mb-4">
+              <h1 className="text-3xl font-bold text-blue-600 mb-2">POORNA</h1>
+              <div className="w-16 h-1 bg-blue-600 mx-auto rounded"></div>
+            </div>
+            <CardTitle className="flex items-center gap-2">
+              <Lock className="w-5 h-5 text-blue-600" />
+              Privacy Policy
+            </CardTitle>
+            <p className="text-sm text-gray-600">
+              Last updated: {new Date().toLocaleDateString()}
+            </p>
+          </CardHeader>
+          <CardContent className="space-y-6">
+            {/* Introduction */}
+            <section>
+              <h2 className="text-xl font-semibold text-gray-900 mb-3">1. Introduction</h2>
+              <p className="text-gray-700 leading-relaxed">
+                At Hydrogen RO Water Purifier Services, we are committed to protecting your privacy and personal information. This Privacy Policy explains how we collect, use, disclose, and safeguard your information when you use our services.
+              </p>
+            </section>
+
+            {/* Information We Collect */}
+            <section>
+              <h2 className="text-xl font-semibold text-gray-900 mb-3">2. Information We Collect</h2>
+              <div className="space-y-4">
+                <div>
+                  <h3 className="text-lg font-medium text-gray-900 mb-2">Personal Information</h3>
+                  <ul className="list-disc list-inside space-y-2 text-gray-700 ml-4">
+                    <li>Name and contact information (phone, email, address)</li>
+                    <li>Service history and preferences</li>
+                    <li>Payment information (processed securely)</li>
+                    <li>Location data for service delivery</li>
+                    <li>Communication records and feedback</li>
+                  </ul>
+                </div>
+                <div>
+                  <h3 className="text-lg font-medium text-gray-900 mb-2">Technical Information</h3>
+                  <ul className="list-disc list-inside space-y-2 text-gray-700 ml-4">
+                    <li>Device information and browser type</li>
+                    <li>IP address and location data</li>
+                    <li>Website usage patterns and analytics</li>
+                    <li>Cookies and similar tracking technologies</li>
+                  </ul>
+                </div>
+              </div>
+            </section>
+
+            {/* How We Use Information */}
+            <section>
+              <h2 className="text-xl font-semibold text-gray-900 mb-3">3. How We Use Your Information</h2>
+              <div className="space-y-3">
+                <p className="text-gray-700">We use your information to:</p>
+                <ul className="list-disc list-inside space-y-2 text-gray-700 ml-4">
+                  <li>Provide and improve our water purifier services</li>
+                  <li>Schedule appointments and service calls</li>
+                  <li>Process payments and manage accounts</li>
+                  <li>Send service reminders and updates</li>
+                  <li>Respond to inquiries and provide customer support</li>
+                  <li>Analyze service patterns and improve offerings</li>
+                  <li>Comply with legal obligations</li>
+                </ul>
+              </div>
+            </section>
+
+            {/* Information Sharing */}
+            <section>
+              <h2 className="text-xl font-semibold text-gray-900 mb-3">4. Information Sharing</h2>
+              <div className="space-y-3">
+                <p className="text-gray-700">We may share your information with:</p>
+                <ul className="list-disc list-inside space-y-2 text-gray-700 ml-4">
+                  <li><strong>Service Technicians:</strong> To perform scheduled services</li>
+                  <li><strong>Payment Processors:</strong> To process payments securely</li>
+                  <li><strong>Legal Authorities:</strong> When required by law</li>
+                  <li><strong>Business Partners:</strong> With your explicit consent</li>
+                </ul>
+                <p className="text-gray-700 mt-3">
+                  We do not sell, rent, or trade your personal information to third parties for marketing purposes.
+                </p>
+              </div>
+            </section>
+
+            {/* Data Security */}
+            <section>
+              <h2 className="text-xl font-semibold text-gray-900 mb-3">5. Data Security</h2>
+              <div className="space-y-3">
+                <p className="text-gray-700">We implement appropriate security measures:</p>
+                <ul className="list-disc list-inside space-y-2 text-gray-700 ml-4">
+                  <li>Encryption of sensitive data in transit and at rest</li>
+                  <li>Secure servers and regular security updates</li>
+                  <li>Access controls and authentication protocols</li>
+                  <li>Regular security audits and assessments</li>
+                  <li>Employee training on data protection</li>
+                </ul>
+              </div>
+            </section>
+
+            {/* Data Retention */}
+            <section>
+              <h2 className="text-xl font-semibold text-gray-900 mb-3">6. Data Retention</h2>
+              <p className="text-gray-700 leading-relaxed">
+                We retain your personal information for as long as necessary to provide services, comply with legal obligations, resolve disputes, and enforce our agreements. Service records are typically retained for 7 years for warranty and legal purposes.
+              </p>
+            </section>
+
+            {/* Your Rights */}
+            <section>
+              <h2 className="text-xl font-semibold text-gray-900 mb-3">7. Your Rights</h2>
+              <div className="space-y-3">
+                <p className="text-gray-700">You have the right to:</p>
+                <ul className="list-disc list-inside space-y-2 text-gray-700 ml-4">
+                  <li>Access your personal information</li>
+                  <li>Correct inaccurate or incomplete data</li>
+                  <li>Request deletion of your information</li>
+                  <li>Object to processing of your data</li>
+                  <li>Data portability and transfer</li>
+                  <li>Withdraw consent at any time</li>
+                </ul>
+              </div>
+            </section>
+
+            {/* Cookies and Tracking */}
+            <section>
+              <h2 className="text-xl font-semibold text-gray-900 mb-3">8. Cookies and Tracking</h2>
+              <div className="space-y-3">
+                <p className="text-gray-700">We use cookies and similar technologies to:</p>
+                <ul className="list-disc list-inside space-y-2 text-gray-700 ml-4">
+                  <li>Remember your preferences and settings</li>
+                  <li>Analyze website traffic and usage patterns</li>
+                  <li>Improve website functionality and user experience</li>
+                  <li>Provide personalized content and recommendations</li>
+                </ul>
+                <p className="text-gray-700 mt-3">
+                  You can control cookie settings through your browser preferences.
+                </p>
+              </div>
+            </section>
+
+            {/* Third-Party Services */}
+            <section>
+              <h2 className="text-xl font-semibold text-gray-900 mb-3">9. Third-Party Services</h2>
+              <p className="text-gray-700 leading-relaxed">
+                Our website may contain links to third-party websites or services. We are not responsible for the privacy practices of these external sites. We encourage you to review their privacy policies before providing any personal information.
+              </p>
+            </section>
+
+            {/* Children's Privacy */}
+            <section>
+              <h2 className="text-xl font-semibold text-gray-900 mb-3">10. Children's Privacy</h2>
+              <p className="text-gray-700 leading-relaxed">
+                Our services are not directed to children under 13 years of age. We do not knowingly collect personal information from children under 13. If we become aware that we have collected such information, we will take steps to delete it promptly.
+              </p>
+            </section>
+
+            {/* Changes to Privacy Policy */}
+            <section>
+              <h2 className="text-xl font-semibold text-gray-900 mb-3">11. Changes to Privacy Policy</h2>
+              <p className="text-gray-700 leading-relaxed">
+                We may update this Privacy Policy from time to time. We will notify you of any material changes by posting the new Privacy Policy on our website and updating the "Last updated" date. Your continued use of our services constitutes acceptance of the updated policy.
+              </p>
+            </section>
+
+            {/* Contact Information */}
+            <section className="bg-blue-50 p-6 rounded-lg">
+              <h2 className="text-xl font-semibold text-gray-900 mb-3 flex items-center gap-2">
+                <Mail className="w-5 h-5 text-blue-600" />
+                Contact Us
+              </h2>
+              <div className="space-y-2 text-gray-700">
+                <p><strong>Privacy Officer:</strong> privacy@hydrogenro.com</p>
+                <p><strong>Phone:</strong> +91-9876543210</p>
+                <p><strong>Address:</strong> Bengaluru, Karnataka, India</p>
+                <p><strong>Response Time:</strong> We respond to privacy inquiries within 30 days</p>
+              </div>
+            </section>
+          </CardContent>
+        </Card>
+      </div>
     </div>
   );
 };

@@ -40,9 +40,7 @@ import {
   Download,
   Eye,
   PhoneCall,
-  Send,
-  Upload,
-  Image
+  Send
 } from 'lucide-react';
 import { db } from '@/lib/supabase';
 import { Customer, Job, Technician } from '@/types';
@@ -50,14 +48,6 @@ import { toast } from 'sonner';
 import { openInGoogleMaps, extractCoordinates, formatAddressForDisplay } from '@/lib/maps';
 import { sendNotification, createJobAssignedNotification, createJobCompletedNotification, createJobCancelledNotification } from '@/lib/notifications';
 import CustomerServicesManager from './CustomerServicesManager';
-
-// Generate job number utility
-const generateJobNumber = (serviceType: 'RO' | 'SOFTENER'): string => {
-  const prefix = serviceType === 'RO' ? 'RO' : 'WS';
-  const timestamp = Date.now().toString().slice(-6);
-  const random = Math.floor(Math.random() * 100).toString().padStart(2, '0');
-  return `${prefix}${timestamp}${random}`;
-};
 
 // WhatsApp Icon Component
 const WhatsAppIcon = ({ className }: { className?: string }) => (
@@ -3201,10 +3191,6 @@ const AdminDashboard = () => {
       {/* Full-Screen Photo Viewer Modal */}
       <Dialog open={photoViewerOpen} onOpenChange={setPhotoViewerOpen}>
         <DialogContent className="max-w-[95vw] max-h-[95vh] p-0 bg-black">
-          <DialogHeader className="sr-only">
-            <DialogTitle>Photo Viewer</DialogTitle>
-            <DialogDescription>Full-screen photo viewer</DialogDescription>
-          </DialogHeader>
           <div className="relative w-full h-full flex items-center justify-center">
             {/* Close button */}
             <Button
@@ -3704,7 +3690,7 @@ const AdminDashboard = () => {
                             style={{ display: 'none' }}
                           >
                             <div className="text-center">
-                              <Image className="w-8 h-8 mx-auto mb-2" />
+                              <ImageIcon className="w-8 h-8 mx-auto mb-2" />
                               <div className="text-xs">Failed to load</div>
                             </div>
                           </div>
@@ -3767,10 +3753,6 @@ const AdminDashboard = () => {
       {/* Photo Viewer Dialog */}
       <Dialog open={!!selectedPhoto} onOpenChange={() => setSelectedPhoto(null)}>
         <DialogContent className="max-w-4xl max-h-[90vh] p-0">
-          <DialogHeader className="sr-only">
-            <DialogTitle>Photo Viewer</DialogTitle>
-            <DialogDescription>View photo in full screen</DialogDescription>
-          </DialogHeader>
           {selectedPhoto && (
             <div className="relative">
               <img

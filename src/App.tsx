@@ -19,6 +19,7 @@ const TechnicianDashboard = lazy(() => import("./pages/TechnicianDashboard"));
 const Settings = lazy(() => import("./pages/Settings"));
 const PrivacyPolicy = lazy(() => import("./pages/PrivacyPolicy"));
 const TermsOfService = lazy(() => import("./pages/TermsOfService"));
+const RefundPolicy = lazy(() => import("./pages/RefundPolicy"));
 const CookiePolicy = lazy(() => import("./pages/CookiePolicy"));
 const PaymentTest = lazy(() => import("./components/PaymentTest"));
 const PaymentTestSimple = lazy(() => import("./components/PaymentTestSimple"));
@@ -70,6 +71,7 @@ const App = () => (
                   <Route path="/technician" element={<TechnicianDashboard />} />
                   <Route path="/privacy-policy" element={<PrivacyPolicy />} />
                   <Route path="/terms-of-service" element={<TermsOfService />} />
+                  <Route path="/refund-policy" element={<RefundPolicy />} />
                   <Route path="/cookie-policy" element={<CookiePolicy />} />
             <Route path="/payment-test" element={<PaymentTest />} />
             <Route path="/payment-test-simple" element={<PaymentTestSimple />} />
