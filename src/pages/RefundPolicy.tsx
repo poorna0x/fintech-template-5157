@@ -3,32 +3,15 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { ArrowLeft, RefreshCw, Calendar, Shield, Clock, CheckCircle, XCircle, Phone, Mail } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
+import Header from '@/components/Header';
+import Footer from '@/components/Footer';
 
 const RefundPolicy = () => {
   const navigate = useNavigate();
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      {/* Header */}
-      <div className="bg-white border-b">
-        <div className="container mx-auto px-4 py-4">
-          <div className="flex items-center gap-4">
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => navigate(-1)}
-              className="flex items-center gap-2"
-            >
-              <ArrowLeft className="w-4 h-4" />
-              Back
-            </Button>
-            <div className="flex items-center gap-2">
-              <RefreshCw className="w-6 h-6 text-blue-600" />
-              <h1 className="text-2xl font-bold text-gray-900">Refund Policy</h1>
-            </div>
-          </div>
-        </div>
-      </div>
+    <div className="min-h-screen flex flex-col bg-background text-foreground">
+      <Header />
 
       <div className="container mx-auto px-4 py-8 max-w-4xl">
         <Card>
@@ -243,8 +226,8 @@ const RefundPolicy = () => {
               </h2>
               <div className="space-y-2 text-gray-700">
                 <p><strong>Refund Department:</strong> refunds@hydrogenro.com</p>
-                <p><strong>Phone:</strong> +91-9876543210</p>
-                <p><strong>WhatsApp:</strong> +91-9876543210</p>
+                <p><strong>Phone:</strong> +91-8884944288</p>
+                <p><strong>WhatsApp:</strong> +91-8884944288</p>
                 <p><strong>Business Hours:</strong> Monday - Sunday, 8:00 AM - 8:00 PM</p>
                 <p><strong>Response Time:</strong> Within 24 hours for refund inquiries</p>
               </div>
@@ -252,6 +235,8 @@ const RefundPolicy = () => {
           </CardContent>
         </Card>
       </div>
+      
+      <Footer />
     </div>
   );
 };

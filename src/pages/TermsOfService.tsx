@@ -1,34 +1,15 @@
 import React from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
-import { ArrowLeft, FileText, Calendar, Shield, Users, Phone, Mail } from 'lucide-react';
-import { useNavigate } from 'react-router-dom';
+import { Shield, Phone, Mail } from 'lucide-react';
+import Header from '@/components/Header';
+import Footer from '@/components/Footer';
 
 const TermsOfService = () => {
   const navigate = useNavigate();
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      {/* Header */}
-      <div className="bg-white border-b">
-        <div className="container mx-auto px-4 py-4">
-          <div className="flex items-center gap-4">
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => navigate(-1)}
-              className="flex items-center gap-2"
-            >
-              <ArrowLeft className="w-4 h-4" />
-              Back
-            </Button>
-            <div className="flex items-center gap-2">
-              <FileText className="w-6 h-6 text-blue-600" />
-              <h1 className="text-2xl font-bold text-gray-900">Terms of Service</h1>
-            </div>
-          </div>
-        </div>
-      </div>
+    <div className="min-h-screen flex flex-col bg-background text-foreground">
+      <Header />
 
       <div className="container mx-auto px-4 py-8 max-w-4xl">
         <Card>
@@ -168,7 +149,7 @@ const TermsOfService = () => {
                 Contact Us
               </h2>
               <div className="space-y-2 text-gray-700">
-                <p><strong>Phone:</strong> +91-9876543210</p>
+                <p><strong>Phone:</strong> +91-8884944288</p>
                 <p><strong>Email:</strong> support@hydrogenro.com</p>
                 <p><strong>Address:</strong> Bengaluru, Karnataka, India</p>
                 <p><strong>Business Hours:</strong> Monday - Sunday, 8:00 AM - 8:00 PM</p>
@@ -177,6 +158,8 @@ const TermsOfService = () => {
           </CardContent>
         </Card>
       </div>
+      
+      <Footer />
     </div>
   );
 };

@@ -3,32 +3,15 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { ArrowLeft, Shield, Calendar, Eye, Lock, Database, Users, Phone, Mail } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
+import Header from '@/components/Header';
+import Footer from '@/components/Footer';
 
 const PrivacyPolicy = () => {
   const navigate = useNavigate();
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      {/* Header */}
-      <div className="bg-white border-b">
-        <div className="container mx-auto px-4 py-4">
-          <div className="flex items-center gap-4">
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => navigate(-1)}
-              className="flex items-center gap-2"
-            >
-              <ArrowLeft className="w-4 h-4" />
-              Back
-            </Button>
-            <div className="flex items-center gap-2">
-              <Shield className="w-6 h-6 text-blue-600" />
-              <h1 className="text-2xl font-bold text-gray-900">Privacy Policy</h1>
-            </div>
-          </div>
-        </div>
-      </div>
+    <div className="min-h-screen flex flex-col bg-background text-foreground">
+      <Header />
 
       <div className="container mx-auto px-4 py-8 max-w-4xl">
         <Card>
@@ -202,7 +185,7 @@ const PrivacyPolicy = () => {
               </h2>
               <div className="space-y-2 text-gray-700">
                 <p><strong>Privacy Officer:</strong> privacy@hydrogenro.com</p>
-                <p><strong>Phone:</strong> +91-9876543210</p>
+                <p><strong>Phone:</strong> +91-8884944288</p>
                 <p><strong>Address:</strong> Bengaluru, Karnataka, India</p>
                 <p><strong>Response Time:</strong> We respond to privacy inquiries within 30 days</p>
               </div>
@@ -210,6 +193,8 @@ const PrivacyPolicy = () => {
           </CardContent>
         </Card>
       </div>
+      
+      <Footer />
     </div>
   );
 };
