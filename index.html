@@ -166,6 +166,53 @@
         send_page_view: true
       });
     </script>
+
+    <!-- Performance & Social Media Tracking -->
+    <script>
+      // Social media and contact tracking
+      window.addEventListener('load', function() {
+        // WhatsApp click tracking
+        const whatsappLinks = document.querySelectorAll('a[href*="wa.me"]');
+        whatsappLinks.forEach(link => {
+          link.addEventListener('click', function() {
+            if (typeof gtag !== 'undefined') {
+              gtag('event', 'click', {
+                'event_category': 'social',
+                'event_label': 'whatsapp_contact'
+              });
+            }
+          });
+        });
+
+        // Phone call tracking
+        const phoneLinks = document.querySelectorAll('a[href^="tel:"]');
+        phoneLinks.forEach(link => {
+          link.addEventListener('click', function() {
+            if (typeof gtag !== 'undefined') {
+              gtag('event', 'click', {
+                'event_category': 'contact',
+                'event_label': 'phone_call'
+              });
+            }
+          });
+        });
+
+        // Performance monitoring
+        if ('performance' in window) {
+          window.addEventListener('load', function() {
+            setTimeout(function() {
+              const perfData = performance.getEntriesByType('navigation')[0];
+              if (perfData && typeof gtag !== 'undefined') {
+                gtag('event', 'timing_complete', {
+                  'name': 'load',
+                  'value': Math.round(perfData.loadEventEnd - perfData.loadEventStart)
+                });
+              }
+            }, 0);
+          });
+        }
+      });
+    </script>
     
     <!-- Google Maps API for address autocomplete (optional - will use free services if not available) -->
     <!-- <script async defer src="https://maps.googleapis.com/maps/api/js?key=YOUR_ACTUAL_GOOGLE_MAPS_API_KEY&libraries=places"></script> -->
