@@ -49,8 +49,26 @@
     <meta name="rating" content="general" />
     <meta name="revisit-after" content="7 days" />
     <meta name="language" content="English" />
-    <meta name="geo.region" content="IN-KA" />
-    <meta name="geo.placename" content="Bengaluru" />
+    
+    <!-- Rich Snippets Meta Tags -->
+    <meta name="business:contact_data:phone_number" content="+91-8884944288" />
+    <meta name="business:contact_data:website" content="https://hydrogenro.com" />
+    <meta name="business:contact_data:locality" content="Bengaluru" />
+    <meta name="business:contact_data:region" content="Karnataka" />
+    <meta name="business:contact_data:country_name" content="India" />
+    
+    <!-- Service Hours for Rich Snippets -->
+    <meta name="business:hours:day" content="monday" />
+    <meta name="business:hours:start" content="08:00" />
+    <meta name="business:hours:end" content="20:00" />
+    
+    <!-- Price Range for Rich Snippets -->
+    <meta name="product:price:amount" content="400" />
+    <meta name="product:price:currency" content="INR" />
+    
+    <!-- Service Type for Rich Snippets -->
+    <meta name="service:type" content="RO Water Purifier Services" />
+    <meta name="service:area" content="Bengaluru, Karnataka" />
     
     <!-- Favicon -->
     <link rel="icon" type="image/x-icon" href="/favicon.ico" />
@@ -80,8 +98,36 @@
       "name": "Hydrogen RO - Water Purifier Services",
       "description": "Expert RO water purifier installation, repair, and maintenance services in Bengaluru, Karnataka. Professional technicians with same-day service and 24/7 emergency support.",
       "url": "https://hydrogenro.com",
-      "telephone": "+91-9876543210",
+      "telephone": "+91-8884944288",
       "email": "info@hydrogenro.com",
+      "potentialAction": {
+        "@type": "ReserveAction",
+        "target": {
+          "@type": "EntryPoint",
+          "urlTemplate": "https://hydrogenro.com/#booking",
+          "actionPlatform": [
+            "http://schema.org/DesktopWebPlatform",
+            "http://schema.org/MobileWebPlatform"
+          ]
+        },
+        "result": {
+          "@type": "Reservation",
+          "name": "RO Service Booking"
+        }
+      },
+      "makesOffer": [
+        {
+          "@type": "Offer",
+          "name": "Book RO Service",
+          "description": "Book RO water purifier installation, repair or maintenance service",
+          "url": "https://hydrogenro.com/#booking",
+          "price": "400",
+          "priceCurrency": "INR",
+          "availability": "https://schema.org/InStock",
+          "validFrom": "2025-01-01",
+          "validThrough": "2025-12-31"
+        }
+      ],
       "address": {
         "@type": "PostalAddress",
         "streetAddress": "MG Road",
@@ -195,6 +241,29 @@
     }
     </script>
     
+    <!-- Organization Structured Data for Rich Snippets -->
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "Organization",
+      "name": "Hydrogen RO",
+      "url": "https://hydrogenro.com",
+      "logo": "https://hydrogenro.com/logo.jpg",
+      "contactPoint": {
+        "@type": "ContactPoint",
+        "telephone": "+91-8884944288",
+        "contactType": "customer service",
+        "areaServed": "IN",
+        "availableLanguage": ["English", "Hindi", "Kannada"]
+      },
+      "sameAs": [
+        "https://www.facebook.com/hydrogenro",
+        "https://www.instagram.com/hydrogenro",
+        "https://www.linkedin.com/company/hydrogenro"
+      ]
+    }
+    </script>
+    
     <!-- FAQ Structured Data -->
     <script type="application/ld+json">
     {
@@ -263,7 +332,7 @@
       "provider": {
         "@type": "LocalBusiness",
         "name": "Hydrogen RO",
-        "telephone": "+91-9876543210",
+        "telephone": "+91-8884944288",
         "address": {
           "@type": "PostalAddress",
           "addressLocality": "Bengaluru",
