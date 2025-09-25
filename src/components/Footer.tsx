@@ -88,7 +88,7 @@ const Footer = () => {
         </div>
         
         <div className="mt-16 pt-8 border-t border-border flex flex-col md:flex-row justify-between items-center text-muted-foreground text-sm">
-          <div className="text-center md:text-left">© 2025 Hydrogen RO - Best RO Water Purifier Services in Bengaluru, Karnataka. All rights reserved.</div>
+          <div className="text-center md:text-left">© {new Date().getFullYear()} Hydrogen RO - Best RO Water Purifier Services in Bengaluru, Karnataka. All rights reserved.</div>
           <div className="flex gap-6 mt-4 md:mt-0">
             <Link to="/privacy-policy" className="hover:text-foreground transition-colors">Privacy Policy</Link>
             <Link to="/terms-of-service" className="hover:text-foreground transition-colors">Terms of Service</Link>
