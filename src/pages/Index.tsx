@@ -48,6 +48,9 @@ const Index = () => {
         {/* Comprehensive SEO Content - Hidden but accessible to search engines */}
         <div className="seo-hidden">
           <h1>Best RO Water Purifier Services in Bengaluru - Hydrogen RO</h1>
+          <p>Professional <a href="/services">RO water purifier services in Bengaluru</a> including installation, repair, and maintenance. 
+          Learn more <a href="/about">about our company</a> and <a href="/contact">contact us</a> for same-day service. 
+          Check our <a href="/service-areas">service areas</a> and read our <a href="/blog">RO maintenance blog</a> for expert tips.</p>
           <h2>RO Installation, Repair & Maintenance Services in Bangalore, Karnataka</h2>
           
           <h3>RO Water Purifier Services in Bengaluru</h3>
