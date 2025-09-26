@@ -81,6 +81,8 @@ const AdminDashboard = () => {
   const [customerToDelete, setCustomerToDelete] = useState<Customer | null>(null);
   const [editingCustomer, setEditingCustomer] = useState<Customer | null>(null);
   const [editDialogOpen, setEditDialogOpen] = useState(false);
+  const [phonePopupOpen, setPhonePopupOpen] = useState(false);
+  const [selectedCustomerPhone, setSelectedCustomerPhone] = useState<Customer | null>(null);
   const [editFormData, setEditFormData] = useState({
     full_name: '',
     phone: '',
@@ -1126,6 +1128,11 @@ const AdminDashboard = () => {
     }
   };
 
+  const handlePhoneClick = (customer: Customer) => {
+    setSelectedCustomerPhone(customer);
+    setPhonePopupOpen(true);
+  };
+
 
   // Job assignment functions
   const handleAssignJob = (job: Job) => {
@@ -1984,15 +1991,24 @@ const AdminDashboard = () => {
                     <div className="bg-white rounded-lg p-3 border border-gray-200 hover:border-gray-300 hover:shadow-sm transition-all duration-200">
                       <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-3">
                         <div className="w-8 h-8 sm:w-10 sm:h-10 bg-gray-100 rounded-lg flex items-center justify-center flex-shrink-0">
-                          <a href={`tel:${customer.phone}`} className="cursor-pointer">
+                          {/* Mobile: Show popup, Desktop: Direct call */}
+                          <button 
+                            onClick={() => {
+                              // Show popup if there's alternate phone, otherwise direct call
+                              if ((customer as any).alternate_phone) {
+                                handlePhoneClick(customer);
+                              } else {
+                                window.open(`tel:${customer.phone}`, '_self');
+                              }
+                            }}
+                            className="cursor-pointer"
+                          >
                             <Phone className="w-4 h-4 sm:w-5 sm:h-5 text-gray-600" />
-                          </a>
+                          </button>
                         </div>
                         <div className="flex-1 min-w-0">
                           <div className="text-sm font-semibold text-gray-900 truncate">{customer.phone}</div>
-                          {(customer as any).alternate_phone && (
-                            <div className="text-xs text-gray-500 truncate">{(customer as any).alternate_phone}</div>
-                          )}
+                          {/* Show only primary label, no alternate phone in display */}
                           <div className="text-xs text-gray-500">Primary</div>
                         </div>
                       </div>
@@ -3952,6 +3968,61 @@ const AdminDashboard = () => {
               )}
             </div>
           )}
+        </DialogContent>
+      </Dialog>
+
+      {/* Phone Numbers Popup */}
+      <Dialog open={phonePopupOpen} onOpenChange={setPhonePopupOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Phone className="w-5 h-5 text-blue-600" />
+              Contact Numbers
+            </DialogTitle>
+            <DialogDescription>
+              Choose a phone number to call for {(selectedCustomerPhone as any)?.full_name}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            {/* Primary Phone */}
+            <div className="flex items-center justify-between p-4 bg-blue-50 rounded-lg border border-blue-200">
+              <div>
+                <div className="font-semibold text-gray-900">{selectedCustomerPhone?.phone}</div>
+                <div className="text-sm text-blue-600 font-medium">Primary Number</div>
+              </div>
+              <a 
+                href={`tel:${selectedCustomerPhone?.phone}`}
+                className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg font-medium transition-colors"
+              >
+                Call
+              </a>
+            </div>
+            
+            {/* Secondary Phone */}
+            {(selectedCustomerPhone as any)?.alternate_phone && (
+              <div className="flex items-center justify-between p-4 bg-gray-50 rounded-lg border border-gray-200">
+                <div>
+                  <div className="font-semibold text-gray-900">{(selectedCustomerPhone as any).alternate_phone}</div>
+                  <div className="text-sm text-gray-600 font-medium">Secondary Number</div>
+                </div>
+                <a 
+                  href={`tel:${(selectedCustomerPhone as any).alternate_phone}`}
+                  className="bg-gray-600 hover:bg-gray-700 text-white px-4 py-2 rounded-lg font-medium transition-colors"
+                >
+                  Call
+                </a>
+              </div>
+            )}
+          </div>
+          <DialogFooter>
+            <Button 
+              variant="outline" 
+              onClick={() => setPhonePopupOpen(false)}
+              className="w-full"
+            >
+              Close
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
     </div>
