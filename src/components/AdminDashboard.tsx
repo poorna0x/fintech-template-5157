@@ -2393,18 +2393,6 @@ const AdminDashboard = () => {
                                       </div>
                                     )}
                                     
-                                    {/* Debug: Show job assignment data */}
-                                    <div className="flex items-start gap-2 sm:items-center">
-                                      <User className="w-4 h-4 text-gray-400 flex-shrink-0 mt-0.5 sm:mt-0" />
-                                      <div className="min-w-0 flex-1">
-                                        <div className="text-xs text-gray-500">Assignment Info</div>
-                                        <div className="text-xs text-gray-600 break-words">
-                                          ID: {(job as any).assigned_technician_id || 'None'} | 
-                                          Tech: {job.assignedTechnician?.fullName || 'None'} |
-                                          Status: {job.status}
-                                        </div>
-                                      </div>
-                                    </div>
                                     
                                     {((job as any).assigned_technician_id || job.assignedTechnician) && (
                                       <div className="flex items-start gap-2 sm:items-center">
@@ -2414,10 +2402,30 @@ const AdminDashboard = () => {
                                           <div className="font-medium text-gray-900 break-words">
                                             {(() => {
                                               const technicianId = (job as any).assigned_technician_id || job.assignedTechnician?.id;
-                                              const technician = technicians.find(t => t.id === technicianId);
-                                              return technician ? technician.full_name : 
-                                                job.assignedTechnician?.fullName || 
-                                                'Unknown Technician';
+                                              
+                                              // Lookup technician by ID
+                                              
+                                              // Try to find technician by ID (exact match)
+                                              let technician = technicians.find(t => t.id === technicianId);
+                                              
+                                              // If not found, try case-insensitive match
+                                              if (!technician) {
+                                                technician = technicians.find(t => t.id?.toLowerCase() === technicianId?.toLowerCase());
+                                              }
+                                              
+                                              // If still not found, try partial match
+                                              if (!technician) {
+                                                technician = technicians.find(t => t.id?.includes(technicianId?.substring(0, 8)));
+                                              }
+                                              
+                                              if (technician) {
+                                                return technician.fullName || technician.full_name;
+                                              } else if (job.assignedTechnician?.fullName) {
+                                                return job.assignedTechnician.fullName;
+                                              } else {
+                                                // If no technician found, show loading or unknown
+                                                return 'Loading...';
+                                              }
                                             })()}
                                           </div>
                                         </div>
