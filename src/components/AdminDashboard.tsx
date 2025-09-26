@@ -2393,15 +2393,31 @@ const AdminDashboard = () => {
                                       </div>
                                     )}
                                     
-                                    {(job as any).assigned_technician_id && (
+                                    {/* Debug: Show job assignment data */}
+                                    <div className="flex items-start gap-2 sm:items-center">
+                                      <User className="w-4 h-4 text-gray-400 flex-shrink-0 mt-0.5 sm:mt-0" />
+                                      <div className="min-w-0 flex-1">
+                                        <div className="text-xs text-gray-500">Assignment Info</div>
+                                        <div className="text-xs text-gray-600 break-words">
+                                          ID: {(job as any).assigned_technician_id || 'None'} | 
+                                          Tech: {job.assignedTechnician?.fullName || 'None'} |
+                                          Status: {job.status}
+                                        </div>
+                                      </div>
+                                    </div>
+                                    
+                                    {((job as any).assigned_technician_id || job.assignedTechnician) && (
                                       <div className="flex items-start gap-2 sm:items-center">
                                         <User className="w-4 h-4 text-gray-400 flex-shrink-0 mt-0.5 sm:mt-0" />
                                         <div className="min-w-0 flex-1">
                                           <div className="text-xs text-gray-500">Assigned To</div>
                                           <div className="font-medium text-gray-900 break-words">
                                             {(() => {
-                                              const technician = technicians.find(t => t.id === (job as any).assigned_technician_id);
-                                              return technician ? technician.full_name : 'Unknown Technician';
+                                              const technicianId = (job as any).assigned_technician_id || job.assignedTechnician?.id;
+                                              const technician = technicians.find(t => t.id === technicianId);
+                                              return technician ? technician.full_name : 
+                                                job.assignedTechnician?.fullName || 
+                                                'Unknown Technician';
                                             })()}
                                           </div>
                                         </div>
