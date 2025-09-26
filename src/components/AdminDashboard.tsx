@@ -2234,7 +2234,7 @@ const AdminDashboard = () => {
                         return (
                           <div key={job.id} className="bg-white rounded-lg border border-gray-200 hover:border-gray-300 hover:shadow-sm transition-all duration-200 overflow-hidden group">
                             <div className="p-3 sm:p-4">
-                              <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between mb-4 gap-3">
+                              <div className="flex items-start justify-between mb-4">
                                 <div className="flex-1 min-w-0">
                                   {/* Mobile: Stack badges vertically, Desktop: Horizontal */}
                                   <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-3 mb-3">
@@ -2304,8 +2304,8 @@ const AdminDashboard = () => {
                                   )}
                                 </div>
 
-                                {/* Job Actions - Mobile responsive */}
-                                <div className="flex items-center sm:ml-4 mt-2 sm:mt-0">
+                                {/* Job Actions - Always in top-right */}
+                                <div className="flex items-center ml-2 flex-shrink-0">
                                   <DropdownMenu>
                                     <DropdownMenuTrigger asChild>
                                       <Button 
@@ -4054,7 +4054,7 @@ const AdminDashboard = () => {
                 <div className="space-y-4">
                   {customerHistory[selectedCustomerForHistory.id].map((job) => (
                     <Card key={job.id} className="p-3 sm:p-4">
-                      <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3">
+                      <div className="flex items-start justify-between">
                         <div className="space-y-2 flex-1 min-w-0">
                           <div className="flex flex-col sm:flex-row sm:items-center gap-2">
                             <div className="flex items-center gap-2 flex-wrap">
