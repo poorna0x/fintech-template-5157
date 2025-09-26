@@ -1787,7 +1787,7 @@ const AdminDashboard = () => {
               <Card key={customer.id} className="bg-white border border-gray-200 hover:border-gray-300 hover:shadow-md transition-all duration-200 overflow-hidden mb-6 rounded-lg group">
                 {/* Customer Profile Header */}
                 <div className="bg-gray-50 p-6 border-b border-gray-200">
-                  <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4 mb-6">
+                  <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 sm:gap-4 mb-6">
                     {/* Customer Info */}
                     <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-2 sm:gap-4 flex-wrap">
@@ -1812,76 +1812,75 @@ const AdminDashboard = () => {
                           )}
                         </div>
                     </div>
-                    
-                    {/* Action Menu */}
-                    <DropdownMenu>
-                        <DropdownMenuTrigger asChild>
-                          <Button variant="ghost" size="sm" className="h-10 w-10 p-0 text-gray-400 hover:text-gray-600 hover:bg-white/50 rounded-xl">
-                            <MoreVertical className="h-5 w-5" />
-                          </Button>
-                        </DropdownMenuTrigger>
-                        <DropdownMenuContent align="end" className="w-48">
-                          <DropdownMenuItem onClick={() => handleEditCustomer(customer)}>
-                            <Edit className="mr-2 h-4 w-4" />
-                            Edit Profile
-                          </DropdownMenuItem>
-                          <DropdownMenuItem onClick={() => toast.info('Billing system coming soon')}>
-                            <Receipt className="mr-2 h-4 w-4" />
-                            Generate Bill
-                          </DropdownMenuItem>
-                          <DropdownMenuItem onClick={() => toast.info('AMC management coming soon')}>
-                            <Star className="mr-2 h-4 w-4" />
-                            AMC
-                          </DropdownMenuItem>
-                          <DropdownMenuItem onClick={() => toast.info('Reports coming soon')}>
-                            <FileText className="mr-2 h-4 w-4" />
-                            Reports
-                          </DropdownMenuItem>
-                        </DropdownMenuContent>
-                      </DropdownMenu>
 
-                    {/* Quick Action Buttons */}
-                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                      <Button 
-                        variant="outline" 
-                        size="sm" 
-                        className="flex items-center gap-2 h-10 bg-white hover:bg-gray-50 border-gray-300 hover:border-gray-400 text-gray-700 hover:text-gray-900 transition-all duration-200 rounded-md"
-                        onClick={() => handleEditCustomer(customer)}
-                      >
-                        <Edit className="w-4 h-4" />
-                        <span className="hidden sm:inline">Edit Profile</span>
-                        <span className="sm:hidden">Edit</span>
-                      </Button>
-                      <Button 
-                        variant="outline" 
-                        size="sm" 
-                        className="flex items-center gap-2 h-10 bg-white hover:bg-gray-50 border-gray-300 hover:border-gray-400 text-gray-700 hover:text-gray-900 transition-all duration-200 rounded-md"
-                        onClick={() => handleNewJob(customer)}
-                      >
-                        <Plus className="w-4 h-4" />
-                        <span className="hidden sm:inline">New Job</span>
-                        <span className="sm:hidden">Job</span>
-                      </Button>
-                      <Button 
-                        variant="outline" 
-                        size="sm" 
-                        className="flex items-center gap-2 h-10 bg-white hover:bg-gray-50 border-gray-300 hover:border-gray-400 text-gray-700 hover:text-gray-900 transition-all duration-200 rounded-md"
-                        onClick={() => handleViewPhotos(customer)}
-                      >
-                        <Camera className="w-4 h-4" />
-                        <span className="hidden sm:inline">Photos</span>
-                        <span className="sm:hidden">Photos</span>
-                      </Button>
-                      <Button 
-                        variant="outline" 
-                        size="sm" 
-                        className="flex items-center gap-2 h-10 bg-white hover:bg-gray-50 border-gray-300 hover:border-gray-400 text-gray-700 hover:text-gray-900 transition-all duration-200 rounded-md"
-                        onClick={() => handleViewHistory(customer)}
-                      >
-                        <History className="w-4 h-4" />
-                        <span className="hidden sm:inline">History</span>
-                        <span className="sm:hidden">History</span>
-                      </Button>
+                    {/* Action Buttons Row */}
+                    <div className="w-full sm:w-auto">
+                      <div className="grid grid-cols-5 gap-1 sm:flex sm:items-center sm:gap-2">
+                        <Button 
+                          variant="outline" 
+                          size="sm" 
+                          className="flex items-center justify-center gap-1 sm:gap-2 h-10 sm:h-8 px-2 sm:px-3 bg-white hover:bg-gray-50 border-gray-300 hover:border-gray-400 text-gray-700 hover:text-gray-900 transition-all duration-200 rounded-md text-xs"
+                          onClick={() => handleEditCustomer(customer)}
+                        >
+                          <Edit className="w-3 h-3" />
+                          <span className="hidden sm:inline">Edit</span>
+                        </Button>
+                        <Button 
+                          variant="outline" 
+                          size="sm" 
+                          className="flex items-center justify-center gap-1 sm:gap-2 h-10 sm:h-8 px-2 sm:px-3 bg-white hover:bg-gray-50 border-gray-300 hover:border-gray-400 text-gray-700 hover:text-gray-900 transition-all duration-200 rounded-md text-xs"
+                          onClick={() => handleNewJob(customer)}
+                        >
+                          <Plus className="w-3 h-3" />
+                          <span className="hidden sm:inline">Job</span>
+                        </Button>
+                        <Button 
+                          variant="outline" 
+                          size="sm" 
+                          className="flex items-center justify-center gap-1 sm:gap-2 h-10 sm:h-8 px-2 sm:px-3 bg-white hover:bg-gray-50 border-gray-300 hover:border-gray-400 text-gray-700 hover:text-gray-900 transition-all duration-200 rounded-md text-xs"
+                          onClick={() => handleViewPhotos(customer)}
+                        >
+                          <Camera className="w-3 h-3" />
+                          <span className="hidden sm:inline">Photos</span>
+                        </Button>
+                        <Button 
+                          variant="outline" 
+                          size="sm" 
+                          className="flex items-center justify-center gap-1 sm:gap-2 h-10 sm:h-8 px-2 sm:px-3 bg-white hover:bg-gray-50 border-gray-300 hover:border-gray-400 text-gray-700 hover:text-gray-900 transition-all duration-200 rounded-md text-xs"
+                          onClick={() => handleViewHistory(customer)}
+                        >
+                          <History className="w-3 h-3" />
+                          <span className="hidden sm:inline">History</span>
+                        </Button>
+                        
+                        {/* Action Menu - 3 Dots */}
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild>
+                            <Button 
+                              variant="outline" 
+                              size="sm" 
+                              className="flex items-center justify-center gap-1 sm:gap-2 h-10 sm:h-8 px-2 sm:px-3 bg-white hover:bg-gray-50 border-gray-300 hover:border-gray-400 text-gray-700 hover:text-gray-900 transition-all duration-200 rounded-md text-xs w-full sm:w-auto"
+                            >
+                              <MoreVertical className="w-3 h-3 sm:w-4 sm:h-4" />
+                              <span className="hidden sm:inline">More</span>
+                            </Button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="end" className="w-48">
+                            <DropdownMenuItem onClick={() => toast.info('Billing system coming soon')}>
+                              <Receipt className="mr-2 h-4 w-4" />
+                              Generate Bill
+                            </DropdownMenuItem>
+                            <DropdownMenuItem onClick={() => toast.info('AMC management coming soon')}>
+                              <Star className="mr-2 h-4 w-4" />
+                              AMC
+                            </DropdownMenuItem>
+                            <DropdownMenuItem onClick={() => toast.info('Reports coming soon')}>
+                              <FileText className="mr-2 h-4 w-4" />
+                              Reports
+                            </DropdownMenuItem>
+                          </DropdownMenuContent>
+                        </DropdownMenu>
+                      </div>
                     </div>
                   </div>
                 </div>
