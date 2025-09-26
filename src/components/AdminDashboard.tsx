@@ -42,7 +42,8 @@ import {
   PhoneCall,
   Send,
   Upload,
-  Image
+  Image,
+  Square
 } from 'lucide-react';
 import { db } from '@/lib/supabase';
 import { Customer, Job, Technician } from '@/types';
@@ -1789,16 +1790,27 @@ const AdminDashboard = () => {
                   <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4 mb-6">
                     {/* Customer Info */}
                     <div className="flex-1 min-w-0">
-                      <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-4 mb-3">
-                        <h3 className="text-xl sm:text-2xl font-semibold text-gray-900 truncate">
-                          {(customer as any).full_name}
-                        </h3>
-                        <div className="flex items-center gap-2">
-                          <div className="bg-gray-800 text-white px-3 py-1 rounded-md font-mono text-sm font-medium">
-                            {(customer as any).customer_id || 'N/A'}
+                        <div className="flex items-center gap-2 sm:gap-4 flex-wrap">
+                          <div className="flex items-center gap-2">
+                            <div className="w-4 h-4 bg-gray-600 rounded-sm flex items-center justify-center">
+                              <div className="w-2 h-2 bg-white rounded-sm"></div>
+                            </div>
+                            <h3 className="text-lg sm:text-xl md:text-2xl font-semibold text-gray-900 truncate">
+                              {(customer as any).full_name}
+                            </h3>
+                            <div className="bg-gray-800 text-white px-2 py-1 rounded-md font-mono text-xs sm:text-sm font-medium">
+                              {(customer as any).customer_id || 'N/A'}
+                            </div>
                           </div>
+                          {(customer.brand || customer.model) && (
+                            <div className="text-xs sm:text-sm text-gray-600 bg-gray-100 px-2 py-1 rounded-md">
+                              {[customer.brand, customer.model]
+                                .filter(Boolean)
+                                .filter(value => !value.toLowerCase().includes('not specified') && !value.toLowerCase().includes('n/a'))
+                                .join(' ')}
+                            </div>
+                          )}
                         </div>
-                      </div>
                     </div>
                     
                     {/* Action Menu */}
@@ -1967,89 +1979,6 @@ const AdminDashboard = () => {
                   </div>
                 </div>
 
-                {/* Equipment & Location Info */}
-                <div className="p-6 border-b border-gray-100">
-                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                    {/* Equipment Information */}
-                    <div className="bg-gray-50 rounded-lg p-4 border border-gray-200">
-                      <div className="flex items-center gap-3 mb-3">
-                        <div className="w-10 h-10 bg-gray-100 rounded-lg flex items-center justify-center">
-                          <Wrench className="w-5 h-5 text-gray-600" />
-                        </div>
-                        <div>
-                          <h5 className="text-sm font-semibold text-gray-900">Equipment Details</h5>
-                          <div className="text-xs text-gray-500">Service Equipment</div>
-                        </div>
-                      </div>
-                      <div className="space-y-2">
-                        <div className="flex justify-between items-center">
-                          <span className="text-sm text-gray-600">Brand:</span>
-                          <span className="text-sm font-semibold text-gray-900">{customer.brand || 'N/A'}</span>
-                        </div>
-                        <div className="flex justify-between items-center">
-                          <span className="text-sm text-gray-600">Model:</span>
-                          <span className="text-sm font-semibold text-gray-900">{customer.model || 'N/A'}</span>
-                        </div>
-                        <div className="flex justify-between items-center">
-                          <span className="text-sm text-gray-600">Service Type:</span>
-                          <Badge variant="outline" className="text-xs border-gray-300 text-gray-700">
-                            {customer.serviceType || 'N/A'}
-                          </Badge>
-                        </div>
-                      </div>
-                    </div>
-
-                    {/* Location Information */}
-                    <div className="bg-gray-50 rounded-lg p-4 border border-gray-200">
-                      <div className="flex items-center gap-3 mb-3">
-                        <div className="w-10 h-10 bg-gray-100 rounded-lg flex items-center justify-center">
-                          <MapPin className="w-5 h-5 text-gray-600" />
-                        </div>
-                        <div>
-                          <h5 className="text-sm font-semibold text-gray-900">Service Location</h5>
-                          <div className="text-xs text-gray-500">Customer Address</div>
-                        </div>
-                      </div>
-                      <div className="space-y-2">
-                        <div className="text-sm text-gray-900 font-medium truncate">
-                          {formatAddressForDisplay(customer.address)}
-                        </div>
-                        <div className="flex items-center justify-between">
-                          <span className="text-xs text-gray-500">Location Type:</span>
-                          <div className="flex items-center gap-2">
-                            {customer.location?.googleLocation ? (
-                              <Badge variant="secondary" className="text-xs bg-gray-100 text-gray-700">
-                                Exact Location
-                              </Badge>
-                            ) : (
-                              <Badge variant="outline" className="text-xs border-gray-300 text-gray-600">
-                                General Area
-                              </Badge>
-                            )}
-                          </div>
-                        </div>
-                        <button
-                          onClick={() => {
-                            if (customer.location?.googleLocation) {
-                              window.open(customer.location.googleLocation, '_blank', 'noopener,noreferrer');
-                            } else {
-                              const location = extractCoordinates(customer.location);
-                              if (location) {
-                                openInGoogleMaps(location);
-                              } else {
-                                toast.error('Location data not available');
-                              }
-                            }
-                          }}
-                          className="w-full mt-3 text-xs text-gray-600 hover:text-gray-800 font-medium flex items-center justify-center gap-1 py-2 px-3 bg-white hover:bg-gray-50 border border-gray-300 rounded-md transition-colors"
-                        >
-                          <MapPin className="w-3 h-3" />
-                          View on Map
-                        </button>
-                      </div>
-                    </div>
-                  </div>
-                </div>
 
 
                 {/* Services Section - Only show if there are jobs */}

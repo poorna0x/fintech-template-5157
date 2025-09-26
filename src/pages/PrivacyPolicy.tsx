@@ -17,7 +17,7 @@ const PrivacyPolicy = () => {
         <Card>
           <CardHeader>
             <div className="text-center mb-4">
-              <h1 className="text-3xl font-bold text-blue-600 mb-2">POORNA</h1>
+              <h1 className="text-3xl font-bold text-blue-600 mb-2">Hydrogen RO</h1>
               <div className="w-16 h-1 bg-blue-600 mx-auto rounded"></div>
             </div>
             <CardTitle className="flex items-center gap-2">
@@ -116,7 +116,7 @@ const PrivacyPolicy = () => {
             <section>
               <h2 className="text-xl font-semibold text-gray-900 mb-3">6. Data Retention</h2>
               <p className="text-gray-700 leading-relaxed">
-                We retain your personal information for as long as necessary to provide services, comply with legal obligations, resolve disputes, and enforce our agreements. Service records are typically retained for 7 years for warranty and legal purposes.
+                We retain your personal information for as long as necessary to provide services, comply with legal obligations, resolve disputes, and enforce our agreements. Service records are typically retained for 7 years for legal and business purposes.
               </p>
             </section>
 

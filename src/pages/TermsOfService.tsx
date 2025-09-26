@@ -14,7 +14,7 @@ const TermsOfService = () => {
         <Card>
           <CardHeader>
             <div className="text-center mb-4">
-              <h1 className="text-3xl font-bold text-blue-600 mb-2">POORNA</h1>
+              <h1 className="text-3xl font-bold text-blue-600 mb-2">Hydrogen RO</h1>
               <div className="w-16 h-1 bg-blue-600 mx-auto rounded"></div>
             </div>
             <CardTitle className="flex items-center gap-2">
@@ -82,36 +82,22 @@ const TermsOfService = () => {
                   <li>Payment is due upon completion of service</li>
                   <li>We accept cash, UPI, and card payments</li>
                   <li>Additional charges may apply for emergency services</li>
-                  <li>Warranty terms vary by product and service type</li>
+                  <li>Service terms vary by product and service type</li>
                 </ul>
               </div>
             </section>
 
-            {/* Warranty */}
-            <section>
-              <h2 className="text-xl font-semibold text-gray-900 mb-3">6. Warranty and Guarantee</h2>
-              <div className="space-y-3">
-                <p className="text-gray-700">Our warranty policy:</p>
-                <ul className="list-disc list-inside space-y-2 text-gray-700 ml-4">
-                  <li>Installation work is guaranteed for 1 year</li>
-                  <li>Replacement parts carry manufacturer warranty</li>
-                  <li>Regular maintenance extends warranty coverage</li>
-                  <li>Warranty is void if service is performed by unauthorized personnel</li>
-                  <li>Damage due to misuse or negligence is not covered</li>
-                </ul>
-              </div>
-            </section>
 
             {/* Customer Responsibilities */}
             <section>
-              <h2 className="text-xl font-semibold text-gray-900 mb-3">7. Customer Responsibilities</h2>
+              <h2 className="text-xl font-semibold text-gray-900 mb-3">6. Customer Responsibilities</h2>
               <div className="space-y-3">
                 <p className="text-gray-700">As our customer, you agree to:</p>
                 <ul className="list-disc list-inside space-y-2 text-gray-700 ml-4">
                   <li>Provide accurate contact and address information</li>
                   <li>Ensure safe access to service areas</li>
                   <li>Follow maintenance recommendations</li>
-                  <li>Report issues promptly for warranty coverage</li>
+                  <li>Report issues promptly for service coverage</li>
                   <li>Treat our technicians with respect and courtesy</li>
                 </ul>
               </div>
@@ -119,7 +105,7 @@ const TermsOfService = () => {
 
             {/* Limitation of Liability */}
             <section>
-              <h2 className="text-xl font-semibold text-gray-900 mb-3">8. Limitation of Liability</h2>
+              <h2 className="text-xl font-semibold text-gray-900 mb-3">7. Limitation of Liability</h2>
               <p className="text-gray-700 leading-relaxed">
                 Hydrogen RO shall not be liable for any indirect, incidental, special, or consequential damages arising from the use of our services. Our total liability shall not exceed the amount paid for the specific service.
               </p>
@@ -127,7 +113,7 @@ const TermsOfService = () => {
 
             {/* Privacy */}
             <section>
-              <h2 className="text-xl font-semibold text-gray-900 mb-3">9. Privacy</h2>
+              <h2 className="text-xl font-semibold text-gray-900 mb-3">8. Privacy</h2>
               <p className="text-gray-700 leading-relaxed">
                 Your privacy is important to us. Please review our Privacy Policy to understand how we collect, use, and protect your information.
               </p>
@@ -135,7 +121,7 @@ const TermsOfService = () => {
 
             {/* Changes to Terms */}
             <section>
-              <h2 className="text-xl font-semibold text-gray-900 mb-3">10. Changes to Terms</h2>
+              <h2 className="text-xl font-semibold text-gray-900 mb-3">9. Changes to Terms</h2>
               <p className="text-gray-700 leading-relaxed">
                 We reserve the right to modify these Terms at any time. Changes will be effective immediately upon posting. Continued use of our services constitutes acceptance of the modified Terms.
               </p>

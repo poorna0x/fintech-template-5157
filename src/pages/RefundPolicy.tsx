@@ -17,7 +17,7 @@ const RefundPolicy = () => {
         <Card>
           <CardHeader>
             <div className="text-center mb-4">
-              <h1 className="text-3xl font-bold text-blue-600 mb-2">POORNA</h1>
+              <h1 className="text-3xl font-bold text-blue-600 mb-2">Hydrogen RO</h1>
               <div className="w-16 h-1 bg-blue-600 mx-auto rounded"></div>
             </div>
             <CardTitle className="flex items-center gap-2">
