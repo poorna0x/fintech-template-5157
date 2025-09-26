@@ -1781,211 +1781,272 @@ const AdminDashboard = () => {
           )}
           
           {/* Customer Cards with Jobs */}
-          <div className="space-y-8">
+          <div className="space-y-6">
             {displayedCustomers.map(({ customer, allJobs, upcomingJobs, completedJobs, cancelledJobs }) => (
-              <Card key={customer.id} className="bg-white border border-gray-200 hover:border-gray-300 hover:shadow-lg transition-all duration-200 overflow-hidden mb-6">
+              <Card key={customer.id} className="bg-white border border-gray-200 hover:border-gray-300 hover:shadow-md transition-all duration-200 overflow-hidden mb-6 rounded-lg group">
                 {/* Customer Profile Header */}
-                <div className="bg-gradient-to-r from-gray-50 to-gray-100 p-6 border-b border-gray-200">
-                  <div className="flex items-start justify-between mb-4">
-                    <div className="flex items-center gap-4">
-                      <div>
-                        <div className="flex items-center gap-3">
-                          <h3 className="text-2xl font-bold text-gray-900">{(customer as any).full_name}</h3>
-                          <div className="bg-gray-500 text-white px-3 py-1 rounded-full font-mono text-sm font-medium">
+                <div className="bg-gray-50 p-6 border-b border-gray-200">
+                  <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4 mb-6">
+                    {/* Customer Info */}
+                    <div className="flex-1 min-w-0">
+                      <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-4 mb-3">
+                        <h3 className="text-xl sm:text-2xl font-semibold text-gray-900 truncate">
+                          {(customer as any).full_name}
+                        </h3>
+                        <div className="flex items-center gap-2">
+                          <div className="bg-gray-800 text-white px-3 py-1 rounded-md font-mono text-sm font-medium">
                             {(customer as any).customer_id || 'N/A'}
                           </div>
                         </div>
                       </div>
                     </div>
+                    
+                    {/* Action Menu */}
                     <DropdownMenu>
-                      <DropdownMenuTrigger asChild>
-                        <Button variant="ghost" size="sm" className="h-8 w-8 p-0 text-gray-400 hover:text-gray-600">
-                          <MoreVertical className="h-4 w-4" />
-                        </Button>
-                      </DropdownMenuTrigger>
-                      <DropdownMenuContent align="end">
-                        <DropdownMenuItem onClick={() => handleEditCustomer(customer)}>
-                          <Edit className="mr-2 h-4 w-4" />
-                          Edit Profile
-                        </DropdownMenuItem>
-                        <DropdownMenuItem onClick={() => toast.info('Billing system coming soon')}>
-                          <Receipt className="mr-2 h-4 w-4" />
-                          Generate Bill
-                        </DropdownMenuItem>
-                        <DropdownMenuItem onClick={() => toast.info('AMC management coming soon')}>
-                          <Star className="mr-2 h-4 w-4" />
-                          AMC
-                        </DropdownMenuItem>
-                        <DropdownMenuItem onClick={() => toast.info('Reports coming soon')}>
-                          <FileText className="mr-2 h-4 w-4" />
-                          Reports
-                        </DropdownMenuItem>
-                      </DropdownMenuContent>
-                    </DropdownMenu>
-                  </div>
+                        <DropdownMenuTrigger asChild>
+                          <Button variant="ghost" size="sm" className="h-10 w-10 p-0 text-gray-400 hover:text-gray-600 hover:bg-white/50 rounded-xl">
+                            <MoreVertical className="h-5 w-5" />
+                          </Button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="end" className="w-48">
+                          <DropdownMenuItem onClick={() => handleEditCustomer(customer)}>
+                            <Edit className="mr-2 h-4 w-4" />
+                            Edit Profile
+                          </DropdownMenuItem>
+                          <DropdownMenuItem onClick={() => toast.info('Billing system coming soon')}>
+                            <Receipt className="mr-2 h-4 w-4" />
+                            Generate Bill
+                          </DropdownMenuItem>
+                          <DropdownMenuItem onClick={() => toast.info('AMC management coming soon')}>
+                            <Star className="mr-2 h-4 w-4" />
+                            AMC
+                          </DropdownMenuItem>
+                          <DropdownMenuItem onClick={() => toast.info('Reports coming soon')}>
+                            <FileText className="mr-2 h-4 w-4" />
+                            Reports
+                          </DropdownMenuItem>
+                        </DropdownMenuContent>
+                      </DropdownMenu>
 
-                  {/* Quick Action Buttons */}
-                  <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-                    <Button 
-                      variant="outline" 
-                      size="sm" 
-                      className="flex items-center gap-2 h-10"
-                      onClick={() => handleEditCustomer(customer)}
-                    >
-                      <Edit className="w-4 h-4" />
-                      Edit Profile
-                    </Button>
-                    <Button 
-                      variant="outline" 
-                      size="sm" 
-                      className="flex items-center gap-2 h-10"
-                      onClick={() => handleNewJob(customer)}
-                    >
-                      <Plus className="w-4 h-4" />
-                      New Job
-                    </Button>
-                    <Button 
-                      variant="outline" 
-                      size="sm" 
-                      className="flex items-center gap-2 h-10"
-                      onClick={() => handleViewPhotos(customer)}
-                    >
-                      <Camera className="w-4 h-4" />
-                      Photos
-                    </Button>
-                    <Button 
-                      variant="outline" 
-                      size="sm" 
-                      className="flex items-center gap-2 h-10"
-                      onClick={() => handleViewHistory(customer)}
-                    >
-                      <History className="w-4 h-4" />
-                      History
-                    </Button>
+                    {/* Quick Action Buttons */}
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                      <Button 
+                        variant="outline" 
+                        size="sm" 
+                        className="flex items-center gap-2 h-10 bg-white hover:bg-gray-50 border-gray-300 hover:border-gray-400 text-gray-700 hover:text-gray-900 transition-all duration-200 rounded-md"
+                        onClick={() => handleEditCustomer(customer)}
+                      >
+                        <Edit className="w-4 h-4" />
+                        <span className="hidden sm:inline">Edit Profile</span>
+                        <span className="sm:hidden">Edit</span>
+                      </Button>
+                      <Button 
+                        variant="outline" 
+                        size="sm" 
+                        className="flex items-center gap-2 h-10 bg-white hover:bg-gray-50 border-gray-300 hover:border-gray-400 text-gray-700 hover:text-gray-900 transition-all duration-200 rounded-md"
+                        onClick={() => handleNewJob(customer)}
+                      >
+                        <Plus className="w-4 h-4" />
+                        <span className="hidden sm:inline">New Job</span>
+                        <span className="sm:hidden">Job</span>
+                      </Button>
+                      <Button 
+                        variant="outline" 
+                        size="sm" 
+                        className="flex items-center gap-2 h-10 bg-white hover:bg-gray-50 border-gray-300 hover:border-gray-400 text-gray-700 hover:text-gray-900 transition-all duration-200 rounded-md"
+                        onClick={() => handleViewPhotos(customer)}
+                      >
+                        <Camera className="w-4 h-4" />
+                        <span className="hidden sm:inline">Photos</span>
+                        <span className="sm:hidden">Photos</span>
+                      </Button>
+                      <Button 
+                        variant="outline" 
+                        size="sm" 
+                        className="flex items-center gap-2 h-10 bg-white hover:bg-gray-50 border-gray-300 hover:border-gray-400 text-gray-700 hover:text-gray-900 transition-all duration-200 rounded-md"
+                        onClick={() => handleViewHistory(customer)}
+                      >
+                        <History className="w-4 h-4" />
+                        <span className="hidden sm:inline">History</span>
+                        <span className="sm:hidden">History</span>
+                      </Button>
+                    </div>
                   </div>
                 </div>
 
                 {/* Contact & Communication */}
                 <div className="p-6 border-b border-gray-100">
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div className="space-y-3">
-                      <div className="flex items-center gap-3">
-                        <a href={`tel:${customer.phone}`} className="cursor-pointer">
-                          <Phone className="w-4 h-4 text-gray-600 hover:text-black" />
-                        </a>
-                        <div>
-                          <div className="text-sm font-medium text-gray-900">{customer.phone}</div>
-                          {(customer as any).alternate_phone && (
-                            <div className="text-xs text-gray-500">{(customer as any).alternate_phone}</div>
-                          )}
-                        </div>
-                      </div>
-                    </div>
-                    
-                    <div className="space-y-3">
-                      <div className="flex items-center gap-3">
-                        <a href={`mailto:${customer.email}`} className="cursor-pointer">
-                          <Mail className="w-4 h-4 text-gray-600 hover:text-black" />
-                        </a>
-                        <div>
-                          <div className="text-sm font-medium text-gray-900">{customer.email}</div>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
                   
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
-                    <div className="flex items-center gap-3">
-                      <button
-                        onClick={() => toast.info('WhatsApp integration coming soon')}
-                        className="cursor-pointer"
-                      >
-                        <WhatsAppIcon className="w-4 h-4 text-gray-600 hover:text-black" />
-                      </button>
-                      <div>
-                        <div className="text-sm font-medium text-gray-900">WhatsApp</div>
-                        <div className="text-xs text-gray-500">Send Message</div>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                    {/* Phone */}
+                    <div className="bg-white rounded-lg p-4 border border-gray-200 hover:border-gray-300 hover:shadow-sm transition-all duration-200">
+                      <div className="flex items-center gap-3">
+                        <div className="w-10 h-10 bg-gray-100 rounded-lg flex items-center justify-center">
+                          <a href={`tel:${customer.phone}`} className="cursor-pointer">
+                            <Phone className="w-5 h-5 text-gray-600" />
+                          </a>
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <div className="text-sm font-semibold text-gray-900 truncate">{customer.phone}</div>
+                          {(customer as any).alternate_phone && (
+                            <div className="text-xs text-gray-500 truncate">{(customer as any).alternate_phone}</div>
+                          )}
+                          <div className="text-xs text-gray-500">Primary</div>
+                        </div>
                       </div>
                     </div>
                     
-                    <div className="flex items-center gap-3">
-                      <button
-                        onClick={() => {
-                          // First try to use the stored googleLocation if available
-                          if (customer.location?.googleLocation) {
-                            window.open(customer.location.googleLocation, '_blank', 'noopener,noreferrer');
-                          } else {
-                            // Fallback to extracting coordinates and generating URL
-                            const location = extractCoordinates(customer.location);
-                            if (location) {
-                              // Don't pass address when we have coordinates - use exact location
-                              openInGoogleMaps(location);
+                    {/* Email */}
+                    <div className="bg-white rounded-lg p-4 border border-gray-200 hover:border-gray-300 hover:shadow-sm transition-all duration-200">
+                      <div className="flex items-center gap-3">
+                        <div className="w-10 h-10 bg-gray-100 rounded-lg flex items-center justify-center">
+                          <a href={`mailto:${customer.email}`} className="cursor-pointer">
+                            <Mail className="w-5 h-5 text-gray-600" />
+                          </a>
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <div className="text-sm font-semibold text-gray-900 truncate">{customer.email}</div>
+                          <div className="text-xs text-gray-500">Email</div>
+                        </div>
+                      </div>
+                    </div>
+                    
+                    {/* WhatsApp */}
+                    <div className="bg-white rounded-lg p-4 border border-gray-200 hover:border-gray-300 hover:shadow-sm transition-all duration-200">
+                      <div className="flex items-center gap-3">
+                        <div className="w-10 h-10 bg-gray-100 rounded-lg flex items-center justify-center">
+                          <button
+                            onClick={() => toast.info('WhatsApp integration coming soon')}
+                            className="cursor-pointer"
+                          >
+                            <WhatsAppIcon className="w-5 h-5 text-gray-600" />
+                          </button>
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <div className="text-sm font-semibold text-gray-900">WhatsApp</div>
+                          <div className="text-xs text-gray-500">Send Message</div>
+                        </div>
+                      </div>
+                    </div>
+                    
+                    {/* Location */}
+                    <div className="bg-white rounded-lg p-4 border border-gray-200 hover:border-gray-300 hover:shadow-sm transition-all duration-200">
+                      <div className="flex items-center gap-3">
+                        <div className="w-10 h-10 bg-gray-100 rounded-lg flex items-center justify-center">
+                          <button
+                            onClick={() => {
+                              if (customer.location?.googleLocation) {
+                                window.open(customer.location.googleLocation, '_blank', 'noopener,noreferrer');
+                              } else {
+                                const location = extractCoordinates(customer.location);
+                                if (location) {
+                                  openInGoogleMaps(location);
+                                } else {
+                                  toast.error('Location data not available');
+                                }
+                              }
+                            }}
+                            className="cursor-pointer"
+                          >
+                            <MapPin className="w-5 h-5 text-gray-600" />
+                          </button>
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <div className="text-sm font-semibold text-gray-900 flex items-center gap-2">
+                            Location
+                            {customer.location?.googleLocation && (
+                              <Badge variant="secondary" className="text-xs bg-gray-100 text-gray-700">Exact</Badge>
+                            )}
+                          </div>
+                          <div className="text-xs text-gray-500">
+                            {customer.location?.googleLocation ? 'Exact Location' : 'View on Map'}
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Equipment & Location Info */}
+                <div className="p-6 border-b border-gray-100">
+                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                    {/* Equipment Information */}
+                    <div className="bg-gray-50 rounded-lg p-4 border border-gray-200">
+                      <div className="flex items-center gap-3 mb-3">
+                        <div className="w-10 h-10 bg-gray-100 rounded-lg flex items-center justify-center">
+                          <Wrench className="w-5 h-5 text-gray-600" />
+                        </div>
+                        <div>
+                          <h5 className="text-sm font-semibold text-gray-900">Equipment Details</h5>
+                          <div className="text-xs text-gray-500">Service Equipment</div>
+                        </div>
+                      </div>
+                      <div className="space-y-2">
+                        <div className="flex justify-between items-center">
+                          <span className="text-sm text-gray-600">Brand:</span>
+                          <span className="text-sm font-semibold text-gray-900">{customer.brand || 'N/A'}</span>
+                        </div>
+                        <div className="flex justify-between items-center">
+                          <span className="text-sm text-gray-600">Model:</span>
+                          <span className="text-sm font-semibold text-gray-900">{customer.model || 'N/A'}</span>
+                        </div>
+                        <div className="flex justify-between items-center">
+                          <span className="text-sm text-gray-600">Service Type:</span>
+                          <Badge variant="outline" className="text-xs border-gray-300 text-gray-700">
+                            {customer.serviceType || 'N/A'}
+                          </Badge>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Location Information */}
+                    <div className="bg-gray-50 rounded-lg p-4 border border-gray-200">
+                      <div className="flex items-center gap-3 mb-3">
+                        <div className="w-10 h-10 bg-gray-100 rounded-lg flex items-center justify-center">
+                          <MapPin className="w-5 h-5 text-gray-600" />
+                        </div>
+                        <div>
+                          <h5 className="text-sm font-semibold text-gray-900">Service Location</h5>
+                          <div className="text-xs text-gray-500">Customer Address</div>
+                        </div>
+                      </div>
+                      <div className="space-y-2">
+                        <div className="text-sm text-gray-900 font-medium truncate">
+                          {formatAddressForDisplay(customer.address)}
+                        </div>
+                        <div className="flex items-center justify-between">
+                          <span className="text-xs text-gray-500">Location Type:</span>
+                          <div className="flex items-center gap-2">
+                            {customer.location?.googleLocation ? (
+                              <Badge variant="secondary" className="text-xs bg-gray-100 text-gray-700">
+                                Exact Location
+                              </Badge>
+                            ) : (
+                              <Badge variant="outline" className="text-xs border-gray-300 text-gray-600">
+                                General Area
+                              </Badge>
+                            )}
+                          </div>
+                        </div>
+                        <button
+                          onClick={() => {
+                            if (customer.location?.googleLocation) {
+                              window.open(customer.location.googleLocation, '_blank', 'noopener,noreferrer');
                             } else {
-                              toast.error('Location data not available');
+                              const location = extractCoordinates(customer.location);
+                              if (location) {
+                                openInGoogleMaps(location);
+                              } else {
+                                toast.error('Location data not available');
+                              }
                             }
-                          }
-                        }}
-                        className="cursor-pointer"
-                      >
-                        <MapPin className="w-4 h-4 text-gray-600 hover:text-black" />
-                      </button>
-                      <div>
-                        <div className="text-sm font-medium text-gray-900 flex items-center gap-2">
-                          Location
-                          {customer.location?.googleLocation && (
-                            <Badge variant="secondary" className="text-xs">Exact</Badge>
-                          )}
-                        </div>
-                        <div className="text-xs text-gray-500">
-                          {customer.location?.googleLocation ? 'Exact Location' : 'View on Map'}
-                        </div>
+                          }}
+                          className="w-full mt-3 text-xs text-gray-600 hover:text-gray-800 font-medium flex items-center justify-center gap-1 py-2 px-3 bg-white hover:bg-gray-50 border border-gray-300 rounded-md transition-colors"
+                        >
+                          <MapPin className="w-3 h-3" />
+                          View on Map
+                        </button>
                       </div>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Equipment Information */}
-                <div className="p-6 border-b border-gray-100">
-                  <div className="flex items-center gap-3">
-                    <Wrench className="w-5 h-5 text-gray-600" />
-                    <div>
-                      <div className="text-sm font-medium text-gray-900">{customer.brand} {customer.model}</div>
-                      <div className="text-xs text-gray-500">Equipment Details</div>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Location */}
-                <div className="p-6 border-b border-gray-100">
-                  <div className="flex items-center gap-3">
-                    <button
-                      onClick={() => {
-                        // First try to use the stored googleLocation if available
-                        if (customer.location?.googleLocation) {
-                          window.open(customer.location.googleLocation, '_blank', 'noopener,noreferrer');
-                        } else {
-                          // Fallback to extracting coordinates and generating URL
-                          const location = extractCoordinates(customer.location);
-                          if (location) {
-                            // Don't pass address when we have coordinates - use exact location
-                            openInGoogleMaps(location);
-                          } else {
-                            toast.error('Location data not available');
-                          }
-                        }
-                      }}
-                      className="cursor-pointer"
-                    >
-                      <MapPin className="w-5 h-5 text-gray-600 hover:text-black" />
-                    </button>
-                    <div className="flex-1">
-                      <div className="text-sm font-medium text-gray-900 flex items-center gap-2">
-                        Service Location
-                        {customer.location?.googleLocation && (
-                          <Badge variant="secondary" className="text-xs">Exact</Badge>
-                        )}
-                      </div>
-                      <div className="text-xs text-gray-500 truncate">{formatAddressForDisplay(customer.address)}</div>
                     </div>
                   </div>
                 </div>
@@ -1993,151 +2054,150 @@ const AdminDashboard = () => {
 
                 {/* Services Section - Only show if there are jobs */}
                 {allJobs.length > 0 && (
-                  <div className="p-4 sm:p-6 bg-gray-50 border-t border-gray-200">
-                    <div className="mb-4">
-                      <h3 className="text-base sm:text-lg font-semibold text-gray-900">Services ({allJobs.length})</h3>
+                  <div className="p-6 bg-gray-50">
+                    <div className="mb-6">
+                      <h3 className="text-xl font-semibold text-gray-900 flex items-center gap-3">
+                        <div className="w-8 h-8 bg-gray-100 rounded-lg flex items-center justify-center">
+                          <Wrench className="w-4 h-4 text-gray-600" />
+                        </div>
+                        Service History ({allJobs.length})
+                      </h3>
+                      <p className="text-sm text-gray-600 mt-1">All service requests and job details</p>
                     </div>
 
-                    <div className="space-y-2">
-                      {allJobs.map((job) => (
-                        <div key={job.id} className={`border border-gray-200 rounded-lg bg-white hover:bg-gray-50 transition-colors duration-150`}>
-                          <div className="p-3">
-                            <div className="flex items-start justify-between">
-                              <div className="flex-1 min-w-0">
-                                <div className="flex items-center gap-3 mb-2">
-                                  <span className="font-mono text-sm font-medium text-gray-900">
-                                    {(job as any).job_number}
-                                  </span>
-                                  {getStatusBadge(job.status)}
-                                  <span className="text-xs text-gray-500">
-                                    {(job as any).service_type || job.serviceType} - {(job as any).service_sub_type || job.serviceSubType}
-                                  </span>
-                                  {(() => {
-                                    const beforePhotos = Array.isArray((job as any).before_photos) ? (job as any).before_photos : [];
-                                    const afterPhotos = Array.isArray((job as any).after_photos) ? (job as any).after_photos : [];
-                                    
-                                    const extractPhotoUrls = (photos: any[]) => {
-                                      return photos.map(photo => {
-                                        if (typeof photo === 'string') {
-                                          return photo;
-                                        } else if (photo && typeof photo === 'object' && photo.secure_url) {
-                                          return photo.secure_url;
-                                        }
-                                        return null;
-                                      }).filter(url => url !== null);
-                                    };
-                                    
-                                    const allPhotos = [...extractPhotoUrls(beforePhotos), ...extractPhotoUrls(afterPhotos)];
-                                    
-                                    return allPhotos.length > 0 && (
-                                      <span className="text-xs text-blue-600">
-                                        📸 {allPhotos.length}
-                                      </span>
-                                    );
-                                  })()}
-                                </div>
-                                
-                                <div className={`grid gap-2 text-xs text-gray-600 ${job.description ? 'grid-cols-1 sm:grid-cols-3' : 'grid-cols-1 sm:grid-cols-2'}`}>
-                                  <div>
-                                    <span className="font-medium">Scheduled:</span> {new Date((job as any).scheduled_date || job.scheduledDate).toLocaleDateString()}
+                    <div className="space-y-4">
+                      {allJobs.map((job) => {
+                        const beforePhotos = Array.isArray((job as any).before_photos) ? (job as any).before_photos : [];
+                        const afterPhotos = Array.isArray((job as any).after_photos) ? (job as any).after_photos : [];
+                        
+                        const extractPhotoUrls = (photos: any[]) => {
+                          return photos.map(photo => {
+                            if (typeof photo === 'string') {
+                              return photo;
+                            } else if (photo && typeof photo === 'object' && photo.secure_url) {
+                              return photo.secure_url;
+                            }
+                            return null;
+                          }).filter(url => url !== null);
+                        };
+                        
+                        const allPhotos = [...extractPhotoUrls(beforePhotos), ...extractPhotoUrls(afterPhotos)];
+                        
+                        return (
+                          <div key={job.id} className="bg-white rounded-lg border border-gray-200 hover:border-gray-300 hover:shadow-sm transition-all duration-200 overflow-hidden group">
+                            <div className="p-5">
+                              <div className="flex items-start justify-between mb-4">
+                                <div className="flex-1 min-w-0">
+                                  <div className="flex items-center gap-3 mb-3">
+                                    <div className="bg-gray-100 text-gray-800 px-3 py-1 rounded-md font-mono text-sm font-semibold">
+                                      {(job as any).job_number}
+                                    </div>
+                                    {getStatusBadge(job.status)}
+                                    <Badge variant="outline" className="text-xs border-gray-300 text-gray-600">
+                                      {(job as any).service_type || job.serviceType} - {(job as any).service_sub_type || job.serviceSubType}
+                                    </Badge>
+                                    {allPhotos.length > 0 && (
+                                      <div className="flex items-center gap-1 text-xs text-gray-600 bg-gray-50 px-2 py-1 rounded-md">
+                                        <Camera className="w-3 h-3" />
+                                        {allPhotos.length} photos
+                                      </div>
+                                    )}
                                   </div>
-                                  <div>
-                                    <span className="font-medium">Equipment:</span> {job.brand} - {job.model}
+                                  
+                                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 text-sm">
+                                    <div className="flex items-center gap-2">
+                                      <Calendar className="w-4 h-4 text-gray-400" />
+                                      <div>
+                                        <div className="text-xs text-gray-500">Scheduled</div>
+                                        <div className="font-medium text-gray-900">
+                                          {new Date((job as any).scheduled_date || job.scheduledDate).toLocaleDateString()}
+                                        </div>
+                                      </div>
+                                    </div>
+                                    
+                                    <div className="flex items-center gap-2">
+                                      <Wrench className="w-4 h-4 text-gray-400" />
+                                      <div>
+                                        <div className="text-xs text-gray-500">Equipment</div>
+                                        <div className="font-medium text-gray-900">{job.brand} - {job.model}</div>
+                                      </div>
+                                    </div>
+                                    
+                                    {job.description && (
+                                      <div className="sm:col-span-2 lg:col-span-1">
+                                        <div className="text-xs text-gray-500">Description</div>
+                                        <div className="font-medium text-gray-900 truncate">{job.description}</div>
+                                      </div>
+                                    )}
                                   </div>
-                                  {job.description && (
-                                    <div className="truncate">
-                                      <span className="font-medium">Description:</span> {job.description}
+
+                                  {/* Photos Section */}
+                                  {allPhotos.length > 0 && (
+                                    <div className="mt-4 pt-4 border-t border-gray-100">
+                                      <button
+                                        onClick={() => openPhotoGallery(job.id, allPhotos, 'photos')}
+                                        className="text-sm text-gray-600 hover:text-gray-800 font-medium flex items-center gap-2 bg-gray-50 hover:bg-gray-100 px-3 py-2 rounded-md transition-colors"
+                                      >
+                                        <Camera className="w-4 h-4" />
+                                        View Photos ({allPhotos.length})
+                                      </button>
                                     </div>
                                   )}
                                 </div>
 
-                                {/* Photos Section */}
-                                {(() => {
-                                  const beforePhotos = Array.isArray((job as any).before_photos) ? (job as any).before_photos : [];
-                                  const afterPhotos = Array.isArray((job as any).after_photos) ? (job as any).after_photos : [];
-                                  
-                                  const extractPhotoUrls = (photos: any[]) => {
-                                    return photos.map(photo => {
-                                      if (typeof photo === 'string') {
-                                        return photo;
-                                      } else if (photo && typeof photo === 'object' && photo.secure_url) {
-                                        return photo.secure_url;
-                                      }
-                                      return null;
-                                    }).filter(url => url !== null);
-                                  };
-                                  
-                                  const allPhotos = [...extractPhotoUrls(beforePhotos), ...extractPhotoUrls(afterPhotos)];
-                                  
-                                  if (allPhotos.length > 0) {
-                                    return (
-                                      <div className="mt-2 pt-2 border-t border-gray-100">
-                                        <button
-                                          onClick={() => openPhotoGallery(job.id, allPhotos, 'photos')}
-                                          className="text-xs text-blue-600 hover:text-blue-800"
-                                        >
-                                          View Photos ({allPhotos.length})
-                                        </button>
-                                      </div>
-                                    );
-                                  }
-                                  
-                                  return null;
-                                })()}
-                              </div>
-
-                              {/* Job Actions */}
-                              <div className="flex items-center">
-                                <DropdownMenu>
-                                  <DropdownMenuTrigger asChild>
-                                    <Button variant="ghost" size="sm" className="h-6 w-6 p-0">
-                                      <MoreVertical className="h-3 w-3" />
-                                    </Button>
-                                  </DropdownMenuTrigger>
-                                  <DropdownMenuContent align="end">
-                                    {job.status === 'PENDING' && (
-                                      <DropdownMenuItem onClick={() => handleAssignJob(job)}>
-                                        <Wrench className="mr-2 h-4 w-4" />
-                                        Assign to Technician
+                                {/* Job Actions */}
+                                <div className="flex items-center ml-4">
+                                  <DropdownMenu>
+                                    <DropdownMenuTrigger asChild>
+                                      <Button variant="ghost" size="sm" className="h-8 w-8 p-0 text-gray-400 hover:text-gray-600">
+                                        <MoreVertical className="h-4 w-4" />
+                                      </Button>
+                                    </DropdownMenuTrigger>
+                                    <DropdownMenuContent align="end" className="w-48">
+                                      {job.status === 'PENDING' && (
+                                        <DropdownMenuItem onClick={() => handleAssignJob(job)}>
+                                          <Wrench className="mr-2 h-4 w-4" />
+                                          Assign to Technician
+                                        </DropdownMenuItem>
+                                      )}
+                                      {job.status === 'ASSIGNED' && (
+                                        <DropdownMenuItem onClick={() => handleJobStatusUpdate(job.id, 'IN_PROGRESS')}>
+                                          <Clock className="mr-2 h-4 w-4" />
+                                          Start Job
+                                        </DropdownMenuItem>
+                                      )}
+                                      {job.status === 'IN_PROGRESS' && (
+                                        <DropdownMenuItem onClick={() => handleJobStatusUpdate(job.id, 'COMPLETED')}>
+                                          <CheckCircle className="mr-2 h-4 w-4" />
+                                          Complete Job
+                                        </DropdownMenuItem>
+                                      )}
+                                      <DropdownMenuItem 
+                                        onClick={() => {
+                                          toast.info('Job details feature coming soon');
+                                        }}
+                                      >
+                                        <Edit className="mr-2 h-4 w-4" />
+                                        View Details
                                       </DropdownMenuItem>
-                                    )}
-                                    {job.status === 'ASSIGNED' && (
-                                      <DropdownMenuItem onClick={() => handleJobStatusUpdate(job.id, 'IN_PROGRESS')}>
-                                        <Clock className="mr-2 h-4 w-4" />
-                                        Start Job
+                                      <DropdownMenuItem 
+                                        onClick={() => {
+                                          setJobToDelete(job);
+                                          setDeleteJobDialogOpen(true);
+                                        }}
+                                        className="text-red-600"
+                                      >
+                                        <Trash2 className="mr-2 h-4 w-4" />
+                                        Delete Job
                                       </DropdownMenuItem>
-                                    )}
-                                    {job.status === 'IN_PROGRESS' && (
-                                      <DropdownMenuItem onClick={() => handleJobStatusUpdate(job.id, 'COMPLETED')}>
-                                        <CheckCircle className="mr-2 h-4 w-4" />
-                                        Complete Job
-                                      </DropdownMenuItem>
-                                    )}
-                                    <DropdownMenuItem 
-                                      onClick={() => {
-                                        toast.info('Job details feature coming soon');
-                                      }}
-                                    >
-                                      <Edit className="mr-2 h-4 w-4" />
-                                      View Details
-                                    </DropdownMenuItem>
-                                    <DropdownMenuItem 
-                                      onClick={() => {
-                                        setJobToDelete(job);
-                                        setDeleteJobDialogOpen(true);
-                                      }}
-                                      className="text-red-600"
-                                    >
-                                      <Trash2 className="mr-2 h-4 w-4" />
-                                      Delete Job
-                                    </DropdownMenuItem>
-                                  </DropdownMenuContent>
-                                </DropdownMenu>
+                                    </DropdownMenuContent>
+                                  </DropdownMenu>
+                                </div>
                               </div>
                             </div>
                           </div>
-                        </div>
-                      ))}
+                        );
+                      })}
                     </div>
                   </div>
                 )}
