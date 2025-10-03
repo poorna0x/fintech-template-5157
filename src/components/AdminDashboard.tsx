@@ -1902,10 +1902,11 @@ const AdminDashboard = () => {
               </Button>
               <Button 
                 onClick={handleAddCustomer}
-                className="bg-blue-600 hover:bg-blue-700 text-white"
+                className="bg-blue-600 hover:bg-blue-700 text-white w-full sm:w-auto px-4 py-2 text-sm sm:text-base"
               >
                 <Users className="w-4 h-4 mr-2" />
-                Add Customer
+                <span className="hidden sm:inline">Add Customer</span>
+                <span className="sm:hidden">Add</span>
               </Button>
             </div>
           </div>
@@ -2558,27 +2559,27 @@ const AdminDashboard = () => {
 
       {/* Add Customer Dialog - Step by Step */}
       <Dialog open={addDialogOpen} onOpenChange={setAddDialogOpen}>
-        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-3">
+        <DialogContent className="w-[95vw] sm:w-[90vw] md:w-[80vw] lg:w-[60vw] xl:w-[50vw] max-w-2xl h-[90vh] max-h-[90vh] overflow-hidden flex flex-col">
+          <DialogHeader className="flex-shrink-0">
+            <DialogTitle className="flex items-center gap-2 sm:gap-3">
               <div className="flex items-center gap-2">
-                <div className="w-8 h-8 rounded-full bg-blue-100 flex items-center justify-center text-blue-600 font-semibold text-sm">
+                <div className="w-6 h-6 sm:w-8 sm:h-8 rounded-full bg-blue-100 flex items-center justify-center text-blue-600 font-semibold text-xs sm:text-sm">
                   {currentStep}
                 </div>
-                <span>Add New Customer</span>
+                <span className="text-sm sm:text-base">Add New Customer</span>
               </div>
               <div className="flex gap-1 ml-auto">
                 {[1, 2, 3, 4, 5].map((step) => (
                   <div
                     key={step}
-                    className={`w-2 h-2 rounded-full ${
+                    className={`w-1.5 h-1.5 sm:w-2 sm:h-2 rounded-full ${
                       step <= currentStep ? 'bg-blue-600' : 'bg-gray-300'
                     }`}
                   />
                 ))}
               </div>
             </DialogTitle>
-            <DialogDescription>
+            <DialogDescription className="text-xs sm:text-sm">
               {currentStep === 1 && "Enter customer's personal information"}
               {currentStep === 2 && "Enter customer's address details"}
               {currentStep === 3 && "Select services and equipment details"}
@@ -2586,62 +2587,63 @@ const AdminDashboard = () => {
             </DialogDescription>
           </DialogHeader>
           
-          <div className="py-4">
+          <div className="py-6 px-2 sm:px-4 flex-1 overflow-y-auto">
             {/* Step 1: Personal Information */}
             {currentStep === 1 && (
               <div className="space-y-4">
             <div className="space-y-2">
-              <Label htmlFor="add_full_name">Full Name</Label>
+              <Label htmlFor="add_full_name" className="text-sm font-medium">Full Name</Label>
               <Input
                 id="add_full_name"
                 value={addFormData.full_name}
                 onChange={(e) => handleAddFormChange('full_name', e.target.value)}
                 placeholder="Enter full name"
-                    className={formErrors.full_name ? 'border-red-500' : ''}
+                className={`text-sm ${formErrors.full_name ? 'border-red-500' : ''}`}
               />
                   {formErrors?.full_name && (
-                    <p className="text-sm text-red-500">{formErrors.full_name}</p>
+                    <p className="text-xs text-red-500">{formErrors.full_name}</p>
                   )}
             </div>
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div className="space-y-2">
-                    <Label htmlFor="add_phone">Primary Phone</Label>
+                    <Label htmlFor="add_phone" className="text-sm font-medium">Primary Phone</Label>
               <Input
                 id="add_phone"
                 value={addFormData.phone}
                 onChange={(e) => handlePhoneChange(e.target.value)}
-                placeholder="Enter primary phone (e.g., 6361631253 or 916361631253)"
-                className={formErrors.phone ? 'border-red-500' : ''}
+                placeholder="Enter primary phone"
+                className={`text-sm ${formErrors.phone ? 'border-red-500' : ''}`}
               />
                     {formErrors?.phone && (
-                      <p className="text-sm text-red-500">{formErrors.phone}</p>
+                      <p className="text-xs text-red-500">{formErrors.phone}</p>
                     )}
             </div>
 
             <div className="space-y-2">
-                    <Label htmlFor="add_alternate_phone">Alternate Phone</Label>
+                    <Label htmlFor="add_alternate_phone" className="text-sm font-medium">Alternate Phone</Label>
               <Input
                       id="add_alternate_phone"
                       value={addFormData.alternate_phone}
                       onChange={(e) => handleAlternatePhoneChange(e.target.value)}
                       placeholder="Enter alternate phone (optional)"
+                      className="text-sm"
               />
             </div>
             </div>
 
             <div className="space-y-2">
-                  <Label htmlFor="add_email">Email Address</Label>
+                  <Label htmlFor="add_email" className="text-sm font-medium">Email Address</Label>
               <Input
                 id="add_email"
                 type="email"
                 value={addFormData.email}
                 onChange={(e) => handleAddFormChange('email', e.target.value)}
                 placeholder="Enter email address"
-                    className={formErrors.email ? 'border-red-500' : ''}
+                className={`text-sm ${formErrors.email ? 'border-red-500' : ''}`}
               />
                   {formErrors?.email && (
-                    <p className="text-sm text-red-500">{formErrors.email}</p>
+                    <p className="text-xs text-red-500">{formErrors.email}</p>
                   )}
             </div>
             </div>
@@ -2929,42 +2931,43 @@ const AdminDashboard = () => {
             )}
           </div>
 
-          <DialogFooter className="flex justify-between">
-            <div className="flex gap-2">
+          <DialogFooter className="flex-shrink-0 flex flex-col sm:flex-row gap-2 sm:gap-0 sm:justify-between pt-4 border-t">
+            <div className="flex gap-2 order-2 sm:order-1">
               {currentStep > 1 && (
-                <Button variant="outline" onClick={prevStep}>
+                <Button variant="outline" onClick={prevStep} className="flex-1 sm:flex-none text-sm">
                   Previous
                 </Button>
               )}
-            <Button 
-              variant="outline" 
-              onClick={() => setAddDialogOpen(false)}
-              disabled={isCreating}
-            >
-              Cancel
-            </Button>
+              <Button 
+                variant="outline" 
+                onClick={() => setAddDialogOpen(false)}
+                disabled={isCreating}
+                className="flex-1 sm:flex-none text-sm"
+              >
+                Cancel
+              </Button>
             </div>
             
-            <div>
+            <div className="order-1 sm:order-2">
               {currentStep < 4 ? (
-                <Button onClick={nextStep} className="bg-blue-600 hover:bg-blue-700">
+                <Button onClick={nextStep} className="bg-blue-600 hover:bg-blue-700 w-full sm:w-auto text-sm">
                   Next Step
                 </Button>
               ) : (
-            <Button 
-              onClick={handleCreateCustomer}
+                <Button 
+                  onClick={handleCreateCustomer}
                   disabled={isCreating}
-              className="bg-green-600 hover:bg-green-700"
-            >
-              {isCreating ? (
-                <div className="flex items-center gap-2">
-                  <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
-                  Creating...
-                </div>
-              ) : (
-                'Create Customer'
-              )}
-            </Button>
+                  className="bg-green-600 hover:bg-green-700 w-full sm:w-auto text-sm"
+                >
+                  {isCreating ? (
+                    <div className="flex items-center gap-2">
+                      <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                      Creating...
+                    </div>
+                  ) : (
+                    'Create Customer'
+                  )}
+                </Button>
               )}
             </div>
           </DialogFooter>
