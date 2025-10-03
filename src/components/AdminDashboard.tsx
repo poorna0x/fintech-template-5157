@@ -758,8 +758,8 @@ const AdminDashboard = () => {
       service_type: (customer.serviceType === 'SOFTENER' ? 'SOFTENER' : 'RO') as 'RO' | 'SOFTENER',
       service_sub_type: 'Installation',
       service_sub_type_custom: '',
-      brand: customer.brand || '',
-      model: customer.model || '',
+      brand: customer.brand || 'Not specified',
+      model: customer.model || 'Not specified',
       scheduled_date: tomorrowDateString, // Set to tomorrow by default
       scheduled_time_slot: 'CUSTOM' as 'MORNING' | 'AFTERNOON' | 'EVENING' | 'CUSTOM', // Set to custom by default
       scheduled_time_custom: currentTime, // Set to current time by default
@@ -797,8 +797,8 @@ const AdminDashboard = () => {
         customer_id: selectedCustomerForJob.id,
         service_type: newJobFormData.service_type,
         service_sub_type: newJobFormData.service_sub_type === 'Other' ? newJobFormData.service_sub_type_custom : newJobFormData.service_sub_type,
-        brand: newJobFormData.brand,
-        model: newJobFormData.model,
+        brand: newJobFormData.brand === 'Not specified' ? '' : newJobFormData.brand,
+        model: newJobFormData.model === 'Not specified' ? '' : newJobFormData.model,
         scheduled_date: newJobFormData.scheduled_date,
         scheduled_time_slot: newJobFormData.scheduled_time_slot === 'CUSTOM' ? newJobFormData.scheduled_time_custom : newJobFormData.scheduled_time_slot,
         service_address: selectedCustomerForJob.address,
@@ -3934,7 +3934,18 @@ const AdminDashboard = () => {
                     id="job_brand"
                     value={newJobFormData.brand}
                     onChange={(e) => handleNewJobFormChange('brand', e.target.value)}
-                    placeholder="Enter brand name"
+                    placeholder="Not specified"
+                    onFocus={(e) => {
+                      if (e.target.value === 'Not specified') {
+                        e.target.value = '';
+                        handleNewJobFormChange('brand', '');
+                      }
+                    }}
+                    onBlur={(e) => {
+                      if (e.target.value.trim() === '') {
+                        handleNewJobFormChange('brand', 'Not specified');
+                      }
+                    }}
                   />
                 </div>
 
@@ -3944,7 +3955,18 @@ const AdminDashboard = () => {
                     id="job_model"
                     value={newJobFormData.model}
                     onChange={(e) => handleNewJobFormChange('model', e.target.value)}
-                    placeholder="Enter model name"
+                    placeholder="Not specified"
+                    onFocus={(e) => {
+                      if (e.target.value === 'Not specified') {
+                        e.target.value = '';
+                        handleNewJobFormChange('model', '');
+                      }
+                    }}
+                    onBlur={(e) => {
+                      if (e.target.value.trim() === '') {
+                        handleNewJobFormChange('model', 'Not specified');
+                      }
+                    }}
                   />
                 </div>
               </div>
