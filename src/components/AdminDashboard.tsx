@@ -177,6 +177,7 @@ const AdminDashboard = () => {
   const [customerServices, setCustomerServices] = useState<{[key: string]: any[]}>({});
   const [existingCustomer, setExistingCustomer] = useState<Customer | null>(null);
   const [overrideDialogOpen, setOverrideDialogOpen] = useState(false);
+  const [shouldUpdateExisting, setShouldUpdateExisting] = useState(false);
   const [customerJobs, setCustomerJobs] = useState<{[customerId: string]: Job[]}>({});
   const [loadingCustomerJobs, setLoadingCustomerJobs] = useState<{[customerId: string]: boolean}>({});
   const [selectedJobPhotos, setSelectedJobPhotos] = useState<{jobId: string, photos: string[], type: 'before' | 'after'} | null>(null);
@@ -681,73 +682,29 @@ const AdminDashboard = () => {
       console.log('Service type char codes:', Array.from(customerData.service_type).map(c => c.charCodeAt(0)));
       console.log('Customer data being sent:', customerData);
 
-      const { data: newCustomer, error } = await db.customers.create(customerData);
-
-      if (error) {
-        throw new Error(error.message);
+      let result;
+      if (shouldUpdateExisting && existingCustomer) {
+        // Update existing customer
+        const { data: updatedCustomer, error } = await db.customers.update(existingCustomer.id, customerData);
+        if (error) {
+          throw new Error(error.message);
+        }
+        result = updatedCustomer;
+        toast.success(`Customer ${(updatedCustomer as any).customer_id} updated successfully!`);
+      } else {
+        // Create new customer
+        const { data: newCustomer, error } = await db.customers.create(customerData);
+        if (error) {
+          throw new Error(error.message);
+        }
+        result = newCustomer;
+        toast.success(`Customer ${(newCustomer as any).customer_id} created successfully!`);
       }
 
-      // Add to local state
-      setCustomers([newCustomer, ...customers]);
-
-      // No automatic job creation - jobs will be created separately when needed
-      toast.success(`Customer ${(newCustomer as any).customer_id} created successfully!`);
-
-      setAddDialogOpen(false);
-    } catch (error) {
-      console.error('Error creating customer:', error);
-      toast.error('Failed to create customer');
-    } finally {
-      setIsCreating(false);
-    }
-  };
-
-  const handleOverrideCustomer = async () => {
-    if (!existingCustomer) return;
-    
-    setIsCreating(true);
-    try {
-      // Update existing customer with new data
-      const customerData = {
-        full_name: addFormData.full_name,
-        phone: addFormData.phone ? formatPhoneNumber(addFormData.phone) : '',
-        alternate_phone: addFormData.alternate_phone ? formatPhoneNumber(addFormData.alternate_phone) : '',
-        email: addFormData.email || '',
-        service_type: addFormData.service_types.join(', ') as 'RO' | 'SOFTENER',
-        brand: addFormData.equipment[addFormData.service_types[0]]?.brand || '',
-        model: addFormData.equipment[addFormData.service_types[0]]?.model || '',
-        behavior: addFormData.behavior,
-        preferred_language: (addFormData.native_language || 'ENGLISH') as 'ENGLISH' | 'HINDI' | 'KANNADA' | 'TAMIL' | 'TELUGU',
-        status: addFormData.status as 'ACTIVE' | 'INACTIVE' | 'BLOCKED',
-        notes: addFormData.notes,
-        address: {
-          street: addFormData.address || '',
-          area: '',
-          city: '',
-          state: '',
-          pincode: ''
-        },
-        location: {
-          googleLocation: addFormData.google_location || '',
-          latitude: null,
-          longitude: null
-        }
-      };
-
-      const { error } = await supabase
-        .from('customers')
-        .update(customerData)
-        .eq('id', existingCustomer.id);
-
-      if (error) throw error;
-
       // Refresh customers list
-      await fetchCustomers();
-      
-      // Close dialogs and reset form
-      setOverrideDialogOpen(false);
-      setAddDialogOpen(false);
-      setCurrentStep(1);
+      await loadDashboardData();
+
+      // Reset form
       setAddFormData({
         full_name: '',
         phone: '',
@@ -762,13 +719,15 @@ const AdminDashboard = () => {
         address: '',
         google_location: ''
       });
+      setCurrentStep(1);
       setFormErrors({});
+      setShouldUpdateExisting(false);
       setExistingCustomer(null);
-      
-      toast.success('Customer updated successfully!');
+
+      setAddDialogOpen(false);
     } catch (error) {
-      console.error('Error updating customer:', error);
-      toast.error('Failed to update customer. Please try again.');
+      console.error('Error creating customer:', error);
+      toast.error('Failed to create customer');
     } finally {
       setIsCreating(false);
     }
@@ -777,15 +736,6 @@ const AdminDashboard = () => {
   const handleCancelOverride = () => {
     setOverrideDialogOpen(false);
     setExistingCustomer(null);
-  };
-
-  // Handle override when user clicks on error message
-  const handleOverrideFromError = (phone: string, email?: string) => {
-    const existing = checkExistingCustomer(phone, email);
-    if (existing) {
-      setExistingCustomer(existing);
-      setOverrideDialogOpen(true);
-    }
   };
 
   // Job creation functions
@@ -1280,12 +1230,6 @@ const AdminDashboard = () => {
           const phoneValidation = validatePhoneNumber(addFormData.phone);
           if (!phoneValidation.isValid) {
             errors.phone = phoneValidation.error || 'Invalid phone number';
-          } else {
-            // Check if customer already exists
-            const existing = checkExistingCustomer(addFormData.phone, addFormData.email);
-            if (existing) {
-              errors.phone = `Customer already exists (ID: ${(existing as any).customer_id})`;
-            }
           }
         }
         
@@ -1294,12 +1238,6 @@ const AdminDashboard = () => {
           const alternatePhoneValidation = validatePhoneNumber(addFormData.alternate_phone);
           if (!alternatePhoneValidation.isValid) {
             errors.alternate_phone = alternatePhoneValidation.error || 'Invalid alternate phone number';
-          } else {
-            // Check if customer already exists with alternate phone
-            const existing = checkExistingCustomer(addFormData.alternate_phone, addFormData.email);
-            if (existing) {
-              errors.alternate_phone = `Customer already exists (ID: ${(existing as any).customer_id})`;
-            }
           }
         }
         
@@ -1308,12 +1246,6 @@ const AdminDashboard = () => {
           const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
           if (!emailRegex.test(addFormData.email)) {
             errors.email = 'Please enter a valid email address';
-          } else {
-            // Check if customer already exists with email
-            const existing = checkExistingCustomer(addFormData.phone, addFormData.email);
-            if (existing) {
-              errors.email = `Customer already exists (ID: ${(existing as any).customer_id})`;
-            }
           }
         }
         break;
@@ -1335,6 +1267,15 @@ const AdminDashboard = () => {
 
   const nextStep = () => {
     if (validateStep(currentStep)) {
+      // Check for existing customer only when moving from step 1
+      if (currentStep === 1) {
+        const existing = checkExistingCustomer(addFormData.phone, addFormData.email);
+        if (existing) {
+          setExistingCustomer(existing);
+          setOverrideDialogOpen(true);
+          return;
+        }
+      }
       setCurrentStep(prev => Math.min(prev + 1, 4));
     }
   };
@@ -2786,18 +2727,7 @@ const AdminDashboard = () => {
                 className={`text-sm ${formErrors.phone ? 'border-red-500' : ''}`}
               />
                     {formErrors?.phone && (
-                      <div className="text-xs text-red-500">
-                        <p>{formErrors.phone}</p>
-                        {formErrors.phone.includes('Customer already exists') && (
-                          <button
-                            type="button"
-                            onClick={() => handleOverrideFromError(addFormData.phone, addFormData.email)}
-                            className="text-blue-600 hover:text-blue-800 underline mt-1"
-                          >
-                            Click to update existing customer
-                          </button>
-                        )}
-                      </div>
+                      <p className="text-xs text-red-500">{formErrors.phone}</p>
                     )}
             </div>
 
@@ -2811,18 +2741,7 @@ const AdminDashboard = () => {
                       className={`text-sm ${formErrors.alternate_phone ? 'border-red-500' : ''}`}
               />
                     {formErrors?.alternate_phone && (
-                      <div className="text-xs text-red-500">
-                        <p>{formErrors.alternate_phone}</p>
-                        {formErrors.alternate_phone.includes('Customer already exists') && (
-                          <button
-                            type="button"
-                            onClick={() => handleOverrideFromError(addFormData.alternate_phone, addFormData.email)}
-                            className="text-blue-600 hover:text-blue-800 underline mt-1"
-                          >
-                            Click to update existing customer
-                          </button>
-                        )}
-                      </div>
+                      <p className="text-xs text-red-500">{formErrors.alternate_phone}</p>
                     )}
             </div>
             </div>
@@ -2838,18 +2757,7 @@ const AdminDashboard = () => {
                 className={`text-sm ${formErrors.email ? 'border-red-500' : ''}`}
               />
                   {formErrors?.email && (
-                    <div className="text-xs text-red-500">
-                      <p>{formErrors.email}</p>
-                      {formErrors.email.includes('Customer already exists') && (
-                        <button
-                          type="button"
-                          onClick={() => handleOverrideFromError(addFormData.phone, addFormData.email)}
-                          className="text-blue-600 hover:text-blue-800 underline mt-1"
-                        >
-                          Click to update existing customer
-                        </button>
-                      )}
-                    </div>
+                    <p className="text-xs text-red-500">{formErrors.email}</p>
                   )}
             </div>
             </div>
@@ -3632,24 +3540,20 @@ const AdminDashboard = () => {
               )}
               <br />
               <br />
-              Do you want to update this existing customer with the new information?
+              Do you want to continue and update this existing customer with the new information?
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel onClick={handleCancelOverride}>Cancel</AlertDialogCancel>
             <AlertDialogAction 
-              onClick={handleOverrideCustomer}
+              onClick={() => {
+                setShouldUpdateExisting(true);
+                setOverrideDialogOpen(false);
+                setCurrentStep(2); // Move to next step
+              }}
               className="bg-orange-600 hover:bg-orange-700"
-              disabled={isCreating}
             >
-              {isCreating ? (
-                <div className="flex items-center gap-2">
-                  <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
-                  Updating...
-                </div>
-              ) : (
-                'Update Customer'
-              )}
+              Continue & Update
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
