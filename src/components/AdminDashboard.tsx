@@ -761,7 +761,7 @@ const AdminDashboard = () => {
       brand: customer.brand || 'Not specified',
       model: customer.model || 'Not specified',
       scheduled_date: tomorrowDateString, // Set to tomorrow by default
-      scheduled_time_slot: 'CUSTOM' as 'MORNING' | 'AFTERNOON' | 'EVENING' | 'CUSTOM', // Set to custom by default
+      scheduled_time_slot: 'MORNING' as 'MORNING' | 'AFTERNOON' | 'EVENING' | 'CUSTOM', // Set to morning by default
       scheduled_time_custom: currentTime, // Set to current time by default
       description: '',
       priority: 'MEDIUM' as 'LOW' | 'MEDIUM' | 'HIGH' | 'URGENT',
