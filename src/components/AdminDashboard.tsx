@@ -864,26 +864,57 @@ const AdminDashboard = () => {
   // Photo upload functions for new job
   const handleNewJobPhotoUpload = async (files: File[]) => {
     try {
-      const uploadPromises = files.map(async (file) => {
-        // Compress image before upload
-        const compressedFile = await compressImage(file, 1920, 0.8);
-        
-        // Upload to Cloudinary using the proper service
-        const uploadResult = await cloudinaryService.uploadImage(compressedFile, 'ro-service');
-        return uploadResult.secure_url;
+      // Show thumbnails immediately
+      const thumbnailPromises = files.map(file => {
+        return new Promise<string>((resolve) => {
+          const reader = new FileReader();
+          reader.onload = (e) => {
+            resolve(e.target?.result as string);
+          };
+          reader.readAsDataURL(file);
+        });
       });
       
-      const uploadedUrls = await Promise.all(uploadPromises);
+      const thumbnails = await Promise.all(thumbnailPromises);
       
+      // Add thumbnails immediately to show in UI
       setNewJobFormData(prev => ({
         ...prev,
-        photos: [...prev.photos, ...uploadedUrls]
+        photos: [...prev.photos, ...thumbnails]
       }));
       
-      toast.success(`${uploadedUrls.length} photo(s) uploaded successfully!`);
+      // Upload to Cloudinary in background with aggressive compression for low size
+      const uploadPromises = files.map(async (file, index) => {
+        try {
+          // Aggressive compression for low file size (max 800px width, 0.4 quality)
+          const compressedFile = await compressImage(file, 800, 0.4);
+          
+          // Upload to Cloudinary using the proper service with size optimization
+          const uploadResult = await cloudinaryService.uploadImage(compressedFile, 'ro-service');
+          
+          // Replace thumbnail with actual uploaded URL
+          setNewJobFormData(prev => ({
+            ...prev,
+            photos: prev.photos.map((photo, i) => 
+              i === prev.photos.length - files.length + index ? uploadResult.secure_url : photo
+            )
+          }));
+          
+          return uploadResult.secure_url;
+        } catch (error) {
+          console.error(`Error uploading ${file.name}:`, error);
+          // Keep thumbnail if upload fails
+          return thumbnails[index];
+        }
+      });
+      
+      // Wait for all uploads to complete
+      await Promise.all(uploadPromises);
+      
+      toast.success(`${files.length} photo(s) processed successfully!`);
     } catch (error) {
-      console.error('Error uploading photos:', error);
-      toast.error(`Failed to upload photos: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      console.error('Error processing photos:', error);
+      toast.error(`Failed to process photos: ${error instanceof Error ? error.message : 'Unknown error'}`);
     }
   };
 
@@ -4140,6 +4171,12 @@ const AdminDashboard = () => {
                           alt={`Upload ${index + 1}`}
                           className="w-full h-24 object-cover rounded-lg border"
                         />
+                        {/* Show loading indicator for thumbnails (data URLs) */}
+                        {photo.startsWith('data:') && (
+                          <div className="absolute inset-0 bg-black bg-opacity-50 rounded-lg flex items-center justify-center">
+                            <div className="w-6 h-6 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                          </div>
+                        )}
                         <button
                           type="button"
                           onClick={() => handleRemovePhoto(index)}
