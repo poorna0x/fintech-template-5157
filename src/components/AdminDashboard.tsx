@@ -866,24 +866,11 @@ const AdminDashboard = () => {
     try {
       const uploadPromises = files.map(async (file) => {
         // Compress image before upload
-        const compressedFile = await compressImage(file, 0.8, 1920);
+        const compressedFile = await compressImage(file, 1920, 0.8);
         
-        // Upload to Cloudinary
-        const formData = new FormData();
-        formData.append('file', compressedFile);
-        formData.append('upload_preset', 'ml_default');
-        
-        const response = await fetch('https://api.cloudinary.com/v1_1/demo/image/upload', {
-          method: 'POST',
-          body: formData
-        });
-        
-        if (!response.ok) {
-          throw new Error('Upload failed');
-        }
-        
-        const data = await response.json();
-        return data.secure_url;
+        // Upload to Cloudinary using the proper service
+        const uploadResult = await cloudinaryService.uploadImage(compressedFile, 'ro-service');
+        return uploadResult.secure_url;
       });
       
       const uploadedUrls = await Promise.all(uploadPromises);
@@ -896,7 +883,7 @@ const AdminDashboard = () => {
       toast.success(`${uploadedUrls.length} photo(s) uploaded successfully!`);
     } catch (error) {
       console.error('Error uploading photos:', error);
-      toast.error('Failed to upload photos. Please try again.');
+      toast.error(`Failed to upload photos: ${error instanceof Error ? error.message : 'Unknown error'}`);
     }
   };
 
