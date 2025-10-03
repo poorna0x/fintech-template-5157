@@ -861,7 +861,7 @@ const AdminDashboard = () => {
         // Upload to Cloudinary
         const formData = new FormData();
         formData.append('file', compressedFile);
-        formData.append('upload_preset', 'customer_photos');
+        formData.append('upload_preset', 'ml_default');
         
         const response = await fetch('https://api.cloudinary.com/v1_1/demo/image/upload', {
           method: 'POST',
@@ -3871,7 +3871,7 @@ const AdminDashboard = () => {
 
       {/* New Job Dialog */}
       <Dialog open={newJobDialogOpen} onOpenChange={handleCloseNewJobDialog}>
-        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+        <DialogContent className="w-[95vw] sm:w-[90vw] md:w-[80vw] lg:w-[60vw] xl:w-[50vw] max-w-2xl h-[90vh] max-h-[90vh] overflow-hidden flex flex-col">
           <DialogHeader>
             <DialogTitle>Create New Job</DialogTitle>
             <DialogDescription>
@@ -3880,18 +3880,25 @@ const AdminDashboard = () => {
           </DialogHeader>
           
           {selectedCustomerForJob && isJobDialogReady && (
-            <div className="py-4 space-y-6">
+            <div className="py-4 space-y-6 flex-1 overflow-y-auto">
             {/* Service Information */}
             <div className="space-y-4">
               <h3 className="text-lg font-semibold text-gray-900">Service Information</h3>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div className="space-y-2">
                   <Label htmlFor="job_service_type">Service Type</Label>
                   <select
                     id="job_service_type"
                     value={newJobFormData.service_type || 'RO'}
                     onChange={(e) => handleNewJobFormChange('service_type', e.target.value)}
-                    className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+                    className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-base ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 appearance-none bg-white"
+                    style={{
+                      backgroundImage: `url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3e%3cpath stroke='%236b7280' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='m6 8 4 4 4-4'/%3e%3c/svg%3e")`,
+                      backgroundPosition: 'right 0.5rem center',
+                      backgroundRepeat: 'no-repeat',
+                      backgroundSize: '1.5em 1.5em',
+                      paddingRight: '2.5rem'
+                    }}
                   >
                     <option value="RO">RO Water Purifier</option>
                     <option value="SOFTENER">Water Softener</option>
@@ -3904,7 +3911,7 @@ const AdminDashboard = () => {
                     id="job_service_sub_type"
                     value={newJobFormData.service_sub_type || 'Installation'}
                     onChange={(e) => handleNewJobFormChange('service_sub_type', e.target.value)}
-                    className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+                    className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 appearance-none bg-white"
                   >
                     <option value="Installation">Installation</option>
                     <option value="Repair">Repair</option>
@@ -3949,7 +3956,7 @@ const AdminDashboard = () => {
             {/* Scheduling */}
             <div className="space-y-4">
               <h3 className="text-lg font-semibold text-gray-900">Scheduling</h3>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div className="space-y-2">
                   <Label htmlFor="job_scheduled_date">Scheduled Date</Label>
                   <Input
@@ -3967,7 +3974,7 @@ const AdminDashboard = () => {
                     id="job_scheduled_time_slot"
                     value={newJobFormData.scheduled_time_slot || 'MORNING'}
                     onChange={(e) => handleNewJobFormChange('scheduled_time_slot', e.target.value)}
-                    className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+                    className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 appearance-none bg-white"
                   >
                     <option value="MORNING">Morning (9 AM - 12 PM)</option>
                     <option value="AFTERNOON">Afternoon (12 PM - 5 PM)</option>
@@ -3992,7 +3999,7 @@ const AdminDashboard = () => {
                     id="job_priority"
                     value={newJobFormData.priority || 'MEDIUM'}
                     onChange={(e) => handleNewJobFormChange('priority', e.target.value)}
-                    className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+                    className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 appearance-none bg-white"
                   >
                     <option value="LOW">Low</option>
                     <option value="MEDIUM">Medium</option>
@@ -4011,7 +4018,7 @@ const AdminDashboard = () => {
                 <select
                   value={newJobFormData.assigned_technician_id || ''}
                   onChange={(e) => handleNewJobFormChange('assigned_technician_id', e.target.value)}
-                  className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+                  className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 appearance-none bg-white"
                 >
                   <option value="">No assignment</option>
                   {technicians
