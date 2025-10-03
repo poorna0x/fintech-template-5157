@@ -175,6 +175,8 @@ const AdminDashboard = () => {
   const [formErrors, setFormErrors] = useState<{[key: string]: string}>({});
   const [isCreating, setIsCreating] = useState(false);
   const [customerServices, setCustomerServices] = useState<{[key: string]: any[]}>({});
+  const [existingCustomer, setExistingCustomer] = useState<Customer | null>(null);
+  const [overrideDialogOpen, setOverrideDialogOpen] = useState(false);
   const [customerJobs, setCustomerJobs] = useState<{[customerId: string]: Job[]}>({});
   const [loadingCustomerJobs, setLoadingCustomerJobs] = useState<{[customerId: string]: boolean}>({});
   const [selectedJobPhotos, setSelectedJobPhotos] = useState<{jobId: string, photos: string[], type: 'before' | 'after'} | null>(null);
@@ -600,9 +602,32 @@ const AdminDashboard = () => {
     setAddDialogOpen(true);
   };
 
+  // Function to check if customer already exists
+  const checkExistingCustomer = (phone: string, email?: string): Customer | null => {
+    const existingByPhone = customers.find(customer => 
+      customer.phone === phone || 
+      (customer as any).alternate_phone === phone
+    );
+    
+    if (existingByPhone) return existingByPhone;
+    
+    if (email && email.trim()) {
+      const existingByEmail = customers.find(customer => 
+        customer.email?.toLowerCase() === email.toLowerCase()
+      );
+      if (existingByEmail) return existingByEmail;
+    }
+    
+    return null;
+  };
+
   const handleCreateCustomer = async () => {
     if (!validateStep(4)) return; // Validate final step
     
+    await createCustomer();
+  };
+
+  const createCustomer = async () => {
     setIsCreating(true);
     try {
       // Create customer data with default location (you can enhance this later)
@@ -674,6 +699,92 @@ const AdminDashboard = () => {
       toast.error('Failed to create customer');
     } finally {
       setIsCreating(false);
+    }
+  };
+
+  const handleOverrideCustomer = async () => {
+    if (!existingCustomer) return;
+    
+    setIsCreating(true);
+    try {
+      // Update existing customer with new data
+      const customerData = {
+        full_name: addFormData.full_name,
+        phone: addFormData.phone ? formatPhoneNumber(addFormData.phone) : '',
+        alternate_phone: addFormData.alternate_phone ? formatPhoneNumber(addFormData.alternate_phone) : '',
+        email: addFormData.email || '',
+        service_type: addFormData.service_types.join(', ') as 'RO' | 'SOFTENER',
+        brand: addFormData.equipment[addFormData.service_types[0]]?.brand || '',
+        model: addFormData.equipment[addFormData.service_types[0]]?.model || '',
+        behavior: addFormData.behavior,
+        preferred_language: (addFormData.native_language || 'ENGLISH') as 'ENGLISH' | 'HINDI' | 'KANNADA' | 'TAMIL' | 'TELUGU',
+        status: addFormData.status as 'ACTIVE' | 'INACTIVE' | 'BLOCKED',
+        notes: addFormData.notes,
+        address: {
+          street: addFormData.address || '',
+          area: '',
+          city: '',
+          state: '',
+          pincode: ''
+        },
+        location: {
+          googleLocation: addFormData.google_location || '',
+          latitude: null,
+          longitude: null
+        }
+      };
+
+      const { error } = await supabase
+        .from('customers')
+        .update(customerData)
+        .eq('id', existingCustomer.id);
+
+      if (error) throw error;
+
+      // Refresh customers list
+      await fetchCustomers();
+      
+      // Close dialogs and reset form
+      setOverrideDialogOpen(false);
+      setAddDialogOpen(false);
+      setCurrentStep(1);
+      setAddFormData({
+        full_name: '',
+        phone: '',
+        alternate_phone: '',
+        email: '',
+        service_types: [],
+        equipment: {},
+        behavior: '',
+        native_language: '',
+        status: 'ACTIVE',
+        notes: '',
+        address: '',
+        google_location: ''
+      });
+      setFormErrors({});
+      setExistingCustomer(null);
+      
+      toast.success('Customer updated successfully!');
+    } catch (error) {
+      console.error('Error updating customer:', error);
+      toast.error('Failed to update customer. Please try again.');
+    } finally {
+      setIsCreating(false);
+    }
+  };
+
+  const handleCancelOverride = () => {
+    setOverrideDialogOpen(false);
+    setExistingCustomer(null);
+  };
+
+  // Handle override when user clicks on error message
+  const handleOverrideFromError = (phone: string, email?: string) => {
+    const existing = checkExistingCustomer(phone, email);
+    if (existing) {
+      setExistingCustomer(existing);
+      setOverrideDialogOpen(true);
     }
   };
 
@@ -1169,6 +1280,12 @@ const AdminDashboard = () => {
           const phoneValidation = validatePhoneNumber(addFormData.phone);
           if (!phoneValidation.isValid) {
             errors.phone = phoneValidation.error || 'Invalid phone number';
+          } else {
+            // Check if customer already exists
+            const existing = checkExistingCustomer(addFormData.phone, addFormData.email);
+            if (existing) {
+              errors.phone = `Customer already exists (ID: ${(existing as any).customer_id})`;
+            }
           }
         }
         
@@ -1177,6 +1294,12 @@ const AdminDashboard = () => {
           const alternatePhoneValidation = validatePhoneNumber(addFormData.alternate_phone);
           if (!alternatePhoneValidation.isValid) {
             errors.alternate_phone = alternatePhoneValidation.error || 'Invalid alternate phone number';
+          } else {
+            // Check if customer already exists with alternate phone
+            const existing = checkExistingCustomer(addFormData.alternate_phone, addFormData.email);
+            if (existing) {
+              errors.alternate_phone = `Customer already exists (ID: ${(existing as any).customer_id})`;
+            }
           }
         }
         
@@ -1185,6 +1308,12 @@ const AdminDashboard = () => {
           const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
           if (!emailRegex.test(addFormData.email)) {
             errors.email = 'Please enter a valid email address';
+          } else {
+            // Check if customer already exists with email
+            const existing = checkExistingCustomer(addFormData.phone, addFormData.email);
+            if (existing) {
+              errors.email = `Customer already exists (ID: ${(existing as any).customer_id})`;
+            }
           }
         }
         break;
@@ -2657,7 +2786,18 @@ const AdminDashboard = () => {
                 className={`text-sm ${formErrors.phone ? 'border-red-500' : ''}`}
               />
                     {formErrors?.phone && (
-                      <p className="text-xs text-red-500">{formErrors.phone}</p>
+                      <div className="text-xs text-red-500">
+                        <p>{formErrors.phone}</p>
+                        {formErrors.phone.includes('Customer already exists') && (
+                          <button
+                            type="button"
+                            onClick={() => handleOverrideFromError(addFormData.phone, addFormData.email)}
+                            className="text-blue-600 hover:text-blue-800 underline mt-1"
+                          >
+                            Click to update existing customer
+                          </button>
+                        )}
+                      </div>
                     )}
             </div>
 
@@ -2671,7 +2811,18 @@ const AdminDashboard = () => {
                       className={`text-sm ${formErrors.alternate_phone ? 'border-red-500' : ''}`}
               />
                     {formErrors?.alternate_phone && (
-                      <p className="text-xs text-red-500">{formErrors.alternate_phone}</p>
+                      <div className="text-xs text-red-500">
+                        <p>{formErrors.alternate_phone}</p>
+                        {formErrors.alternate_phone.includes('Customer already exists') && (
+                          <button
+                            type="button"
+                            onClick={() => handleOverrideFromError(addFormData.alternate_phone, addFormData.email)}
+                            className="text-blue-600 hover:text-blue-800 underline mt-1"
+                          >
+                            Click to update existing customer
+                          </button>
+                        )}
+                      </div>
                     )}
             </div>
             </div>
@@ -2687,7 +2838,18 @@ const AdminDashboard = () => {
                 className={`text-sm ${formErrors.email ? 'border-red-500' : ''}`}
               />
                   {formErrors?.email && (
-                    <p className="text-xs text-red-500">{formErrors.email}</p>
+                    <div className="text-xs text-red-500">
+                      <p>{formErrors.email}</p>
+                      {formErrors.email.includes('Customer already exists') && (
+                        <button
+                          type="button"
+                          onClick={() => handleOverrideFromError(addFormData.phone, addFormData.email)}
+                          className="text-blue-600 hover:text-blue-800 underline mt-1"
+                        >
+                          Click to update existing customer
+                        </button>
+                      )}
+                    </div>
                   )}
             </div>
             </div>
@@ -2902,7 +3064,7 @@ const AdminDashboard = () => {
                       <span className="font-medium text-gray-600">Behavior:</span>
                       <p className="text-gray-900">
                         {addFormData.behavior ? 
-                          addFormData.behavior.replace('_', ' ').toLowerCase().replace(/\b\w/g, l => l.toUpperCase()) 
+                          addFormData.behavior.charAt(0).toUpperCase() + addFormData.behavior.slice(1).toLowerCase()
                           : 'Not specified'
                         }
                       </p>
@@ -2911,27 +3073,15 @@ const AdminDashboard = () => {
             </div>
 
                 <div className="space-y-2">
-                  <Label htmlFor="add_behavior">Customer Behavior</Label>
+                  <Label htmlFor="add_behavior" className="text-sm font-medium">Customer Behavior</Label>
                   <Select value={addFormData.behavior || ''} onValueChange={(value) => handleAddFormChange('behavior', value)}>
-                    <SelectTrigger>
-                      <SelectValue placeholder="Select customer behavior pattern" />
+                    <SelectTrigger className="text-sm">
+                      <SelectValue placeholder="Select customer behavior" />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="FRIENDLY">Friendly & Cooperative</SelectItem>
-                      <SelectItem value="DEMANDING">Demanding & Particular</SelectItem>
-                      <SelectItem value="QUIET">Quiet & Reserved</SelectItem>
-                      <SelectItem value="CHATTY">Chatty & Social</SelectItem>
-                      <SelectItem value="BUSY">Always Busy</SelectItem>
-                      <SelectItem value="PUNCTUAL">Very Punctual</SelectItem>
-                      <SelectItem value="FLEXIBLE">Flexible & Easy-going</SelectItem>
-                      <SelectItem value="COMPLAINING">Tends to Complain</SelectItem>
-                      <SelectItem value="SATISFIED">Always Satisfied</SelectItem>
-                      <SelectItem value="NEGOTIATING">Price Negotiating</SelectItem>
-                      <SelectItem value="TECH_SAVVY">Tech Savvy</SelectItem>
-                      <SelectItem value="TRADITIONAL">Traditional Approach</SelectItem>
-                      <SelectItem value="URGENT">Always Urgent</SelectItem>
-                      <SelectItem value="PATIENT">Very Patient</SelectItem>
-                      <SelectItem value="OTHER">Other</SelectItem>
+                      <SelectItem value="GOOD">Good</SelectItem>
+                      <SelectItem value="AVERAGE">Average</SelectItem>
+                      <SelectItem value="BAD">Bad</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
@@ -3267,27 +3417,15 @@ const AdminDashboard = () => {
               
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div className="space-y-2">
-                  <Label htmlFor="edit_behavior">Customer Behavior</Label>
+                  <Label htmlFor="edit_behavior" className="text-sm font-medium">Customer Behavior</Label>
                   <Select value={editFormData?.behavior || ''} onValueChange={(value) => handleEditFormChange('behavior', value)}>
-                    <SelectTrigger>
-                      <SelectValue placeholder="Select customer behavior pattern" />
+                    <SelectTrigger className="text-sm">
+                      <SelectValue placeholder="Select customer behavior" />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="FRIENDLY">Friendly & Cooperative</SelectItem>
-                      <SelectItem value="DEMANDING">Demanding & Particular</SelectItem>
-                      <SelectItem value="QUIET">Quiet & Reserved</SelectItem>
-                      <SelectItem value="CHATTY">Chatty & Social</SelectItem>
-                      <SelectItem value="BUSY">Always Busy</SelectItem>
-                      <SelectItem value="PUNCTUAL">Very Punctual</SelectItem>
-                      <SelectItem value="FLEXIBLE">Flexible & Easy-going</SelectItem>
-                      <SelectItem value="COMPLAINING">Tends to Complain</SelectItem>
-                      <SelectItem value="SATISFIED">Always Satisfied</SelectItem>
-                      <SelectItem value="NEGOTIATING">Price Negotiating</SelectItem>
-                      <SelectItem value="TECH_SAVVY">Tech Savvy</SelectItem>
-                      <SelectItem value="TRADITIONAL">Traditional Approach</SelectItem>
-                      <SelectItem value="URGENT">Always Urgent</SelectItem>
-                      <SelectItem value="PATIENT">Very Patient</SelectItem>
-                      <SelectItem value="OTHER">Other</SelectItem>
+                      <SelectItem value="GOOD">Good</SelectItem>
+                      <SelectItem value="AVERAGE">Average</SelectItem>
+                      <SelectItem value="BAD">Bad</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
@@ -3466,6 +3604,51 @@ const AdminDashboard = () => {
                 </div>
               ) : (
                 'Delete Photo'
+              )}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Override Existing Customer Dialog */}
+      <AlertDialog open={overrideDialogOpen} onOpenChange={setOverrideDialogOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Customer Already Exists</AlertDialogTitle>
+            <AlertDialogDescription>
+              A customer with this phone number or email already exists:
+              <br />
+              <br />
+              <strong>Customer ID:</strong> {(existingCustomer as any)?.customer_id}
+              <br />
+              <strong>Name:</strong> {(existingCustomer as any)?.full_name}
+              <br />
+              <strong>Phone:</strong> {(existingCustomer as any)?.phone}
+              {existingCustomer?.email && (
+                <>
+                  <br />
+                  <strong>Email:</strong> {existingCustomer.email}
+                </>
+              )}
+              <br />
+              <br />
+              Do you want to update this existing customer with the new information?
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel onClick={handleCancelOverride}>Cancel</AlertDialogCancel>
+            <AlertDialogAction 
+              onClick={handleOverrideCustomer}
+              className="bg-orange-600 hover:bg-orange-700"
+              disabled={isCreating}
+            >
+              {isCreating ? (
+                <div className="flex items-center gap-2">
+                  <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                  Updating...
+                </div>
+              ) : (
+                'Update Customer'
               )}
             </AlertDialogAction>
           </AlertDialogFooter>
