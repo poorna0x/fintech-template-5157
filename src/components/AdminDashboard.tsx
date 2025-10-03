@@ -743,6 +743,16 @@ const AdminDashboard = () => {
   // Job creation functions
   const handleNewJob = (customer: Customer) => {
     setSelectedCustomerForJob(customer);
+    
+    // Get tomorrow's date
+    const tomorrow = new Date();
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    const tomorrowDateString = tomorrow.toISOString().split('T')[0];
+    
+    // Get current time
+    const now = new Date();
+    const currentTime = now.toTimeString().slice(0, 5); // HH:MM format
+    
     // Initialize form data with proper defaults
     const initialFormData = {
       service_type: (customer.serviceType === 'SOFTENER' ? 'SOFTENER' : 'RO') as 'RO' | 'SOFTENER',
@@ -750,9 +760,9 @@ const AdminDashboard = () => {
       service_sub_type_custom: '',
       brand: customer.brand || '',
       model: customer.model || '',
-      scheduled_date: '',
-      scheduled_time_slot: 'MORNING' as 'MORNING' | 'AFTERNOON' | 'EVENING' | 'CUSTOM',
-      scheduled_time_custom: '',
+      scheduled_date: tomorrowDateString, // Set to tomorrow by default
+      scheduled_time_slot: 'CUSTOM' as 'MORNING' | 'AFTERNOON' | 'EVENING' | 'CUSTOM', // Set to custom by default
+      scheduled_time_custom: currentTime, // Set to current time by default
       description: '',
       priority: 'MEDIUM' as 'LOW' | 'MEDIUM' | 'HIGH' | 'URGENT',
       assigned_technician_id: '',
@@ -3880,9 +3890,9 @@ const AdminDashboard = () => {
           </DialogHeader>
           
           {selectedCustomerForJob && isJobDialogReady && (
-            <div className="py-4 space-y-6 flex-1 overflow-y-auto">
+            <div className="py-4 px-2 sm:px-4 space-y-6 flex-1 overflow-y-auto">
             {/* Service Information */}
-            <div className="space-y-4">
+            <div className="space-y-4 p-4 border border-gray-200 rounded-lg bg-gray-50">
               <h3 className="text-lg font-semibold text-gray-900">Service Information</h3>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div className="space-y-2">
@@ -3954,7 +3964,7 @@ const AdminDashboard = () => {
             </div>
 
             {/* Scheduling */}
-            <div className="space-y-4">
+            <div className="space-y-4 p-4 border border-gray-200 rounded-lg bg-gray-50">
               <h3 className="text-lg font-semibold text-gray-900">Scheduling</h3>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div className="space-y-2">
@@ -4011,7 +4021,7 @@ const AdminDashboard = () => {
             </div>
 
             {/* Assignment */}
-            <div className="space-y-4">
+            <div className="space-y-4 p-4 border border-gray-200 rounded-lg bg-gray-50">
               <h3 className="text-lg font-semibold text-gray-900">Assignment</h3>
               <div className="space-y-2">
                 <Label htmlFor="job_assigned_technician">Assign Technician (Optional)</Label>
@@ -4033,7 +4043,7 @@ const AdminDashboard = () => {
             </div>
 
             {/* Photo Upload */}
-            <div className="space-y-4">
+            <div className="space-y-4 p-4 border border-gray-200 rounded-lg bg-gray-50">
               <h3 className="text-lg font-semibold text-gray-900">Photos</h3>
               <div className="space-y-4">
                 {/* Photo Upload Area */}
@@ -4136,7 +4146,7 @@ const AdminDashboard = () => {
             </div>
 
             {/* Job Details */}
-            <div className="space-y-4">
+            <div className="space-y-4 p-4 border border-gray-200 rounded-lg bg-gray-50">
               <h3 className="text-lg font-semibold text-gray-900">Job Details</h3>
               <div className="space-y-2">
                 <Label htmlFor="job_description">Description</Label>
