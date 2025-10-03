@@ -1053,26 +1053,60 @@ const AdminDashboard = () => {
     // Clean the input to only allow digits
     const cleaned = value.replace(/\D/g, '');
     
-    // Limit to 12 digits maximum (for 91 prefix)
-    const limited = cleaned.substring(0, 12);
+    // Remove country codes (91, 0) if present
+    let processed = cleaned;
+    if (processed.startsWith('91') && processed.length > 10) {
+      processed = processed.substring(2);
+    }
+    if (processed.startsWith('0') && processed.length > 10) {
+      processed = processed.substring(1);
+    }
+    
+    // Limit to 10 digits maximum
+    const limited = processed.substring(0, 10);
     
     setAddFormData(prev => ({
       ...prev,
       phone: limited
     }));
+
+    // Clear error when user starts typing
+    if (formErrors.phone) {
+      setFormErrors(prev => ({
+        ...prev,
+        phone: ''
+      }));
+    }
   };
 
   const handleAlternatePhoneChange = (value: string) => {
     // Clean the input to only allow digits
     const cleaned = value.replace(/\D/g, '');
     
-    // Limit to 12 digits maximum (for 91 prefix)
-    const limited = cleaned.substring(0, 12);
+    // Remove country codes (91, 0) if present
+    let processed = cleaned;
+    if (processed.startsWith('91') && processed.length > 10) {
+      processed = processed.substring(2);
+    }
+    if (processed.startsWith('0') && processed.length > 10) {
+      processed = processed.substring(1);
+    }
+    
+    // Limit to 10 digits maximum
+    const limited = processed.substring(0, 10);
     
     setAddFormData(prev => ({
       ...prev,
       alternate_phone: limited
     }));
+
+    // Clear error when user starts typing
+    if (formErrors.alternate_phone) {
+      setFormErrors(prev => ({
+        ...prev,
+        alternate_phone: ''
+      }));
+    }
   };
 
   // Phone number validation and formatting functions
@@ -1099,29 +1133,28 @@ const AdminDashboard = () => {
 
   const validatePhoneNumber = (phone: string): { isValid: boolean; error?: string; formatted?: string } => {
     const cleaned = cleanPhoneNumber(phone);
-    const formatted = formatPhoneNumber(phone);
     
     if (!cleaned) {
       return { isValid: true }; // Phone is optional
     }
     
-    // Check if it's exactly 10 digits after formatting
-    if (formatted.length !== 10) {
+    // Must be exactly 10 digits
+    if (cleaned.length !== 10) {
       return { 
         isValid: false, 
-        error: 'Phone number must be exactly 10 digits (e.g., 6361631253 or 916361631253 or 06361631253)' 
+        error: 'Phone number must be exactly 10 digits (e.g., 6361631253)' 
       };
     }
     
     // Check if it starts with valid digits (6, 7, 8, 9 for Indian mobile numbers)
-    if (!/^[6-9]/.test(formatted)) {
+    if (!/^[6-9]/.test(cleaned)) {
       return { 
         isValid: false, 
         error: 'Phone number must start with 6, 7, 8, or 9' 
       };
     }
     
-    return { isValid: true, formatted };
+    return { isValid: true, formatted: cleaned };
   };
 
   const validateStep = (step: number): boolean => {
@@ -1136,6 +1169,14 @@ const AdminDashboard = () => {
           const phoneValidation = validatePhoneNumber(addFormData.phone);
           if (!phoneValidation.isValid) {
             errors.phone = phoneValidation.error || 'Invalid phone number';
+          }
+        }
+        
+        // Alternate phone number validation
+        if (addFormData.alternate_phone && addFormData.alternate_phone.trim()) {
+          const alternatePhoneValidation = validatePhoneNumber(addFormData.alternate_phone);
+          if (!alternatePhoneValidation.isValid) {
+            errors.alternate_phone = alternatePhoneValidation.error || 'Invalid alternate phone number';
           }
         }
         
@@ -2612,7 +2653,7 @@ const AdminDashboard = () => {
                 id="add_phone"
                 value={addFormData.phone}
                 onChange={(e) => handlePhoneChange(e.target.value)}
-                placeholder="Enter primary phone"
+                placeholder="Enter 10-digit phone number"
                 className={`text-sm ${formErrors.phone ? 'border-red-500' : ''}`}
               />
                     {formErrors?.phone && (
@@ -2626,9 +2667,12 @@ const AdminDashboard = () => {
                       id="add_alternate_phone"
                       value={addFormData.alternate_phone}
                       onChange={(e) => handleAlternatePhoneChange(e.target.value)}
-                      placeholder="Enter alternate phone (optional)"
-                      className="text-sm"
+                      placeholder="Enter 10-digit phone number (optional)"
+                      className={`text-sm ${formErrors.alternate_phone ? 'border-red-500' : ''}`}
               />
+                    {formErrors?.alternate_phone && (
+                      <p className="text-xs text-red-500">{formErrors.alternate_phone}</p>
+                    )}
             </div>
             </div>
 
