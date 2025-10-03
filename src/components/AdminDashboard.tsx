@@ -169,12 +169,7 @@ const AdminDashboard = () => {
     status: 'ACTIVE',
     notes: '',
     address: '', // Simplified to single address field
-    google_location: '', // For Google Maps integration
-    assigned_technician_id: '', // For job assignment
-    scheduled_date: '', // Job scheduling
-    scheduled_time_slot: '', // Job time slot
-    description: '', // Job description
-    priority: 'MEDIUM' // Job priority
+    google_location: '' // For Google Maps integration
   });
   const [currentStep, setCurrentStep] = useState(1);
   const [formErrors, setFormErrors] = useState<{[key: string]: string}>({});
@@ -606,7 +601,7 @@ const AdminDashboard = () => {
   };
 
   const handleCreateCustomer = async () => {
-    if (!validateStep(5)) return; // Validate final step
+    if (!validateStep(4)) return; // Validate final step
     
     setIsCreating(true);
     try {
@@ -670,58 +665,8 @@ const AdminDashboard = () => {
       // Add to local state
       setCustomers([newCustomer, ...customers]);
 
-      // Create job if job details are provided
-      if (addFormData.scheduled_date && addFormData.scheduled_time_slot) {
-        try {
-          const jobData = {
-            customer_id: newCustomer.id,
-            service_type: customerData.service_type,
-            service_sub_type: addFormData.service_types.join(', '),
-            brand: customerData.brand,
-            model: customerData.model,
-            scheduled_date: addFormData.scheduled_date,
-            scheduled_time_slot: addFormData.scheduled_time_slot as 'MORNING' | 'AFTERNOON' | 'EVENING',
-            service_address: customerData.address,
-            service_location: customerData.location,
-            description: addFormData.description || 'Service request',
-            priority: addFormData.priority as 'LOW' | 'MEDIUM' | 'HIGH' | 'URGENT',
-            status: addFormData.assigned_technician_id ? 'ASSIGNED' : 'PENDING',
-            assigned_technician_id: addFormData.assigned_technician_id || null,
-            assigned_date: addFormData.assigned_technician_id ? new Date().toISOString() : null
-          };
-
-          const { data: newJob, error: jobError } = await db.jobs.create(jobData);
-          
-          if (jobError) {
-            console.error('Error creating job:', jobError);
-            toast.warning('Customer created but job creation failed');
-          } else {
-            // Add job to local state
-            setJobs(prev => [newJob, ...prev]);
-            toast.success(`Customer and job created successfully! Job #${(newJob as any).job_number}`);
-            
-            // Send notification if job is assigned to technician
-            if (addFormData.assigned_technician_id) {
-              const assignedTechnician = technicians.find(t => t.id === addFormData.assigned_technician_id);
-              if (assignedTechnician) {
-                const notification = createJobAssignedNotification(
-                  (newJob as any).job_number,
-                  addFormData.full_name,
-                  assignedTechnician.fullName,
-                  newJob.id,
-                  assignedTechnician.id
-                );
-                await sendNotification(notification);
-              }
-            }
-          }
-        } catch (jobError) {
-          console.error('Error creating job:', jobError);
-          toast.warning('Customer created but job creation failed');
-        }
-      } else {
-        toast.success(`Customer ${(newCustomer as any).customer_id} created successfully!`);
-      }
+      // No automatic job creation - jobs will be created separately when needed
+      toast.success(`Customer ${(newCustomer as any).customer_id} created successfully!`);
 
       setAddDialogOpen(false);
     } catch (error) {
@@ -1209,8 +1154,8 @@ const AdminDashboard = () => {
         // Service types are now optional
         // Equipment details are now optional
         break;
-      case 4: // Job Assignment
-        // No required fields for job assignment - technician assignment is optional
+      case 4: // Review & Notes
+        // No required fields for review step
         break;
     }
     
@@ -1220,7 +1165,7 @@ const AdminDashboard = () => {
 
   const nextStep = () => {
     if (validateStep(currentStep)) {
-      setCurrentStep(prev => Math.min(prev + 1, 5));
+      setCurrentStep(prev => Math.min(prev + 1, 4));
     }
   };
 
@@ -2637,8 +2582,7 @@ const AdminDashboard = () => {
               {currentStep === 1 && "Enter customer's personal information"}
               {currentStep === 2 && "Enter customer's address details"}
               {currentStep === 3 && "Select services and equipment details"}
-              {currentStep === 4 && "Assign technician and schedule job"}
-              {currentStep === 5 && "Review and confirm customer information"}
+              {currentStep === 4 && "Review and confirm customer information"}
             </DialogDescription>
           </DialogHeader>
           
@@ -2839,99 +2783,9 @@ const AdminDashboard = () => {
               </div>
             )}
 
-            {/* Step 4: Job Assignment */}
+
+            {/* Step 4: Review & Notes */}
             {currentStep === 4 && (
-              <div className="space-y-4">
-                <div className="space-y-4">
-                  <h3 className="text-lg font-semibold text-gray-900">Job Assignment & Scheduling</h3>
-                  
-                  {/* Technician Assignment */}
-                  <div>
-                    <Label htmlFor="assigned_technician">Assign Technician (Optional)</Label>
-                    <Select 
-                      value={addFormData.assigned_technician_id || ''} 
-                      onValueChange={(value) => handleAddFormChange('assigned_technician_id', value)}
-                    >
-                      <SelectTrigger>
-                        <SelectValue placeholder="Select a technician" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="no-assignment">No assignment</SelectItem>
-                        {technicians.map((technician) => (
-                          <SelectItem value={technician.id || 'unknown'}>
-                            {technician.fullName || 'Unknown'} - {technician.employeeId || 'No ID'} ({technician.status || 'Unknown'})
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-
-                  {/* Job Scheduling */}
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div>
-                      <Label htmlFor="scheduled_date">Scheduled Date</Label>
-                      <Input
-                        id="scheduled_date"
-                        type="date"
-                        value={addFormData.scheduled_date}
-                        onChange={(e) => handleAddFormChange('scheduled_date', e.target.value)}
-                        min={new Date().toISOString().split('T')[0]}
-                      />
-                    </div>
-                    <div>
-                      <Label htmlFor="scheduled_time_slot">Time Slot</Label>
-                      <Select 
-                        value={addFormData.scheduled_time_slot || ''} 
-                        onValueChange={(value) => handleAddFormChange('scheduled_time_slot', value)}
-                      >
-                        <SelectTrigger>
-                          <SelectValue placeholder="Select time slot" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="MORNING">Morning (9:00 AM - 12:00 PM)</SelectItem>
-                          <SelectItem value="AFTERNOON">Afternoon (12:00 PM - 4:00 PM)</SelectItem>
-                          <SelectItem value="EVENING">Evening (4:00 PM - 7:00 PM)</SelectItem>
-                        </SelectContent>
-                      </Select>
-                    </div>
-                  </div>
-
-                  {/* Job Description */}
-                  <div>
-                    <Label htmlFor="job_description">Job Description</Label>
-                    <Textarea
-                      id="job_description"
-                      value={addFormData.description}
-                      onChange={(e) => handleAddFormChange('description', e.target.value)}
-                      placeholder="Describe the service requirements..."
-                      rows={3}
-                    />
-                  </div>
-
-                  {/* Priority */}
-                  <div>
-                    <Label htmlFor="priority">Priority</Label>
-                    <Select 
-                      value={addFormData.priority || 'MEDIUM'} 
-                      onValueChange={(value) => handleAddFormChange('priority', value)}
-                    >
-                      <SelectTrigger>
-                        <SelectValue placeholder="Select priority" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="LOW">Low</SelectItem>
-                        <SelectItem value="MEDIUM">Medium</SelectItem>
-                        <SelectItem value="HIGH">High</SelectItem>
-                        <SelectItem value="URGENT">Urgent</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-                </div>
-              </div>
-            )}
-
-            {/* Step 5: Review & Notes */}
-            {currentStep === 5 && (
               <div className="space-y-4">
                 <div className="bg-gray-50 p-4 rounded-lg space-y-3">
                   <h3 className="font-semibold text-gray-900">Customer Information Summary</h3>
@@ -3092,7 +2946,7 @@ const AdminDashboard = () => {
             </div>
             
             <div>
-              {currentStep < 5 ? (
+              {currentStep < 4 ? (
                 <Button onClick={nextStep} className="bg-blue-600 hover:bg-blue-700">
                   Next Step
                 </Button>
