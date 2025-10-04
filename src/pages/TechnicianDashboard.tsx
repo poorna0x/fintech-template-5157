@@ -49,6 +49,8 @@ const TechnicianDashboard = () => {
   const [selectedRequest, setSelectedRequest] = useState<JobAssignmentRequest | null>(null);
   const [responseNotes, setResponseNotes] = useState('');
   const [isResponding, setIsResponding] = useState(false);
+  const [currentLocation, setCurrentLocation] = useState<{lat: number, lng: number} | null>(null);
+  const [distances, setDistances] = useState<{[jobId: string]: number}>({});
 
   // Redirect if not technician
   useEffect(() => {
@@ -66,8 +68,95 @@ const TechnicianDashboard = () => {
     if (user?.technicianId) {
       loadAssignedJobs();
       loadAssignmentRequests();
+      getCurrentLocation();
     }
   }, [user?.technicianId]);
+
+  // Get current location
+  const getCurrentLocation = () => {
+    if (navigator.geolocation) {
+      navigator.geolocation.getCurrentPosition(
+        (position) => {
+          const location = {
+            lat: position.coords.latitude,
+            lng: position.coords.longitude
+          };
+          setCurrentLocation(location);
+          console.log('Current location:', location);
+        },
+        (error) => {
+          console.error('Error getting location:', error);
+          toast.error('Unable to get your location. Distance calculations will not be available.');
+        },
+        {
+          enableHighAccuracy: true,
+          timeout: 10000,
+          maximumAge: 300000 // 5 minutes
+        }
+      );
+    } else {
+      console.error('Geolocation not supported');
+      toast.error('Location services not supported. Distance calculations will not be available.');
+    }
+  };
+
+  // Calculate distance between two points using Haversine formula
+  const calculateDistance = (lat1: number, lng1: number, lat2: number, lng2: number): number => {
+    const R = 6371; // Earth's radius in kilometers
+    const dLat = (lat2 - lat1) * Math.PI / 180;
+    const dLng = (lng2 - lng1) * Math.PI / 180;
+    const a = 
+      Math.sin(dLat/2) * Math.sin(dLat/2) +
+      Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * 
+      Math.sin(dLng/2) * Math.sin(dLng/2);
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+    return R * c; // Distance in kilometers
+  };
+
+  // Calculate distances for all jobs
+  const calculateDistances = () => {
+    if (!currentLocation) return;
+
+    const newDistances: {[jobId: string]: number} = {};
+
+    // Calculate distances for assigned jobs
+    jobs.forEach(job => {
+      const customerLocation = job.serviceLocation as any;
+      if (customerLocation?.latitude && customerLocation?.longitude) {
+        const distance = calculateDistance(
+          currentLocation.lat,
+          currentLocation.lng,
+          customerLocation.latitude,
+          customerLocation.longitude
+        );
+        newDistances[job.id] = Math.round(distance * 10) / 10; // Round to 1 decimal place
+      }
+    });
+
+    // Calculate distances for assignment requests
+    assignmentRequests.forEach(request => {
+      const job = request.job as any;
+      const customerLocation = job?.customer?.location;
+      if (customerLocation?.latitude && customerLocation?.longitude) {
+        const distance = calculateDistance(
+          currentLocation.lat,
+          currentLocation.lng,
+          customerLocation.latitude,
+          customerLocation.longitude
+        );
+        newDistances[job.id] = Math.round(distance * 10) / 10;
+      }
+    });
+
+    setDistances(newDistances);
+  };
+
+  // Recalculate distances when location or jobs change
+  useEffect(() => {
+    if (currentLocation && (jobs.length > 0 || assignmentRequests.length > 0)) {
+      calculateDistances();
+    }
+  }, [currentLocation, jobs, assignmentRequests]);
 
   // Periodic refresh to catch changes from other technicians
   useEffect(() => {
@@ -369,7 +458,25 @@ const TechnicianDashboard = () => {
               <Wrench className="w-8 h-8 text-blue-600 mr-3" />
               <div>
                 <h1 className="text-xl font-bold text-gray-900">Technician Dashboard</h1>
-                <p className="text-sm text-gray-600">Welcome, {user?.fullName || user?.email}</p>
+                <div className="flex items-center gap-2">
+                  <p className="text-sm text-gray-600">Welcome, {user?.fullName || user?.email}</p>
+                  <div className="flex items-center gap-1">
+                    <div className={`w-2 h-2 rounded-full ${currentLocation ? 'bg-green-500' : 'bg-yellow-500'}`} />
+                    <span className="text-xs text-gray-500">
+                      {currentLocation ? 'Location enabled' : 'Location needed'}
+                    </span>
+                    {!currentLocation && (
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        onClick={getCurrentLocation}
+                        className="h-6 px-2 text-xs"
+                      >
+                        Enable
+                      </Button>
+                    )}
+                  </div>
+                </div>
               </div>
             </div>
             
@@ -471,7 +578,13 @@ const TechnicianDashboard = () => {
             </CardHeader>
             <CardContent>
               <div className="space-y-4">
-                {assignmentRequests.map((request) => {
+                {assignmentRequests
+                  .sort((a, b) => {
+                    const distanceA = distances[(a.job as any)?.id] || 999999;
+                    const distanceB = distances[(b.job as any)?.id] || 999999;
+                    return distanceA - distanceB;
+                  })
+                  .map((request) => {
                   const job = request.job as any;
                   const customer = job?.customer as any;
                   
@@ -495,11 +608,20 @@ const TechnicianDashboard = () => {
                                 <p><strong>Customer:</strong> {customer?.full_name || 'N/A'}</p>
                                 <p><strong>Service:</strong> {job?.service_type} - {job?.service_sub_type}</p>
                                 <p><strong>Brand/Model:</strong> {job?.brand} {job?.model}</p>
+                                {distances[job?.id] && (
+                                  <p className="text-blue-600 font-medium">
+                                    <MapPin className="w-3 h-3 inline mr-1" />
+                                    {distances[job?.id]} km away
+                                  </p>
+                                )}
                               </div>
                               <div>
                                 <p><strong>Date:</strong> {job?.scheduled_date}</p>
                                 <p><strong>Time:</strong> {job?.scheduled_time_slot}</p>
                                 <p><strong>Priority:</strong> {job?.priority}</p>
+                                {!distances[job?.id] && currentLocation && (
+                                  <p className="text-gray-400 text-xs">Distance calculating...</p>
+                                )}
                               </div>
                             </div>
                             
@@ -609,6 +731,11 @@ const TechnicianDashboard = () => {
                             {(job as any).job_number}
                           </span>
                           {getStatusBadge(job.status)}
+                          {distances[job.id] && (
+                            <div className="text-sm text-blue-600 font-medium">
+                              📍 {distances[job.id]} km
+                            </div>
+                          )}
                         </div>
                         <span className="text-sm text-gray-600">
                           {(job as any).service_type || job.serviceType} - {(job as any).service_sub_type || job.serviceSubType}
@@ -648,6 +775,11 @@ const TechnicianDashboard = () => {
                             <MapPin className="w-4 h-4" />
                             {(job.serviceAddress as any)?.address || 'Address not available'}
                           </div>
+                          {distances[job.id] && (
+                            <div className="mt-1 text-sm text-blue-600 font-medium">
+                              📍 {distances[job.id]} km away
+                            </div>
+                          )}
                         </div>
                         
                         {job.description && (
