@@ -315,6 +315,7 @@ export interface Bill {
   // Financial Summary
   subtotal: number;
   totalTax: number;
+  serviceCharge?: number;
   totalAmount: number;
   
   // Payment Information

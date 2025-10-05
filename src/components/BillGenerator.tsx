@@ -4,10 +4,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Badge } from '@/components/ui/badge';
-import { Separator } from '@/components/ui/separator';
-import { Plus, Trash2, Download } from 'lucide-react';
+import { Plus, Trash2, Download, Edit, X } from 'lucide-react';
 import { toast } from 'sonner';
 import { Bill, BillItem, CompanyInfo, Customer } from '@/types';
 
@@ -36,15 +33,14 @@ const defaultBillItems: BillItem[] = [
     quantity: 1,
     unitPrice: 15000,
     total: 15000,
-    taxRate: 18,
-    taxAmount: 2700
+    taxRate: 0,
+    taxAmount: 0
   }
 ];
 
 export default function BillGenerator({ customer, onPrint }: BillGeneratorProps) {
   const [billNumber, setBillNumber] = useState('');
   const [billDate, setBillDate] = useState(new Date().toISOString().split('T')[0]);
-  const [dueDate, setDueDate] = useState(new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]);
   const [company, setCompany] = useState<CompanyInfo>(defaultCompanyInfo);
   const [items, setItems] = useState<BillItem[]>(defaultBillItems);
   const [notes, setNotes] = useState('');
@@ -56,13 +52,15 @@ export default function BillGenerator({ customer, onPrint }: BillGeneratorProps)
 5. Once the order placed cannot be cancelled and advance amount will not be returned.
 6. Charges of Rs. 500/- extra to be paid on collection of the cash against cheque return.
 7. Company is not responsible for any transactions done personally with the technicians.`);
-  const [paymentStatus, setPaymentStatus] = useState<'PENDING' | 'PAID' | 'OVERDUE'>('PENDING');
-  const [paymentMethod, setPaymentMethod] = useState<'CASH' | 'CARD' | 'UPI' | 'BANK_TRANSFER' | 'CHEQUE'>('CASH');
+  const [serviceCharge, setServiceCharge] = useState(0);
+  const [isEditingTerms, setIsEditingTerms] = useState(false);
+  const [newTerm, setNewTerm] = useState('');
+  const [isEditingNotes, setIsEditingNotes] = useState(false);
+  const [newNote, setNewNote] = useState('');
 
   // Calculate totals
   const subtotal = items.reduce((sum, item) => sum + item.total, 0);
-  const totalTax = items.reduce((sum, item) => sum + item.taxAmount, 0);
-  const totalAmount = subtotal + totalTax;
+  const totalAmount = subtotal + serviceCharge;
 
   // Generate bill number
   useEffect(() => {
@@ -79,7 +77,7 @@ export default function BillGenerator({ customer, onPrint }: BillGeneratorProps)
       quantity: 1,
       unitPrice: 0,
       total: 0,
-      taxRate: 18,
+      taxRate: 0,
       taxAmount: 0
     };
     setItems([...items, newItem]);
@@ -96,12 +94,9 @@ export default function BillGenerator({ customer, onPrint }: BillGeneratorProps)
       if (item.id === id) {
         const updatedItem = { ...item, [field]: value };
         
-        // Recalculate totals when quantity, unitPrice, or taxRate changes
+        // Recalculate totals when quantity or unitPrice changes
         if (field === 'quantity' || field === 'unitPrice') {
           updatedItem.total = updatedItem.quantity * updatedItem.unitPrice;
-          updatedItem.taxAmount = (updatedItem.total * updatedItem.taxRate) / 100;
-        } else if (field === 'taxRate') {
-          updatedItem.taxAmount = (updatedItem.total * updatedItem.taxRate) / 100;
         }
         
         return updatedItem;
@@ -110,6 +105,38 @@ export default function BillGenerator({ customer, onPrint }: BillGeneratorProps)
     }));
   };
 
+  const addTerm = () => {
+    if (newTerm.trim()) {
+      const currentTerms = terms.split('\n').filter(line => line.trim());
+      const updatedTerms = [...currentTerms, newTerm.trim()].join('\n');
+      setTerms(updatedTerms);
+      setNewTerm('');
+    }
+  };
+
+  const removeTerm = (index: number) => {
+    const currentTerms = terms.split('\n').filter(line => line.trim());
+    const updatedTerms = currentTerms.filter((_, i) => i !== index).join('\n');
+    setTerms(updatedTerms);
+  };
+
+  const addNote = () => {
+    if (newNote.trim()) {
+      const currentNotes = notes.split('\n').filter(line => line.trim());
+      const updatedNotes = [...currentNotes, newNote.trim()].join('\n');
+      setNotes(updatedNotes);
+      setNewNote('');
+    }
+  };
+
+  const removeNote = (index: number) => {
+    const currentNotes = notes.split('\n').filter(line => line.trim());
+    const updatedNotes = currentNotes.filter((_, i) => i !== index).join('\n');
+    setNotes(updatedNotes);
+  };
+
+  const termsList = terms.split('\n').filter(line => line.trim());
+  const notesList = notes.split('\n').filter(line => line.trim());
 
   const handlePrint = () => {
     if (!customer) {
@@ -121,7 +148,7 @@ export default function BillGenerator({ customer, onPrint }: BillGeneratorProps)
       id: Date.now().toString(),
       billNumber,
       billDate,
-      dueDate,
+      dueDate: billDate, // Use bill date as due date
       company,
       customer: {
         id: customer.id,
@@ -136,10 +163,11 @@ export default function BillGenerator({ customer, onPrint }: BillGeneratorProps)
       },
       items,
       subtotal,
-      totalTax,
+      totalTax: 0,
+      serviceCharge,
       totalAmount,
-      paymentStatus,
-      paymentMethod,
+      paymentStatus: 'PENDING',
+      paymentMethod: 'CASH',
       notes,
       terms,
       serviceType: customer.serviceType,
@@ -151,25 +179,25 @@ export default function BillGenerator({ customer, onPrint }: BillGeneratorProps)
   };
 
   return (
-    <div className="max-w-4xl mx-auto p-6 space-y-6">
-      <div className="flex items-center justify-between">
-        <h1 className="text-3xl font-bold text-gray-900">Generate Bill</h1>
+    <div className="max-w-4xl mx-auto p-4 sm:p-6 space-y-4 sm:space-y-6">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+        <h1 className="text-2xl sm:text-3xl font-bold text-gray-900">Generate Bill</h1>
         <div className="flex gap-2">
-          <Button onClick={handlePrint} className="bg-green-600 hover:bg-green-700">
+          <Button onClick={handlePrint} className="bg-green-600 hover:bg-green-700 w-full sm:w-auto">
             <Download className="w-4 h-4 mr-2" />
             Print Bill
           </Button>
         </div>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-6">
         {/* Bill Information */}
         <Card>
           <CardHeader>
             <CardTitle>Bill Information</CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
                 <Label htmlFor="billNumber">Bill Number</Label>
                 <Input
@@ -188,45 +216,6 @@ export default function BillGenerator({ customer, onPrint }: BillGeneratorProps)
                   onChange={(e) => setBillDate(e.target.value)}
                 />
               </div>
-            </div>
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <Label htmlFor="dueDate">Due Date</Label>
-                <Input
-                  id="dueDate"
-                  type="date"
-                  value={dueDate}
-                  onChange={(e) => setDueDate(e.target.value)}
-                />
-              </div>
-              <div>
-                <Label htmlFor="paymentStatus">Payment Status</Label>
-                <Select value={paymentStatus} onValueChange={(value: any) => setPaymentStatus(value)}>
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="PENDING">Pending</SelectItem>
-                    <SelectItem value="PAID">Paid</SelectItem>
-                    <SelectItem value="OVERDUE">Overdue</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-            </div>
-            <div>
-              <Label htmlFor="paymentMethod">Payment Method</Label>
-              <Select value={paymentMethod} onValueChange={(value: any) => setPaymentMethod(value)}>
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="CASH">Cash</SelectItem>
-                  <SelectItem value="CARD">Card</SelectItem>
-                  <SelectItem value="UPI">UPI</SelectItem>
-                  <SelectItem value="BANK_TRANSFER">Bank Transfer</SelectItem>
-                  <SelectItem value="CHEQUE">Cheque</SelectItem>
-                </SelectContent>
-              </Select>
             </div>
           </CardContent>
         </Card>
@@ -260,67 +249,88 @@ export default function BillGenerator({ customer, onPrint }: BillGeneratorProps)
       {/* Bill Items */}
       <Card>
         <CardHeader>
-          <div className="flex items-center justify-between">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
             <CardTitle>Bill Items</CardTitle>
-            <Button onClick={addItem} size="sm">
-              <Plus className="w-4 h-4 mr-2" />
-              Add Item
-            </Button>
+            <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 sm:gap-4">
+              <div className="flex items-center gap-2">
+                <Label htmlFor="serviceCharge" className="text-sm font-medium whitespace-nowrap">Service Charge:</Label>
+                <Input
+                  id="serviceCharge"
+                  type="number"
+                  value={serviceCharge}
+                  onChange={(e) => setServiceCharge(parseFloat(e.target.value) || 0)}
+                  min="0"
+                  step="0.01"
+                  className="w-24"
+                  placeholder="0"
+                />
+              </div>
+              <Button onClick={addItem} size="sm" className="w-full sm:w-auto">
+                <Plus className="w-4 h-4 mr-2" />
+                Add Item
+              </Button>
+            </div>
           </div>
         </CardHeader>
         <CardContent>
           <div className="space-y-4">
             {items.map((item, index) => (
-              <div key={item.id} className="grid grid-cols-12 gap-4 items-end p-4 border rounded-lg">
-                <div className="col-span-5">
-                  <Label>Description</Label>
-                  <Input
-                    value={item.description}
-                    onChange={(e) => updateItem(item.id, 'description', e.target.value)}
-                    placeholder="Item description"
-                  />
+              <div key={item.id} className="space-y-4 p-4 border rounded-lg">
+                {/* Mobile-first grid layout */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                  <div className="sm:col-span-2 lg:col-span-1">
+                    <Label>Description</Label>
+                    <Input
+                      value={item.description}
+                      onChange={(e) => updateItem(item.id, 'description', e.target.value)}
+                      placeholder="Item description"
+                    />
+                  </div>
+                  <div>
+                    <Label>Quantity</Label>
+                    <Input
+                      type="number"
+                      value={item.quantity}
+                      onChange={(e) => updateItem(item.id, 'quantity', parseInt(e.target.value) || 0)}
+                      min="1"
+                    />
+                  </div>
+                  <div>
+                    <Label>Unit Price</Label>
+                    <Input
+                      type="number"
+                      value={item.unitPrice}
+                      onChange={(e) => updateItem(item.id, 'unitPrice', parseFloat(e.target.value) || 0)}
+                      min="0"
+                      step="0.01"
+                    />
+                  </div>
+                  <div className="flex items-end gap-2">
+                    <div className="flex-1">
+                      <Label>Tax Rate (%)</Label>
+                      <Input
+                        type="number"
+                        value={item.taxRate}
+                        onChange={(e) => updateItem(item.id, 'taxRate', parseFloat(e.target.value) || 0)}
+                        min="0"
+                        max="100"
+                        step="0.01"
+                      />
+                    </div>
+                    <Button
+                      variant="destructive"
+                      size="sm"
+                      onClick={() => removeItem(item.id)}
+                      disabled={items.length === 1}
+                      className="h-10"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </Button>
+                  </div>
                 </div>
-                <div className="col-span-2">
-                  <Label>Quantity</Label>
-                  <Input
-                    type="number"
-                    value={item.quantity}
-                    onChange={(e) => updateItem(item.id, 'quantity', parseInt(e.target.value) || 0)}
-                    min="1"
-                  />
-                </div>
-                <div className="col-span-2">
-                  <Label>Unit Price</Label>
-                  <Input
-                    type="number"
-                    value={item.unitPrice}
-                    onChange={(e) => updateItem(item.id, 'unitPrice', parseFloat(e.target.value) || 0)}
-                    min="0"
-                    step="0.01"
-                  />
-                </div>
-                <div className="col-span-2">
-                  <Label>Tax Rate (%)</Label>
-                  <Input
-                    type="number"
-                    value={item.taxRate}
-                    onChange={(e) => updateItem(item.id, 'taxRate', parseFloat(e.target.value) || 0)}
-                    min="0"
-                    max="100"
-                    step="0.01"
-                  />
-                </div>
-                <div className="col-span-1">
-                  <Button
-                    variant="destructive"
-                    size="sm"
-                    onClick={() => removeItem(item.id)}
-                    disabled={items.length === 1}
-                  >
-                    <Trash2 className="w-4 h-4" />
-                  </Button>
-                </div>
-                <div className="col-span-12 grid grid-cols-3 gap-4 mt-2">
+                
+                {/* Item totals - mobile friendly */}
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 pt-2 border-t">
                   <div className="text-sm">
                     <span className="text-gray-500">Subtotal: </span>
                     <span className="font-semibold">₹{item.total.toLocaleString()}</span>
@@ -351,12 +361,13 @@ export default function BillGenerator({ customer, onPrint }: BillGeneratorProps)
               <span>Subtotal:</span>
               <span>₹{subtotal.toLocaleString()}</span>
             </div>
-            <div className="flex justify-between text-lg">
-              <span>Total Tax:</span>
-              <span>₹{totalTax.toLocaleString()}</span>
-            </div>
-            <Separator />
-            <div className="flex justify-between text-xl font-bold">
+            {serviceCharge > 0 && (
+              <div className="flex justify-between text-lg">
+                <span>Service Charge:</span>
+                <span>₹{serviceCharge.toLocaleString()}</span>
+              </div>
+            )}
+            <div className="flex justify-between text-xl font-bold border-t pt-4">
               <span>Total Amount:</span>
               <span>₹{totalAmount.toLocaleString()}</span>
             </div>
@@ -365,35 +376,158 @@ export default function BillGenerator({ customer, onPrint }: BillGeneratorProps)
       </Card>
 
       {/* Additional Information */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <Card>
-          <CardHeader>
-            <CardTitle>Notes</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <Textarea
-              value={notes}
-              onChange={(e) => setNotes(e.target.value)}
-              placeholder="Additional notes for the customer..."
-              rows={4}
-            />
-          </CardContent>
-        </Card>
+      <Card>
+        <CardHeader>
+          <CardTitle>Additional Information</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-6">
+            {/* Notes Section */}
+            <div className="space-y-4">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                <h3 className="text-lg font-semibold">Notes</h3>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setIsEditingNotes(!isEditingNotes)}
+                  className="w-full sm:w-auto"
+                >
+                  <Edit className="w-4 h-4 mr-2" />
+                  {isEditingNotes ? 'View' : 'Edit'}
+                </Button>
+              </div>
+              
+              {isEditingNotes ? (
+                <div className="space-y-4">
+                  <div className="text-sm text-gray-600">
+                    Add new notes. Each line will be treated as a separate bullet point.
+                  </div>
+                  <div className="flex gap-2">
+                    <Input
+                      value={newNote}
+                      onChange={(e) => setNewNote(e.target.value)}
+                      placeholder="Enter new note..."
+                      onKeyPress={(e) => e.key === 'Enter' && addNote()}
+                    />
+                    <Button onClick={addNote} size="sm">
+                      <Plus className="w-4 h-4 mr-2" />
+                      Add
+                    </Button>
+                  </div>
+                  <Textarea
+                    value={notes}
+                    onChange={(e) => setNotes(e.target.value)}
+                    placeholder="Or edit all notes at once..."
+                    rows={4}
+                    className="font-mono text-sm"
+                  />
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  <div className="text-sm text-gray-600">
+                    Current notes:
+                  </div>
+                  <div className="space-y-2">
+                    {notesList.map((note, index) => (
+                      <div key={index} className="flex items-start gap-3 p-3 bg-blue-50 rounded-lg">
+                        <span className="text-blue-400 mt-1">•</span>
+                        <span className="flex-1 text-sm">{note}</span>
+                        {isEditingNotes && (
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => removeNote(index)}
+                            className="text-red-500 hover:text-red-700"
+                          >
+                            <X className="w-4 h-4" />
+                          </Button>
+                        )}
+                      </div>
+                    ))}
+                    {notesList.length === 0 && (
+                      <div className="text-center text-gray-500 py-4">
+                        No notes added yet.
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
 
-        <Card>
-          <CardHeader>
-            <CardTitle>Terms & Conditions</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <Textarea
-              value={terms}
-              onChange={(e) => setTerms(e.target.value)}
-              placeholder="Terms and conditions..."
-              rows={4}
-            />
-          </CardContent>
-        </Card>
-      </div>
+            {/* Terms & Conditions Section */}
+            <div className="space-y-4">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                <h3 className="text-lg font-semibold">Terms & Conditions</h3>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setIsEditingTerms(!isEditingTerms)}
+                  className="w-full sm:w-auto"
+                >
+                  <Edit className="w-4 h-4 mr-2" />
+                  {isEditingTerms ? 'View' : 'Edit'}
+                </Button>
+              </div>
+              
+              {isEditingTerms ? (
+                <div className="space-y-4">
+                  <div className="text-sm text-gray-600">
+                    Add new terms and conditions. Each line will be treated as a separate bullet point.
+                  </div>
+                  <div className="flex gap-2">
+                    <Input
+                      value={newTerm}
+                      onChange={(e) => setNewTerm(e.target.value)}
+                      placeholder="Enter new term..."
+                      onKeyPress={(e) => e.key === 'Enter' && addTerm()}
+                    />
+                    <Button onClick={addTerm} size="sm">
+                      <Plus className="w-4 h-4 mr-2" />
+                      Add
+                    </Button>
+                  </div>
+                  <Textarea
+                    value={terms}
+                    onChange={(e) => setTerms(e.target.value)}
+                    placeholder="Or edit all terms at once..."
+                    rows={4}
+                    className="font-mono text-sm"
+                  />
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  <div className="text-sm text-gray-600">
+                    Current terms and conditions:
+                  </div>
+                  <div className="space-y-2">
+                    {termsList.map((term, index) => (
+                      <div key={index} className="flex items-start gap-3 p-3 bg-gray-50 rounded-lg">
+                        <span className="text-gray-400 mt-1">•</span>
+                        <span className="flex-1 text-sm">{term}</span>
+                        {isEditingTerms && (
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => removeTerm(index)}
+                            className="text-red-500 hover:text-red-700"
+                          >
+                            <X className="w-4 h-4" />
+                          </Button>
+                        )}
+                      </div>
+                    ))}
+                    {termsList.length === 0 && (
+                      <div className="text-center text-gray-500 py-4">
+                        No terms and conditions added yet.
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        </CardContent>
+      </Card>
     </div>
   );
 }

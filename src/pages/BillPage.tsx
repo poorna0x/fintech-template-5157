@@ -116,6 +116,7 @@ export default function BillPage() {
       items: bill.items,
       subtotal: bill.subtotal,
       totalTax: bill.totalTax,
+      serviceCharge: bill.serviceCharge || 0,
       totalAmount: bill.totalAmount,
       paymentStatus: bill.paymentStatus,
       paymentMethod: bill.paymentMethod,
