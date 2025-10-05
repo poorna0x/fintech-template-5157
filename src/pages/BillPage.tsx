@@ -124,7 +124,6 @@ export default function BillPage() {
     };
     
     generateBillPDF(pdfData);
-    toast.success('Bill opened for printing!');
   };
 
   if (isGeneratingBill && selectedCustomer) {

@@ -150,7 +150,7 @@ export default function BillGenerator({ customer, onPrint }: BillGeneratorProps)
         <div className="flex gap-2">
           <Button onClick={handlePrint} className="bg-green-600 hover:bg-green-700">
             <Download className="w-4 h-4 mr-2" />
-            Print/Download Bill
+            Print Bill
           </Button>
         </div>
       </div>

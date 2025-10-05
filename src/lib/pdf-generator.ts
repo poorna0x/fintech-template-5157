@@ -46,21 +46,91 @@ export interface PDFBillData {
 }
 
 export function generateBillPDF(billData: PDFBillData): void {
-  const printWindow = window.open('', '_blank');
-  if (!printWindow) {
-    console.error('Unable to open print window');
-    return;
-  }
-
-  const htmlContent = generateBillHTML(billData);
+  // Create a temporary div with the bill content
+  const billDiv = document.createElement('div');
+  billDiv.innerHTML = generateBillHTML(billData);
+  billDiv.style.position = 'fixed';
+  billDiv.style.top = '0';
+  billDiv.style.left = '0';
+  billDiv.style.width = '100vw';
+  billDiv.style.height = '100vh';
+  billDiv.style.backgroundColor = 'white';
+  billDiv.style.zIndex = '9999';
+  billDiv.style.overflow = 'auto';
+  billDiv.style.padding = '0';
+  billDiv.style.margin = '0';
+  billDiv.style.boxSizing = 'border-box';
   
-  printWindow.document.write(htmlContent);
-  printWindow.document.close();
+  // Add to current page
+  document.body.appendChild(billDiv);
   
-  // Wait for content to load before printing
-  printWindow.onload = () => {
-    printWindow.print();
-  };
+  // Print after a short delay to ensure content is loaded
+  setTimeout(() => {
+    // Hide everything except the bill content for printing
+    const originalBody = document.body.innerHTML;
+    document.body.innerHTML = billDiv.innerHTML;
+    
+    // Add print styles with fixed A4 dimensions
+    const printStyles = document.createElement('style');
+    printStyles.textContent = `
+      * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+      }
+      
+      body {
+        width: 210mm !important;
+        min-height: 297mm !important;
+        max-width: 210mm !important;
+        padding: 20mm 15mm 30mm 15mm !important;
+        margin: 0 !important;
+        font-family: Arial, sans-serif !important;
+        line-height: 1.6 !important;
+        color: #333 !important;
+        background: white !important;
+        overflow: visible !important;
+      }
+      
+      .bill-container {
+        width: 100% !important;
+        max-width: 100% !important;
+        margin: 0 !important;
+        padding: 0 !important;
+      }
+      
+      @page {
+        size: A4 !important;
+        margin: 0 !important;
+      }
+      
+      @media print {
+        body {
+          width: 210mm !important;
+          min-height: 297mm !important;
+          max-width: 210mm !important;
+          padding: 20mm 15mm 30mm 15mm !important;
+          margin: 0 !important;
+        }
+        
+        .bill-container {
+          width: 100% !important;
+          max-width: 100% !important;
+          margin: 0 !important;
+          padding: 0 !important;
+        }
+      }
+    `;
+    document.head.appendChild(printStyles);
+    
+    window.print();
+    
+    // Restore original content
+    setTimeout(() => {
+      document.head.removeChild(printStyles);
+      document.body.innerHTML = originalBody;
+    }, 1000);
+  }, 500);
 }
 
 function generateBillHTML(data: PDFBillData): string {
@@ -87,8 +157,10 @@ function generateBillHTML(data: PDFBillData): string {
           padding: 0;
           width: 210mm; /* A4 width */
           min-height: 297mm; /* A4 height */
+          max-width: 210mm; /* Fixed A4 width */
           padding: 20mm 15mm 30mm 15mm; /* Top, Right, Bottom, Left - A4 padding */
           box-sizing: border-box;
+          overflow: visible;
         }
         
         .bill-container {
@@ -98,6 +170,7 @@ function generateBillHTML(data: PDFBillData): string {
           background: white;
           box-shadow: none;
           padding: 0;
+          overflow: visible;
         }
         
         .header {
@@ -254,6 +327,7 @@ function generateBillHTML(data: PDFBillData): string {
         }
         
         @media print {
+          
           body {
             width: 210mm;
             min-height: 297mm;
