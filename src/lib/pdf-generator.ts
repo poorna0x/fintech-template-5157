@@ -142,6 +142,8 @@ function generateBillHTML(data: PDFBillData): string {
       <meta name="viewport" content="width=device-width, initial-scale=1.0">
       <title>Bill - ${data.billNumber}</title>
       <style>
+        @import url('https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&display=swap');
+        
         * {
           margin: 0;
           padding: 0;
@@ -149,7 +151,7 @@ function generateBillHTML(data: PDFBillData): string {
         }
         
         body {
-          font-family: 'Arial', sans-serif;
+          font-family: 'Poppins', sans-serif;
           line-height: 1.6;
           color: #333;
           background: white;
@@ -177,7 +179,7 @@ function generateBillHTML(data: PDFBillData): string {
         .header {
           text-align: center;
           margin-bottom: 30px;
-          border-bottom: 3px solid #2563eb;
+          border-bottom: 3px solid #000000;
           padding-bottom: 15px;
         }
         
@@ -214,7 +216,7 @@ function generateBillHTML(data: PDFBillData): string {
         .section-title {
           font-size: 18px;
           font-weight: bold;
-          color: #2563eb;
+          color: #000000;
           margin-bottom: 15px;
           border-bottom: 2px solid #e5e7eb;
           padding-bottom: 5px;
@@ -275,9 +277,9 @@ function generateBillHTML(data: PDFBillData): string {
         .summary-row.total {
           font-size: 18px;
           font-weight: bold;
-          color: #2563eb;
-          border-top: 2px solid #2563eb;
-          border-bottom: 2px solid #2563eb;
+          color: #000000;
+          border-top: 2px solid #000000;
+          border-bottom: 2px solid #000000;
           margin-top: 10px;
           padding: 15px 0;
         }
@@ -308,7 +310,9 @@ function generateBillHTML(data: PDFBillData): string {
         
         .terms-list li {
           margin-bottom: 8px;
+          list-style-type: disc;
         }
+        
         
         .footer {
           margin-top: 40px;
@@ -461,7 +465,7 @@ function generateBillHTML(data: PDFBillData): string {
             ${data.terms ? `
               <div class="notes-title" style="margin-top: 20px;">Terms & Conditions:</div>
               <div class="notes-content">
-                <ol class="terms-list">
+                <ul class="terms-list">
                   <li>Goods once sold will not be taken back and refund or exchange.</li>
                   <li>There is 60 Days warranty for RO & PUMP. No Warranty for other spare parts.</li>
                   <li>Without the bill there will not be any warranty / free service given.</li>
@@ -469,7 +473,7 @@ function generateBillHTML(data: PDFBillData): string {
                   <li>Once the order placed cannot be cancelled and advance amount will not be returned.</li>
                   <li>Charges of Rs. 500/- extra to be paid on collection of the cash against cheque return.</li>
                   <li>Company is not responsible for any transactions done personally with the technicians.</li>
-                </ol>
+                </ul>
               </div>
             ` : ''}
           </div>
