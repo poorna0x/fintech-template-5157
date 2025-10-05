@@ -17,16 +17,16 @@ interface BillGeneratorProps {
 }
 
 const defaultCompanyInfo: CompanyInfo = {
-  name: "Hydrogenro Water Solutions",
-  address: "123 Main Street, Tech Park",
-  city: "Bangalore",
+  name: "Authorised Service Franchise",
+  address: "Ground Floor, 13, 4th Main Road, Next To Jain Temple,Seshadripuram, Kumara Park West",
+  city: "Bengaluru",
   state: "Karnataka",
-  pincode: "560001",
-  phone: "+91 98765 43210",
-  email: "info@hydrogenro.com",
-  gstNumber: "29ABCDE1234F1Z5",
-  panNumber: "ABCDE1234F",
-  website: "www.hydrogenro.com"
+  pincode: "560020",
+  phone: "9886944288 & 8884944288",
+  email: "mail@hydrogenro.com",
+  gstNumber: "29LIJPS5140P1Z6",
+  panNumber: "LIJPS5140P",
+  website: "hydrogenro.com"
 };
 
 const defaultBillItems: BillItem[] = [
@@ -48,7 +48,14 @@ export default function BillGenerator({ customer, onPrint }: BillGeneratorProps)
   const [company, setCompany] = useState<CompanyInfo>(defaultCompanyInfo);
   const [items, setItems] = useState<BillItem[]>(defaultBillItems);
   const [notes, setNotes] = useState('');
-  const [terms, setTerms] = useState('Payment due within 30 days of invoice date.');
+  const [terms, setTerms] = useState(`Terms & Conditions
+1. Goods once sold will not be taken back and refund or exchange.
+2. There is 60 Days warranty for RO & PUMP. No Warranty for other spare parts.
+3. Without the bill there will not be any warranty / free service given.
+4. There is no warranty on the water purifier used for more than 750 PPM water TDS level.
+5. Once the order placed cannot be cancelled and advance amount will not be returned.
+6. Charges of Rs. 500/- extra to be paid on collection of the cash against cheque return.
+7. Company is not responsible for any transactions done personally with the technicians.`);
   const [paymentStatus, setPaymentStatus] = useState<'PENDING' | 'PAID' | 'OVERDUE'>('PENDING');
   const [paymentMethod, setPaymentMethod] = useState<'CASH' | 'CARD' | 'UPI' | 'BANK_TRANSFER' | 'CHEQUE'>('CASH');
 

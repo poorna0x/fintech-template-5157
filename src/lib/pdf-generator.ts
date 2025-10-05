@@ -79,18 +79,18 @@ export function generateBillPDF(billData: PDFBillData): void {
         box-sizing: border-box;
       }
       
-      body {
-        width: 210mm !important;
-        min-height: 297mm !important;
-        max-width: 210mm !important;
-        padding: 20mm 15mm 30mm 15mm !important;
-        margin: 0 !important;
-        font-family: Arial, sans-serif !important;
-        line-height: 1.6 !important;
-        color: #333 !important;
-        background: white !important;
-        overflow: visible !important;
-      }
+        body {
+          width: 210mm !important;
+          min-height: 297mm !important;
+          max-width: 210mm !important;
+          padding: 0 !important;
+          margin: 0 !important;
+          font-family: Arial, sans-serif !important;
+          line-height: 1.6 !important;
+          color: #333 !important;
+          background: white !important;
+          overflow: visible !important;
+        }
       
       .bill-container {
         width: 100% !important;
@@ -99,10 +99,10 @@ export function generateBillPDF(billData: PDFBillData): void {
         padding: 0 !important;
       }
       
-      @page {
-        size: A4 !important;
-        margin: 0 !important;
-      }
+        @page {
+          size: A4 !important;
+          margin: 20mm 15mm 20mm 15mm !important;
+        }
       
       @media print {
         body {
@@ -158,7 +158,7 @@ function generateBillHTML(data: PDFBillData): string {
           width: 210mm; /* A4 width */
           min-height: 297mm; /* A4 height */
           max-width: 210mm; /* Fixed A4 width */
-          padding: 20mm 15mm 30mm 15mm; /* Top, Right, Bottom, Left - A4 padding */
+          padding: 15mm 10mm 25mm 10mm; /* Top, Right, Bottom, Left - A4 padding with more space for border */
           box-sizing: border-box;
           overflow: visible;
         }
@@ -168,9 +168,10 @@ function generateBillHTML(data: PDFBillData): string {
           max-width: 100%;
           margin: 0;
           background: white;
-          box-shadow: none;
-          padding: 0;
+          box-shadow: 0 15px 35px rgba(0, 0, 0, 0.6), 0 8px 15px rgba(0, 0, 0, 0.4);
+          padding: 40px;
           overflow: visible;
+          border-radius: 12px;
         }
         
         .header {
@@ -180,11 +181,17 @@ function generateBillHTML(data: PDFBillData): string {
           padding-bottom: 15px;
         }
         
-        .company-name {
-          font-size: 28px;
-          font-weight: bold;
-          color: #2563eb;
-          margin-bottom: 10px;
+        .logo-container {
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          margin-bottom: 15px;
+        }
+        
+        .full-logo {
+          max-width: 200px;
+          height: auto;
+          max-height: 60px;
         }
         
         .company-details {
@@ -230,14 +237,15 @@ function generateBillHTML(data: PDFBillData): string {
           color: #374151;
           font-weight: bold;
           padding: 12px 8px;
-          text-align: left;
+          text-align: center;
           border: 1px solid #d1d5db;
         }
         
         .items-table td {
           padding: 12px 8px;
           border: 1px solid #d1d5db;
-          vertical-align: top;
+          vertical-align: middle;
+          text-align: center;
         }
         
         .items-table tr:nth-child(even) {
@@ -293,6 +301,15 @@ function generateBillHTML(data: PDFBillData): string {
           color: #6b7280;
         }
         
+        .terms-list {
+          margin: 0;
+          padding-left: 20px;
+        }
+        
+        .terms-list li {
+          margin-bottom: 8px;
+        }
+        
         .footer {
           margin-top: 40px;
           padding-top: 20px;
@@ -331,21 +348,36 @@ function generateBillHTML(data: PDFBillData): string {
           body {
             width: 210mm;
             min-height: 297mm;
-            padding: 20mm 15mm 30mm 15mm;
+            padding: 0;
             margin: 0;
             box-shadow: none;
           }
           
           .bill-container {
             box-shadow: none;
-            padding: 0;
+            padding: 40px;
             width: 100%;
             max-width: 100%;
+            margin: 0;
           }
           
           @page {
             size: A4;
-            margin: 0;
+            margin: 20mm 15mm 20mm 15mm;
+          }
+          
+          @page :first {
+            margin-top: 20mm;
+          }
+          
+          @page :left {
+            margin-left: 15mm;
+            margin-right: 10mm;
+          }
+          
+          @page :right {
+            margin-left: 10mm;
+            margin-right: 15mm;
           }
         }
       </style>
@@ -354,11 +386,13 @@ function generateBillHTML(data: PDFBillData): string {
       <div class="bill-container">
         <!-- Header -->
         <div class="header">
-          <div class="company-name">${data.company.name}</div>
+          <div class="logo-container">
+            <img src="/fulllogo.webp" alt="Hydrogenro Logo" class="full-logo" />
+          </div>
           <div class="company-details">
             <div>${data.company.address}, ${data.company.city} - ${data.company.pincode}</div>
             <div>Phone: ${data.company.phone} | Email: ${data.company.email}</div>
-            <div>GST: ${data.company.gstNumber} | PAN: ${data.company.panNumber}</div>
+            <div>GST: ${data.company.gstNumber}</div>
             ${data.company.website ? `<div>Website: ${data.company.website}</div>` : ''}
           </div>
         </div>
@@ -383,12 +417,6 @@ function generateBillHTML(data: PDFBillData): string {
               <div><strong>Bill Number:</strong> ${data.billNumber}</div>
               <div><strong>Bill Date:</strong> ${new Date(data.billDate).toLocaleDateString()}</div>
               <div><strong>Due Date:</strong> ${new Date(data.dueDate).toLocaleDateString()}</div>
-              <div><strong>Status:</strong> 
-                <span class="status-badge status-${data.paymentStatus.toLowerCase()}">
-                  ${data.paymentStatus}
-                </span>
-              </div>
-              ${data.paymentMethod ? `<div><strong>Payment Method:</strong> ${data.paymentMethod}</div>` : ''}
             </div>
           </div>
         </div>
@@ -398,24 +426,18 @@ function generateBillHTML(data: PDFBillData): string {
           <thead>
             <tr>
               <th>Description</th>
-              <th class="text-center">Qty</th>
-              <th class="text-right">Unit Price</th>
-              <th class="text-right">Total</th>
-              <th class="text-center">Tax Rate</th>
-              <th class="text-right">Tax Amount</th>
-              <th class="text-right">Final Amount</th>
+              <th>Qty</th>
+              <th>Unit Price</th>
+              <th>Total</th>
             </tr>
           </thead>
           <tbody>
             ${data.items.map(item => `
               <tr>
                 <td>${item.description}</td>
-                <td class="text-center">${item.quantity}</td>
-                <td class="text-right">₹${item.unitPrice.toLocaleString()}</td>
-                <td class="text-right">₹${item.total.toLocaleString()}</td>
-                <td class="text-center">${item.taxRate}%</td>
-                <td class="text-right">₹${item.taxAmount.toLocaleString()}</td>
-                <td class="text-right">₹${(item.total + item.taxAmount).toLocaleString()}</td>
+                <td>${item.quantity}</td>
+                <td>₹${item.unitPrice.toLocaleString()}</td>
+                <td>₹${item.total.toLocaleString()}</td>
               </tr>
             `).join('')}
           </tbody>
@@ -423,17 +445,9 @@ function generateBillHTML(data: PDFBillData): string {
         
         <!-- Summary -->
         <div class="summary">
-          <div class="summary-row">
-            <span>Subtotal:</span>
-            <span>₹${data.subtotal.toLocaleString()}</span>
-          </div>
-          <div class="summary-row">
-            <span>Total Tax:</span>
-            <span>₹${data.totalTax.toLocaleString()}</span>
-          </div>
           <div class="summary-row total">
             <span>Total Amount:</span>
-            <span>₹${data.totalAmount.toLocaleString()}</span>
+            <span>₹${data.subtotal.toLocaleString()}</span>
           </div>
         </div>
         
@@ -446,14 +460,24 @@ function generateBillHTML(data: PDFBillData): string {
             ` : ''}
             ${data.terms ? `
               <div class="notes-title" style="margin-top: 20px;">Terms & Conditions:</div>
-              <div class="notes-content">${data.terms}</div>
+              <div class="notes-content">
+                <ol class="terms-list">
+                  <li>Goods once sold will not be taken back and refund or exchange.</li>
+                  <li>There is 60 Days warranty for RO & PUMP. No Warranty for other spare parts.</li>
+                  <li>Without the bill there will not be any warranty / free service given.</li>
+                  <li>There is no warranty on the water purifier used for more than 750 PPM water TDS level.</li>
+                  <li>Once the order placed cannot be cancelled and advance amount will not be returned.</li>
+                  <li>Charges of Rs. 500/- extra to be paid on collection of the cash against cheque return.</li>
+                  <li>Company is not responsible for any transactions done personally with the technicians.</li>
+                </ol>
+              </div>
             ` : ''}
           </div>
         ` : ''}
         
         <!-- Footer -->
         <div class="footer">
-          <p>Thank you for choosing Hydrogenro Water Solutions!</p>
+          <p>Thank you for choosing Hydrogenro!</p>
           <p>For any queries, contact us at ${data.company.phone} or ${data.company.email}</p>
         </div>
       </div>
