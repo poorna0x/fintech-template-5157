@@ -37,7 +37,6 @@ export interface PDFBillData {
     taxAmount: number;
   }>;
   subtotal: number;
-  totalTax: number;
   serviceCharge?: number;
   totalAmount: number;
   paymentStatus: string;
@@ -452,10 +451,6 @@ function generateBillHTML(data: PDFBillData): string {
           <div class="summary-row">
             <span>Subtotal:</span>
             <span>₹${data.subtotal.toLocaleString()}</span>
-          </div>
-          <div class="summary-row">
-            <span>Total Tax:</span>
-            <span>₹${data.totalTax.toLocaleString()}</span>
           </div>
           ${data.serviceCharge && data.serviceCharge > 0 ? `
             <div class="summary-row">

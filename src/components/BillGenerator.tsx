@@ -277,7 +277,7 @@ export default function BillGenerator({ customer, onPrint }: BillGeneratorProps)
             {items.map((item, index) => (
               <div key={item.id} className="space-y-4 p-4 border rounded-lg">
                 {/* Mobile-first grid layout */}
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
                   <div className="sm:col-span-2 lg:col-span-1">
                     <Label>Description</Label>
                     <Input
@@ -295,25 +295,14 @@ export default function BillGenerator({ customer, onPrint }: BillGeneratorProps)
                       min="1"
                     />
                   </div>
-                  <div>
-                    <Label>Unit Price</Label>
-                    <Input
-                      type="number"
-                      value={item.unitPrice}
-                      onChange={(e) => updateItem(item.id, 'unitPrice', parseFloat(e.target.value) || 0)}
-                      min="0"
-                      step="0.01"
-                    />
-                  </div>
                   <div className="flex items-end gap-2">
                     <div className="flex-1">
-                      <Label>Tax Rate (%)</Label>
+                      <Label>Unit Price</Label>
                       <Input
                         type="number"
-                        value={item.taxRate}
-                        onChange={(e) => updateItem(item.id, 'taxRate', parseFloat(e.target.value) || 0)}
+                        value={item.unitPrice}
+                        onChange={(e) => updateItem(item.id, 'unitPrice', parseFloat(e.target.value) || 0)}
                         min="0"
-                        max="100"
                         step="0.01"
                       />
                     </div>
@@ -330,18 +319,14 @@ export default function BillGenerator({ customer, onPrint }: BillGeneratorProps)
                 </div>
                 
                 {/* Item totals - mobile friendly */}
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 pt-2 border-t">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-2 border-t">
                   <div className="text-sm">
-                    <span className="text-gray-500">Subtotal: </span>
-                    <span className="font-semibold">₹{item.total.toLocaleString()}</span>
-                  </div>
-                  <div className="text-sm">
-                    <span className="text-gray-500">Tax: </span>
-                    <span className="font-semibold">₹{item.taxAmount.toLocaleString()}</span>
+                    <span className="text-gray-500">Quantity: </span>
+                    <span className="font-semibold">{item.quantity}</span>
                   </div>
                   <div className="text-sm">
                     <span className="text-gray-500">Total: </span>
-                    <span className="font-semibold">₹{(item.total + item.taxAmount).toLocaleString()}</span>
+                    <span className="font-semibold">₹{item.total.toLocaleString()}</span>
                   </div>
                 </div>
               </div>
