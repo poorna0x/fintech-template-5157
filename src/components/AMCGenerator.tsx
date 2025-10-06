@@ -149,7 +149,7 @@ The AMC does not cover display and lights of the RO.`);
     }
   };
 
-  const handlePrint = async () => {
+  const handlePrint = () => {
     if (!billNumber.trim()) {
       toast.error('Please enter a bill number');
       return;
@@ -185,7 +185,7 @@ The AMC does not cover display and lights of the RO.`);
     };
 
     try {
-      await generateAMCPDF(bill);
+      generateAMCPDF(bill);
       toast.success('AMC Agreement generated successfully!');
       onPrint?.(bill);
     } catch (error) {

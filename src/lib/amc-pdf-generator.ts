@@ -134,6 +134,35 @@ function generateAMCHTML(data: AMCPDFData): string {
           border-left: 4px solid #000000;
         }
         
+        .customer-info-section {
+          background: #f0f9ff;
+          padding: 15px;
+          border-radius: 8px;
+          margin-bottom: 20px;
+          border-left: 4px solid #0ea5e9;
+        }
+        
+        .customer-details {
+          margin-top: 10px;
+        }
+        
+        .customer-detail-row {
+          display: flex;
+          justify-content: space-between;
+          margin-bottom: 8px;
+          font-size: 14px;
+        }
+        
+        .customer-label {
+          font-weight: 600;
+          color: #374151;
+        }
+        
+        .customer-value {
+          color: #0ea5e9;
+          font-weight: 500;
+        }
+        
         .services-section {
           background: #f8fafc;
           padding: 15px;
@@ -342,6 +371,35 @@ function generateAMCHTML(data: AMCPDFData): string {
         <p>We M/s <strong>Hydrogen RO</strong>, Authorized for Service by RO Care India, undertake to maintain your <strong>RO Water Purifier</strong> Unit as detailed below:</p>
       </div>
 
+      <!-- Customer Information -->
+      <div class="customer-info-section">
+        <h3 class="section-title">Customer Information</h3>
+        <div class="customer-details">
+          <div class="customer-detail-row">
+            <span class="customer-label">Customer Name:</span>
+            <span class="customer-value">${data.customer.name}</span>
+          </div>
+          <div class="customer-detail-row">
+            <span class="customer-label">Phone Number:</span>
+            <span class="customer-value">${data.customer.phone}</span>
+          </div>
+          <div class="customer-detail-row">
+            <span class="customer-label">Email:</span>
+            <span class="customer-value">${data.customer.email}</span>
+          </div>
+          <div class="customer-detail-row">
+            <span class="customer-label">Address:</span>
+            <span class="customer-value">${data.customer.address}, ${data.customer.city} - ${data.customer.pincode}</span>
+          </div>
+          ${data.customer.gstNumber ? `
+          <div class="customer-detail-row">
+            <span class="customer-label">GST Number:</span>
+            <span class="customer-value">${data.customer.gstNumber}</span>
+          </div>
+          ` : ''}
+        </div>
+      </div>
+
       <!-- Services Covered -->
       <div class="services-section">
         <h3 class="services-title">SERVICES COVERED BY THE AGREEMENT ARE AS FOLLOWS:</h3>
@@ -455,7 +513,7 @@ function generateAMCHTML(data: AMCPDFData): string {
   `;
 }
 
-export async function generateAMCPDF(bill: Bill): Promise<void> {
+export function generateAMCPDF(bill: Bill): void {
   const data: AMCPDFData = {
     billNumber: bill.billNumber,
     billDate: bill.billDate,
@@ -470,22 +528,89 @@ export async function generateAMCPDF(bill: Bill): Promise<void> {
     terms: bill.terms
   };
 
-  const html = generateAMCHTML(data);
+  // Create a temporary div with the AMC content
+  const amcDiv = document.createElement('div');
+  amcDiv.innerHTML = generateAMCHTML(data);
+  amcDiv.style.position = 'fixed';
+  amcDiv.style.top = '0';
+  amcDiv.style.left = '0';
+  amcDiv.style.width = '100vw';
+  amcDiv.style.height = '100vh';
+  amcDiv.style.backgroundColor = 'white';
+  amcDiv.style.zIndex = '9999';
+  amcDiv.style.overflow = 'auto';
+  amcDiv.style.padding = '0';
+  amcDiv.style.margin = '0';
+  amcDiv.style.boxSizing = 'border-box';
   
-  // Create a new window with the HTML content
-  const printWindow = window.open('', '_blank');
-  if (!printWindow) {
-    throw new Error('Unable to open print window. Please check your popup blocker settings.');
-  }
-
-  printWindow.document.write(html);
-  printWindow.document.close();
-
-  // Wait for the content to load, then trigger print
-  printWindow.onload = () => {
+  // Add to current page
+  document.body.appendChild(amcDiv);
+  
+  // Print after a short delay to ensure content is loaded
+  setTimeout(() => {
+    // Hide everything except the AMC content for printing
+    const originalBody = document.body.innerHTML;
+    document.body.innerHTML = amcDiv.innerHTML;
+    
+    // Add print styles with fixed A4 dimensions
+    const printStyles = document.createElement('style');
+    printStyles.textContent = `
+      * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+      }
+      
+      body {
+        width: 210mm !important;
+        min-height: 297mm !important;
+        max-width: 210mm !important;
+        padding: 0 !important;
+        margin: 0 !important;
+        font-family: 'Poppins', sans-serif !important;
+        line-height: 1.6 !important;
+        color: #333 !important;
+        background: white !important;
+        overflow: visible !important;
+      }
+      
+      .bill-container {
+        width: 100% !important;
+        max-width: 100% !important;
+        margin: 0 !important;
+        padding: 0 !important;
+      }
+      
+      @page {
+        size: A4 !important;
+        margin: 20mm 15mm 20mm 15mm !important;
+      }
+      
+      @media print {
+        body {
+          width: 210mm !important;
+          min-height: 297mm !important;
+          max-width: 210mm !important;
+          padding: 20mm 15mm 30mm 15mm !important;
+          margin: 0 !important;
+        }
+        
+        .bill-container {
+          width: 100% !important;
+          max-width: 100% !important;
+          margin: 0 !important;
+          padding: 0 !important;
+        }
+      }
+    `;
+    document.head.appendChild(printStyles);
+    
+    window.print();
+    
+    // Restore original content
     setTimeout(() => {
-      printWindow.print();
-      printWindow.close();
-    }, 500);
-  };
+      document.head.removeChild(printStyles);
+      document.body.innerHTML = originalBody;
+    }, 1000);
+  }, 500);
 }
