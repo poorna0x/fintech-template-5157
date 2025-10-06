@@ -8,7 +8,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Badge } from '@/components/ui/badge';
 import { Search, User, FileText, ArrowLeft } from 'lucide-react';
 import { toast } from 'sonner';
-import BillGenerator from '@/components/BillGenerator';
+import AMCGenerator from '@/components/AMCGenerator';
 import { Customer, Bill } from '@/types';
 import { generateBillPDF } from '@/lib/pdf-generator';
 
@@ -149,7 +149,7 @@ export default function AMCPage() {
             </div>
           </div>
         </div>
-        <BillGenerator
+        <AMCGenerator
           customer={selectedCustomer}
           onPrint={handlePrintBill}
         />

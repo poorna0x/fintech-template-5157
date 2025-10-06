@@ -171,12 +171,12 @@ const AMC = () => {
       yPosition += 10;
       pdf.setFontSize(10);
       const services = [
-        '• Any additional visits during the Agreement period, as and when required, in the event of any breakdown / main functioning issue of the equipment shall be undertaken as part of the agreement.',
-        '• Filters / RO Membrane / Consumables / Electrical parts: During the period of Agreement, we undertake to keep the unit in satisfactory working order by cleaning, repairing, or replacing the said requisite with genuine spares and ensure:',
-        '• Safe RO output within a range of 50 to 150 TDS (WHO Guidelines) or as suiting customer\'s taste.',
-        '• Maintain clean cosmetics and smooth functioning of the unit.',
-        '• In case of a breakdown – Resolution within 24 Hrs.',
-        '• We will change the filter in 2026 and 2027 also This is comprehensive AMC.'
+        'Breakdown Support: If any breakdown or problem happens with the RO during this 1-year period, the company will provide service without extra charges.',
+        'Filters / RO Membrane / Consumables: Company will clean, repair, or replace filters and parts needed for smooth working.',
+        'Safe RO output: Water quality TDS between 50 to 150, as per WHO guidelines or as per customer preference.',
+        'Clean cosmetics and smooth working of the machine.',
+        'Quick service: Any breakdown will be resolved within 24 hours.',
+        'Full Care of RO: The company takes responsibility for complete maintenance and support for 1 year, including Pre Sediment Filtration (with terms & conditions).'
       ];
       
       services.forEach(service => {
@@ -191,20 +191,49 @@ const AMC = () => {
       // Terms and Conditions
       yPosition += 10;
       pdf.setFontSize(11);
-      pdf.text('TERMS AND CONDITIONS OF THE AGREEMENT', 20, yPosition);
+      pdf.text('⚖️ TERMS AND CONDITIONS', 20, yPosition);
       
       yPosition += 10;
       pdf.setFontSize(9);
       const terms = [
-        '• This Agreement cannot be terminated before expiry period or transferred to any other person or equipment in event of sale / gift / purchase of a machine.',
-        '• For each home service beyond municipal limits, charges for travelling and stay, if required, will be charged over and above the Agreement fee.',
-        '• In case of any dispute, this Agreement is subject to the jurisdiction of Bangalore Courts only. Renewal of Agreement after expiry will be subject to the new Agreement thereon.',
-        '• The product shall be made available for servicing as and when M/s Hydrogen RO Authorized representative calls on his periodical-servicing visit. Failure to do so will be treated as a service rendered, and no refund shall be made on this account.',
-        '• No modification of this Agreement shall be binding unless it is made in writing and signed by the Agreeing Parties.'
+        'No Early Termination: You cannot cancel this agreement before expiry. It also cannot be transferred to another person if you sell/gift the machine.',
+        'Extra Charges: If service is outside municipal limits, extra charges for travel/stay will apply.',
+        'Disputes: Any legal disputes will be handled only in Bangalore courts.',
+        'Renewal: After expiry, renewal requires a new agreement.',
+        'Customer\'s Duty: The customer must make the RO available for servicing when the company\'s authorized representative visits.',
+        'If the customer fails to give the machine for servicing, it will still be treated as service given, and no refund will be made.',
+        'Agreement Modification: Cannot be changed unless written and signed by both parties.',
+        'Not Covered: Display and lights of the RO are not covered under this AMC.'
       ];
       
       terms.forEach(term => {
         const lines = pdf.splitTextToSize(term, 170);
+        lines.forEach((line: string) => {
+          pdf.text(line, 20, yPosition);
+          yPosition += 4;
+        });
+        yPosition += 2;
+      });
+
+      // Summary Section
+      yPosition += 10;
+      pdf.setFontSize(11);
+      pdf.text('🔍 Summary in Simple Words', 20, yPosition);
+      
+      yPosition += 10;
+      pdf.setFontSize(9);
+      const summary = [
+        `You (the customer) paid ₹${formData.agreementAmount} for 1-year full AMC service of your ${formData.productName}.`,
+        'All repairs, filters, and breakdown services are included, with a guarantee of 24-hour resolution.',
+        'The service covers water quality maintenance (50–150 TDS) and overall machine health.',
+        'Extra travel charges apply if your location is outside the municipal area.',
+        'You can\'t cancel/transfer this AMC until it expires.',
+        'Legal disputes go to Bangalore court.',
+        'The AMC does not cover display and lights of the RO.'
+      ];
+      
+      summary.forEach(item => {
+        const lines = pdf.splitTextToSize(item, 170);
         lines.forEach((line: string) => {
           pdf.text(line, 20, yPosition);
           yPosition += 4;
@@ -484,12 +513,42 @@ const AMC = () => {
                             <div className="border-l-2 border-muted-foreground pl-4">
                               <h3 className="font-medium text-foreground text-sm mb-3">SERVICES COVERED BY THE AGREEMENT ARE AS FOLLOWS:</h3>
                               <ul className="list-disc pl-4 space-y-2 text-sm text-muted-foreground">
-                                <li className="leading-relaxed">Any additional visits during the Agreement period...</li>
-                                <li className="leading-relaxed">Filters / RO Membrane / Consumables / Electrical parts...</li>
-                                <li className="leading-relaxed">Safe RO output within a range of 50 to 150 TDS...</li>
-                                <li className="leading-relaxed">Maintain clean cosmetics and smooth functioning...</li>
-                                <li className="leading-relaxed">In case of a breakdown – Resolution within 24 Hrs...</li>
+                                <li className="leading-relaxed">Breakdown Support: If any breakdown or problem happens with the RO during this 1-year period, the company will provide service without extra charges.</li>
+                                <li className="leading-relaxed">Filters / RO Membrane / Consumables: Company will clean, repair, or replace filters and parts needed for smooth working.</li>
+                                <li className="leading-relaxed">Safe RO output: Water quality TDS between 50 to 150, as per WHO guidelines or as per customer preference.</li>
+                                <li className="leading-relaxed">Clean cosmetics and smooth working of the machine.</li>
+                                <li className="leading-relaxed">Quick service: Any breakdown will be resolved within 24 hours.</li>
+                                <li className="leading-relaxed">Full Care of RO: The company takes responsibility for complete maintenance and support for 1 year, including Pre Sediment Filtration (with terms & conditions).</li>
                               </ul>
+                            </div>
+
+                            {/* Terms and Conditions Preview */}
+                            <div className="border-l-2 border-red-300 pl-4">
+                              <h3 className="font-medium text-foreground text-sm mb-3">⚖️ TERMS AND CONDITIONS</h3>
+                              <ul className="list-disc pl-4 space-y-2 text-sm text-muted-foreground">
+                                <li className="leading-relaxed">No Early Termination: You cannot cancel this agreement before expiry. It also cannot be transferred to another person if you sell/gift the machine.</li>
+                                <li className="leading-relaxed">Extra Charges: If service is outside municipal limits, extra charges for travel/stay will apply.</li>
+                                <li className="leading-relaxed">Disputes: Any legal disputes will be handled only in Bangalore courts.</li>
+                                <li className="leading-relaxed">Renewal: After expiry, renewal requires a new agreement.</li>
+                                <li className="leading-relaxed">Customer's Duty: The customer must make the RO available for servicing when the company's authorized representative visits.</li>
+                                <li className="leading-relaxed">If the customer fails to give the machine for servicing, it will still be treated as service given, and no refund will be made.</li>
+                                <li className="leading-relaxed">Agreement Modification: Cannot be changed unless written and signed by both parties.</li>
+                                <li className="leading-relaxed">Not Covered: Display and lights of the RO are not covered under this AMC.</li>
+                              </ul>
+                            </div>
+
+                            {/* Summary Preview */}
+                            <div className="border-l-2 border-green-300 pl-4">
+                              <h3 className="font-medium text-foreground text-sm mb-3">🔍 Summary in Simple Words</h3>
+                              <div className="text-sm text-muted-foreground space-y-2">
+                                <p className="leading-relaxed">You (the customer) paid ₹{formData.agreementAmount || '14000'} for 1-year full AMC service of your {formData.productName || 'Kent RO'}.</p>
+                                <p className="leading-relaxed">All repairs, filters, and breakdown services are included, with a guarantee of 24-hour resolution.</p>
+                                <p className="leading-relaxed">The service covers water quality maintenance (50–150 TDS) and overall machine health.</p>
+                                <p className="leading-relaxed">Extra travel charges apply if your location is outside the municipal area.</p>
+                                <p className="leading-relaxed">You can't cancel/transfer this AMC until it expires.</p>
+                                <p className="leading-relaxed">Legal disputes go to Bangalore court.</p>
+                                <p className="leading-relaxed">The AMC does not cover display and lights of the RO.</p>
+                              </div>
                             </div>
 
                             {/* Agreement Details */}
@@ -621,12 +680,12 @@ const AMC = () => {
               <div className="bg-blue-50 p-4 rounded-lg mb-4 border-l-4 border-blue-500">
                 <h3 className="font-bold mb-3 text-blue-800 text-sm">SERVICES COVERED BY THE AGREEMENT ARE AS FOLLOWS:</h3>
                 <ul className="list-disc pl-6 space-y-2 text-xs">
-                  <li>Any additional visits during the Agreement period, as and when required, in the event of any breakdown / main functioning issue of the equipment shall be undertaken as part of the agreement.</li>
-                  <li>Filters / RO Membrane / Consumables / Electrical parts: During the period of Agreement, we undertake to keep the unit in satisfactory working order by cleaning, repairing, or replacing the said requisite with genuine spares and ensure:</li>
-                  <li>Safe RO output within a range of 50 to 150 TDS (WHO Guidelines) or as suiting customer's taste.</li>
-                  <li>Maintain clean cosmetics and smooth functioning of the unit.</li>
-                  <li>In case of a breakdown – Resolution within 24 Hrs.</li>
-                  <li>We will change the filter in 2026 and 2027 also This is comprehensive AMC.</li>
+                  <li>Breakdown Support: If any breakdown or problem happens with the RO during this 1-year period, the company will provide service without extra charges.</li>
+                  <li>Filters / RO Membrane / Consumables: Company will clean, repair, or replace filters and parts needed for smooth working.</li>
+                  <li>Safe RO output: Water quality TDS between 50 to 150, as per WHO guidelines or as per customer preference.</li>
+                  <li>Clean cosmetics and smooth working of the machine.</li>
+                  <li>Quick service: Any breakdown will be resolved within 24 hours.</li>
+                  <li>Full Care of RO: The company takes responsibility for complete maintenance and support for 1 year, including Pre Sediment Filtration (with terms & conditions).</li>
                 </ul>
               </div>
             </div>
@@ -634,14 +693,33 @@ const AMC = () => {
             {/* Terms and Conditions */}
             <div className="mb-6">
               <div className="bg-gray-50 p-4 rounded-lg border-l-4 border-gray-400">
-                <h3 className="font-bold mb-3 text-center text-gray-800 text-sm">TERMS AND CONDITIONS OF THE AGREEMENT</h3>
+                <h3 className="font-bold mb-3 text-center text-gray-800 text-sm">⚖️ TERMS AND CONDITIONS</h3>
                 <ul className="list-disc pl-6 space-y-2 text-xs text-gray-700">
-                  <li>This Agreement cannot be terminated before expiry period or transferred to any other person or equipment in event of sale / gift / purchase of a machine.</li>
-                  <li>For each home service beyond municipal limits, charges for travelling and stay, if required, will be charged over and above the Agreement fee.</li>
-                  <li>In case of any dispute, this Agreement is subject to the jurisdiction of Bangalore Courts only. Renewal of Agreement after expiry will be subject to the new Agreement thereon.</li>
-                  <li>The product shall be made available for servicing as and when M/s Hydrogen RO Authorized representative calls on his periodical-servicing visit. Failure to do so will be treated as a service rendered, and no refund shall be made on this account.</li>
-                  <li>No modification of this Agreement shall be binding unless it is made in writing and signed by the Agreeing Parties.</li>
+                  <li>No Early Termination: You cannot cancel this agreement before expiry. It also cannot be transferred to another person if you sell/gift the machine.</li>
+                  <li>Extra Charges: If service is outside municipal limits, extra charges for travel/stay will apply.</li>
+                  <li>Disputes: Any legal disputes will be handled only in Bangalore courts.</li>
+                  <li>Renewal: After expiry, renewal requires a new agreement.</li>
+                  <li>Customer's Duty: The customer must make the RO available for servicing when the company's authorized representative visits.</li>
+                  <li>If the customer fails to give the machine for servicing, it will still be treated as service given, and no refund will be made.</li>
+                  <li>Agreement Modification: Cannot be changed unless written and signed by both parties.</li>
+                  <li>Not Covered: Display and lights of the RO are not covered under this AMC.</li>
                 </ul>
+              </div>
+            </div>
+
+            {/* Summary Section */}
+            <div className="mb-6">
+              <div className="bg-gradient-to-r from-green-50 to-blue-50 p-4 rounded-lg border-l-4 border-green-500">
+                <h3 className="font-bold mb-3 text-center text-green-800 text-sm">🔍 Summary in Simple Words</h3>
+                <div className="text-xs text-gray-700 space-y-2">
+                  <p>You (the customer) paid ₹{formData.agreementAmount} for 1-year full AMC service of your {formData.productName}.</p>
+                  <p>All repairs, filters, and breakdown services are included, with a guarantee of 24-hour resolution.</p>
+                  <p>The service covers water quality maintenance (50–150 TDS) and overall machine health.</p>
+                  <p>Extra travel charges apply if your location is outside the municipal area.</p>
+                  <p>You can't cancel/transfer this AMC until it expires.</p>
+                  <p>Legal disputes go to Bangalore court.</p>
+                  <p>The AMC does not cover display and lights of the RO.</p>
+                </div>
               </div>
             </div>
 
