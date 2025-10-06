@@ -28,6 +28,7 @@ const CustomerPayment = lazy(() => import("./pages/CustomerPayment"));
 const PaymentSuccess = lazy(() => import("./pages/PaymentSuccess"));
 const PaymentWebhook = lazy(() => import("./pages/PaymentWebhook"));
 const BillPage = lazy(() => import("./pages/BillPage"));
+const AMCPage = lazy(() => import("./pages/AMCPage"));
 
 // New SEO pages
 const Services = lazy(() => import("./pages/Services"));
@@ -89,6 +90,7 @@ const App = () => (
                   <Route path="/payment/success" element={<PaymentSuccess />} />
                   <Route path="/payment/webhook" element={<PaymentWebhook />} />
                   <Route path="/bills" element={<BillPage />} />
+                  <Route path="/amc" element={<AMCPage />} />
                   
                   {/* SEO Pages */}
                   <Route path="/services" element={<Services />} />
