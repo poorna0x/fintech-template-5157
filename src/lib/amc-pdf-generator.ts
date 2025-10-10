@@ -513,48 +513,96 @@ function generateAMCHTML(data: AMCPDFData): string {
   `;
 }
 
-export function generateAMCPDF(bill: Bill): void {
-  const data: AMCPDFData = {
-    billNumber: bill.billNumber,
-    billDate: bill.billDate,
-    company: bill.company,
-    customer: bill.customer,
-    items: bill.items,
-    subtotal: bill.subtotal,
-    totalTax: bill.totalTax,
-    serviceCharge: bill.serviceCharge,
-    totalAmount: bill.totalAmount,
-    notes: bill.notes,
-    terms: bill.terms
-  };
-
-  // Create a temporary div with the AMC content
-  const amcDiv = document.createElement('div');
-  amcDiv.innerHTML = generateAMCHTML(data);
-  amcDiv.style.position = 'fixed';
-  amcDiv.style.top = '0';
-  amcDiv.style.left = '0';
-  amcDiv.style.width = '100vw';
-  amcDiv.style.height = '100vh';
-  amcDiv.style.backgroundColor = 'white';
-  amcDiv.style.zIndex = '9999';
-  amcDiv.style.overflow = 'auto';
-  amcDiv.style.padding = '0';
-  amcDiv.style.margin = '0';
-  amcDiv.style.boxSizing = 'border-box';
-  
-  // Add to current page
-  document.body.appendChild(amcDiv);
-  
-  // Print after a short delay to ensure content is loaded
-  setTimeout(() => {
-    // Hide everything except the AMC content for printing
-    const originalBody = document.body.innerHTML;
-    document.body.innerHTML = amcDiv.innerHTML;
+export function generateAMCPDF(bill: Bill, action: 'print' | 'pdf' = 'print'): void {
+  try {
+    // Check if it's a mobile device
+    const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
     
-    // Add print styles with fixed A4 dimensions
+    if (isMobile) {
+      // For mobile devices, use a different approach
+      handleMobilePrint(bill, action);
+      return;
+    }
+    
+    // Create a new window for printing to avoid destroying React components
+    const printWindow = window.open('', '_blank', 'width=800,height=600');
+    if (!printWindow) {
+      alert('Please allow popups to print the AMC Agreement');
+      return;
+    }
+    
+    const data: AMCPDFData = {
+      billNumber: bill.billNumber,
+      billDate: bill.billDate,
+      company: bill.company,
+      customer: bill.customer,
+      items: bill.items,
+      subtotal: bill.subtotal,
+      totalTax: bill.totalTax,
+      serviceCharge: bill.serviceCharge,
+      totalAmount: bill.totalAmount,
+      notes: bill.notes,
+      terms: bill.terms
+    };
+    
+    // Write content to new window
+    printWindow.document.write(generateAMCHTML(data));
+    printWindow.document.close();
+    
+    // Wait for content to load, then print
+    printWindow.onload = () => {
+      setTimeout(() => {
+        if (action === 'print') {
+          // Direct print without preview
+          printWindow.print();
+        } else {
+          // Save as PDF (browser will show save dialog)
+          printWindow.print();
+        }
+        
+        // Close the print window after printing
+        setTimeout(() => {
+          printWindow.close();
+        }, 1000);
+      }, 100);
+    };
+    
+  } catch (error) {
+    console.error('Error generating AMC PDF:', error);
+    alert('Error generating AMC Agreement. Please try again.');
+  }
+}
+
+function handleMobilePrint(bill: Bill, action: 'print' | 'pdf'): void {
+  try {
+    // Store original content
+    const originalBody = document.body.innerHTML;
+    const originalTitle = document.title;
+    
+    const data: AMCPDFData = {
+      billNumber: bill.billNumber,
+      billDate: bill.billDate,
+      company: bill.company,
+      customer: bill.customer,
+      items: bill.items,
+      subtotal: bill.subtotal,
+      totalTax: bill.totalTax,
+      serviceCharge: bill.serviceCharge,
+      totalAmount: bill.totalAmount,
+      notes: bill.notes,
+      terms: bill.terms
+    };
+    
+    // Replace body content temporarily
+    document.body.innerHTML = generateAMCHTML(data);
+    document.title = `AMC Agreement - ${bill.billNumber}`;
+    
+    // Add mobile-optimized print styles
     const printStyles = document.createElement('style');
+    printStyles.id = 'mobile-print-styles';
     printStyles.textContent = `
+      @import url('https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&display=swap');
+      
       * {
         margin: 0;
         padding: 0;
@@ -562,37 +610,37 @@ export function generateAMCPDF(bill: Bill): void {
       }
       
       body {
-        width: 210mm !important;
-        min-height: 297mm !important;
-        max-width: 210mm !important;
-        padding: 0 !important;
-        margin: 0 !important;
-        font-family: 'Poppins', sans-serif !important;
-        line-height: 1.6 !important;
-        color: #333 !important;
-        background: white !important;
-        overflow: visible !important;
+        font-family: 'Poppins', sans-serif;
+        line-height: 1.6;
+        color: #333;
+        background: white;
+        margin: 0;
+        padding: 10mm;
+        font-size: 10px;
+        -webkit-text-size-adjust: 100%;
       }
       
       .bill-container {
-        width: 100% !important;
-        max-width: 100% !important;
-        margin: 0 !important;
-        padding: 0 !important;
-      }
-      
-      @page {
-        size: A4 !important;
-        margin: 20mm 15mm 20mm 15mm !important;
+        width: 100%;
+        max-width: 100%;
+        margin: 0;
+        background: white;
+        padding: 0;
+        box-shadow: 0 15px 35px rgba(0, 0, 0, 0.6), 0 8px 15px rgba(0, 0, 0, 0.4);
+        border-radius: 12px;
       }
       
       @media print {
+        * {
+          -webkit-print-color-adjust: exact !important;
+          color-adjust: exact !important;
+        }
+        
         body {
-          width: 210mm !important;
-          min-height: 297mm !important;
-          max-width: 210mm !important;
-          padding: 20mm 15mm 30mm 15mm !important;
           margin: 0 !important;
+          padding: 10mm !important;
+          font-size: 11pt !important;
+          line-height: 1.6 !important;
         }
         
         .bill-container {
@@ -600,17 +648,41 @@ export function generateAMCPDF(bill: Bill): void {
           max-width: 100% !important;
           margin: 0 !important;
           padding: 0 !important;
+          box-shadow: none !important;
+        }
+        
+        @page {
+          size: A4 !important;
+          margin: 0 !important;
         }
       }
     `;
+    
+    // Add styles to document
     document.head.appendChild(printStyles);
     
-    window.print();
-    
-    // Restore original content
+    // Wait a moment for styles to apply, then print
     setTimeout(() => {
-      document.head.removeChild(printStyles);
-      document.body.innerHTML = originalBody;
-    }, 1000);
-  }, 500);
+      if (action === 'print') {
+        // Direct print without preview
+        window.print();
+      } else {
+        // Save as PDF (browser will show save dialog)
+        window.print();
+      }
+      
+      // Clean up after printing - restore original content immediately
+      setTimeout(() => {
+        document.body.innerHTML = originalBody;
+        document.title = originalTitle;
+        if (document.head.contains(printStyles)) {
+          document.head.removeChild(printStyles);
+        }
+      }, 1000); // Longer timeout for mobile
+    }, 200); // Longer delay for mobile
+    
+  } catch (error) {
+    console.error('Error generating mobile AMC PDF:', error);
+    alert('Error generating AMC Agreement. Please try again.');
+  }
 }
