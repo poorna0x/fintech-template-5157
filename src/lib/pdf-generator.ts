@@ -47,7 +47,7 @@ export interface PDFBillData {
 
 export function generateBillPDF(billData: PDFBillData, action: 'print' | 'pdf' = 'print'): void {
   try {
-    // Store original body content
+    // Store original content
     const originalBody = document.body.innerHTML;
     const originalTitle = document.title;
     
@@ -292,14 +292,14 @@ export function generateBillPDF(billData: PDFBillData, action: 'print' | 'pdf' =
         window.print();
       }
       
-      // Clean up after printing
+      // Clean up after printing - restore original content immediately
       setTimeout(() => {
         document.body.innerHTML = originalBody;
         document.title = originalTitle;
         if (document.head.contains(printStyles)) {
           document.head.removeChild(printStyles);
         }
-      }, 1000);
+      }, 500); // Reduced from 1000ms to 500ms for faster restoration
     }, 100);
     
   } catch (error) {
