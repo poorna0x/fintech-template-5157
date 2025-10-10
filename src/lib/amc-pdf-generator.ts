@@ -525,9 +525,12 @@ export function generateAMCPDF(bill: Bill, action: 'print' | 'pdf' = 'print'): v
     }
     
     // Create a new window for printing to avoid destroying React components
-    const printWindow = window.open('', '_blank', 'width=800,height=600');
+    const printWindow = window.open('', '_blank', 'width=800,height=600,scrollbars=yes,resizable=yes');
     if (!printWindow) {
-      alert('Please allow popups to print the AMC Agreement');
+      // If popup is blocked, fall back to mobile print method
+      console.warn('Popup blocked, falling back to mobile print method');
+      alert('Popup blocked by browser. Using alternative printing method...');
+      handleMobilePrint(bill, action);
       return;
     }
     
