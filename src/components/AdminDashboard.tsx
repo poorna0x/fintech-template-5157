@@ -54,6 +54,7 @@ import { openInGoogleMaps, extractCoordinates, formatAddressForDisplay } from '@
 import { sendNotification, createJobAssignedNotification, createJobCompletedNotification, createJobCancelledNotification, createJobAssignmentRequestNotification } from '@/lib/notifications';
 import CustomerServicesManager from './CustomerServicesManager';
 import BillModal from './BillModal';
+import AMCModal from './AMCModal';
 
 // Generate job number utility
 const generateJobNumber = (serviceType: 'RO' | 'SOFTENER'): string => {
@@ -88,6 +89,8 @@ const AdminDashboard = () => {
   const [selectedCustomerPhone, setSelectedCustomerPhone] = useState<Customer | null>(null);
   const [billModalOpen, setBillModalOpen] = useState(false);
   const [selectedCustomerForBill, setSelectedCustomerForBill] = useState<Customer | null>(null);
+  const [amcModalOpen, setAmcModalOpen] = useState(false);
+  const [selectedCustomerForAMC, setSelectedCustomerForAMC] = useState<Customer | null>(null);
   const [editFormData, setEditFormData] = useState({
     full_name: '',
     phone: '',
@@ -1484,6 +1487,16 @@ const AdminDashboard = () => {
     setSelectedCustomerForBill(null);
   };
 
+  const handleGenerateAMC = (customer: Customer) => {
+    setSelectedCustomerForAMC(customer);
+    setAmcModalOpen(true);
+  };
+
+  const handleAMCModalClose = () => {
+    setAmcModalOpen(false);
+    setSelectedCustomerForAMC(null);
+  };
+
 
   // Job assignment functions
   const handleAssignJob = (job: Job) => {
@@ -2438,9 +2451,9 @@ const AdminDashboard = () => {
                             <Receipt className="mr-2 h-4 w-4" />
                             Generate Bill
                           </DropdownMenuItem>
-                          <DropdownMenuItem onClick={() => toast.info('AMC management coming soon')}>
+                          <DropdownMenuItem onClick={() => handleGenerateAMC(customer)}>
                             <Star className="mr-2 h-4 w-4" />
-                            AMC
+                            Generate AMC
                           </DropdownMenuItem>
                           <DropdownMenuItem onClick={() => toast.info('Reports coming soon')}>
                             <FileText className="mr-2 h-4 w-4" />
@@ -2534,9 +2547,9 @@ const AdminDashboard = () => {
                             <Receipt className="mr-2 h-4 w-4" />
                             Generate Bill
                           </DropdownMenuItem>
-                          <DropdownMenuItem onClick={() => toast.info('AMC management coming soon')}>
+                          <DropdownMenuItem onClick={() => handleGenerateAMC(customer)}>
                             <Star className="mr-2 h-4 w-4" />
-                            AMC
+                            Generate AMC
                           </DropdownMenuItem>
                           <DropdownMenuItem onClick={() => toast.info('Reports coming soon')}>
                             <FileText className="mr-2 h-4 w-4" />
@@ -5079,6 +5092,12 @@ const AdminDashboard = () => {
         isOpen={billModalOpen}
         onClose={handleBillModalClose}
         customer={selectedCustomerForBill}
+      />
+      
+      <AMCModal
+        isOpen={amcModalOpen}
+        onClose={handleAMCModalClose}
+        customer={selectedCustomerForAMC}
       />
     </div>
   );
