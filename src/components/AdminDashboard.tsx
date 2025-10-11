@@ -207,7 +207,7 @@ const AdminDashboard = () => {
   const [completeDialogOpen, setCompleteDialogOpen] = useState(false);
   const [selectedJobForComplete, setSelectedJobForComplete] = useState<Job | null>(null);
   const [completionNotes, setCompletionNotes] = useState('');
-  const [statusFilter, setStatusFilter] = useState<'ALL' | 'PENDING' | 'ASSIGNED' | 'IN_PROGRESS' | 'COMPLETED' | 'CANCELLED' | 'RESCHEDULED'>('ALL');
+  const [statusFilter, setStatusFilter] = useState<'ONGOING' | 'PENDING' | 'ASSIGNED' | 'IN_PROGRESS' | 'COMPLETED' | 'CANCELLED' | 'RESCHEDULED'>('ONGOING');
   const [loadingCustomerJobs, setLoadingCustomerJobs] = useState<{[customerId: string]: boolean}>({});
   const [selectedJobPhotos, setSelectedJobPhotos] = useState<{jobId: string, photos: string[], type: 'before' | 'after'} | null>(null);
   const [jobToDelete, setJobToDelete] = useState<Job | null>(null);
@@ -2383,26 +2383,24 @@ const AdminDashboard = () => {
     let filteredCustomers = customersWithJobs;
     
     // Apply status filter
-    if (statusFilter !== 'ALL') {
-      if (statusFilter === 'RESCHEDULED') {
-        // Filter for follow-up jobs (RESCHEDULED with FOLLOW-UP in description)
-        filteredCustomers = customersWithJobs.filter(({ allJobs }) => 
-          allJobs.some(job => job.status === 'RESCHEDULED' && job.description?.includes('FOLLOW-UP SCHEDULED'))
-        );
-      } else if (statusFilter === 'CANCELLED') {
-        // Filter for denied jobs (CANCELLED with JOB DENIED in description)
-        filteredCustomers = customersWithJobs.filter(({ allJobs }) => 
-          allJobs.some(job => job.status === 'CANCELLED' && job.description?.includes('JOB DENIED'))
-        );
-      } else {
-        filteredCustomers = customersWithJobs.filter(({ allJobs }) => 
-          allJobs.some(job => job.status === statusFilter)
-        );
-      }
-    } else {
-      // Default: show customers with any active jobs (upcoming, follow-up, denied, completed)
+    if (statusFilter === 'ONGOING') {
+      // Default: show customers with ongoing jobs (pending, assigned, in-progress)
       filteredCustomers = customersWithJobs.filter(({ allJobs }) => 
-        allJobs.some(job => ['PENDING', 'ASSIGNED', 'IN_PROGRESS', 'RESCHEDULED', 'CANCELLED', 'COMPLETED'].includes(job.status))
+        allJobs.some(job => ['PENDING', 'ASSIGNED', 'IN_PROGRESS'].includes(job.status))
+      );
+    } else if (statusFilter === 'RESCHEDULED') {
+      // Filter for follow-up jobs (RESCHEDULED with FOLLOW-UP in description)
+      filteredCustomers = customersWithJobs.filter(({ allJobs }) => 
+        allJobs.some(job => job.status === 'RESCHEDULED' && job.description?.includes('FOLLOW-UP SCHEDULED'))
+      );
+    } else if (statusFilter === 'CANCELLED') {
+      // Filter for denied jobs (CANCELLED with JOB DENIED in description)
+      filteredCustomers = customersWithJobs.filter(({ allJobs }) => 
+        allJobs.some(job => job.status === 'CANCELLED' && job.description?.includes('JOB DENIED'))
+      );
+    } else {
+      filteredCustomers = customersWithJobs.filter(({ allJobs }) => 
+        allJobs.some(job => job.status === statusFilter)
       );
     }
     
@@ -2624,6 +2622,14 @@ const AdminDashboard = () => {
         <div className="mb-6">
           <div className="flex flex-col sm:flex-row gap-3 sm:gap-4">
             <Button
+              onClick={() => setStatusFilter('ONGOING')}
+              variant={statusFilter === 'ONGOING' ? 'default' : 'outline'}
+              className="flex items-center gap-2"
+            >
+              <Clock className="h-4 w-4" />
+              Ongoing Jobs ({jobs.filter(job => ['PENDING', 'ASSIGNED', 'IN_PROGRESS'].includes(job.status)).length})
+            </Button>
+            <Button
               onClick={() => setStatusFilter('RESCHEDULED')}
               variant={statusFilter === 'RESCHEDULED' ? 'default' : 'outline'}
               className="flex items-center gap-2"
@@ -2647,21 +2653,13 @@ const AdminDashboard = () => {
               <CheckCircle2 className="h-4 w-4" />
               Completed Jobs ({jobs.filter(job => job.status === 'COMPLETED').length})
             </Button>
-            <Button
-              onClick={() => setStatusFilter('ALL')}
-              variant={statusFilter === 'ALL' ? 'default' : 'outline'}
-              className="flex items-center gap-2"
-            >
-              <Filter className="h-4 w-4" />
-              All Jobs ({jobs.length})
-            </Button>
           </div>
         </div>
 
         {/* Customers with Jobs */}
         <div className="mb-6">
           <h2 className="text-xl font-bold text-gray-900 mb-1">
-            {statusFilter === 'ALL' ? 'Customers with All Jobs' : 
+            {statusFilter === 'ONGOING' ? 'Customers with Ongoing Jobs' : 
              statusFilter === 'RESCHEDULED' ? 'Customers with Follow-up Jobs' :
              statusFilter === 'CANCELLED' ? 'Customers with Denied Jobs' :
              statusFilter === 'COMPLETED' ? 'Customers with Completed Jobs' :
@@ -2669,8 +2667,8 @@ const AdminDashboard = () => {
           </h2>
           {!searchTerm.trim() && (
             <p className="text-xs text-gray-500 mb-3">
-              {statusFilter === 'ALL' 
-                ? `Showing ${displayedCustomers.length} customers with all job statuses (pending, assigned, in-progress, follow-up, denied, completed)`
+              {statusFilter === 'ONGOING' 
+                ? `Showing ${displayedCustomers.length} customers with ongoing jobs (pending, assigned, in-progress)`
                 : statusFilter === 'RESCHEDULED'
                 ? `Showing ${displayedCustomers.length} customers with follow-up jobs`
                 : statusFilter === 'CANCELLED'
@@ -2996,7 +2994,10 @@ const AdminDashboard = () => {
                       {(() => {
                         // Show jobs based on current filter
                         let jobsToShow = allJobs;
-                        if (statusFilter === 'RESCHEDULED') {
+                        if (statusFilter === 'ONGOING') {
+                          // Show ongoing jobs (pending, assigned, in-progress)
+                          jobsToShow = allJobs.filter(job => ['PENDING', 'ASSIGNED', 'IN_PROGRESS'].includes(job.status));
+                        } else if (statusFilter === 'RESCHEDULED') {
                           // Show follow-up jobs (RESCHEDULED with FOLLOW-UP in description)
                           jobsToShow = allJobs.filter(job => job.status === 'RESCHEDULED' && job.description?.includes('FOLLOW-UP SCHEDULED'));
                         } else if (statusFilter === 'CANCELLED') {
@@ -3004,9 +3005,6 @@ const AdminDashboard = () => {
                           jobsToShow = allJobs.filter(job => job.status === 'CANCELLED' && job.description?.includes('JOB DENIED'));
                         } else if (statusFilter === 'COMPLETED') {
                           jobsToShow = completedJobs;
-                        } else if (statusFilter === 'ALL') {
-                          // Show all jobs regardless of status
-                          jobsToShow = allJobs;
                         } else {
                           jobsToShow = allJobs.filter(job => job.status === statusFilter);
                         }
