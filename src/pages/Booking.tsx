@@ -942,6 +942,9 @@ const Booking: React.FC = () => {
     setIsSubmitting(true);
     setShowSuccessLoader(true);
     
+    // Add a small delay to show the loading state
+    await new Promise(resolve => setTimeout(resolve, 500));
+    
     try {
       // Upload images to Cloudinary
       const imageUrls = await Promise.all(
@@ -953,8 +956,9 @@ const Booking: React.FC = () => {
       let isExistingCustomer = false;
       const { data: existingCustomer, error: findError } = await db.customers.getByPhone(formData.phone);
       
-      if (findError && findError.code !== 'PGRST116') { // PGRST116 is "not found" error
-        throw new Error(`Error checking existing customer: ${findError.message}`);
+      if (findError) {
+        console.error('Error checking existing customer:', findError);
+        // Continue with creating new customer if there's an error
       }
       
       if (existingCustomer) {

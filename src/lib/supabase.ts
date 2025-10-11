@@ -52,7 +52,7 @@ export const db = {
         .from('customers')
         .select('*')
         .eq('phone', phone)
-        .single();
+        .maybeSingle();
       
       return { data, error };
     },
