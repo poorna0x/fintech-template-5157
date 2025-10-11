@@ -268,6 +268,45 @@ const AdminDashboard = () => {
     updatedAt: tech.updated_at
   });
 
+  // Transform customer data from database format to frontend format
+  const transformCustomerData = (customer: any): Customer => ({
+    id: customer.id,
+    customerId: customer.customer_id,
+    fullName: customer.full_name,
+    phone: customer.phone,
+    alternatePhone: customer.alternate_phone,
+    email: customer.email,
+    address: {
+      street: customer.address?.street || '',
+      area: customer.address?.area || '',
+      city: customer.address?.city || '',
+      state: customer.address?.state || '',
+      pincode: customer.address?.pincode || '',
+      landmark: customer.address?.landmark
+    },
+    location: {
+      latitude: customer.location?.latitude || 0,
+      longitude: customer.location?.longitude || 0,
+      formattedAddress: customer.location?.formatted_address || '',
+      googlePlaceId: customer.location?.google_place_id
+    },
+    serviceType: customer.service_type,
+    brand: customer.brand,
+    model: customer.model,
+    installationDate: customer.installation_date,
+    warrantyExpiry: customer.warranty_expiry,
+    status: customer.status,
+    customerSince: customer.customer_since,
+    lastServiceDate: customer.last_service_date,
+    notes: customer.notes,
+    preferredTimeSlot: customer.preferred_time_slot,
+    preferredLanguage: customer.preferred_language,
+    serviceCost: customer.service_cost,
+    costAgreed: customer.cost_agreed,
+    createdAt: customer.created_at,
+    updatedAt: customer.updated_at
+  });
+
   // Load data on component mount
   useEffect(() => {
     loadDashboardData();
@@ -293,7 +332,12 @@ const AdminDashboard = () => {
         db.technicians.getAll()
       ]);
 
-      if (customersResult.data) setCustomers(customersResult.data);
+      if (customersResult.data) {
+        console.log('Raw customers data:', customersResult.data);
+        const transformedCustomers = customersResult.data.map(transformCustomerData);
+        console.log('Transformed customers data:', transformedCustomers);
+        setCustomers(transformedCustomers);
+      }
       if (jobsResult.data) setJobs(jobsResult.data);
       if (techniciansResult.data) {
         console.log('Raw technicians data:', techniciansResult.data);
@@ -2293,8 +2337,8 @@ const AdminDashboard = () => {
     
     const searchLower = searchTerm.toLowerCase();
     return (
-      (customer as any).customer_id?.toLowerCase().includes(searchLower) ||
-      (customer as any).full_name?.toLowerCase().includes(searchLower) ||
+      customer.customerId?.toLowerCase().includes(searchLower) ||
+      customer.fullName?.toLowerCase().includes(searchLower) ||
       customer.phone?.includes(searchTerm) ||
       (customer as any).alternate_phone?.includes(searchTerm) ||
       customer.email?.toLowerCase().includes(searchLower) ||
@@ -2649,10 +2693,10 @@ const AdminDashboard = () => {
                         <div className="w-3 h-3 bg-white rounded-sm"></div>
                       </div>
                       <h3 className="text-lg font-semibold text-gray-900 truncate flex-1">
-                        {(customer as any).full_name}
+                        {customer.fullName || 'Unknown Customer'}
                       </h3>
                       <div className="bg-gray-800 text-white px-2 py-1 rounded-md font-mono text-xs font-medium">
-                        {(customer as any).customer_id || 'N/A'}
+                        {customer.customerId || 'N/A'}
                       </div>
                     </div>
                     {(customer.brand || customer.model) && (
@@ -2745,10 +2789,10 @@ const AdminDashboard = () => {
                             <div className="w-2 h-2 bg-white rounded-sm"></div>
                           </div>
                           <h3 className="text-xl font-semibold text-gray-900 truncate">
-                            {(customer as any).full_name}
+                            {customer.fullName || 'Unknown Customer'}
                           </h3>
                           <div className="bg-gray-800 text-white px-2 py-1 rounded-md font-mono text-sm font-medium">
-                            {(customer as any).customer_id || 'N/A'}
+                            {customer.customerId || 'N/A'}
                           </div>
                         </div>
                         {(customer.brand || customer.model) && (
