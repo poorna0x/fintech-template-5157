@@ -2356,8 +2356,10 @@ const AdminDashboard = () => {
         );
       }
     } else {
-      // Default: show customers with upcoming active jobs
-      filteredCustomers = customersWithJobs.filter(({ upcomingJobs }) => upcomingJobs.length > 0);
+      // Default: show customers with any active jobs (upcoming, follow-up, denied, completed)
+      filteredCustomers = customersWithJobs.filter(({ allJobs }) => 
+        allJobs.some(job => ['PENDING', 'ASSIGNED', 'IN_PROGRESS', 'RESCHEDULED', 'CANCELLED', 'COMPLETED'].includes(job.status))
+      );
     }
     
     return filteredCustomers;
@@ -2615,7 +2617,7 @@ const AdminDashboard = () => {
         {/* Customers with Jobs */}
         <div className="mb-6">
           <h2 className="text-xl font-bold text-gray-900 mb-1">
-            {statusFilter === 'ALL' ? 'Customers with Upcoming Jobs' : 
+            {statusFilter === 'ALL' ? 'Customers with All Jobs' : 
              statusFilter === 'RESCHEDULED' ? 'Customers with Follow-up Jobs' :
              statusFilter === 'CANCELLED' ? 'Customers with Denied Jobs' :
              statusFilter === 'COMPLETED' ? 'Customers with Completed Jobs' :
@@ -2624,7 +2626,7 @@ const AdminDashboard = () => {
           {!searchTerm.trim() && (
             <p className="text-xs text-gray-500 mb-3">
               {statusFilter === 'ALL' 
-                ? `Showing ${displayedCustomers.length} customers with pending, assigned, or in-progress jobs`
+                ? `Showing ${displayedCustomers.length} customers with all job statuses (pending, assigned, in-progress, follow-up, denied, completed)`
                 : statusFilter === 'RESCHEDULED'
                 ? `Showing ${displayedCustomers.length} customers with follow-up jobs`
                 : statusFilter === 'CANCELLED'
@@ -2959,6 +2961,7 @@ const AdminDashboard = () => {
                         } else if (statusFilter === 'COMPLETED') {
                           jobsToShow = completedJobs;
                         } else if (statusFilter === 'ALL') {
+                          // Show all jobs regardless of status
                           jobsToShow = allJobs;
                         } else {
                           jobsToShow = allJobs.filter(job => job.status === statusFilter);
