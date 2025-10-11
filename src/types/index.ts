@@ -82,7 +82,7 @@ export interface Job {
   serviceLocation: Customer['location'];
   
   // Status & Progress
-  status: 'PENDING' | 'ASSIGNED' | 'IN_PROGRESS' | 'COMPLETED' | 'CANCELLED' | 'RESCHEDULED';
+  status: 'PENDING' | 'ASSIGNED' | 'IN_PROGRESS' | 'COMPLETED' | 'CANCELLED' | 'RESCHEDULED' | 'FOLLOW_UP' | 'DENIED';
   priority: 'LOW' | 'MEDIUM' | 'HIGH' | 'URGENT';
   
   // Job Details
@@ -114,10 +114,26 @@ export interface Job {
   invoice?: string;
   warranty?: string;
   
+  // Follow-up Tracking
+  followUpDate?: string;
+  followUpTime?: string;
+  followUpNotes?: string;
+  followUpScheduledBy?: string;
+  followUpScheduledAt?: string;
+  
+  // Denial Tracking
+  denialReason?: string;
+  deniedBy?: string;
+  deniedAt?: string;
+  
+  // Completion Tracking
+  completionNotes?: string;
+  completedBy?: string;
+  completedAt?: string;
+
   // Timestamps
   createdAt: string;
   updatedAt: string;
-  completedAt?: string;
 }
 
 // Technician Types

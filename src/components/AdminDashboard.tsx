@@ -44,13 +44,18 @@ import {
   Send,
   Upload,
   Image,
-  Square
+  Square,
+  CalendarPlus,
+  XCircle,
+  CheckCircle2,
+  Filter
 } from 'lucide-react';
 import { db } from '@/lib/supabase';
 import { Customer, Job, Technician } from '@/types';
 import { cloudinaryService, compressImage } from '@/lib/cloudinary';
 import { toast } from 'sonner';
 import { openInGoogleMaps, extractCoordinates, formatAddressForDisplay } from '@/lib/maps';
+import FollowUpModal from '@/components/FollowUpModal';
 import { sendNotification, createJobAssignedNotification, createJobCompletedNotification, createJobCancelledNotification, createJobAssignmentRequestNotification } from '@/lib/notifications';
 import CustomerServicesManager from './CustomerServicesManager';
 import BillModal from './BillModal';
@@ -192,6 +197,17 @@ const AdminDashboard = () => {
   const [overrideDialogOpen, setOverrideDialogOpen] = useState(false);
   const [shouldUpdateExisting, setShouldUpdateExisting] = useState(false);
   const [customerJobs, setCustomerJobs] = useState<{[customerId: string]: Job[]}>({});
+  
+  // Follow-up functionality state
+  const [followUpModalOpen, setFollowUpModalOpen] = useState(false);
+  const [selectedJobForFollowUp, setSelectedJobForFollowUp] = useState<Job | null>(null);
+  const [denyDialogOpen, setDenyDialogOpen] = useState(false);
+  const [selectedJobForDeny, setSelectedJobForDeny] = useState<Job | null>(null);
+  const [denyReason, setDenyReason] = useState('');
+  const [completeDialogOpen, setCompleteDialogOpen] = useState(false);
+  const [selectedJobForComplete, setSelectedJobForComplete] = useState<Job | null>(null);
+  const [completionNotes, setCompletionNotes] = useState('');
+  const [statusFilter, setStatusFilter] = useState<'ALL' | 'PENDING' | 'ASSIGNED' | 'IN_PROGRESS' | 'COMPLETED' | 'CANCELLED' | 'RESCHEDULED'>('ALL');
   const [loadingCustomerJobs, setLoadingCustomerJobs] = useState<{[customerId: string]: boolean}>({});
   const [selectedJobPhotos, setSelectedJobPhotos] = useState<{jobId: string, photos: string[], type: 'before' | 'after'} | null>(null);
   const [jobToDelete, setJobToDelete] = useState<Job | null>(null);
@@ -1815,6 +1831,184 @@ const AdminDashboard = () => {
     }
   };
 
+  // Handle scheduling follow-up
+  const handleScheduleFollowUp = (job: Job) => {
+    setSelectedJobForFollowUp(job);
+    setFollowUpModalOpen(true);
+  };
+
+  // Handle follow-up submission
+  const handleFollowUpSubmit = async (jobId: string, followUpData: {
+    followUpDate: string;
+    followUpTime: string;
+    followUpNotes?: string;
+  }) => {
+    try {
+      // TODO: Apply database migration first to enable FOLLOW_UP status
+      // For now, use RESCHEDULED status as a temporary workaround
+      const { error } = await db.jobs.update(jobId, {
+        status: 'RESCHEDULED',
+        description: `FOLLOW-UP SCHEDULED: ${followUpData.followUpDate} at ${followUpData.followUpTime}. ${followUpData.followUpNotes || ''}`
+      });
+
+      if (error) {
+        throw new Error(error.message);
+      }
+
+      // Update local state
+      setJobs(prev => prev.map(job => 
+        job.id === jobId ? { 
+          ...job, 
+          status: 'RESCHEDULED',
+          description: `FOLLOW-UP SCHEDULED: ${followUpData.followUpDate} at ${followUpData.followUpTime}. ${followUpData.followUpNotes || ''}`
+        } : job
+      ));
+
+      setCustomerJobs(prev => {
+        const updated = { ...prev };
+        Object.keys(updated).forEach(customerId => {
+          updated[customerId] = updated[customerId].map(job => 
+            job.id === jobId ? { 
+              ...job, 
+              status: 'RESCHEDULED',
+              description: `FOLLOW-UP SCHEDULED: ${followUpData.followUpDate} at ${followUpData.followUpTime}. ${followUpData.followUpNotes || ''}`
+            } : job
+          );
+        });
+        return updated;
+      });
+
+      toast.success('Follow-up scheduled successfully');
+      setFollowUpModalOpen(false);
+      setSelectedJobForFollowUp(null);
+    } catch (error) {
+      console.error('Error scheduling follow-up:', error);
+      toast.error('Failed to schedule follow-up');
+    }
+  };
+
+  // Handle job denial
+  const handleDenyJob = (job: Job) => {
+    setSelectedJobForDeny(job);
+    setDenyReason('');
+    setDenyDialogOpen(true);
+  };
+
+  // Handle job denial submission
+  const handleDenyJobSubmit = async () => {
+    if (!selectedJobForDeny || !denyReason.trim()) {
+      toast.error('Please provide a reason for denial');
+      return;
+    }
+
+    try {
+      // TODO: Apply database migration first to enable DENIED status
+      // For now, use CANCELLED status as a temporary workaround
+      const { error } = await db.jobs.update(selectedJobForDeny.id, {
+        status: 'CANCELLED',
+        description: `JOB DENIED: ${denyReason.trim()}`
+      });
+
+      if (error) {
+        throw new Error(error.message);
+      }
+
+      // Update local state
+      setJobs(prev => prev.map(job => 
+        job.id === selectedJobForDeny.id ? { 
+          ...job, 
+          status: 'CANCELLED',
+          description: `JOB DENIED: ${denyReason.trim()}`
+        } : job
+      ));
+
+      setCustomerJobs(prev => {
+        const updated = { ...prev };
+        Object.keys(updated).forEach(customerId => {
+          updated[customerId] = updated[customerId].map(job => 
+            job.id === selectedJobForDeny.id ? { 
+              ...job, 
+              status: 'CANCELLED',
+              description: `JOB DENIED: ${denyReason.trim()}`
+            } : job
+          );
+        });
+        return updated;
+      });
+
+      toast.success('Job denied successfully');
+      setDenyDialogOpen(false);
+      setSelectedJobForDeny(null);
+      setDenyReason('');
+    } catch (error) {
+      console.error('Error denying job:', error);
+      toast.error('Failed to deny job');
+    }
+  };
+
+  // Handle job completion
+  const handleCompleteJob = (job: Job) => {
+    setSelectedJobForComplete(job);
+    setCompletionNotes('');
+    setCompleteDialogOpen(true);
+  };
+
+  // Handle job completion submission
+  const handleCompleteJobSubmit = async () => {
+    if (!selectedJobForComplete) return;
+
+    try {
+      const { error } = await db.jobs.update(selectedJobForComplete.id, {
+        status: 'COMPLETED',
+        end_time: new Date().toISOString(),
+        description: completionNotes.trim() ? 
+          `${selectedJobForComplete.description}\n\nCOMPLETION NOTES: ${completionNotes.trim()}` : 
+          selectedJobForComplete.description
+      });
+
+      if (error) {
+        throw new Error(error.message);
+      }
+
+      // Update local state
+      setJobs(prev => prev.map(job => 
+        job.id === selectedJobForComplete.id ? { 
+          ...job, 
+          status: 'COMPLETED',
+          end_time: new Date().toISOString(),
+          description: completionNotes.trim() ? 
+            `${selectedJobForComplete.description}\n\nCOMPLETION NOTES: ${completionNotes.trim()}` : 
+            selectedJobForComplete.description
+        } : job
+      ));
+
+      setCustomerJobs(prev => {
+        const updated = { ...prev };
+        Object.keys(updated).forEach(customerId => {
+          updated[customerId] = updated[customerId].map(job => 
+            job.id === selectedJobForComplete.id ? { 
+              ...job, 
+              status: 'COMPLETED',
+              end_time: new Date().toISOString(),
+              description: completionNotes.trim() ? 
+                `${selectedJobForComplete.description}\n\nCOMPLETION NOTES: ${completionNotes.trim()}` : 
+                selectedJobForComplete.description
+            } : job
+          );
+        });
+        return updated;
+      });
+
+      toast.success('Job completed successfully');
+      setCompleteDialogOpen(false);
+      setSelectedJobForComplete(null);
+      setCompletionNotes('');
+    } catch (error) {
+      console.error('Error completing job:', error);
+      toast.error('Failed to complete job');
+    }
+  };
+
   // Handle job deletion
   const handleDeleteJob = async () => {
     if (!jobToDelete) return;
@@ -2140,11 +2334,37 @@ const AdminDashboard = () => {
   });
 
 
-  // Filter to only show customers with upcoming active jobs
-  const customersWithUpcomingJobs = customersWithJobs.filter(({ upcomingJobs }) => upcomingJobs.length > 0);
+  // Filter customers based on status filter
+  const getFilteredCustomers = () => {
+    let filteredCustomers = customersWithJobs;
+    
+    // Apply status filter
+    if (statusFilter !== 'ALL') {
+      if (statusFilter === 'RESCHEDULED') {
+        // Filter for follow-up jobs (RESCHEDULED with FOLLOW-UP in description)
+        filteredCustomers = customersWithJobs.filter(({ allJobs }) => 
+          allJobs.some(job => job.status === 'RESCHEDULED' && job.description?.includes('FOLLOW-UP SCHEDULED'))
+        );
+      } else if (statusFilter === 'CANCELLED') {
+        // Filter for denied jobs (CANCELLED with JOB DENIED in description)
+        filteredCustomers = customersWithJobs.filter(({ allJobs }) => 
+          allJobs.some(job => job.status === 'CANCELLED' && job.description?.includes('JOB DENIED'))
+        );
+      } else {
+        filteredCustomers = customersWithJobs.filter(({ allJobs }) => 
+          allJobs.some(job => job.status === statusFilter)
+        );
+      }
+    } else {
+      // Default: show customers with upcoming active jobs
+      filteredCustomers = customersWithJobs.filter(({ upcomingJobs }) => upcomingJobs.length > 0);
+    }
+    
+    return filteredCustomers;
+  };
 
   const displayedCustomers = !searchTerm.trim()
-    ? customersWithUpcomingJobs
+    ? getFilteredCustomers()
         .sort((a, b) => {
           const aDate = new Date(a.customer.createdAt).getTime();
           const bDate = new Date(b.customer.createdAt).getTime();
@@ -2354,14 +2574,63 @@ const AdminDashboard = () => {
           </Card>
         </div>
 
-
-
-        {/* Customers with Upcoming Jobs */}
+        {/* Action Buttons Section */}
         <div className="mb-6">
-          <h2 className="text-xl font-bold text-gray-900 mb-1">Customers with Upcoming Jobs</h2>
+          <div className="flex flex-col sm:flex-row gap-3 sm:gap-4">
+            <Button
+              onClick={() => setStatusFilter('RESCHEDULED')}
+              variant={statusFilter === 'RESCHEDULED' ? 'default' : 'outline'}
+              className="flex items-center gap-2"
+            >
+              <CalendarPlus className="h-4 w-4" />
+              Follow-up Jobs ({jobs.filter(job => job.status === 'RESCHEDULED' && job.description?.includes('FOLLOW-UP SCHEDULED')).length})
+            </Button>
+            <Button
+              onClick={() => setStatusFilter('CANCELLED')}
+              variant={statusFilter === 'CANCELLED' ? 'default' : 'outline'}
+              className="flex items-center gap-2"
+            >
+              <XCircle className="h-4 w-4" />
+              Denied Jobs ({jobs.filter(job => job.status === 'CANCELLED' && job.description?.includes('JOB DENIED')).length})
+            </Button>
+            <Button
+              onClick={() => setStatusFilter('COMPLETED')}
+              variant={statusFilter === 'COMPLETED' ? 'default' : 'outline'}
+              className="flex items-center gap-2"
+            >
+              <CheckCircle2 className="h-4 w-4" />
+              Completed Jobs ({jobs.filter(job => job.status === 'COMPLETED').length})
+            </Button>
+            <Button
+              onClick={() => setStatusFilter('ALL')}
+              variant={statusFilter === 'ALL' ? 'default' : 'outline'}
+              className="flex items-center gap-2"
+            >
+              <Filter className="h-4 w-4" />
+              All Jobs ({jobs.length})
+            </Button>
+          </div>
+        </div>
+
+        {/* Customers with Jobs */}
+        <div className="mb-6">
+          <h2 className="text-xl font-bold text-gray-900 mb-1">
+            {statusFilter === 'ALL' ? 'Customers with Upcoming Jobs' : 
+             statusFilter === 'RESCHEDULED' ? 'Customers with Follow-up Jobs' :
+             statusFilter === 'CANCELLED' ? 'Customers with Denied Jobs' :
+             statusFilter === 'COMPLETED' ? 'Customers with Completed Jobs' :
+             `Customers with ${statusFilter} Jobs`}
+          </h2>
           {!searchTerm.trim() && (
             <p className="text-xs text-gray-500 mb-3">
-              Showing {displayedCustomers.length} customers with pending, assigned, or in-progress jobs
+              {statusFilter === 'ALL' 
+                ? `Showing ${displayedCustomers.length} customers with pending, assigned, or in-progress jobs`
+                : statusFilter === 'RESCHEDULED'
+                ? `Showing ${displayedCustomers.length} customers with follow-up jobs`
+                : statusFilter === 'CANCELLED'
+                ? `Showing ${displayedCustomers.length} customers with denied jobs`
+                : `Showing ${displayedCustomers.length} customers with ${statusFilter.toLowerCase().replace('_', ' ')} jobs`
+              }
             </p>
           )}
           
@@ -2678,7 +2947,24 @@ const AdminDashboard = () => {
                     </div>
 
                     <div className="space-y-4">
-                      {allJobs.map((job) => {
+                      {(() => {
+                        // Show jobs based on current filter
+                        let jobsToShow = allJobs;
+                        if (statusFilter === 'RESCHEDULED') {
+                          // Show follow-up jobs (RESCHEDULED with FOLLOW-UP in description)
+                          jobsToShow = allJobs.filter(job => job.status === 'RESCHEDULED' && job.description?.includes('FOLLOW-UP SCHEDULED'));
+                        } else if (statusFilter === 'CANCELLED') {
+                          // Show denied jobs (CANCELLED with JOB DENIED in description)
+                          jobsToShow = allJobs.filter(job => job.status === 'CANCELLED' && job.description?.includes('JOB DENIED'));
+                        } else if (statusFilter === 'COMPLETED') {
+                          jobsToShow = completedJobs;
+                        } else if (statusFilter === 'ALL') {
+                          jobsToShow = allJobs;
+                        } else {
+                          jobsToShow = allJobs.filter(job => job.status === statusFilter);
+                        }
+                        
+                        return jobsToShow.map((job) => {
                         const beforePhotos = Array.isArray((job as any).before_photos) ? (job as any).before_photos : [];
                         const afterPhotos = Array.isArray((job as any).after_photos) ? (job as any).after_photos : [];
                         
@@ -2863,6 +3149,24 @@ const AdminDashboard = () => {
                                           Complete Job
                                         </DropdownMenuItem>
                                       )}
+                                      {(job.status === 'PENDING' || job.status === 'ASSIGNED' || job.status === 'IN_PROGRESS') && (
+                                        <>
+                                          <DropdownMenuItem onClick={() => handleScheduleFollowUp(job)}>
+                                            <CalendarPlus className="mr-2 h-4 w-4" />
+                                            Schedule Follow-up
+                                          </DropdownMenuItem>
+                                          <DropdownMenuItem onClick={() => handleDenyJob(job)}>
+                                            <XCircle className="mr-2 h-4 w-4" />
+                                            Deny Job
+                                          </DropdownMenuItem>
+                                        </>
+                                      )}
+                                      {job.status === 'IN_PROGRESS' && (
+                                        <DropdownMenuItem onClick={() => handleCompleteJob(job)}>
+                                          <CheckCircle2 className="mr-2 h-4 w-4" />
+                                          Mark as Completed
+                                        </DropdownMenuItem>
+                                      )}
                                       <DropdownMenuItem 
                                         onClick={() => {
                                           toast.info('Job details feature coming soon');
@@ -2902,7 +3206,8 @@ const AdminDashboard = () => {
                             </div>
                           </div>
                         );
-                      })}
+                        });
+                      })()}
                     </div>
                   </div>
                 )}
@@ -5100,6 +5405,136 @@ const AdminDashboard = () => {
         onClose={handleAMCModalClose}
         customer={selectedCustomerForAMC}
       />
+
+      {/* Follow-up Modal */}
+      <FollowUpModal
+        isOpen={followUpModalOpen}
+        onClose={() => {
+          setFollowUpModalOpen(false);
+          setSelectedJobForFollowUp(null);
+        }}
+        job={selectedJobForFollowUp}
+        onScheduleFollowUp={handleFollowUpSubmit}
+      />
+
+      {/* Deny Job Dialog */}
+      <Dialog open={denyDialogOpen} onOpenChange={setDenyDialogOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Deny Job</DialogTitle>
+            <DialogDescription>
+              Please provide a reason for denying this job.
+            </DialogDescription>
+          </DialogHeader>
+          
+          {selectedJobForDeny && (
+            <div className="p-3 bg-gray-50 rounded-lg mb-4">
+              <div className="text-sm font-medium text-gray-900">
+                Job: {(selectedJobForDeny as any).job_number || selectedJobForDeny.jobNumber}
+              </div>
+              <div className="text-sm text-gray-600">
+                {selectedJobForDeny.serviceType} - {selectedJobForDeny.serviceSubType}
+              </div>
+              <div className="text-sm text-gray-600">
+                Customer: {selectedJobForDeny.customer?.fullName || 'Unknown'}
+              </div>
+            </div>
+          )}
+
+          <div className="space-y-4">
+            <div>
+              <Label htmlFor="deny-reason">Reason for Denial *</Label>
+              <Textarea
+                id="deny-reason"
+                placeholder="Enter the reason for denying this job..."
+                value={denyReason}
+                onChange={(e) => setDenyReason(e.target.value)}
+                rows={3}
+                className="mt-1"
+              />
+            </div>
+          </div>
+
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => {
+                setDenyDialogOpen(false);
+                setSelectedJobForDeny(null);
+                setDenyReason('');
+              }}
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={handleDenyJobSubmit}
+              disabled={!denyReason.trim()}
+              variant="destructive"
+            >
+              Deny Job
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Complete Job Dialog */}
+      <Dialog open={completeDialogOpen} onOpenChange={setCompleteDialogOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Complete Job</DialogTitle>
+            <DialogDescription>
+              Mark this job as completed and add any completion notes.
+            </DialogDescription>
+          </DialogHeader>
+          
+          {selectedJobForComplete && (
+            <div className="p-3 bg-gray-50 rounded-lg mb-4">
+              <div className="text-sm font-medium text-gray-900">
+                Job: {(selectedJobForComplete as any).job_number || selectedJobForComplete.jobNumber}
+              </div>
+              <div className="text-sm text-gray-600">
+                {selectedJobForComplete.serviceType} - {selectedJobForComplete.serviceSubType}
+              </div>
+              <div className="text-sm text-gray-600">
+                Customer: {selectedJobForComplete.customer?.fullName || 'Unknown'}
+              </div>
+            </div>
+          )}
+
+          <div className="space-y-4">
+            <div>
+              <Label htmlFor="completion-notes">Completion Notes (Optional)</Label>
+              <Textarea
+                id="completion-notes"
+                placeholder="Add any notes about the job completion..."
+                value={completionNotes}
+                onChange={(e) => setCompletionNotes(e.target.value)}
+                rows={3}
+                className="mt-1"
+              />
+            </div>
+          </div>
+
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => {
+                setCompleteDialogOpen(false);
+                setSelectedJobForComplete(null);
+                setCompletionNotes('');
+              }}
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={handleCompleteJobSubmit}
+              className="bg-green-600 hover:bg-green-700"
+            >
+              Complete Job
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 };
