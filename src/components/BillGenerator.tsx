@@ -41,8 +41,8 @@ const defaultBillItems: BillItem[] = [
 export default function BillGenerator({ customer, onPrint }: BillGeneratorProps) {
   // Safe customer data extraction
   const customerName = customer?.fullName || (customer as any)?.full_name || 'Customer Name';
-  const customerPhone = customer?.phone || 'Not provided';
-  const customerEmail = customer?.email || 'Not provided';
+  const customerPhone = customer?.phone || '';
+  const customerEmail = customer?.email || '';
   const customerAddress = customer?.address || {};
   const customerGst = customer?.gstNumber || '';
   const customerServiceType = customer?.serviceType || 'RO';
@@ -50,7 +50,6 @@ export default function BillGenerator({ customer, onPrint }: BillGeneratorProps)
   // State management
   const [billNumber, setBillNumber] = useState('');
   const [billDate, setBillDate] = useState(new Date().toISOString().split('T')[0]);
-  const [dueDate, setDueDate] = useState(new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]);
   const [company, setCompany] = useState<CompanyInfo>(defaultCompanyInfo);
   const [items, setItems] = useState<BillItem[]>(defaultBillItems);
   const [notes, setNotes] = useState('');
@@ -158,15 +157,14 @@ export default function BillGenerator({ customer, onPrint }: BillGeneratorProps)
       id: Date.now().toString(),
       billNumber,
       billDate,
-      dueDate,
       company,
       customer: {
         id: customer.id || '',
         name: customerName,
-        address: `${customerAddress.street || ''}, ${customerAddress.area || ''}`.trim() || 'Address not provided',
-        city: customerAddress.city || 'City',
-        state: customerAddress.state || 'State',
-        pincode: customerAddress.pincode || '000000',
+        address: `${customerAddress.street || ''}, ${customerAddress.area || ''}`.trim() || '',
+        city: customerAddress.city || '',
+        state: customerAddress.state || '',
+        pincode: customerAddress.pincode || '',
         phone: customerPhone,
         email: customerEmail,
         gstNumber: customerGst
@@ -211,7 +209,7 @@ export default function BillGenerator({ customer, onPrint }: BillGeneratorProps)
             <CardTitle>Bill Information</CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
                 <Label htmlFor="billNumber">Bill Number</Label>
                 <Input
@@ -230,15 +228,6 @@ export default function BillGenerator({ customer, onPrint }: BillGeneratorProps)
                   onChange={(e) => setBillDate(e.target.value)}
                 />
               </div>
-              <div>
-                <Label htmlFor="dueDate">Due Date</Label>
-                <Input
-                  id="dueDate"
-                  type="date"
-                  value={dueDate}
-                  onChange={(e) => setDueDate(e.target.value)}
-                />
-              </div>
             </div>
           </CardContent>
         </Card>
@@ -252,10 +241,14 @@ export default function BillGenerator({ customer, onPrint }: BillGeneratorProps)
             <div className="space-y-2">
               <div className="font-semibold text-lg">{customerName}</div>
               <div className="text-sm text-gray-600">
-                <div>{customerAddress.street || ''}, {customerAddress.area || ''}</div>
-                <div>{customerAddress.city || ''}, {customerAddress.state || ''} - {customerAddress.pincode || ''}</div>
-                <div>Phone: {customerPhone}</div>
-                <div>Email: {customerEmail}</div>
+                {(customerAddress.street || customerAddress.area) && (
+                  <div>{customerAddress.street || ''}, {customerAddress.area || ''}</div>
+                )}
+                {(customerAddress.city || customerAddress.state || customerAddress.pincode) && (
+                  <div>{customerAddress.city || ''}, {customerAddress.state || ''} - {customerAddress.pincode || ''}</div>
+                )}
+                {customerPhone && <div>Phone: {customerPhone}</div>}
+                {customerEmail && <div>Email: {customerEmail}</div>}
                 {customerGst && <div>GST: {customerGst}</div>}
               </div>
             </div>

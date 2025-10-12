@@ -5,7 +5,6 @@
 export interface PDFBillData {
   billNumber: string;
   billDate: string;
-  dueDate: string;
   company: {
     name: string;
     address: string;
@@ -608,10 +607,10 @@ function createBillContent(data: PDFBillData): string {
           <div class="section-title">Bill To:</div>
           <div class="customer-info">
             <div><strong>${data.customer.name}</strong></div>
-            <div>${data.customer.address}</div>
-            <div>${data.customer.city}, ${data.customer.state} - ${data.customer.pincode}</div>
-            <div>Phone: ${data.customer.phone}</div>
-            <div>Email: ${data.customer.email}</div>
+            ${data.customer.address ? `<div>${data.customer.address}</div>` : ''}
+            ${(data.customer.city || data.customer.state || data.customer.pincode) ? `<div>${data.customer.city}, ${data.customer.state} - ${data.customer.pincode}</div>` : ''}
+            ${data.customer.phone ? `<div>Phone: ${data.customer.phone}</div>` : ''}
+            ${data.customer.email ? `<div>Email: ${data.customer.email}</div>` : ''}
             ${data.customer.gstNumber ? `<div>GST: ${data.customer.gstNumber}</div>` : ''}
           </div>
         </div>
@@ -621,7 +620,6 @@ function createBillContent(data: PDFBillData): string {
           <div class="bill-meta">
             <div><strong>Bill Number:</strong> ${data.billNumber}</div>
             <div><strong>Bill Date:</strong> ${new Date(data.billDate).toLocaleDateString()}</div>
-            <div><strong>Due Date:</strong> ${new Date(data.dueDate).toLocaleDateString()}</div>
           </div>
         </div>
       </div>
@@ -992,10 +990,10 @@ function generateBillHTML(data: PDFBillData): string {
             <div class="section-title">Bill To:</div>
             <div class="customer-info">
               <div><strong>${data.customer.name}</strong></div>
-              <div>${data.customer.address}</div>
-              <div>${data.customer.city}, ${data.customer.state} - ${data.customer.pincode}</div>
-              <div>Phone: ${data.customer.phone}</div>
-              <div>Email: ${data.customer.email}</div>
+              ${data.customer.address ? `<div>${data.customer.address}</div>` : ''}
+              ${(data.customer.city || data.customer.state || data.customer.pincode) ? `<div>${data.customer.city}, ${data.customer.state} - ${data.customer.pincode}</div>` : ''}
+              ${data.customer.phone ? `<div>Phone: ${data.customer.phone}</div>` : ''}
+              ${data.customer.email ? `<div>Email: ${data.customer.email}</div>` : ''}
               ${data.customer.gstNumber ? `<div>GST: ${data.customer.gstNumber}</div>` : ''}
             </div>
           </div>
@@ -1005,7 +1003,6 @@ function generateBillHTML(data: PDFBillData): string {
             <div class="bill-meta">
               <div><strong>Bill Number:</strong> ${data.billNumber}</div>
               <div><strong>Bill Date:</strong> ${new Date(data.billDate).toLocaleDateString()}</div>
-              <div><strong>Due Date:</strong> ${new Date(data.dueDate).toLocaleDateString()}</div>
             </div>
           </div>
         </div>

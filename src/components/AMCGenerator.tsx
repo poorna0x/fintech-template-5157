@@ -159,18 +159,17 @@ The AMC does not cover display and lights of the RO.`);
       id: Date.now().toString(),
       billNumber,
       billDate,
-      dueDate: billDate,
       company,
       customer: {
         id: customer.id,
         name: customer.fullName,
-        address: `${customer.address.street}, ${customer.address.area}`,
-        city: customer.address.city,
-        state: customer.address.state,
-        pincode: customer.address.pincode,
-        phone: customer.phone,
-        email: customer.email,
-        gstNumber: customer.gstNumber
+        address: `${customer.address.street || ''}, ${customer.address.area || ''}`.trim() || '',
+        city: customer.address.city || '',
+        state: customer.address.state || '',
+        pincode: customer.address.pincode || '',
+        phone: customer.phone || '',
+        email: customer.email || '',
+        gstNumber: customer.gstNumber || ''
       },
       items,
       subtotal,
@@ -258,14 +257,18 @@ The AMC does not cover display and lights of the RO.`);
                 <span className="font-medium">{customer.fullName}</span>
                 <Badge variant="outline">{customer.customerId}</Badge>
               </div>
-              <div className="flex items-center gap-2">
-                <Phone className="w-4 h-4 text-gray-500" />
-                <span>{customer.phone}</span>
-              </div>
-              <div className="flex items-center gap-2">
-                <MapPin className="w-4 h-4 text-gray-500" />
-                <span>{customer.address.street}, {customer.address.area}, {customer.address.city}</span>
-              </div>
+              {customer.phone && (
+                <div className="flex items-center gap-2">
+                  <Phone className="w-4 h-4 text-gray-500" />
+                  <span>{customer.phone}</span>
+                </div>
+              )}
+              {(customer.address.street || customer.address.area || customer.address.city) && (
+                <div className="flex items-center gap-2">
+                  <MapPin className="w-4 h-4 text-gray-500" />
+                  <span>{customer.address.street}, {customer.address.area}, {customer.address.city}</span>
+                </div>
+              )}
             </CardContent>
           </Card>
 

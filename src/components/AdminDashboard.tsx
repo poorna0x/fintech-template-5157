@@ -1888,11 +1888,13 @@ const AdminDashboard = () => {
     followUpNotes?: string;
   }) => {
     try {
-      // TODO: Apply database migration first to enable FOLLOW_UP status
-      // For now, use RESCHEDULED status as a temporary workaround
       const { error } = await db.jobs.update(jobId, {
-        status: 'RESCHEDULED',
-        description: `FOLLOW-UP SCHEDULED: ${followUpData.followUpDate} at ${followUpData.followUpTime}. ${followUpData.followUpNotes || ''}`
+        status: 'FOLLOW_UP',
+        follow_up_date: followUpData.followUpDate,
+        follow_up_time: followUpData.followUpTime,
+        follow_up_notes: followUpData.followUpNotes || '',
+        follow_up_scheduled_by: user?.id || 'admin',
+        follow_up_scheduled_at: new Date().toISOString()
       });
 
       if (error) {
@@ -1903,8 +1905,12 @@ const AdminDashboard = () => {
       setJobs(prev => prev.map(job => 
         job.id === jobId ? { 
           ...job, 
-          status: 'RESCHEDULED',
-          description: `FOLLOW-UP SCHEDULED: ${followUpData.followUpDate} at ${followUpData.followUpTime}. ${followUpData.followUpNotes || ''}`
+          status: 'FOLLOW_UP',
+          followUpDate: followUpData.followUpDate,
+          followUpTime: followUpData.followUpTime,
+          followUpNotes: followUpData.followUpNotes || '',
+          followUpScheduledBy: user?.id || 'admin',
+          followUpScheduledAt: new Date().toISOString()
         } : job
       ));
 
@@ -1914,8 +1920,12 @@ const AdminDashboard = () => {
           updated[customerId] = updated[customerId].map(job => 
             job.id === jobId ? { 
               ...job, 
-              status: 'RESCHEDULED',
-              description: `FOLLOW-UP SCHEDULED: ${followUpData.followUpDate} at ${followUpData.followUpTime}. ${followUpData.followUpNotes || ''}`
+              status: 'FOLLOW_UP',
+              followUpDate: followUpData.followUpDate,
+              followUpTime: followUpData.followUpTime,
+              followUpNotes: followUpData.followUpNotes || '',
+              followUpScheduledBy: user?.id || 'admin',
+              followUpScheduledAt: new Date().toISOString()
             } : job
           );
         });
@@ -1946,11 +1956,11 @@ const AdminDashboard = () => {
     }
 
     try {
-      // TODO: Apply database migration first to enable DENIED status
-      // For now, use CANCELLED status as a temporary workaround
       const { error } = await db.jobs.update(selectedJobForDeny.id, {
-        status: 'CANCELLED',
-        description: `JOB DENIED: ${denyReason.trim()}`
+        status: 'DENIED',
+        denial_reason: denyReason.trim(),
+        denied_by: user?.id || 'admin',
+        denied_at: new Date().toISOString()
       });
 
       if (error) {
@@ -1961,8 +1971,10 @@ const AdminDashboard = () => {
       setJobs(prev => prev.map(job => 
         job.id === selectedJobForDeny.id ? { 
           ...job, 
-          status: 'CANCELLED',
-          description: `JOB DENIED: ${denyReason.trim()}`
+          status: 'DENIED',
+          denialReason: denyReason.trim(),
+          deniedBy: user?.id || 'admin',
+          deniedAt: new Date().toISOString()
         } : job
       ));
 
@@ -1972,8 +1984,10 @@ const AdminDashboard = () => {
           updated[customerId] = updated[customerId].map(job => 
             job.id === selectedJobForDeny.id ? { 
               ...job, 
-              status: 'CANCELLED',
-              description: `JOB DENIED: ${denyReason.trim()}`
+              status: 'DENIED',
+              denialReason: denyReason.trim(),
+              deniedBy: user?.id || 'admin',
+              deniedAt: new Date().toISOString()
             } : job
           );
         });
@@ -2005,9 +2019,9 @@ const AdminDashboard = () => {
       const { error } = await db.jobs.update(selectedJobForComplete.id, {
         status: 'COMPLETED',
         end_time: new Date().toISOString(),
-        description: completionNotes.trim() ? 
-          `${selectedJobForComplete.description}\n\nCOMPLETION NOTES: ${completionNotes.trim()}` : 
-          selectedJobForComplete.description
+        completion_notes: completionNotes.trim(),
+        completed_by: user?.id || 'admin',
+        completed_at: new Date().toISOString()
       });
 
       if (error) {
@@ -2020,9 +2034,9 @@ const AdminDashboard = () => {
           ...job, 
           status: 'COMPLETED',
           end_time: new Date().toISOString(),
-          description: completionNotes.trim() ? 
-            `${selectedJobForComplete.description}\n\nCOMPLETION NOTES: ${completionNotes.trim()}` : 
-            selectedJobForComplete.description
+          completionNotes: completionNotes.trim(),
+          completedBy: user?.id || 'admin',
+          completedAt: new Date().toISOString()
         } : job
       ));
 
@@ -2034,9 +2048,9 @@ const AdminDashboard = () => {
               ...job, 
               status: 'COMPLETED',
               end_time: new Date().toISOString(),
-              description: completionNotes.trim() ? 
-                `${selectedJobForComplete.description}\n\nCOMPLETION NOTES: ${completionNotes.trim()}` : 
-                selectedJobForComplete.description
+              completionNotes: completionNotes.trim(),
+              completedBy: user?.id || 'admin',
+              completedAt: new Date().toISOString()
             } : job
           );
         });
@@ -2316,6 +2330,8 @@ const AdminDashboard = () => {
       'IN_PROGRESS': { color: 'bg-orange-100 text-orange-800', icon: Wrench },
       'COMPLETED': { color: 'bg-green-100 text-green-800', icon: CheckCircle },
       'CANCELLED': { color: 'bg-red-100 text-red-800', icon: AlertCircle },
+      'FOLLOW_UP': { color: 'bg-indigo-100 text-indigo-800', icon: CalendarPlus },
+      'DENIED': { color: 'bg-red-100 text-red-800', icon: XCircle },
       'ACTIVE': { color: 'bg-green-100 text-green-800', icon: CheckCircle },
       'INACTIVE': { color: 'bg-gray-100 text-gray-800', icon: AlertCircle },
     };
@@ -2388,16 +2404,16 @@ const AdminDashboard = () => {
       filteredCustomers = customersWithJobs.filter(({ allJobs }) => 
         allJobs.some(job => ['PENDING', 'ASSIGNED', 'IN_PROGRESS'].includes(job.status))
       );
-    } else if (statusFilter === 'RESCHEDULED') {
-      // Filter for follow-up jobs (RESCHEDULED with FOLLOW-UP in description)
-      filteredCustomers = customersWithJobs.filter(({ allJobs }) => 
-        allJobs.some(job => job.status === 'RESCHEDULED' && job.description?.includes('FOLLOW-UP SCHEDULED'))
-      );
-    } else if (statusFilter === 'CANCELLED') {
-      // Filter for denied jobs (CANCELLED with JOB DENIED in description)
-      filteredCustomers = customersWithJobs.filter(({ allJobs }) => 
-        allJobs.some(job => job.status === 'CANCELLED' && job.description?.includes('JOB DENIED'))
-      );
+      } else if (statusFilter === 'RESCHEDULED') {
+        // Filter for follow-up jobs (FOLLOW_UP status)
+        filteredCustomers = customersWithJobs.filter(({ allJobs }) => 
+          allJobs.some(job => job.status === 'FOLLOW_UP')
+        );
+      } else if (statusFilter === 'CANCELLED') {
+        // Filter for denied jobs (DENIED status)
+        filteredCustomers = customersWithJobs.filter(({ allJobs }) => 
+          allJobs.some(job => job.status === 'DENIED')
+        );
     } else {
       filteredCustomers = customersWithJobs.filter(({ allJobs }) => 
         allJobs.some(job => job.status === statusFilter)
@@ -2635,7 +2651,7 @@ const AdminDashboard = () => {
               className="flex items-center gap-2"
             >
               <CalendarPlus className="h-4 w-4" />
-              Follow-up Jobs ({jobs.filter(job => job.status === 'RESCHEDULED' && job.description?.includes('FOLLOW-UP SCHEDULED')).length})
+              Follow-up Jobs ({jobs.filter(job => job.status === 'FOLLOW_UP').length})
             </Button>
             <Button
               onClick={() => setStatusFilter('CANCELLED')}
@@ -2643,7 +2659,7 @@ const AdminDashboard = () => {
               className="flex items-center gap-2"
             >
               <XCircle className="h-4 w-4" />
-              Denied Jobs ({jobs.filter(job => job.status === 'CANCELLED' && job.description?.includes('JOB DENIED')).length})
+              Denied Jobs ({jobs.filter(job => job.status === 'DENIED').length})
             </Button>
             <Button
               onClick={() => setStatusFilter('COMPLETED')}
@@ -2997,12 +3013,12 @@ const AdminDashboard = () => {
                         if (statusFilter === 'ONGOING') {
                           // Show ongoing jobs (pending, assigned, in-progress)
                           jobsToShow = allJobs.filter(job => ['PENDING', 'ASSIGNED', 'IN_PROGRESS'].includes(job.status));
-                        } else if (statusFilter === 'RESCHEDULED') {
-                          // Show follow-up jobs (RESCHEDULED with FOLLOW-UP in description)
-                          jobsToShow = allJobs.filter(job => job.status === 'RESCHEDULED' && job.description?.includes('FOLLOW-UP SCHEDULED'));
-                        } else if (statusFilter === 'CANCELLED') {
-                          // Show denied jobs (CANCELLED with JOB DENIED in description)
-                          jobsToShow = allJobs.filter(job => job.status === 'CANCELLED' && job.description?.includes('JOB DENIED'));
+      } else if (statusFilter === 'RESCHEDULED') {
+        // Show follow-up jobs (FOLLOW_UP status)
+        jobsToShow = allJobs.filter(job => job.status === 'FOLLOW_UP');
+      } else if (statusFilter === 'CANCELLED') {
+        // Show denied jobs (DENIED status)
+        jobsToShow = allJobs.filter(job => job.status === 'DENIED');
                         } else if (statusFilter === 'COMPLETED') {
                           jobsToShow = completedJobs;
                         } else {

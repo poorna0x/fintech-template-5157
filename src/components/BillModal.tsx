@@ -22,7 +22,6 @@ export default function BillModal({ isOpen, onClose, customer }: BillModalProps)
     const pdfData = {
       billNumber: bill.billNumber,
       billDate: bill.billDate,
-      dueDate: bill.dueDate,
       company: bill.company,
       customer: bill.customer,
       items: bill.items,

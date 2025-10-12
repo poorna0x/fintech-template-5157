@@ -307,7 +307,7 @@ export interface Bill {
   id: string;
   billNumber: string; // Format: BILL-2024-001
   billDate: string;
-  dueDate: string;
+  dueDate?: string;
   
   // Company Information
   company: CompanyInfo;

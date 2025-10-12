@@ -23,12 +23,15 @@ import {
   AlertCircle,
   LogOut,
   User,
-  Eye
+  Eye,
+  CalendarPlus,
+  XCircle
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { db } from '@/lib/supabase';
 import { Job, JobAssignmentRequest } from '@/types';
 import { sendNotification, createJobCompletedNotification, createJobAssignmentRequestNotification, createJobAssignmentAcceptedNotification, createJobAssignmentRejectedNotification } from '@/lib/notifications';
+import FollowUpModal from '@/components/FollowUpModal';
 
 const TechnicianDashboard = () => {
   const { user, logout, isTechnician, loading } = useAuth();
@@ -38,7 +41,7 @@ const TechnicianDashboard = () => {
   const [filteredJobs, setFilteredJobs] = useState<Job[]>([]);
   const [jobsLoading, setJobsLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
-  const [statusFilter, setStatusFilter] = useState('ALL');
+  const [statusFilter, setStatusFilter] = useState<'ONGOING' | 'PENDING' | 'ASSIGNED' | 'IN_PROGRESS' | 'COMPLETED' | 'CANCELLED' | 'RESCHEDULED'>('ONGOING');
   const [selectedJob, setSelectedJob] = useState<Job | null>(null);
   const [jobNotes, setJobNotes] = useState('');
   const [isUpdating, setIsUpdating] = useState(false);
@@ -51,6 +54,16 @@ const TechnicianDashboard = () => {
   const [isResponding, setIsResponding] = useState(false);
   const [currentLocation, setCurrentLocation] = useState<{lat: number, lng: number} | null>(null);
   const [distances, setDistances] = useState<{[jobId: string]: number}>({});
+
+  // Follow-up functionality state
+  const [followUpModalOpen, setFollowUpModalOpen] = useState(false);
+  const [selectedJobForFollowUp, setSelectedJobForFollowUp] = useState<Job | null>(null);
+  const [denyDialogOpen, setDenyDialogOpen] = useState(false);
+  const [selectedJobForDeny, setSelectedJobForDeny] = useState<Job | null>(null);
+  const [denyReason, setDenyReason] = useState('');
+  const [completeDialogOpen, setCompleteDialogOpen] = useState(false);
+  const [selectedJobForComplete, setSelectedJobForComplete] = useState<Job | null>(null);
+  const [completionNotes, setCompletionNotes] = useState('');
 
   // Redirect if not technician
   useEffect(() => {
@@ -199,7 +212,16 @@ const TechnicianDashboard = () => {
     }
 
     // Filter by status
-    if (statusFilter !== 'ALL') {
+    if (statusFilter === 'ONGOING') {
+      // Show ongoing jobs (pending, assigned, in-progress)
+      filtered = filtered.filter(job => ['PENDING', 'ASSIGNED', 'IN_PROGRESS'].includes(job.status));
+    } else if (statusFilter === 'RESCHEDULED') {
+      // Filter for follow-up jobs (FOLLOW_UP status)
+      filtered = filtered.filter(job => job.status === 'FOLLOW_UP');
+    } else if (statusFilter === 'CANCELLED') {
+      // Filter for denied jobs (DENIED status)
+      filtered = filtered.filter(job => job.status === 'DENIED');
+    } else if (statusFilter !== 'ALL') {
       filtered = filtered.filter(job => job.status === statusFilter);
     }
 
@@ -375,6 +397,148 @@ const TechnicianDashboard = () => {
     }
   };
 
+  // Follow-up functionality handlers
+  const handleScheduleFollowUp = (job: Job) => {
+    setSelectedJobForFollowUp(job);
+    setFollowUpModalOpen(true);
+  };
+
+  const handleFollowUpSubmit = async (jobId: string, followUpData: {
+    followUpDate: string;
+    followUpTime: string;
+    followUpNotes?: string;
+  }) => {
+    try {
+      const { error } = await db.jobs.update(jobId, {
+        status: 'FOLLOW_UP',
+        follow_up_date: followUpData.followUpDate,
+        follow_up_time: followUpData.followUpTime,
+        follow_up_notes: followUpData.followUpNotes || '',
+        follow_up_scheduled_by: user?.id || 'technician',
+        follow_up_scheduled_at: new Date().toISOString()
+      });
+
+      if (error) {
+        throw new Error(error.message);
+      }
+
+      // Update local state
+      setJobs(prev => prev.map(job => 
+        job.id === jobId 
+          ? { 
+              ...job, 
+              status: 'FOLLOW_UP',
+              followUpDate: followUpData.followUpDate,
+              followUpTime: followUpData.followUpTime,
+              followUpNotes: followUpData.followUpNotes || '',
+              followUpScheduledBy: user?.id || 'technician',
+              followUpScheduledAt: new Date().toISOString()
+            }
+          : job
+      ));
+      
+      toast.success('Follow-up scheduled successfully');
+      setFollowUpModalOpen(false);
+      setSelectedJobForFollowUp(null);
+    } catch (error) {
+      console.error('Error scheduling follow-up:', error);
+      toast.error('Failed to schedule follow-up');
+    }
+  };
+
+  const handleDenyJob = (job: Job) => {
+    setSelectedJobForDeny(job);
+    setDenyDialogOpen(true);
+  };
+
+  const handleDenyJobSubmit = async () => {
+    if (!selectedJobForDeny || !denyReason.trim()) {
+      toast.error('Please provide a reason for denying the job');
+      return;
+    }
+
+    try {
+      const { error } = await db.jobs.update(selectedJobForDeny.id, {
+        status: 'DENIED',
+        denial_reason: denyReason,
+        denied_by: user?.id || 'technician',
+        denied_at: new Date().toISOString()
+      });
+
+      if (error) {
+        throw new Error(error.message);
+      }
+
+      // Update local state
+      setJobs(prev => prev.map(job => 
+        job.id === selectedJobForDeny.id 
+          ? { 
+              ...job, 
+              status: 'DENIED',
+              denialReason: denyReason,
+              deniedBy: user?.id || 'technician',
+              deniedAt: new Date().toISOString()
+            }
+          : job
+      ));
+      
+      toast.success('Job denied successfully');
+      setDenyDialogOpen(false);
+      setSelectedJobForDeny(null);
+      setDenyReason('');
+    } catch (error) {
+      console.error('Error denying job:', error);
+      toast.error('Failed to deny job');
+    }
+  };
+
+  const handleCompleteJob = (job: Job) => {
+    setSelectedJobForComplete(job);
+    setCompleteDialogOpen(true);
+  };
+
+  const handleCompleteJobSubmit = async () => {
+    if (!selectedJobForComplete) {
+      return;
+    }
+
+    try {
+      const { error } = await db.jobs.update(selectedJobForComplete.id, {
+        status: 'COMPLETED',
+        end_time: new Date().toISOString(),
+        completion_notes: completionNotes,
+        completed_by: user?.id || 'technician',
+        completed_at: new Date().toISOString()
+      });
+
+      if (error) {
+        throw new Error(error.message);
+      }
+
+      // Update local state
+      setJobs(prev => prev.map(job => 
+        job.id === selectedJobForComplete.id 
+          ? { 
+              ...job, 
+              status: 'COMPLETED',
+              end_time: new Date().toISOString(),
+              completionNotes: completionNotes,
+              completedBy: user?.id || 'technician',
+              completedAt: new Date().toISOString()
+            }
+          : job
+      ));
+      
+      toast.success('Job completed successfully');
+      setCompleteDialogOpen(false);
+      setSelectedJobForComplete(null);
+      setCompletionNotes('');
+    } catch (error) {
+      console.error('Error completing job:', error);
+      toast.error('Failed to complete job');
+    }
+  };
+
   const getStatusBadge = (status: string) => {
     const statusConfig = {
       PENDING: { color: 'bg-yellow-100 text-yellow-800', icon: Clock },
@@ -382,6 +546,9 @@ const TechnicianDashboard = () => {
       IN_PROGRESS: { color: 'bg-orange-100 text-orange-800', icon: Play },
       COMPLETED: { color: 'bg-green-100 text-green-800', icon: CheckCircle },
       CANCELLED: { color: 'bg-red-100 text-red-800', icon: AlertCircle },
+      RESCHEDULED: { color: 'bg-purple-100 text-purple-800', icon: CalendarPlus },
+      FOLLOW_UP: { color: 'bg-indigo-100 text-indigo-800', icon: CalendarPlus },
+      DENIED: { color: 'bg-red-100 text-red-800', icon: XCircle },
     };
 
     const config = statusConfig[status as keyof typeof statusConfig] || statusConfig.PENDING;
@@ -399,27 +566,58 @@ const TechnicianDashboard = () => {
     switch (job.status) {
       case 'ASSIGNED':
         return (
-          <Button
-            size="sm"
-            onClick={() => handleStatusUpdate(job.id, 'IN_PROGRESS')}
-            disabled={isUpdating}
-            className="bg-orange-600 hover:bg-orange-700 w-full sm:w-auto"
-          >
-            <Play className="w-4 h-4 mr-1" />
-            Start Job
-          </Button>
+          <div className="flex flex-col sm:flex-row gap-2">
+            <Button
+              size="sm"
+              onClick={() => handleStatusUpdate(job.id, 'IN_PROGRESS')}
+              disabled={isUpdating}
+              className="bg-orange-600 hover:bg-orange-700 w-full sm:w-auto"
+            >
+              <Play className="w-4 h-4 mr-1" />
+              Start Job
+            </Button>
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => handleScheduleFollowUp(job)}
+              className="w-full sm:w-auto"
+            >
+              <CalendarPlus className="w-4 h-4 mr-1" />
+              Follow-up
+            </Button>
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => handleDenyJob(job)}
+              className="w-full sm:w-auto text-red-600 border-red-300 hover:bg-red-50"
+            >
+              <XCircle className="w-4 h-4 mr-1" />
+              Deny
+            </Button>
+          </div>
         );
       case 'IN_PROGRESS':
         return (
-          <Button
-            size="sm"
-            onClick={() => handleStatusUpdate(job.id, 'COMPLETED')}
-            disabled={isUpdating}
-            className="bg-green-600 hover:bg-green-700 w-full sm:w-auto"
-          >
-            <CheckCircle className="w-4 h-4 mr-1" />
-            Complete Job
-          </Button>
+          <div className="flex flex-col sm:flex-row gap-2">
+            <Button
+              size="sm"
+              onClick={() => handleCompleteJob(job)}
+              disabled={isUpdating}
+              className="bg-green-600 hover:bg-green-700 w-full sm:w-auto"
+            >
+              <CheckCircle className="w-4 h-4 mr-1" />
+              Complete Job
+            </Button>
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => handleScheduleFollowUp(job)}
+              className="w-full sm:w-auto"
+            >
+              <CalendarPlus className="w-4 h-4 mr-1" />
+              Follow-up
+            </Button>
+          </div>
         );
       default:
         return null;
@@ -510,9 +708,9 @@ const TechnicianDashboard = () => {
               <div className="flex items-center">
                 <Clock className="h-8 w-8 text-blue-600" />
                 <div className="ml-4">
-                  <p className="text-sm font-medium text-gray-600">Assigned</p>
+                  <p className="text-sm font-medium text-gray-600">Ongoing Jobs</p>
                   <p className="text-2xl font-bold text-gray-900">
-                    {jobs.filter(job => job.status === 'ASSIGNED').length}
+                    {jobs.filter(job => ['PENDING', 'ASSIGNED', 'IN_PROGRESS'].includes(job.status)).length}
                   </p>
                 </div>
               </div>
@@ -522,11 +720,25 @@ const TechnicianDashboard = () => {
           <Card>
             <CardContent className="p-6">
               <div className="flex items-center">
-                <Play className="h-8 w-8 text-orange-600" />
+                <CalendarPlus className="h-8 w-8 text-purple-600" />
                 <div className="ml-4">
-                  <p className="text-sm font-medium text-gray-600">In Progress</p>
+                  <p className="text-sm font-medium text-gray-600">Follow-up Jobs</p>
                   <p className="text-2xl font-bold text-gray-900">
-                    {jobs.filter(job => job.status === 'IN_PROGRESS').length}
+                    {jobs.filter(job => job.status === 'FOLLOW_UP').length}
+                  </p>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardContent className="p-6">
+              <div className="flex items-center">
+                <XCircle className="h-8 w-8 text-red-600" />
+                <div className="ml-4">
+                  <p className="text-sm font-medium text-gray-600">Denied Jobs</p>
+                  <p className="text-2xl font-bold text-gray-900">
+                    {jobs.filter(job => job.status === 'DENIED').length}
                   </p>
                 </div>
               </div>
@@ -538,7 +750,7 @@ const TechnicianDashboard = () => {
               <div className="flex items-center">
                 <CheckCircle className="h-8 w-8 text-green-600" />
                 <div className="ml-4">
-                  <p className="text-sm font-medium text-gray-600">Completed</p>
+                  <p className="text-sm font-medium text-gray-600">Completed Jobs</p>
                   <p className="text-2xl font-bold text-gray-900">
                     {jobs.filter(job => job.status === 'COMPLETED').length}
                   </p>
@@ -546,18 +758,44 @@ const TechnicianDashboard = () => {
               </div>
             </CardContent>
           </Card>
+        </div>
 
-          <Card>
-            <CardContent className="p-6">
-              <div className="flex items-center">
-                <Wrench className="h-8 w-8 text-gray-600" />
-                <div className="ml-4">
-                  <p className="text-sm font-medium text-gray-600">Total Jobs</p>
-                  <p className="text-2xl font-bold text-gray-900">{jobs.length}</p>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
+        {/* Filter Buttons */}
+        <div className="mb-6">
+          <div className="flex flex-col sm:flex-row gap-3 sm:gap-4">
+            <Button
+              onClick={() => setStatusFilter('ONGOING')}
+              variant={statusFilter === 'ONGOING' ? 'default' : 'outline'}
+              className="flex items-center gap-2"
+            >
+              <Clock className="h-4 w-4" />
+              Ongoing Jobs ({jobs.filter(job => ['PENDING', 'ASSIGNED', 'IN_PROGRESS'].includes(job.status)).length})
+            </Button>
+            <Button
+              onClick={() => setStatusFilter('RESCHEDULED')}
+              variant={statusFilter === 'RESCHEDULED' ? 'default' : 'outline'}
+              className="flex items-center gap-2"
+            >
+              <CalendarPlus className="h-4 w-4" />
+              Follow-up Jobs ({jobs.filter(job => job.status === 'FOLLOW_UP').length})
+            </Button>
+            <Button
+              onClick={() => setStatusFilter('CANCELLED')}
+              variant={statusFilter === 'CANCELLED' ? 'default' : 'outline'}
+              className="flex items-center gap-2"
+            >
+              <XCircle className="h-4 w-4" />
+              Denied Jobs ({jobs.filter(job => job.status === 'DENIED').length})
+            </Button>
+            <Button
+              onClick={() => setStatusFilter('COMPLETED')}
+              variant={statusFilter === 'COMPLETED' ? 'default' : 'outline'}
+              className="flex items-center gap-2"
+            >
+              <CheckCircle className="h-4 w-4" />
+              Completed Jobs ({jobs.filter(job => job.status === 'COMPLETED').length})
+            </Button>
+          </div>
         </div>
 
         {/* Job Assignment Requests Section */}
@@ -671,39 +909,43 @@ const TechnicianDashboard = () => {
           </Card>
         )}
 
-        {/* Filters */}
+        {/* Search */}
         <Card className="mb-6">
           <CardContent className="p-6">
-            <div className="flex flex-col sm:flex-row gap-4">
-              <div className="flex-1">
-                <div className="relative">
-                  <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
-                  <Input
-                    placeholder="Search jobs by job number, customer name, or phone..."
-                    value={searchTerm}
-                    onChange={(e) => setSearchTerm(e.target.value)}
-                    className="pl-10"
-                  />
-                </div>
-              </div>
-              <div className="sm:w-48">
-                <Select value={statusFilter} onValueChange={setStatusFilter}>
-                  <SelectTrigger>
-                    <Filter className="w-4 h-4 mr-2" />
-                    <SelectValue placeholder="Filter by status" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="ALL">All Status</SelectItem>
-                    <SelectItem value="ASSIGNED">Assigned</SelectItem>
-                    <SelectItem value="IN_PROGRESS">In Progress</SelectItem>
-                    <SelectItem value="COMPLETED">Completed</SelectItem>
-                    <SelectItem value="CANCELLED">Cancelled</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
+            <div className="relative">
+              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
+              <Input
+                placeholder="Search jobs by job number, customer name, or phone..."
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                className="pl-10"
+              />
             </div>
           </CardContent>
         </Card>
+
+        {/* Section Title */}
+        <div className="mb-4">
+          <h2 className="text-xl font-bold text-gray-900 mb-1">
+            {statusFilter === 'ONGOING' ? 'Your Ongoing Jobs' : 
+             statusFilter === 'RESCHEDULED' ? 'Your Follow-up Jobs' :
+             statusFilter === 'CANCELLED' ? 'Your Denied Jobs' :
+             statusFilter === 'COMPLETED' ? 'Your Completed Jobs' :
+             `Your ${statusFilter} Jobs`}
+          </h2>
+          {!searchTerm.trim() && (
+            <p className="text-xs text-gray-500 mb-3">
+              {statusFilter === 'ONGOING' 
+                ? `Showing ${filteredJobs.length} ongoing jobs (pending, assigned, in-progress)`
+                : statusFilter === 'RESCHEDULED'
+                ? `Showing ${filteredJobs.length} follow-up jobs`
+                : statusFilter === 'CANCELLED'
+                ? `Showing ${filteredJobs.length} denied jobs`
+                : `Showing ${filteredJobs.length} ${statusFilter.toLowerCase().replace('_', ' ')} jobs`
+              }
+            </p>
+          )}
+        </div>
 
         {/* Jobs List */}
         <div className="space-y-4">
@@ -713,9 +955,17 @@ const TechnicianDashboard = () => {
                 <Wrench className="w-12 h-12 text-gray-400 mx-auto mb-4" />
                 <h3 className="text-lg font-medium text-gray-900 mb-2">No jobs found</h3>
                 <p className="text-gray-600">
-                  {searchTerm || statusFilter !== 'ALL' 
-                    ? 'No jobs match your current filters.' 
-                    : 'You have no assigned jobs at the moment.'}
+                  {searchTerm 
+                    ? 'No jobs match your search criteria.' 
+                    : statusFilter === 'ONGOING'
+                    ? 'You have no ongoing jobs at the moment.'
+                    : statusFilter === 'RESCHEDULED'
+                    ? 'You have no follow-up jobs scheduled.'
+                    : statusFilter === 'CANCELLED'
+                    ? 'You have no denied jobs.'
+                    : statusFilter === 'COMPLETED'
+                    ? 'You have no completed jobs.'
+                    : 'You have no jobs at the moment.'}
                 </p>
               </CardContent>
             </Card>
@@ -902,15 +1152,21 @@ const TechnicianDashboard = () => {
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
                           <div>
                             <p><strong>Name:</strong> {customer?.full_name || 'N/A'}</p>
-                            <p><strong>Phone:</strong> {customer?.phone || 'N/A'}</p>
-                            <p><strong>Email:</strong> {customer?.email || 'N/A'}</p>
+                            {customer?.phone && <p><strong>Phone:</strong> {customer.phone}</p>}
+                            {customer?.email && <p><strong>Email:</strong> {customer.email}</p>}
                           </div>
                           <div>
                             <p><strong>Address:</strong></p>
                             <p className="text-gray-700">
-                              {(customer?.address as any)?.street || ''}<br/>
-                              {(customer?.address as any)?.area || ''}<br/>
-                              {(customer?.address as any)?.city || ''} - {(customer?.address as any)?.pincode || ''}
+                              {((customer?.address as any)?.street || (customer?.address as any)?.area) && (
+                                <>
+                                  {(customer?.address as any)?.street || ''}<br/>
+                                  {(customer?.address as any)?.area || ''}<br/>
+                                </>
+                              )}
+                              {((customer?.address as any)?.city || (customer?.address as any)?.pincode) && (
+                                <>{(customer?.address as any)?.city || ''} - {(customer?.address as any)?.pincode || ''}</>
+                              )}
                             </p>
                           </div>
                         </div>
@@ -974,6 +1230,142 @@ const TechnicianDashboard = () => {
                 })()}
               </div>
             )}
+          </DialogContent>
+        </Dialog>
+
+        {/* Follow-up Modal */}
+        <FollowUpModal
+          isOpen={followUpModalOpen}
+          onClose={() => {
+            setFollowUpModalOpen(false);
+            setSelectedJobForFollowUp(null);
+          }}
+          job={selectedJobForFollowUp}
+          onScheduleFollowUp={handleFollowUpSubmit}
+        />
+
+        {/* Deny Job Dialog */}
+        <Dialog open={denyDialogOpen} onOpenChange={setDenyDialogOpen}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Deny Job</DialogTitle>
+              <DialogDescription>
+                Are you sure you want to deny this job? Please provide a reason.
+              </DialogDescription>
+            </DialogHeader>
+            
+            <div className="space-y-4">
+              {selectedJobForDeny && (
+                <div className="bg-gray-50 p-4 rounded-lg">
+                  <h4 className="font-medium text-gray-900 mb-2">Job Details</h4>
+                  <p className="text-sm text-gray-600">
+                    <strong>Job Number:</strong> {(selectedJobForDeny as any).job_number}
+                  </p>
+                  <p className="text-sm text-gray-600">
+                    <strong>Customer:</strong> {(selectedJobForDeny.customer as any)?.full_name || 'Unknown'}
+                  </p>
+                  <p className="text-sm text-gray-600">
+                    <strong>Service:</strong> {selectedJobForDeny.serviceType} - {selectedJobForDeny.serviceSubType}
+                  </p>
+                </div>
+              )}
+              
+              <div>
+                <label htmlFor="deny-reason" className="block text-sm font-medium text-gray-700 mb-2">
+                  Reason for Denial *
+                </label>
+                <Textarea
+                  id="deny-reason"
+                  placeholder="Please provide a reason for denying this job..."
+                  value={denyReason}
+                  onChange={(e) => setDenyReason(e.target.value)}
+                  rows={3}
+                  required
+                />
+              </div>
+            </div>
+
+            <div className="flex justify-end gap-3 pt-4 border-t">
+              <Button
+                variant="outline"
+                onClick={() => {
+                  setDenyDialogOpen(false);
+                  setSelectedJobForDeny(null);
+                  setDenyReason('');
+                }}
+              >
+                Cancel
+              </Button>
+              <Button
+                onClick={handleDenyJobSubmit}
+                className="bg-red-600 hover:bg-red-700"
+              >
+                <XCircle className="w-4 h-4 mr-2" />
+                Deny Job
+              </Button>
+            </div>
+          </DialogContent>
+        </Dialog>
+
+        {/* Complete Job Dialog */}
+        <Dialog open={completeDialogOpen} onOpenChange={setCompleteDialogOpen}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Complete Job</DialogTitle>
+              <DialogDescription>
+                Mark this job as completed. You can add completion notes if needed.
+              </DialogDescription>
+            </DialogHeader>
+            
+            <div className="space-y-4">
+              {selectedJobForComplete && (
+                <div className="bg-gray-50 p-4 rounded-lg">
+                  <h4 className="font-medium text-gray-900 mb-2">Job Details</h4>
+                  <p className="text-sm text-gray-600">
+                    <strong>Job Number:</strong> {(selectedJobForComplete as any).job_number}
+                  </p>
+                  <p className="text-sm text-gray-600">
+                    <strong>Customer:</strong> {(selectedJobForComplete.customer as any)?.full_name || 'Unknown'}
+                  </p>
+                  <p className="text-sm text-gray-600">
+                    <strong>Service:</strong> {selectedJobForComplete.serviceType} - {selectedJobForComplete.serviceSubType}
+                  </p>
+                </div>
+              )}
+              
+              <div>
+                <label htmlFor="completion-notes" className="block text-sm font-medium text-gray-700 mb-2">
+                  Completion Notes (Optional)
+                </label>
+                <Textarea
+                  id="completion-notes"
+                  placeholder="Add any notes about the completion..."
+                  value={completionNotes}
+                  onChange={(e) => setCompletionNotes(e.target.value)}
+                  rows={3}
+                />
+              </div>
+            </div>
+
+            <div className="flex justify-end gap-3 pt-4 border-t">
+              <Button
+                variant="outline"
+                onClick={() => {
+                  setCompleteDialogOpen(false);
+                  setSelectedJobForComplete(null);
+                  setCompletionNotes('');
+                }}
+              >
+                Cancel
+              </Button>
+              <Button
+                onClick={handleCompleteJobSubmit}
+                className="bg-green-600 hover:bg-green-700"
+              >
+                <CheckCircle className="w-4 h-4 mr-2" />
+                Complete Job
+              </Button>
+            </div>
           </DialogContent>
         </Dialog>
       </div>

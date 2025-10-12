@@ -110,7 +110,6 @@ export default function BillPage() {
            const pdfData = {
              billNumber: bill.billNumber,
              billDate: bill.billDate,
-             dueDate: bill.dueDate,
              company: bill.company,
              customer: bill.customer,
              items: bill.items,
@@ -205,16 +204,22 @@ export default function BillPage() {
                 </CardHeader>
                 <CardContent>
                   <div className="space-y-2">
-                    <div className="flex items-center text-sm text-gray-600">
-                      <User className="w-4 h-4 mr-2" />
-                      {customer.phone}
-                    </div>
-                    <div className="text-sm text-gray-600">
-                      {customer.email}
-                    </div>
-                    <div className="text-sm text-gray-600">
-                      {customer.address.area}, {customer.address.city}
-                    </div>
+                    {customer.phone && (
+                      <div className="flex items-center text-sm text-gray-600">
+                        <User className="w-4 h-4 mr-2" />
+                        {customer.phone}
+                      </div>
+                    )}
+                    {customer.email && (
+                      <div className="text-sm text-gray-600">
+                        {customer.email}
+                      </div>
+                    )}
+                    {(customer.address.area || customer.address.city) && (
+                      <div className="text-sm text-gray-600">
+                        {customer.address.area}, {customer.address.city}
+                      </div>
+                    )}
                     <div className="flex items-center justify-between mt-4">
                       <Badge variant={customer.status === 'ACTIVE' ? 'default' : 'secondary'}>
                         {customer.status}
