@@ -132,7 +132,7 @@ export function generateBillPDF(billData: PDFBillData, action: 'print' | 'pdf' =
             justify-content: space-between;
             margin-bottom: 15px;
             gap: 15px;
-            padding: 0 15px;
+            padding: 0 5px;
           }
           
           .bill-to, .bill-details {
@@ -217,11 +217,11 @@ export function generateBillPDF(billData: PDFBillData, action: 'print' | 'pdf' =
             border-top: 2px solid #000000;
             border-bottom: 2px solid #000000;
             margin-top: 10px;
-            padding: 15px 0;
+            padding: 5px 0;
           }
           
           .notes-section {
-            margin: 15px 15px 0 15px;
+            margin: 15px 5px 0 5px;
             padding-top: 10px;
             border-top: 1px solid #e5e7eb;
           }
@@ -241,7 +241,7 @@ export function generateBillPDF(billData: PDFBillData, action: 'print' | 'pdf' =
           
           .terms-list {
             margin: 0;
-            padding-left: 20px;
+            padding-left: 5px;
           }
           
           .terms-list li {
@@ -275,7 +275,7 @@ export function generateBillPDF(billData: PDFBillData, action: 'print' | 'pdf' =
           width: 100% !important;
           max-width: 100% !important;
           margin: 0 !important;
-          padding: 20px 2px 20px 2px !important;
+          padding: 20px 1px 20px 1px !important;
               border: none !important;
               box-shadow: none !important;
               background: white !important;
@@ -285,7 +285,7 @@ export function generateBillPDF(billData: PDFBillData, action: 'print' | 'pdf' =
             
             @page {
               size: A4 !important;
-              margin: 20mm 15mm 20mm 15mm !important;
+              margin: 20mm 8mm 20mm 8mm !important;
               border: 2px solid #000000 !important;
               border-radius: 12px !important;
             }
@@ -297,16 +297,16 @@ export function generateBillPDF(billData: PDFBillData, action: 'print' | 'pdf' =
             }
             
             @page :left {
-              margin-left: 15mm !important;
-              margin-right: 10mm !important;
+              margin-left: 8mm !important;
+              margin-right: 5mm !important;
               margin-top: 20mm !important;
               border: 2px solid #000000 !important;
               border-radius: 12px !important;
             }
             
             @page :right {
-              margin-left: 10mm !important;
-              margin-right: 15mm !important;
+              margin-left: 5mm !important;
+              margin-right: 8mm !important;
               margin-top: 20mm !important;
               border: 2px solid #000000 !important;
               border-radius: 12px !important;
@@ -391,7 +391,7 @@ function handleMobilePrint(billData: PDFBillData, action: 'print' | 'pdf'): void
         color: #333;
         background: white;
         margin: 0;
-        padding: 10mm;
+        padding: 5mm;
         font-size: 10px;
         -webkit-text-size-adjust: 100%;
       }
@@ -401,7 +401,7 @@ function handleMobilePrint(billData: PDFBillData, action: 'print' | 'pdf'): void
         max-width: 100%;
         margin: 0;
         background: white;
-        padding: 20px 2px 20px 2px;
+        padding: 20px 1px 20px 1px;
         border: none;
         box-sizing: border-box;
         border-radius: 0;
@@ -547,7 +547,7 @@ function handleMobilePrint(billData: PDFBillData, action: 'print' | 'pdf'): void
       
       .terms-list {
         margin: 0;
-        padding-left: 15px;
+        padding-left: 5px;
       }
       
       .terms-list li {
@@ -846,7 +846,7 @@ function generateBillHTML(data: PDFBillData): string {
           justify-content: space-between;
           margin-bottom: 15px;
           gap: 15px;
-          padding: 0 15px;
+          padding: 0 5px;
         }
         
         .bill-to, .bill-details {
@@ -931,11 +931,11 @@ function generateBillHTML(data: PDFBillData): string {
           border-top: 2px solid #000000;
           border-bottom: 2px solid #000000;
           margin-top: 10px;
-          padding: 15px 0;
+          padding: 5px 0;
         }
         
         .notes-section {
-          margin: 15px 15px 0 15px;
+          margin: 15px 5px 0 5px;
           padding-top: 10px;
           border-top: 1px solid #e5e7eb;
         }
@@ -955,7 +955,7 @@ function generateBillHTML(data: PDFBillData): string {
         
         .terms-list {
           margin: 0;
-          padding-left: 20px;
+          padding-left: 5px;
         }
         
         .terms-list li {
@@ -1017,7 +1017,7 @@ function generateBillHTML(data: PDFBillData): string {
             width: 100% !important;
             max-width: 100% !important;
             margin: 0 !important;
-            padding: 20px 2px 20px 2px !important;
+            padding: 20px 1px 20px 1px !important;
             border: none !important;
             box-shadow: none !important;
             page-break-inside: avoid !important;
@@ -1026,7 +1026,7 @@ function generateBillHTML(data: PDFBillData): string {
           
           @page {
             size: A4 !important;
-            margin: 20mm 15mm 20mm 15mm !important;
+            margin: 20mm 8mm 20mm 8mm !important;
             border: 2px solid #000000 !important;
             border-radius: 12px !important;
           }
@@ -1038,16 +1038,16 @@ function generateBillHTML(data: PDFBillData): string {
           }
           
           @page :left {
-            margin-left: 15mm !important;
-            margin-right: 10mm !important;
+            margin-left: 8mm !important;
+            margin-right: 5mm !important;
             margin-top: 20mm !important;
             border: 2px solid #000000 !important;
             border-radius: 12px !important;
           }
           
           @page :right {
-            margin-left: 10mm !important;
-            margin-right: 15mm !important;
+            margin-left: 5mm !important;
+            margin-right: 8mm !important;
             margin-top: 20mm !important;
             border: 2px solid #000000 !important;
             border-radius: 12px !important;
