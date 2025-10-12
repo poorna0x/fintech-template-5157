@@ -105,7 +105,7 @@ export function generateBillPDF(billData: PDFBillData, action: 'print' | 'pdf' =
             text-align: center;
             margin-bottom: 15px;
             border-bottom: 2px solid #000000;
-            padding: 10px 0 8px 0;
+            padding: 5px 0 8px 0;
           }
           
           .logo-container {
@@ -411,7 +411,7 @@ function handleMobilePrint(billData: PDFBillData, action: 'print' | 'pdf'): void
         text-align: center;
         margin-bottom: 10px;
         border-bottom: 2px solid #000000;
-        padding: 8px 0 6px 0;
+        padding: 3px 0 6px 0;
       }
       
       .logo-container {
@@ -819,7 +819,7 @@ function generateBillHTML(data: PDFBillData): string {
           text-align: center;
           margin-bottom: 15px;
           border-bottom: 2px solid #000000;
-          padding: 10px 0 8px 0;
+          padding: 5px 0 8px 0;
         }
         
         .logo-container {
@@ -1056,6 +1056,7 @@ function generateBillHTML(data: PDFBillData): string {
           .header {
             page-break-after: avoid !important;
             margin-top: 0 !important;
+            padding-top: 5px !important;
           }
           
           .items-table {
