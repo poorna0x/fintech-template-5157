@@ -3226,6 +3226,22 @@ const AdminDashboard = () => {
                                         <div className="font-medium text-gray-900 break-words line-clamp-2">{job.description}</div>
                                       </div>
                                     )}
+                                    
+                                    {/* Google Maps Link */}
+                                    {(job as any)?.service_location?.googleLocation && (
+                                      <div className="sm:col-span-2 lg:col-span-1">
+                                        <div className="text-xs text-gray-500">Location</div>
+                                        <a 
+                                          href={(job as any)?.service_location?.googleLocation}
+                                          target="_blank"
+                                          rel="noopener noreferrer"
+                                          className="inline-flex items-center gap-1 text-blue-600 hover:text-blue-800 text-sm font-medium"
+                                        >
+                                          <MapPin className="w-4 h-4" />
+                                          Open in Google Maps
+                                        </a>
+                                      </div>
+                                    )}
                                   </div>
 
                                   {/* Photos Section - Mobile responsive */}
@@ -4451,6 +4467,22 @@ const AdminDashboard = () => {
                 <p className="text-sm text-gray-600">
                   <strong>Scheduled:</strong> {(jobToAssign as any)?.scheduled_date} - {(jobToAssign as any)?.scheduled_time_slot}
                 </p>
+                <p className="text-sm text-gray-600">
+                  <strong>Location:</strong> {(jobToAssign as any)?.service_address?.street || 'N/A'}
+                </p>
+                {(jobToAssign as any)?.service_location?.googleLocation && (
+                  <div className="mt-2">
+                    <a 
+                      href={(jobToAssign as any)?.service_location?.googleLocation}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-flex items-center gap-1 text-blue-600 hover:text-blue-800 text-sm font-medium"
+                    >
+                      <MapPin className="w-4 h-4" />
+                      Open in Google Maps
+                    </a>
+                  </div>
+                )}
               </div>
             </div>
 

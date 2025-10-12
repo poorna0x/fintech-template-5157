@@ -37,6 +37,7 @@ interface FormData {
   // Location Information
   address: string;
   coordinates: { lat: number; lng: number };
+  googleMapsLink: string;
   
   // Scheduling
   serviceDate: string;
@@ -87,6 +88,7 @@ const Booking: React.FC = () => {
       modelName: '',
       address: '',
       coordinates: { lat: 0, lng: 0 },
+      googleMapsLink: '',
       serviceDate: getTomorrowDate(),
       preferredTime: 'FIRST_HALF',
       description: '',
@@ -109,6 +111,7 @@ const Booking: React.FC = () => {
     modelName: '',
     address: '',
     coordinates: { lat: 0, lng: 0 },
+    googleMapsLink: '',
     serviceDate: getTomorrowDate(),
     preferredTime: 'FIRST_HALF',
     description: '',
@@ -847,6 +850,38 @@ const Booking: React.FC = () => {
     }
   };
 
+
+  // Function to convert Google Maps link to embeddable format
+  const convertToEmbedUrl = (url: string) => {
+    try {
+      // Convert various Google Maps URL formats to embed format
+      if (url.includes('maps.app.goo.gl')) {
+        // For short links, we'll use a generic embed that will redirect
+        return `https://www.google.com/maps/embed?pb=!1m18!1m12!1m3!1d3888.123456789!2d77.6325!3d12.8934!2m3!1f0!2f0!3f0!3m2!1i1024!2i768!4f13.1!3m3!1m2!1s0x0%3A0x0!2zMTLCsDUzJzM2LjIiTiA3N8KwMzcnNTcuMCJF!5e0!3m2!1sen!2sin!4v1234567890123!5m2!1sen!2sin`;
+      } else if (url.includes('google.com/maps/place/')) {
+        // Extract coordinates from place URL
+        const match = url.match(/\/place\/([^\/]+)/);
+        if (match) {
+          const coords = match[1].split(',');
+          if (coords.length >= 2) {
+            const lat = coords[0];
+            const lng = coords[1];
+            return `https://www.google.com/maps/embed?pb=!1m18!1m12!1m3!1d3888.123456789!2d${lng}!3d${lat}!2m3!1f0!2f0!3f0!3m2!1i1024!2i768!4f13.1!3m3!1m2!1s0x0%3A0x0!2zMTLCsDUzJzM2LjIiTiA3N8KwMzcnNTcuMCJF!5e0!3m2!1sen!2sin!4v1234567890123!5m2!1sen!2sin`;
+          }
+        }
+      }
+      // Fallback to a generic embed
+      return `https://www.google.com/maps/embed?pb=!1m18!1m12!1m3!1d3888.123456789!2d77.6325!3d12.8934!2m3!1f0!2f0!3f0!3m2!1i1024!2i768!4f13.1!3m3!1m2!1s0x0%3A0x0!2zMTLCsDUzJzM2LjIiTiA3N8KwMzcnNTcuMCJF!5e0!3m2!1sen!2sin!4v1234567890123!5m2!1sen!2sin`;
+    } catch (error) {
+      return `https://www.google.com/maps/embed?pb=!1m18!1m12!1m3!1d3888.123456789!2d77.6325!3d12.8934!2m3!1f0!2f0!3f0!3m2!1i1024!2i768!4f13.1!3m3!1m2!1s0x0%3A0x0!2zMTLCsDUzJzM2LjIiTiA3N8KwMzcnNTcuMCJF!5e0!3m2!1sen!2sin!4v1234567890123!5m2!1sen!2sin`;
+    }
+  };
+
+  // Function to handle Google Maps link changes
+  const handleGoogleMapsLinkChange = (value: string) => {
+    setFormData(prev => ({ ...prev, googleMapsLink: value }));
+  };
+
   const processFiles = async (files: File[]) => {
     const validFiles = files.filter(file => {
       if (!file.type.startsWith('image/')) {
@@ -1023,9 +1058,7 @@ const Booking: React.FC = () => {
             latitude: formData.coordinates.lat,
             longitude: formData.coordinates.lng,
             formattedAddress: formData.address,
-            googleLocation: formData.coordinates.lat !== 0 && formData.coordinates.lng !== 0 
-              ? `https://www.google.com/maps/place/${formData.coordinates.lat},${formData.coordinates.lng}`
-              : null
+            googleLocation: formData.googleMapsLink || null
           },
           service_type: formData.serviceType,
           brand: formData.brandName || 'Not specified',
@@ -1076,9 +1109,7 @@ const Booking: React.FC = () => {
           latitude: formData.coordinates.lat,
           longitude: formData.coordinates.lng,
           formattedAddress: formData.address,
-          googleLocation: formData.coordinates.lat !== 0 && formData.coordinates.lng !== 0 
-            ? `https://www.google.com/maps/place/${formData.coordinates.lat},${formData.coordinates.lng}`
-            : null
+          googleLocation: formData.googleMapsLink || null
         },
         requirements: [],
         estimated_cost: 0,
@@ -1411,7 +1442,7 @@ const Booking: React.FC = () => {
                     id="address"
                     value={formData.address}
                     onChange={(e) => handleInputChange('address', e.target.value)}
-                    placeholder="Please click 'Use Current Location' for easy navigation, or enter your complete address manually..."
+                    placeholder="Enter your complete address including flat number, building name, street, area, city..."
                     className={`mt-1 min-h-[100px] ${
                       showValidation && !formData.address 
                         ? 'border-2 border-black dark:border-white' 
@@ -1435,31 +1466,81 @@ const Booking: React.FC = () => {
                 </div>
               </div>
               
-              <Button
-                type="button"
-                variant="outline"
-                onClick={getCurrentLocation}
-                disabled={isLoadingLocation}
-                className="w-full relative"
-              >
-                {isLoadingLocation ? (
-                  <>
-                    <div className="flex space-x-1 mr-2">
-                      <div className="w-2 h-2 bg-primary rounded-full animate-bounce"></div>
-                      <div className="w-2 h-2 bg-primary rounded-full animate-bounce" style={{animationDelay: '0.1s'}}></div>
-                      <div className="w-2 h-2 bg-primary rounded-full animate-bounce" style={{animationDelay: '0.2s'}}></div>
+              
+              {/* Google Maps Link Input */}
+              <div>
+                <div className="flex items-center gap-2 mb-1">
+                  <Label htmlFor="googleMapsLink">Google Maps Link</Label>
+                  <Badge variant="secondary" className="text-xs bg-blue-100 text-blue-800">
+                    Recommended
+                  </Badge>
+                </div>
+                <div className="mt-1 space-y-2">
+                  <Input
+                    id="googleMapsLink"
+                    value={formData.googleMapsLink}
+                    onChange={(e) => handleGoogleMapsLinkChange(e.target.value)}
+                    placeholder="Paste Google Maps shareable link here (e.g., https://maps.app.goo.gl/...)"
+                    className="text-sm"
+                  />
+                  <div className="flex gap-2 mb-2">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={() => {
+                        // Try to open Google Maps app first, fallback to web
+                        const isMobile = /Android|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+                        
+                        if (isMobile) {
+                          // For mobile, try app first, then web
+                          const appUrl = 'comgooglemaps://';
+                          const webUrl = 'https://www.google.com/maps';
+                          
+                          // Try to open app
+                          window.location.href = appUrl;
+                          
+                          // Fallback to web after a short delay
+                          setTimeout(() => {
+                            window.open(webUrl, '_blank', 'noopener,noreferrer');
+                          }, 1000);
+                        } else {
+                          // For desktop, open web version
+                          window.open('https://www.google.com/maps', '_blank', 'noopener,noreferrer');
+                        }
+                      }}
+                      className="text-xs"
+                    >
+                      <MapPin className="w-4 h-4 mr-1" />
+                      Open Google Maps
+                    </Button>
+                  </div>
+                  <p className="text-xs text-muted-foreground">
+                    💡 <strong>We recommend sharing a Google Maps link</strong> to help our technicians find your exact location easily and save time. 
+                    Click "Open Google Maps" above, find your location, then click "Share" → "Copy link" and paste it here.
+                  </p>
+                  
+                  {/* Google Maps Link Preview */}
+                  {formData.googleMapsLink && (
+                    <div className="mt-3">
+                      <div className="text-xs text-gray-600 mb-2">📍 Location Link:</div>
+                      <div className="p-3 bg-gray-50 rounded-lg border">
+                        <a 
+                          href={formData.googleMapsLink}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-blue-600 hover:text-blue-800 text-sm break-all hover:underline"
+                        >
+                          🔗 {formData.googleMapsLink}
+                        </a>
+                        <p className="text-xs text-gray-500 mt-2">
+                          Click to verify this opens the correct location
+                        </p>
+                      </div>
                     </div>
-                    Getting Location...
-                  </>
-                ) : (
-                  <>
-                    <MapPin className="w-4 h-4 mr-2" />
-                    Use Current Location
-                  </>
-                )}
-              </Button>
-              
-              
+                  )}
+                </div>
+              </div>
               
               <div>
                 <Label>Upload Images (Optional)</Label>
@@ -1667,6 +1748,19 @@ const Booking: React.FC = () => {
                 </CardHeader>
                 <CardContent className="space-y-2 text-sm">
                   <div><strong>Address:</strong> {formData.address}</div>
+                  {formData.googleMapsLink && (
+                    <div>
+                      <strong>Google Maps Link:</strong> 
+                      <a 
+                        href={formData.googleMapsLink} 
+                        target="_blank" 
+                        rel="noopener noreferrer"
+                        className="ml-1 text-blue-600 hover:text-blue-800 underline"
+                      >
+                        🔗 Open in Maps
+                      </a>
+                    </div>
+                  )}
                   <div><strong>Service Date:</strong> {formData.serviceDate ? new Date(formData.serviceDate).toLocaleDateString() : 'Not selected'}</div>
                   <div><strong>Time Slot:</strong> {formatTimeSlot(formData.preferredTime)}</div>
                   {formData.images.length > 0 && <div><strong>Images:</strong> {formData.images.length} uploaded</div>}
