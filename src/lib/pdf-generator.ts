@@ -391,8 +391,8 @@ function handleMobilePrint(billData: PDFBillData, action: 'print' | 'pdf'): void
         color: #333;
         background: white;
         margin: 0;
-        padding: 5mm;
-        font-size: 10px;
+        padding: 0;
+        font-size: 12px;
         -webkit-text-size-adjust: 100%;
       }
       
@@ -402,43 +402,43 @@ function handleMobilePrint(billData: PDFBillData, action: 'print' | 'pdf'): void
         margin: 0;
         background: white;
         padding: 20px 1px 20px 1px;
-        border: none;
+        border: 2px solid #000;
         box-sizing: border-box;
-        border-radius: 0;
+        border-radius: 12px;
       }
       
       .header {
         text-align: center;
-        margin-bottom: 10px;
+        margin-bottom: 15px;
         border-bottom: 2px solid #000000;
-        padding: 3px 0 6px 0;
+        padding: 5px 0 8px 0;
       }
       
       .logo-container {
         display: flex;
         align-items: center;
         justify-content: center;
-        margin-bottom: 10px;
+        margin-bottom: 15px;
       }
       
       .full-logo {
-        max-width: 150px;
+        max-width: 200px;
         height: auto;
-        max-height: 50px;
+        max-height: 60px;
       }
       
       .company-details {
-        font-size: 12px;
+        font-size: 14px;
         color: #666;
-        line-height: 1.3;
+        line-height: 1.4;
       }
       
       .bill-info {
         display: flex;
-        flex-direction: column;
-        margin-bottom: 10px;
-        gap: 10px;
-        padding: 0 10px;
+        justify-content: space-between;
+        margin-bottom: 15px;
+        gap: 15px;
+        padding: 0 5px;
       }
       
       .bill-to, .bill-details {
@@ -446,24 +446,24 @@ function handleMobilePrint(billData: PDFBillData, action: 'print' | 'pdf'): void
       }
       
       .section-title {
-        font-size: 16px;
+        font-size: 18px;
         font-weight: bold;
         color: #000000;
-        margin-bottom: 10px;
+        margin-bottom: 15px;
         border-bottom: 2px solid #e5e7eb;
-        padding-bottom: 3px;
+        padding-bottom: 5px;
       }
       
       .customer-info, .bill-meta {
-        font-size: 12px;
-        line-height: 1.4;
+        font-size: 14px;
+        line-height: 1.5;
       }
       
       .items-table {
-        width: calc(100% - 20px);
+        width: calc(100% - 30px);
         border-collapse: collapse;
-        margin: 0 10px 10px 10px;
-        font-size: 9px;
+        margin: 0 15px 15px 15px;
+        font-size: 10px;
         table-layout: fixed;
       }
       
@@ -471,7 +471,7 @@ function handleMobilePrint(billData: PDFBillData, action: 'print' | 'pdf'): void
         background-color: #f8fafc;
         color: #374151;
         font-weight: bold;
-        padding: 6px 3px;
+        padding: 8px 4px;
         text-align: center;
         border: 1px solid #d1d5db;
       }
@@ -482,7 +482,7 @@ function handleMobilePrint(billData: PDFBillData, action: 'print' | 'pdf'): void
       .items-table th:nth-child(4) { width: 15%; }
       
       .items-table td {
-        padding: 6px 3px;
+        padding: 8px 4px;
         border: 1px solid #d1d5db;
         vertical-align: middle;
         text-align: center;
@@ -503,45 +503,45 @@ function handleMobilePrint(billData: PDFBillData, action: 'print' | 'pdf'): void
       }
       
       .summary {
-        margin: 10px 10px 0 10px;
+        margin: 15px 15px 0 15px;
         text-align: right;
-        width: calc(100% - 20px);
+        width: calc(100% - 30px);
         box-sizing: border-box;
       }
       
       .summary-row {
         display: flex;
         justify-content: space-between;
-        padding: 6px 0;
+        padding: 8px 0;
         border-bottom: 1px solid #e5e7eb;
       }
       
       .summary-row.total {
-        font-size: 16px;
+        font-size: 18px;
         font-weight: bold;
         color: #000000;
         border-top: 2px solid #000000;
         border-bottom: 2px solid #000000;
-        margin-top: 8px;
-        padding: 12px 0;
+        margin-top: 10px;
+        padding: 5px 0;
       }
       
       .notes-section {
-        margin: 10px 10px 0 10px;
-        padding-top: 8px;
+        margin: 15px 5px 0 5px;
+        padding-top: 10px;
         border-top: 1px solid #e5e7eb;
       }
       
       .notes-title {
-        font-size: 14px;
+        font-size: 16px;
         font-weight: bold;
         color: #374151;
-        margin-bottom: 8px;
+        margin-bottom: 10px;
       }
       
       .notes-content {
-        font-size: 12px;
-        line-height: 1.4;
+        font-size: 14px;
+        line-height: 1.5;
         color: #6b7280;
       }
       
@@ -551,16 +551,16 @@ function handleMobilePrint(billData: PDFBillData, action: 'print' | 'pdf'): void
       }
       
       .terms-list li {
-        margin-bottom: 6px;
+        margin-bottom: 8px;
         list-style-type: disc;
       }
       
       .footer {
-        margin: 10px 10px 0 10px;
-        padding: 8px 0;
+        margin: 15px 15px 0 15px;
+        padding: 10px 0;
         border-top: 1px solid #e5e7eb;
         text-align: center;
-        font-size: 9px;
+        font-size: 10px;
         color: #6b7280;
       }
       
@@ -572,8 +572,8 @@ function handleMobilePrint(billData: PDFBillData, action: 'print' | 'pdf'): void
         
         body {
           margin: 0 !important;
-          padding: 10mm !important;
-          font-size: 11pt !important;
+          padding: 15mm !important;
+          font-size: 12pt !important;
           line-height: 1.4 !important;
         }
         
@@ -590,7 +590,7 @@ function handleMobilePrint(billData: PDFBillData, action: 'print' | 'pdf'): void
         
         @page {
           size: A4 !important;
-          margin: 20mm 15mm 20mm 15mm !important;
+          margin: 20mm 8mm 20mm 8mm !important;
           border: 2px solid #000000 !important;
           border-radius: 12px !important;
         }
@@ -602,16 +602,16 @@ function handleMobilePrint(billData: PDFBillData, action: 'print' | 'pdf'): void
         }
         
         @page :left {
-          margin-left: 15mm !important;
-          margin-right: 10mm !important;
+          margin-left: 8mm !important;
+          margin-right: 5mm !important;
           margin-top: 20mm !important;
           border: 2px solid #000000 !important;
           border-radius: 12px !important;
         }
         
         @page :right {
-          margin-left: 10mm !important;
-          margin-right: 15mm !important;
+          margin-left: 5mm !important;
+          margin-right: 8mm !important;
           margin-top: 20mm !important;
           border: 2px solid #000000 !important;
           border-radius: 12px !important;
@@ -637,23 +637,40 @@ function handleMobilePrint(billData: PDFBillData, action: 'print' | 'pdf'): void
     
     // Wait a moment for styles to apply, then print
     setTimeout(() => {
-      if (action === 'print') {
-        // Direct print without preview
-        window.print();
-      } else {
-        // Save as PDF (browser will show save dialog)
-        window.print();
-      }
-      
-      // Clean up after printing - restore original content immediately
-      setTimeout(() => {
+      try {
+        if (action === 'print') {
+          // Direct print without preview
+          window.print();
+        } else {
+          // Save as PDF (browser will show save dialog)
+          window.print();
+        }
+        
+        // Clean up after printing - restore original content
+        setTimeout(() => {
+          try {
+            document.body.innerHTML = originalBody;
+            document.title = originalTitle;
+            if (document.head.contains(printStyles)) {
+              document.head.removeChild(printStyles);
+            }
+          } catch (cleanupError) {
+            console.error('Error during cleanup:', cleanupError);
+            // Force cleanup even if there's an error
+            location.reload();
+          }
+        }, 2000); // Longer timeout for mobile
+      } catch (printError) {
+        console.error('Error during print:', printError);
+        // Restore content immediately on error
         document.body.innerHTML = originalBody;
         document.title = originalTitle;
         if (document.head.contains(printStyles)) {
           document.head.removeChild(printStyles);
         }
-      }, 1000); // Longer timeout for mobile
-    }, 200); // Longer delay for mobile
+        alert('Error generating PDF. Please try again.');
+      }
+    }, 300); // Longer delay for mobile
     
   } catch (error) {
     console.error('Error generating mobile bill PDF:', error);
