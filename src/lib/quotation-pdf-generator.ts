@@ -240,17 +240,19 @@ export function generateQuotationPDF(quotationData: PDFQuotationData, action: 'p
           }
           
           .validity-note {
-            background-color: #fef3c7;
-            border: 1px solid #f59e0b;
-            border-radius: 4px;
+            background-color: #dbeafe;
+            border: 2px solid #3b82f6;
+            border-radius: 8px;
             padding: 15px;
             margin: 15px 15px 0 15px;
             font-size: 14px;
-            color: #92400e;
+            color: #1e40af;
+            font-weight: 500;
           }
           
           .validity-note strong {
-            color: #b45309;
+            color: #1d4ed8;
+            font-weight: 700;
           }
           
           .footer {
@@ -511,17 +513,19 @@ function handleMobilePrint(quotationData: PDFQuotationData, action: 'print' | 'p
       }
       
       .validity-note {
-        background-color: #fef3c7;
-        border: 1px solid #f59e0b;
-        border-radius: 4px;
+        background-color: #dbeafe;
+        border: 2px solid #3b82f6;
+        border-radius: 8px;
         padding: 12px;
         margin: 10px 10px 0 10px;
         font-size: 12px;
-        color: #92400e;
+        color: #1e40af;
+        font-weight: 500;
       }
       
       .validity-note strong {
-        color: #b45309;
+        color: #1d4ed8;
+        font-weight: 700;
       }
       
       .footer {

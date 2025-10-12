@@ -55,6 +55,8 @@ export default function BillGenerator({ customer, onPrint }: BillGeneratorProps)
   const [notes, setNotes] = useState<string[]>([]);
   const [newNote, setNewNote] = useState('');
   const [editingNoteIndex, setEditingNoteIndex] = useState<number | null>(null);
+  const [validityNote, setValidityNote] = useState('This bill is valid for 30 days from the date of issue. Prices are subject to change without prior notice.');
+  const [showValidityNote, setShowValidityNote] = useState(false);
   const [terms, setTerms] = useState(`1. Goods once sold will not be taken back and refund or exchange.
 2. There is 60 Days warranty for RO & PUMP. No Warranty for other spare parts.
 3. Without the bill there will not be any warranty / free service given.
@@ -218,7 +220,7 @@ export default function BillGenerator({ customer, onPrint }: BillGeneratorProps)
       paymentStatus: 'PENDING',
       paymentMethod: 'CASH',
       notes: notes.join('\n'),
-      terms,
+      terms: showValidityNote ? `${validityNote}\n\n${terms}` : terms,
       serviceType: customerServiceType,
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString()
@@ -683,6 +685,60 @@ export default function BillGenerator({ customer, onPrint }: BillGeneratorProps)
                         No terms and conditions added yet. Click "Edit" to add some.
                       </div>
                     )}
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Validity Note Section */}
+            <div className="space-y-3 sm:space-y-4">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 sm:gap-2">
+                <h3 className="text-base sm:text-lg font-semibold text-blue-800">Validity Note</h3>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setShowValidityNote(!showValidityNote)}
+                  className={`w-full sm:w-auto ${showValidityNote ? 'border-red-300 text-red-700 hover:bg-red-50' : 'border-green-300 text-green-700 hover:bg-green-50'}`}
+                >
+                  {showValidityNote ? (
+                    <>
+                      <X className="w-4 h-4 mr-1" />
+                      Remove
+                    </>
+                  ) : (
+                    <>
+                      <Plus className="w-4 h-4 mr-1" />
+                      Add
+                    </>
+                  )}
+                </Button>
+              </div>
+              
+              {showValidityNote && (
+                <div className="space-y-3">
+                  <div className="p-4 bg-blue-100 border-2 border-blue-300 rounded-lg">
+                    <div className="flex items-start gap-3">
+                      <div className="flex-1">
+                        <Textarea
+                          value={validityNote}
+                          onChange={(e) => setValidityNote(e.target.value)}
+                          placeholder="Enter validity note..."
+                          rows={3}
+                          className="w-full bg-transparent border-none p-0 text-blue-900 font-medium resize-none focus:ring-0 focus:border-none"
+                        />
+                      </div>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => setValidityNote('This bill is valid for 30 days from the date of issue. Prices are subject to change without prior notice.')}
+                        className="h-8 w-8 p-0 text-blue-600 hover:text-blue-700 hover:bg-blue-200"
+                      >
+                        <Edit className="w-3 h-3" />
+                      </Button>
+                    </div>
+                  </div>
+                  <div className="text-xs text-blue-600">
+                    This note will appear at the top of the terms and conditions section on the bill PDF.
                   </div>
                 </div>
               )}
