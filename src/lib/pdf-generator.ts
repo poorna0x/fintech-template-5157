@@ -275,16 +275,54 @@ export function generateBillPDF(billData: PDFBillData, action: 'print' | 'pdf' =
           width: 100% !important;
           max-width: 100% !important;
           margin: 0 !important;
-          padding: 0 !important;
-              border: 2px solid #000 !important;
+          padding: 20px 2px 20px 2px !important;
+              border: none !important;
               box-shadow: none !important;
               background: white !important;
               box-sizing: border-box !important;
+              border-radius: 0 !important;
             }
             
             @page {
               size: A4 !important;
-              margin: 0 !important;
+              margin: 20mm 15mm 20mm 15mm !important;
+              border: 2px solid #000000 !important;
+              border-radius: 12px !important;
+            }
+            
+            @page :first {
+              margin-top: 20mm !important;
+              border: 2px solid #000000 !important;
+              border-radius: 12px !important;
+            }
+            
+            @page :left {
+              margin-left: 15mm !important;
+              margin-right: 10mm !important;
+              margin-top: 20mm !important;
+              border: 2px solid #000000 !important;
+              border-radius: 12px !important;
+            }
+            
+            @page :right {
+              margin-left: 10mm !important;
+              margin-right: 15mm !important;
+              margin-top: 20mm !important;
+              border: 2px solid #000000 !important;
+              border-radius: 12px !important;
+            }
+            
+            .page-break {
+              page-break-before: always !important;
+              margin-top: 20px !important;
+            }
+            
+            .new-page-content {
+              margin-top: 0 !important;
+            }
+            
+            .bill-container:not(:first-child) {
+              padding-top: 20px !important;
             }
           }
         </style>
@@ -363,9 +401,10 @@ function handleMobilePrint(billData: PDFBillData, action: 'print' | 'pdf'): void
         max-width: 100%;
         margin: 0;
         background: white;
-        padding: 0;
-        border: 2px solid #000;
+        padding: 20px 2px 20px 2px;
+        border: none;
         box-sizing: border-box;
+        border-radius: 0;
       }
       
       .header {
@@ -551,7 +590,44 @@ function handleMobilePrint(billData: PDFBillData, action: 'print' | 'pdf'): void
         
         @page {
           size: A4 !important;
-          margin: 0 !important;
+          margin: 20mm 15mm 20mm 15mm !important;
+          border: 2px solid #000000 !important;
+          border-radius: 12px !important;
+        }
+        
+        @page :first {
+          margin-top: 20mm !important;
+          border: 2px solid #000000 !important;
+          border-radius: 12px !important;
+        }
+        
+        @page :left {
+          margin-left: 15mm !important;
+          margin-right: 10mm !important;
+          margin-top: 20mm !important;
+          border: 2px solid #000000 !important;
+          border-radius: 12px !important;
+        }
+        
+        @page :right {
+          margin-left: 10mm !important;
+          margin-right: 15mm !important;
+          margin-top: 20mm !important;
+          border: 2px solid #000000 !important;
+          border-radius: 12px !important;
+        }
+        
+        .page-break {
+          page-break-before: always !important;
+          margin-top: 20px !important;
+        }
+        
+        .new-page-content {
+          margin-top: 0 !important;
+        }
+        
+        .bill-container:not(:first-child) {
+          padding-top: 20px !important;
         }
       }
     `;
@@ -941,27 +1017,67 @@ function generateBillHTML(data: PDFBillData): string {
             width: 100% !important;
             max-width: 100% !important;
             margin: 0 !important;
-            padding: 0 !important;
-            border: 2px solid #000 !important;
+            padding: 20px 2px 20px 2px !important;
+            border: none !important;
             box-shadow: none !important;
             page-break-inside: avoid !important;
+            border-radius: 0 !important;
           }
           
           @page {
             size: A4 !important;
-            margin: 15mm !important;
+            margin: 20mm 15mm 20mm 15mm !important;
+            border: 2px solid #000000 !important;
+            border-radius: 12px !important;
+          }
+          
+          @page :first {
+            margin-top: 20mm !important;
+            border: 2px solid #000000 !important;
+            border-radius: 12px !important;
+          }
+          
+          @page :left {
+            margin-left: 15mm !important;
+            margin-right: 10mm !important;
+            margin-top: 20mm !important;
+            border: 2px solid #000000 !important;
+            border-radius: 12px !important;
+          }
+          
+          @page :right {
+            margin-left: 10mm !important;
+            margin-right: 15mm !important;
+            margin-top: 20mm !important;
+            border: 2px solid #000000 !important;
+            border-radius: 12px !important;
           }
           
           .header {
             page-break-after: avoid !important;
+            margin-top: 0 !important;
           }
           
           .items-table {
-            page-break-inside: avoid !important;
+            page-break-inside: auto !important;
           }
           
           .summary {
             page-break-before: avoid !important;
+            margin-top: 20px !important;
+          }
+          
+          .page-break {
+            page-break-before: always !important;
+            margin-top: 20px !important;
+          }
+          
+          .new-page-content {
+            margin-top: 0 !important;
+          }
+          
+          .bill-container:not(:first-child) {
+            padding-top: 20px !important;
           }
         }
       </style>
