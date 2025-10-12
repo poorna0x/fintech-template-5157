@@ -137,7 +137,11 @@ The AMC does not cover display and lights of the RO.`);
 
   const addTerm = () => {
     if (newTerm.trim()) {
-      setTerms(prev => prev + '\n' + newTerm);
+      const currentTerms = terms.split('\n').filter(line => line.trim());
+      const termNumber = currentTerms.length + 1;
+      const formattedTerm = `${termNumber}. ${newTerm.trim()}`;
+      const updatedTerms = [...currentTerms, formattedTerm].join('\n');
+      setTerms(updatedTerms);
       setNewTerm('');
     }
   };
@@ -356,7 +360,7 @@ The AMC does not cover display and lights of the RO.`);
           <Card>
             <CardHeader>
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-                <CardTitle>Additional Notes</CardTitle>
+                <CardTitle>Additional Info</CardTitle>
                 <Button
                   variant="outline"
                   size="sm"
@@ -426,27 +430,34 @@ The AMC does not cover display and lights of the RO.`);
               {isEditingTerms ? (
                 <div className="space-y-4">
                   <div className="text-sm text-gray-600">
-                    Edit AMC terms and conditions. Each line will be treated as a separate section.
+                    Edit AMC terms and conditions. Each term will be automatically numbered.
                   </div>
                   <div className="flex gap-2">
                     <Input
                       value={newTerm}
                       onChange={(e) => setNewTerm(e.target.value)}
-                      placeholder="Enter new term..."
+                      placeholder="Enter new term (e.g., 'Service response within 24 hours')"
                       onKeyPress={(e) => e.key === 'Enter' && addTerm()}
+                      className="flex-1"
                     />
-                    <Button onClick={addTerm} size="sm">
+                    <Button onClick={addTerm} size="sm" disabled={!newTerm.trim()}>
                       <Plus className="w-4 h-4 mr-2" />
-                      Add
+                      Add Term
                     </Button>
                   </div>
-                  <Textarea
-                    value={terms}
-                    onChange={(e) => setTerms(e.target.value)}
-                    placeholder="Or edit all terms at once..."
-                    rows={8}
-                    className="font-mono text-sm"
-                  />
+                  <div className="space-y-2">
+                    <Label className="text-sm font-medium">Current AMC Terms & Conditions:</Label>
+                    <Textarea
+                      value={terms}
+                      onChange={(e) => setTerms(e.target.value)}
+                      placeholder="Terms will be automatically numbered..."
+                      rows={10}
+                      className="font-mono text-sm"
+                    />
+                    <div className="text-xs text-gray-500">
+                      💡 Tip: Each line will be treated as a separate numbered term. You can edit the full text above or add individual terms using the input above.
+                    </div>
+                  </div>
                 </div>
               ) : (
                 <div className="space-y-3">

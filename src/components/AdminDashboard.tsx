@@ -3976,7 +3976,7 @@ const AdminDashboard = () => {
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="edit_notes">Notes</Label>
+                <Label htmlFor="edit_notes">Additional Info</Label>
                 <Textarea
                   id="edit_notes"
                   value={editFormData?.notes || ''}

@@ -309,7 +309,7 @@ const CustomerServicesManager: React.FC<CustomerServicesManagerProps> = ({
 
             {/* Notes */}
             <div className="space-y-2">
-              <Label htmlFor="notes">Notes</Label>
+              <Label htmlFor="notes">Additional Info</Label>
               <Input
                 id="notes"
                 value={serviceFormData.notes}

@@ -668,20 +668,17 @@ function createBillContent(data: PDFBillData): string {
       ${data.notes || data.terms ? `
         <div class="notes-section">
           ${data.notes ? `
-            <div class="notes-title">Notes:</div>
+            <div class="notes-title">Additional Info:</div>
             <div class="notes-content">${data.notes}</div>
           ` : ''}
           ${data.terms ? `
             <div class="notes-title" style="margin-top: 20px;">Terms & Conditions:</div>
             <div class="notes-content">
               <ul class="terms-list">
-                <li>Goods once sold will not be taken back and refund or exchange.</li>
-                <li>There is 60 Days warranty for RO & PUMP. No Warranty for other spare parts.</li>
-                <li>Without the bill there will not be any warranty / free service given.</li>
-                <li>There is no warranty on the water purifier used for more than 750 PPM water TDS level.</li>
-                <li>Once the order placed cannot be cancelled and advance amount will not be returned.</li>
-                <li>Charges of Rs. 500/- extra to be paid on collection of the cash against cheque return.</li>
-                <li>Company is not responsible for any transactions done personally with the technicians.</li>
+                ${data.terms.split('\n').filter(line => line.trim()).map(term => {
+                  const cleanTerm = term.replace(/^\d+\.\s*/, ''); // Remove number if present
+                  return `<li>${cleanTerm}</li>`;
+                }).join('')}
               </ul>
             </div>
           ` : ''}
@@ -1051,20 +1048,17 @@ function generateBillHTML(data: PDFBillData): string {
         ${data.notes || data.terms ? `
           <div class="notes-section">
             ${data.notes ? `
-              <div class="notes-title">Notes:</div>
+              <div class="notes-title">Additional Info:</div>
               <div class="notes-content">${data.notes}</div>
             ` : ''}
             ${data.terms ? `
               <div class="notes-title" style="margin-top: 20px;">Terms & Conditions:</div>
               <div class="notes-content">
                 <ul class="terms-list">
-                  <li>Goods once sold will not be taken back and refund or exchange.</li>
-                  <li>There is 60 Days warranty for RO & PUMP. No Warranty for other spare parts.</li>
-                  <li>Without the bill there will not be any warranty / free service given.</li>
-                  <li>There is no warranty on the water purifier used for more than 750 PPM water TDS level.</li>
-                  <li>Once the order placed cannot be cancelled and advance amount will not be returned.</li>
-                  <li>Charges of Rs. 500/- extra to be paid on collection of the cash against cheque return.</li>
-                  <li>Company is not responsible for any transactions done personally with the technicians.</li>
+                  ${data.terms.split('\n').filter(line => line.trim()).map(term => {
+                    const cleanTerm = term.replace(/^\d+\.\s*/, ''); // Remove number if present
+                    return `<li>${cleanTerm}</li>`;
+                  }).join('')}
                 </ul>
               </div>
             ` : ''}

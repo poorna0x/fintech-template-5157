@@ -53,8 +53,7 @@ export default function BillGenerator({ customer, onPrint }: BillGeneratorProps)
   const [company, setCompany] = useState<CompanyInfo>(defaultCompanyInfo);
   const [items, setItems] = useState<BillItem[]>(defaultBillItems);
   const [notes, setNotes] = useState('');
-  const [terms, setTerms] = useState(`Terms & Conditions
-1. Goods once sold will not be taken back and refund or exchange.
+  const [terms, setTerms] = useState(`1. Goods once sold will not be taken back and refund or exchange.
 2. There is 60 Days warranty for RO & PUMP. No Warranty for other spare parts.
 3. Without the bill there will not be any warranty / free service given.
 4. There is no warranty on the water purifier used for more than 750 PPM water TDS level.
@@ -117,7 +116,9 @@ export default function BillGenerator({ customer, onPrint }: BillGeneratorProps)
   const addTerm = () => {
     if (newTerm.trim()) {
       const currentTerms = terms.split('\n').filter(line => line.trim());
-      const updatedTerms = [...currentTerms, newTerm.trim()].join('\n');
+      const termNumber = currentTerms.length + 1;
+      const formattedTerm = `${termNumber}. ${newTerm.trim()}`;
+      const updatedTerms = [...currentTerms, formattedTerm].join('\n');
       setTerms(updatedTerms);
       setNewTerm('');
     }
@@ -125,8 +126,13 @@ export default function BillGenerator({ customer, onPrint }: BillGeneratorProps)
 
   const removeTerm = (index: number) => {
     const currentTerms = terms.split('\n').filter(line => line.trim());
-    const updatedTerms = currentTerms.filter((_, i) => i !== index).join('\n');
-    setTerms(updatedTerms);
+    const updatedTerms = currentTerms.filter((_, i) => i !== index);
+    // Renumber the terms
+    const renumberedTerms = updatedTerms.map((term, i) => {
+      const termText = term.replace(/^\d+\.\s*/, ''); // Remove existing number
+      return `${i + 1}. ${termText}`;
+    });
+    setTerms(renumberedTerms.join('\n'));
   };
 
   const addNote = () => {
@@ -380,7 +386,7 @@ export default function BillGenerator({ customer, onPrint }: BillGeneratorProps)
             {/* Notes Section */}
             <div className="space-y-4">
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-                <h3 className="text-lg font-semibold">Notes</h3>
+                <h3 className="text-lg font-semibold">Additional Info</h3>
                 <Button
                   variant="outline"
                   size="sm"
@@ -467,27 +473,34 @@ export default function BillGenerator({ customer, onPrint }: BillGeneratorProps)
               {isEditingTerms ? (
                 <div className="space-y-4">
                   <div className="text-sm text-gray-600">
-                    Add new terms and conditions. Each line will be treated as a separate bullet point.
+                    Add new terms and conditions. Each term will be automatically numbered.
                   </div>
                   <div className="flex gap-2">
                     <Input
                       value={newTerm}
                       onChange={(e) => setNewTerm(e.target.value)}
-                      placeholder="Enter new term..."
+                      placeholder="Enter new term (e.g., 'Payment due within 30 days')"
                       onKeyPress={(e) => e.key === 'Enter' && addTerm()}
+                      className="flex-1"
                     />
-                    <Button onClick={addTerm} size="sm">
+                    <Button onClick={addTerm} size="sm" disabled={!newTerm.trim()}>
                       <Plus className="w-4 h-4 mr-2" />
-                      Add
+                      Add Term
                     </Button>
                   </div>
-                  <Textarea
-                    value={terms}
-                    onChange={(e) => setTerms(e.target.value)}
-                    placeholder="Or edit all terms at once..."
-                    rows={4}
-                    className="font-mono text-sm"
-                  />
+                  <div className="space-y-2">
+                    <Label className="text-sm font-medium">Current Terms & Conditions:</Label>
+                    <Textarea
+                      value={terms}
+                      onChange={(e) => setTerms(e.target.value)}
+                      placeholder="Terms will be automatically numbered..."
+                      rows={6}
+                      className="font-mono text-sm"
+                    />
+                    <div className="text-xs text-gray-500">
+                      💡 Tip: Each line will be treated as a separate numbered term. You can edit the full text above or add individual terms using the input above.
+                    </div>
+                  </div>
                 </div>
               ) : (
                 <div className="space-y-3">
@@ -497,14 +510,17 @@ export default function BillGenerator({ customer, onPrint }: BillGeneratorProps)
                   <div className="space-y-2">
                     {termsList.map((term, index) => (
                       <div key={`term-${index}-${term.slice(0, 10)}`} className="flex items-start gap-3 p-3 bg-gray-50 rounded-lg">
-                        <span className="text-gray-400 mt-1">•</span>
-                        <span className="flex-1 text-sm">{term}</span>
+                        <span className="text-gray-600 mt-1 font-medium text-sm">
+                          {term.match(/^\d+\./)?.[0] || `${index + 1}.`}
+                        </span>
+                        <span className="flex-1 text-sm">{term.replace(/^\d+\.\s*/, '')}</span>
                         {isEditingTerms && (
                           <Button
                             variant="ghost"
                             size="sm"
                             onClick={() => removeTerm(index)}
                             className="text-red-500 hover:text-red-700"
+                            title="Remove this term"
                           >
                             <X className="w-4 h-4" />
                           </Button>
@@ -513,7 +529,7 @@ export default function BillGenerator({ customer, onPrint }: BillGeneratorProps)
                     ))}
                     {termsList.length === 0 && (
                       <div className="text-center text-gray-500 py-4">
-                        No terms and conditions added yet.
+                        No terms and conditions added yet. Click "Edit" to add some.
                       </div>
                     )}
                   </div>
