@@ -2,9 +2,12 @@
 export interface Customer {
   id: string;
   customerId: string; // Format: C0001, C0002, etc.
+  customer_id?: string; // Alternative field name used in database
   fullName: string;
+  full_name?: string; // Alternative field name used in database
   phone: string;
   alternatePhone?: string;
+  alternate_phone?: string; // Alternative field name used in database
   email: string;
   
   // Address Information
@@ -27,6 +30,7 @@ export interface Customer {
   
   // Service Information
   serviceType: 'RO' | 'SOFTENER';
+  service_type?: string; // Alternative field name used in database
   brand: string;
   model: string;
   installationDate?: string;
@@ -39,6 +43,7 @@ export interface Customer {
   
   // Additional Info
   notes?: string;
+  behavior?: string; // Customer behavior notes
   preferredTimeSlot?: 'MORNING' | 'AFTERNOON' | 'EVENING';
   preferredLanguage?: 'ENGLISH' | 'HINDI' | 'KANNADA' | 'TAMIL' | 'TELUGU';
   
@@ -55,26 +60,33 @@ export interface Customer {
 export interface Job {
   id: string;
   jobNumber: string; // Auto-generated: RO-2024-001
+  job_number?: string; // Alternative field name used in database
   
   // Customer Info
   customerId: string;
+  customer_id?: string; // Alternative field name used in database
   customer?: Customer;
   
   // Service Details
   serviceType: 'RO' | 'SOFTENER';
+  service_type?: string; // Alternative field name used in database
   serviceSubType: string; // 'Installation', 'Repair', 'Maintenance'
+  service_sub_type?: string; // Alternative field name used in database
   brand: string;
   model: string;
   
   // Assignment
   assignedTechnicianId?: string;
+  assigned_technician_id?: string; // Alternative field name used in database
   assignedTechnician?: Technician;
   assignedDate?: string;
   assignedBy?: string; // Admin ID
   
   // Scheduling
   scheduledDate: string;
-  scheduledTimeSlot: 'MORNING' | 'AFTERNOON' | 'EVENING';
+  scheduled_date?: string; // Alternative field name used in database
+  scheduledTimeSlot: 'MORNING' | 'AFTERNOON' | 'EVENING' | 'CUSTOM';
+  scheduled_time_slot?: string; // Alternative field name used in database
   estimatedDuration: number; // minutes
   
   // Location
@@ -82,8 +94,8 @@ export interface Job {
   serviceLocation: Customer['location'];
   
   // Status & Progress
-  status: 'PENDING' | 'ASSIGNED' | 'IN_PROGRESS' | 'COMPLETED' | 'CANCELLED' | 'RESCHEDULED' | 'FOLLOW_UP' | 'DENIED';
-  priority: 'LOW' | 'MEDIUM' | 'HIGH' | 'URGENT';
+  status: 'PENDING' | 'ASSIGNED' | 'IN_PROGRESS' | 'COMPLETED' | 'CANCELLED' | 'RESCHEDULED' | 'FOLLOW_UP' | 'DENIED' | string;
+  priority: 'LOW' | 'MEDIUM' | 'HIGH' | 'URGENT' | string;
   
   // Job Details
   description: string;
@@ -110,7 +122,10 @@ export interface Job {
   
   // Documents
   beforePhotos?: string[];
+  before_photos?: string[]; // Alternative field name used in database
   afterPhotos?: string[];
+  after_photos?: string[]; // Alternative field name used in database
+  images?: string[]; // General images field used in database
   invoice?: string;
   warranty?: string;
   
@@ -352,29 +367,80 @@ export interface Bill {
   updatedAt: string;
 }
 
-// Database Table Types (for Supabase)
+// Database Table Types (for Supabase) - matches actual schema with snake_case
 export interface Database {
   public: {
     Tables: {
       customers: {
-        Row: Customer;
-        Insert: Omit<Customer, 'id' | 'createdAt' | 'updatedAt'>;
-        Update: Partial<Omit<Customer, 'id' | 'createdAt'>>;
+        Row: {
+          id: string;
+          customer_id: string;
+          full_name: string;
+          phone: string;
+          alternate_phone?: string;
+          email: string;
+          address: any;
+          location: any;
+          service_type: string;
+          brand: string;
+          model: string;
+          installation_date?: string;
+          warranty_expiry?: string;
+          status: string;
+          customer_since: string;
+          last_service_date?: string;
+          notes?: string;
+          preferred_time_slot?: string;
+          preferred_language?: string;
+          service_cost?: number;
+          cost_agreed?: boolean;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: Omit<Database['public']['Tables']['customers']['Row'], 'id' | 'created_at' | 'updated_at'>;
+        Update: Partial<Omit<Database['public']['Tables']['customers']['Row'], 'id' | 'created_at'>>;
       };
       jobs: {
         Row: Job;
-        Insert: Omit<Job, 'id' | 'jobNumber' | 'createdAt' | 'updatedAt'>;
-        Update: Partial<Omit<Job, 'id' | 'jobNumber' | 'createdAt'>>;
+        Insert: Omit<Job, 'id' | 'createdAt' | 'updatedAt'>;
+        Update: Partial<Omit<Job, 'id' | 'createdAt'>>;
       };
       technicians: {
-        Row: Technician;
-        Insert: Omit<Technician, 'id' | 'createdAt' | 'updatedAt'>;
-        Update: Partial<Omit<Technician, 'id' | 'createdAt'>>;
+        Row: {
+          id: string;
+          full_name: string;
+          phone: string;
+          email: string;
+          employee_id: string;
+          skills: any;
+          service_areas: any;
+          status: string;
+          current_location?: any;
+          work_schedule: any;
+          performance: any;
+          vehicle?: any;
+          salary: any;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: Omit<Database['public']['Tables']['technicians']['Row'], 'id' | 'created_at' | 'updated_at'>;
+        Update: Partial<Omit<Database['public']['Tables']['technicians']['Row'], 'id' | 'created_at'>>;
       };
       job_assignment_requests: {
-        Row: JobAssignmentRequest;
-        Insert: Omit<JobAssignmentRequest, 'id' | 'createdAt' | 'updatedAt'>;
-        Update: Partial<Omit<JobAssignmentRequest, 'id' | 'createdAt'>>;
+        Row: {
+          id: string;
+          job_id: string;
+          technician_id: string;
+          status: string;
+          assigned_by?: string;
+          assigned_at: string;
+          responded_at?: string;
+          response_notes?: string;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: Omit<Database['public']['Tables']['job_assignment_requests']['Row'], 'id' | 'created_at' | 'updated_at'>;
+        Update: Partial<Omit<Database['public']['Tables']['job_assignment_requests']['Row'], 'id' | 'created_at'>>;
       };
       bills: {
         Row: Bill;

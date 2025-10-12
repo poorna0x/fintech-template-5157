@@ -258,10 +258,9 @@ const AdminDashboard = () => {
     phone: tech.phone,
     email: tech.email,
     employeeId: tech.employee_id,
-    account_status: tech.account_status || 'ACTIVE',
+    status: tech.status || 'AVAILABLE',
     skills: tech.skills,
     serviceAreas: tech.service_areas,
-    status: tech.status,
     currentLocation: tech.current_location,
     workSchedule: tech.work_schedule,
     performance: tech.performance,
@@ -310,11 +309,6 @@ const AdminDashboard = () => {
     updatedAt: customer.updated_at
   });
 
-  // Load data on component mount
-  useEffect(() => {
-    loadDashboardData();
-  }, []);
-
   // Reset assignment type when dialog closes
   useEffect(() => {
     if (!assignJobDialogOpen) {
@@ -357,6 +351,11 @@ const AdminDashboard = () => {
     }
   };
 
+  // Load data on component mount
+  useEffect(() => {
+    loadDashboardData();
+  }, []);
+
   const handleDeleteCustomer = async () => {
     if (!customerToDelete) return;
     
@@ -365,7 +364,7 @@ const AdminDashboard = () => {
       // const { error } = await db.customers.delete(customerToDelete.id);
       
       // For now, just show success message
-      toast.success(`Customer ${(customerToDelete as any).customer_id} deleted successfully`);
+      toast.success(`Customer ${customerToDelete.customer_id || customerToDelete.customerId} deleted successfully`);
       
       // Remove from local state
       setCustomers(customers.filter(c => c.id !== customerToDelete.id));
@@ -381,8 +380,8 @@ const AdminDashboard = () => {
     setEditingCustomer(customer);
     
     // Parse service types from the stored string
-    const serviceTypes = (customer as any).service_type ? 
-      (customer as any).service_type.split(',').map((s: string) => s.trim()) : [];
+    const serviceTypes = customer.service_type ? 
+      customer.service_type.split(',').map((s: string) => s.trim()) : [];
     
     // Parse equipment from brands and models
     const equipment: {[serviceType: string]: {brand: string, model: string}} = {};
@@ -399,17 +398,17 @@ const AdminDashboard = () => {
     }
     
     setEditFormData({
-      full_name: (customer as any).full_name || '',
+      full_name: customer.full_name || customer.fullName || '',
       phone: customer.phone || '',
-      alternate_phone: (customer as any).alternate_phone || '',
+      alternate_phone: customer.alternate_phone || customer.alternatePhone || '',
       email: customer.email || '',
       service_types: serviceTypes,
       equipment: equipment,
-      behavior: (customer as any).behavior || '',
-      native_language: (customer as any).preferred_language || '',
+      behavior: customer.behavior || '',
+      native_language: customer.preferredLanguage || '',
       status: customer.status || '',
       notes: customer.notes || '',
-      google_location: customer.location?.googleLocation || '',
+      google_location: customer.location?.formattedAddress || '',
       address: {
         street: [
           customer.address?.street,
@@ -427,7 +426,9 @@ const AdminDashboard = () => {
         latitude: customer.location?.latitude || 0,
         longitude: customer.location?.longitude || 0,
         formattedAddress: customer.location?.formattedAddress || ''
-      }
+      },
+      service_cost: customer.serviceCost || 0,
+      cost_agreed: customer.costAgreed || false
     });
     setEditDialogOpen(true);
   };
@@ -449,7 +450,7 @@ const AdminDashboard = () => {
 
       const updatedLocation = {
         ...editFormData.location,
-        googleLocation: editFormData.google_location || null
+        formattedAddress: editFormData.google_location || editFormData.location.formattedAddress
       };
 
       const { error } = await db.customers.update(editingCustomer.id, {
@@ -477,10 +478,10 @@ const AdminDashboard = () => {
           ? { 
               ...c, 
               full_name: editFormData.full_name,
-              alternate_phone: editFormData.alternate_phone,
+              alternatePhone: editFormData.alternate_phone,
               service_type: editFormData.service_types.join(', ') as 'RO' | 'SOFTENER',
               behavior: editFormData.behavior,
-              preferred_language: (editFormData.native_language || 'ENGLISH') as 'ENGLISH' | 'HINDI' | 'KANNADA' | 'TAMIL' | 'TELUGU',
+              preferredLanguage: (editFormData.native_language || 'ENGLISH') as 'ENGLISH' | 'HINDI' | 'KANNADA' | 'TAMIL' | 'TELUGU',
               status: editFormData.status as 'ACTIVE' | 'INACTIVE' | 'BLOCKED',
               notes: editFormData.notes,
               address: updatedAddress,
@@ -575,8 +576,7 @@ const AdminDashboard = () => {
             location: {
               latitude: lat,
               longitude: lng,
-              formattedAddress: result.display_name || address,
-              googleLocation: `https://www.google.com/maps/place/${lat},${lng}`
+              formattedAddress: result.display_name || address
             }
           }));
           
@@ -659,7 +659,7 @@ const AdminDashboard = () => {
             ...prev.location,
             latitude: coords.latitude,
             longitude: coords.longitude,
-            googleLocation: value
+            formattedAddress: value
           }
         }));
         toast.success('Coordinates extracted from Google Maps link!');
@@ -685,7 +685,9 @@ const AdminDashboard = () => {
       status: 'ACTIVE',
       notes: '',
       address: '',
-      google_location: ''
+      google_location: '',
+      service_cost: 0,
+      cost_agreed: false
     });
     setCurrentStep(1);
     setFormErrors({});
@@ -696,7 +698,7 @@ const AdminDashboard = () => {
   const checkExistingCustomer = (phone: string, email?: string): Customer | null => {
     const existingByPhone = customers.find(customer => 
       customer.phone === phone || 
-      (customer as any).alternate_phone === phone
+      customer.alternate_phone === phone
     );
     
     if (existingByPhone) return existingByPhone;
@@ -723,6 +725,7 @@ const AdminDashboard = () => {
       // Create customer data with default location (you can enhance this later)
       const customerData = {
         // Don't set customer_id - let the database generate it using the function
+        customer_id: '', // Will be generated by database
         full_name: addFormData.full_name,
         phone: addFormData.phone ? formatPhoneNumber(addFormData.phone) : '',
         alternate_phone: addFormData.alternate_phone ? formatPhoneNumber(addFormData.alternate_phone) : '',
@@ -779,7 +782,7 @@ const AdminDashboard = () => {
           throw new Error(error.message);
         }
         result = updatedCustomer;
-        toast.success(`Customer ${(updatedCustomer as any).customer_id} updated successfully!`);
+        toast.success(`Customer ${updatedCustomer.customer_id || updatedCustomer.customerId} updated successfully!`);
       } else {
         // Create new customer
         const { data: newCustomer, error } = await db.customers.create(customerData);
@@ -787,7 +790,7 @@ const AdminDashboard = () => {
           throw new Error(error.message);
         }
         result = newCustomer;
-        toast.success(`Customer ${(newCustomer as any).customer_id} created successfully!`);
+        toast.success(`Customer ${newCustomer.customer_id || newCustomer.customerId} created successfully!`);
       }
 
       // Refresh customers list
@@ -806,7 +809,9 @@ const AdminDashboard = () => {
         status: 'ACTIVE',
         notes: '',
         address: '',
-        google_location: ''
+        google_location: '',
+        service_cost: 0,
+        cost_agreed: false
       });
       setCurrentStep(1);
       setFormErrors({});
@@ -898,7 +903,7 @@ const AdminDashboard = () => {
         payment_status: 'PENDING',
         assigned_technician_id: newJobFormData.assigned_technician_id || null,
         assigned_date: newJobFormData.assigned_technician_id ? new Date().toISOString() : null,
-        before_photos: newJobFormData.photos
+        beforePhotos: newJobFormData.photos
       };
 
       const { data: newJob, error } = await db.jobs.create(jobData);
@@ -1017,7 +1022,11 @@ const AdminDashboard = () => {
     setSelectedCustomerForPhotos(customer);
     setCustomerPhotoGalleryOpen(true);
     // Always reload customer photos to get the latest data
-    const customerId = (customer as any).customer_id || customer.customerId;
+    const customerId = customer.customer_id || customer.customerId;
+    console.log('Customer object:', customer);
+    console.log('Extracted customer ID:', customerId);
+    console.log('Customer ID from customer_id:', customer.customer_id);
+    console.log('Customer ID from customerId:', customer.customerId);
     loadCustomerPhotos(customerId);
   };
 
@@ -1029,19 +1038,39 @@ const AdminDashboard = () => {
   const loadCustomerPhotos = async (customerId: string) => {
     setIsLoadingPhotos(true);
     try {
-      // Find the customer by customer_id to get their UUID
+      console.log('Loading photos for customer ID:', customerId);
+      console.log('Customer ID type:', typeof customerId);
+      
+      if (!customerId) {
+        throw new Error('Customer ID is required but not provided');
+      }
+      
+      // First, find the customer by customer_id to get their UUID
       const { data: customer, error: customerError } = await db.customers.getByCustomerId(customerId);
       
       if (customerError || !customer) {
+        console.error('Customer not found:', customerError);
         throw new Error(`Customer not found: ${customerError?.message || 'Unknown error'}`);
       }
       
-      // Fetch actual photos from jobs for this customer using the UUID
+      console.log('Found customer:', customer);
+      
+      // Now fetch jobs using the customer's UUID
       const { data: jobs, error } = await db.jobs.getByCustomerId(customer.id);
       
       if (error) {
+        console.error('Error fetching jobs:', error);
+        console.error('Error details:', {
+          message: error.message,
+          details: error.details,
+          hint: error.hint,
+          code: error.code
+        });
         throw error;
       }
+      
+      console.log('Jobs found:', jobs);
+      console.log('Number of jobs:', jobs ? jobs.length : 0);
       
       // Extract all photos from jobs (using before_photos as general photos)
       const allPhotos: string[] = [];
@@ -1051,9 +1080,9 @@ const AdminDashboard = () => {
         jobs.forEach((job, index) => {
           console.log(`Job ${index}:`, {
             id: job.id,
-            job_number: (job as any).job_number,
-            before_photos: (job as any).before_photos,
-            images: (job as any).images
+            job_number: job.job_number || job.jobNumber,
+            before_photos: job.before_photos || job.beforePhotos,
+            images: job.images
           });
           
           // Extract URLs from Cloudinary objects or use as-is if already strings
@@ -1070,23 +1099,35 @@ const AdminDashboard = () => {
           };
           
           // Add photos from before_photos field (treating it as general photos)
-          const jobPhotos = Array.isArray((job as any).before_photos) ? (job as any).before_photos : [];
+          const jobPhotos = Array.isArray(job.before_photos || job.beforePhotos) ? (job.before_photos || job.beforePhotos) : [];
           const extractedPhotos = extractPhotoUrls(jobPhotos);
           console.log(`Job ${index} extracted photos from before_photos:`, extractedPhotos);
           allPhotos.push(...extractedPhotos);
           
           // Also check if there are photos in the images field (for backward compatibility)
-          const jobImages = Array.isArray((job as any).images) ? (job as any).images : [];
+          const jobImages = Array.isArray(job.images) ? job.images : [];
           const extractedImages = extractPhotoUrls(jobImages);
           console.log(`Job ${index} extracted photos from images:`, extractedImages);
           allPhotos.push(...extractedImages);
+          
+          // Also check after_photos field
+          const jobAfterPhotos = Array.isArray(job.after_photos || job.afterPhotos) ? (job.after_photos || job.afterPhotos) : [];
+          const extractedAfterPhotos = extractPhotoUrls(jobAfterPhotos);
+          console.log(`Job ${index} extracted photos from after_photos:`, extractedAfterPhotos);
+          allPhotos.push(...extractedAfterPhotos);
         });
       }
       
-      setCustomerPhotos(prev => ({
-        ...prev,
-        [customerId]: allPhotos
-      }));
+      console.log('Total photos found:', allPhotos.length, allPhotos);
+      console.log('Storing photos with key:', customerId);
+      setCustomerPhotos(prev => {
+        const newState = {
+          ...prev,
+          [customerId]: allPhotos
+        };
+        console.log('Updated customerPhotos state:', newState);
+        return newState;
+      });
     } catch (error) {
       console.error('Error loading photos:', error);
       toast.error('Failed to load photos');
@@ -1102,7 +1143,7 @@ const AdminDashboard = () => {
     setIsCompressingImage(true);
     try {
       const uploadedPhotos: string[] = [];
-      const customerId = (selectedCustomerForPhotos as any).customer_id;
+      const customerId = selectedCustomerForPhotos.customer_id || selectedCustomerForPhotos.customerId;
       
       for (let i = 0; i < files.length; i++) {
         const file = files[i];
@@ -1164,7 +1205,7 @@ const AdminDashboard = () => {
           if (customerJobs && customerJobs.length > 0) {
             // Update the latest job with new photos
             const latestJob = customerJobs[0]; // Jobs are ordered by created_at desc
-            const currentPhotos = Array.isArray((latestJob as any).before_photos) ? (latestJob as any).before_photos : [];
+            const currentPhotos = Array.isArray(latestJob.before_photos || latestJob.beforePhotos) ? (latestJob.before_photos || latestJob.beforePhotos) : [];
             const updatedPhotos = [...currentPhotos, ...uploadedPhotos];
 
             const { error: updateError } = await db.jobs.update(latestJob.id, {
@@ -1197,7 +1238,7 @@ const AdminDashboard = () => {
               requirements: [],
               estimated_cost: 0,
               payment_status: 'PENDING' as const,
-              before_photos: uploadedPhotos,
+              beforePhotos: uploadedPhotos,
             };
 
             const { error: createError } = await db.jobs.create(jobData);
@@ -1623,6 +1664,7 @@ const AdminDashboard = () => {
         job_id: jobToAssign.id,
         technician_id: technicianId,
         assigned_by: user?.id,
+        assigned_at: new Date().toISOString(),
         status: 'PENDING' as const
       }));
 
@@ -1631,8 +1673,8 @@ const AdminDashboard = () => {
       if (error) throw error;
 
       // Send notifications to all technicians
-      const job = jobToAssign as any;
-      const customer = job.customer as any;
+      const job = jobToAssign;
+      const customer = job.customer;
       
       for (const technicianId of selectedTechnicianIds) {
         const technician = technicians.find(t => t.id === technicianId);
@@ -1705,7 +1747,7 @@ const AdminDashboard = () => {
   // Handle job status update
   const handleReassignJob = (job: Job) => {
     setJobToReassign(job);
-    setSelectedTechnicianForReassign((job as any).assigned_technician_id || '');
+    setSelectedTechnicianForReassign(job.assigned_technician_id || job.assignedTechnicianId || '');
     setReassignDialogOpen(true);
   };
 
@@ -1743,11 +1785,11 @@ const AdminDashboard = () => {
     setJobToEdit(job);
     
     // Determine if service sub type is custom
-    const serviceSubType = (job as any).service_sub_type || job.serviceSubType || 'Installation';
+    const serviceSubType = job.service_sub_type || job.serviceSubType || 'Installation';
     const isCustomSubType = !['Installation', 'Reinstallation', 'Service', 'Repair', 'Other'].includes(serviceSubType);
     
     // Determine if time slot is custom
-    const timeSlot = (job as any).scheduled_time_slot || job.scheduledTimeSlot || 'MORNING';
+    const timeSlot = job.scheduled_time_slot || job.scheduledTimeSlot || 'MORNING';
     const isCustomTimeSlot = !['MORNING', 'AFTERNOON', 'EVENING'].includes(timeSlot);
     
     // Convert custom time to HH:MM format for time picker
@@ -1768,14 +1810,14 @@ const AdminDashboard = () => {
     }
     
     setEditJobFormData({
-      serviceType: ((job as any).service_type || job.serviceType || 'RO') as 'RO' | 'SOFTENER',
+      serviceType: (job.service_type || job.serviceType || 'RO') as 'RO' | 'SOFTENER',
       serviceSubType: isCustomSubType ? 'Custom' : serviceSubType,
       serviceSubTypeCustom: isCustomSubType ? serviceSubType : '',
       description: job.description || '',
-      scheduledDate: (job as any).scheduled_date || job.scheduledDate || '',
+      scheduledDate: job.scheduled_date || job.scheduledDate || '',
       scheduledTimeSlot: isCustomTimeSlot ? 'CUSTOM' : (timeSlot as 'MORNING' | 'AFTERNOON' | 'EVENING'),
       scheduledTimeCustom: customTimeValue,
-      priority: ((job as any).priority || 'MEDIUM') as 'LOW' | 'MEDIUM' | 'HIGH' | 'URGENT'
+      priority: (job.priority || 'MEDIUM') as 'LOW' | 'MEDIUM' | 'HIGH' | 'URGENT'
     });
     setEditJobDialogOpen(true);
   };
@@ -1846,7 +1888,7 @@ const AdminDashboard = () => {
         const updated = { ...prev };
         Object.keys(updated).forEach(customerId => {
           updated[customerId] = updated[customerId].map(job => 
-            job.id === jobId ? { ...job, status: newStatus as any } : job
+            job.id === jobId ? { ...job, status: newStatus } : job
           );
         });
         return updated;
@@ -1854,7 +1896,7 @@ const AdminDashboard = () => {
 
       // Also update the main jobs state
       setJobs(prev => prev.map(job => 
-        job.id === jobId ? { ...job, status: newStatus as any } : job
+        job.id === jobId ? { ...job, status: newStatus } : job
       ));
 
       toast.success(`Job status updated to ${newStatus}`);
@@ -1862,21 +1904,21 @@ const AdminDashboard = () => {
       // Send notifications for specific status changes
       const job = jobs.find(j => j.id === jobId);
       if (job) {
-        const customer = job.customer as any;
-        const technician = technicians.find(t => t.id === (job as any).assigned_technician_id);
+        const customer = job.customer;
+        const technician = technicians.find(t => t.id === (job.assigned_technician_id || job.assignedTechnicianId));
         
         if (newStatus === 'COMPLETED' && technician) {
           const notification = createJobCompletedNotification(
-            (job as any).job_number,
-            customer?.full_name || 'Customer',
+            job.job_number || job.jobNumber,
+            customer?.full_name || customer?.fullName || 'Customer',
             technician.fullName,
             jobId
           );
           await sendNotification(notification);
         } else if (newStatus === 'CANCELLED') {
           const notification = createJobCancelledNotification(
-            (job as any).job_number,
-            customer?.full_name || 'Customer',
+            job.job_number || job.jobNumber,
+            customer?.full_name || customer?.fullName || 'Customer',
             jobId
           );
           await sendNotification(notification);
@@ -2085,7 +2127,7 @@ const AdminDashboard = () => {
     if (!jobToDelete) return;
     
     try {
-      const { error } = await (db.jobs as any).delete(jobToDelete.id);
+      const { error } = await db.jobs.delete(jobToDelete.id);
       
       if (error) {
         throw new Error(error.message);
@@ -2101,7 +2143,7 @@ const AdminDashboard = () => {
         return updated;
       });
 
-      toast.success(`Job ${(jobToDelete as any).job_number} deleted successfully`);
+      toast.success(`Job ${jobToDelete.job_number || jobToDelete.jobNumber} deleted successfully`);
       setDeleteJobDialogOpen(false);
       setJobToDelete(null);
     } catch (error) {
@@ -2253,8 +2295,8 @@ const AdminDashboard = () => {
       }
 
       // Get current photos
-      const beforePhotos = Array.isArray((job as any).before_photos) ? (job as any).before_photos : [];
-      const afterPhotos = Array.isArray((job as any).after_photos) ? (job as any).after_photos : [];
+      const beforePhotos = Array.isArray(job.before_photos || job.beforePhotos) ? (job.before_photos || job.beforePhotos) : [];
+      const afterPhotos = Array.isArray(job.after_photos || job.afterPhotos) ? (job.after_photos || job.afterPhotos) : [];
       
       // Determine which array contains the photo to delete
       let updatedBeforePhotos = [...beforePhotos];
@@ -2369,16 +2411,16 @@ const AdminDashboard = () => {
       customer.customerId?.toLowerCase().includes(searchLower) ||
       customer.fullName?.toLowerCase().includes(searchLower) ||
       customer.phone?.includes(searchTerm) ||
-      (customer as any).alternate_phone?.includes(searchTerm) ||
+      customer.alternate_phone?.includes(searchTerm) ||
       customer.email?.toLowerCase().includes(searchLower) ||
-      (customer as any).preferred_language?.toLowerCase().includes(searchLower) ||
+      customer.preferredLanguage?.toLowerCase().includes(searchLower) ||
       customer.serviceType?.toLowerCase().includes(searchLower) ||
       customer.brand?.toLowerCase().includes(searchLower) ||
       customer.model?.toLowerCase().includes(searchLower) ||
-      (customer as any).behavior?.toLowerCase().includes(searchLower) ||
-      (customer.address as any)?.street?.toLowerCase().includes(searchLower) ||
-      (customer.address as any)?.area?.toLowerCase().includes(searchLower) ||
-      (customer.address as any)?.pincode?.includes(searchTerm)
+      customer.behavior?.toLowerCase().includes(searchLower) ||
+      customer.address?.street?.toLowerCase().includes(searchLower) ||
+      customer.address?.area?.toLowerCase().includes(searchLower) ||
+      customer.address?.pincode?.includes(searchTerm)
     );
   });
 
@@ -2388,12 +2430,12 @@ const AdminDashboard = () => {
     const customerJobs = jobs
       .filter(job => {
         // Check both possible field names for customer ID
-        const jobCustomerId = (job as any).customer_id || job.customerId;
+        const jobCustomerId = job.customer_id || job.customerId;
         return jobCustomerId === customer.id;
       })
       .sort((a, b) => {
-        const aDate = new Date((a as any).scheduled_date || a.scheduledDate).getTime();
-        const bDate = new Date((b as any).scheduled_date || b.scheduledDate).getTime();
+        const aDate = new Date(a.scheduled_date || a.scheduledDate).getTime();
+        const bDate = new Date(b.scheduled_date || b.scheduledDate).getTime();
         return bDate - aDate; // Most recent first
       });
     
@@ -2446,8 +2488,8 @@ const AdminDashboard = () => {
     : customersWithJobs.filter(item => {
       const searchLower = searchTerm.toLowerCase();
       return (
-        (item.customer as any).customer_id?.toLowerCase().includes(searchLower) ||
-        (item.customer as any).full_name?.toLowerCase().includes(searchLower) ||
+        (item.customer.customer_id || item.customer.customerId)?.toLowerCase().includes(searchLower) ||
+        (item.customer.full_name || item.customer.fullName)?.toLowerCase().includes(searchLower) ||
         item.customer.phone?.includes(searchTerm) ||
         item.customer.email?.toLowerCase().includes(searchLower)
       );
@@ -2459,8 +2501,8 @@ const AdminDashboard = () => {
     
     const searchLower = searchTerm.toLowerCase();
     return (
-      (job as any).job_number?.toLowerCase().includes(searchLower) ||
-      (job.customer as any)?.full_name?.toLowerCase().includes(searchLower) ||
+      (job.job_number || job.jobNumber)?.toLowerCase().includes(searchLower) ||
+      (job.customer?.full_name || job.customer?.fullName)?.toLowerCase().includes(searchLower) ||
       job.customer?.phone?.includes(searchTerm)
     );
   });
@@ -2922,7 +2964,7 @@ const AdminDashboard = () => {
                           <button 
                             onClick={() => {
                               // Show popup if there's alternate phone, otherwise direct call
-                              if ((customer as any).alternate_phone) {
+                              if (customer.alternate_phone) {
                                 handlePhoneClick(customer);
                               } else {
                                 window.open(`tel:${customer.phone}`, '_self');
@@ -2980,8 +3022,8 @@ const AdminDashboard = () => {
                         <div className="w-8 h-8 sm:w-10 sm:h-10 bg-gray-100 rounded-lg flex items-center justify-center flex-shrink-0">
                           <button
                             onClick={() => {
-                              if (customer.location?.googleLocation) {
-                                window.open(customer.location.googleLocation, '_blank', 'noopener,noreferrer');
+                              if (customer.location?.formattedAddress) {
+                                window.open(customer.location.formattedAddress, '_blank', 'noopener,noreferrer');
                               } else {
                                 const location = extractCoordinates(customer.location);
                                 if (location) {
@@ -2999,12 +3041,12 @@ const AdminDashboard = () => {
                         <div className="flex-1 min-w-0">
                           <div className="text-sm font-semibold text-gray-900 flex items-center gap-2">
                             Location
-                            {customer.location?.googleLocation && (
+                            {customer.location?.formattedAddress && (
                               <Badge variant="secondary" className="text-xs bg-gray-100 text-gray-700">Exact</Badge>
                             )}
                           </div>
                           <div className="text-xs text-gray-500">
-                            {customer.location?.googleLocation ? 'Exact Location' : 'View on Map'}
+                            {customer.location?.formattedAddress ? 'Exact Location' : 'View on Map'}
                           </div>
                         </div>
                       </div>
@@ -3047,8 +3089,8 @@ const AdminDashboard = () => {
                         }
                         
                         return jobsToShow.map((job) => {
-                        const beforePhotos = Array.isArray((job as any).before_photos) ? (job as any).before_photos : [];
-                        const afterPhotos = Array.isArray((job as any).after_photos) ? (job as any).after_photos : [];
+                        const beforePhotos = Array.isArray(job.before_photos || job.beforePhotos) ? (job.before_photos || job.beforePhotos) : [];
+                        const afterPhotos = Array.isArray(job.after_photos || job.afterPhotos) ? (job.after_photos || job.afterPhotos) : [];
                         
                         const extractPhotoUrls = (photos: any[]) => {
                           return photos.map(photo => {
@@ -3072,13 +3114,13 @@ const AdminDashboard = () => {
                                   <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-3 mb-3">
                                     <div className="flex items-center gap-2 flex-wrap">
                                       <div className="bg-gray-100 text-gray-800 px-2 sm:px-3 py-1 rounded-md font-mono text-xs sm:text-sm font-semibold">
-                                        {(job as any).job_number}
+                                        {job.job_number || job.jobNumber}
                                       </div>
                                       {getStatusBadge(job.status)}
                                     </div>
                                     <div className="flex items-center gap-2 flex-wrap">
                                       <Badge variant="outline" className="text-xs border-gray-300 text-gray-600">
-                                        {(job as any).service_type || job.serviceType} - {(job as any).service_sub_type || job.serviceSubType}
+                                        {job.service_type || job.serviceType} - {job.service_sub_type || job.serviceSubType}
                                       </Badge>
                                       {allPhotos.length > 0 && (
                                         <div className="flex items-center gap-1 text-xs text-gray-600 bg-gray-50 px-2 py-1 rounded-md">
@@ -3095,10 +3137,10 @@ const AdminDashboard = () => {
                                       <div className="min-w-0 flex-1">
                                         <div className="text-xs text-gray-500">Scheduled</div>
                                         <div className="font-medium text-gray-900 break-words">
-                                          {new Date((job as any).scheduled_date || job.scheduledDate).toLocaleDateString()}
+                                          {new Date(job.scheduled_date || job.scheduledDate).toLocaleDateString()}
                                         </div>
                                         <div className="text-xs text-gray-600">
-                                          {(job as any).scheduled_time_slot || job.scheduledTimeSlot || 'Time not specified'}
+                                          {job.scheduled_time_slot || job.scheduledTimeSlot || 'Time not specified'}
                                         </div>
                                       </div>
                                     </div>
@@ -3165,7 +3207,7 @@ const AdminDashboard = () => {
                                               }
                                               
                                               if (technician) {
-                                                return technician.fullName || technician.full_name;
+                                                return technician.fullName;
                                               } else if (job.assignedTechnician?.fullName) {
                                                 return job.assignedTechnician.fullName;
                                               } else {
@@ -3802,13 +3844,13 @@ const AdminDashboard = () => {
                     )}
                   </div>
                   <div className="flex gap-2">
-                    {editFormData?.location?.googleLocation && (
+                    {editFormData?.location?.formattedAddress && (
                       <Button
                         type="button"
                         variant="outline"
                         size="sm"
                         onClick={() => {
-                          window.open(editFormData.location.googleLocation, '_blank', 'noopener,noreferrer');
+                          window.open(editFormData.location.formattedAddress, '_blank', 'noopener,noreferrer');
                         }}
                         className="text-blue-600 border-blue-300 hover:bg-blue-100"
                       >
@@ -4463,7 +4505,7 @@ const AdminDashboard = () => {
                         </SelectItem>
                       ) : (
                         technicians
-                          .filter(tech => !tech.account_status || tech.account_status === 'ACTIVE')
+                          .filter(tech => !tech.status || tech.status === 'AVAILABLE')
                           .map((technician) => (
                             <SelectItem key={technician.id} value={technician.id || 'unknown'}>
                               {technician.fullName || 'Unknown'} ({technician.employeeId || 'No ID'})
@@ -4484,7 +4526,7 @@ const AdminDashboard = () => {
                     <p className="text-sm text-gray-500">No technicians available</p>
                   ) : (
                     technicians
-                      .filter(tech => !tech.account_status || tech.account_status === 'ACTIVE')
+                      .filter(tech => !tech.status || tech.status === 'AVAILABLE')
                       .map((technician) => (
                         <div key={technician.id} className="flex items-center space-x-2">
                           <input
@@ -4733,7 +4775,7 @@ const AdminDashboard = () => {
                 >
                   <option value="">No assignment</option>
                   {technicians
-                    .filter(tech => !tech.account_status || tech.account_status === 'ACTIVE')
+                    .filter(tech => !tech.status || tech.status === 'AVAILABLE')
                     .map((technician) => (
                       <option key={technician.id} value={technician.id}>
                         {technician.fullName || 'Unknown'} ({technician.employeeId || 'No ID'})
@@ -4951,6 +4993,17 @@ const AdminDashboard = () => {
               {(() => {
                 const customerId = (selectedCustomerForPhotos as any).customer_id;
                 const photos = customerPhotos[customerId];
+                console.log('Upload area check:', {
+                  customerId,
+                  photos,
+                  photosLength: photos ? photos.length : 0,
+                  shouldShowUpload: !photos || photos.length === 0,
+                  selectedCustomerForPhotos,
+                  allCustomerPhotosKeys: Object.keys(customerPhotos)
+                });
+                console.log('Full selectedCustomerForPhotos object:', selectedCustomerForPhotos);
+                console.log('Customer ID from customer_id:', (selectedCustomerForPhotos as any).customer_id);
+                console.log('Customer ID from customerId:', (selectedCustomerForPhotos as any).customerId);
                 return !photos || photos.length === 0;
               })() && (
                 <div
@@ -5001,7 +5054,18 @@ const AdminDashboard = () => {
               )}
 
               {/* Photo Grid */}
-              {!isLoadingPhotos && customerPhotos[(selectedCustomerForPhotos as any).customer_id] && customerPhotos[(selectedCustomerForPhotos as any).customer_id].length > 0 && (
+              {(() => {
+                const customerId = (selectedCustomerForPhotos as any).customer_id;
+                const photos = customerPhotos[customerId];
+                console.log('Photo display check:', {
+                  customerId,
+                  photos,
+                  photosLength: photos ? photos.length : 0,
+                  isLoadingPhotos,
+                  customerPhotosKeys: Object.keys(customerPhotos)
+                });
+                return !isLoadingPhotos && photos && photos.length > 0;
+              })() && (
                 <div className="space-y-4">
                   <div className="flex items-center justify-between">
                     <h3 className="text-lg font-medium">
@@ -5317,10 +5381,10 @@ const AdminDashboard = () => {
                 </SelectTrigger>
                 <SelectContent>
                   {technicians
-                    .filter(tech => tech.account_status === 'ACTIVE')
+                    .filter(tech => tech.status === 'AVAILABLE')
                     .map(tech => (
                       <SelectItem key={tech.id || 'unknown'} value={tech.id || 'unknown'}>
-                        {tech.full_name || 'Unknown'} - {tech.specialization || 'No specialization'}
+                        {tech.fullName || 'Unknown'} - {tech.skills?.serviceTypes?.join(', ') || 'No specialization'}
                       </SelectItem>
                     ))}
                 </SelectContent>
