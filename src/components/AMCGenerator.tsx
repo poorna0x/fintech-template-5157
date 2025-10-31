@@ -29,23 +29,10 @@ const defaultCompanyInfo: CompanyInfo = {
   website: "hydrogenro.com"
 };
 
-const defaultAMCItems: BillItem[] = [
-  {
-    id: '1',
-    description: 'AMC Agreement - 1 Year Service Contract',
-    quantity: 1,
-    unitPrice: 7000,
-    total: 7000,
-    taxRate: 0,
-    taxAmount: 0
-  }
-];
-
 export default function AMCGenerator({ customer, onPrint }: AMCGeneratorProps) {
   const [billNumber, setBillNumber] = useState(`AMC-${new Date().getFullYear()}-${String(Math.floor(Math.random() * 1000)).padStart(3, '0')}`);
   const [billDate, setBillDate] = useState(new Date().toISOString().split('T')[0]);
   const [company, setCompany] = useState<CompanyInfo>(defaultCompanyInfo);
-  const [items, setItems] = useState<BillItem[]>(defaultAMCItems);
   const [notes, setNotes] = useState('');
   const [validity, setValidity] = useState('1 Year');
   const [customFromDate, setCustomFromDate] = useState('');
@@ -82,6 +69,7 @@ If the customer fails to give the machine for servicing, it will still be treate
 Agreement Modification: Cannot be changed unless written and signed by both parties.
 
 Not Covered: Display and lights of the RO are not covered under this AMC.`);
+  const [amcCost, setAmcCost] = useState(7000);
   const [serviceCharge, setServiceCharge] = useState(0);
   const [isEditingTerms, setIsEditingTerms] = useState(false);
   const [newTerm, setNewTerm] = useState('');
@@ -104,40 +92,10 @@ Not Covered: Display and lights of the RO are not covered under this AMC.`);
     }
   });
 
-  // Calculate totals
-  const subtotal = items.reduce((sum, item) => sum + item.total, 0);
+  // Calculate totals - use direct AMC cost instead of items
+  const subtotal = amcCost;
   const totalAmount = subtotal + serviceCharge;
 
-  const addItem = () => {
-    const newItem: BillItem = {
-      id: Date.now().toString(),
-      description: '',
-      quantity: 1,
-      unitPrice: 0,
-      total: 0,
-      taxRate: 0,
-      taxAmount: 0
-    };
-    setItems([...items, newItem]);
-  };
-
-  const updateItem = (id: string, field: keyof BillItem, value: string | number) => {
-    setItems(items.map(item => {
-      if (item.id === id) {
-        const updated = { ...item, [field]: value };
-        if (field === 'quantity' || field === 'unitPrice' || field === 'taxRate') {
-          updated.total = updated.quantity * updated.unitPrice;
-          updated.taxAmount = updated.total * (updated.taxRate / 100);
-        }
-        return updated;
-      }
-      return item;
-    }));
-  };
-
-  const removeItem = (id: string) => {
-    setItems(items.filter(item => item.id !== id));
-  };
 
   const addTerm = () => {
     if (newTerm.trim()) {
@@ -196,6 +154,17 @@ Not Covered: Display and lights of the RO are not covered under this AMC.`);
       validityEndDate = endDate.toISOString().split('T')[0];
     }
 
+    // Create a single item from the AMC cost
+    const amcItem: BillItem = {
+      id: '1',
+      description: 'AMC Agreement - 1 Year Service Contract',
+      quantity: 1,
+      unitPrice: amcCost,
+      total: amcCost,
+      taxRate: 0,
+      taxAmount: 0
+    };
+
     const bill: Bill = {
       id: Date.now().toString(),
       billNumber,
@@ -213,9 +182,9 @@ Not Covered: Display and lights of the RO are not covered under this AMC.`);
         gstNumber: editableCustomer.gst || '',
         roModel: roModel.trim()
       },
-      items,
+      items: [amcItem],
       subtotal,
-      totalTax: items.reduce((sum, item) => sum + item.taxAmount, 0),
+      totalTax: 0,
       serviceCharge,
       totalAmount,
       paymentStatus: 'PENDING',
@@ -255,6 +224,34 @@ Not Covered: Display and lights of the RO are not covered under this AMC.`);
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-6 md:gap-8">
         {/* Form Section */}
         <div className="space-y-4 sm:space-y-6">
+          {/* AMC Cost - Prominently at the top */}
+          <Card className="border-2 border-blue-200 bg-blue-50/50">
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2 text-blue-700">
+                <Droplets className="w-5 h-5" />
+                AMC Cost
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div>
+                <Label htmlFor="amcCost" className="text-base font-semibold">AMC Agreement Cost (₹) *</Label>
+                <Input
+                  id="amcCost"
+                  type="number"
+                  value={amcCost}
+                  onChange={(e) => setAmcCost(parseFloat(e.target.value) || 0)}
+                  placeholder="7000"
+                  min="0"
+                  step="1"
+                  className="mt-2 text-lg font-semibold"
+                />
+                <p className="text-xs text-gray-600 mt-2">
+                  Enter the total cost for the AMC Agreement
+                </p>
+              </div>
+            </CardContent>
+          </Card>
+
           {/* Bill Details */}
           <Card>
             <CardHeader>
@@ -506,115 +503,6 @@ Not Covered: Display and lights of the RO are not covered under this AMC.`);
             </CardContent>
           </Card>
 
-          {/* Items */}
-          <Card>
-            <CardHeader>
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-                <CardTitle>AMC Services</CardTitle>
-                <Button onClick={addItem} size="sm" className="w-full sm:w-auto">
-                  <Plus className="w-4 h-4 mr-2" />
-                  Add Service
-                </Button>
-              </div>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              {items.map((item, index) => (
-                <div key={item.id} className="space-y-3 sm:space-y-0">
-                  {/* Mobile Layout - Stacked */}
-                  <div className="grid grid-cols-1 gap-3 sm:hidden">
-                    <div>
-                      <Label>Description</Label>
-                      <Input
-                        value={item.description}
-                        onChange={(e) => updateItem(item.id, 'description', e.target.value)}
-                        placeholder="Service description"
-                      />
-                    </div>
-                    <div className="grid grid-cols-3 gap-2">
-                      <div>
-                        <Label>Qty</Label>
-                        <Input
-                          type="number"
-                          value={item.quantity}
-                          onChange={(e) => updateItem(item.id, 'quantity', parseInt(e.target.value) || 0)}
-                        />
-                      </div>
-                      <div>
-                        <Label>Price</Label>
-                        <Input
-                          type="number"
-                          value={item.unitPrice}
-                          onChange={(e) => updateItem(item.id, 'unitPrice', parseFloat(e.target.value) || 0)}
-                        />
-                      </div>
-                      <div>
-                        <Label>Total</Label>
-                        <Input
-                          value={item.total}
-                          readOnly
-                          className="bg-gray-50"
-                        />
-                      </div>
-                    </div>
-                    <Button
-                      onClick={() => removeItem(item.id)}
-                      variant="outline"
-                      size="sm"
-                      className="w-full text-red-600 hover:text-red-700"
-                    >
-                      Remove Item
-                    </Button>
-                  </div>
-                  {/* Desktop Layout - Grid */}
-                  <div className="hidden sm:grid grid-cols-12 gap-2 items-end">
-                    <div className="col-span-5">
-                      <Label>Description</Label>
-                      <Input
-                        value={item.description}
-                        onChange={(e) => updateItem(item.id, 'description', e.target.value)}
-                        placeholder="Service description"
-                      />
-                    </div>
-                    <div className="col-span-2">
-                      <Label>Qty</Label>
-                      <Input
-                        type="number"
-                        value={item.quantity}
-                        onChange={(e) => updateItem(item.id, 'quantity', parseInt(e.target.value) || 0)}
-                      />
-                    </div>
-                    <div className="col-span-2">
-                      <Label>Price</Label>
-                      <Input
-                        type="number"
-                        value={item.unitPrice}
-                        onChange={(e) => updateItem(item.id, 'unitPrice', parseFloat(e.target.value) || 0)}
-                      />
-                    </div>
-                    <div className="col-span-2">
-                      <Label>Total</Label>
-                      <Input
-                        value={item.total}
-                        readOnly
-                        className="bg-gray-50"
-                      />
-                    </div>
-                    <div className="col-span-1">
-                      <Button
-                        onClick={() => removeItem(item.id)}
-                        variant="outline"
-                        size="sm"
-                        className="text-red-600 hover:text-red-700"
-                      >
-                        ×
-                      </Button>
-                    </div>
-                  </div>
-                </div>
-              ))}
-            </CardContent>
-          </Card>
-
           {/* Service Charge */}
           <Card>
             <CardHeader>
@@ -756,12 +644,12 @@ Not Covered: Display and lights of the RO are not covered under this AMC.`);
             <CardContent className="space-y-4">
               <div className="space-y-2">
                 <div className="flex justify-between text-sm sm:text-base">
-                  <span>Subtotal:</span>
-                  <span>₹{subtotal.toLocaleString()}</span>
+                  <span>AMC Cost:</span>
+                  <span>₹{amcCost.toLocaleString()}</span>
                 </div>
                 {serviceCharge > 0 && (
                   <div className="flex justify-between text-sm sm:text-base">
-                    <span>Service Charge:</span>
+                    <span>Additional Charges:</span>
                     <span>₹{serviceCharge.toLocaleString()}</span>
                   </div>
                 )}
