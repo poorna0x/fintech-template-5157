@@ -6,6 +6,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Badge } from '@/components/ui/badge';
+import { Checkbox } from '@/components/ui/checkbox';
 import { Edit, Plus, Download, FileText, User, Phone, MapPin, Building, Droplets, Mail } from 'lucide-react';
 import { toast } from 'sonner';
 import { Customer, Bill, BillItem, CompanyInfo } from '@/types';
@@ -38,9 +39,13 @@ export default function AMCGenerator({ customer, onPrint }: AMCGeneratorProps) {
   const [customFromDate, setCustomFromDate] = useState('');
   const [customToDate, setCustomToDate] = useState('');
   const [roModel, setRoModel] = useState('');
-  const [terms, setTerms] = useState(`SERVICES COVERED BY THE AGREEMENT
+  const [includesPreSedimentFiltration, setIncludesPreSedimentFiltration] = useState(false);
 
-Breakdown Support: If any breakdown or problem happens with the RO during this 1-year period, the company will provide service without extra charges.
+  // Generate terms dynamically based on pre-sediment filtration checkbox
+  const generateTerms = (includesPreFilter: boolean) => {
+    const servicesCovered = `SERVICES COVERED BY THE AGREEMENT
+
+Breakdown Support: If any breakdown or problem happens with the RO during the AMC period, the company will provide service without extra charges.
 
 Filters / RO Membrane / Consumables: Company will clean, repair, or replace filters and parts needed for smooth working.
 
@@ -50,9 +55,13 @@ Clean cosmetics and smooth working of the machine.
 
 Quick service: Any breakdown will be resolved within 24 hours.
 
-Full Care of RO: The company takes responsibility for complete maintenance and support for 1 year, including Pre Sediment Filtration (with terms & conditions).
+Full Care of RO: The company takes responsibility for complete maintenance and support during the AMC period.`;
 
-⚖️ TERMS AND CONDITIONS
+    const servicesCoveredWithPreFilter = servicesCovered + `
+
+Includes pre-sediment filtration maintenance and servicing.`;
+
+    const termsAndConditions = `⚖️ TERMS AND CONDITIONS
 
 No Early Termination: You cannot cancel this agreement before expiry. It also cannot be transferred to another person if you sell/gift the machine.
 
@@ -66,15 +75,36 @@ Customer's Duty: The customer must make the RO available for servicing when the 
 
 If the customer fails to give the machine for servicing, it will still be treated as service given, and no refund will be made.
 
-Agreement Modification: Cannot be changed unless written and signed by both parties.
+Agreement Modification: Cannot be changed unless written and signed by both parties.`;
 
-Not Covered: Display and lights of the RO, RO tap, body, and tank are not covered under this AMC.`);
+    const notCoveredBase = `Not Covered: Display and lights of the RO, RO tap, body, and tank are not covered under this AMC.`;
+    
+    const notCoveredWithPreFilter = includesPreFilter 
+      ? notCoveredBase
+      : notCoveredBase.replace('are not covered under this AMC.', 'are not covered under this AMC. Pre-sediment filtration is not included in this agreement.');
+
+    const finalServicesCovered = includesPreFilter ? servicesCoveredWithPreFilter : servicesCovered;
+
+    return `${finalServicesCovered}
+
+${termsAndConditions}
+
+${notCoveredWithPreFilter}`;
+  };
+
+  const [terms, setTerms] = useState(generateTerms(false));
   const [amcCost, setAmcCost] = useState(7000);
   const [serviceCharge, setServiceCharge] = useState(0);
   const [isEditingTerms, setIsEditingTerms] = useState(false);
   const [newTerm, setNewTerm] = useState('');
   const [isEditingNotes, setIsEditingNotes] = useState(false);
   const [newNote, setNewNote] = useState('');
+
+  // Update terms when pre-sediment filtration checkbox changes
+  React.useEffect(() => {
+    setTerms(generateTerms(includesPreSedimentFiltration));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [includesPreSedimentFiltration]);
 
   // Editable customer information state
   const [isEditingCustomer, setIsEditingCustomer] = useState(false);
@@ -154,6 +184,9 @@ Not Covered: Display and lights of the RO, RO tap, body, and tank are not covere
       validityEndDate = endDate.toISOString().split('T')[0];
     }
 
+    // Generate fresh terms based on current pre-sediment filtration selection
+    const finalTerms = generateTerms(includesPreSedimentFiltration);
+
     // Create a single item from the AMC cost
     const amcItem: BillItem = {
       id: '1',
@@ -189,7 +222,7 @@ Not Covered: Display and lights of the RO, RO tap, body, and tank are not covere
       totalAmount,
       paymentStatus: 'PENDING',
       notes,
-      terms,
+      terms: finalTerms,
       validity: validity === 'Custom' ? 
         `${new Date(customFromDate).toLocaleDateString('en-IN', { day: '2-digit', month: '2-digit', year: 'numeric' })} to ${new Date(customToDate).toLocaleDateString('en-IN', { day: '2-digit', month: '2-digit', year: 'numeric' })}` : 
         `${new Date(billDate).toLocaleDateString('en-IN', { day: '2-digit', month: '2-digit', year: 'numeric' })} to ${new Date(validityEndDate).toLocaleDateString('en-IN', { day: '2-digit', month: '2-digit', year: 'numeric' })}`,
@@ -500,6 +533,33 @@ Not Covered: Display and lights of the RO, RO tap, body, and tank are not covere
                   )}
                 </div>
               )}
+            </CardContent>
+          </Card>
+
+          {/* Pre-Sediment Filtration Option */}
+          <Card>
+            <CardHeader>
+              <CardTitle>Pre-Sediment Filtration</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="flex items-center space-x-2">
+                <Checkbox
+                  id="includesPreSedimentFiltration"
+                  checked={includesPreSedimentFiltration}
+                  onCheckedChange={(checked) => setIncludesPreSedimentFiltration(checked === true)}
+                />
+                <Label
+                  htmlFor="includesPreSedimentFiltration"
+                  className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 cursor-pointer"
+                >
+                  Include Pre-Sediment Filtration Maintenance
+                </Label>
+              </div>
+              <p className="text-xs text-gray-500 mt-2 ml-6">
+                {includesPreSedimentFiltration 
+                  ? "Pre-sediment filtration will be included in Services Covered section"
+                  : "Pre-sediment filtration exclusion will be mentioned in Not Covered section"}
+              </p>
             </CardContent>
           </Card>
 
