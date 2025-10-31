@@ -252,7 +252,7 @@ Not Covered: Display and lights of the RO are not covered under this AMC.`);
         </div>
       </div>
 
-      <div className="grid grid-cols-1 xl:grid-cols-2 gap-4 sm:gap-6 md:gap-8">
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-6 md:gap-8">
         {/* Form Section */}
         <div className="space-y-4 sm:space-y-6">
           {/* Bill Details */}
@@ -300,24 +300,26 @@ Not Covered: Display and lights of the RO are not covered under this AMC.`);
                   </Select>
                 </div>
                 {validity === 'Custom' && (
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
-                    <div>
-                      <Label htmlFor="customFromDate">From Date</Label>
-                      <Input
-                        id="customFromDate"
-                        type="date"
-                        value={customFromDate}
-                        onChange={(e) => setCustomFromDate(e.target.value)}
-                      />
-                    </div>
-                    <div>
-                      <Label htmlFor="customToDate">To Date</Label>
-                      <Input
-                        id="customToDate"
-                        type="date"
-                        value={customToDate}
-                        onChange={(e) => setCustomToDate(e.target.value)}
-                      />
+                  <div className="col-span-1 sm:col-span-2">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
+                      <div>
+                        <Label htmlFor="customFromDate">From Date</Label>
+                        <Input
+                          id="customFromDate"
+                          type="date"
+                          value={customFromDate}
+                          onChange={(e) => setCustomFromDate(e.target.value)}
+                        />
+                      </div>
+                      <div>
+                        <Label htmlFor="customToDate">To Date</Label>
+                        <Input
+                          id="customToDate"
+                          type="date"
+                          value={customToDate}
+                          onChange={(e) => setCustomToDate(e.target.value)}
+                        />
+                      </div>
                     </div>
                   </div>
                 )}
@@ -507,9 +509,9 @@ Not Covered: Display and lights of the RO are not covered under this AMC.`);
           {/* Items */}
           <Card>
             <CardHeader>
-              <div className="flex items-center justify-between">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
                 <CardTitle>AMC Services</CardTitle>
-                <Button onClick={addItem} size="sm">
+                <Button onClick={addItem} size="sm" className="w-full sm:w-auto">
                   <Plus className="w-4 h-4 mr-2" />
                   Add Service
                 </Button>
@@ -517,48 +519,96 @@ Not Covered: Display and lights of the RO are not covered under this AMC.`);
             </CardHeader>
             <CardContent className="space-y-4">
               {items.map((item, index) => (
-                <div key={item.id} className="grid grid-cols-12 gap-2 items-end">
-                  <div className="col-span-5">
-                    <Label>Description</Label>
-                    <Input
-                      value={item.description}
-                      onChange={(e) => updateItem(item.id, 'description', e.target.value)}
-                      placeholder="Service description"
-                    />
-                  </div>
-                  <div className="col-span-2">
-                    <Label>Qty</Label>
-                    <Input
-                      type="number"
-                      value={item.quantity}
-                      onChange={(e) => updateItem(item.id, 'quantity', parseInt(e.target.value) || 0)}
-                    />
-                  </div>
-                  <div className="col-span-2">
-                    <Label>Price</Label>
-                    <Input
-                      type="number"
-                      value={item.unitPrice}
-                      onChange={(e) => updateItem(item.id, 'unitPrice', parseFloat(e.target.value) || 0)}
-                    />
-                  </div>
-                  <div className="col-span-2">
-                    <Label>Total</Label>
-                    <Input
-                      value={item.total}
-                      readOnly
-                      className="bg-gray-50"
-                    />
-                  </div>
-                  <div className="col-span-1">
+                <div key={item.id} className="space-y-3 sm:space-y-0">
+                  {/* Mobile Layout - Stacked */}
+                  <div className="grid grid-cols-1 gap-3 sm:hidden">
+                    <div>
+                      <Label>Description</Label>
+                      <Input
+                        value={item.description}
+                        onChange={(e) => updateItem(item.id, 'description', e.target.value)}
+                        placeholder="Service description"
+                      />
+                    </div>
+                    <div className="grid grid-cols-3 gap-2">
+                      <div>
+                        <Label>Qty</Label>
+                        <Input
+                          type="number"
+                          value={item.quantity}
+                          onChange={(e) => updateItem(item.id, 'quantity', parseInt(e.target.value) || 0)}
+                        />
+                      </div>
+                      <div>
+                        <Label>Price</Label>
+                        <Input
+                          type="number"
+                          value={item.unitPrice}
+                          onChange={(e) => updateItem(item.id, 'unitPrice', parseFloat(e.target.value) || 0)}
+                        />
+                      </div>
+                      <div>
+                        <Label>Total</Label>
+                        <Input
+                          value={item.total}
+                          readOnly
+                          className="bg-gray-50"
+                        />
+                      </div>
+                    </div>
                     <Button
                       onClick={() => removeItem(item.id)}
                       variant="outline"
                       size="sm"
-                      className="text-red-600 hover:text-red-700"
+                      className="w-full text-red-600 hover:text-red-700"
                     >
-                      ×
+                      Remove Item
                     </Button>
+                  </div>
+                  {/* Desktop Layout - Grid */}
+                  <div className="hidden sm:grid grid-cols-12 gap-2 items-end">
+                    <div className="col-span-5">
+                      <Label>Description</Label>
+                      <Input
+                        value={item.description}
+                        onChange={(e) => updateItem(item.id, 'description', e.target.value)}
+                        placeholder="Service description"
+                      />
+                    </div>
+                    <div className="col-span-2">
+                      <Label>Qty</Label>
+                      <Input
+                        type="number"
+                        value={item.quantity}
+                        onChange={(e) => updateItem(item.id, 'quantity', parseInt(e.target.value) || 0)}
+                      />
+                    </div>
+                    <div className="col-span-2">
+                      <Label>Price</Label>
+                      <Input
+                        type="number"
+                        value={item.unitPrice}
+                        onChange={(e) => updateItem(item.id, 'unitPrice', parseFloat(e.target.value) || 0)}
+                      />
+                    </div>
+                    <div className="col-span-2">
+                      <Label>Total</Label>
+                      <Input
+                        value={item.total}
+                        readOnly
+                        className="bg-gray-50"
+                      />
+                    </div>
+                    <div className="col-span-1">
+                      <Button
+                        onClick={() => removeItem(item.id)}
+                        variant="outline"
+                        size="sm"
+                        className="text-red-600 hover:text-red-700"
+                      >
+                        ×
+                      </Button>
+                    </div>
                   </div>
                 </div>
               ))}
@@ -606,14 +656,15 @@ Not Covered: Display and lights of the RO are not covered under this AMC.`);
                   <div className="text-sm text-gray-600">
                     Add additional notes or special instructions.
                   </div>
-                  <div className="flex gap-2">
+                  <div className="flex flex-col sm:flex-row gap-2">
                     <Input
                       value={newNote}
                       onChange={(e) => setNewNote(e.target.value)}
                       placeholder="Enter new note..."
                       onKeyPress={(e) => e.key === 'Enter' && addNote()}
+                      className="flex-1"
                     />
-                    <Button onClick={addNote} size="sm">
+                    <Button onClick={addNote} size="sm" className="w-full sm:w-auto">
                       <Plus className="w-4 h-4 mr-2" />
                       Add
                     </Button>
@@ -660,7 +711,7 @@ Not Covered: Display and lights of the RO are not covered under this AMC.`);
                   <div className="text-sm text-gray-600">
                     Edit AMC terms and conditions. Each term will be automatically numbered.
                   </div>
-                  <div className="flex gap-2">
+                  <div className="flex flex-col sm:flex-row gap-2">
                     <Input
                       value={newTerm}
                       onChange={(e) => setNewTerm(e.target.value)}
@@ -668,7 +719,7 @@ Not Covered: Display and lights of the RO are not covered under this AMC.`);
                       onKeyPress={(e) => e.key === 'Enter' && addTerm()}
                       className="flex-1"
                     />
-                    <Button onClick={addTerm} size="sm" disabled={!newTerm.trim()}>
+                    <Button onClick={addTerm} size="sm" disabled={!newTerm.trim()} className="w-full sm:w-auto">
                       <Plus className="w-4 h-4 mr-2" />
                       Add Term
                     </Button>
@@ -698,23 +749,23 @@ Not Covered: Display and lights of the RO are not covered under this AMC.`);
 
         {/* Summary Section */}
         <div className="space-y-6">
-          <Card className="sticky top-6">
+          <Card className="sticky top-4 sm:top-6">
             <CardHeader>
               <CardTitle>AMC Agreement Summary</CardTitle>
             </CardHeader>
             <CardContent className="space-y-4">
               <div className="space-y-2">
-                <div className="flex justify-between">
+                <div className="flex justify-between text-sm sm:text-base">
                   <span>Subtotal:</span>
                   <span>₹{subtotal.toLocaleString()}</span>
                 </div>
                 {serviceCharge > 0 && (
-                  <div className="flex justify-between">
+                  <div className="flex justify-between text-sm sm:text-base">
                     <span>Service Charge:</span>
                     <span>₹{serviceCharge.toLocaleString()}</span>
                   </div>
                 )}
-                <div className="flex justify-between font-bold text-lg border-t pt-2">
+                <div className="flex justify-between font-bold text-base sm:text-lg border-t pt-2">
                   <span>Total Amount:</span>
                   <span>₹{totalAmount.toLocaleString()}</span>
                 </div>
@@ -722,7 +773,7 @@ Not Covered: Display and lights of the RO are not covered under this AMC.`);
 
               <Button 
                 onClick={handlePrint} 
-                className="w-full"
+                className="w-full text-sm sm:text-base"
                 disabled={!billNumber.trim()}
               >
                 <Download className="w-4 h-4 mr-2" />

@@ -297,7 +297,7 @@ function generateAMCHTML(data: AMCPDFData): string {
           font-weight: 600;
           color: #333333;
           margin-bottom: 24px;
-          text-align: left;
+          text-align: center;
           text-transform: uppercase;
           letter-spacing: 1px;
           padding: 0;
