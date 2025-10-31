@@ -70,9 +70,9 @@ function generateAMCHTML(data: AMCPDFData): string {
           width: 210mm; /* A4 width */
           min-height: 297mm; /* A4 height */
           max-width: 210mm; /* Fixed A4 width */
-          padding: 15mm 10mm 25mm 10mm; /* Top, Right, Bottom, Left - A4 padding with more space for border */
           box-sizing: border-box;
           overflow: visible;
+          position: relative;
         }
         
         .bill-container {
@@ -81,9 +81,80 @@ function generateAMCHTML(data: AMCPDFData): string {
           margin: 0;
           background: white;
           box-shadow: 0 15px 35px rgba(0, 0, 0, 0.6), 0 8px 15px rgba(0, 0, 0, 0.4);
-          padding: 40px;
+          padding: 20mm 15mm 20mm 15mm; /* Top, Right, Bottom, Left - proper padding for content */
           overflow: visible;
           border-radius: 12px;
+          border: none;
+          box-sizing: border-box;
+          position: relative;
+          z-index: 2;
+        }
+        
+        /* Ensure borders appear on printed pages */
+        @media print {
+          @page {
+            /* Page margin creates space for border + content padding */
+            margin: 13mm;
+            size: A4;
+          }
+          
+          /* Single border using body border - simplest approach */
+          body {
+            padding: 0 !important;
+            margin: 0 !important;
+            border: 2px solid #000000 !important;
+            width: 210mm !important;
+            min-height: 297mm !important;
+            box-sizing: border-box !important;
+          }
+          
+          /* Remove ALL pseudo-element borders to prevent double border */
+          body::before,
+          body::after {
+            display: none !important;
+            content: none !important;
+            border: none !important;
+            outline: none !important;
+          }
+          
+          .bill-container {
+            border: none !important;
+            box-shadow: none !important;
+            border-radius: 0 !important;
+            outline: none !important;
+            /* Generous padding ensures content never touches border - even at page breaks */
+            padding-top: 10mm !important;    /* Space from top border on first page */
+            padding-bottom: 10mm !important;  /* Space from bottom border on last page */
+            padding-left: 5mm !important;
+            padding-right: 5mm !important;
+            margin: 0 !important;
+            width: 100% !important;
+            max-width: 100% !important;
+            /* Ensure padding is maintained across page breaks */
+            box-decoration-break: clone;
+            -webkit-box-decoration-break: clone;
+          }
+          
+          /* Ensure first element respects container padding */
+          .bill-container > *:first-child {
+            margin-top: 0 !important;
+          }
+          
+          /* Add extra spacing to major sections to prevent touching at page breaks */
+          .detail-card,
+          .services-section,
+          .terms-section {
+            margin-top: 8mm !important;
+            margin-bottom: 8mm !important;
+            page-break-inside: avoid;
+            break-inside: avoid;
+          }
+          
+          /* Ensure header has proper spacing */
+          .header {
+            margin-top: 0 !important;
+            margin-bottom: 12mm !important;
+          }
         }
         
         .header {
@@ -365,21 +436,23 @@ function generateAMCHTML(data: AMCPDFData): string {
           
           @page {
             size: A4;
-            margin: 20mm 15mm 20mm 15mm;
+            margin: 13mm;
+            border: 2px solid #000000;
           }
           
           @page :first {
-            margin-top: 20mm;
+            margin: 13mm;
+            border: 2px solid #000000;
           }
           
           @page :left {
-            margin-left: 15mm;
-            margin-right: 10mm;
+            margin: 13mm;
+            border: 2px solid #000000;
           }
           
           @page :right {
-            margin-left: 10mm;
-            margin-right: 15mm;
+            margin: 13mm;
+            border: 2px solid #000000;
           }
         }
       </style>
