@@ -24,6 +24,7 @@ interface AMCPDFData {
     phone: string;
     email: string;
     gstNumber?: string;
+    roModel?: string;
   };
   items: Array<{
     description: string;
@@ -39,6 +40,7 @@ interface AMCPDFData {
   totalAmount: number;
   notes?: string;
   terms?: string;
+  validity?: string;
 }
 
 function generateAMCHTML(data: AMCPDFData): string {
@@ -216,41 +218,92 @@ function generateAMCHTML(data: AMCPDFData): string {
         
         
         .agreement-details {
-          background: #f8fafc;
-          padding: 15px;
-          border-radius: 8px;
-          margin-bottom: 20px;
+          margin-bottom: 25px;
         }
         
         .agreement-details-title {
-          font-weight: bold;
-          color: #000000;
-          margin-bottom: 15px;
           font-size: 16px;
-          text-align: center;
-        }
-        
-        .details-grid {
-          display: grid;
-          grid-template-columns: 1fr 1fr;
-          gap: 15px;
-        }
-        
-        .detail-item {
-          display: flex;
-          justify-content: space-between;
-          font-size: 14px;
-          margin-bottom: 8px;
-        }
-        
-        .detail-label {
           font-weight: 600;
-          color: #374151;
+          color: #333333;
+          margin-bottom: 24px;
+          text-align: left;
+          text-transform: uppercase;
+          letter-spacing: 1px;
+          padding: 0;
+          border: none;
         }
         
-        .detail-value {
-          color: #000000;
+        .detail-card {
+          background: #fafafa;
+          border: 1px solid #e0e0e0;
+          border-radius: 6px;
+          padding: 20px;
+          margin-bottom: 20px;
+          box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+        }
+        
+        .detail-card-title {
+          font-size: 14px;
+          font-weight: 600;
+          color: #333333;
+          padding: 0;
+          margin: 0 0 18px 0;
+          border: none;
+          text-transform: uppercase;
+          letter-spacing: 1px;
+          background: transparent;
+          text-align: left;
+        }
+        
+        .detail-items-list {
+          display: flex;
+          flex-direction: column;
+          padding: 0;
+          margin: 0;
+          gap: 14px;
+        }
+        
+        .detail-item-new {
+          display: grid;
+          grid-template-columns: 160px 1fr;
+          gap: 16px;
+          padding: 0;
+          background: transparent;
+          border: none;
+        }
+        
+        .detail-label-new {
           font-weight: 500;
+          color: #666666;
+          font-size: 12px;
+          text-transform: uppercase;
+          letter-spacing: 0.5px;
+          margin: 0;
+        }
+        
+        .detail-value-new {
+          color: #000000;
+          font-weight: 400;
+          font-size: 13px;
+          text-align: left;
+          word-break: break-word;
+          margin: 0;
+        }
+        
+        .address-value {
+          text-align: left !important;
+          line-height: 1.5;
+        }
+        
+        .validity-value {
+          color: #059669;
+          font-weight: 600;
+        }
+        
+        .amount-value {
+          color: #dc2626;
+          font-weight: 700;
+          font-size: 15px;
         }
         
         .signatures {
@@ -348,52 +401,113 @@ function generateAMCHTML(data: AMCPDFData): string {
 
       <!-- Agreement Introduction -->
       <div class="agreement-intro">
-        <p>We M/s <strong>Hydrogen RO</strong>, Authorized for Service by RO Care India, undertake to maintain your <strong>RO Water Purifier</strong> Unit as detailed below:</p>
+        <p>We M/s <strong>Hydrogen RO</strong>, Authorized Service Provider, undertake to maintain your <strong>RO Water Purifier</strong> Unit as detailed below:</p>
       </div>
 
       <!-- Agreement Details -->
       <div class="agreement-details">
         <h3 class="agreement-details-title">AGREEMENT DETAILS</h3>
-        <div class="details-grid">
-          <div>
-            <div class="detail-item">
-              <span class="detail-label">Customer Name:</span>
-              <span class="detail-value">${data.customer.name}</span>
+        
+        <!-- Customer Information Card -->
+        <div class="detail-card">
+          <h4 class="detail-card-title">Customer Information</h4>
+          <div class="detail-items-list">
+            <div class="detail-item-new">
+              <div class="detail-label-new">Customer Name</div>
+              <div class="detail-value-new">${data.customer.name}</div>
             </div>
-            <div class="detail-item">
-              <span class="detail-label">Phone Number:</span>
-              <span class="detail-value">${data.customer.phone}</span>
+            <div class="detail-item-new">
+              <div class="detail-label-new">Phone Number</div>
+              <div class="detail-value-new">${data.customer.phone}</div>
             </div>
-            <div class="detail-item">
-              <span class="detail-label">Address:</span>
-              <span class="detail-value">${data.customer.address}, ${data.customer.city} - ${data.customer.pincode}</span>
+            ${data.customer.email && data.customer.email.trim() ? `
+            <div class="detail-item-new">
+              <div class="detail-label-new">Email</div>
+              <div class="detail-value-new">${data.customer.email.trim()}</div>
             </div>
-            <div class="detail-item">
-              <span class="detail-label">RO Brand:</span>
-              <span class="detail-value">${data.items[0]?.name || 'RO Water Purifier'}</span>
+            ` : ''}
+            <div class="detail-item-new">
+              <div class="detail-label-new">Address</div>
+              <div class="detail-value-new address-value">${data.customer.address}${data.customer.city ? ', ' + data.customer.city : ''}${data.customer.pincode ? ' - ' + data.customer.pincode : ''}</div>
+            </div>
+            ${data.customer.gstNumber && data.customer.gstNumber.trim() ? `
+            <div class="detail-item-new">
+              <div class="detail-label-new">GST Number</div>
+              <div class="detail-value-new">${data.customer.gstNumber.trim()}</div>
+            </div>
+            ` : ''}
+            <div class="detail-item-new">
+              <div class="detail-label-new">RO Model</div>
+              <div class="detail-value-new">${data.customer.roModel || data.items[0]?.description || 'RO Water Purifier'}</div>
             </div>
           </div>
-          <div>
-            <div class="detail-item">
-              <span class="detail-label">Agreement Amount:</span>
-              <span class="detail-value">₹${data.totalAmount.toLocaleString()}</span>
+        </div>
+
+        <!-- Agreement Information Card -->
+        <div class="detail-card">
+          <h4 class="detail-card-title">Agreement Information</h4>
+          <div class="detail-items-list">
+            <div class="detail-item-new">
+              <div class="detail-label-new">Agreement Number</div>
+              <div class="detail-value-new">${data.billNumber}</div>
             </div>
-            <div class="detail-item">
-              <span class="detail-label">Date of Agreement:</span>
-              <span class="detail-value">${new Date(data.billDate).toLocaleDateString('en-IN', { 
+            <div class="detail-item-new">
+              <div class="detail-label-new">Date of Agreement</div>
+              <div class="detail-value-new">${new Date(data.billDate).toLocaleDateString('en-IN', { 
                 day: '2-digit', 
-                month: '2-digit', 
+                month: 'long', 
                 year: 'numeric' 
-              })}</span>
+              })}</div>
             </div>
-            <div class="detail-item">
-              <span class="detail-label">Validity:</span>
-              <span class="detail-value">${data.validity && data.validity.includes(' to ') ? data.validity : (data.validity || '1 Year') + ' from Agreement Date'}</span>
+            <div class="detail-item-new">
+              <div class="detail-label-new">Agreement Validity</div>
+              <div class="detail-value-new validity-value">${(() => {
+                if (data.validity && data.validity.includes(' to ')) {
+                  const parts = data.validity.split(' to ');
+                  try {
+                    const parseDate = (dateStr) => {
+                      // Try DD/MM/YYYY format
+                      const ddmmyyyy = dateStr.trim().match(/(\d{2})\/(\d{2})\/(\d{4})/);
+                      if (ddmmyyyy) {
+                        return new Date(parseInt(ddmmyyyy[3]), parseInt(ddmmyyyy[2]) - 1, parseInt(ddmmyyyy[1]));
+                      }
+                      // Try YYYY-MM-DD format
+                      return new Date(dateStr.trim());
+                    };
+                    
+                    const fromDate = parseDate(parts[0]);
+                    const toDate = parseDate(parts[1]);
+                    
+                    if (!isNaN(fromDate.getTime()) && !isNaN(toDate.getTime())) {
+                      return `${fromDate.toLocaleDateString('en-IN', { day: '2-digit', month: 'long', year: 'numeric' })} to ${toDate.toLocaleDateString('en-IN', { day: '2-digit', month: 'long', year: 'numeric' })}`;
+                    }
+                  } catch (e) {
+                    console.error('Date parsing error:', e);
+                  }
+                  return data.validity;
+                }
+                // Fallback: calculate from billDate if validity is just a number or "1 Year" etc
+                if (data.validity && !data.validity.includes(' to ')) {
+                  const years = parseInt(data.validity) || 1;
+                  const startDate = new Date(data.billDate);
+                  const endDate = new Date(startDate);
+                  endDate.setFullYear(endDate.getFullYear() + years);
+                  endDate.setDate(endDate.getDate() - 1);
+                  return `${startDate.toLocaleDateString('en-IN', { day: '2-digit', month: 'long', year: 'numeric' })} to ${endDate.toLocaleDateString('en-IN', { day: '2-digit', month: 'long', year: 'numeric' })}`;
+                }
+                return data.validity || 'Not specified';
+              })()}</div>
             </div>
-            <div class="detail-item">
-              <span class="detail-label">Agreement Number:</span>
-              <span class="detail-value">${data.billNumber}</span>
+            <div class="detail-item-new">
+              <div class="detail-label-new">Agreement Amount</div>
+              <div class="detail-value-new amount-value">₹${data.totalAmount.toLocaleString()}</div>
             </div>
+            ${data.serviceCharge && data.serviceCharge > 0 ? `
+            <div class="detail-item-new">
+              <div class="detail-label-new">Service Charge</div>
+              <div class="detail-value-new">₹${data.serviceCharge.toLocaleString()}</div>
+            </div>
+            ` : ''}
           </div>
         </div>
       </div>
@@ -530,14 +644,18 @@ export function generateAMCPDF(bill: Bill, action: 'print' | 'pdf' = 'print'): v
       billNumber: bill.billNumber,
       billDate: bill.billDate,
       company: bill.company,
-      customer: bill.customer,
+      customer: {
+        ...bill.customer,
+        roModel: (bill.customer as any).roModel || ''
+      },
       items: bill.items,
       subtotal: bill.subtotal,
       totalTax: bill.totalTax,
       serviceCharge: bill.serviceCharge,
       totalAmount: bill.totalAmount,
       notes: bill.notes,
-      terms: bill.terms
+      terms: bill.terms,
+      validity: bill.validity
     };
     
     // Write content to new window
@@ -600,14 +718,18 @@ function handleMobilePrint(bill: Bill, action: 'print' | 'pdf'): void {
       billNumber: bill.billNumber,
       billDate: bill.billDate,
       company: bill.company,
-      customer: bill.customer,
+      customer: {
+        ...bill.customer,
+        roModel: (bill.customer as any).roModel || ''
+      },
       items: bill.items,
       subtotal: bill.subtotal,
       totalTax: bill.totalTax,
       serviceCharge: bill.serviceCharge,
       totalAmount: bill.totalAmount,
       notes: bill.notes,
-      terms: bill.terms
+      terms: bill.terms,
+      validity: bill.validity
     };
     
     // Replace body content temporarily
@@ -737,3 +859,4 @@ function handleMobilePrint(bill: Bill, action: 'print' | 'pdf'): void {
     isPrinting = false; // Reset flag on error
   }
 }
+

@@ -50,6 +50,7 @@ export default function AMCGenerator({ customer, onPrint }: AMCGeneratorProps) {
   const [validity, setValidity] = useState('1 Year');
   const [customFromDate, setCustomFromDate] = useState('');
   const [customToDate, setCustomToDate] = useState('');
+  const [roModel, setRoModel] = useState('');
   const [terms, setTerms] = useState(`SERVICES COVERED BY THE AGREEMENT
 
 Breakdown Support: If any breakdown or problem happens with the RO during this 1-year period, the company will provide service without extra charges.
@@ -80,23 +81,7 @@ If the customer fails to give the machine for servicing, it will still be treate
 
 Agreement Modification: Cannot be changed unless written and signed by both parties.
 
-Not Covered: Display and lights of the RO are not covered under this AMC.
-
-🔍 Summary in Simple Words
-
-You (the customer) paid ₹7000 for 1-year full AMC service of your AO Smith P6 RO.
-
-All repairs, filters, and breakdown services are included, with a guarantee of 24-hour resolution.
-
-The service covers water quality maintenance (50–150 TDS) and overall machine health.
-
-Extra travel charges apply if your location is outside the municipal area.
-
-You can't cancel/transfer this AMC until it expires.
-
-Legal disputes go to Bangalore court.
-
-The AMC does not cover display and lights of the RO.`);
+Not Covered: Display and lights of the RO are not covered under this AMC.`);
   const [serviceCharge, setServiceCharge] = useState(0);
   const [isEditingTerms, setIsEditingTerms] = useState(false);
   const [newTerm, setNewTerm] = useState('');
@@ -178,6 +163,15 @@ The AMC does not cover display and lights of the RO.`);
       return;
     }
 
+    // Validate RO Model/Brand
+    if (!roModel.trim()) {
+      toast.error('Please enter RO Model/Brand before generating AMC Agreement', {
+        description: 'RO Model is required to generate the agreement. Please add the brand and model information.',
+        duration: 6000
+      });
+      return;
+    }
+
     if (validity === 'Custom' && (!customFromDate || !customToDate)) {
       toast.error('Please select both from and to dates for custom validity');
       return;
@@ -186,6 +180,20 @@ The AMC does not cover display and lights of the RO.`);
     if (validity === 'Custom' && customFromDate && customToDate && new Date(customFromDate) >= new Date(customToDate)) {
       toast.error('To date must be after from date');
       return;
+    }
+
+    // Calculate validity end date
+    let validityEndDate = '';
+    const agreementDate = new Date(billDate);
+    
+    if (validity === 'Custom') {
+      validityEndDate = customToDate;
+    } else {
+      const years = parseInt(validity) || 1;
+      const endDate = new Date(agreementDate);
+      endDate.setFullYear(endDate.getFullYear() + years);
+      endDate.setDate(endDate.getDate() - 1); // Subtract 1 day to get the last day of the period
+      validityEndDate = endDate.toISOString().split('T')[0];
     }
 
     const bill: Bill = {
@@ -202,7 +210,8 @@ The AMC does not cover display and lights of the RO.`);
         pincode: editableCustomer.address.pincode || '',
         phone: editableCustomer.phone || '',
         email: editableCustomer.email || '',
-        gstNumber: editableCustomer.gst || ''
+        gstNumber: editableCustomer.gst || '',
+        roModel: roModel.trim()
       },
       items,
       subtotal,
@@ -214,7 +223,7 @@ The AMC does not cover display and lights of the RO.`);
       terms,
       validity: validity === 'Custom' ? 
         `${new Date(customFromDate).toLocaleDateString('en-IN', { day: '2-digit', month: '2-digit', year: 'numeric' })} to ${new Date(customToDate).toLocaleDateString('en-IN', { day: '2-digit', month: '2-digit', year: 'numeric' })}` : 
-        validity,
+        `${new Date(billDate).toLocaleDateString('en-IN', { day: '2-digit', month: '2-digit', year: 'numeric' })} to ${new Date(validityEndDate).toLocaleDateString('en-IN', { day: '2-digit', month: '2-digit', year: 'numeric' })}`,
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString()
     };
@@ -336,6 +345,22 @@ The AMC does not cover display and lights of the RO.`);
               </div>
             </CardHeader>
             <CardContent className="space-y-4">
+              {/* RO Model Field - Always visible and editable */}
+              <div>
+                <Label htmlFor="roModel">RO Model *</Label>
+                <Input
+                  id="roModel"
+                  value={roModel}
+                  onChange={(e) => setRoModel(e.target.value)}
+                  placeholder="e.g., AO Smith P6, AquaGuard Marvel, etc."
+                  className={!roModel.trim() ? 'border-red-300 focus:border-red-500' : ''}
+                />
+                {!roModel.trim() && (
+                  <p className="text-xs text-red-500 mt-1">
+                    RO Model is required to generate the AMC Agreement
+                  </p>
+                )}
+              </div>
               {isEditingCustomer ? (
                 <div className="space-y-4">
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
