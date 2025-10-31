@@ -68,7 +68,7 @@ If the customer fails to give the machine for servicing, it will still be treate
 
 Agreement Modification: Cannot be changed unless written and signed by both parties.
 
-Not Covered: Display and lights of the RO are not covered under this AMC.`);
+Not Covered: Display and lights of the RO, RO tap, body, and tank are not covered under this AMC.`);
   const [amcCost, setAmcCost] = useState(7000);
   const [serviceCharge, setServiceCharge] = useState(0);
   const [isEditingTerms, setIsEditingTerms] = useState(false);

@@ -386,7 +386,6 @@ function generateAMCHTML(data: AMCPDFData): string {
         
         .signature-box {
           text-align: center;
-          border-top: 2px solid #000000;
           padding-top: 15px;
         }
         
@@ -609,7 +608,7 @@ function generateAMCHTML(data: AMCPDFData): string {
           <li><strong>Customer's Duty:</strong> The customer must make the RO available for servicing when the company's authorized representative visits.</li>
           <li>If the customer fails to give the machine for servicing, it will still be treated as service given, and no refund will be made.</li>
           <li><strong>Agreement Modification:</strong> Cannot be changed unless written and signed by both parties.</li>
-          <li><strong>Not Covered:</strong> Display and lights of the RO are not covered under this AMC.</li>
+          <li><strong>Not Covered:</strong> Display and lights of the RO, RO tap, body, and tank are not covered under this AMC.</li>
         </ul>
       </div>
 
