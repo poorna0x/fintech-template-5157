@@ -100,6 +100,8 @@ ${notCoveredWithPreFilter}`;
   const [termSection, setTermSection] = useState<'services' | 'terms'>('services');
   const [isEditingNotes, setIsEditingNotes] = useState(false);
   const [newNote, setNewNote] = useState('');
+  const [isEditingIntro, setIsEditingIntro] = useState(false);
+  const [agreementIntro, setAgreementIntro] = useState('We M/s <strong>Hydrogen RO</strong>, Authorized Service Provider, undertake to maintain your <strong>RO Water Purifier</strong> Unit as detailed below:');
 
   // Update terms when pre-sediment filtration checkbox changes
   React.useEffect(() => {
@@ -255,7 +257,7 @@ ${notCoveredWithPreFilter}`;
         email: editableCustomer.email || '',
         gstNumber: editableCustomer.gst || '',
         roModel: roModel.trim()
-      },
+      } as any,
       items: [amcItem],
       subtotal,
       totalTax: 0,
@@ -267,6 +269,7 @@ ${notCoveredWithPreFilter}`;
       validity: validity === 'Custom' ? 
         `${new Date(customFromDate).toLocaleDateString('en-IN', { day: '2-digit', month: '2-digit', year: 'numeric' })} to ${new Date(customToDate).toLocaleDateString('en-IN', { day: '2-digit', month: '2-digit', year: 'numeric' })}` : 
         `${new Date(billDate).toLocaleDateString('en-IN', { day: '2-digit', month: '2-digit', year: 'numeric' })} to ${new Date(validityEndDate).toLocaleDateString('en-IN', { day: '2-digit', month: '2-digit', year: 'numeric' })}`,
+      agreementIntro,
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString()
     };
@@ -673,6 +676,44 @@ ${notCoveredWithPreFilter}`;
                   ) : (
                     <div className="text-sm text-gray-500 italic">No additional notes</div>
                   )}
+                </div>
+              )}
+            </CardContent>
+          </Card>
+
+          {/* Agreement Introduction Section */}
+          <Card>
+            <CardHeader>
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                <CardTitle>Agreement Introduction</CardTitle>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setIsEditingIntro(!isEditingIntro)}
+                  className="w-full sm:w-auto"
+                >
+                  <Edit className="w-4 h-4 mr-2" />
+                  {isEditingIntro ? 'View' : 'Edit'}
+                </Button>
+              </div>
+            </CardHeader>
+            <CardContent>
+              {isEditingIntro ? (
+                <div className="space-y-2">
+                  <Textarea
+                    value={agreementIntro}
+                    onChange={(e) => setAgreementIntro(e.target.value)}
+                    placeholder="Enter agreement introduction text"
+                    rows={4}
+                    className="font-mono text-sm"
+                  />
+                  <div className="text-xs text-gray-500">
+                    💡 Tip: Use HTML tags like &lt;strong&gt; for bold text (e.g., &lt;strong&gt;Hydrogen RO&lt;/strong&gt;)
+                  </div>
+                </div>
+              ) : (
+                <div className="text-sm whitespace-pre-wrap">
+                  <div dangerouslySetInnerHTML={{ __html: agreementIntro }} />
                 </div>
               )}
             </CardContent>

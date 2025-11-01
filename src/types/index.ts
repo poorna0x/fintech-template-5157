@@ -358,6 +358,7 @@ export interface Bill {
   notes?: string;
   terms?: string;
   validity?: string; // AMC validity period
+  agreementIntro?: string; // AMC agreement introduction text
   
   // Related Job/Service
   jobId?: string;

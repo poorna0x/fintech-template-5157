@@ -41,6 +41,7 @@ interface AMCPDFData {
   notes?: string;
   terms?: string;
   validity?: string;
+  agreementIntro?: string;
 }
 
 function generateAMCHTML(data: AMCPDFData): string {
@@ -472,9 +473,15 @@ function generateAMCHTML(data: AMCPDFData): string {
         </div>
 
       <!-- Agreement Introduction -->
-      <div class="agreement-intro">
-        <p>We M/s <strong>Hydrogen RO</strong>, Authorized Service Provider, undertake to maintain your <strong>RO Water Purifier</strong> Unit as detailed below:</p>
-      </div>
+      ${data.agreementIntro ? `
+        <div class="agreement-intro">
+          <p>${data.agreementIntro}</p>
+        </div>
+      ` : `
+        <div class="agreement-intro">
+          <p>We M/s <strong>Hydrogen RO</strong>, Authorized Service Provider, undertake to maintain your <strong>RO Water Purifier</strong> Unit as detailed below:</p>
+        </div>
+      `}
 
       <!-- Agreement Details -->
       <div class="agreement-details">
@@ -839,7 +846,8 @@ export function generateAMCPDF(bill: Bill, action: 'print' | 'pdf' = 'print'): v
       totalAmount: bill.totalAmount,
       notes: bill.notes,
       terms: bill.terms,
-      validity: bill.validity
+      validity: bill.validity,
+      agreementIntro: bill.agreementIntro
     };
     
     // Write content to new window
@@ -913,7 +921,8 @@ function handleMobilePrint(bill: Bill, action: 'print' | 'pdf'): void {
       totalAmount: bill.totalAmount,
       notes: bill.notes,
       terms: bill.terms,
-      validity: bill.validity
+      validity: bill.validity,
+      agreementIntro: bill.agreementIntro
     };
     
     // Replace body content temporarily
