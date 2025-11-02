@@ -2208,19 +2208,38 @@ const Booking: React.FC = () => {
   // Show full screen success loader
   if (showSuccessLoader) {
     return (
-      <div className="fixed inset-0 bg-background/95 backdrop-blur-sm z-50 flex items-center justify-center">
-        <div className="text-center">
-          <div className="mb-6">
-            <div className="flex justify-center space-x-2">
-              <div className="w-3 h-3 bg-primary rounded-full animate-bounce-delay-1"></div>
-              <div className="w-3 h-3 bg-primary rounded-full animate-bounce-delay-2"></div>
-              <div className="w-3 h-3 bg-primary rounded-full animate-bounce-delay-3"></div>
+      <>
+        <style>{`
+          @keyframes bounce-delay-1 {
+            0%, 100% { transform: translateY(0); }
+            50% { transform: translateY(-10px); }
+          }
+          @keyframes bounce-delay-2 {
+            0%, 100% { transform: translateY(0); }
+            50% { transform: translateY(-10px); }
+          }
+          @keyframes bounce-delay-3 {
+            0%, 100% { transform: translateY(0); }
+            50% { transform: translateY(-10px); }
+          }
+          .dot-1 { animation: bounce-delay-1 1s ease-in-out infinite; }
+          .dot-2 { animation: bounce-delay-2 1s ease-in-out 0.2s infinite; }
+          .dot-3 { animation: bounce-delay-3 1s ease-in-out 0.4s infinite; }
+        `}</style>
+        <div className="fixed inset-0 bg-background/95 backdrop-blur-sm z-50 flex items-center justify-center">
+          <div className="text-center">
+            <div className="mb-6">
+              <div className="flex justify-center space-x-2">
+                <div className="w-3 h-3 bg-primary rounded-full dot-1"></div>
+                <div className="w-3 h-3 bg-primary rounded-full dot-2"></div>
+                <div className="w-3 h-3 bg-primary rounded-full dot-3"></div>
+              </div>
             </div>
+            <p className="text-2xl font-bold text-foreground mb-3">Booking...</p>
+            <p className="text-lg text-muted-foreground mb-4">Processing your request</p>
           </div>
-          <p className="text-2xl font-bold text-foreground mb-3">Booking...</p>
-          <p className="text-lg text-muted-foreground mb-4">Processing your request</p>
         </div>
-      </div>
+      </>
     );
   }
 
