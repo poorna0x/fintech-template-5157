@@ -1,9 +1,18 @@
 import React from 'react';
+import Header from '@/components/Header';
+import Footer from '@/components/Footer';
+import { Card, CardContent } from '@/components/ui/card';
+import { useNavigate } from 'react-router-dom';
 
 const BlogArticle = () => {
+  const navigate = useNavigate();
+  
   return (
-    <div className="min-h-screen bg-white">
-      <div className="container mx-auto px-4 py-20 max-w-4xl">
+    <div className="min-h-screen flex flex-col bg-background text-foreground">
+      <Header />
+      
+      <main className="flex-1">
+      <div className="container mx-auto px-4 py-12 max-w-4xl">
         <h1 className="text-4xl font-bold mb-6 text-gray-900">
           How to Maintain Your RO Purifier at Home - Complete Guide
         </h1>
@@ -74,18 +83,33 @@ const BlogArticle = () => {
           </p>
         </div>
 
-        <div className="mt-12 bg-gray-50 p-6 rounded-lg">
-          <h3 className="text-xl font-semibold mb-3 text-gray-900">Need Professional Help?</h3>
-          <p className="text-gray-700 mb-4">
-            For professional RO maintenance and repair services in Bengaluru, contact Hydrogen RO.
-          </p>
-          <div className="space-y-2">
-            <p className="text-gray-700">📞 Call: +91-8884944288</p>
-            <p className="text-gray-700">✉️ Email: info@hydrogenro.com</p>
-            <p className="text-gray-700">Available: 24/7 Emergency Service</p>
-          </div>
+        <Card className="cosmic-card mt-12">
+          <CardContent className="p-8">
+            <h3 className="text-2xl font-semibold mb-4 text-foreground">Need Professional Help?</h3>
+            <p className="text-foreground mb-6">
+              For professional RO maintenance and repair services in Bengaluru, contact Hydrogen RO.
+            </p>
+            <div className="space-y-3">
+              <p className="text-foreground"><a href="tel:+918884944288" className="hover:underline cursor-pointer">📞 Call: +91-8884944288</a></p>
+              <p className="text-foreground"><a href="tel:+919886944288" className="hover:underline cursor-pointer">📞 Call: +91-9886944288</a></p>
+              <p className="text-foreground">✉️ Email: info@hydrogenro.com</p>
+              <p className="text-foreground">Available: 24/7 Emergency Service</p>
+            </div>
+          </CardContent>
+        </Card>
+
+        <div className="mt-8 text-center">
+          <button 
+            onClick={() => navigate('/blog')}
+            className="text-primary hover:underline font-medium"
+          >
+            ← Back to Blog
+          </button>
         </div>
       </div>
+      </main>
+
+      <Footer />
     </div>
   );
 };

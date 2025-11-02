@@ -95,7 +95,7 @@ const App = () => (
                   <Route path="/service-areas" element={<ServiceAreas />} />
                   <Route path="/booking" element={<Booking />} />
                   <Route path="/blog" element={<Blog />} />
-                  <Route path="/blog/how-to-maintain-ro-purifier-at-home" element={<BlogArticle />} />
+                  <Route path="/blog/:slug" element={<BlogArticle />} />
                   
                   {/* Service-specific pages */}
                   <Route path="/ro-installation" element={<Services />} />

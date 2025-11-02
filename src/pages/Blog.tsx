@@ -195,30 +195,6 @@ const Blog = () => {
           ))}
         </div>
 
-        {/* Categories Section */}
-        <section className="py-8 bg-muted/30 rounded-xl mb-12">
-          <div className="text-center mb-6">
-            <h2 className="text-2xl font-bold mb-2 text-foreground">Browse by Category</h2>
-            <p className="text-muted-foreground">Find articles based on your specific needs</p>
-          </div>
-          <div className="flex flex-wrap justify-center gap-3">
-            {['Maintenance', 'Comparison', 'Water Treatment', 'Repair', 'Buying Guide', 'Tips & Tricks', 'Installation'].map((category) => (
-              <span 
-                key={category} 
-                className="px-4 py-2 rounded-full text-sm font-medium bg-card border border-border text-foreground hover:bg-primary hover:text-primary-foreground transition-colors cursor-pointer"
-              >
-                {category}
-              </span>
-            ))}
-          </div>
-        </section>
-
-        {/* Features */}
-        <div className="mt-8 text-center text-sm text-muted-foreground space-y-1">
-          <div>Same-day service available</div>
-          <div>All brands service supported</div>
-          <div>Genuine spare parts</div>
-        </div>
       </div>
       </section>
       </main>
