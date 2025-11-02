@@ -47,46 +47,27 @@ const Contact = () => {
           We're here to help 24/7!
         </p>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-8 mb-12">
-          <div>
-            <h2 className="text-2xl font-semibold mb-4 text-foreground">Contact Information</h2>
-            <div className="space-y-4">
-              <div>
-                <h3 className="font-semibold text-foreground">Phone</h3>
-                <p className="text-foreground">+91-8884944288</p>
-                <p className="text-sm text-muted-foreground">Call us for immediate assistance</p>
-              </div>
-              <div>
-                <h3 className="font-semibold text-foreground">Email</h3>
-                <p className="text-foreground">info@hydrogenro.com</p>
-                <p className="text-sm text-muted-foreground">Send us an email anytime</p>
-              </div>
-              <div>
-                <h3 className="font-semibold text-foreground">Working Hours</h3>
-                <p className="text-foreground">24/7 Emergency Service</p>
-                <p className="text-sm text-muted-foreground">Mon-Sun: 8:00 AM - 8:00 PM</p>
-              </div>
+        <div className="mb-12">
+          <h2 className="text-2xl font-semibold mb-4 text-foreground">Contact Information</h2>
+          <div className="space-y-4 max-w-2xl">
+            <div>
+              <h3 className="font-semibold text-foreground">Phone</h3>
+              <p className="text-foreground">+91-8884944288</p>
+              <p className="text-sm text-muted-foreground">Call us for immediate assistance</p>
             </div>
-          </div>
-
-          <div>
-            <h2 className="text-2xl font-semibold mb-4 text-foreground">Service Areas</h2>
-            <p className="text-foreground mb-4">
-              We provide RO water purifier services across all areas of Bengaluru including:
-            </p>
-            <div className="grid grid-cols-2 gap-2 text-muted-foreground">
-              <div>Whitefield</div>
-              <div>Electronic City</div>
-              <div>Koramangala</div>
-              <div>HSR Layout</div>
-              <div>Indiranagar</div>
-              <div>Marathahalli</div>
-              <div>BTM Layout</div>
-              <div>Jayanagar</div>
-              <div>Malleshwaram</div>
-              <div>Rajajinagar</div>
-              <div>Bannerghatta</div>
-              <div>Hebbal</div>
+            <div>
+              <h3 className="font-semibold text-foreground">Email</h3>
+              <p className="text-foreground">info@hydrogenro.com</p>
+              <p className="text-sm text-muted-foreground">Send us an email anytime</p>
+            </div>
+            <div>
+              <h3 className="font-semibold text-foreground">Working Hours</h3>
+              <p className="text-foreground">24/7 Emergency Service</p>
+              <p className="text-sm text-muted-foreground">Mon-Sun: 8:00 AM - 8:00 PM</p>
+            </div>
+            <div>
+              <h3 className="font-semibold text-foreground">Service Areas</h3>
+              <p className="text-foreground">We provide RO services across all areas of Bengaluru and parts of Kolar and Ramanagar districts.</p>
             </div>
           </div>
         </div>
