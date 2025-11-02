@@ -71,6 +71,8 @@ const PageHero: React.FC<PageHeroProps> = ({
             
             <div className="pt-6 text-sm text-muted-foreground space-y-1">
               <div>Same-day service available</div>
+              <div>All brands service supported</div>
+              <div>Genuine spare parts</div>
             </div>
           </>
         )}

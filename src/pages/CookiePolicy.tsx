@@ -242,6 +242,13 @@ const CookiePolicy: React.FC = () => {
             </div>
           </div>
         </div>
+        
+        {/* Features */}
+        <div className="mt-8 text-center text-sm text-muted-foreground space-y-1">
+          <div>Same-day service available</div>
+          <div>All brands service supported</div>
+          <div>Genuine spare parts</div>
+        </div>
       </main>
       
       <Footer />

@@ -16,10 +16,6 @@ const RefundPolicy = () => {
       <div className="container mx-auto px-4 py-8 max-w-4xl">
         <Card>
           <CardHeader>
-            <div className="text-center mb-4">
-              <h1 className="text-3xl font-bold text-blue-600 mb-2">Hydrogen RO</h1>
-              <div className="w-16 h-1 bg-blue-600 mx-auto rounded"></div>
-            </div>
             <CardTitle className="flex items-center gap-2">
               <Shield className="w-5 h-5 text-blue-600" />
               Refund Policy
@@ -193,6 +189,13 @@ const RefundPolicy = () => {
             </section>
           </CardContent>
         </Card>
+        
+        {/* Features */}
+        <div className="mt-8 text-center text-sm text-muted-foreground space-y-1">
+          <div>Same-day service available</div>
+          <div>All brands service supported</div>
+          <div>Genuine spare parts</div>
+        </div>
       </div>
       
       <Footer />
