@@ -204,6 +204,28 @@
     @apply bg-accent/20 transition-all duration-300;
   }
 
+  /* Booking loading dots animation */
+  @keyframes booking-bounce {
+    0%, 100% { 
+      transform: translateY(0); 
+    }
+    50% { 
+      transform: translateY(-10px); 
+    }
+  }
+
+  .booking-dot-1 {
+    animation: booking-bounce 1s ease-in-out infinite;
+  }
+
+  .booking-dot-2 {
+    animation: booking-bounce 1s ease-in-out 0.2s infinite;
+  }
+
+  .booking-dot-3 {
+    animation: booking-bounce 1s ease-in-out 0.4s infinite;
+  }
+
   /* SEO optimization - Hide detailed pincode content from users but keep for SEO */
   .seo-hidden {
     display: none !important;
