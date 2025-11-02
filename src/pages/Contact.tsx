@@ -1,11 +1,27 @@
-import React from 'react';
+import React, { useState } from 'react';
 import Header from '@/components/Header';
 import Footer from '@/components/Footer';
 import PageHero from '@/components/PageHero';
 import { Card, CardContent } from '@/components/ui/card';
+import { Button } from '@/components/ui/button';
 import { Phone, Mail, MapPin, Clock, AlertCircle, MessageSquare } from 'lucide-react';
 
 const Contact = () => {
+  const [showCallOptions, setShowCallOptions] = useState(false);
+
+  const handleCall = (number: string) => {
+    window.open(`tel:${number}`, '_self');
+    setShowCallOptions(false);
+  };
+
+  const handleWhatsApp = () => {
+    window.open('https://wa.me/918884944288', '_blank', 'noopener,noreferrer');
+  };
+
+  const handleEmail = () => {
+    window.open('mailto:info@hydrogenro.com', '_self');
+  };
+
   return (
     <div className="min-h-screen flex flex-col bg-background text-foreground">
       {/* SEO Meta Tags - These will be handled by the main index.html */}
@@ -129,24 +145,80 @@ const Contact = () => {
             <Card className="cosmic-card">
               <CardContent className="p-8">
                 <h3 className="text-2xl font-semibold mb-6 text-center text-foreground">Quick Contact</h3>
-                <p className="text-center text-muted-foreground mb-6">
+                <p className="text-center text-muted-foreground mb-8">
                   For non-emergency services, you can reach us during business hours or send us an email.
                 </p>
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-center">
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                  {/* Call Button */}
                   <div>
-                    <Phone className="w-6 h-6 mx-auto mb-2 text-primary" />
-                    <p className="text-foreground">Call</p>
-                    <p className="text-sm text-muted-foreground">+91-8884944288</p>
+                    <div className="w-16 h-16 bg-gray-100 dark:bg-white rounded-full flex items-center justify-center mx-auto mb-4">
+                      <Phone className="w-8 h-8 text-gray-600 dark:text-black" />
+                    </div>
+                    <h4 className="font-semibold text-foreground mb-2 text-center">Call Us</h4>
+                    <p className="text-sm text-muted-foreground mb-4 text-center">Speak directly with our RO experts</p>
+                    
+                    {!showCallOptions ? (
+                      <Button 
+                        onClick={() => setShowCallOptions(true)}
+                        className="w-full bg-black dark:bg-white hover:scale-105 transition-transform duration-200 text-white dark:text-black"
+                      >
+                        Call
+                      </Button>
+                    ) : (
+                      <div className="space-y-2">
+                        <Button 
+                          onClick={() => handleCall('+918884944288')}
+                          className="w-full bg-black dark:bg-white hover:scale-105 transition-transform duration-200 text-white dark:text-black"
+                        >
+                          Call: +91-8884944288
+                        </Button>
+                        <Button 
+                          onClick={() => handleCall('+919886944288')}
+                          className="w-full bg-black dark:bg-white hover:scale-105 transition-transform duration-200 text-white dark:text-black"
+                        >
+                          Call: +91-9886944288
+                        </Button>
+                        <Button 
+                          onClick={() => setShowCallOptions(false)}
+                          variant="outline"
+                          className="w-full"
+                        >
+                          Cancel
+                        </Button>
+                      </div>
+                    )}
                   </div>
+
+                  {/* Email Button */}
                   <div>
-                    <Mail className="w-6 h-6 mx-auto mb-2 text-primary" />
-                    <p className="text-foreground">Email</p>
-                    <p className="text-sm text-muted-foreground">info@hydrogenro.com</p>
+                    <div className="w-16 h-16 bg-gray-100 dark:bg-white rounded-full flex items-center justify-center mx-auto mb-4">
+                      <Mail className="w-8 h-8 text-gray-600 dark:text-black" />
+                    </div>
+                    <h4 className="font-semibold text-foreground mb-2 text-center">Email Us</h4>
+                    <p className="text-sm text-muted-foreground mb-4 text-center">Send us an email anytime</p>
+                    <Button 
+                      onClick={handleEmail}
+                      className="w-full bg-black dark:bg-white hover:scale-105 transition-transform duration-200 text-white dark:text-black"
+                    >
+                      <Mail className="w-4 h-4 mr-2" />
+                      Email
+                    </Button>
                   </div>
+
+                  {/* WhatsApp Button */}
                   <div>
-                    <MessageSquare className="w-6 h-6 mx-auto mb-2 text-primary" />
-                    <p className="text-foreground">WhatsApp</p>
-                    <p className="text-sm text-muted-foreground">+91-8884944288</p>
+                    <div className="w-16 h-16 bg-gray-100 dark:bg-white rounded-full flex items-center justify-center mx-auto mb-4">
+                      <MessageSquare className="w-8 h-8 text-gray-600 dark:text-black" />
+                    </div>
+                    <h4 className="font-semibold text-foreground mb-2 text-center">WhatsApp</h4>
+                    <p className="text-sm text-muted-foreground mb-4 text-center">Chat with us on WhatsApp</p>
+                    <Button 
+                      onClick={handleWhatsApp}
+                      className="w-full bg-[#25D366] hover:bg-[#20BA5A] hover:scale-105 transition-transform duration-200 text-white"
+                    >
+                      <MessageSquare className="w-4 h-4 mr-2" />
+                      WhatsApp
+                    </Button>
                   </div>
                 </div>
               </CardContent>

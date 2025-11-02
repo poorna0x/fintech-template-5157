@@ -58,10 +58,10 @@ const ContactSection = () => {
                     Call: +91-8884944288
                   </Button>
                   <Button 
-                    onClick={() => handleCall('+919448944288')}
+                    onClick={() => handleCall('+919886944288')}
                     className="w-full bg-black dark:bg-white hover:scale-105 transition-transform duration-200 text-white dark:text-black"
                   >
-                    Call: +91-9448944288
+                    Call: +91-9886944288
                   </Button>
                   <Button 
                     onClick={() => setShowCallOptions(false)}
@@ -125,7 +125,7 @@ const ContactSection = () => {
           <p>Mon-Fri: 8AM - 8PM, Saturday: 9AM - 6PM, Sunday: Emergency RO Service Only, 24/7 Emergency RO Repair Available</p>
           
           <h3>Contact Information</h3>
-          <p>Phone: +91-8884944288, +91-9448944288, Email: mail@hydrogenro.com, WhatsApp: +91-8884944288</p>
+          <p>Phone: +91-8884944288, +91-9886944288, Email: mail@hydrogenro.com, WhatsApp: +91-8884944288</p>
         </div>
       </div>
     </section>
