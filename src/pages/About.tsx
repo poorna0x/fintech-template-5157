@@ -123,7 +123,6 @@ const About = () => {
         <div className="mb-12">
           <h2 className="text-2xl font-semibold mb-4 text-foreground">Certifications & Awards</h2>
           <ul className="space-y-2 text-foreground">
-            <li>• ISO Certified - Quality management system certification</li>
             <li>• Certified Technicians - All technicians are certified and trained</li>
             <li>• Customer Choice - Most trusted RO service provider in Bengaluru</li>
           </ul>
