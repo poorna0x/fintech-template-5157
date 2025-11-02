@@ -23,6 +23,12 @@ const Header = () => {
       setActivePage('home');
     } else if (location.pathname === '/book') {
       setActivePage('booking');
+    } else if (location.pathname === '/contact') {
+      setActivePage('contact');
+    } else if (location.pathname === '/about') {
+      setActivePage('about');
+    } else if (location.pathname === '/services') {
+      setActivePage('services');
     }
   }, [location.pathname]);
 
@@ -31,7 +37,7 @@ const Header = () => {
     if (location.pathname !== '/') return;
 
     const handleScroll = () => {
-      const sections = ['home', 'about', 'services', 'booking', 'contact'];
+      const sections = ['home', 'about', 'services', 'booking'];
       const scrollPosition = window.scrollY + 200; // Increased offset for better UX
 
       for (let i = sections.length - 1; i >= 0; i--) {
@@ -62,8 +68,17 @@ const Header = () => {
     } else if (page === 'booking') {
       // Navigate to booking page
       navigate('/book');
+    } else if (page === 'contact') {
+      // Navigate to contact page
+      navigate('/contact');
+    } else if (page === 'about') {
+      // Navigate to about page
+      navigate('/about');
+    } else if (page === 'services') {
+      // Navigate to services page
+      navigate('/services');
     } else if (location.pathname === '/') {
-      // On homepage, scroll to sections
+      // On homepage, scroll to sections (about, services)
       const element = document.getElementById(page);
       if (element) {
         element.scrollIntoView({ behavior: 'smooth' });
