@@ -47,11 +47,22 @@ export const generateGoogleMapsDirections = (destination: LocationData, address?
 };
 
 /**
+ * Remove Google Plus Codes from address string
+ * Plus codes look like "VJVJ+8XW" and should be removed from display
+ */
+export const removePlusCode = (address: string): string => {
+  // Match patterns like "VJVJ+8XW", "VJVJ+8XW, Address", etc.
+  // Plus codes typically have 2-6 characters, a +, and 2-6 characters
+  const plusCodePattern = /\s*[A-Z0-9]{2,6}\+[A-Z0-9]{2,6}\s*,?\s*/gi;
+  return address.replace(plusCodePattern, '').trim();
+};
+
+/**
  * Format address for display
  */
 export const formatAddressForDisplay = (address: string | AddressData): string => {
   if (typeof address === 'string') {
-    return address;
+    return removePlusCode(address);
   }
   
   const parts = [];
@@ -62,7 +73,8 @@ export const formatAddressForDisplay = (address: string | AddressData): string =
   if (address.state) parts.push(address.state);
   if (address.pincode) parts.push(address.pincode);
   
-  return parts.join(', ');
+  const fullAddress = parts.join(', ');
+  return removePlusCode(fullAddress);
 };
 
 /**

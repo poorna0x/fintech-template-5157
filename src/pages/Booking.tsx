@@ -20,6 +20,7 @@ import BehavioralTracker from '@/components/BehavioralTracker';
 import SecurityStatus from '@/components/SecurityStatus';
 import { useSecurity } from '@/contexts/SecurityContext';
 import DraggableMap from '@/components/DraggableMap';
+import { removePlusCode } from '@/lib/maps';
 
 declare global {
   interface Window {
@@ -521,13 +522,8 @@ const Booking: React.FC = () => {
     }
 
     function initAllAutocompletes() {
-      // Don't re-initialize if already initialized
-      if (addressAutocompleteRef.current || autocompleteRef.current) {
-        return;
-      }
-
       // Initialize address autocomplete
-      if (addressInputRef.current && window.google?.maps?.places) {
+      if (addressInputRef.current && window.google?.maps?.places && !addressAutocompleteRef.current) {
         const autocomplete = new window.google.maps.places.Autocomplete(
           addressInputRef.current,
           {
@@ -557,7 +553,7 @@ const Booking: React.FC = () => {
       }
 
       // Initialize location search autocomplete
-      if (locationSearchInputRef.current && window.google?.maps?.places) {
+      if (locationSearchInputRef.current && window.google?.maps?.places && !autocompleteRef.current) {
         const autocomplete = new window.google.maps.places.Autocomplete(
           locationSearchInputRef.current,
           {
@@ -1352,7 +1348,7 @@ const Booking: React.FC = () => {
           email: formData.email,
           alternate_phone: formData.alternatePhone,
           address: {
-            street: formData.address,
+            street: removePlusCode(formData.address),
             area: 'Bangalore',
             city: 'Bangalore',
             state: 'Karnataka',
@@ -1361,7 +1357,7 @@ const Booking: React.FC = () => {
           location: {
             latitude: formData.coordinates.lat,
             longitude: formData.coordinates.lng,
-            formattedAddress: formData.address,
+            formattedAddress: formData.address, // Keep full address with Plus Code for Google Maps
             googleLocation: formData.googleMapsLink || null
           },
           service_type: formData.serviceType,
@@ -1430,7 +1426,7 @@ const Booking: React.FC = () => {
         scheduled_time_slot: (formData.preferredTime === 'FIRST_HALF' ? 'MORNING' : 'AFTERNOON') as 'MORNING' | 'AFTERNOON' | 'EVENING',
         estimated_duration: 120,
         service_address: {
-          street: formData.address,
+          street: removePlusCode(formData.address),
           area: 'Bangalore',
           city: 'Bangalore',
           state: 'Karnataka',
@@ -1439,7 +1435,7 @@ const Booking: React.FC = () => {
         service_location: {
           latitude: formData.coordinates.lat,
           longitude: formData.coordinates.lng,
-          formattedAddress: formData.address,
+          formattedAddress: formData.address, // Keep full address with Plus Code for Google Maps
           googleLocation: formData.googleMapsLink || null
         },
         requirements: [],
