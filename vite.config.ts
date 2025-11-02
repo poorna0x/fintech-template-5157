@@ -25,9 +25,10 @@ export default defineConfig(({ mode }) => ({
     minify: 'terser',
     terserOptions: {
       compress: {
-        // Keep console logs for debugging environment variables
-        drop_console: false,
+        // Remove console logs in production for better performance
+        drop_console: mode === 'production',
         drop_debugger: mode === 'production',
+        pure_funcs: mode === 'production' ? ['console.log', 'console.info', 'console.debug'] : [],
       },
     },
     // Code splitting for better performance
@@ -101,7 +102,11 @@ export default defineConfig(({ mode }) => ({
       },
     },
     // Optimize chunk size
-    chunkSizeWarningLimit: 1000,
+    chunkSizeWarningLimit: 600,
+    // Report compressed size to reduce build output
+    reportCompressedSize: true,
+    // Increase build speed
+    sourcemap: false,
   },
   // Optimize dependencies
   optimizeDeps: {
