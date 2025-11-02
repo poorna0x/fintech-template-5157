@@ -124,6 +124,17 @@ After adding the environment variable:
   - Select "Don't restrict key" (not recommended for production)
   - Or add all required APIs to the restricted list
 
+### **Warning: Autocomplete is deprecated**
+
+**Message:** "As of March 1st, 2025, google.maps.places.Autocomplete is not available to new customers"
+
+**Note:** 
+- The application currently uses the legacy `Autocomplete` API which still works for existing customers
+- `PlaceAutocompleteElement` is recommended for new customers
+- The app uses `@googlemaps/js-api-loader` for proper API loading
+- This warning is informational and doesn't break functionality
+- Migration to `PlaceAutocompleteElement` will be done in a future update
+
 ---
 
 ## 💰 **Billing Note**
