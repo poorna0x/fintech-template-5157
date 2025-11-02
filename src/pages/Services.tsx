@@ -1,6 +1,8 @@
 import React from 'react';
 import Header from '@/components/Header';
 import Footer from '@/components/Footer';
+import { Card, CardContent } from '@/components/ui/card';
+import { Filter, Wrench, RefreshCw, CheckCircle, DollarSign, Clock, Shield } from 'lucide-react';
 
 const Services = () => {
   return (
@@ -45,7 +47,7 @@ const Services = () => {
               "@type": "Offer",
               "name": "RO Installation",
               "description": "Professional RO water purifier installation service",
-              "price": "400",
+              "price": "500",
               "priceCurrency": "INR",
               "availability": "https://schema.org/InStock"
             },
@@ -78,77 +80,183 @@ const Services = () => {
 
       <Header />
 
-      <main className="flex-1 container mx-auto px-4 py-20 max-w-4xl">
-        <h1 className="text-3xl md:text-4xl lg:text-5xl font-bold mb-6 text-foreground">
-          RO Water Purifier Services in Bengaluru | Best RO Repair & Installation
-        </h1>
-        
-        <p className="text-lg md:text-xl text-muted-foreground mb-8">
-          Professional RO water purifier installation, repair, and maintenance services by certified technicians in Bengaluru, Karnataka. 
-          Same-day service, 24/7 emergency support across all areas of Bangalore. Trusted by 3000+ customers.
-        </p>
-
-        {/* SEO Keywords Section */}
-        <div className="bg-blue-50 dark:bg-blue-950 p-6 rounded-lg mb-8">
-          <h2 className="text-xl font-semibold mb-4 text-foreground">Why Choose Our RO Services in Bengaluru?</h2>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm text-foreground">
-            <div>✅ Certified RO Technicians</div>
-            <div>✅ Same Day Service Available</div>
-            <div>✅ All RO Brands Supported</div>
-            <div>✅ 24/7 Emergency Repair</div>
-            <div>✅ Genuine Spare Parts</div>
-            <div>✅ 1 Year Warranty</div>
-            <div>✅ Free Site Survey</div>
-            <div>✅ Competitive Pricing</div>
+      <main className="flex-1">
+        {/* Hero Section */}
+        <section className="py-16 px-2 md:px-12 bg-background">
+          <div className="max-w-6xl mx-auto text-center">
+            <h1 className="text-3xl md:text-4xl font-bold mb-6 text-foreground">
+              RO Water Purifier Services in Bengaluru
+            </h1>
+            <p className="text-lg text-muted-foreground max-w-3xl mx-auto">
+              Professional RO water purifier installation, repair, and maintenance services by certified technicians in Bengaluru, Karnataka. 
+              Same-day service, 24/7 emergency support across all areas of Bangalore. Trusted by 3000+ customers.
+            </p>
           </div>
-        </div>
+        </section>
 
-        <div className="mb-12">
-          <h2 className="text-2xl md:text-3xl font-semibold mb-6 text-foreground">Complete RO Water Purifier Services in Bengaluru</h2>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            <div className="bg-card p-6 rounded-lg shadow-sm border border-border">
-              <h3 className="text-lg font-semibold mb-3 text-foreground">RO Installation Services</h3>
-              <ul className="space-y-2 text-foreground text-sm">
-                <li>• Kent RO Installation in Bengaluru</li>
-                <li>• Aquaguard RO Setup & Installation</li>
-                <li>• Pureit RO Water Purifier Installation</li>
-                <li>• Livpure RO Installation Service</li>
-                <li>• All Brands RO Installation</li>
-                <li>• Starting from ₹400 - Best Price in Bangalore</li>
-              </ul>
+        {/* Why Choose Section */}
+        <section className="py-16 px-2 md:px-12 bg-muted/30">
+          <div className="max-w-6xl mx-auto">
+            <div className="text-center mb-12">
+              <h2 className="text-3xl md:text-4xl font-bold text-foreground mb-6">
+                Why Choose Our RO Services?
+              </h2>
             </div>
-            <div className="bg-card p-6 rounded-lg shadow-sm border border-border">
-              <h3 className="text-lg font-semibold mb-3 text-foreground">RO Repair & Maintenance</h3>
-              <ul className="space-y-2 text-foreground text-sm">
-                <li>• RO Water Purifier Repair Service</li>
-                <li>• Filter Replacement in Bengaluru</li>
-                <li>• RO Membrane Replacement</li>
-                <li>• Water Softener Service</li>
-                <li>• Emergency RO Repair - 24/7</li>
-                <li>• Annual Maintenance Contract (AMC)</li>
-              </ul>
+            
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+              <Card className="cosmic-card text-center hover:shadow-lg transition-all duration-300">
+                <CardContent className="p-6">
+                  <div className="w-16 h-16 bg-primary/10 rounded-xl flex items-center justify-center mx-auto mb-4">
+                    <Shield className="w-8 h-8 text-primary" />
+                  </div>
+                  <h3 className="text-lg font-semibold text-foreground mb-3">
+                    Certified Technicians
+                  </h3>
+                  <p className="text-muted-foreground text-sm">
+                    All RO technicians are certified and trained professionals
+                  </p>
+                </CardContent>
+              </Card>
+
+              <Card className="cosmic-card text-center hover:shadow-lg transition-all duration-300">
+                <CardContent className="p-6">
+                  <div className="w-16 h-16 bg-primary/10 rounded-xl flex items-center justify-center mx-auto mb-4">
+                    <Clock className="w-8 h-8 text-primary" />
+                  </div>
+                  <h3 className="text-lg font-semibold text-foreground mb-3">
+                    Same Day Service
+                  </h3>
+                  <p className="text-muted-foreground text-sm">
+                    Quick response times with same-day service available
+                  </p>
+                </CardContent>
+              </Card>
+
+              <Card className="cosmic-card text-center hover:shadow-lg transition-all duration-300">
+                <CardContent className="p-6">
+                  <div className="w-16 h-16 bg-primary/10 rounded-xl flex items-center justify-center mx-auto mb-4">
+                    <CheckCircle className="w-8 h-8 text-primary" />
+                  </div>
+                  <h3 className="text-lg font-semibold text-foreground mb-3">
+                    All Brands Supported
+                  </h3>
+                  <p className="text-muted-foreground text-sm">
+                    Expert service for all major RO water purifier brands
+                  </p>
+                </CardContent>
+              </Card>
+
+              <Card className="cosmic-card text-center hover:shadow-lg transition-all duration-300">
+                <CardContent className="p-6">
+                  <div className="w-16 h-16 bg-primary/10 rounded-xl flex items-center justify-center mx-auto mb-4">
+                    <DollarSign className="w-8 h-8 text-primary" />
+                  </div>
+                  <h3 className="text-lg font-semibold text-foreground mb-3">
+                    Competitive Pricing
+                  </h3>
+                  <p className="text-muted-foreground text-sm">
+                    Transparent pricing with no hidden fees
+                  </p>
+                </CardContent>
+              </Card>
             </div>
           </div>
-        </div>
+        </section>
 
-        <div className="mb-12">
-          <h2 className="text-2xl font-semibold mb-4 text-foreground">Why Choose Hydrogen RO?</h2>
-          <ul className="space-y-2 text-foreground">
-            <li>• Same-day service availability</li>
-            <li>• Certified and experienced technicians</li>
-            <li>• 100% satisfaction guarantee</li>
-            <li>• All areas of Bengaluru covered</li>
-            <li>• Genuine spare parts only</li>
-            <li>• Competitive pricing</li>
-          </ul>
-        </div>
+        {/* Main Services */}
+        <section className="py-16 px-2 md:px-12 bg-background">
+          <div className="max-w-6xl mx-auto">
+            <div className="text-center mb-12">
+              <h2 className="text-3xl md:text-4xl font-bold text-foreground mb-6">
+                Complete RO Water Purifier Services
+              </h2>
+            </div>
 
-        <div className="bg-muted p-6 rounded-lg">
-          <h3 className="text-xl font-semibold mb-3 text-foreground">Contact Us</h3>
-          <p className="text-foreground mb-2">Phone: +91-8884944288, +91-9886944288</p>
-          <p className="text-foreground mb-2">Email: info@hydrogenro.com</p>
-          <p className="text-foreground">Available: 24/7 Emergency Service</p>
-        </div>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
+              <Card className="cosmic-card hover:shadow-lg transition-all duration-300">
+                <CardContent className="p-8">
+                  <div className="w-16 h-16 bg-primary/10 rounded-xl flex items-center justify-center mb-6">
+                    <Filter className="w-8 h-8 text-primary" />
+                  </div>
+                  <h3 className="text-2xl font-semibold mb-4 text-foreground">RO Installation</h3>
+                  <ul className="space-y-2 text-muted-foreground">
+                    <li>• Complete RO system setup</li>
+                    <li>• Water quality testing</li>
+                    <li>• All brands supported</li>
+                    <li>• Starting from ₹500</li>
+                  </ul>
+                </CardContent>
+              </Card>
+
+              <Card className="cosmic-card hover:shadow-lg transition-all duration-300">
+                <CardContent className="p-8">
+                  <div className="w-16 h-16 bg-primary/10 rounded-xl flex items-center justify-center mb-6">
+                    <Wrench className="w-8 h-8 text-primary" />
+                  </div>
+                  <h3 className="text-2xl font-semibold mb-4 text-foreground">RO Repair & Maintenance</h3>
+                  <ul className="space-y-2 text-muted-foreground">
+                    <li>• Complete system repair</li>
+                    <li>• Emergency 24/7 support</li>
+                    <li>• Water softener service</li>
+                    <li>• Annual maintenance plans</li>
+                  </ul>
+                </CardContent>
+              </Card>
+
+              <Card className="cosmic-card hover:shadow-lg transition-all duration-300">
+                <CardContent className="p-8">
+                  <div className="w-16 h-16 bg-primary/10 rounded-xl flex items-center justify-center mb-6">
+                    <RefreshCw className="w-8 h-8 text-primary" />
+                  </div>
+                  <h3 className="text-2xl font-semibold mb-4 text-foreground">Filter Replacement</h3>
+                  <ul className="space-y-2 text-muted-foreground">
+                    <li>• All filter types</li>
+                    <li>• Pre & post filters</li>
+                    <li>• RO membrane replacement</li>
+                    <li>• UV lamp maintenance</li>
+                  </ul>
+                </CardContent>
+              </Card>
+            </div>
+          </div>
+        </section>
+
+        {/* Additional Benefits */}
+        <section className="py-16 px-2 md:px-12 bg-muted/30">
+          <div className="max-w-6xl mx-auto">
+            <Card className="cosmic-card">
+              <CardContent className="p-8">
+                <h3 className="text-2xl font-semibold mb-6 text-center text-foreground">Additional Benefits</h3>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-muted-foreground">
+                  <p>• 1 Year Warranty</p>
+                  <p>• Free Site Survey</p>
+                  <p>• 24/7 Emergency Repair</p>
+                  <p>• Genuine Spare Parts</p>
+                  <p>• 100% Satisfaction Guarantee</p>
+                  <p>• All Areas of Bengaluru Covered</p>
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+        </section>
+
+        {/* Contact Section */}
+        <section className="py-16 px-2 md:px-12 bg-background">
+          <div className="max-w-4xl mx-auto">
+            <Card className="cosmic-card">
+              <CardContent className="p-8">
+                <div className="text-center">
+                  <h3 className="text-2xl font-semibold mb-6 text-foreground">Contact Us</h3>
+                  <div className="space-y-3 text-foreground">
+                    <p>Phone: +91-8884944288, +91-9886944288</p>
+                    <p>Email: info@hydrogenro.com</p>
+                    <p>Available: 24/7 Emergency Service</p>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+        </section>
       </main>
 
       <Footer />
