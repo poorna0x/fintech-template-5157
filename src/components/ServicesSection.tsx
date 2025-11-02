@@ -35,7 +35,7 @@ const ServicesSection = () => {
           "Same-day installation available",
           "Genuine spare parts & warranty",
           "24/7 emergency repair support",
-          "All major brands supported",
+          "All brands service supported",
           "Professional installation guarantee"
         ]
       }

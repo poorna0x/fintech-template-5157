@@ -3,7 +3,7 @@ import Header from '@/components/Header';
 import Footer from '@/components/Footer';
 import PageHero from '@/components/PageHero';
 import { Card, CardContent } from '@/components/ui/card';
-import { Filter, Wrench, RefreshCw, CheckCircle, DollarSign, Clock, Shield } from 'lucide-react';
+import { Filter, Wrench, RefreshCw, CheckCircle, DollarSign, Clock, Shield, MapPin, Settings } from 'lucide-react';
 
 const Services = () => {
   return (
@@ -165,7 +165,7 @@ const Services = () => {
               </h2>
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-8">
               <Card className="cosmic-card hover:shadow-lg transition-all duration-300">
                 <CardContent className="p-8">
                   <div className="w-16 h-16 bg-primary/10 rounded-xl flex items-center justify-center mb-6">
@@ -175,7 +175,7 @@ const Services = () => {
                   <ul className="space-y-2 text-muted-foreground">
                     <li>• Complete RO system setup</li>
                     <li>• Water quality testing</li>
-                    <li>• All brands supported</li>
+                    <li>• All brands service supported</li>
                     <li>• Starting from ₹500</li>
                   </ul>
                 </CardContent>
@@ -190,7 +190,7 @@ const Services = () => {
                   <ul className="space-y-2 text-muted-foreground">
                     <li>• Complete system repair</li>
                     <li>• Emergency 24/7 support</li>
-                    <li>• Water softener service</li>
+                    <li>• All brands service supported</li>
                     <li>• Annual maintenance plans</li>
                   </ul>
                 </CardContent>
@@ -210,26 +210,22 @@ const Services = () => {
                   </ul>
                 </CardContent>
               </Card>
-            </div>
-          </div>
-        </section>
 
-        {/* Additional Benefits */}
-        <section className="py-16 px-2 md:px-12 bg-muted/30">
-          <div className="max-w-6xl mx-auto">
-            <Card className="cosmic-card">
-              <CardContent className="p-8">
-                <h3 className="text-2xl font-semibold mb-6 text-center text-foreground">Additional Benefits</h3>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-muted-foreground">
-                  <p>• 1 Year Warranty</p>
-                  <p>• Free Site Survey</p>
-                  <p>• 24/7 Emergency Repair</p>
-                  <p>• Genuine Spare Parts</p>
-                  <p>• 100% Satisfaction Guarantee</p>
-                  <p>• All Areas of Bengaluru Covered</p>
-                </div>
-              </CardContent>
-            </Card>
+              <Card className="cosmic-card hover:shadow-lg transition-all duration-300">
+                <CardContent className="p-8">
+                  <div className="w-16 h-16 bg-primary/10 rounded-xl flex items-center justify-center mb-6">
+                    <Settings className="w-8 h-8 text-primary" />
+                  </div>
+                  <h3 className="text-2xl font-semibold mb-4 text-foreground">Water Softener</h3>
+                  <ul className="space-y-2 text-muted-foreground">
+                    <li>• Softener installation</li>
+                    <li>• Resin level management</li>
+                    <li>• Salt level monitoring</li>
+                    <li>• All brands service supported</li>
+                  </ul>
+                </CardContent>
+              </Card>
+            </div>
           </div>
         </section>
 

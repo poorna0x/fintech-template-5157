@@ -63,7 +63,6 @@ const HeroSection = () => {
         </div>
         
         <div className="pt-6 text-sm text-muted-foreground space-y-1">
-          <div>Free consultation</div>
           <div>Same-day service available</div>
         </div>
       </div>
