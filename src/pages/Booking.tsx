@@ -906,199 +906,52 @@ const Booking: React.FC = () => {
 
       const { latitude, longitude } = position.coords;
       
-      // Try multiple approaches to get detailed addresses
-      const geocodingPromises = [
-        // Try OpenStreetMap Nominatim with CORS proxy
-        fetch(`/.netlify/functions/geocode?lat=${latitude}&lon=${longitude}`)
-          .then(res => res.json())
-          .then(data => {
-            if (data && data.display_name) {
-              // Use the full display_name if it's detailed enough
-              let detailedAddress = data.display_name;
-              
-              // If display_name is too generic, try to build a better one
-              if (data.display_name.length < 50 || data.display_name.includes(data.address?.city + ', ' + data.address?.city)) {
-                const addr = data.address || {};
-                const addressParts = [];
-                
-                // Add house number if available
-                if (addr.house_number) addressParts.push(addr.house_number);
-                
-                // Add street/road information
-                if (addr.road) {
-                  addressParts.push(addr.road);
-                } else if (data.extratags?.ref) {
-                  // Use reference if no street name (like VJVJ+8XW)
-                  addressParts.push(data.extratags.ref);
-                }
-                
-                // Add area/locality information with priority order
-                if (addr.suburb && addr.suburb !== addr.city) addressParts.push(addr.suburb);
-                if (addr.neighbourhood && addr.neighbourhood !== addr.suburb && addr.neighbourhood !== addr.city) addressParts.push(addr.neighbourhood);
-                if (addr.quarter && addr.quarter !== addr.suburb && addr.quarter !== addr.city) addressParts.push(addr.quarter);
-                if (addr.district && addr.district !== addr.city) addressParts.push(addr.district);
-                
-                // Add city
-                if (addr.city) addressParts.push(addr.city);
-                
-                // Add state
-                if (addr.state && addr.state !== addr.city) addressParts.push(addr.state);
-                
-                // Add pincode
-                if (addr.postcode) addressParts.push(addr.postcode);
-                
-                // Add country
-                if (addr.country && addr.country !== 'India') addressParts.push(addr.country);
-                
-                if (addressParts.length >= 4) {
-                  detailedAddress = addressParts.join(', ');
-                }
-              }
-              
-              return {
-                service: 'nominatim',
-                address: detailedAddress,
-                pincode: data.address?.postcode || '',
-                city: data.address?.city || '',
-                state: data.address?.state || '',
-                area: data.address?.suburb || data.address?.neighbourhood || '',
-                street: data.address?.road || '',
-                houseNumber: data.address?.house_number || '',
-                country: data.address?.country || '',
-                fullDetails: data
-              };
-            }
-            return null;
-          })
-          .catch(() => null),
-        
-        // Try alternative CORS proxy
-        fetch(`/.netlify/functions/geocode?lat=${latitude}&lon=${longitude}`)
-          .then(res => res.json())
-          .then(data => {
-            if (data && data.display_name) {
-              return {
-                service: 'nominatim-alt',
-                address: data.display_name,
-                pincode: data.address?.postcode || '',
-                city: data.address?.city || '',
-                state: data.address?.state || '',
-                area: data.address?.suburb || data.address?.neighbourhood || '',
-                street: data.address?.road || '',
-                houseNumber: data.address?.house_number || '',
-                country: data.address?.country || '',
-                fullDetails: data
-              };
-            }
-            return null;
-          })
-          .catch(() => null),
-        
-        // BigDataCloud as fallback
-        fetch(`https://api.bigdatacloud.net/data/reverse-geocode-client?latitude=${latitude}&longitude=${longitude}&localityLanguage=en&localityInfo=true`)
-          .then(res => res.json())
-          .then(data => {
-            const addressParts = [];
-            
-            if (data.localityInfo?.administrative) {
-              const admin = data.localityInfo.administrative;
-              if (admin[4]?.name && admin[4].name !== admin[2]?.name) addressParts.push(admin[4].name);
-              if (admin[3]?.name && admin[3].name !== admin[4]?.name && admin[3].name !== admin[2]?.name) addressParts.push(admin[3].name);
-              if (admin[2]?.name) addressParts.push(admin[2].name);
-              if (admin[1]?.name && admin[1].name !== admin[2]?.name) addressParts.push(admin[1].name);
-              if (data.postcode) addressParts.push(data.postcode);
+      // Try to get address using Google Geocoding if available, otherwise just store coordinates
+      if (window.google && window.google.maps && window.google.maps.Geocoder) {
+        try {
+          const geocoder = new window.google.maps.Geocoder();
+          geocoder.geocode({ location: { lat: latitude, lng: longitude } }, (results, status) => {
+            if (status === 'OK' && results && results[0]) {
+              setFormData(prev => ({ 
+                ...prev, 
+                address: results[0].formatted_address,
+                coordinates: { lat: latitude, lng: longitude }
+              }));
             } else {
-              if (data.locality && data.locality !== data.city) addressParts.push(data.locality);
-              if (data.city) addressParts.push(data.city);
-              if (data.principalSubdivision && data.principalSubdivision !== data.city) addressParts.push(data.principalSubdivision);
-              if (data.postcode) addressParts.push(data.postcode);
+              // Google geocoding failed, prompt user to enter manually
+              setFormData(prev => ({ 
+                ...prev, 
+                address: '',
+                coordinates: { lat: latitude, lng: longitude }
+              }));
+              toast.info('Location detected but couldn\'t get address. Please enter your address manually.');
             }
             
-            const address = addressParts.length > 0 
-              ? addressParts.join(', ')
-              : `Current Location: ${latitude.toFixed(6)}, ${longitude.toFixed(6)}`;
-            
-            return {
-              service: 'bigdatacloud',
-              address: address,
-              pincode: data.postcode || '',
-              city: data.city || '',
-              state: data.principalSubdivision || '',
-              area: data.locality || '',
-              street: '',
-              houseNumber: '',
-              country: data.countryName || '',
-              fullDetails: data
-            };
-          })
-          .catch(() => null)
-      ];
-
-      // Wait for all geocoding services to complete and pick the best result
-      Promise.allSettled(geocodingPromises.filter(p => p !== null))
-        .then(results => {
-          const successfulResults = results
-            .filter(r => r.status === 'fulfilled' && r.value)
-            .map(r => (r as PromiseFulfilledResult<any>).value);
-          
-          
-          // Find the best result based on address detail and length
-          const bestResult = successfulResults.reduce((best, current) => {
-            const currentScore = current.address.length + (current.address.includes(',') ? 10 : 0) + (current.street ? 20 : 0);
-            const bestScore = best.address.length + (best.address.includes(',') ? 10 : 0) + (best.street ? 20 : 0);
-            return currentScore > bestScore ? current : best;
-          }, successfulResults[0] as any);
-          
-          if (bestResult) {
-            setFormData(prev => ({ 
-              ...prev, 
-              address: bestResult.address,
-              coordinates: { lat: latitude, lng: longitude }
-            }));
-
-          } else {
-            const coordinateAddress = `Current Location: ${latitude.toFixed(6)}, ${longitude.toFixed(6)}`;
-            
-            setFormData(prev => ({ 
-              ...prev, 
-              address: coordinateAddress,
-              coordinates: { lat: latitude, lng: longitude }
-            }));
-            toast.warning('Location detected but detailed address lookup failed. Please verify the coordinates.');
-          }
-          
-          // Use requestAnimationFrame to ensure the DOM is updated before turning off loading
-          requestAnimationFrame(() => {
-            requestAnimationFrame(() => {
-              // Double requestAnimationFrame ensures the address field is fully rendered
-              setTimeout(() => {
-                loadingRef.current = false;
-                setIsLoadingLocation(false);
-              }, 1000); // Increased delay to ensure address field is fully updated
-            });
+            loadingRef.current = false;
+            setIsLoadingLocation(false);
           });
-        })
-        .catch(() => {
-          const coordinateAddress = `Current Location: ${latitude.toFixed(6)}, ${longitude.toFixed(6)}`;
-          
+        } catch (error) {
+          // Google geocoding error, prompt user to enter manually
           setFormData(prev => ({ 
             ...prev, 
-            address: coordinateAddress,
+            address: '',
             coordinates: { lat: latitude, lng: longitude }
           }));
-          toast.warning('Location detected but address lookup failed. Please verify the coordinates.');
-          
-          // Use requestAnimationFrame to ensure the DOM is updated before turning off loading
-          requestAnimationFrame(() => {
-            requestAnimationFrame(() => {
-              // Double requestAnimationFrame ensures the address field is fully rendered
-              setTimeout(() => {
-                loadingRef.current = false;
-                setIsLoadingLocation(false);
-              }, 1000); // Increased delay to ensure address field is fully updated
-            });
-          });
-        });
+          toast.info('Location detected but address lookup failed. Please enter your address manually.');
+          loadingRef.current = false;
+          setIsLoadingLocation(false);
+        }
+      } else {
+        // Google Maps not available, prompt user to enter manually
+        setFormData(prev => ({ 
+          ...prev, 
+          address: '',
+          coordinates: { lat: latitude, lng: longitude }
+        }));
+        toast.info('Location detected. Please enter your address manually.');
+        loadingRef.current = false;
+        setIsLoadingLocation(false);
+      }
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'Failed to get current location.';
       toast.error(`${errorMessage} Please try manual entry or check your browser settings.`, { duration: 8000 });
