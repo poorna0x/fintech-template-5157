@@ -2212,9 +2212,9 @@ const Booking: React.FC = () => {
         <div className="text-center">
           <div className="mb-6">
             <div className="flex justify-center space-x-2">
-              <div className="w-3 h-3 bg-primary rounded-full animate-[bounce_1s_infinite]"></div>
-              <div className="w-3 h-3 bg-primary rounded-full animate-[bounce_1s_infinite_0.2s]"></div>
-              <div className="w-3 h-3 bg-primary rounded-full animate-[bounce_1s_infinite_0.4s]"></div>
+              <div className="w-3 h-3 bg-primary rounded-full animate-bounce-delay-1"></div>
+              <div className="w-3 h-3 bg-primary rounded-full animate-bounce-delay-2"></div>
+              <div className="w-3 h-3 bg-primary rounded-full animate-bounce-delay-3"></div>
             </div>
           </div>
           <p className="text-2xl font-bold text-foreground mb-3">Booking...</p>

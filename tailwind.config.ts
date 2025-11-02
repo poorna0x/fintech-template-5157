@@ -97,6 +97,20 @@ export default {
 					'0%': { backgroundPosition: '0% 50%' },
 					'50%': { backgroundPosition: '100% 50%' },
 					'100%': { backgroundPosition: '0% 50%' }
+				},
+				'bounce-delay-1': {
+					'0%, 100%': { transform: 'translateY(0)' },
+					'50%': { transform: 'translateY(-10px)' }
+				},
+				'bounce-delay-2': {
+					'0%, 20%': { transform: 'translateY(0)' },
+					'10%, 30%': { transform: 'translateY(-10px)' },
+					'40%, 100%': { transform: 'translateY(0)' }
+				},
+				'bounce-delay-3': {
+					'0%, 40%': { transform: 'translateY(0)' },
+					'20%, 60%': { transform: 'translateY(-10px)' },
+					'70%, 100%': { transform: 'translateY(0)' }
 				}
 			},
 			animation: {
@@ -104,7 +118,10 @@ export default {
 				'accordion-up': 'accordion-up 0.2s ease-out',
 				'float': 'float 6s ease-in-out infinite',
 				'pulse-slow': 'pulse-slow 4s ease-in-out infinite',
-				'gradient-shift': 'gradient-shift 8s ease infinite'
+				'gradient-shift': 'gradient-shift 8s ease infinite',
+				'bounce-delay-1': 'bounce-delay-1 1s ease-in-out infinite',
+				'bounce-delay-2': 'bounce-delay-2 1s ease-in-out infinite',
+				'bounce-delay-3': 'bounce-delay-3 1s ease-in-out infinite'
 			},
 			fontFamily: {
 				'inter': ['Inter', 'sans-serif']
