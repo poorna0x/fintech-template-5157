@@ -487,7 +487,6 @@ const Booking: React.FC = () => {
     const apiKey = import.meta.env.VITE_GOOGLE_MAPS_API_KEY;
     
     if (!apiKey || apiKey === 'your_google_maps_api_key' || apiKey.length < 20) {
-      toast.error('Google Maps API key not configured. Please contact support.');
       return;
     }
 
@@ -1667,6 +1666,8 @@ const Booking: React.FC = () => {
                     <Input
                       ref={addressInputRef}
                       id="address"
+                      value={formData.address}
+                      onChange={(e) => handleInputChange('address', e.target.value)}
                       placeholder="Search your address..."
                       className={`pr-10 ${
                         showValidation && !formData.address 
