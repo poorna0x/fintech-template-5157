@@ -39,4 +39,6 @@
 
 [build.environment]
   NODE_VERSION = "18"
-  VITE_GOOGLE_MAPS_API_KEY = "AIzaSyCqqSI1sYLj1yoAK6tSP6QmVC4UFokD9ys"
+
+# Environment variables are set in Netlify dashboard to avoid exposing API keys in git
+# Add VITE_GOOGLE_MAPS_API_KEY in Netlify → Site settings → Environment variables
