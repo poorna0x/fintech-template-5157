@@ -682,14 +682,6 @@ const TechnicianDashboard = () => {
               <Button
                 variant="outline"
                 size="sm"
-                onClick={() => navigate('/technician/location')}
-              >
-                <MapPin className="w-4 h-4 mr-2" />
-                Location Test
-              </Button>
-              <Button
-                variant="outline"
-                size="sm"
                 onClick={() => navigate('/')}
               >
                 <User className="w-4 h-4 mr-2" />
