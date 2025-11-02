@@ -2211,11 +2211,7 @@ const Booking: React.FC = () => {
       <div className="fixed inset-0 bg-background/95 backdrop-blur-sm z-50 flex items-center justify-center">
         <div className="text-center">
           <div className="mb-6">
-            <div className="flex justify-center space-x-2">
-              <div className="w-3 h-3 bg-primary rounded-full booking-dot-1"></div>
-              <div className="w-3 h-3 bg-primary rounded-full booking-dot-2"></div>
-              <div className="w-3 h-3 bg-primary rounded-full booking-dot-3"></div>
-            </div>
+            <Loader2 className="w-12 h-12 text-primary animate-spin mx-auto" />
           </div>
           <p className="text-2xl font-bold text-foreground mb-3">Booking...</p>
           <p className="text-lg text-muted-foreground mb-4">Processing your request</p>
