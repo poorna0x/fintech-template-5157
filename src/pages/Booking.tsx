@@ -529,61 +529,61 @@ const Booking: React.FC = () => {
     function initAllAutocompletes() {
       // Small delay to ensure DOM is ready and refs are attached
       setTimeout(() => {
-        // Initialize address autocomplete
-        if (addressInputRef.current && window.google?.maps?.places && !addressAutocompleteRef.current) {
-          const autocomplete = new window.google.maps.places.Autocomplete(
-            addressInputRef.current,
-            {
-              componentRestrictions: { country: 'in' },
-              fields: ['formatted_address', 'geometry']
-            }
-          );
+      // Initialize address autocomplete
+      if (addressInputRef.current && window.google?.maps?.places && !addressAutocompleteRef.current) {
+        const autocomplete = new window.google.maps.places.Autocomplete(
+          addressInputRef.current,
+          {
+            componentRestrictions: { country: 'in' },
+            fields: ['formatted_address', 'geometry']
+          }
+        );
 
-          addressAutocompleteRef.current = autocomplete;
+        addressAutocompleteRef.current = autocomplete;
 
-          autocomplete.addListener('place_changed', () => {
-            const place = autocomplete.getPlace();
-            if (place.geometry && place.geometry.location) {
-              const location = {
-                lat: place.geometry.location.lat(),
-                lng: place.geometry.location.lng()
-              };
-              setFormData(prev => ({
-                ...prev,
-                address: place.formatted_address || '',
-                coordinates: location
-              }));
-              setMapCenter(location);
-              toast.success('Address set!');
-            }
-          });
-        }
+        autocomplete.addListener('place_changed', () => {
+          const place = autocomplete.getPlace();
+          if (place.geometry && place.geometry.location) {
+            const location = {
+              lat: place.geometry.location.lat(),
+              lng: place.geometry.location.lng()
+            };
+            setFormData(prev => ({
+              ...prev,
+              address: place.formatted_address || '',
+              coordinates: location
+            }));
+            setMapCenter(location);
+            toast.success('Address set!');
+          }
+        });
+      }
 
-        // Initialize location search autocomplete
-        if (locationSearchInputRef.current && window.google?.maps?.places && !autocompleteRef.current) {
-          const autocomplete = new window.google.maps.places.Autocomplete(
-            locationSearchInputRef.current,
-            {
-              componentRestrictions: { country: 'in' },
-              fields: ['formatted_address', 'geometry']
-            }
-          );
+      // Initialize location search autocomplete
+      if (locationSearchInputRef.current && window.google?.maps?.places && !autocompleteRef.current) {
+        const autocomplete = new window.google.maps.places.Autocomplete(
+          locationSearchInputRef.current,
+          {
+            componentRestrictions: { country: 'in' },
+            fields: ['formatted_address', 'geometry']
+          }
+        );
 
-          autocompleteRef.current = autocomplete;
+        autocompleteRef.current = autocomplete;
 
-          autocomplete.addListener('place_changed', () => {
-            const place = autocomplete.getPlace();
-            if (place.geometry && place.geometry.location) {
-              const location = {
-                lat: place.geometry.location.lat(),
-                lng: place.geometry.location.lng()
-              };
-              setLocationSearchResult(location);
-              setLocationSearchQuery(place.formatted_address || '');
-              toast.success('Location found!');
-            }
-          });
-        }
+        autocomplete.addListener('place_changed', () => {
+          const place = autocomplete.getPlace();
+          if (place.geometry && place.geometry.location) {
+            const location = {
+              lat: place.geometry.location.lat(),
+              lng: place.geometry.location.lng()
+            };
+            setLocationSearchResult(location);
+            setLocationSearchQuery(place.formatted_address || '');
+            toast.success('Location found!');
+          }
+        });
+      }
       }, 100);
     }
 
@@ -911,24 +911,24 @@ const Booking: React.FC = () => {
           const geocoder = new window.google.maps.Geocoder();
           geocoder.geocode({ location: { lat: latitude, lng: longitude } }, (results, status) => {
             if (status === 'OK' && results && results[0]) {
-              setFormData(prev => ({ 
-                ...prev, 
+            setFormData(prev => ({ 
+              ...prev, 
                 address: results[0].formatted_address,
-                coordinates: { lat: latitude, lng: longitude }
-              }));
-            } else {
+              coordinates: { lat: latitude, lng: longitude }
+            }));
+          } else {
               // Google geocoding failed, prompt user to enter manually
-              setFormData(prev => ({ 
-                ...prev, 
+            setFormData(prev => ({ 
+              ...prev, 
                 address: '',
-                coordinates: { lat: latitude, lng: longitude }
-              }));
+              coordinates: { lat: latitude, lng: longitude }
+            }));
               toast.info('Location detected but couldn\'t get address. Please enter your address manually.');
-            }
-            
-            loadingRef.current = false;
-            setIsLoadingLocation(false);
-          });
+          }
+          
+                loadingRef.current = false;
+                setIsLoadingLocation(false);
+            });
         } catch (error) {
           // Google geocoding error, prompt user to enter manually
           setFormData(prev => ({ 
@@ -937,8 +937,8 @@ const Booking: React.FC = () => {
             coordinates: { lat: latitude, lng: longitude }
           }));
           toast.info('Location detected but address lookup failed. Please enter your address manually.');
-          loadingRef.current = false;
-          setIsLoadingLocation(false);
+                loadingRef.current = false;
+                setIsLoadingLocation(false);
         }
       } else {
         // Google Maps not available, prompt user to enter manually

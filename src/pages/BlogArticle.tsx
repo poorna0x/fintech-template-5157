@@ -103,8 +103,8 @@ const BlogArticle = () => {
           <CardContent className="p-8">
             <h3 className="text-2xl font-semibold mb-6 text-center text-foreground">Need Professional Help?</h3>
             <p className="text-center text-muted-foreground mb-8">
-              For professional RO maintenance and repair services in Bengaluru, contact Hydrogen RO.
-            </p>
+            For professional RO maintenance and repair services in Bengaluru, contact Hydrogen RO.
+          </p>
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
               {/* Call Button */}
               <div>
@@ -122,7 +122,7 @@ const BlogArticle = () => {
                     Call
                   </Button>
                 ) : (
-                  <div className="space-y-2">
+          <div className="space-y-2">
                     <Button 
                       onClick={() => handleCall('+918884944288')}
                       className="w-full bg-black dark:bg-white hover:scale-105 transition-transform duration-200 text-white dark:text-black"
@@ -181,7 +181,7 @@ const BlogArticle = () => {
                   WhatsApp
                 </Button>
               </div>
-            </div>
+          </div>
           </CardContent>
         </Card>
 

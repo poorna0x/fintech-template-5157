@@ -111,7 +111,7 @@ const Header = () => {
         
         {/* Mobile menu button */}
         <button 
-          className="md:hidden p-3 rounded-2xl text-muted-foreground hover:text-foreground bg-card/80 backdrop-blur-sm border border-border/50"
+          className="md:hidden p-3 rounded-2xl text-muted-foreground hover:text-foreground bg-background/80 backdrop-blur-sm border border-border/50"
           onClick={toggleMobileMenu}
         >
           {mobileMenuOpen ? <X size={24} /> : <Menu size={24} />}

@@ -120,7 +120,7 @@ const Contact = () => {
         </section>
 
         {/* Emergency Service */}
-        <section className="py-16 px-2 md:px-12 bg-muted/30">
+        <section className="py-16 px-2 md:px-12 bg-background">
           <div className="max-w-4xl mx-auto">
             <Card className="cosmic-card">
               <CardContent className="p-8">

@@ -95,16 +95,16 @@ const ServiceAreas = () => {
                     <div className="flex items-start gap-3">
                       <div className="w-10 h-10 bg-primary/10 rounded-lg flex items-center justify-center flex-shrink-0">
                         <MapPin className="w-5 h-5 text-primary" />
-                      </div>
+            </div>
                       <div className="flex-1">
                         <h3 className="font-semibold text-foreground mb-1">{location.area}</h3>
                         <p className="text-sm text-muted-foreground mb-2">{location.pincode}</p>
                         <div className="flex items-center gap-1 text-sm text-muted-foreground">
                           <Clock className="w-3 h-3" />
                           <span>Response: {location.time}</span>
-                        </div>
-                      </div>
-                    </div>
+            </div>
+            </div>
+            </div>
                   </CardContent>
                 </Card>
               ))}
@@ -142,7 +142,7 @@ const ServiceAreas = () => {
                         Local Expertise
                       </li>
                     </ul>
-                  </div>
+            </div>
                   <div>
                     <h4 className="font-semibold text-foreground mb-3 flex items-center gap-2">
                       <Check className="w-5 h-5 text-primary" />
@@ -166,8 +166,8 @@ const ServiceAreas = () => {
                         Emergency Repair
                       </li>
                     </ul>
-                  </div>
-                </div>
+            </div>
+            </div>
               </CardContent>
             </Card>
 

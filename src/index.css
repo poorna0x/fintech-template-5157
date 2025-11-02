@@ -136,7 +136,7 @@
   }
   
   .cosmic-card {
-    @apply bg-card border border-border backdrop-blur-sm;
+    @apply bg-background border border-border backdrop-blur-sm;
   }
   
   .nav-pill {

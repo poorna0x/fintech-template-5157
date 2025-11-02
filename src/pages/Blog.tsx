@@ -183,7 +183,7 @@ const Blog = () => {
             </div>
                 <p className="text-muted-foreground text-sm line-clamp-3 mb-4">
                   {article.excerpt}
-                </p>
+              </p>
                 <button 
                   onClick={() => navigate(`/blog/${article.slug}`)}
                   className="text-primary hover:underline text-sm font-medium"
