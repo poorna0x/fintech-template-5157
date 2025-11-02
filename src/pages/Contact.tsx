@@ -52,7 +52,7 @@ const Contact = () => {
           <div className="space-y-4 max-w-2xl">
             <div>
               <h3 className="font-semibold text-foreground">Phone</h3>
-              <p className="text-foreground">+91-8884944288</p>
+              <p className="text-foreground">+91-8884944288, +91-9886944288</p>
               <p className="text-sm text-muted-foreground">Call us for immediate assistance</p>
             </div>
             <div>
