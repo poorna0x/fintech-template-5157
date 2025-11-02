@@ -1,6 +1,7 @@
 import React from 'react';
 import Header from '@/components/Header';
 import Footer from '@/components/Footer';
+import PageHero from '@/components/PageHero';
 import { Card, CardContent } from '@/components/ui/card';
 import { Filter, Wrench, RefreshCw, CheckCircle, DollarSign, Clock, Shield } from 'lucide-react';
 
@@ -81,18 +82,10 @@ const Services = () => {
       <Header />
 
       <main className="flex-1">
-        {/* Hero Section */}
-        <section className="py-16 px-2 md:px-12 bg-background">
-          <div className="max-w-6xl mx-auto text-center">
-            <h1 className="text-3xl md:text-4xl font-bold mb-6 text-foreground">
-              RO Water Purifier Services in Bengaluru
-            </h1>
-            <p className="text-lg text-muted-foreground max-w-3xl mx-auto">
-              Professional RO water purifier installation, repair, and maintenance services by certified technicians in Bengaluru, Karnataka. 
-              Same-day service, 24/7 emergency support across all areas of Bangalore. Trusted by 3000+ customers.
-            </p>
-          </div>
-        </section>
+        <PageHero 
+          title="RO Water Purifier Services in Bengaluru"
+          description="Professional RO water purifier installation, repair, and maintenance services by certified technicians in Bengaluru, Karnataka. Same-day service, 24/7 emergency support across all areas of Bangalore."
+        />
 
         {/* Why Choose Section */}
         <section className="py-16 px-2 md:px-12 bg-muted/30">

@@ -1,6 +1,7 @@
 import React from 'react';
 import Header from '@/components/Header';
 import Footer from '@/components/Footer';
+import PageHero from '@/components/PageHero';
 import { Card, CardContent } from '@/components/ui/card';
 import { Phone, Mail, MapPin, Clock, AlertCircle, MessageSquare } from 'lucide-react';
 
@@ -40,18 +41,10 @@ const Contact = () => {
       <Header />
 
       <main className="flex-1">
-        {/* Hero Section */}
-        <section className="py-16 px-2 md:px-12 bg-background">
-          <div className="max-w-6xl mx-auto text-center">
-            <h1 className="text-3xl md:text-4xl font-bold text-foreground mb-6">
-              Contact Hydrogen RO
-            </h1>
-            <p className="text-lg text-muted-foreground max-w-3xl mx-auto">
-              Get in touch with us for professional RO water purifier services in Bengaluru. 
-              We're here to help 24/7!
-            </p>
-          </div>
-        </section>
+        <PageHero 
+          title="Contact Hydrogen RO"
+          description="Get in touch with us for professional RO water purifier services in Bengaluru. We're here to help 24/7!"
+        />
 
         {/* Contact Information Cards */}
         <section className="py-16 px-2 md:px-12 bg-background">

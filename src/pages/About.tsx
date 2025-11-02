@@ -1,6 +1,7 @@
 import React from 'react';
 import Header from '@/components/Header';
 import Footer from '@/components/Footer';
+import PageHero from '@/components/PageHero';
 import { Card, CardContent } from '@/components/ui/card';
 import { Shield, Clock, DollarSign, Users, Award, Heart } from 'lucide-react';
 
@@ -76,18 +77,10 @@ const About = () => {
       <Header />
 
       <main className="flex-1">
-        {/* Hero Section */}
-        <section className="py-16 px-2 md:px-12 bg-background">
-          <div className="max-w-6xl mx-auto text-center">
-            <h1 className="text-3xl md:text-4xl font-bold text-foreground mb-6">
-              About Hydrogen RO - Leading RO Service Provider
-            </h1>
-            <p className="text-lg text-muted-foreground max-w-3xl mx-auto">
-              Hydrogen RO is your trusted partner for clean water solutions in Bengaluru, Karnataka. 
-              We've been serving the community with professional RO water purifier services since 2019.
-            </p>
-          </div>
-        </section>
+        <PageHero 
+          title="About Hydrogen RO - Leading RO Service Provider"
+          description="Hydrogen RO is your trusted partner for clean water solutions in Bengaluru, Karnataka. We've been serving the community with professional RO water purifier services since 2019."
+        />
 
         {/* Our Mission & Story */}
         <section className="py-16 px-2 md:px-12 bg-background">
