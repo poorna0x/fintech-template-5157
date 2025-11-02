@@ -39,3 +39,4 @@
 
 [build.environment]
   NODE_VERSION = "18"
+  VITE_GOOGLE_MAPS_API_KEY = "AIzaSyCqqSI1sYLj1yoAK6tSP6QmVC4UFokD9ys"
