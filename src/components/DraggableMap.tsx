@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
+import { Loader } from '@googlemaps/js-api-loader';
 
 declare global {
   interface Window {
@@ -23,7 +24,7 @@ const DraggableMap = ({ center, onLocationChange, zoom = 15, height = '400px' }:
   const [map, setMap] = useState<google.maps.Map | null>(null);
   const [marker, setMarker] = useState<google.maps.Marker | null>(null);
 
-  // Load Google Maps script
+  // Load Google Maps script using Loader
   useEffect(() => {
     if (isScriptLoaded) return;
 
@@ -40,29 +41,19 @@ const DraggableMap = ({ center, onLocationChange, zoom = 15, height = '400px' }:
       return;
     }
 
-    // Load the script
-    const script = document.createElement('script');
-    script.src = `https://maps.googleapis.com/maps/api/js?key=${apiKey}&libraries=places&loading=async`;
-    script.async = true;
-    script.defer = true;
-    
-    script.onload = () => {
-      setIsScriptLoaded(true);
-    };
-    
-    script.onerror = () => {
-      toast.error('Failed to load Google Maps');
-    };
-    
-    document.head.appendChild(script);
+    // Load using Loader from @googlemaps/js-api-loader
+    const loader = new Loader({
+      apiKey,
+      version: 'weekly',
+      libraries: ['places']
+    });
 
-    return () => {
-      // Cleanup script if component unmounts
-      const scripts = document.querySelectorAll('script[src*="maps.googleapis.com"]');
-      if (scripts.length > 0) {
-        // Don't remove if other components might be using it
-      }
-    };
+    loader.load().then(() => {
+      setIsScriptLoaded(true);
+    }).catch((error) => {
+      console.error('Failed to load Google Maps:', error);
+      toast.error('Failed to load Google Maps');
+    });
   }, [isScriptLoaded]);
 
   // Initialize map when script is loaded - ONLY ONCE

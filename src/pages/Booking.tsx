@@ -21,6 +21,7 @@ import SecurityStatus from '@/components/SecurityStatus';
 import { useSecurity } from '@/contexts/SecurityContext';
 import DraggableMap from '@/components/DraggableMap';
 import { removePlusCode } from '@/lib/maps';
+import { Loader } from '@googlemaps/js-api-loader';
 
 declare global {
   interface Window {
@@ -480,7 +481,7 @@ const Booking: React.FC = () => {
     setShowModelSuggestions(false);
   };
 
-  // Initialize Google Maps for both address and location search
+  // Initialize Google Maps for both address and location search using Loader
   useEffect(() => {
     if (currentStep !== 3) return;
     
@@ -492,44 +493,7 @@ const Booking: React.FC = () => {
     
     console.log('Loading Google Maps API with key:', apiKey ? 'Key found (length: ' + apiKey.length + ')' : 'No key');
 
-    let checkInterval: NodeJS.Timeout | null = null;
-
-    // Check if script is already loaded
-    if (!window.google || !window.google.maps) {
-      // Check if script already exists
-      const existingScript = document.querySelector('script[src*="maps.googleapis.com"]');
-      if (!existingScript) {
-        // Load the script
-        const script = document.createElement('script');
-        script.src = `https://maps.googleapis.com/maps/api/js?key=${apiKey}&libraries=places&loading=async`;
-        script.async = true;
-        script.defer = true;
-        
-        script.onload = () => {
-          initAllAutocompletes();
-        };
-        
-        script.onerror = () => {
-          console.error('Failed to load Google Maps API. Check your API key and billing.');
-          toast.error('Failed to load Google Maps. Please check console for details.');
-        };
-        
-        document.head.appendChild(script);
-      } else {
-        // Script already exists, wait for it to load
-        checkInterval = setInterval(() => {
-          if (window.google && window.google.maps && window.google.maps.places) {
-            clearInterval(checkInterval as NodeJS.Timeout);
-            initAllAutocompletes();
-          }
-        }, 100);
-      }
-    } else {
-      // Google Maps already loaded, initialize immediately
-      initAllAutocompletes();
-    }
-
-    function initAllAutocompletes() {
+    const initAllAutocompletes = async () => {
       // Small delay to ensure DOM is ready and refs are attached
       setTimeout(() => {
         // Initialize address autocomplete
@@ -588,13 +552,31 @@ const Booking: React.FC = () => {
           });
         }
       }, 100);
+    };
+
+    // Check if already loaded
+    if (window.google && window.google.maps) {
+      initAllAutocompletes();
+      return;
     }
+
+    // Load using Loader from @googlemaps/js-api-loader
+    const loader = new Loader({
+      apiKey,
+      version: 'weekly',
+      libraries: ['places']
+    });
+
+    loader.load().then(() => {
+      console.log('Google Maps loaded successfully');
+      initAllAutocompletes();
+    }).catch((error) => {
+      console.error('Failed to load Google Maps:', error);
+      toast.error('Failed to load Google Maps. Please check your API key and billing.');
+    });
 
     // Cleanup function
     return () => {
-      if (checkInterval) {
-        clearInterval(checkInterval);
-      }
       // Don't remove autocomplete instances as they might be used
     };
   }, [currentStep]);
