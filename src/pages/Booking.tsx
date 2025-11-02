@@ -486,22 +486,10 @@ const Booking: React.FC = () => {
     
     const apiKey = import.meta.env.VITE_GOOGLE_MAPS_API_KEY;
     
-    // Debug logging
-    console.log('🔑 Google Maps API Key Check:', {
-      hasKey: !!apiKey,
-      keyLength: apiKey?.length || 0,
-      keyPrefix: apiKey ? apiKey.substring(0, 10) + '...' : 'NO KEY',
-      keyValue: apiKey || 'MISSING'
-    });
-    
     if (!apiKey || apiKey === 'your_google_maps_api_key' || apiKey.length < 20) {
-      console.error('❌ Google Maps API key not configured properly!');
-      console.error('Please set VITE_GOOGLE_MAPS_API_KEY in your environment variables.');
       toast.error('Google Maps API key not configured. Please contact support.');
       return;
     }
-    
-    console.log('✅ Google Maps API key loaded successfully');
 
     let checkInterval: NodeJS.Timeout | null = null;
 
@@ -521,8 +509,7 @@ const Booking: React.FC = () => {
         };
         
         script.onerror = () => {
-          console.error('Failed to load Google Maps API. Check your API key and billing.');
-          toast.error('Failed to load Google Maps. Please check console for details.');
+          toast.error('Failed to load Google Maps. Please check your API key and billing.');
         };
         
         document.head.appendChild(script);
@@ -610,10 +597,6 @@ const Booking: React.FC = () => {
     };
   }, [currentStep]);
 
-  // Debug loader state changes
-  useEffect(() => {
-    console.log('📊 Loader state changed - showSuccessLoader:', showSuccessLoader, 'showConfirmation:', showConfirmation);
-  }, [showSuccessLoader, showConfirmation]);
 
   // Get current location handler
   const handleGetCurrentLocation = () => {
@@ -756,7 +739,7 @@ const Booking: React.FC = () => {
           }
         });
       } catch (error) {
-        console.error('Error reverse geocoding:', error);
+        // Reverse geocoding failed, continue without updating address
       }
     }
   }, []);
@@ -824,10 +807,8 @@ const Booking: React.FC = () => {
   };
 
   const getCurrentLocation = async () => {
-    console.log('Starting location fetch, setting loading to true');
     loadingRef.current = true;
     setIsLoadingLocation(true);
-    console.log('Loading state set to true, current state:', isLoadingLocation);
     
     // Show waiting message in address field immediately
     setFormData(prev => ({ 
@@ -884,7 +865,6 @@ const Booking: React.FC = () => {
           navigator.geolocation.getCurrentPosition(
             resolve, 
             (error) => {
-              console.error('Geolocation error (first attempt):', error);
               reject(error);
             },
             {
@@ -895,13 +875,11 @@ const Booking: React.FC = () => {
           );
         });
       } catch (error) {
-        console.log('First attempt failed, trying with fallback settings...');
         // Fallback with even more relaxed settings
         position = await new Promise<GeolocationPosition>((resolve, reject) => {
           navigator.geolocation.getCurrentPosition(
             resolve, 
             (error) => {
-              console.error('Geolocation error (fallback):', error);
               switch (error.code) {
                 case error.PERMISSION_DENIED:
                   reject(new Error('Location access denied. Please allow location permission and try again.'));
@@ -934,8 +912,6 @@ const Booking: React.FC = () => {
         fetch(`/.netlify/functions/geocode?lat=${latitude}&lon=${longitude}`)
           .then(res => res.json())
           .then(data => {
-            console.log('Nominatim detailed response:', data);
-            
             if (data && data.display_name) {
               // Use the full display_name if it's detailed enough
               let detailedAddress = data.display_name;
@@ -1000,8 +976,6 @@ const Booking: React.FC = () => {
         fetch(`/.netlify/functions/geocode?lat=${latitude}&lon=${longitude}`)
           .then(res => res.json())
           .then(data => {
-            console.log('Nominatim alternative response:', data);
-            
             if (data && data.display_name) {
               return {
                 service: 'nominatim-alt',
@@ -1024,8 +998,6 @@ const Booking: React.FC = () => {
         fetch(`https://api.bigdatacloud.net/data/reverse-geocode-client?latitude=${latitude}&longitude=${longitude}&localityLanguage=en&localityInfo=true`)
           .then(res => res.json())
           .then(data => {
-            console.log('BigDataCloud fallback response:', data);
-            
             const addressParts = [];
             
             if (data.localityInfo?.administrative) {
@@ -1078,8 +1050,6 @@ const Booking: React.FC = () => {
           }, successfulResults[0] as any);
           
           if (bestResult) {
-            console.log('Setting address to:', bestResult.address);
-            
             setFormData(prev => ({ 
               ...prev, 
               address: bestResult.address,
@@ -1130,7 +1100,6 @@ const Booking: React.FC = () => {
           });
         });
     } catch (error) {
-      console.error('Error getting location:', error);
       const errorMessage = error instanceof Error ? error.message : 'Failed to get current location.';
       toast.error(`${errorMessage} Please try manual entry or check your browser settings.`, { duration: 8000 });
       
@@ -1148,7 +1117,6 @@ const Booking: React.FC = () => {
       // Loading state is now managed in the promise callbacks
       // Only turn off loading if there was an error in the try block
       if (loadingRef.current) {
-        console.log('Location fetch failed, setting loading to false');
         loadingRef.current = false;
         setIsLoadingLocation(false);
       }
@@ -1217,7 +1185,6 @@ const Booking: React.FC = () => {
 
       toast.success(`${validFiles.length} image(s) added successfully!`);
     } catch (error) {
-      console.error('Error processing images:', error);
       toast.error('Failed to process images. Please try again.');
     }
   };
@@ -1279,10 +1246,8 @@ const Booking: React.FC = () => {
   };
 
   const handleAutoSubmit = async () => {
-    console.log('🚀 Starting booking submission...');
     setIsSubmitting(true);
     setShowSuccessLoader(true);
-    console.log('✅ Show loader set to true');
     
     // Add a small delay to show the loading state
     await new Promise(resolve => setTimeout(resolve, 500));
@@ -1320,15 +1285,12 @@ const Booking: React.FC = () => {
       }
       
       if (findError && !findError.message?.includes('connect')) {
-        console.error('Error checking existing customer:', findError);
         // Continue with creating new customer if there's a non-network error
       }
       
       if (existingCustomer) {
         // Customer exists, update their information
         isExistingCustomer = true;
-        console.log('Customer exists, updating information');
-        console.log('Existing customer data:', existingCustomer);
         const updateData = {
           full_name: formData.fullName,
           email: formData.email,
@@ -1348,9 +1310,6 @@ const Booking: React.FC = () => {
           preferred_time_slot: formData.preferredTime,
           updated_at: new Date().toISOString(),
         };
-        
-        console.log('Updating customer with ID:', (existingCustomer as any).id);
-        console.log('Update data:', updateData);
         
         let updatedCustomer = null;
         let updateError = null;
@@ -1374,10 +1333,7 @@ const Booking: React.FC = () => {
           updateError = networkError;
         }
         
-        console.log('Update result:', { updatedCustomer, updateError });
-        
         if (updateError) {
-          console.error('Customer update error:', updateError);
           const errorMessage = updateError.message || String(updateError);
           if (errorMessage.includes('Failed to fetch') || 
               errorMessage.includes('ERR_NAME_NOT_RESOLVED')) {
@@ -1389,14 +1345,12 @@ const Booking: React.FC = () => {
         }
         
         if (!updatedCustomer) {
-          console.error('No customer data returned from update');
           throw new Error('Customer update failed: No data returned');
         }
         
         customer = updatedCustomer;
       } else {
         // Customer doesn't exist, create new one
-        console.log('Customer does not exist, creating new customer');
         const customerData = {
           full_name: formData.fullName,
           phone: formData.phone,
@@ -1447,7 +1401,6 @@ const Booking: React.FC = () => {
         }
         
         if (customerError) {
-          console.error('Customer creation error:', customerError);
           const errorMessage = customerError.message || String(customerError);
           if (errorMessage.includes('Failed to fetch') || 
               errorMessage.includes('ERR_NAME_NOT_RESOLVED')) {
@@ -1521,7 +1474,6 @@ const Booking: React.FC = () => {
         });
         
         if (emailSent) {
-          console.log('Email confirmation sent successfully to:', formData.email);
           // Show success message about email (non-blocking)
           toast.success('Confirmation email sent!', {
             description: 'Please check your inbox (and spam folder) for booking details.',
@@ -1530,7 +1482,6 @@ const Booking: React.FC = () => {
         }
       } catch (emailError) {
         // Log error but don't fail the booking
-        console.error('Failed to send confirmation email:', emailError);
         toast.warning('Booking confirmed, but email could not be sent.', {
           description: 'Your booking was saved successfully. Please check your booking details below.',
           duration: 6000,
@@ -1556,16 +1507,13 @@ const Booking: React.FC = () => {
         images: formData.images,
       });
       
-      console.log('🎉 Booking successful! Setting timeout to show confirmation...');
       // Show confirmation page after 2 seconds
       setTimeout(() => {
-        console.log('✅ 2 seconds elapsed, hiding loader and showing confirmation');
         setShowSuccessLoader(false);
         setShowConfirmation(true);
       }, 2000);
       
     } catch (error) {
-      console.error('Booking error:', error);
       
       // Provide user-friendly error messages
       let errorMessage = 'Unknown error occurred';
@@ -1588,7 +1536,6 @@ const Booking: React.FC = () => {
         }
       }
       
-      console.error('❌ Booking failed, hiding loader');
       toast.error(`Booking failed: ${errorMessage}`, { duration: 8000 });
       setShowSuccessLoader(false);
     } finally {
