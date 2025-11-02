@@ -1,116 +1,187 @@
 import React from 'react';
+import Header from '@/components/Header';
+import Footer from '@/components/Footer';
+import PageHero from '@/components/PageHero';
+import { Card, CardContent } from '@/components/ui/card';
+import { MapPin, Clock, Check } from 'lucide-react';
 
 const ServiceAreas = () => {
   return (
-    <div className="min-h-screen bg-white">
-      <div className="container mx-auto px-4 py-20 max-w-4xl">
-        <h1 className="text-4xl font-bold mb-6 text-gray-900">
-          Service Areas in Bengaluru
-        </h1>
-        
-        <p className="text-lg text-gray-600 mb-8">
-          We provide professional RO water purifier services across all areas of Bengaluru. 
-          Find your area and book service today!
-        </p>
+    <div className="min-h-screen flex flex-col bg-background text-foreground">
+      <script type="application/ld+json">
+        {JSON.stringify({
+          "@context": "https://schema.org",
+          "@type": "Service",
+          "name": "RO Service Areas in Bengaluru",
+          "description": "Professional RO water purifier services across all areas of Bengaluru, Karnataka",
+          "provider": {
+            "@type": "LocalBusiness",
+            "name": "Hydrogen RO",
+            "address": {
+              "@type": "PostalAddress",
+              "streetAddress": "MG Road",
+              "addressLocality": "Bengaluru",
+              "addressRegion": "Karnataka",
+              "postalCode": "560001",
+              "addressCountry": "IN"
+            },
+            "telephone": "+91-8884944288",
+            "email": "info@hydrogenro.com",
+            "url": "https://hydrogenro.com",
+            "areaServed": {
+              "@type": "City",
+              "name": "Bengaluru"
+            },
+            "serviceArea": {
+              "@type": "GeoCircle",
+              "geoMidpoint": {
+                "@type": "GeoCoordinates",
+                "latitude": 12.9716,
+                "longitude": 77.5946
+              },
+              "geoRadius": "50000"
+            }
+          },
+          "offers": {
+            "@type": "Offer",
+            "name": "RO Service",
+            "description": "Professional RO water purifier services",
+            "price": "500",
+            "priceCurrency": "INR",
+            "availability": "https://schema.org/InStock",
+            "areaServed": {
+              "@type": "City",
+              "name": "Bengaluru"
+            }
+          }
+        })}
+      </script>
 
-        <div className="mb-12">
-          <h2 className="text-2xl font-semibold mb-4 text-gray-900">Our Service Areas</h2>
-          <p className="text-gray-700 mb-6">
-            Professional RO services available in all major areas of Bengaluru:
-          </p>
-          <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
-            <div className="bg-gray-50 p-4 rounded-lg">
-              <h3 className="font-semibold text-gray-900">Whitefield (560066)</h3>
-              <p className="text-sm text-gray-600">Response Time: 30 minutes</p>
-              <p className="text-sm text-gray-600">Rating: 4.9/5</p>
+      <Header />
+
+      <main className="flex-1">
+        <PageHero 
+          title="Service Areas in Bengaluru"
+          description="We provide professional RO water purifier services across all areas of Bengaluru. Find your area and book service today!"
+          showButtons={true}
+        />
+
+        <section className="py-16 px-2 md:px-12 bg-background">
+          <div className="max-w-6xl mx-auto">
+            <div className="text-center mb-12">
+              <h2 className="text-3xl font-bold mb-4 text-foreground">Coverage Across Bengaluru</h2>
+              <p className="text-lg text-muted-foreground">
+                Professional RO services available in all major areas
+              </p>
             </div>
-            <div className="bg-gray-50 p-4 rounded-lg">
-              <h3 className="font-semibold text-gray-900">Electronic City (560100)</h3>
-              <p className="text-sm text-gray-600">Response Time: 45 minutes</p>
-              <p className="text-sm text-gray-600">Rating: 4.8/5</p>
+
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-12">
+              {[
+                { area: 'Whitefield', pincode: '560066', time: '30 minutes' },
+                { area: 'Electronic City', pincode: '560100', time: '45 minutes' },
+                { area: 'Koramangala', pincode: '560034', time: '25 minutes' },
+                { area: 'HSR Layout', pincode: '560102', time: '35 minutes' },
+                { area: 'Indiranagar', pincode: '560038', time: '20 minutes' },
+                { area: 'Marathahalli', pincode: '560037', time: '40 minutes' },
+                { area: 'BTM Layout', pincode: '560076', time: '30 minutes' },
+                { area: 'Jayanagar', pincode: '560011', time: '25 minutes' },
+                { area: 'Malleshwaram', pincode: '560003', time: '35 minutes' },
+                { area: 'Rajajinagar', pincode: '560010', time: '30 minutes' },
+                { area: 'Bannerghatta', pincode: '560076', time: '50 minutes' },
+                { area: 'Hebbal', pincode: '560024', time: '45 minutes' }
+              ].map((location, index) => (
+                <Card key={index} className="cosmic-card hover:shadow-lg transition-all duration-300">
+                  <CardContent className="p-6">
+                    <div className="flex items-start gap-3">
+                      <div className="w-10 h-10 bg-primary/10 rounded-lg flex items-center justify-center flex-shrink-0">
+                        <MapPin className="w-5 h-5 text-primary" />
+                      </div>
+                      <div className="flex-1">
+                        <h3 className="font-semibold text-foreground mb-1">{location.area}</h3>
+                        <p className="text-sm text-muted-foreground mb-2">{location.pincode}</p>
+                        <div className="flex items-center gap-1 text-sm text-muted-foreground">
+                          <Clock className="w-3 h-3" />
+                          <span>Response: {location.time}</span>
+                        </div>
+                      </div>
+                    </div>
+                  </CardContent>
+                </Card>
+              ))}
             </div>
-            <div className="bg-gray-50 p-4 rounded-lg">
-              <h3 className="font-semibold text-gray-900">Koramangala (560034)</h3>
-              <p className="text-sm text-gray-600">Response Time: 25 minutes</p>
-              <p className="text-sm text-gray-600">Rating: 4.9/5</p>
-            </div>
-            <div className="bg-gray-50 p-4 rounded-lg">
-              <h3 className="font-semibold text-gray-900">HSR Layout (560102)</h3>
-              <p className="text-sm text-gray-600">Response Time: 35 minutes</p>
-              <p className="text-sm text-gray-600">Rating: 4.8/5</p>
-            </div>
-            <div className="bg-gray-50 p-4 rounded-lg">
-              <h3 className="font-semibold text-gray-900">Indiranagar (560038)</h3>
-              <p className="text-sm text-gray-600">Response Time: 20 minutes</p>
-              <p className="text-sm text-gray-600">Rating: 4.9/5</p>
-            </div>
-            <div className="bg-gray-50 p-4 rounded-lg">
-              <h3 className="font-semibold text-gray-900">Marathahalli (560037)</h3>
-              <p className="text-sm text-gray-600">Response Time: 40 minutes</p>
-              <p className="text-sm text-gray-600">Rating: 4.7/5</p>
-            </div>
-            <div className="bg-gray-50 p-4 rounded-lg">
-              <h3 className="font-semibold text-gray-900">BTM Layout (560076)</h3>
-              <p className="text-sm text-gray-600">Response Time: 30 minutes</p>
-              <p className="text-sm text-gray-600">Rating: 4.8/5</p>
-            </div>
-            <div className="bg-gray-50 p-4 rounded-lg">
-              <h3 className="font-semibold text-gray-900">Jayanagar (560011)</h3>
-              <p className="text-sm text-gray-600">Response Time: 25 minutes</p>
-              <p className="text-sm text-gray-600">Rating: 4.9/5</p>
-            </div>
-            <div className="bg-gray-50 p-4 rounded-lg">
-              <h3 className="font-semibold text-gray-900">Malleshwaram (560003)</h3>
-              <p className="text-sm text-gray-600">Response Time: 35 minutes</p>
-              <p className="text-sm text-gray-600">Rating: 4.8/5</p>
-            </div>
-            <div className="bg-gray-50 p-4 rounded-lg">
-              <h3 className="font-semibold text-gray-900">Rajajinagar (560010)</h3>
-              <p className="text-sm text-gray-600">Response Time: 30 minutes</p>
-              <p className="text-sm text-gray-600">Rating: 4.7/5</p>
-            </div>
-            <div className="bg-gray-50 p-4 rounded-lg">
-              <h3 className="font-semibold text-gray-900">Bannerghatta (560076)</h3>
-              <p className="text-sm text-gray-600">Response Time: 50 minutes</p>
-              <p className="text-sm text-gray-600">Rating: 4.6/5</p>
-            </div>
-            <div className="bg-gray-50 p-4 rounded-lg">
-              <h3 className="font-semibold text-gray-900">Hebbal (560024)</h3>
-              <p className="text-sm text-gray-600">Response Time: 45 minutes</p>
-              <p className="text-sm text-gray-600">Rating: 4.7/5</p>
+
+            <Card className="cosmic-card">
+              <CardContent className="p-8">
+                <h3 className="text-2xl font-bold mb-6 text-center text-foreground">
+                  All Bengaluru Areas Covered
+                </h3>
+                <p className="text-center text-muted-foreground mb-6">
+                  We provide comprehensive RO services across all pincodes from 560001 to 560110, covering all areas of Bengaluru and parts of Kolar and Ramanagar districts.
+                </p>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  <div>
+                    <h4 className="font-semibold text-foreground mb-3 flex items-center gap-2">
+                      <Check className="w-5 h-5 text-primary" />
+                      Why Choose Us?
+                    </h4>
+                    <ul className="space-y-2 text-muted-foreground">
+                      <li className="flex items-center gap-2">
+                        <Check className="w-4 h-4 text-primary flex-shrink-0" />
+                        Quick Response - Average response time of 30 minutes
+                      </li>
+                      <li className="flex items-center gap-2">
+                        <Check className="w-4 h-4 text-primary flex-shrink-0" />
+                        Certified Technicians
+                      </li>
+                      <li className="flex items-center gap-2">
+                        <Check className="w-4 h-4 text-primary flex-shrink-0" />
+                        Quality Guarantee
+                      </li>
+                      <li className="flex items-center gap-2">
+                        <Check className="w-4 h-4 text-primary flex-shrink-0" />
+                        Local Expertise
+                      </li>
+                    </ul>
+                  </div>
+                  <div>
+                    <h4 className="font-semibold text-foreground mb-3 flex items-center gap-2">
+                      <Check className="w-5 h-5 text-primary" />
+                      Services Offered
+                    </h4>
+                    <ul className="space-y-2 text-muted-foreground">
+                      <li className="flex items-center gap-2">
+                        <Check className="w-4 h-4 text-primary flex-shrink-0" />
+                        RO Installation
+                      </li>
+                      <li className="flex items-center gap-2">
+                        <Check className="w-4 h-4 text-primary flex-shrink-0" />
+                        RO Repair & Maintenance
+                      </li>
+                      <li className="flex items-center gap-2">
+                        <Check className="w-4 h-4 text-primary flex-shrink-0" />
+                        Filter Replacement
+                      </li>
+                      <li className="flex items-center gap-2">
+                        <Check className="w-4 h-4 text-primary flex-shrink-0" />
+                        Emergency Repair
+                      </li>
+                    </ul>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+
+            {/* Features */}
+            <div className="mt-8 text-center text-sm text-muted-foreground space-y-1">
+              <div>Same-day service available</div>
+              <div>All brands service supported</div>
+              <div>Genuine spare parts</div>
             </div>
           </div>
-        </div>
+        </section>
+      </main>
 
-        <div className="mb-12">
-          <h2 className="text-2xl font-semibold mb-4 text-gray-900">Services We Offer</h2>
-          <ul className="space-y-2 text-gray-700">
-            <li>• RO Installation</li>
-            <li>• RO Repair & Maintenance</li>
-            <li>• Filter Replacement</li>
-            <li>• Water Softener Service</li>
-            <li>• Emergency Repair</li>
-            <li>• Annual Maintenance</li>
-          </ul>
-        </div>
-
-        <div className="mb-12">
-          <h2 className="text-2xl font-semibold mb-4 text-gray-900">Why Choose Us?</h2>
-          <ul className="space-y-2 text-gray-700">
-            <li>• Quick Response - Average response time of 30 minutes</li>
-            <li>• Certified Technicians - All technicians are certified and experienced</li>
-            <li>• Quality Guarantee - 100% satisfaction guarantee on all services</li>
-            <li>• Local Expertise - Deep understanding of local water quality</li>
-          </ul>
-        </div>
-
-        <div className="bg-gray-50 p-6 rounded-lg">
-          <h3 className="text-xl font-semibold mb-3 text-gray-900">Contact Us</h3>
-          <p className="text-gray-700 mb-2">Phone: +91-8884944288</p>
-          <p className="text-gray-700 mb-2">Email: info@hydrogenro.com</p>
-          <p className="text-gray-700">Available: 24/7 Emergency Service</p>
-        </div>
-      </div>
+      <Footer />
     </div>
   );
 };
