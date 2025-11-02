@@ -610,6 +610,11 @@ const Booking: React.FC = () => {
     };
   }, [currentStep]);
 
+  // Debug loader state changes
+  useEffect(() => {
+    console.log('📊 Loader state changed - showSuccessLoader:', showSuccessLoader, 'showConfirmation:', showConfirmation);
+  }, [showSuccessLoader, showConfirmation]);
+
   // Get current location handler
   const handleGetCurrentLocation = () => {
     setCurrentLocationLoading(true);
@@ -1274,8 +1279,10 @@ const Booking: React.FC = () => {
   };
 
   const handleAutoSubmit = async () => {
+    console.log('🚀 Starting booking submission...');
     setIsSubmitting(true);
     setShowSuccessLoader(true);
+    console.log('✅ Show loader set to true');
     
     // Add a small delay to show the loading state
     await new Promise(resolve => setTimeout(resolve, 500));
@@ -1549,8 +1556,10 @@ const Booking: React.FC = () => {
         images: formData.images,
       });
       
+      console.log('🎉 Booking successful! Setting timeout to show confirmation...');
       // Show confirmation page after 2 seconds
       setTimeout(() => {
+        console.log('✅ 2 seconds elapsed, hiding loader and showing confirmation');
         setShowSuccessLoader(false);
         setShowConfirmation(true);
       }, 2000);
@@ -1579,6 +1588,7 @@ const Booking: React.FC = () => {
         }
       }
       
+      console.error('❌ Booking failed, hiding loader');
       toast.error(`Booking failed: ${errorMessage}`, { duration: 8000 });
       setShowSuccessLoader(false);
     } finally {
@@ -2210,11 +2220,8 @@ const Booking: React.FC = () => {
     return (
       <div className="fixed inset-0 bg-background/95 backdrop-blur-sm z-50 flex items-center justify-center">
         <div className="text-center">
-          <div className="mb-6">
-            <Loader2 className="w-12 h-12 text-primary animate-spin mx-auto" />
-          </div>
           <p className="text-2xl font-bold text-foreground mb-3">Booking...</p>
-          <p className="text-lg text-muted-foreground mb-4">Processing your request</p>
+          <p className="text-lg text-muted-foreground mb-4">Please wait until confirmation message</p>
         </div>
       </div>
     );
