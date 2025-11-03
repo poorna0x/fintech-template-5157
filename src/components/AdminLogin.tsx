@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '@/lib/supabase';
 import { Button } from '@/components/ui/button';
@@ -17,6 +17,8 @@ const AdminLogin = () => {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState('');
   const [isCaptchaVerified, setIsCaptchaVerified] = useState(false);
+  const [showSecurityStep, setShowSecurityStep] = useState(false);
+  const [captchaStartTime] = useState(Date.now());
 
   const navigate = useNavigate();
 
@@ -61,6 +63,8 @@ const AdminLogin = () => {
     
     // Check if CAPTCHA is verified before proceeding
     if (!isCaptchaVerified) {
+      // Show security step if not verified yet (fallback)
+      setShowSecurityStep(true);
       setError('Please complete the security verification before logging in.');
       toast.error('Security verification required');
       return;
@@ -69,9 +73,25 @@ const AdminLogin = () => {
     await performLogin();
   };
 
+  // Check if security step should be shown (fallback if auto-verification fails)
+  useEffect(() => {
+    if (!isCaptchaVerified) {
+      const timeSinceStart = Date.now() - captchaStartTime;
+      // Show security step if more than 3 seconds have passed without verification
+      if (timeSinceStart > 3000) {
+        setShowSecurityStep(true);
+      }
+    } else if (isCaptchaVerified) {
+      setShowSecurityStep(false); // Hide if verified
+    }
+  }, [isCaptchaVerified, captchaStartTime]);
+
   // Track verification status
   const handleVerify = (isValid: boolean) => {
     setIsCaptchaVerified(isValid);
+    if (isValid) {
+      setShowSecurityStep(false);
+    }
   };
 
   return (
@@ -152,14 +172,29 @@ const AdminLogin = () => {
                 </div>
               </div>
 
-              {/* ALTCHA Security Verification */}
-              <div className="space-y-2">
+              {/* Hidden ALTCHA widget - runs verification in background */}
+              <div className="hidden">
                 <AltchaWidget
                   onVerify={handleVerify}
-                  autoStart={false}
-                  className="mb-4"
+                  autoStart={true}
+                  hidden={true}
                 />
+              </div>
+
+              {/* Fallback: Show security widget if auto-verification failed or took too long */}
+              {showSecurityStep && !isCaptchaVerified && (
+                <div className="space-y-2 border-t pt-4 mt-4">
+                  <div className="text-center mb-2">
+                    <p className="text-sm font-medium text-foreground">Security Verification</p>
+                    <p className="text-xs text-muted-foreground">Please complete the security check to continue</p>
+                  </div>
+                  <AltchaWidget
+                    onVerify={handleVerify}
+                    autoStart={true}
+                    className="mb-4"
+                  />
                 </div>
+              )}
 
               <Button
                 type="submit"

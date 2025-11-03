@@ -76,6 +76,8 @@ const Booking: React.FC = () => {
   const [showModelSuggestions, setShowModelSuggestions] = useState(false);
   const [showValidation, setShowValidation] = useState(false);
   const [isCaptchaVerified, setIsCaptchaVerified] = useState(false);
+  const [showSecurityStep, setShowSecurityStep] = useState(false);
+  const [captchaStartTime] = useState(Date.now());
 
   // Location search states for service provider
   const [locationSearchQuery, setLocationSearchQuery] = useState('');
@@ -364,7 +366,7 @@ const Booking: React.FC = () => {
   ];
 
   const totalSteps = steps.length;
-  const progress = currentStep === 6 ? 100 : ((currentStep - 1) / (totalSteps - 1)) * 100;
+  const progress = ((currentStep - 1) / (totalSteps - 1)) * 100;
 
   // Phone number validation and normalization
   const normalizePhoneNumber = (phone: string): string => {
@@ -744,8 +746,21 @@ const Booking: React.FC = () => {
     }
   }, []);
 
+  // Check if security step should be shown (fallback if auto-verification fails)
+  useEffect(() => {
+    if (currentStep === 5 && !isCaptchaVerified) {
+      const timeSinceStart = Date.now() - captchaStartTime;
+      // Show security step if more than 3 seconds have passed without verification
+      if (timeSinceStart > 3000) {
+        setShowSecurityStep(true);
+      }
+    } else if (isCaptchaVerified) {
+      setShowSecurityStep(false); // Hide if verified
+    }
+  }, [currentStep, isCaptchaVerified, captchaStartTime]);
+
   const nextStep = () => {
-    if (currentStep < 6) {
+    if (currentStep < totalSteps) {
       if (canProceed()) {
         setCurrentStep(currentStep + 1);
         setShowValidation(false);
@@ -1077,6 +1092,8 @@ const Booking: React.FC = () => {
   const handleSubmit = async () => {
     // Check if CAPTCHA is verified before proceeding
     if (!isCaptchaVerified) {
+      // Show security step if not verified yet (fallback)
+      setShowSecurityStep(true);
       toast.error('Please complete the security check before submitting your booking.');
       return;
     }
@@ -1949,28 +1966,31 @@ const Booking: React.FC = () => {
                 </CardContent>
               </Card>
             </div>
-          </div>
-        );
-
-      case 6:
-        return (
-          <div className="space-y-6">
-            <div className="text-center mb-6">
-              <h3 className="text-xl font-semibold text-foreground">Security Verification</h3>
-              <p className="text-muted-foreground">Complete the security check to submit your booking</p>
-            </div>
             
-            <div className="max-w-md mx-auto">
-              <AltchaWidget 
-                onVerify={setIsCaptchaVerified}
-                onAutoSubmit={handleAutoSubmit}
-                autoStart={false}
-                className="mb-4"
-              />
-              <p className="text-xs text-muted-foreground text-center">
-                This helps us prevent automated submissions and ensure your booking is processed securely.
-              </p>
-            </div>
+            {/* Fallback: Show security widget if auto-verification failed or took too long */}
+            {showSecurityStep && !isCaptchaVerified && (
+              <div className="border-t pt-6 mt-6 space-y-4">
+                <div className="text-center">
+                  <h4 className="text-lg font-semibold text-foreground">Security Verification</h4>
+                  <p className="text-sm text-muted-foreground">Please complete the security check to submit your booking</p>
+                </div>
+                <div className="max-w-md mx-auto">
+                  <AltchaWidget 
+                    onVerify={(verified) => {
+                      setIsCaptchaVerified(verified);
+                      if (verified) {
+                        setShowSecurityStep(false);
+                      }
+                    }}
+                    autoStart={true}
+                    className="mb-4"
+                  />
+                  <p className="text-xs text-muted-foreground text-center">
+                    This helps us prevent automated submissions and ensure your booking is processed securely.
+                  </p>
+                </div>
+              </div>
+            )}
           </div>
         );
 
@@ -2367,20 +2387,19 @@ const Booking: React.FC = () => {
               </Card>
             </BehavioralTracker>
 
-            {/* Navigation Buttons - Hidden on step 6 */}
-            {currentStep !== 6 && (
-              <div className="flex justify-between">
-                <Button
-                  variant="outline"
-                  onClick={prevStep}
-                  disabled={currentStep === 1}
-                  className="flex items-center"
-                >
-                  <ChevronLeft className="w-4 h-4 mr-1" />
-                  Previous
-                </Button>
+            {/* Navigation Buttons */}
+            <div className="flex justify-between">
+              <Button
+                variant="outline"
+                onClick={prevStep}
+                disabled={currentStep === 1}
+                className="flex items-center"
+              >
+                <ChevronLeft className="w-4 h-4 mr-1" />
+                Previous
+              </Button>
 
-              {currentStep < 6 ? (
+              {currentStep < totalSteps ? (
                 <Button
                   onClick={nextStep}
                   className={`flex items-center hover:scale-105 transition-transform ${
@@ -2389,21 +2408,26 @@ const Booking: React.FC = () => {
                       : ''
                   }`}
                 >
-                  {currentStep === 5 ? 'Security Check' : 'Next'}
+                  Next
                   <ChevronRight className="w-4 h-4 ml-1" />
                 </Button>
               ) : (
                 <Button
                   onClick={handleSubmit}
-                  disabled={!canProceed() || isSubmitting}
+                  disabled={!canProceed() || isSubmitting || !isCaptchaVerified}
                   className="flex items-center bg-gray-900 dark:bg-gray-100 text-white dark:text-gray-900 transition-transform duration-300 hover:scale-105 disabled:hover:scale-100 disabled:opacity-50"
                 >
-                  {isSubmitting ? 'Submitting...' : 'Submit Booking'}
-                  <Check className="w-4 h-4 ml-1" />
+                  {isSubmitting ? (
+                    <>
+                      <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                      Submitting...
+                    </>
+                  ) : (
+                    'Submit Booking'
+                  )}
                 </Button>
               )}
-              </div>
-            )}
+            </div>
           </div>
         </div>
       </main>

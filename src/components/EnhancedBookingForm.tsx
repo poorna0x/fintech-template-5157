@@ -111,11 +111,14 @@ const EnhancedBookingForm = () => {
 
   const handleNext = async () => {
     if (currentStep === 5) {
-      // Step 5 (Review) doesn't need form validation
-      setCurrentStep(currentStep + 1);
+      // Step 5 (Review) - submit the form
+      const isValid = await trigger();
+      if (isValid) {
+        handleSubmit(handleAutoSubmit)();
+      }
     } else {
       const isValid = await trigger();
-      if (isValid && currentStep < 6) {
+      if (isValid && currentStep < 5) {
         setCurrentStep(currentStep + 1);
       }
     }
@@ -497,10 +500,9 @@ const EnhancedBookingForm = () => {
           Book RO Service
         </CardTitle>
         
-        {/* Progress Steps - Hidden on step 6 */}
-        {currentStep !== 6 && (
-          <>
-            <div className="flex items-center justify-between mt-4">
+        {/* Progress Steps */}
+        <>
+          <div className="flex items-center justify-between mt-4">
               {[1, 2, 3, 4, 5].map((step) => (
                 <div key={step} className="flex items-center">
                   <div className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-medium ${
@@ -527,7 +529,6 @@ const EnhancedBookingForm = () => {
               <span>Review</span>
             </div>
           </>
-        )}
       </CardHeader>
       
       <CardContent className="p-6">
@@ -977,38 +978,22 @@ const EnhancedBookingForm = () => {
               </div>
             )}
 
-            {/* Step 6: Security Check */}
-            {currentStep === 6 && (
-              <div className="space-y-6">
-                <div className="text-center mb-6">
-                  <h3 className="text-lg font-semibold">Security Verification</h3>
-                  <p className="text-muted-foreground">
-                    Complete the security check to submit your booking
-                  </p>
-                </div>
-                
-                <div className="max-w-md mx-auto">
-                  <AltchaWidget 
-                    onVerify={setIsCaptchaVerified}
-                    onAutoSubmit={() => handleAutoSubmit(watchedValues)}
-                    autoStart={true}
-                    className="mb-4"
-                  />
-                  <p className="text-xs text-muted-foreground text-center">
-                    This helps us prevent automated submissions and ensure your booking is processed securely.
-                  </p>
-                </div>
-              </div>
-            )}
+            {/* Hidden ALTCHA widget - runs verification in background */}
+            <div className="hidden">
+              <AltchaWidget 
+                onVerify={setIsCaptchaVerified}
+                autoStart={true}
+                hidden={true}
+              />
+            </div>
           </div>
 
-          {/* Navigation Buttons - Hidden on step 6 */}
-          {currentStep !== 6 && (
-            <div className="flex justify-between pt-6">
-              <Button
-                type="button"
-                variant="outline"
-                onClick={handlePrevious}
+          {/* Navigation Buttons */}
+          <div className="flex justify-between pt-6">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={handlePrevious}
                 disabled={currentStep === 1}
                 className="flex items-center gap-2"
               >
@@ -1016,28 +1001,37 @@ const EnhancedBookingForm = () => {
                 Previous
               </Button>
               
-              {currentStep < 6 ? (
+              {currentStep < 5 ? (
                 <Button
                   type="button"
                   onClick={handleNext}
                   disabled={!isStepValid(currentStep)}
                   className="flex items-center gap-2"
                 >
-                  {currentStep === 5 ? 'Security Check' : currentStep === 4 ? 'Review & Confirm' : 'Next'}
+                  {currentStep === 4 ? 'Review & Confirm' : 'Next'}
                   <ChevronRight className="w-4 h-4" />
                 </Button>
               ) : (
                 <Button
-                  type="submit"
+                  type="button"
+                  onClick={handleNext}
                   disabled={isSubmitting || !isCaptchaVerified}
                   className="flex items-center gap-2 bg-black dark:bg-white text-white dark:text-black hover:scale-105 transition-transform duration-300"
                 >
-                  <Check className="w-4 h-4" />
-                  Confirm & Book Service
+                  {isSubmitting ? (
+                    <>
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                      Submitting...
+                    </>
+                  ) : (
+                    <>
+                      <Check className="w-4 h-4" />
+                      Submit Booking
+                    </>
+                  )}
                 </Button>
               )}
             </div>
-          )}
         </form>
       </CardContent>
     </Card>
