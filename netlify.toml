@@ -34,6 +34,17 @@
   to = "/.netlify/functions/:splat"
   status = 200
 
+# Allow sitemap and robots.txt to be accessed directly
+[[redirects]]
+  from = "/sitemap.xml"
+  to = "/sitemap.xml"
+  status = 200
+
+[[redirects]]
+  from = "/robots.txt"
+  to = "/robots.txt"
+  status = 200
+
 # Handle SPA routing - redirect all non-API requests to index.html
 [[redirects]]
   from = "/*"
