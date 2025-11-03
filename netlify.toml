@@ -2,6 +2,9 @@
   command = "npm run build"
   publish = "dist"
 
+[dev]
+  command = "npm run dev:vite"
+
 [functions]
   directory = "netlify/functions"
 

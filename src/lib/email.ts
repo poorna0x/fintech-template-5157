@@ -471,21 +471,8 @@ export class EmailService {
 
   async sendEmail(emailData: EmailData): Promise<boolean> {
     try {
-      console.log('Sending email:', {
-        to: emailData.to,
-        subject: emailData.subject,
-        from: this.fromEmail,
-        template: emailData.template
-      });
-
-      // For development, just log the email content
+      // For development, don't actually send emails
       if (import.meta.env.DEV) {
-        console.log('📧 [DEV MODE] Email would be sent:', {
-          to: emailData.to,
-          subject: emailData.subject,
-          preview: emailData.data.text?.substring(0, 200) + '...'
-        });
-        console.warn('⚠️ In development mode, emails are not actually sent. Configure email service for production.');
         return false; // Return false in dev mode to indicate email wasn't actually sent
       }
 
@@ -506,31 +493,19 @@ export class EmailService {
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({ error: 'Unknown error' }));
         
-        // If it's a configuration error, log it but don't fail the booking
+        // If it's a configuration error, don't fail the booking
         if (response.status === 500 && errorData.error?.includes('configuration')) {
-          console.warn('⚠️ Email service not configured, booking will continue without email notification:', errorData);
           return false; // Return false to indicate email was not sent
         }
         
         throw new Error(`Email service error: ${errorData.error || response.statusText}`);
       }
 
-      const result = await response.json();
-      console.log('✅ Email sent successfully:', result);
+      await response.json();
       return true;
 
     } catch (error) {
-      console.error('❌ Error sending email:', error);
-      
-      // Log more details about the error
-      if (error instanceof Error) {
-        if (error.message.includes('Failed to fetch') || error.message.includes('NetworkError')) {
-          console.warn('⚠️ Network error while sending email. Check your internet connection and email service configuration.');
-        }
-      }
-      
-      // Return false to indicate email was not sent
-      // Don't throw error to avoid blocking the booking process
+      // Silent failure - email errors shouldn't break the booking flow
       return false;
     }
   }

@@ -25,18 +25,6 @@ class CloudinaryService {
       uploadPreset: import.meta.env.VITE_CLOUDINARY_UPLOAD_PRESET || '',
       apiKey: import.meta.env.VITE_CLOUDINARY_API_KEY || '',
     };
-    
-    // Debug configuration
-    console.log('Cloudinary config:', {
-      cloudName: this.config.cloudName ? '✓ Set' : '✗ Missing',
-      uploadPreset: this.config.uploadPreset ? '✓ Set' : '✗ Missing',
-      apiKey: this.config.apiKey ? '✓ Set' : '✗ Missing',
-      fullConfig: {
-        cloudName: this.config.cloudName,
-        uploadPreset: this.config.uploadPreset,
-        apiKey: this.config.apiKey ? '***' + this.config.apiKey.slice(-4) : 'Not set'
-      }
-    });
   }
 
   async uploadImage(file: File, folder: string = 'ro-service'): Promise<CloudinaryUploadResult> {
@@ -55,12 +43,6 @@ class CloudinaryService {
     // manifest_transformation, manifest_json, template, template_vars, regions, public_id_prefix
 
     try {
-      console.log('Uploading to Cloudinary:', {
-        cloudName: this.config.cloudName,
-        uploadPreset: this.config.uploadPreset,
-        folder: folder
-      });
-
       const response = await fetch(
         `https://api.cloudinary.com/v1_1/${this.config.cloudName}/image/upload`,
         {
@@ -73,16 +55,6 @@ class CloudinaryService {
 
       if (!response.ok) {
         const errorText = await response.text();
-        console.error('Cloudinary upload failed:', {
-          status: response.status,
-          statusText: response.statusText,
-          error: errorText,
-          config: {
-            cloudName: this.config.cloudName,
-            uploadPreset: this.config.uploadPreset,
-            folder: folder
-          }
-        });
         
         // Check for specific error messages
         if (errorText.includes('Upload preset must be specified')) {
@@ -103,7 +75,6 @@ class CloudinaryService {
       const result = await response.json();
       
       if (!result.public_id || !result.secure_url) {
-        console.error('Invalid Cloudinary response:', result);
         throw new Error('Invalid response from Cloudinary');
       }
       
@@ -116,8 +87,6 @@ class CloudinaryService {
         bytes: result.bytes,
       };
     } catch (error) {
-      console.error('Cloudinary upload error:', error);
-      
       // Handle specific error types
       if (error instanceof TypeError && error.message.includes('Failed to fetch')) {
         throw new Error('Network error: Unable to connect to Cloudinary. Please check your internet connection and try again.');

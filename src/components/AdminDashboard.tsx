@@ -330,16 +330,12 @@ const AdminDashboard = () => {
       ]);
 
       if (customersResult.data) {
-        console.log('Raw customers data:', customersResult.data);
         const transformedCustomers = customersResult.data.map(transformCustomerData);
-        console.log('Transformed customers data:', transformedCustomers);
         setCustomers(transformedCustomers);
       }
       if (jobsResult.data) setJobs(jobsResult.data);
       if (techniciansResult.data) {
-        console.log('Raw technicians data:', techniciansResult.data);
         const transformedTechnicians = techniciansResult.data.map(transformTechnicianData);
-        console.log('Transformed technicians data:', transformedTechnicians);
         setTechnicians(transformedTechnicians);
       }
 
@@ -769,11 +765,6 @@ const AdminDashboard = () => {
         preferred_time_slot: 'MORNING' as 'MORNING' | 'AFTERNOON' | 'EVENING'
       };
 
-      console.log('Final service_type:', customerData.service_type);
-      console.log('Service type length:', customerData.service_type.length);
-      console.log('Service type char codes:', Array.from(customerData.service_type).map(c => c.charCodeAt(0)));
-      console.log('Customer data being sent:', customerData);
-
       let result;
       if (shouldUpdateExisting && existingCustomer) {
         // Update existing customer
@@ -1023,10 +1014,6 @@ const AdminDashboard = () => {
     setCustomerPhotoGalleryOpen(true);
     // Always reload customer photos to get the latest data
     const customerId = customer.customer_id || customer.customerId;
-    console.log('Customer object:', customer);
-    console.log('Extracted customer ID:', customerId);
-    console.log('Customer ID from customer_id:', customer.customer_id);
-    console.log('Customer ID from customerId:', customer.customerId);
     loadCustomerPhotos(customerId);
   };
 
@@ -1038,9 +1025,6 @@ const AdminDashboard = () => {
   const loadCustomerPhotos = async (customerId: string) => {
     setIsLoadingPhotos(true);
     try {
-      console.log('Loading photos for customer ID:', customerId);
-      console.log('Customer ID type:', typeof customerId);
-      
       if (!customerId) {
         throw new Error('Customer ID is required but not provided');
       }
@@ -1052,8 +1036,6 @@ const AdminDashboard = () => {
         console.error('Customer not found:', customerError);
         throw new Error(`Customer not found: ${customerError?.message || 'Unknown error'}`);
       }
-      
-      console.log('Found customer:', customer);
       
       // Now fetch jobs using the customer's UUID
       const { data: jobs, error } = await db.jobs.getByCustomerId(customer.id);
@@ -1068,9 +1050,6 @@ const AdminDashboard = () => {
         });
         throw error;
       }
-      
-      console.log('Jobs found:', jobs);
-      console.log('Number of jobs:', jobs ? jobs.length : 0);
       
       // Extract all photos from jobs (using before_photos as general photos)
       const allPhotos: string[] = [];

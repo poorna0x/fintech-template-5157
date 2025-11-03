@@ -14,29 +14,19 @@ const PerformanceMonitor = () => {
       const { onCLS, onINP, onFCP, onLCP, onTTFB } = webVitals;
       
       onCLS((metric) => {
-        if (process.env.NODE_ENV === 'development') {
-          console.log('CLS:', metric);
-        }
+        // Send to analytics if needed
       });
       onINP((metric) => {
-        if (process.env.NODE_ENV === 'development') {
-          console.log('INP:', metric);
-        }
+        // Send to analytics if needed
       });
       onFCP((metric) => {
-        if (process.env.NODE_ENV === 'development') {
-          console.log('FCP:', metric);
-        }
+        // Send to analytics if needed
       });
       onLCP((metric) => {
-        if (process.env.NODE_ENV === 'development') {
-          console.log('LCP:', metric);
-        }
+        // Send to analytics if needed
       });
       onTTFB((metric) => {
-        if (process.env.NODE_ENV === 'development') {
-          console.log('TTFB:', metric);
-        }
+        // Send to analytics if needed
       });
     }).catch((error) => {
       console.warn('Failed to load web-vitals:', error);
@@ -63,11 +53,6 @@ const PerformanceMonitor = () => {
               // Total page load time
               totalLoad: perfData.loadEventEnd - perfData.fetchStart,
             };
-
-            // Log performance metrics in development
-            if (process.env.NODE_ENV === 'development') {
-              console.log('Performance Metrics:', metrics);
-            }
 
             // Send to analytics in production
             if (process.env.NODE_ENV === 'production' && window.gtag) {
@@ -112,13 +97,9 @@ const PerformanceMonitor = () => {
               limit: Math.round(memory.jsHeapSizeLimit / 1048576), // MB
             };
 
-            if (process.env.NODE_ENV === 'development') {
-              console.log('Memory Usage:', memoryInfo);
-            }
-
             // Alert if memory usage is high
             if (memoryInfo.used > memoryInfo.limit * 0.8) {
-              console.warn('High memory usage detected:', memoryInfo);
+              // High memory usage - could log to monitoring service in production
             }
           }
         } catch (error) {

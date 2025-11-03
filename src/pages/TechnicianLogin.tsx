@@ -9,6 +9,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Wrench, Eye, EyeOff, ArrowLeft } from 'lucide-react';
 import { Link } from 'react-router-dom';
+import AltchaCaptcha from '@/components/AltchaCaptcha';
 
 const TechnicianLogin = () => {
   const [email, setEmail] = useState('');
@@ -16,6 +17,7 @@ const TechnicianLogin = () => {
   const [showPassword, setShowPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState('');
+  const [isCaptchaVerified, setIsCaptchaVerified] = useState(false);
 
   const { login } = useAuth();
   const navigate = useNavigate();
@@ -23,21 +25,22 @@ const TechnicianLogin = () => {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
+    
+    if (!isCaptchaVerified) {
+      setError('Please complete the security verification');
+      return;
+    }
+    
     setIsLoading(true);
 
     try {
-      console.log('Submitting login form...');
       const success = await login(email, password);
-      console.log('Login result:', success);
       
       if (success) {
-        console.log('Login successful, requesting notification permission...');
         // Request notification permission for job updates
         await requestNotificationPermission();
-        console.log('Navigating to technician dashboard...');
         navigate('/technician');
       } else {
-        console.log('Login failed');
         setError('Login failed. Please try again.');
       }
     } catch (err) {
@@ -129,10 +132,21 @@ const TechnicianLogin = () => {
                 </div>
               </div>
 
+              <div className="space-y-2">
+                <AltchaCaptcha
+                  onVerify={setIsCaptchaVerified}
+                  autoStart={false}
+                  className="mb-4"
+                />
+                <p className="text-xs text-muted-foreground text-center">
+                  Security verification helps protect against automated attacks
+                </p>
+              </div>
+
               <Button
                 type="submit"
                 className="w-full h-11 bg-blue-600 hover:bg-blue-700 text-white font-medium"
-                disabled={isLoading}
+                disabled={isLoading || !isCaptchaVerified}
               >
                 {isLoading ? (
                   <div className="flex items-center">

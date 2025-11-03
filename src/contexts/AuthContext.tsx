@@ -36,23 +36,17 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     // Check for existing session on app load
     const checkSession = async () => {
       try {
-        console.log('🔍 Checking for existing sessions...');
-        
         // First check custom auth session (for technicians)
         const customSession = getAuthSession();
         if (customSession) {
-          console.log('✅ Found custom session:', customSession);
           setUser(customSession);
           setLoading(false);
           return;
-        } else {
-          console.log('❌ No custom session found');
         }
 
         // Then check Supabase auth session (for admins)
         const { data: { session } } = await supabase.auth.getSession();
         if (session?.user) {
-          console.log('✅ Found Supabase session:', session.user);
           const userRole = session.user.user_metadata?.role || session.user.app_metadata?.role || 'admin';
           setUser({
             id: session.user.id,
@@ -60,13 +54,10 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
             role: userRole,
             fullName: session.user.user_metadata?.full_name || session.user.user_metadata?.name
           });
-        } else {
-          console.log('❌ No Supabase session found');
         }
       } catch (error) {
-        console.error('💥 Error checking session:', error);
+        // Silent error handling
       } finally {
-        console.log('🏁 Session check complete, setting loading to false');
         setLoading(false);
         setInitialized(true);
       }
@@ -96,12 +87,10 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   const login = async (email: string, password: string): Promise<boolean> => {
     try {
       setLoading(true);
-      console.log('Login attempt for:', email);
       
       // First try custom authentication (for technicians)
       const customUser = await authenticateUser(email, password);
       if (customUser) {
-        console.log('Custom auth successful:', customUser);
         setUser(customUser);
         setAuthSession(customUser);
         toast.success(`Welcome back, ${customUser.fullName || customUser.email}!`);
@@ -115,13 +104,11 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       });
 
       if (error) {
-        console.log('Supabase auth failed:', error);
         toast.error('Invalid email or password');
         return false;
       }
 
       if (data.user) {
-        console.log('Supabase auth successful:', data.user);
         const userRole = data.user.user_metadata?.role || data.user.app_metadata?.role || 'admin';
         const user = {
           id: data.user.id,
@@ -136,7 +123,6 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       
       return false;
     } catch (error) {
-      console.error('Login error:', error);
       toast.error('Login failed. Please try again.');
       return false;
     } finally {
@@ -177,7 +163,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   );
 };
 
-export const useAuth = (): AuthContextType => {
+export const useAuth = () => {
   const context = useContext(AuthContext);
   if (context === undefined) {
     throw new Error('useAuth must be used within an AuthProvider');

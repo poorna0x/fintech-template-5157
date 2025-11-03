@@ -58,24 +58,18 @@ export const db = {
     },
     
     async update(id: string, updates: Database['public']['Tables']['customers']['Update']) {
-      console.log('DB Update - ID:', id, 'Updates:', updates);
-      
       const { data, error } = await supabase
         .from('customers')
         .update(updates)
         .eq('id', id)
         .select();
       
-      console.log('DB Update - Raw response:', { data, error });
-      
       if (error) {
-        console.error('DB Update - Error:', error);
         return { data: null, error };
       }
       
       // Return the first (and should be only) updated row
       const result = { data: data?.[0] || null, error: null };
-      console.log('DB Update - Final result:', result);
       return result;
     },
     

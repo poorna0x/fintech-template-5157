@@ -9,6 +9,7 @@ import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Shield, Eye, EyeOff, ArrowLeft } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { toast } from 'sonner';
+import AltchaCaptcha from '@/components/AltchaCaptcha';
 
 const AdminLogin = () => {
   const [email, setEmail] = useState('');
@@ -16,12 +17,20 @@ const AdminLogin = () => {
   const [showPassword, setShowPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState('');
+  const [isCaptchaVerified, setIsCaptchaVerified] = useState(false);
 
   const navigate = useNavigate();
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
+    
+    if (!isCaptchaVerified) {
+      setError('Please complete the security verification');
+      toast.error('Security verification required');
+      return;
+    }
+    
     setIsLoading(true);
 
     try {
@@ -125,10 +134,21 @@ const AdminLogin = () => {
                 </div>
               </div>
 
+              <div className="space-y-2">
+                <AltchaCaptcha
+                  onVerify={setIsCaptchaVerified}
+                  autoStart={false}
+                  className="mb-4"
+                />
+                <p className="text-xs text-muted-foreground text-center">
+                  Security verification helps protect against automated attacks
+                </p>
+              </div>
+
               <Button
                 type="submit"
                 className="w-full bg-blue-600 hover:bg-blue-700 text-white"
-                disabled={isLoading}
+                disabled={isLoading || !isCaptchaVerified}
               >
                 {isLoading ? (
                   <div className="flex items-center">

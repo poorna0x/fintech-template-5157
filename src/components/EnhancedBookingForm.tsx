@@ -14,7 +14,7 @@ import { toast } from 'sonner';
 import { db, generateJobNumber } from '@/lib/supabase';
 import { emailService } from '@/lib/email';
 import { BookingFormData } from '@/types';
-import MathCaptcha from '@/components/MathCaptcha';
+import AltchaCaptcha from '@/components/AltchaCaptcha';
 
 // Validation schema
 const bookingSchema = z.object({
@@ -299,7 +299,6 @@ const EnhancedBookingForm = () => {
       };
 
       await emailService.sendBookingConfirmation(emailData);
-      console.log('Confirmation email sent successfully');
     } catch (error) {
       console.error('Failed to send confirmation email:', error);
       // Don't throw error here as booking is already created
@@ -988,9 +987,11 @@ const EnhancedBookingForm = () => {
                 </div>
                 
                 <div className="max-w-md mx-auto">
-                  <MathCaptcha 
+                  <AltchaCaptcha 
                     onVerify={setIsCaptchaVerified}
                     onAutoSubmit={() => handleAutoSubmit(watchedValues)}
+                    autoStart={false}
+                    buttonText="Submit Booking"
                     className="mb-4"
                   />
                   <p className="text-xs text-muted-foreground text-center">
