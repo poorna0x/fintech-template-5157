@@ -510,10 +510,10 @@ export class EmailService {
     }
   }
 
-  async sendBookingConfirmation(data: BookingConfirmationData): Promise<boolean> {
+  sendBookingConfirmation(data: BookingConfirmationData): Promise<boolean> {
     const template = emailTemplates.bookingConfirmation(data);
     
-    return await this.sendEmail({
+    return this.sendEmail({
       to: data.email,
       subject: template.subject,
       template: 'bookingConfirmation',
