@@ -596,15 +596,6 @@ const Booking: React.FC = () => {
     };
   }, [currentStep]);
 
-  // Show email notification toast when confirmation page appears
-  useEffect(() => {
-    if (showConfirmation && bookingDetails) {
-      toast.success('Booking confirmed!', {
-        description: 'You will receive a confirmation email shortly. Please check your spam folder if you don\'t see it.',
-        duration: 6000,
-      });
-    }
-  }, [showConfirmation, bookingDetails]);
 
   // Get current location handler
   const handleGetCurrentLocation = () => {
@@ -1114,7 +1105,7 @@ const Booking: React.FC = () => {
       // Upload images to Cloudinary (non-blocking, continue even if upload fails)
       const imageUrls = formData.images.length > 0 
         ? await Promise.all(
-            formData.images.map(file => cloudinaryService.uploadImage(file))
+        formData.images.map(file => cloudinaryService.uploadImage(file))
           )
         : [];
 
@@ -1319,17 +1310,17 @@ const Booking: React.FC = () => {
 
       // Send confirmation email (non-blocking for faster response)
       emailService.sendBookingConfirmation({
-        customerName: formData.fullName,
-        email: formData.email,
-        jobNumber: (job as any)?.job_number || (job as any)?.jobNumber || 'N/A',
-        serviceType: formData.serviceType,
-        serviceSubType: formData.service === 'Other' ? formData.customService : formData.service,
-        brand: formData.brandName || 'Not specified',
-        model: formData.modelName || 'Not specified',
-        scheduledDate: formData.serviceDate ? formData.serviceDate : new Date().toISOString().split('T')[0],
-        scheduledTimeSlot: formData.preferredTime,
-        serviceAddress: formData.address,
-        phone: formData.phone,
+          customerName: formData.fullName,
+          email: formData.email,
+          jobNumber: (job as any)?.job_number || (job as any)?.jobNumber || 'N/A',
+          serviceType: formData.serviceType,
+          serviceSubType: formData.service === 'Other' ? formData.customService : formData.service,
+          brand: formData.brandName || 'Not specified',
+          model: formData.modelName || 'Not specified',
+          scheduledDate: formData.serviceDate ? formData.serviceDate : new Date().toISOString().split('T')[0],
+          scheduledTimeSlot: formData.preferredTime,
+          serviceAddress: formData.address,
+          phone: formData.phone,
       }).catch(error => {
         console.error('Email sending failed:', error);
       });
@@ -1357,6 +1348,10 @@ const Booking: React.FC = () => {
       setTimeout(() => {
         setShowSuccessLoader(false);
         setShowConfirmation(true);
+        toast.success('Booking confirmed successfully!', {
+          description: 'You will receive a confirmation email shortly. Please check your spam folder if you don\'t see it.',
+          duration: 6000,
+        });
       }, 2000);
       
     } catch (error) {

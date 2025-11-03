@@ -202,7 +202,7 @@ async function handlePost(event) {
     }
 
     console.log('Verification status:', verified);
-    
+
     if (verified) {
       console.log('Challenge verified successfully!');
       // Mark challenge as used to prevent replay attacks

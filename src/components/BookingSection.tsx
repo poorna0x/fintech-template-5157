@@ -405,17 +405,17 @@ const BookingSection = () => {
 
       // Send confirmation email (non-blocking for faster response)
       emailService.sendBookingConfirmation({
-        customerName: customer.full_name,
-        jobNumber: job.job_number,
-        serviceType: job.service_type,
-        serviceSubType: job.service_sub_type,
-        brand: job.brand,
-        model: job.model,
-        scheduledDate: job.scheduled_date,
-        scheduledTimeSlot: job.scheduled_time_slot,
-        serviceAddress: formData.address,
-        phone: customer.phone,
-        email: customer.email,
+          customerName: customer.full_name,
+          jobNumber: job.job_number,
+          serviceType: job.service_type,
+          serviceSubType: job.service_sub_type,
+          brand: job.brand,
+          model: job.model,
+          scheduledDate: job.scheduled_date,
+          scheduledTimeSlot: job.scheduled_time_slot,
+          serviceAddress: formData.address,
+          phone: customer.phone,
+          email: customer.email,
       }).catch(error => {
         console.error('Email sending failed:', error);
       });

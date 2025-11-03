@@ -271,7 +271,7 @@ const EnhancedBookingForm = () => {
         setShowSuccessLoader(false);
         setBookingSuccess(true);
         toast.success('Booking confirmed successfully!', {
-          description: 'Confirmation email sent. Please check your spam folder if you don\'t see it.',
+          description: 'You will receive a confirmation email shortly. Please check your spam folder if you don\'t see it.',
           duration: 6000,
         });
       }, 2000);
@@ -285,19 +285,19 @@ const EnhancedBookingForm = () => {
   };
 
   const sendConfirmationEmail = async (customer: any, job: any) => {
-    const emailData = {
-      customerName: customer.fullName,
-      jobNumber: job.jobNumber,
-      serviceType: job.serviceType,
-      serviceSubType: job.serviceSubType,
-      brand: job.brand,
-      model: job.model,
-      scheduledDate: job.scheduledDate,
-      scheduledTimeSlot: job.scheduledTimeSlot,
-      serviceAddress: `${job.serviceAddress.street}, ${job.serviceAddress.area}, ${job.serviceAddress.city} - ${job.serviceAddress.pincode}`,
-      phone: customer.phone,
-      email: customer.email,
-    };
+      const emailData = {
+        customerName: customer.fullName,
+        jobNumber: job.jobNumber,
+        serviceType: job.serviceType,
+        serviceSubType: job.serviceSubType,
+        brand: job.brand,
+        model: job.model,
+        scheduledDate: job.scheduledDate,
+        scheduledTimeSlot: job.scheduledTimeSlot,
+        serviceAddress: `${job.serviceAddress.street}, ${job.serviceAddress.area}, ${job.serviceAddress.city} - ${job.serviceAddress.pincode}`,
+        phone: customer.phone,
+        email: customer.email,
+      };
 
     emailService.sendBookingConfirmation(emailData).catch(error => {
       console.error('Failed to send confirmation email:', error);
