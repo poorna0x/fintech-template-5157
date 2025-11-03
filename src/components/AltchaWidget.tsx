@@ -44,6 +44,7 @@ const AltchaWidget: React.FC<AltchaWidgetProps> = ({
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const { difficultyLevel, isRateLimited } = useSecurity();
+  const isVerifyingRef = useRef(false); // Prevent duplicate verification requests
 
   // Calculate complexity based on difficulty (similar to our custom implementation)
   // Lower base complexity for faster verification (1-2 seconds typical)
@@ -90,7 +91,14 @@ const AltchaWidget: React.FC<AltchaWidgetProps> = ({
 
     // Verify payload with server
     const verifyWithServer = async (payload: string) => {
+      // Prevent duplicate verification requests
+      if (isVerifyingRef.current) {
+        console.log('Verification already in progress, skipping duplicate request');
+        return;
+      }
+      
       try {
+        isVerifyingRef.current = true;
         setIsLoading(true);
         setError(null);
         
@@ -127,6 +135,8 @@ const AltchaWidget: React.FC<AltchaWidgetProps> = ({
         setIsLoading(false);
         setError(error.message || 'Verification failed. Please try again.');
         onVerify(false);
+      } finally {
+        isVerifyingRef.current = false;
       }
     };
 
