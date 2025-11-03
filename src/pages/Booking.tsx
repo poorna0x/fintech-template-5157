@@ -1309,36 +1309,22 @@ const Booking: React.FC = () => {
         throw new Error(jobError.message);
       }
 
-      // Send confirmation email
-      try {
-        const emailSent = await emailService.sendBookingConfirmation({
-          customerName: formData.fullName,
-          email: formData.email,
-          jobNumber: (job as any)?.job_number || (job as any)?.jobNumber || 'N/A',
-          serviceType: formData.serviceType,
-          serviceSubType: formData.service === 'Other' ? formData.customService : formData.service,
-          brand: formData.brandName || 'Not specified',
-          model: formData.modelName || 'Not specified',
-          scheduledDate: formData.serviceDate ? formData.serviceDate : new Date().toISOString().split('T')[0],
-          scheduledTimeSlot: formData.preferredTime,
-          serviceAddress: formData.address,
-          phone: formData.phone,
-        });
-        
-        if (emailSent) {
-          // Show success message about email (non-blocking)
-          toast.success('Confirmation email sent!', {
-            description: 'Please check your inbox (and spam folder) for booking details.',
-            duration: 5000,
-          });
-        }
-      } catch (emailError) {
-        // Log error but don't fail the booking
-        toast.warning('Booking confirmed, but email could not be sent.', {
-          description: 'Your booking was saved successfully. Please check your booking details below.',
-          duration: 6000,
-        });
-      }
+      // Send confirmation email (non-blocking for faster response)
+      emailService.sendBookingConfirmation({
+        customerName: formData.fullName,
+        email: formData.email,
+        jobNumber: (job as any)?.job_number || (job as any)?.jobNumber || 'N/A',
+        serviceType: formData.serviceType,
+        serviceSubType: formData.service === 'Other' ? formData.customService : formData.service,
+        brand: formData.brandName || 'Not specified',
+        model: formData.modelName || 'Not specified',
+        scheduledDate: formData.serviceDate ? formData.serviceDate : new Date().toISOString().split('T')[0],
+        scheduledTimeSlot: formData.preferredTime,
+        serviceAddress: formData.address,
+        phone: formData.phone,
+      }).catch(error => {
+        console.error('Email sending failed:', error);
+      });
 
       const customerAction = isExistingCustomer ? 'updated' : 'created';
       

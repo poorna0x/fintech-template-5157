@@ -403,27 +403,22 @@ const BookingSection = () => {
         throw new Error(jobError.message);
       }
 
-      // Send confirmation email
-      try {
-        const emailData = {
-          customerName: customer.full_name,
-          jobNumber: job.job_number,
-          serviceType: job.service_type,
-          serviceSubType: job.service_sub_type,
-          brand: job.brand,
-          model: job.model,
-          scheduledDate: job.scheduled_date,
-          scheduledTimeSlot: job.scheduled_time_slot,
-          serviceAddress: formData.address,
-          phone: customer.phone,
-          email: customer.email,
-        };
-
-        await emailService.sendBookingConfirmation(emailData);
-      } catch (emailError) {
-        console.error('Email sending failed:', emailError);
-        // Don't fail the booking if email fails
-      }
+      // Send confirmation email (non-blocking for faster response)
+      emailService.sendBookingConfirmation({
+        customerName: customer.full_name,
+        jobNumber: job.job_number,
+        serviceType: job.service_type,
+        serviceSubType: job.service_sub_type,
+        brand: job.brand,
+        model: job.model,
+        scheduledDate: job.scheduled_date,
+        scheduledTimeSlot: job.scheduled_time_slot,
+        serviceAddress: formData.address,
+        phone: customer.phone,
+        email: customer.email,
+      }).catch(error => {
+        console.error('Email sending failed:', error);
+      });
 
       setBookingId(job.job_number);
       setBookingSuccess(true);

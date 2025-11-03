@@ -258,8 +258,10 @@ const EnhancedBookingForm = () => {
         throw new Error(jobError.message);
       }
 
-      // Send confirmation email
-      await sendConfirmationEmail(customer, job);
+      // Send confirmation email (non-blocking for faster response)
+      sendConfirmationEmail(customer, job).catch(error => {
+        console.error('Email sending failed:', error);
+      });
 
       setBookingId(job.jobNumber);
       setShowSuccessLoader(true);
