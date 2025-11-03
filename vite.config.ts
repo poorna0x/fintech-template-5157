@@ -23,6 +23,8 @@ export default defineConfig(({ mode }) => ({
     // Optimize bundle size
     target: 'esnext',
     minify: 'terser',
+    cssCodeSplit: true,
+    cssMinify: true,
     terserOptions: {
       compress: {
         // Remove console logs in production for better performance
