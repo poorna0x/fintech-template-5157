@@ -1,4 +1,25 @@
 // Netlify Function for ALTCHA server-side verification using official altcha-lib
+// Polyfill Web Crypto API for Node 18 compatibility
+const nodeCrypto = require('crypto');
+if (typeof globalThis.crypto === 'undefined') {
+  globalThis.crypto = {
+    getRandomValues: (arr) => {
+      const bytes = nodeCrypto.randomBytes(arr.length);
+      for (let i = 0; i < arr.length; i++) {
+        arr[i] = bytes[i];
+      }
+      return arr;
+    },
+    subtle: {
+      digest: async (algorithm, data) => {
+        const hash = nodeCrypto.createHash(algorithm.toLowerCase().replace('-', ''));
+        return hash.update(Buffer.from(data)).digest();
+      }
+    }
+  };
+  console.log('✅ Web Crypto API polyfilled');
+}
+
 let createChallenge, verifySolution;
 try {
   const altchaLib = require('altcha-lib');
