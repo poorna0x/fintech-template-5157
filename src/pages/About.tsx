@@ -19,6 +19,7 @@ const About = () => {
             "@type": "LocalBusiness",
             "name": "Hydrogen RO",
             "description": "Professional RO water purifier installation, repair, and maintenance services in Bengaluru, Karnataka",
+            "image": "https://hydrogenro.com/og-image.jpg",
             "foundingDate": "2019",
             "address": {
               "@type": "PostalAddress",

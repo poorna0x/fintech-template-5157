@@ -14,6 +14,7 @@ const ServiceAreas = () => {
           "@type": "Service",
           "name": "RO Service Areas in Bengaluru",
           "description": "Professional RO water purifier services across all areas of Bengaluru, Karnataka",
+          "image": "https://hydrogenro.com/og-image.jpg",
           "provider": {
             "@type": "LocalBusiness",
             "name": "Hydrogen RO",
