@@ -44,7 +44,7 @@ const ServiceAreasSection = () => {
           <p>We provide comprehensive RO water purifier services across all areas of Bengaluru, Karnataka. Find your area and pincode below for instant RO service booking.</p>
           
           <h4>Search by area name or pincode</h4>
-          <p>All Zones: Central, East, South, West, North, Southeast, Southwest, Northeast, Northwest</p>
+          <p>All Zones: Central, East, South, West, North, Southeast, Southwest, Northeast, Northwest, Kolar</p>
           
           <h4>Popular RO Service Areas in Bengaluru</h4>
           <p>Whitefield RO Service, Koramangala RO Service, HSR Layout RO Service, Electronic City RO Service, Indiranagar RO Service, Marathahalli RO Service, BTM Layout RO Service, Jayanagar RO Service, Malleshwaram RO Service, Rajajinagar RO Service</p>
@@ -56,12 +56,14 @@ const ServiceAreasSection = () => {
           <p>West Bengaluru RO Service: Malleshwaram, Rajajinagar, Vijayanagar, Basaveshwaranagar, Nagarbhavi, Kengeri, RR Nagar, Uttarahalli, Chamrajpet, Chickpet</p>
           <p>North Bengaluru RO Service: Hebbal, Yelahanka, Sahakar Nagar, RT Nagar, Sanjay Nagar, Ganganagar, Nagawara, Hennur, Kodigehalli, Thanisandra</p>
           <p>Southeast Bengaluru RO Service: Sarjapur, Bellandur, Varthur, Kadubeesanahalli, Panathur, Kadabagere, Devarabeesanahalli, Avalahalli, Kodathi, Chandapura</p>
-          <p>Southwest Bengaluru RO Service: Uttarahalli, Kengeri, Rajarajeshwari Nagar, Vijayanagar, Basaveshwaranagar, Nagarbhavi, Bidadi, Ramanagara, Magadi, Nelamangala</p>
+          <p>Southwest Bengaluru RO Service: Uttarahalli, Kengeri, Rajarajeshwari Nagar, Vijayanagar, Basaveshwaranagar, Nagarbhavi, Bidadi, Ramanagara, Magadi, Nelamangala, Channapatna, Kanakapura</p>
           <p>Northeast Bengaluru RO Service: Hennur, Kodigehalli, Thanisandra, Nagawara, Hennur Road, Kogilu, Bagalur, Kempapura, Chikkaballapur, Doddaballapur</p>
           <p>Northwest Bengaluru RO Service: Peenya, Yeshwanthpur, Tumkur Road, Nelamangala, Doddaballapur Road, Magadi Road, Mysore Road, Hosur Road, Bannerghatta Road, Kanakapura Road</p>
+          <p>Kolar District RO Service: Kolar, Kolar City, Kolar Gold Fields, KGF, Bangarapet, Budikote, Mulbagal, Virupakshi, Malur, Doddakallahalli, Srinivaspur, Gattahalli</p>
           
           <h4>RO Service by Pincode in Bengaluru</h4>
           <p>560001 RO Service: MG Road, Brigade Road, Cubbon Park, Vidhana Soudha, Cantonment, Shivajinagar</p>
+          <p>560002 RO Service: KR Market, Avenue Road, Kalasipalyam</p>
           <p>560003 RO Service: Malleshwaram</p>
           <p>560004 RO Service: Basavanagudi</p>
           <p>560005 RO Service: Richards Town, Frazer Town, Cox Town, Cooke Town</p>
@@ -120,7 +122,15 @@ const ServiceAreasSection = () => {
           <p>562123 RO Service: Nelamangala</p>
           <p>562125 RO Service: Sarjapur</p>
           <p>562159 RO Service: Ramanagara</p>
+          <p>562160 RO Service: Channapatna</p>
+          <p>562117 RO Service: Kanakapura</p>
           <p>635109 RO Service: Hosur</p>
+          <p>563101 RO Service: Kolar, Kolar City</p>
+          <p>563115 RO Service: Kolar Gold Fields, KGF</p>
+          <p>563114 RO Service: Bangarapet, Budikote</p>
+          <p>563131 RO Service: Mulbagal, Virupakshi</p>
+          <p>563130 RO Service: Malur, Doddakallahalli</p>
+          <p>563135 RO Service: Srinivaspur, Gattahalli</p>
         </div>
 
         {/* Quick Stats - Visible to users */}

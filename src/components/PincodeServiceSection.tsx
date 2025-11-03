@@ -43,6 +43,7 @@ const PincodeServiceSection = () => {
           
           <h4>Complete RO Service Coverage by Pincode</h4>
           <p>RO Water Purifier Service 560001: MG Road RO Service, Brigade Road RO Service, Cubbon Park RO Service, Vidhana Soudha RO Service, Cantonment RO Service, Shivajinagar RO Service</p>
+          <p>RO Water Purifier Service 560002: KR Market RO Service, Avenue Road RO Service, Kalasipalyam RO Service</p>
           <p>RO Water Purifier Service 560003: Malleshwaram RO Service</p>
           <p>RO Water Purifier Service 560004: Basavanagudi RO Service</p>
           <p>RO Water Purifier Service 560005: Richards Town RO Service, Frazer Town RO Service, Cox Town RO Service, Cooke Town RO Service</p>
@@ -101,7 +102,15 @@ const PincodeServiceSection = () => {
           <p>RO Water Purifier Service 562123: Nelamangala RO Service</p>
           <p>RO Water Purifier Service 562125: Sarjapur RO Service</p>
           <p>RO Water Purifier Service 562159: Ramanagara RO Service</p>
+          <p>RO Water Purifier Service 562160: Channapatna RO Service</p>
+          <p>RO Water Purifier Service 562117: Kanakapura RO Service</p>
           <p>RO Water Purifier Service 635109: Hosur RO Service</p>
+          <p>RO Water Purifier Service 563101: Kolar RO Service, Kolar City RO Service</p>
+          <p>RO Water Purifier Service 563115: Kolar Gold Fields RO Service, KGF RO Service</p>
+          <p>RO Water Purifier Service 563114: Bangarapet RO Service, Budikote RO Service</p>
+          <p>RO Water Purifier Service 563131: Mulbagal RO Service, Virupakshi RO Service</p>
+          <p>RO Water Purifier Service 563130: Malur RO Service, Doddakallahalli RO Service</p>
+          <p>RO Water Purifier Service 563135: Srinivaspur RO Service, Gattahalli RO Service</p>
         </div>
 
         {/* All Pincodes Coverage - Hidden from users but available for SEO */}
@@ -153,6 +162,7 @@ const PincodeServiceSection = () => {
           <p>Southwest Bengaluru RO Service Benefits: Professional installation, expert repair, maintenance packages, 24/7 support, customer satisfaction</p>
           <p>Northeast Bengaluru RO Service Benefits: Certified service, genuine parts, warranty coverage, emergency support, quality components</p>
           <p>Northwest Bengaluru RO Service Benefits: Professional technicians, same-day service, quality repair, maintenance plans, customer care</p>
+          <p>Kolar District RO Service Benefits: Comprehensive coverage, certified technicians, genuine spare parts, quick response, competitive pricing</p>
         </div>
 
         {/* Call to Action - Hidden from users but available for SEO */}
