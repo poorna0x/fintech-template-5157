@@ -6,10 +6,9 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Alert, AlertDescription } from '@/components/ui/alert';
-import { Shield, Eye, EyeOff, ArrowLeft } from 'lucide-react';
-import { Link } from 'react-router-dom';
+import { Shield, Eye, EyeOff, Droplets } from 'lucide-react';
 import { toast } from 'sonner';
-import AltchaCaptcha from '@/components/AltchaCaptcha';
+import AltchaWidget from '@/components/AltchaWidget';
 
 const AdminLogin = () => {
   const [email, setEmail] = useState('');
@@ -21,17 +20,14 @@ const AdminLogin = () => {
 
   const navigate = useNavigate();
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setError('');
-    
-    if (!isCaptchaVerified) {
-      setError('Please complete the security verification');
-      toast.error('Security verification required');
-      return;
+  // Extract login logic to be called automatically after verification
+  const performLogin = async () => {
+    if (!email || !password) {
+      return; // Don't auto-login if fields are empty
     }
-    
+
     setIsLoading(true);
+    setError('');
 
     try {
       const { data, error } = await supabase.auth.signInWithPassword({
@@ -59,33 +55,53 @@ const AdminLogin = () => {
     }
   };
 
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError('');
+    
+    // Check if CAPTCHA is verified before proceeding
+    if (!isCaptchaVerified) {
+      setError('Please complete the security verification before logging in.');
+      toast.error('Security verification required');
+      return;
+    }
+    
+    await performLogin();
+  };
+
+  // Track verification status
+  const handleVerify = (isValid: boolean) => {
+    setIsCaptchaVerified(isValid);
+  };
+
   return (
-    <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 flex items-center justify-center p-4">
+    <div className="min-h-screen bg-background flex items-center justify-center p-4">
       <div className="w-full max-w-md">
-        {/* Back to Home Link */}
-        <div className="mb-6">
-          <Link 
-            to="/" 
-            className="inline-flex items-center text-sm text-gray-600 hover:text-gray-900 transition-colors"
-          >
-            <ArrowLeft className="w-4 h-4 mr-2" />
-            Back to Home
-          </Link>
+        {/* Hydrogen RO Logo */}
+        <div className="mb-8 flex justify-center">
+          <div className="flex items-center gap-3 cursor-pointer hover:opacity-80 transition-opacity">
+            <div className="w-12 h-12 bg-primary rounded-xl flex items-center justify-center shadow-lg">
+              <Droplets className="w-7 h-7 text-primary-foreground" />
+            </div>
+            <div className="text-2xl font-bold text-foreground">
+              Hydrogen RO
+            </div>
+          </div>
         </div>
 
-        <Card className="shadow-xl">
-          <CardHeader className="text-center">
-            <div className="mx-auto w-12 h-12 bg-blue-100 rounded-full flex items-center justify-center mb-4">
-              <Shield className="w-6 h-6 text-blue-600" />
+        <Card className="shadow-xl cosmic-card">
+          <CardHeader className="text-center pb-6">
+            <div className="mx-auto w-16 h-16 bg-primary rounded-full flex items-center justify-center mb-4 shadow-lg">
+              <Shield className="w-8 h-8 text-primary-foreground" />
             </div>
-            <CardTitle className="text-2xl font-bold text-gray-900">Admin Login</CardTitle>
-            <CardDescription className="text-gray-600">
-              Enter your admin credentials to access the dashboard
+            <CardTitle className="text-3xl font-bold text-card-foreground">Admin Login</CardTitle>
+            <CardDescription className="text-muted-foreground text-base mt-2">
+              Secure access to your dashboard
             </CardDescription>
           </CardHeader>
           
           <CardContent>
-            <form onSubmit={handleSubmit} className="space-y-4">
+            <form onSubmit={handleSubmit} autoComplete="off" className="space-y-4">
               {error && (
                 <Alert variant="destructive">
                   <AlertDescription>{error}</AlertDescription>
@@ -100,6 +116,7 @@ const AdminLogin = () => {
                   placeholder="Enter your admin email"
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
+                  autoComplete="off"
                   required
                   disabled={isLoading}
                   className="w-full"
@@ -115,6 +132,7 @@ const AdminLogin = () => {
                     placeholder="Enter your password"
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
+                    autoComplete="off"
                     required
                     disabled={isLoading}
                     className="w-full pr-10"
@@ -134,20 +152,18 @@ const AdminLogin = () => {
                 </div>
               </div>
 
+              {/* ALTCHA Security Verification */}
               <div className="space-y-2">
-                <AltchaCaptcha
-                  onVerify={setIsCaptchaVerified}
+                <AltchaWidget
+                  onVerify={handleVerify}
                   autoStart={false}
                   className="mb-4"
                 />
-                <p className="text-xs text-muted-foreground text-center">
-                  Security verification helps protect against automated attacks
-                </p>
               </div>
 
               <Button
                 type="submit"
-                className="w-full bg-blue-600 hover:bg-blue-700 text-white"
+                className="w-full font-semibold shadow-lg hover:shadow-xl transition-all duration-300"
                 disabled={isLoading || !isCaptchaVerified}
               >
                 {isLoading ? (
@@ -161,11 +177,6 @@ const AdminLogin = () => {
               </Button>
             </form>
 
-            <div className="mt-6 text-center">
-              <p className="text-sm text-gray-600">
-                Enter your admin credentials to access the dashboard
-              </p>
-            </div>
           </CardContent>
         </Card>
       </div>

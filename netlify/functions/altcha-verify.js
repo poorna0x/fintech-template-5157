@@ -1,5 +1,10 @@
-// Netlify Function for ALTCHA server-side verification
-// ALTCHA uses a challenge-response system with proof-of-work
+// Netlify Function for ALTCHA server-side verification using official altcha-lib
+const { createChallenge, verifySolution } = require('altcha-lib');
+
+// HMAC key for signing challenges
+// IMPORTANT: In production, ALWAYS use ALTCHA_HMAC_KEY environment variable!
+// Generate a secure 64-byte key: openssl rand -hex 32
+const HMAC_KEY = process.env.ALTCHA_HMAC_KEY || 'your-secret-hmac-key-change-in-production';
 
 // Simple in-memory store for challenges (in production, use Redis or database)
 const challengeStore = new Map();
@@ -11,80 +16,199 @@ const corsHeaders = {
   'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
 };
 
-// Generate a challenge for ALTCHA
-function generateChallenge(complexity = 20) {
-  // Complexity determines difficulty: 2^complexity = maxNumber
-  // Lower complexity = easier, higher = harder
-  const maxNumber = Math.pow(2, complexity);
-  const salt = Math.random().toString(36).substring(2, 15) + Date.now().toString(36);
-  const number = Math.floor(Math.random() * maxNumber);
-  
-  // Store challenge with expiration (5 minutes)
-  const challenge = {
-    salt,
-    number,
-    maxNumber,
-    complexity,
-    timestamp: Date.now(),
-    expiresAt: Date.now() + 5 * 60 * 1000, // 5 minutes
-  };
-  
-  challengeStore.set(salt, challenge);
-  
-  // Clean up expired challenges periodically
-  if (challengeStore.size > 1000) {
-    const now = Date.now();
-    for (const [key, value] of challengeStore.entries()) {
-      if (value.expiresAt < now) {
-        challengeStore.delete(key);
+// GET request: Generate challenge using official altcha-lib
+async function handleGet(event) {
+  try {
+    const complexity = parseInt(event.queryStringParameters?.complexity || '14', 10);
+    
+    // Create challenge using official altcha-lib
+    const challenge = await createChallenge({
+      algorithm: 'SHA-256',
+      maxnumber: Math.pow(2, complexity),
+      expires: new Date(Date.now() + 20 * 60 * 1000), // 20 minutes from now (ALTCHA recommendation)
+      hmacKey: HMAC_KEY,
+    });
+
+    // Ensure all required fields are present
+    // ALTCHA widget requires: algorithm, challenge, salt, signature, maxnumber
+    const response = {
+      algorithm: challenge.algorithm,
+      challenge: challenge.challenge,
+      salt: challenge.salt,
+      signature: challenge.signature,
+      maxnumber: challenge.maxnumber,
+    };
+
+    // Store challenge for verification and replay attack prevention
+    challengeStore.set(challenge.salt, {
+      challenge: challenge.challenge,
+      salt: challenge.salt,
+      expires: Date.now() + 20 * 60 * 1000, // 20 minutes
+      used: false, // Track if challenge has been used
+    });
+
+    // Clean up expired challenges periodically
+    if (challengeStore.size > 1000) {
+      const now = Date.now();
+      for (const [key, value] of challengeStore.entries()) {
+        if (value.expires < now) {
+          challengeStore.delete(key);
+        }
       }
     }
+
+    return {
+      statusCode: 200,
+      headers: {
+        ...corsHeaders,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(response),
+    };
+  } catch (error) {
+    console.error('ALTCHA challenge generation error:', error);
+    return {
+      statusCode: 500,
+      headers: {
+        ...corsHeaders,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        error: 'Failed to generate challenge',
+        details: error.message,
+      }),
+    };
   }
-  
-  return {
-    algorithm: 'SHA-256',
-    salt,
-    maxNumber,
-    // Don't include the solution number - client must find it
-  };
 }
 
-// Verify ALTCHA payload
-async function verifyPayload(payload) {
+// POST request: Verify payload using official altcha-lib
+async function handlePost(event) {
   try {
-    const decoded = JSON.parse(Buffer.from(payload, 'base64').toString('utf-8'));
-    const { salt, number, algorithm } = decoded;
+    // Parse request body
+    let payload;
+    const rawBody = event.body || '';
     
-    // Get stored challenge
-    const challenge = challengeStore.get(salt);
-    if (!challenge) {
-      return { verified: false, error: 'Challenge not found or expired' };
+    // Try to parse as JSON first (we're sending { payload: "..." })
+    try {
+      const body = JSON.parse(rawBody);
+      payload = body.payload;
+    } catch (e) {
+      // If not JSON, assume it's the payload string directly
+      payload = rawBody;
     }
-    
-    // Check expiration (5 minutes)
-    if (challenge.expiresAt < Date.now()) {
-      challengeStore.delete(salt);
-      return { verified: false, error: 'Challenge expired' };
+
+    if (!payload || (typeof payload === 'string' && payload.trim() === '')) {
+      return {
+        statusCode: 400,
+        headers: {
+          ...corsHeaders,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          verified: false,
+          error: 'Missing payload',
+        }),
+      };
     }
+
+    // Verify using official altcha-lib
+    // verifySolution accepts either string (base64 encoded) or Payload object
+    // ALTCHA widget sends payload as base64-encoded string
+    let verified = false;
+    let salt = null;
     
-    // Verify the proof-of-work by checking if the hash is valid
-    const crypto = require('crypto');
-    const message = `${salt}:${number}`;
-    const hash = crypto.createHash('sha256').update(message).digest('hex');
-    
-    // Convert first 8 hex characters to number (0-2^32)
-    const hashNum = parseInt(hash.substring(0, 8), 16);
-    
-    if (hashNum < challenge.maxNumber && number < challenge.maxNumber * 2) {
-      // Remove used challenge (prevent replay)
-      challengeStore.delete(salt);
-      return { verified: true };
+    try {
+      // Parse payload to get salt for replay attack prevention
+      try {
+        const payloadData = JSON.parse(Buffer.from(payload, 'base64').toString('utf8'));
+        salt = payloadData.salt;
+      } catch (e) {
+        // If parsing fails, salt will remain null
+      }
+      
+      // Check if this challenge has already been used (replay attack prevention)
+      if (salt && challengeStore.has(salt)) {
+        const storedChallenge = challengeStore.get(salt);
+        if (storedChallenge && storedChallenge.used) {
+          console.log('Replay attack detected - challenge already used');
+          return {
+            statusCode: 400,
+            headers: {
+              ...corsHeaders,
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              verified: false,
+              error: 'Challenge already used',
+            }),
+          };
+        }
+      }
+      
+      verified = await verifySolution(payload, HMAC_KEY, true);
+    } catch (verifyError) {
+      console.error('verifySolution error:', verifyError);
+      return {
+        statusCode: 400,
+        headers: {
+          ...corsHeaders,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          verified: false,
+          error: 'Verification process failed',
+          details: verifyError.message,
+        }),
+      };
     }
-    
-    return { verified: false, error: 'Invalid proof-of-work solution' };
+
+    if (verified) {
+      // Mark challenge as used to prevent replay attacks
+      if (salt && challengeStore.has(salt)) {
+        const storedChallenge = challengeStore.get(salt);
+        if (storedChallenge) {
+          storedChallenge.used = true;
+          challengeStore.set(salt, storedChallenge);
+        }
+      }
+      
+      return {
+        statusCode: 200,
+        headers: {
+          ...corsHeaders,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ verified: true }),
+      };
+    } else {
+      return {
+        statusCode: 400,
+        headers: {
+          ...corsHeaders,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          verified: false,
+          error: 'Invalid proof-of-work solution',
+        }),
+      };
+    }
   } catch (error) {
     console.error('ALTCHA verification error:', error);
-    return { verified: false, error: 'Verification failed' };
+    console.error('Error stack:', error.stack);
+    return {
+      statusCode: 500,
+      headers: {
+        ...corsHeaders,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        verified: false,
+        error: 'Verification failed',
+        details: error.message,
+        stack: process.env.NODE_ENV === 'development' ? error.stack : undefined,
+      }),
+    };
   }
 }
 
@@ -99,46 +223,12 @@ exports.handler = async (event, context) => {
   }
 
   try {
-    // GET request: Generate challenge
     if (event.httpMethod === 'GET') {
-      const complexity = parseInt(event.queryStringParameters?.complexity || '20', 10);
-      const challenge = generateChallenge(complexity);
-      
-      return {
-        statusCode: 200,
-        headers: {
-          ...corsHeaders,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(challenge),
-      };
+      return await handleGet(event);
     }
 
-    // POST request: Verify payload
     if (event.httpMethod === 'POST') {
-      const { payload } = JSON.parse(event.body || '{}');
-      
-      if (!payload) {
-        return {
-          statusCode: 400,
-          headers: {
-            ...corsHeaders,
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({ verified: false, error: 'Missing payload' }),
-        };
-      }
-
-      const result = await verifyPayload(payload);
-      
-      return {
-        statusCode: result.verified ? 200 : 400,
-        headers: {
-          ...corsHeaders,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(result),
-      };
+      return await handlePost(event);
     }
 
     // Method not allowed

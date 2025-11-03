@@ -14,7 +14,7 @@ import { db } from '@/lib/supabase';
 import { cloudinaryService, compressImage } from '@/lib/cloudinary';
 import { emailService } from '@/lib/email';
 import { generateJobNumber } from '@/lib/supabase';
-import AltchaCaptcha from '@/components/AltchaCaptcha';
+import AltchaWidget from '@/components/AltchaWidget';
 import HoneypotField from '@/components/HoneypotField';
 import BehavioralTracker from '@/components/BehavioralTracker';
 import SecurityStatus from '@/components/SecurityStatus';
@@ -1969,11 +1969,10 @@ const Booking: React.FC = () => {
             </div>
             
             <div className="max-w-md mx-auto">
-              <AltchaCaptcha 
+              <AltchaWidget 
                 onVerify={setIsCaptchaVerified}
                 onAutoSubmit={handleAutoSubmit}
                 autoStart={false}
-                buttonText="Submit Booking"
                 className="mb-4"
               />
               <p className="text-xs text-muted-foreground text-center">

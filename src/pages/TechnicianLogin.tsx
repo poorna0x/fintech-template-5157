@@ -7,9 +7,8 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Alert, AlertDescription } from '@/components/ui/alert';
-import { Wrench, Eye, EyeOff, ArrowLeft } from 'lucide-react';
-import { Link } from 'react-router-dom';
-import AltchaCaptcha from '@/components/AltchaCaptcha';
+import { Wrench, Eye, EyeOff, Droplets } from 'lucide-react';
+import AltchaWidget from '@/components/AltchaWidget';
 
 const TechnicianLogin = () => {
   const [email, setEmail] = useState('');
@@ -22,16 +21,14 @@ const TechnicianLogin = () => {
   const { login } = useAuth();
   const navigate = useNavigate();
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setError('');
-    
-    if (!isCaptchaVerified) {
-      setError('Please complete the security verification');
-      return;
+  // Extract login logic to be called automatically after verification
+  const performLogin = async () => {
+    if (!email || !password) {
+      return; // Don't auto-login if fields are empty
     }
-    
+
     setIsLoading(true);
+    setError('');
 
     try {
       const success = await login(email, password);
@@ -51,35 +48,54 @@ const TechnicianLogin = () => {
     }
   };
 
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError('');
+    
+    // Check if CAPTCHA is verified before proceeding
+    if (!isCaptchaVerified) {
+      setError('Please complete the security verification before logging in.');
+      return;
+    }
+    
+    await performLogin();
+  };
+
+  // Track verification status
+  const handleVerify = (isValid: boolean) => {
+    setIsCaptchaVerified(isValid);
+  };
+
   return (
-    <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 flex items-center justify-center p-4">
+    <div className="min-h-screen bg-background flex items-center justify-center p-4">
       <div className="w-full max-w-md">
-        {/* Back to Home */}
-        <div className="mb-6">
-          <Link 
-            to="/" 
-            className="inline-flex items-center text-sm text-gray-600 hover:text-gray-900 transition-colors"
-          >
-            <ArrowLeft className="w-4 h-4 mr-2" />
-            Back to Home
-          </Link>
+        {/* Hydrogen RO Logo */}
+        <div className="mb-8 flex justify-center">
+          <div className="flex items-center gap-3 cursor-pointer hover:opacity-80 transition-opacity">
+            <div className="w-12 h-12 bg-primary rounded-xl flex items-center justify-center shadow-lg">
+              <Droplets className="w-7 h-7 text-primary-foreground" />
+            </div>
+            <div className="text-2xl font-bold text-foreground">
+              Hydrogen RO
+            </div>
+          </div>
         </div>
 
-        <Card className="shadow-xl border-0">
-          <CardHeader className="text-center pb-2">
-            <div className="mx-auto w-12 h-12 bg-blue-100 rounded-full flex items-center justify-center mb-4">
-              <Wrench className="w-6 h-6 text-blue-600" />
+        <Card className="shadow-xl cosmic-card">
+          <CardHeader className="text-center pb-6">
+            <div className="mx-auto w-16 h-16 bg-primary rounded-full flex items-center justify-center mb-4 shadow-lg">
+              <Wrench className="w-8 h-8 text-primary-foreground" />
             </div>
-            <CardTitle className="text-2xl font-bold text-gray-900">
+            <CardTitle className="text-3xl font-bold text-card-foreground">
               Technician Login
             </CardTitle>
-            <CardDescription className="text-gray-600">
-              Access your assigned jobs and update status
+            <CardDescription className="text-muted-foreground text-base mt-2">
+              Access your assigned jobs
             </CardDescription>
           </CardHeader>
 
           <CardContent className="pt-6">
-            <form onSubmit={handleSubmit} className="space-y-4">
+            <form onSubmit={handleSubmit} autoComplete="off" className="space-y-4">
               {error && (
                 <Alert variant="destructive">
                   <AlertDescription>{error}</AlertDescription>
@@ -96,6 +112,7 @@ const TechnicianLogin = () => {
                   placeholder="technician@roservice.com"
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
+                  autoComplete="off"
                   required
                   className="h-11"
                   disabled={isLoading}
@@ -113,6 +130,7 @@ const TechnicianLogin = () => {
                     placeholder="Enter your password"
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
+                    autoComplete="off"
                     required
                     className="h-11 pr-10"
                     disabled={isLoading}
@@ -132,20 +150,18 @@ const TechnicianLogin = () => {
                 </div>
               </div>
 
+              {/* ALTCHA Security Verification */}
               <div className="space-y-2">
-                <AltchaCaptcha
-                  onVerify={setIsCaptchaVerified}
+                <AltchaWidget
+                  onVerify={handleVerify}
                   autoStart={false}
                   className="mb-4"
                 />
-                <p className="text-xs text-muted-foreground text-center">
-                  Security verification helps protect against automated attacks
-                </p>
               </div>
 
               <Button
                 type="submit"
-                className="w-full h-11 bg-blue-600 hover:bg-blue-700 text-white font-medium"
+                className="w-full h-11 font-semibold shadow-lg hover:shadow-xl transition-all duration-300"
                 disabled={isLoading || !isCaptchaVerified}
               >
                 {isLoading ? (
@@ -160,23 +176,15 @@ const TechnicianLogin = () => {
             </form>
 
             <div className="mt-6 text-center">
-              <p className="text-sm text-gray-600">
+              <p className="text-sm text-muted-foreground">
                 Don't have an account?{' '}
-                <span className="text-gray-500">
+                <span className="text-muted-foreground/70">
                   Contact administrator
                 </span>
               </p>
-              
             </div>
           </CardContent>
         </Card>
-
-        {/* Footer */}
-        <div className="mt-8 text-center">
-          <p className="text-xs text-gray-500">
-            RO Service Management System
-          </p>
-        </div>
       </div>
     </div>
   );

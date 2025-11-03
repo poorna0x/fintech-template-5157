@@ -14,7 +14,7 @@ import { toast } from 'sonner';
 import { db, generateJobNumber } from '@/lib/supabase';
 import { emailService } from '@/lib/email';
 import { BookingFormData } from '@/types';
-import AltchaCaptcha from '@/components/AltchaCaptcha';
+import AltchaWidget from '@/components/AltchaWidget';
 
 // Validation schema
 const bookingSchema = z.object({
@@ -987,11 +987,10 @@ const EnhancedBookingForm = () => {
                 </div>
                 
                 <div className="max-w-md mx-auto">
-                  <AltchaCaptcha 
+                  <AltchaWidget 
                     onVerify={setIsCaptchaVerified}
                     onAutoSubmit={() => handleAutoSubmit(watchedValues)}
-                    autoStart={false}
-                    buttonText="Submit Booking"
+                    autoStart={true}
                     className="mb-4"
                   />
                   <p className="text-xs text-muted-foreground text-center">

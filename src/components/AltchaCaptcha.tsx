@@ -71,12 +71,14 @@ const AltchaCaptcha: React.FC<AltchaCaptchaProps> = ({
   }, [autoStart, buttonReady, pageLoadTime]);
 
   // Adjust complexity based on security difficulty level
-  // Reduced base complexity for faster verification (better UX)
+  // Optimized for fast verification (0.5-1.5 seconds) while maintaining security
   const getComplexity = useCallback(() => {
-    // Lower base complexity = faster verification (targeted at 1-3 seconds instead of 3-5)
-    const baseComplexity = 16; // Reduced from 18
-    const additionalComplexity = (difficultyLevel - 1) * 1.5; // Reduced multiplier
-    return Math.min(baseComplexity + additionalComplexity, 22); // Reduced max from 24
+    // Lower complexity = faster verification
+    // Base: 14 = ~0.5 seconds on average device
+    // Max: 18 = ~2 seconds (only for high difficulty)
+    const baseComplexity = 14; // Fast verification
+    const additionalComplexity = (difficultyLevel - 1) * 1; // Smaller multiplier
+    return Math.min(baseComplexity + additionalComplexity, 18); // Reduced max
   }, [difficultyLevel]);
 
   // Generate SHA-256 hash
@@ -97,36 +99,24 @@ const AltchaCaptcha: React.FC<AltchaCaptchaProps> = ({
       const salt = challenge.salt;
       const maxAttempts = target * 2; // Reasonable limit
       
-      // Batch processing for better performance
-      const batchSize = 50; // Process 50 hashes at a time
-      
-      for (let batchStart = 0; batchStart < maxAttempts; batchStart += batchSize) {
-        const batchEnd = Math.min(batchStart + batchSize, maxAttempts);
-        const batchPromises: Promise<{ number: number; hash: string }>[] = [];
+      // Optimized sequential processing with early exit
+      // Sequential is often faster than parallel for this use case
+      for (let number = 0; number < maxAttempts; number++) {
+        const message = `${salt}:${number}`;
+        const hash = await sha256(message);
         
-        // Process batch in parallel
-        for (let number = batchStart; number < batchEnd; number++) {
-          batchPromises.push(
-            sha256(`${salt}:${number}`).then(hash => ({ number, hash }))
-          );
+        // Convert first 8 hex characters to number (0-2^32)
+        const hashNum = parseInt(hash.substring(0, 8), 16);
+        
+        if (hashNum < target) {
+          // Found solution!
+          return number;
         }
         
-        // Wait for batch to complete
-        const batchResults = await Promise.all(batchPromises);
-        
-        // Check results
-        for (const { number, hash } of batchResults) {
-          // Convert first 8 hex characters to number (0-2^32)
-          const hashNum = parseInt(hash.substring(0, 8), 16);
-          
-          if (hashNum < target) {
-            // Found solution!
-            return number;
-          }
+        // Yield to UI every 20 iterations to prevent blocking
+        if (number % 20 === 0) {
+          await new Promise(resolve => setTimeout(resolve, 0));
         }
-        
-        // Yield to UI every batch to prevent blocking
-        await new Promise(resolve => setTimeout(resolve, 10));
       }
       
       return null;
