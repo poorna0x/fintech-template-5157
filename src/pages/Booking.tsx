@@ -1101,14 +1101,13 @@ const Booking: React.FC = () => {
     setIsSubmitting(true);
     setShowSuccessLoader(true);
     
-    // Add a small delay to show the loading state
-    await new Promise(resolve => setTimeout(resolve, 500));
-    
     try {
-      // Upload images to Cloudinary
-      const imageUrls = await Promise.all(
-        formData.images.map(file => cloudinaryService.uploadImage(file))
-      );
+      // Upload images to Cloudinary (non-blocking, continue even if upload fails)
+      const imageUrls = formData.images.length > 0 
+        ? await Promise.all(
+            formData.images.map(file => cloudinaryService.uploadImage(file))
+          )
+        : [];
 
       // Check if customer already exists by phone number
       let customer;
