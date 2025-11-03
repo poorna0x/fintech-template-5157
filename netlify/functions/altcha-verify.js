@@ -1,5 +1,15 @@
 // Netlify Function for ALTCHA server-side verification using official altcha-lib
-const { createChallenge, verifySolution } = require('altcha-lib');
+let createChallenge, verifySolution;
+try {
+  const altchaLib = require('altcha-lib');
+  createChallenge = altchaLib.createChallenge;
+  verifySolution = altchaLib.verifySolution;
+  console.log('✅ altcha-lib loaded successfully');
+} catch (error) {
+  console.error('❌ Error loading altcha-lib:', error.message);
+  console.error('Stack:', error.stack);
+  throw error;
+}
 
 // HMAC key for signing challenges
 // IMPORTANT: In production, ALWAYS use ALTCHA_HMAC_KEY environment variable!
