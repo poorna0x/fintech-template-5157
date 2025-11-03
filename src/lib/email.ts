@@ -391,7 +391,7 @@ export const emailTemplates = {
                   📞 Phone
                 </a>
                 <a href="https://wa.me/918884944288?text=Hi, I have a booking for ${data.serviceType} service. My name is ${data.customerName}" class="contact-btn btn-message">
-                  💬 Message Us
+                  <img src="https://raw.githubusercontent.com/WhatsApp/WhatsApp-Logos/main/Logos/W-Logo/Green.png" alt="WhatsApp" style="width: 24px; height: 24px; vertical-align: middle; margin-right: 8px;" /> WhatsApp Us
                 </a>
               </div>
               
