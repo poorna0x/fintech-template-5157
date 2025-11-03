@@ -2044,9 +2044,10 @@ const Booking: React.FC = () => {
               </div>
 
               {/* Email Confirmation Alert */}
-              <Alert className="mb-6 border-green-200 dark:border-green-800 bg-green-50 dark:bg-green-950">
-                <Mail className="h-4 w-4 text-green-600 dark:text-green-400" />
-                <AlertDescription className="text-green-800 dark:text-green-200">
+              <Alert className="mb-6 border-2 border-green-200 dark:border-green-800 bg-green-50 dark:bg-green-950 relative overflow-hidden animate-pulse">
+                <div className="absolute inset-0 border-2 border-green-400 dark:border-green-600 animate-ping opacity-20" style={{ animationDuration: '2s' }}></div>
+                <Mail className="h-4 w-4 text-green-600 dark:text-green-400 relative z-10" />
+                <AlertDescription className="text-green-800 dark:text-green-200 relative z-10">
                   You will receive a confirmation email shortly at <strong>{bookingDetails.email}</strong>. Please check your spam folder if you don't see it.
                 </AlertDescription>
               </Alert>
