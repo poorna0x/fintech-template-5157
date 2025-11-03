@@ -86,8 +86,14 @@ exports.handler = async (event, context) => {
         pass: process.env.HOSTINGER_EMAIL_PASS, // Your Hostinger email password
       },
       tls: {
-        rejectUnauthorized: false
-      }
+        rejectUnauthorized: false,
+        ciphers: 'SSLv3'
+      },
+      connectionTimeout: 5000, // 5 seconds timeout
+      greetingTimeout: 5000,
+      socketTimeout: 5000,
+      logger: false,
+      debug: false
     });
 
     // Email options with spam prevention
