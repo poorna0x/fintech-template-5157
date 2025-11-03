@@ -65,28 +65,129 @@ const AltchaWidget: React.FC<AltchaWidgetProps> = ({
 
     const widgetElement = widget as any; // Type assertion for web component
 
+    // Store observer reference for cleanup
+    let logoObserver: MutationObserver | null = null;
+
     // Wait for widget to load before configuring
     const handleLoad = () => {
       setIsLoading(false);
       setError(null);
       
-      // Small delay to ensure widget is fully ready
-      setTimeout(() => {
-        try {
+      // Configure immediately to prevent logo flash
+      try {
           // Configure widget programmatically - match official ALTCHA styling
           widgetElement.configure({
             challengeurl: `${apiUrl}?complexity=${getComplexity()}`,
             auto: autoStart ? 'onload' : 'off',
             workers: Math.min(navigator.hardwareConcurrency || 4, 8),
-            hidefooter: false, // Show footer to match official
-            hidelogo: false, // Show logo to match official
+            hidefooter: false, // Show footer with custom text
+            hidelogo: false, // Show ALTCHA logo
+            strings: {
+              footer: 'Protected by HydrogenRO' // Customize footer text
+            }
           });
-        } catch (err) {
-          console.error('Widget configuration error:', err);
-          setError('Failed to configure verification');
-          onVerify(false);
+      } catch (err) {
+        console.error('Widget configuration error:', err);
+        setError('Failed to configure verification');
+        onVerify(false);
+      }
+      
+      // Small delay to ensure widget is fully ready, then disable links
+      setTimeout(() => {
+        disableLogoLink(widget);
+      }, 50);
+    };
+
+    // Function to disable logo link clicks and customize text
+    const disableLogoLink = (widgetElement: HTMLElement) => {
+      try {
+        // Find the logo link inside the widget shadow DOM or regular DOM
+        const shadowRoot = widgetElement.shadowRoot;
+        const root = shadowRoot || widgetElement;
+        
+        // Function to replace "Protected by ALTCHA" text with "Protected by HydrogenRO"
+        const replaceFooterText = (element: Node) => {
+          // Walk through all text nodes
+          const walker = document.createTreeWalker(element, NodeFilter.SHOW_TEXT, null);
+          let node: Node | null;
+          while ((node = walker.nextNode())) {
+            if (node.textContent) {
+              // Replace various forms of "Protected by ALTCHA"
+              const newText = node.textContent
+                .replace(/Protected by ALTCHA/gi, 'Protected by HydrogenRO')
+                .replace(/Protected by altcha/gi, 'Protected by HydrogenRO');
+              if (newText !== node.textContent) {
+                node.textContent = newText;
+              }
+            }
+          }
+        };
+        
+        // Try multiple selectors to find the logo link
+        const logoSelectors = [
+          'a[href*="altcha"]',
+          'a[href*="altcha.org"]',
+          'a[href*="altcha.com"]',
+          '.logo a',
+          'footer a',
+          'a',
+        ];
+        
+        const disableLink = (link: Element) => {
+          const href = (link as HTMLAnchorElement).href;
+          // Only disable links that point to ALTCHA website
+          if (href && (href.includes('altcha.org') || href.includes('altcha.com'))) {
+            // Disable pointer events
+            (link as HTMLElement).style.pointerEvents = 'none';
+            (link as HTMLElement).style.cursor = 'default';
+            
+            // Prevent click events
+            link.addEventListener('click', (e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              return false;
+            }, { capture: true });
+            
+            // Remove href or make it non-navigable
+            (link as HTMLAnchorElement).href = 'javascript:void(0)';
+            (link as HTMLAnchorElement).onclick = (e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              return false;
+            };
+          }
+        };
+        
+        // Replace footer text
+        replaceFooterText(root);
+        
+        // Disable existing links
+        for (const selector of logoSelectors) {
+          const links = root.querySelectorAll(selector);
+          links.forEach(disableLink);
         }
-      }, 100);
+        
+        // Also use MutationObserver to catch dynamically added links and text
+        logoObserver = new MutationObserver(() => {
+          // Replace any new text that appears
+          replaceFooterText(root);
+          
+          // Disable any new links
+          logoSelectors.forEach((selector) => {
+            const links = root.querySelectorAll(selector);
+            links.forEach(disableLink);
+          });
+        });
+        
+        logoObserver.observe(root, {
+          childList: true,
+          subtree: true,
+          characterData: true, // Watch for text changes
+        });
+      } catch (err) {
+        // Silently fail if we can't access shadow DOM (some browsers restrict this)
+        console.debug('Could not disable logo link or customize text:', err);
+      }
     };
 
     // Verify payload with server
@@ -190,6 +291,10 @@ const AltchaWidget: React.FC<AltchaWidgetProps> = ({
       widget.removeEventListener('load', handleLoad);
       widget.removeEventListener('statechange', handleStateChange as EventListener);
       widget.removeEventListener('verified', handleVerified as EventListener);
+      // Cleanup MutationObserver
+      if (logoObserver) {
+        logoObserver.disconnect();
+      }
     };
   }, [autoStart, onVerify, onAutoSubmit, difficultyLevel]);
 
@@ -217,9 +322,28 @@ const AltchaWidget: React.FC<AltchaWidgetProps> = ({
   }
 
   return (
-    <div className={`flex flex-col items-center justify-center w-full ${className}`}>
-      {/* ALTCHA Widget - Centered, using official styling exactly */}
-      <div className="flex justify-center items-center w-full">
+    <>
+      <style>{`
+        /* Disable ALTCHA logo link clicks - only target links to ALTCHA website */
+        /* Logo is visible but not clickable */
+        altcha-widget a[href*="altcha.org"],
+        altcha-widget a[href*="altcha.com"],
+        altcha-widget a[href^="https://www.altcha"],
+        altcha-widget a[href^="http://www.altcha"] {
+          pointer-events: none !important;
+          cursor: default !important;
+          text-decoration: none !important;
+        }
+        
+        /* Customize footer text styling if needed */
+        altcha-widget footer,
+        altcha-widget::part(footer) {
+          /* Any custom styling for footer can go here */
+        }
+      `}</style>
+      <div className={`flex flex-col items-center justify-center w-full ${className}`}>
+        {/* ALTCHA Widget - Centered, using official styling exactly */}
+        <div className="flex justify-center items-center w-full">
         <altcha-widget
           ref={widgetRef}
           id="altcha-widget"
@@ -227,8 +351,9 @@ const AltchaWidget: React.FC<AltchaWidgetProps> = ({
             display: 'block',
           }}
         />
+        </div>
       </div>
-    </div>
+    </>
   );
 };
 
