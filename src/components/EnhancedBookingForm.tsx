@@ -266,14 +266,16 @@ const EnhancedBookingForm = () => {
       setBookingId(job.jobNumber);
       setShowSuccessLoader(true);
       
+      // Show toast notification immediately
+      toast.success('Booking confirmed successfully!', {
+        description: 'You will receive a confirmation email shortly. Please check your spam folder if you don\'t see it.',
+        duration: 6000,
+      });
+      
       // Show success loader for 2 seconds before showing success page
       setTimeout(() => {
         setShowSuccessLoader(false);
         setBookingSuccess(true);
-        toast.success('Booking confirmed successfully!', {
-          description: 'You will receive a confirmation email shortly. Please check your spam folder if you don\'t see it.',
-          duration: 6000,
-        });
       }, 2000);
       
     } catch (error) {

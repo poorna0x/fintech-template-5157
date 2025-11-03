@@ -8,6 +8,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Progress } from '@/components/ui/progress';
+import { Alert, AlertDescription } from '@/components/ui/alert';
 import { toast } from 'sonner';
 import { ChevronLeft, ChevronRight, MapPin, Camera, Upload, Check, Phone, Mail, User, Home, Clock, Wrench, Loader2, Search, Navigation, X } from 'lucide-react';
 import { db } from '@/lib/supabase';
@@ -1348,11 +1349,13 @@ const Booking: React.FC = () => {
       setTimeout(() => {
         setShowSuccessLoader(false);
         setShowConfirmation(true);
-        toast.success('Booking confirmed successfully!', {
-          description: 'You will receive a confirmation email shortly. Please check your spam folder if you don\'t see it.',
-          duration: 6000,
-        });
       }, 2000);
+      
+      // Show toast notification immediately
+      toast.success('Booking confirmed successfully!', {
+        description: 'You will receive a confirmation email shortly. Please check your spam folder if you don\'t see it.',
+        duration: 6000,
+      });
       
     } catch (error) {
       
@@ -2039,6 +2042,14 @@ const Booking: React.FC = () => {
                   Your service has been scheduled successfully
                 </p>
               </div>
+
+              {/* Email Confirmation Alert */}
+              <Alert className="mb-6 border-green-200 dark:border-green-800 bg-green-50 dark:bg-green-950">
+                <Mail className="h-4 w-4 text-green-600 dark:text-green-400" />
+                <AlertDescription className="text-green-800 dark:text-green-200">
+                  You will receive a confirmation email shortly at <strong>{bookingDetails.email}</strong>. Please check your spam folder if you don't see it.
+                </AlertDescription>
+              </Alert>
 
               {/* Booking Details Card */}
               <Card className="mb-6">
