@@ -285,26 +285,23 @@ const EnhancedBookingForm = () => {
   };
 
   const sendConfirmationEmail = async (customer: any, job: any) => {
-    try {
-      const emailData = {
-        customerName: customer.fullName,
-        jobNumber: job.jobNumber,
-        serviceType: job.serviceType,
-        serviceSubType: job.serviceSubType,
-        brand: job.brand,
-        model: job.model,
-        scheduledDate: job.scheduledDate,
-        scheduledTimeSlot: job.scheduledTimeSlot,
-        serviceAddress: `${job.serviceAddress.street}, ${job.serviceAddress.area}, ${job.serviceAddress.city} - ${job.serviceAddress.pincode}`,
-        phone: customer.phone,
-        email: customer.email,
-      };
+    const emailData = {
+      customerName: customer.fullName,
+      jobNumber: job.jobNumber,
+      serviceType: job.serviceType,
+      serviceSubType: job.serviceSubType,
+      brand: job.brand,
+      model: job.model,
+      scheduledDate: job.scheduledDate,
+      scheduledTimeSlot: job.scheduledTimeSlot,
+      serviceAddress: `${job.serviceAddress.street}, ${job.serviceAddress.area}, ${job.serviceAddress.city} - ${job.serviceAddress.pincode}`,
+      phone: customer.phone,
+      email: customer.email,
+    };
 
-      await emailService.sendBookingConfirmation(emailData);
-    } catch (error) {
+    emailService.sendBookingConfirmation(emailData).catch(error => {
       console.error('Failed to send confirmation email:', error);
-      // Don't throw error here as booking is already created
-    }
+    });
   };
 
   const isStepValid = (step: number) => {
