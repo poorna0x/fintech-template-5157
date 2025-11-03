@@ -596,6 +596,15 @@ const Booking: React.FC = () => {
     };
   }, [currentStep]);
 
+  // Show email notification toast when confirmation page appears
+  useEffect(() => {
+    if (showConfirmation && bookingDetails) {
+      toast.success('Booking confirmed!', {
+        description: 'You will receive a confirmation email shortly. Please check your spam folder if you don\'t see it.',
+        duration: 6000,
+      });
+    }
+  }, [showConfirmation, bookingDetails]);
 
   // Get current location handler
   const handleGetCurrentLocation = () => {
