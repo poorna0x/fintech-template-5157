@@ -2045,7 +2045,7 @@ const Booking: React.FC = () => {
 
               {/* Email Confirmation Alert */}
               <Alert className="mb-6 border-2 border-gray-200 dark:border-gray-700 bg-transparent relative overflow-hidden">
-                <div className="absolute inset-0 border-2 border-primary animate-ping opacity-30" style={{ animationDuration: '2s' }}></div>
+                <div className="absolute inset-0 running-border pointer-events-none"></div>
                 <Mail className="h-4 w-4 text-primary relative z-10" />
                 <AlertDescription className="text-foreground relative z-10">
                   You will receive a confirmation email shortly at <strong>{bookingDetails.email}</strong>. Please check your spam folder if you don't see it.

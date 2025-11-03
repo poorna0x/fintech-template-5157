@@ -204,6 +204,54 @@
     @apply bg-accent/20 transition-all duration-300;
   }
 
+  /* Running border animation */
+  @keyframes border-run {
+    0% {
+      background-position: 0% 0%;
+    }
+    25% {
+      background-position: 100% 0%;
+    }
+    50% {
+      background-position: 100% 100%;
+    }
+    75% {
+      background-position: 0% 100%;
+    }
+    100% {
+      background-position: 0% 0%;
+    }
+  }
+
+  .running-border {
+    position: absolute;
+    inset: 0;
+    border: 2px solid transparent;
+    background: 
+      linear-gradient(hsl(var(--background)), hsl(var(--background))) padding-box,
+      linear-gradient(90deg, transparent, hsl(var(--primary)), transparent) border-box;
+    background-size: 100% 100%, 200% 100%;
+    animation: border-run 3s ease-in-out infinite;
+    pointer-events: none;
+    border-radius: inherit;
+  }
+  
+  .running-border::before {
+    content: '';
+    position: absolute;
+    inset: -2px;
+    background: linear-gradient(
+      90deg,
+      transparent,
+      hsl(var(--primary)),
+      transparent
+    );
+    background-size: 200% 100%;
+    animation: border-run 3s linear infinite;
+    pointer-events: none;
+    z-index: -1;
+  }
+
   /* Booking loading dots animation */
   @keyframes booking-bounce {
     0%, 100% { 
