@@ -149,11 +149,16 @@ async function handlePost(event) {
     let salt = null;
     
     try {
+      console.log('POST received, payload length:', payload.length);
+      console.log('Payload preview:', payload.substring(0, 100));
+      
       // Parse payload to get salt for replay attack prevention
       try {
         const payloadData = JSON.parse(Buffer.from(payload, 'base64').toString('utf8'));
         salt = payloadData.salt;
+        console.log('Salt extracted:', salt ? salt.substring(0, 50) + '...' : 'none');
       } catch (e) {
+        console.log('Could not extract salt:', e.message);
         // If parsing fails, salt will remain null
       }
       
@@ -176,9 +181,12 @@ async function handlePost(event) {
         }
       }
       
+      console.log('Calling verifySolution with HMAC_KEY:', HMAC_KEY.length, 'bytes');
       verified = await verifySolution(payload, HMAC_KEY, true);
+      console.log('Verification result:', verified);
     } catch (verifyError) {
-      console.error('verifySolution error:', verifyError);
+      console.error('verifySolution error:', verifyError.message);
+      console.error('Stack:', verifyError.stack);
       return {
         statusCode: 400,
         headers: {
