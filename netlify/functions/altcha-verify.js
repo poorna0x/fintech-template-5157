@@ -201,13 +201,17 @@ async function handlePost(event) {
       };
     }
 
+    console.log('Verification status:', verified);
+    
     if (verified) {
+      console.log('Challenge verified successfully!');
       // Mark challenge as used to prevent replay attacks
       if (salt && challengeStore.has(salt)) {
         const storedChallenge = challengeStore.get(salt);
         if (storedChallenge) {
           storedChallenge.used = true;
           challengeStore.set(salt, storedChallenge);
+          console.log('Challenge marked as used');
         }
       }
       
@@ -220,6 +224,7 @@ async function handlePost(event) {
         body: JSON.stringify({ verified: true }),
       };
     } else {
+      console.log('Verification failed - invalid proof-of-work solution');
       return {
         statusCode: 400,
         headers: {
