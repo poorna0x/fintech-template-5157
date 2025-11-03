@@ -316,6 +316,9 @@ export const emailTemplates = {
       <body>
         <div class="container">
           <div class="header">
+            <div style="margin-bottom: 20px;">
+              <img src="https://hydrogenro.com/fulllogo.webp" alt="Hydrogen RO Logo" style="max-width: 200px; height: auto; margin-bottom: 16px;" />
+            </div>
             <h1>Service Booking Confirmed!</h1>
             <p>Thank you for choosing Hydrogen RO</p>
           </div>
@@ -390,8 +393,8 @@ export const emailTemplates = {
                 <a href="tel:+918884944288" class="contact-btn btn-phone">
                   📞 Phone
                 </a>
-                <a href="https://wa.me/918884944288?text=Hi, I have a booking for ${data.serviceType} service. My name is ${data.customerName}" class="contact-btn btn-message">
-                  <img src="https://raw.githubusercontent.com/WhatsApp/WhatsApp-Logos/main/Logos/W-Logo/Green.png" alt="WhatsApp" style="width: 24px; height: 24px; vertical-align: middle; margin-right: 8px;" /> WhatsApp Us
+                <a href="https://wa.me/918884944288?text=Hi, I have a booking for ${data.serviceType} service. My name is ${data.customerName}" class="contact-btn btn-message" style="background: #25D366; color: white;">
+                  💬 WhatsApp Us
                 </a>
               </div>
               
