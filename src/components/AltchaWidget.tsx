@@ -45,6 +45,9 @@ const AltchaWidget: React.FC<AltchaWidgetProps> = ({
   const [error, setError] = useState<string | null>(null);
   const { difficultyLevel, isRateLimited } = useSecurity();
   const isVerifyingRef = useRef(false); // Prevent duplicate verification requests
+  const isConfiguredRef = useRef(false); // Track if widget has been configured
+  const onVerifyRef = useRef(onVerify); // Store latest onVerify callback
+  const onAutoSubmitRef = useRef(onAutoSubmit); // Store latest onAutoSubmit callback
 
   // Calculate complexity based on difficulty (similar to our custom implementation)
   // Lower base complexity for faster verification (1-2 seconds typical)
@@ -54,9 +57,23 @@ const AltchaWidget: React.FC<AltchaWidgetProps> = ({
     return Math.min(Math.floor(baseComplexity + additionalComplexity), 14); // Max 14 instead of 18
   };
 
+  // Update refs when callbacks change (without triggering re-configuration)
   useEffect(() => {
+    onVerifyRef.current = onVerify;
+    onAutoSubmitRef.current = onAutoSubmit;
+  }, [onVerify, onAutoSubmit]);
+
+    useEffect(() => {
     const widget = widgetRef.current;
     if (!widget) return;
+    
+    // Prevent re-configuration if already configured
+    // This stops the widget from requesting new challenges on every render
+    if (isConfiguredRef.current) {
+      // Widget already configured, skip re-configuration
+      // Event listeners will still work because they use refs for callbacks
+      return;
+    }
 
     // Configure the widget
     const apiUrl = import.meta.env.DEV
@@ -70,6 +87,9 @@ const AltchaWidget: React.FC<AltchaWidgetProps> = ({
 
     // Wait for widget to load before configuring
     const handleLoad = () => {
+      // Mark as configured to prevent re-configuration
+      isConfiguredRef.current = true;
+      
       setIsLoading(false);
       setError(null);
       
@@ -89,7 +109,8 @@ const AltchaWidget: React.FC<AltchaWidgetProps> = ({
       } catch (err) {
         console.error('Widget configuration error:', err);
         setError('Failed to configure verification');
-        onVerify(false);
+        onVerifyRef.current(false);
+        isConfiguredRef.current = false; // Allow retry on error
       }
       
       // Small delay to ensure widget is fully ready, then disable links
@@ -190,11 +211,11 @@ const AltchaWidget: React.FC<AltchaWidgetProps> = ({
       }
     };
 
-    // Verify payload with server
+        // Verify payload with server
     const verifyWithServer = async (payload: string) => {
       // Prevent duplicate verification requests
       if (isVerifyingRef.current) {
-        console.log('Verification already in progress, skipping duplicate request');
+        console.log('Verification already in progress, skipping duplicate request');                                                                            
         return;
       }
       
@@ -211,7 +232,25 @@ const AltchaWidget: React.FC<AltchaWidgetProps> = ({
         
         if (!response.ok) {
           const errorData = await response.json().catch(() => ({}));
-          throw new Error(errorData.error || `Server error: ${response.status}`);
+          
+          // Handle specific error status codes with user-friendly messages
+          if (response.status === 429) {
+            // Rate limit exceeded
+            const retryAfter = response.headers.get('Retry-After');
+            const seconds = retryAfter ? parseInt(retryAfter) : 60;
+            throw new Error(`Too many requests. Please wait ${seconds} seconds before trying again.`);
+          } else if (response.status === 400) {
+            // Bad request - might be expired challenge or invalid payload
+            if (errorData.error?.includes('expired')) {
+              throw new Error('Verification expired. The page will refresh to get a new challenge.');
+            } else if (errorData.error?.includes('already used')) {
+              throw new Error('This verification has already been used. Please refresh the page.');
+            } else {
+              throw new Error(errorData.error || 'Verification failed. Please refresh the page and try again.');
+            }
+          } else {
+            throw new Error(errorData.error || `Server error: ${response.status}`);
+          }
         }
         
         const result = await response.json();
@@ -219,23 +258,30 @@ const AltchaWidget: React.FC<AltchaWidgetProps> = ({
         if (result.verified) {
           setIsLoading(false);
           setError(null);
-          onVerify(true, payload);
+          onVerifyRef.current(true, payload);
           // Auto-submit if callback provided
-          if (onAutoSubmit) {
+          if (onAutoSubmitRef.current) {
             setTimeout(() => {
-              onAutoSubmit();
+              onAutoSubmitRef.current?.();
             }, 300);
           }
         } else {
           setIsLoading(false);
           setError(result.error || 'Verification failed. Please try again.');
-          onVerify(false);
+          onVerifyRef.current(false);
         }
       } catch (error: any) {
         console.error('Server verification error:', error);
         setIsLoading(false);
-        setError(error.message || 'Verification failed. Please try again.');
-        onVerify(false);
+        const errorMessage = error.message || 'Verification failed. Please try again.';
+        setError(errorMessage);
+        onVerifyRef.current(false);
+        
+        // If it's a rate limit or expired challenge error, suggest refreshing
+        if (errorMessage.includes('Too many requests') || errorMessage.includes('expired')) {
+          // The error message already tells the user what to do
+          console.log('Rate limit or expiration error detected - user should wait or refresh');
+        }
       } finally {
         isVerifyingRef.current = false;
       }
@@ -252,17 +298,17 @@ const AltchaWidget: React.FC<AltchaWidgetProps> = ({
       } else if (state === 'error') {
         setIsLoading(false);
         setError(e.detail?.error || 'Verification failed. Please try again.');
-        onVerify(false);
+        onVerifyRef.current(false);
       } else if (state === 'expired') {
         setIsLoading(false);
         setError('Verification expired. Please try again.');
-        onVerify(false);
+        onVerifyRef.current(false);
       } else if (state === 'verifying') {
         setIsLoading(true);
         setError(null);
       } else if (state === 'unverified') {
         setIsLoading(false);
-        onVerify(false);
+        onVerifyRef.current(false);
       }
     };
 
@@ -287,16 +333,16 @@ const AltchaWidget: React.FC<AltchaWidgetProps> = ({
     widget.addEventListener('statechange', handleStateChange as EventListener);
     widget.addEventListener('verified', handleVerified as EventListener);
 
-    return () => {
+        return () => {
       widget.removeEventListener('load', handleLoad);
-      widget.removeEventListener('statechange', handleStateChange as EventListener);
+      widget.removeEventListener('statechange', handleStateChange as EventListener);                                                                            
       widget.removeEventListener('verified', handleVerified as EventListener);
       // Cleanup MutationObserver
       if (logoObserver) {
         logoObserver.disconnect();
       }
     };
-  }, [autoStart, onVerify, onAutoSubmit, difficultyLevel]);
+  }, [autoStart, difficultyLevel]); // Removed onVerify and onAutoSubmit from dependencies
 
   if (hidden) {
     return (

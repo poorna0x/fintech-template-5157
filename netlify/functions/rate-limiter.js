@@ -145,8 +145,9 @@ const rateLimiters = {
   }),
 
   // Moderate limits for ALTCHA (abuse protection)
+  // Increased limits to accommodate auto-loading widget and page refreshes
   altcha: createRateLimiter({
-    maxRequests: 30,      // 30 requests
+    maxRequests: 60,      // 60 requests (increased from 30)
     windowMs: 60000,     // per minute
     endpoint: 'altcha'
   }),

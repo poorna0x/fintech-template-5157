@@ -222,23 +222,25 @@ async function handlePost(event, corsHeaders) {
         // 1. Challenge expired and was cleaned up
         // 2. Serverless function was restarted (new container)
         // 3. Invalid/forged challenge
-        console.log('Challenge not found in store - may be expired or invalid');
-        return {
-          statusCode: 400,
-          headers: {
-            ...corsHeaders,
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            verified: false,
-            error: 'Invalid or expired challenge',
-          }),
-        };
+        // 
+        // IMPORTANT: For serverless environments, we should still verify the payload
+        // even if it's not in our store, as long as it's valid. This prevents
+        // false negatives when the function container restarts.
+        console.log('Challenge not found in store - may be expired or from previous container restart');
+        // Continue with verification instead of failing immediately
+        // The verifySolution function will check the cryptographic signature
       }
       
-      console.log('Calling verifySolution with HMAC_KEY:', HMAC_KEY.length, 'bytes');
-      verified = await verifySolution(payload, HMAC_KEY, true);
-      console.log('Verification result:', verified);
+            console.log('Calling verifySolution with HMAC_KEY:', HMAC_KEY.length, 'bytes');                                                                           
+      try {
+        verified = await verifySolution(payload, HMAC_KEY, true);
+        console.log('Verification result:', verified);
+      } catch (verifyError) {
+        console.error('verifySolution threw an error:', verifyError.message);
+        // If verification throws, treat as failed
+        verified = false;
+        throw verifyError; // Re-throw to be caught by outer catch
+      }
     } catch (verifyError) {
       console.error('verifySolution error:', verifyError.message);
       console.error('Stack:', verifyError.stack);
@@ -261,6 +263,7 @@ async function handlePost(event, corsHeaders) {
     if (verified) {
       console.log('Challenge verified successfully!');
       // Mark challenge as used to prevent replay attacks
+      // Only if it exists in store (might not exist if container restarted)
       if (salt && challengeStore.has(salt)) {
         const storedChallenge = challengeStore.get(salt);
         if (storedChallenge) {
@@ -268,6 +271,16 @@ async function handlePost(event, corsHeaders) {
           challengeStore.set(salt, storedChallenge);
           console.log('Challenge marked as used');
         }
+      } else if (salt) {
+        // Challenge verified but not in store (container restart scenario)
+        // Store it now to prevent immediate replay attacks
+        challengeStore.set(salt, {
+          challenge: '',
+          salt: salt,
+          expires: Date.now() + 5 * 60 * 1000, // 5 minutes from now
+          used: true,
+        });
+        console.log('Challenge stored and marked as used (was not in store)');
       }
       
       return {
