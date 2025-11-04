@@ -9,22 +9,46 @@ const DEFAULT_ORIGINS = [
   'http://localhost:8888',           // Netlify functions dev server
 ];
 
+// Detect if we're in production
+function isProduction() {
+  // Netlify sets CONTEXT to 'production' in production builds
+  // Also check NODE_ENV as fallback
+  return process.env.CONTEXT === 'production' || 
+         process.env.NODE_ENV === 'production' ||
+         process.env.NETLIFY === 'true'; // Netlify sets this in production
+}
+
 // Get allowed origins from environment variable or use defaults
 function getAllowedOrigins() {
   // Read from environment variable (comma-separated list)
   const envOrigins = process.env.ALLOWED_ORIGINS;
+  const inProduction = isProduction();
   
   if (envOrigins) {
     // Parse comma-separated origins from environment variable
     const origins = envOrigins.split(',').map(origin => origin.trim()).filter(Boolean);
-    // Combine with default localhost origins for development
+    
+    // In production, only use env origins (no localhost)
+    if (inProduction) {
+      return origins;
+    }
+    
+    // In development, combine with localhost origins
     return [...DEFAULT_ORIGINS, ...origins];
   }
   
-  // Fallback to defaults + common production domains
+  // Fallback: production domains
+  if (inProduction) {
+    return [
+      'https://hydrogenro.com',           // Production domain
+      'https://www.hydrogenro.com',       // Production domain with www
+    ];
+  }
+  
+  // Development fallback: include localhost
   return [
     ...DEFAULT_ORIGINS,
-    'https://hydrogenro.com',           // Production domain
+    'https://hydrogenro.com',           // Production domain (for testing)
     'https://www.hydrogenro.com',       // Production domain with www
   ];
 }
@@ -43,8 +67,8 @@ function getAllowedOrigin(requestOrigin) {
     return requestOrigin;
   }
 
-  // For development, allow localhost with any port
-  if (process.env.NODE_ENV !== 'production' && requestOrigin.startsWith('http://localhost:')) {
+  // For development, allow localhost with any port (only if not in production)
+  if (!isProduction() && requestOrigin.startsWith('http://localhost:')) {
     return requestOrigin;
   }
 

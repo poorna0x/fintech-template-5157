@@ -5,24 +5,16 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Badge } from '@/components/ui/badge';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from '@/components/ui/alert-dialog';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { 
   Settings as SettingsIcon, 
   Users, 
-  Wrench, 
   Plus, 
   Edit, 
   Trash2, 
-  ArrowLeft,
-  Save,
-  RefreshCw,
-  Shield,
-  Bell,
-  Database
+  ArrowLeft
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { db } from '@/lib/supabase';
@@ -47,18 +39,6 @@ const Settings = () => {
     password: ''
   });
 
-  // System settings states
-  const [systemSettings, setSystemSettings] = useState({
-    companyName: 'RO Service',
-    companyEmail: 'info@roservice.com',
-    companyPhone: '+1234567890',
-    notificationEnabled: true,
-    autoAssignJobs: false,
-    workingHours: {
-      start: '09:00',
-      end: '18:00'
-    }
-  });
 
   // Load data on component mount
   useEffect(() => {
@@ -232,8 +212,51 @@ const Settings = () => {
           toast.error('Password is required when creating a new technician');
           return;
         }
+        
+        // Check for duplicate employee_id or phone before creating
+        const { data: existingTechnicians } = await db.technicians.getAll();
+        if (existingTechnicians) {
+          const duplicateEmployeeId = existingTechnicians.find(
+            (t: any) => t.employee_id === technicianData.employee_id
+          );
+          const duplicatePhone = existingTechnicians.find(
+            (t: any) => t.phone === technicianData.phone
+          );
+          const duplicateEmail = existingTechnicians.find(
+            (t: any) => t.email.toLowerCase() === technicianData.email.toLowerCase()
+          );
+          
+          if (duplicateEmployeeId) {
+            toast.error(`Employee ID "${technicianData.employee_id}" already exists. Please use a different ID.`);
+            return;
+          }
+          if (duplicatePhone) {
+            toast.error(`Phone number "${technicianData.phone}" already exists. Please use a different phone number.`);
+            return;
+          }
+          if (duplicateEmail) {
+            toast.error(`Email "${technicianData.email}" already exists. Please use a different email address.`);
+            return;
+          }
+        }
+        
         const { error } = await db.technicians.create(technicianData);
-        if (error) throw error;
+        if (error) {
+          // Handle 409 conflict errors with better messages
+          if (error.code === '23505') { // PostgreSQL unique violation
+            if (error.message.includes('employee_id')) {
+              toast.error(`Employee ID "${technicianData.employee_id}" already exists. Please use a different ID.`);
+            } else if (error.message.includes('phone')) {
+              toast.error(`Phone number "${technicianData.phone}" already exists. Please use a different phone number.`);
+            } else if (error.message.includes('email')) {
+              toast.error(`Email "${technicianData.email}" already exists. Please use a different email address.`);
+            } else {
+              toast.error('A technician with this information already exists. Please check employee ID, phone, or email.');
+            }
+            return;
+          }
+          throw error;
+        }
         toast.success('Technician created successfully');
       }
 
@@ -263,11 +286,6 @@ const Settings = () => {
     }
   };
 
-  const handleSaveSystemSettings = () => {
-    // In a real app, you'd save this to a database
-    localStorage.setItem('systemSettings', JSON.stringify(systemSettings));
-    toast.success('Settings saved successfully');
-  };
 
   // No authentication check - allow access to all
 
@@ -276,20 +294,21 @@ const Settings = () => {
       {/* Header */}
       <div className="bg-white border-b border-gray-200">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex items-center justify-between h-16">
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 py-4 sm:py-0 sm:h-16">
             <div className="flex items-center">
-              <SettingsIcon className="w-8 h-8 text-blue-600 mr-3" />
+              <SettingsIcon className="w-6 h-6 sm:w-8 sm:h-8 text-blue-600 mr-2 sm:mr-3 shrink-0" />
               <div>
-                <h1 className="text-xl font-bold text-gray-900">Settings</h1>
-                <p className="text-sm text-gray-600">Manage system configuration</p>
+                <h1 className="text-lg sm:text-xl font-bold text-gray-900">Settings</h1>
+                <p className="text-xs sm:text-sm text-gray-600">Manage technician accounts</p>
               </div>
             </div>
             
-            <div className="flex items-center space-x-4">
+            <div className="flex items-center">
               <Button
                 variant="outline"
                 size="sm"
                 onClick={() => navigate('/admin')}
+                className="w-full sm:w-auto"
               >
                 <ArrowLeft className="w-4 h-4 mr-2" />
                 Back to Admin
@@ -299,243 +318,111 @@ const Settings = () => {
         </div>
       </div>
 
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        <Tabs defaultValue="technicians" className="space-y-6">
-          <TabsList className="grid w-full grid-cols-3">
-            <TabsTrigger value="technicians" className="flex items-center gap-2">
-              <Users className="w-4 h-4" />
-              Technicians
-            </TabsTrigger>
-            <TabsTrigger value="system" className="flex items-center gap-2">
-              <Shield className="w-4 h-4" />
-              System
-            </TabsTrigger>
-            <TabsTrigger value="notifications" className="flex items-center gap-2">
-              <Bell className="w-4 h-4" />
-              Notifications
-            </TabsTrigger>
-          </TabsList>
-
-          {/* Technicians Tab */}
-          <TabsContent value="technicians" className="space-y-6">
-            <Card>
-              <CardHeader>
-                <div className="flex items-center justify-between">
-                  <div>
-                    <CardTitle className="flex items-center gap-2">
-                      <Users className="w-5 h-5" />
-                      Technician Management
-                    </CardTitle>
-                    <CardDescription>
-                      Manage technician accounts and permissions
-                    </CardDescription>
-                  </div>
-                  <Button onClick={handleAddTechnician} className="bg-blue-600 hover:bg-blue-700">
-                    <Plus className="w-4 h-4 mr-2" />
-                    Add Technician
-                  </Button>
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4 sm:py-6 lg:py-8">
+        <div className="space-y-4 sm:space-y-6">
+          <Card>
+            <CardHeader>
+              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+                <div>
+                  <CardTitle className="flex items-center gap-2 text-lg sm:text-xl">
+                    <Users className="w-5 h-5" />
+                    Technician Management
+                  </CardTitle>
+                  <CardDescription className="text-sm mt-1">
+                    Manage technician accounts and permissions
+                  </CardDescription>
                 </div>
-              </CardHeader>
-              <CardContent>
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                  {technicians.map((technician) => (
-                    <Card key={technician.id} className="hover:shadow-md transition-shadow">
-                      <CardContent className="p-4">
-                        <div className="flex items-start justify-between mb-3">
-                          <div>
-                            <h3 className="font-semibold text-gray-900">{technician.fullName}</h3>
-                            <p className="text-sm text-gray-600">{technician.employeeId}</p>
-                          </div>
-                          <Badge 
-                            variant={technician.account_status === 'ACTIVE' ? 'default' : 'secondary'}
-                            className="text-xs"
-                          >
-                            {technician.account_status}
+                <Button 
+                  onClick={handleAddTechnician} 
+                  className="bg-blue-600 hover:bg-blue-700 w-full sm:w-auto"
+                  size="sm"
+                >
+                  <Plus className="w-4 h-4 mr-2" />
+                  Add Technician
+                </Button>
+              </div>
+            </CardHeader>
+            <CardContent className="p-4 sm:p-6">
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                {technicians.map((technician) => (
+                  <Card key={technician.id} className="hover:shadow-md transition-shadow">
+                    <CardContent className="p-4">
+                      <div className="flex items-start justify-between mb-3 gap-2">
+                        <div className="flex-1 min-w-0">
+                          <h3 className="font-semibold text-gray-900 text-sm sm:text-base truncate">{technician.fullName}</h3>
+                          <p className="text-xs sm:text-sm text-gray-600 truncate">{technician.employeeId}</p>
+                        </div>
+                        <Badge 
+                          variant={technician.account_status === 'ACTIVE' ? 'default' : 'secondary'}
+                          className="text-xs shrink-0"
+                        >
+                          {technician.account_status}
+                        </Badge>
+                      </div>
+                      
+                      <div className="space-y-1.5 sm:space-y-2 text-xs sm:text-sm text-gray-600 mb-4">
+                        <div className="flex items-start gap-2">
+                          <span className="font-medium shrink-0">Email:</span>
+                          <span className="truncate">{technician.email}</span>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <span className="font-medium shrink-0">Phone:</span>
+                          <span className="truncate">{technician.phone}</span>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <span className="font-medium shrink-0">Status:</span>
+                          <Badge variant="outline" className="text-xs">
+                            {technician.status}
                           </Badge>
                         </div>
-                        
-                        <div className="space-y-2 text-sm text-gray-600 mb-4">
-                          <div className="flex items-center gap-2">
-                            <span className="font-medium">Email:</span>
-                            <span>{technician.email}</span>
-                          </div>
-                          <div className="flex items-center gap-2">
-                            <span className="font-medium">Phone:</span>
-                            <span>{technician.phone}</span>
-                          </div>
-                          <div className="flex items-center gap-2">
-                            <span className="font-medium">Status:</span>
-                            <Badge variant="outline" className="text-xs">
-                              {technician.status}
-                            </Badge>
-                          </div>
-                        </div>
+                      </div>
 
-                        <div className="flex items-center gap-2">
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={() => handleEditTechnician(technician)}
-                            className="flex-1"
-                          >
-                            <Edit className="w-4 h-4 mr-1" />
-                            Edit
-                          </Button>
-                          <AlertDialog>
-                            <AlertDialogTrigger asChild>
-                              <Button variant="outline" size="sm" className="text-red-600 hover:text-red-700">
-                                <Trash2 className="w-4 h-4" />
-                              </Button>
-                            </AlertDialogTrigger>
-                            <AlertDialogContent>
-                              <AlertDialogHeader>
-                                <AlertDialogTitle>Delete Technician</AlertDialogTitle>
-                                <AlertDialogDescription>
-                                  Are you sure you want to delete {technician.fullName}? This action cannot be undone.
-                                </AlertDialogDescription>
-                              </AlertDialogHeader>
-                              <AlertDialogFooter>
-                                <AlertDialogCancel>Cancel</AlertDialogCancel>
-                                <AlertDialogAction
-                                  onClick={() => handleDeleteTechnician(technician.id)}
-                                  className="bg-red-600 hover:bg-red-700"
-                                >
-                                  Delete
-                                </AlertDialogAction>
-                              </AlertDialogFooter>
-                            </AlertDialogContent>
-                          </AlertDialog>
-                        </div>
-                      </CardContent>
-                    </Card>
-                  ))}
-                </div>
-              </CardContent>
-            </Card>
-          </TabsContent>
-
-          {/* System Tab */}
-          <TabsContent value="system" className="space-y-6">
-            <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <Shield className="w-5 h-5" />
-                  System Configuration
-                </CardTitle>
-                <CardDescription>
-                  Configure system-wide settings and preferences
-                </CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-6">
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                  <div className="space-y-4">
-                    <h3 className="text-lg font-medium">Company Information</h3>
-                    <div>
-                      <Label htmlFor="companyName">Company Name</Label>
-                      <Input
-                        id="companyName"
-                        value={systemSettings.companyName}
-                        onChange={(e) => setSystemSettings(prev => ({ ...prev, companyName: e.target.value }))}
-                      />
-                    </div>
-                    <div>
-                      <Label htmlFor="companyEmail">Company Email</Label>
-                      <Input
-                        id="companyEmail"
-                        type="email"
-                        value={systemSettings.companyEmail}
-                        onChange={(e) => setSystemSettings(prev => ({ ...prev, companyEmail: e.target.value }))}
-                      />
-                    </div>
-                    <div>
-                      <Label htmlFor="companyPhone">Company Phone</Label>
-                      <Input
-                        id="companyPhone"
-                        value={systemSettings.companyPhone}
-                        onChange={(e) => setSystemSettings(prev => ({ ...prev, companyPhone: e.target.value }))}
-                      />
-                    </div>
-                  </div>
-
-                  <div className="space-y-4">
-                    <h3 className="text-lg font-medium">Work Settings</h3>
-                    <div>
-                      <Label htmlFor="workingHoursStart">Working Hours Start</Label>
-                      <Input
-                        id="workingHoursStart"
-                        type="time"
-                        value={systemSettings.workingHours.start}
-                        onChange={(e) => setSystemSettings(prev => ({ 
-                          ...prev, 
-                          workingHours: { ...prev.workingHours, start: e.target.value }
-                        }))}
-                      />
-                    </div>
-                    <div>
-                      <Label htmlFor="workingHoursEnd">Working Hours End</Label>
-                      <Input
-                        id="workingHoursEnd"
-                        type="time"
-                        value={systemSettings.workingHours.end}
-                        onChange={(e) => setSystemSettings(prev => ({ 
-                          ...prev, 
-                          workingHours: { ...prev.workingHours, end: e.target.value }
-                        }))}
-                      />
-                    </div>
-                    <div className="flex items-center space-x-2">
-                      <input
-                        type="checkbox"
-                        id="autoAssignJobs"
-                        checked={systemSettings.autoAssignJobs}
-                        onChange={(e) => setSystemSettings(prev => ({ ...prev, autoAssignJobs: e.target.checked }))}
-                        className="rounded"
-                      />
-                      <Label htmlFor="autoAssignJobs">Auto-assign jobs to available technicians</Label>
-                    </div>
-                  </div>
-                </div>
-
-                <div className="flex justify-end">
-                  <Button onClick={handleSaveSystemSettings} className="bg-blue-600 hover:bg-blue-700">
-                    <Save className="w-4 h-4 mr-2" />
-                    Save Settings
-                  </Button>
-                </div>
-              </CardContent>
-            </Card>
-          </TabsContent>
-
-          {/* Notifications Tab */}
-          <TabsContent value="notifications" className="space-y-6">
-            <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <Bell className="w-5 h-5" />
-                  Notification Settings
-                </CardTitle>
-                <CardDescription>
-                  Configure notification preferences and delivery methods
-                </CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <div className="flex items-center space-x-2">
-                  <input
-                    type="checkbox"
-                    id="notificationEnabled"
-                    checked={systemSettings.notificationEnabled}
-                    onChange={(e) => setSystemSettings(prev => ({ ...prev, notificationEnabled: e.target.checked }))}
-                    className="rounded"
-                  />
-                  <Label htmlFor="notificationEnabled">Enable notifications</Label>
-                </div>
-                <p className="text-sm text-gray-600">
-                  Notifications will be sent for job assignments, status updates, and important system events.
-                </p>
-              </CardContent>
-            </Card>
-          </TabsContent>
-        </Tabs>
+                      <div className="flex items-center gap-2">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => handleEditTechnician(technician)}
+                          className="flex-1 text-xs sm:text-sm"
+                        >
+                          <Edit className="w-3 h-3 sm:w-4 sm:h-4 mr-1" />
+                          Edit
+                        </Button>
+                        <AlertDialog>
+                          <AlertDialogTrigger asChild>
+                            <Button 
+                              variant="outline" 
+                              size="sm" 
+                              className="text-red-600 hover:text-red-700 px-2 sm:px-3"
+                            >
+                              <Trash2 className="w-3 h-3 sm:w-4 sm:h-4" />
+                            </Button>
+                          </AlertDialogTrigger>
+                          <AlertDialogContent className="mx-4 sm:mx-0">
+                            <AlertDialogHeader>
+                              <AlertDialogTitle>Delete Technician</AlertDialogTitle>
+                              <AlertDialogDescription>
+                                Are you sure you want to delete {technician.fullName}? This action cannot be undone.
+                              </AlertDialogDescription>
+                            </AlertDialogHeader>
+                            <AlertDialogFooter className="flex-col sm:flex-row gap-2">
+                              <AlertDialogCancel className="w-full sm:w-auto">Cancel</AlertDialogCancel>
+                              <AlertDialogAction
+                                onClick={() => handleDeleteTechnician(technician.id)}
+                                className="bg-red-600 hover:bg-red-700 w-full sm:w-auto"
+                              >
+                                Delete
+                              </AlertDialogAction>
+                            </AlertDialogFooter>
+                          </AlertDialogContent>
+                        </AlertDialog>
+                      </div>
+                    </CardContent>
+                  </Card>
+                ))}
+              </div>
+            </CardContent>
+          </Card>
+        </div>
       </div>
 
       {/* Add/Edit Technician Dialog */}
@@ -546,7 +433,7 @@ const Settings = () => {
           setSelectedTechnician(null);
         }
       }}>
-        <DialogContent className="sm:max-w-md">
+        <DialogContent className="sm:max-w-md mx-4 max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>
               {editTechnicianDialogOpen ? 'Edit Technician' : 'Add New Technician'}
@@ -562,7 +449,7 @@ const Settings = () => {
           <div className="space-y-6">
             <div className="space-y-4">
               <h3 className="text-lg font-semibold text-gray-900">Basic Information</h3>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
                   <Label htmlFor="fullName">Full Name *</Label>
                   <Input
@@ -611,7 +498,9 @@ const Settings = () => {
                   </Label>
                   <Input
                     id="password"
+                    name="password"
                     type="password"
+                    autoComplete="new-password"
                     value={technicianFormData.password}
                     onChange={(e) => setTechnicianFormData(prev => ({ ...prev, password: e.target.value }))}
                     placeholder={editTechnicianDialogOpen ? "Enter new password (optional)" : "Enter password"}
@@ -621,7 +510,7 @@ const Settings = () => {
             </div>
           </div>
 
-          <DialogFooter className="flex gap-3">
+          <DialogFooter className="flex flex-col sm:flex-row gap-2 sm:gap-3">
             <Button
               variant="outline"
               onClick={() => {
@@ -629,13 +518,14 @@ const Settings = () => {
                 setEditTechnicianDialogOpen(false);
                 setSelectedTechnician(null);
               }}
+              className="w-full sm:w-auto"
             >
               Cancel
             </Button>
             <Button
               onClick={handleSaveTechnician}
               disabled={!technicianFormData.fullName || !technicianFormData.phone || !technicianFormData.email || !technicianFormData.employeeId || (!editTechnicianDialogOpen && !technicianFormData.password)}
-              className="bg-blue-600 hover:bg-blue-700"
+              className="bg-blue-600 hover:bg-blue-700 w-full sm:w-auto"
             >
               {editTechnicianDialogOpen ? 'Update Technician' : 'Create Technician'}
             </Button>
