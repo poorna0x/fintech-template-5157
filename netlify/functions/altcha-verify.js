@@ -38,6 +38,13 @@ try {
 // This is a placeholder only - NEVER use in production without env var
 const HMAC_KEY = process.env.ALTCHA_HMAC_KEY || 'PLACEHOLDER-DO-NOT-USE-IN-PRODUCTION-GENERATE-REAL-KEY';
 
+// SECURITY: Warn if using placeholder key in production
+if (process.env.CONTEXT === 'production' && HMAC_KEY === 'PLACEHOLDER-DO-NOT-USE-IN-PRODUCTION-GENERATE-REAL-KEY') {
+  console.error('⚠️ SECURITY WARNING: Using placeholder HMAC key in production!');
+  console.error('⚠️ Set ALTCHA_HMAC_KEY environment variable in Netlify dashboard');
+  console.error('⚠️ Generate key with: openssl rand -hex 32');
+}
+
 // Simple in-memory store for challenges (in production, use Redis or database)
 const challengeStore = new Map();
 
@@ -47,7 +54,17 @@ const { rateLimiters } = require('./rate-limiter');
 // GET request: Generate challenge using official altcha-lib
 async function handleGet(event, corsHeaders) {
   try {
-    const complexity = parseInt(event.queryStringParameters?.complexity || '14', 10);
+    // SECURITY: Validate and limit complexity to prevent DoS attacks
+    let complexity = parseInt(event.queryStringParameters?.complexity || '14', 10);
+    
+    // Clamp complexity between 10 and 16 to prevent resource exhaustion
+    // Too low ( < 10): Too easy to solve, defeats purpose
+    // Too high ( > 16): Could cause DoS by consuming too much CPU
+    if (isNaN(complexity) || complexity < 10) {
+      complexity = 10;
+    } else if (complexity > 16) {
+      complexity = 16;
+    }
     
     // Create challenge using official altcha-lib
     const challenge = await createChallenge({
@@ -103,7 +120,8 @@ async function handleGet(event, corsHeaders) {
       },
       body: JSON.stringify({
         error: 'Failed to generate challenge',
-        details: error.message,
+        // SECURITY: Don't expose internal error details in production
+        details: process.env.NODE_ENV === 'development' ? error.message : undefined,
       }),
     };
   }
@@ -159,9 +177,30 @@ async function handlePost(event, corsHeaders) {
         // If parsing fails, salt will remain null
       }
       
-      // Check if this challenge has already been used (replay attack prevention)
+      // SECURITY: Check if this challenge has already been used (replay attack prevention)
+      // SECURITY: Check if challenge has expired
       if (salt && challengeStore.has(salt)) {
         const storedChallenge = challengeStore.get(salt);
+        const now = Date.now();
+        
+        // Check if challenge has expired
+        if (storedChallenge && storedChallenge.expires < now) {
+          console.log('Expired challenge detected');
+          challengeStore.delete(salt); // Clean up expired challenge
+          return {
+            statusCode: 400,
+            headers: {
+              ...corsHeaders,
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              verified: false,
+              error: 'Challenge expired',
+            }),
+          };
+        }
+        
+        // Check if challenge has already been used
         if (storedChallenge && storedChallenge.used) {
           console.log('Replay attack detected - challenge already used');
           return {
@@ -176,6 +215,24 @@ async function handlePost(event, corsHeaders) {
             }),
           };
         }
+      } else if (salt) {
+        // Challenge not found in store - might be expired or invalid
+        // This could happen if:
+        // 1. Challenge expired and was cleaned up
+        // 2. Serverless function was restarted (new container)
+        // 3. Invalid/forged challenge
+        console.log('Challenge not found in store - may be expired or invalid');
+        return {
+          statusCode: 400,
+          headers: {
+            ...corsHeaders,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            verified: false,
+            error: 'Invalid or expired challenge',
+          }),
+        };
       }
       
       console.log('Calling verifySolution with HMAC_KEY:', HMAC_KEY.length, 'bytes');
