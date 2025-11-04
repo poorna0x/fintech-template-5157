@@ -1,4 +1,5 @@
 import { Bill } from '@/types';
+import { sanitizeForTemplate } from './sanitize';
 
 interface AMCPDFData {
   billNumber: string;
@@ -493,7 +494,7 @@ function generateAMCHTML(data: AMCPDFData): string {
           <div class="detail-items-list">
             <div class="detail-item-new">
               <div class="detail-label-new">Customer Name</div>
-              <div class="detail-value-new">${data.customer.name}</div>
+              <div class="detail-value-new">${sanitizeForTemplate(data.customer.name)}</div>
             </div>
             <div class="detail-item-new">
               <div class="detail-label-new">Phone Number</div>
@@ -507,7 +508,7 @@ function generateAMCHTML(data: AMCPDFData): string {
             ` : ''}
             <div class="detail-item-new">
               <div class="detail-label-new">Address</div>
-              <div class="detail-value-new address-value">${data.customer.address}${data.customer.city ? ', ' + data.customer.city : ''}${data.customer.pincode ? ' - ' + data.customer.pincode : ''}</div>
+              <div class="detail-value-new address-value">${sanitizeForTemplate(data.customer.address)}${data.customer.city ? ', ' + sanitizeForTemplate(data.customer.city) : ''}${data.customer.pincode ? ' - ' + sanitizeForTemplate(data.customer.pincode) : ''}</div>
             </div>
             ${data.customer.gstNumber && data.customer.gstNumber.trim() ? `
             <div class="detail-item-new">
@@ -517,7 +518,7 @@ function generateAMCHTML(data: AMCPDFData): string {
             ` : ''}
             <div class="detail-item-new">
               <div class="detail-label-new">RO Model</div>
-              <div class="detail-value-new">${data.customer.roModel || data.items[0]?.description || 'RO Water Purifier'}</div>
+              <div class="detail-value-new">${sanitizeForTemplate(data.customer.roModel || data.items[0]?.description || 'RO Water Purifier')}</div>
             </div>
           </div>
         </div>
@@ -619,10 +620,10 @@ function generateAMCHTML(data: AMCPDFData): string {
               // Format as bold label if it has a colon pattern
               const boldMatch = line.match(/^([^:]+):\s*(.*)$/);
               if (boldMatch && boldMatch[2].trim()) {
-                return `<li><strong>${boldMatch[1].trim()}:</strong> ${boldMatch[2].trim()}</li>`;
+                return `<li><strong>${sanitizeForTemplate(boldMatch[1].trim())}:</strong> ${sanitizeForTemplate(boldMatch[2].trim())}</li>`;
               }
               // Regular list item
-              return `<li>${line}</li>`;
+              return `<li>${sanitizeForTemplate(line)}</li>`;
             })
             .filter(item => item !== null)
             .join('');
@@ -666,7 +667,7 @@ function generateAMCHTML(data: AMCPDFData): string {
         if (notCoveredMatch) {
           const notCoveredContent = notCoveredMatch[1].trim();
           if (notCoveredContent) {
-            const notCoveredItem = `<li><strong>Not Covered:</strong> ${notCoveredContent}</li>`;
+            const notCoveredItem = `<li><strong>Not Covered:</strong> ${sanitizeForTemplate(notCoveredContent)}</li>`;
             
             if (termsSection) {
               // Insert before closing </ul>
@@ -737,7 +738,7 @@ function generateAMCHTML(data: AMCPDFData): string {
       ${data.notes ? `
         <div class="agreement-details">
           <h3 class="agreement-details-title">Additional Notes</h3>
-          <p>${data.notes}</p>
+          <p>${sanitizeForTemplate(data.notes)}</p>
         </div>
       ` : ''}
 

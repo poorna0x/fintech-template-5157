@@ -2,6 +2,8 @@
 // This is a simple implementation using browser's print functionality
 // For production, consider using libraries like jsPDF or Puppeteer
 
+import { sanitizeForTemplate } from './sanitize';
+
 export interface PDFQuotationData {
   billNumber: string;
   billDate: string;
@@ -620,8 +622,8 @@ function createQuotationContent(data: PDFQuotationData): string {
         <div class="quotation-to">
           <div class="section-title">Quotation To:</div>
           <div class="customer-info">
-            <div><strong>${data.customer.name}</strong></div>
-            ${data.customer.address ? `<div>${data.customer.address}</div>` : ''}
+            <div><strong>${sanitizeForTemplate(data.customer.name)}</strong></div>
+            ${data.customer.address ? `<div>${sanitizeForTemplate(data.customer.address)}</div>` : ''}
             ${(data.customer.city || data.customer.state || data.customer.pincode) ? `<div>${data.customer.city}, ${data.customer.state} - ${data.customer.pincode}</div>` : ''}
             ${data.customer.phone ? `<div>Phone: ${data.customer.phone}</div>` : ''}
             ${data.customer.email ? `<div>Email: ${data.customer.email}</div>` : ''}
@@ -1011,7 +1013,7 @@ function generateQuotationHTML(data: PDFQuotationData): string {
           <tbody>
             ${data.items.map(item => `
               <tr>
-                <td>${item.description}</td>
+                <td>${sanitizeForTemplate(item.description)}</td>
                 <td>${item.quantity}</td>
                 <td>₹${item.unitPrice.toLocaleString()}</td>
                 <td>₹${item.total.toLocaleString()}</td>
@@ -1042,7 +1044,7 @@ function generateQuotationHTML(data: PDFQuotationData): string {
         ${data.notes ? `
           <div class="notes-section">
             <div class="notes-title">Additional Info:</div>
-            <div class="notes-content">${data.notes}</div>
+            <div class="notes-content">${sanitizeForTemplate(data.notes)}</div>
           </div>
         ` : ''}
         

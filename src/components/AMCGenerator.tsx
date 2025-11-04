@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import DOMPurify from 'dompurify';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -713,7 +714,14 @@ ${notCoveredWithPreFilter}`;
                 </div>
               ) : (
                 <div className="text-sm whitespace-pre-wrap">
-                  <div dangerouslySetInnerHTML={{ __html: agreementIntro }} />
+                  <div 
+                    dangerouslySetInnerHTML={{ 
+                      __html: DOMPurify.sanitize(agreementIntro, {
+                        ALLOWED_TAGS: ['strong', 'em', 'u', 'b', 'i', 'p', 'br', 'span'],
+                        ALLOWED_ATTR: []
+                      })
+                    }} 
+                  />
                 </div>
               )}
             </CardContent>

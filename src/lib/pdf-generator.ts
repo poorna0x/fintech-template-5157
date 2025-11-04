@@ -2,6 +2,8 @@
 // This is a simple implementation using browser's print functionality
 // For production, consider using libraries like jsPDF or Puppeteer
 
+import { sanitizeForTemplate } from './sanitize';
+
 export interface PDFBillData {
   billNumber: string;
   billDate: string;
@@ -801,8 +803,8 @@ function createBillContent(data: PDFBillData): string {
         <div class="bill-to">
           <div class="section-title">Bill To:</div>
           <div class="customer-info">
-            <div><strong>${data.customer.name}</strong></div>
-            ${data.customer.address ? `<div>${data.customer.address}</div>` : ''}
+            <div><strong>${sanitizeForTemplate(data.customer.name)}</strong></div>
+            ${data.customer.address ? `<div>${sanitizeForTemplate(data.customer.address)}</div>` : ''}
             ${(data.customer.city || data.customer.state || data.customer.pincode) ? `<div>${data.customer.city}, ${data.customer.state} - ${data.customer.pincode}</div>` : ''}
             ${data.customer.phone ? `<div>Phone: ${data.customer.phone}</div>` : ''}
             ${data.customer.email ? `<div>Email: ${data.customer.email}</div>` : ''}
@@ -830,14 +832,14 @@ function createBillContent(data: PDFBillData): string {
           </tr>
         </thead>
         <tbody>
-          ${data.items.map(item => `
-            <tr>
-              <td>${item.description}</td>
-              <td>${item.quantity}</td>
-              <td>₹${item.unitPrice.toLocaleString()}</td>
-              <td>₹${item.total.toLocaleString()}</td>
-            </tr>
-          `).join('')}
+            ${data.items.map(item => `
+              <tr>
+                <td>${sanitizeForTemplate(item.description)}</td>
+                <td>${item.quantity}</td>
+                <td>₹${item.unitPrice.toLocaleString()}</td>
+                <td>₹${item.total.toLocaleString()}</td>
+              </tr>
+            `).join('')}
         </tbody>
       </table>
       
@@ -862,10 +864,10 @@ function createBillContent(data: PDFBillData): string {
       <!-- Notes and Terms -->
       ${data.notes || data.terms ? `
         <div class="notes-section">
-          ${data.notes ? `
-            <div class="notes-title">Additional Info:</div>
-            <div class="notes-content">${data.notes}</div>
-          ` : ''}
+            ${data.notes ? `
+              <div class="notes-title">Additional Info:</div>
+              <div class="notes-content">${sanitizeForTemplate(data.notes)}</div>
+            ` : ''}
           ${data.terms ? `
             <div class="notes-title" style="margin-top: 20px;">Terms & Conditions:</div>
             <div class="notes-content">
@@ -1222,8 +1224,8 @@ function generateBillHTML(data: PDFBillData): string {
           <div class="bill-to">
             <div class="section-title">Bill To:</div>
             <div class="customer-info">
-              <div><strong>${data.customer.name}</strong></div>
-              ${data.customer.address ? `<div>${data.customer.address}</div>` : ''}
+              <div><strong>${sanitizeForTemplate(data.customer.name)}</strong></div>
+              ${data.customer.address ? `<div>${sanitizeForTemplate(data.customer.address)}</div>` : ''}
               ${(data.customer.city || data.customer.state || data.customer.pincode) ? `<div>${data.customer.city}, ${data.customer.state} - ${data.customer.pincode}</div>` : ''}
               ${data.customer.phone ? `<div>Phone: ${data.customer.phone}</div>` : ''}
               ${data.customer.email ? `<div>Email: ${data.customer.email}</div>` : ''}
@@ -1253,7 +1255,7 @@ function generateBillHTML(data: PDFBillData): string {
           <tbody>
             ${data.items.map(item => `
               <tr>
-                <td>${item.description}</td>
+                <td>${sanitizeForTemplate(item.description)}</td>
                 <td>${item.quantity}</td>
                 <td>₹${item.unitPrice.toLocaleString()}</td>
                 <td>₹${item.total.toLocaleString()}</td>
@@ -1285,7 +1287,7 @@ function generateBillHTML(data: PDFBillData): string {
           <div class="notes-section">
             ${data.notes ? `
               <div class="notes-title">Additional Info:</div>
-              <div class="notes-content">${data.notes}</div>
+              <div class="notes-content">${sanitizeForTemplate(data.notes)}</div>
             ` : ''}
             ${data.terms ? `
               <div class="notes-title" style="margin-top: 20px;">Terms & Conditions:</div>
@@ -1293,7 +1295,7 @@ function generateBillHTML(data: PDFBillData): string {
                 <ul class="terms-list">
                   ${data.terms.split('\n').filter(line => line.trim()).map(term => {
                     const cleanTerm = term.replace(/^\d+\.\s*/, ''); // Remove number if present
-                    return `<li>${cleanTerm}</li>`;
+                    return `<li>${sanitizeForTemplate(cleanTerm)}</li>`;
                   }).join('')}
                 </ul>
               </div>
