@@ -80,7 +80,7 @@ const About = () => {
 
       <main className="flex-1">
         <PageHero 
-          title="About Hydrogen RO - Leading RO Service Provider"
+          title="About Hydrogen RO Leading RO Service Provider"
           description="Hydrogen RO is your trusted partner for clean water solutions in Bengaluru, Karnataka. We've been serving the community with professional RO water purifier services since 2019."
         />
 

@@ -5,7 +5,7 @@ import { useTheme } from '@/contexts/ThemeContext';
 
 interface PageHeroProps {
   badge?: string;
-  title: string;
+  title: string | React.ReactNode;
   description: string;
   showButtons?: boolean;
   customDarkBgColor?: string;
@@ -54,7 +54,14 @@ const PageHero: React.FC<PageHeroProps> = ({
         </div>
         
         <h1 className="text-4xl md:text-5xl lg:text-6xl font-medium tracking-tighter text-balance text-foreground">
-          {title}
+          {typeof title === 'string' && title.startsWith('About Hydrogen') ? (
+            <>
+              <span className="whitespace-nowrap">About Hydrogen RO</span>
+              {title.replace('About Hydrogen RO', '')}
+            </>
+          ) : (
+            title
+          )}
         </h1>
         
         <p className="text-lg md:text-xl text-muted-foreground max-w-2xl mx-auto text-balance">
