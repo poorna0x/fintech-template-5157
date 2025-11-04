@@ -12,7 +12,7 @@ exports.handler = async (event, context) => {
   if (event.httpMethod === 'OPTIONS') {
     return {
       statusCode: 200,
-      headers: corsHeaders,
+        headers: addSecurityHeaders(corsHeaders),
       body: '',
     };
   }
@@ -55,17 +55,47 @@ exports.handler = async (event, context) => {
   }
 
   try {
-    // Parse request body
-    const { password } = JSON.parse(event.body || '{}');
-
-    // Validate input
-    if (!password || typeof password !== 'string') {
+    // SECURITY: Validate request body exists
+    if (!event.body || typeof event.body !== 'string') {
       return {
         statusCode: 400,
-        headers: {
+        headers: addSecurityHeaders({
           ...corsHeaders,
           'Content-Type': 'application/json',
-        },
+        }),
+        body: JSON.stringify({
+          error: 'Missing request body',
+        }),
+      };
+    }
+
+    // Parse request body
+    let parsedBody;
+    try {
+      parsedBody = JSON.parse(event.body);
+    } catch (parseError) {
+      return {
+        statusCode: 400,
+        headers: addSecurityHeaders({
+          ...corsHeaders,
+          'Content-Type': 'application/json',
+        }),
+        body: JSON.stringify({
+          error: 'Invalid JSON in request body',
+        }),
+      };
+    }
+
+    const { password } = parsedBody;
+
+    // SECURITY: Validate input types and presence
+    if (!password || typeof password !== 'string' || password.trim() === '') {
+      return {
+        statusCode: 400,
+        headers: addSecurityHeaders({
+          ...corsHeaders,
+          'Content-Type': 'application/json',
+        }),
         body: JSON.stringify({
           error: 'Missing or invalid password field',
         }),

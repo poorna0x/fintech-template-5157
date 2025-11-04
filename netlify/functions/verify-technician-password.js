@@ -3,6 +3,7 @@
 const bcrypt = require('bcryptjs');
 const { getCorsHeaders, isOriginAllowed } = require('./cors-helper');
 const { rateLimiters } = require('./rate-limiter');
+const { addSecurityHeaders } = require('./security-headers');
 
 exports.handler = async (event, context) => {
   const requestOrigin = event.headers.origin || event.headers.Origin;
@@ -12,7 +13,7 @@ exports.handler = async (event, context) => {
   if (event.httpMethod === 'OPTIONS') {
     return {
       statusCode: 200,
-      headers: corsHeaders,
+        headers: addSecurityHeaders(corsHeaders),
       body: '',
     };
   }
@@ -49,26 +50,72 @@ exports.handler = async (event, context) => {
   if (event.httpMethod !== 'POST') {
     return {
       statusCode: 405,
-      headers: corsHeaders,
+        headers: addSecurityHeaders(corsHeaders),
       body: JSON.stringify({ error: 'Method not allowed' }),
     };
   }
 
   try {
-    // Parse request body
-    const { password, hashedPassword } = JSON.parse(event.body || '{}');
-
-    // Validate input
-    if (!password || !hashedPassword) {
+    // SECURITY: Validate request body exists
+    if (!event.body || typeof event.body !== 'string') {
       return {
         statusCode: 400,
-        headers: {
+        headers: addSecurityHeaders({
           ...corsHeaders,
           'Content-Type': 'application/json',
-        },
+        }),
         body: JSON.stringify({
           verified: false,
-          error: 'Missing required fields: password and hashedPassword',
+          error: 'Missing request body',
+        }),
+      };
+    }
+
+    // Parse request body
+    let parsedBody;
+    try {
+      parsedBody = JSON.parse(event.body);
+    } catch (parseError) {
+      return {
+        statusCode: 400,
+        headers: addSecurityHeaders({
+          ...corsHeaders,
+          'Content-Type': 'application/json',
+        }),
+        body: JSON.stringify({
+          verified: false,
+          error: 'Invalid JSON in request body',
+        }),
+      };
+    }
+
+    const { password, hashedPassword } = parsedBody;
+
+    // SECURITY: Validate input types and presence
+    if (!password || typeof password !== 'string' || password.trim() === '') {
+      return {
+        statusCode: 400,
+        headers: addSecurityHeaders({
+          ...corsHeaders,
+          'Content-Type': 'application/json',
+        }),
+        body: JSON.stringify({
+          verified: false,
+          error: 'Missing or invalid password field',
+        }),
+      };
+    }
+
+    if (!hashedPassword || typeof hashedPassword !== 'string' || hashedPassword.trim() === '') {
+      return {
+        statusCode: 400,
+        headers: addSecurityHeaders({
+          ...corsHeaders,
+          'Content-Type': 'application/json',
+        }),
+        body: JSON.stringify({
+          verified: false,
+          error: 'Missing or invalid hashedPassword field',
         }),
       };
     }

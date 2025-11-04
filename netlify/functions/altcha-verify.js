@@ -50,6 +50,7 @@ const challengeStore = new Map();
 
 const { getCorsHeaders, isOriginAllowed } = require('./cors-helper');
 const { rateLimiters } = require('./rate-limiter');
+const { addSecurityHeaders } = require('./security-headers');
 
 // GET request: Generate challenge using official altcha-lib
 async function handleGet(event, corsHeaders) {
@@ -104,20 +105,20 @@ async function handleGet(event, corsHeaders) {
 
     return {
       statusCode: 200,
-      headers: {
+      headers: addSecurityHeaders({
         ...corsHeaders,
         'Content-Type': 'application/json',
-      },
+      }),
       body: JSON.stringify(response),
     };
   } catch (error) {
     console.error('ALTCHA challenge generation error:', error);
     return {
       statusCode: 500,
-      headers: {
+      headers: addSecurityHeaders({
         ...corsHeaders,
         'Content-Type': 'application/json',
-      },
+      }),
       body: JSON.stringify({
         error: 'Failed to generate challenge',
         // SECURITY: Don't expose internal error details in production
@@ -146,10 +147,10 @@ async function handlePost(event, corsHeaders) {
     if (!payload || (typeof payload === 'string' && payload.trim() === '')) {
       return {
         statusCode: 400,
-        headers: {
+        headers: addSecurityHeaders({
           ...corsHeaders,
           'Content-Type': 'application/json',
-        },
+        }),
         body: JSON.stringify({
           verified: false,
           error: 'Missing payload',
@@ -243,10 +244,10 @@ async function handlePost(event, corsHeaders) {
       console.error('Stack:', verifyError.stack);
       return {
         statusCode: 400,
-        headers: {
+        headers: addSecurityHeaders({
           ...corsHeaders,
           'Content-Type': 'application/json',
-        },
+        }),
         body: JSON.stringify({
           verified: false,
           error: 'Verification process failed',
@@ -271,20 +272,20 @@ async function handlePost(event, corsHeaders) {
       
       return {
         statusCode: 200,
-        headers: {
+        headers: addSecurityHeaders({
           ...corsHeaders,
           'Content-Type': 'application/json',
-        },
+        }),
         body: JSON.stringify({ verified: true }),
       };
     } else {
       console.log('Verification failed - invalid proof-of-work solution');
       return {
         statusCode: 400,
-        headers: {
+        headers: addSecurityHeaders({
           ...corsHeaders,
           'Content-Type': 'application/json',
-        },
+        }),
         body: JSON.stringify({
           verified: false,
           error: 'Invalid proof-of-work solution',
@@ -318,7 +319,7 @@ exports.handler = async (event, context) => {
   if (event.httpMethod === 'OPTIONS') {
     return {
       statusCode: 200,
-      headers: corsHeaders,
+      headers: addSecurityHeaders(corsHeaders),
       body: '',
     };
   }
@@ -327,9 +328,9 @@ exports.handler = async (event, context) => {
   if (requestOrigin && !isOriginAllowed(requestOrigin)) {
     return {
       statusCode: 403,
-      headers: {
+      headers: addSecurityHeaders({
         'Content-Type': 'application/json',
-      },
+      }),
       body: JSON.stringify({
         error: 'Forbidden: Origin not allowed',
       }),
@@ -360,7 +361,7 @@ exports.handler = async (event, context) => {
     // Method not allowed
     return {
       statusCode: 405,
-      headers: corsHeaders,
+      headers: addSecurityHeaders(corsHeaders),
       body: JSON.stringify({ error: 'Method not allowed' }),
     };
   } catch (error) {

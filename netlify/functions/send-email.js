@@ -2,6 +2,7 @@
 const nodemailer = require('nodemailer');
 const { getCorsHeaders, isOriginAllowed } = require('./cors-helper');
 const { rateLimiters } = require('./rate-limiter');
+const { addSecurityHeaders } = require('./security-headers');
 
 exports.handler = async (event, context) => {
   console.log('Email function called:', event.httpMethod, event.body);
@@ -13,7 +14,7 @@ exports.handler = async (event, context) => {
   if (event.httpMethod === 'OPTIONS') {
     return {
       statusCode: 200,
-      headers: corsHeaders,
+      headers: addSecurityHeaders(corsHeaders),
       body: '',
     };
   }
@@ -47,10 +48,10 @@ exports.handler = async (event, context) => {
   if (event.httpMethod !== 'POST') {
     return {
       statusCode: 405,
-      headers: {
+      headers: addSecurityHeaders({
         ...corsHeaders,
         'Content-Type': 'application/json',
-      },
+      }),
       body: JSON.stringify({ error: 'Method not allowed' }),
     };
   }
@@ -74,10 +75,10 @@ exports.handler = async (event, context) => {
     if (!to || !subject || !html) {
       return {
         statusCode: 400,
-        headers: {
+        headers: addSecurityHeaders({
           ...corsHeaders,
           'Content-Type': 'application/json',
-        },
+        }),
         body: JSON.stringify({ error: 'Missing required fields: to, subject, html' }),
       };
     }
@@ -87,10 +88,10 @@ exports.handler = async (event, context) => {
       console.error('Missing environment variables');
       return {
         statusCode: 500,
-        headers: {
+        headers: addSecurityHeaders({
           ...corsHeaders,
           'Content-Type': 'application/json',
-        },
+        }),
         body: JSON.stringify({ 
           error: 'Email configuration missing',
           details: 'Environment variables HOSTINGER_EMAIL_USER and HOSTINGER_EMAIL_PASS not set. Please configure these in your hosting platform.',
@@ -145,10 +146,10 @@ exports.handler = async (event, context) => {
 
     return {
       statusCode: 200,
-      headers: {
+      headers: addSecurityHeaders({
         ...corsHeaders,
         'Content-Type': 'application/json',
-      },
+      }),
       body: JSON.stringify({ 
         success: true, 
         messageId: info.messageId,
@@ -161,10 +162,10 @@ exports.handler = async (event, context) => {
     
     return {
       statusCode: 500,
-      headers: {
+      headers: addSecurityHeaders({
         ...corsHeaders,
         'Content-Type': 'application/json',
-      },
+      }),
       body: JSON.stringify({ 
         error: 'Failed to send email',
         details: error.message 
