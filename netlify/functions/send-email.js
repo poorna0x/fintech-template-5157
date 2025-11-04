@@ -51,6 +51,7 @@ exports.handler = async (event, context) => {
       headers: addSecurityHeaders({
         ...corsHeaders,
         'Content-Type': 'application/json',
+        'Allow': 'POST, OPTIONS',
       }),
       body: JSON.stringify({ error: 'Method not allowed' }),
     };

@@ -46,10 +46,11 @@ exports.handler = async (event, context) => {
   if (event.httpMethod !== 'POST') {
     return {
       statusCode: 405,
-      headers: {
+      headers: addSecurityHeaders({
         ...corsHeaders,
         'Content-Type': 'application/json',
-      },
+        'Allow': 'POST',
+      }),
       body: JSON.stringify({ error: 'Method not allowed' }),
     };
   }
