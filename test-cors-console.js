@@ -39,7 +39,7 @@ async function testCORS() {
       headers: {
         'Content-Type': 'application/json'
       },
-      body: JSON.stringify({ password: 'test123' })
+      body: JSON.stringify({ password: 'test-value-123' }) // Test value only - not a real password
     });
     
     const data = await postResponse.json();

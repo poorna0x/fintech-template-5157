@@ -320,109 +320,109 @@ const Settings = () => {
 
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4 sm:py-6 lg:py-8">
         <div className="space-y-4 sm:space-y-6">
-          <Card>
-            <CardHeader>
+            <Card>
+              <CardHeader>
               <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-                <div>
+                  <div>
                   <CardTitle className="flex items-center gap-2 text-lg sm:text-xl">
-                    <Users className="w-5 h-5" />
-                    Technician Management
-                  </CardTitle>
+                      <Users className="w-5 h-5" />
+                      Technician Management
+                    </CardTitle>
                   <CardDescription className="text-sm mt-1">
-                    Manage technician accounts and permissions
-                  </CardDescription>
-                </div>
+                      Manage technician accounts and permissions
+                    </CardDescription>
+                  </div>
                 <Button 
                   onClick={handleAddTechnician} 
                   className="bg-blue-600 hover:bg-blue-700 w-full sm:w-auto"
                   size="sm"
                 >
-                  <Plus className="w-4 h-4 mr-2" />
-                  Add Technician
-                </Button>
-              </div>
-            </CardHeader>
+                    <Plus className="w-4 h-4 mr-2" />
+                    Add Technician
+                  </Button>
+                </div>
+              </CardHeader>
             <CardContent className="p-4 sm:p-6">
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-                {technicians.map((technician) => (
-                  <Card key={technician.id} className="hover:shadow-md transition-shadow">
-                    <CardContent className="p-4">
+                  {technicians.map((technician) => (
+                    <Card key={technician.id} className="hover:shadow-md transition-shadow">
+                      <CardContent className="p-4">
                       <div className="flex items-start justify-between mb-3 gap-2">
                         <div className="flex-1 min-w-0">
                           <h3 className="font-semibold text-gray-900 text-sm sm:text-base truncate">{technician.fullName}</h3>
                           <p className="text-xs sm:text-sm text-gray-600 truncate">{technician.employeeId}</p>
-                        </div>
-                        <Badge 
-                          variant={technician.account_status === 'ACTIVE' ? 'default' : 'secondary'}
+                          </div>
+                          <Badge 
+                            variant={technician.account_status === 'ACTIVE' ? 'default' : 'secondary'}
                           className="text-xs shrink-0"
-                        >
-                          {technician.account_status}
-                        </Badge>
-                      </div>
-                      
+                          >
+                            {technician.account_status}
+                          </Badge>
+                        </div>
+                        
                       <div className="space-y-1.5 sm:space-y-2 text-xs sm:text-sm text-gray-600 mb-4">
                         <div className="flex items-start gap-2">
                           <span className="font-medium shrink-0">Email:</span>
                           <span className="truncate">{technician.email}</span>
-                        </div>
-                        <div className="flex items-center gap-2">
+                          </div>
+                          <div className="flex items-center gap-2">
                           <span className="font-medium shrink-0">Phone:</span>
                           <span className="truncate">{technician.phone}</span>
-                        </div>
-                        <div className="flex items-center gap-2">
+                          </div>
+                          <div className="flex items-center gap-2">
                           <span className="font-medium shrink-0">Status:</span>
-                          <Badge variant="outline" className="text-xs">
-                            {technician.status}
-                          </Badge>
+                            <Badge variant="outline" className="text-xs">
+                              {technician.status}
+                            </Badge>
+                          </div>
                         </div>
-                      </div>
 
-                      <div className="flex items-center gap-2">
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={() => handleEditTechnician(technician)}
+                        <div className="flex items-center gap-2">
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => handleEditTechnician(technician)}
                           className="flex-1 text-xs sm:text-sm"
-                        >
+                          >
                           <Edit className="w-3 h-3 sm:w-4 sm:h-4 mr-1" />
-                          Edit
-                        </Button>
-                        <AlertDialog>
-                          <AlertDialogTrigger asChild>
+                            Edit
+                          </Button>
+                          <AlertDialog>
+                            <AlertDialogTrigger asChild>
                             <Button 
                               variant="outline" 
                               size="sm" 
                               className="text-red-600 hover:text-red-700 px-2 sm:px-3"
                             >
                               <Trash2 className="w-3 h-3 sm:w-4 sm:h-4" />
-                            </Button>
-                          </AlertDialogTrigger>
+                              </Button>
+                            </AlertDialogTrigger>
                           <AlertDialogContent className="mx-4 sm:mx-0">
-                            <AlertDialogHeader>
-                              <AlertDialogTitle>Delete Technician</AlertDialogTitle>
-                              <AlertDialogDescription>
-                                Are you sure you want to delete {technician.fullName}? This action cannot be undone.
-                              </AlertDialogDescription>
-                            </AlertDialogHeader>
+                              <AlertDialogHeader>
+                                <AlertDialogTitle>Delete Technician</AlertDialogTitle>
+                                <AlertDialogDescription>
+                                  Are you sure you want to delete {technician.fullName}? This action cannot be undone.
+                                </AlertDialogDescription>
+                              </AlertDialogHeader>
                             <AlertDialogFooter className="flex-col sm:flex-row gap-2">
                               <AlertDialogCancel className="w-full sm:w-auto">Cancel</AlertDialogCancel>
-                              <AlertDialogAction
-                                onClick={() => handleDeleteTechnician(technician.id)}
+                                <AlertDialogAction
+                                  onClick={() => handleDeleteTechnician(technician.id)}
                                 className="bg-red-600 hover:bg-red-700 w-full sm:w-auto"
-                              >
-                                Delete
-                              </AlertDialogAction>
-                            </AlertDialogFooter>
-                          </AlertDialogContent>
-                        </AlertDialog>
-                      </div>
-                    </CardContent>
-                  </Card>
-                ))}
-              </div>
-            </CardContent>
-          </Card>
-        </div>
+                                >
+                                  Delete
+                                </AlertDialogAction>
+                              </AlertDialogFooter>
+                            </AlertDialogContent>
+                          </AlertDialog>
+                        </div>
+                      </CardContent>
+                    </Card>
+                  ))}
+                </div>
+              </CardContent>
+            </Card>
+                </div>
       </div>
 
       {/* Add/Edit Technician Dialog */}

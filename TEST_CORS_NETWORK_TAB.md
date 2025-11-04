@@ -32,7 +32,7 @@
 fetch('https://hydrogenro.com/.netlify/functions/hash-technician-password', {
   method: 'POST',
   headers: { 'Content-Type': 'application/json' },
-  body: JSON.stringify({ password: 'test123' })
+  body: JSON.stringify({ password: 'test-value-123' }) // Test value only
 })
 ```
 4. Press Enter

@@ -1,6 +1,7 @@
 // Netlify Function for sending emails via Hostinger SMTP
 const nodemailer = require('nodemailer');
 const { getCorsHeaders, isOriginAllowed } = require('./cors-helper');
+const { rateLimiters } = require('./rate-limiter');
 
 exports.handler = async (event, context) => {
   console.log('Email function called:', event.httpMethod, event.body);
@@ -14,6 +15,18 @@ exports.handler = async (event, context) => {
       statusCode: 200,
       headers: corsHeaders,
       body: '',
+    };
+  }
+
+  // SECURITY: Rate limiting (spam protection)
+  const rateLimitResult = rateLimiters.email(event);
+  if (rateLimitResult) {
+    return {
+      ...rateLimitResult,
+      headers: {
+        ...rateLimitResult.headers,
+        ...corsHeaders
+      }
     };
   }
 

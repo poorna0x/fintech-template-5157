@@ -35,12 +35,14 @@ try {
 // HMAC key for signing challenges
 // IMPORTANT: In production, ALWAYS use ALTCHA_HMAC_KEY environment variable!
 // Generate a secure 64-byte key: openssl rand -hex 32
-const HMAC_KEY = process.env.ALTCHA_HMAC_KEY || 'your-secret-hmac-key-change-in-production';
+// This is a placeholder only - NEVER use in production without env var
+const HMAC_KEY = process.env.ALTCHA_HMAC_KEY || 'PLACEHOLDER-DO-NOT-USE-IN-PRODUCTION-GENERATE-REAL-KEY';
 
 // Simple in-memory store for challenges (in production, use Redis or database)
 const challengeStore = new Map();
 
 const { getCorsHeaders, isOriginAllowed } = require('./cors-helper');
+const { rateLimiters } = require('./rate-limiter');
 
 // GET request: Generate challenge using official altcha-lib
 async function handleGet(event, corsHeaders) {
@@ -274,6 +276,18 @@ exports.handler = async (event, context) => {
       body: JSON.stringify({
         error: 'Forbidden: Origin not allowed',
       }),
+    };
+  }
+
+  // SECURITY: Rate limiting (abuse protection)
+  const rateLimitResult = rateLimiters.altcha(event);
+  if (rateLimitResult) {
+    return {
+      ...rateLimitResult,
+      headers: {
+        ...rateLimitResult.headers,
+        ...corsHeaders
+      }
     };
   }
 

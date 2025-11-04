@@ -1,0 +1,19 @@
+# GitGuardian configuration
+# Exclude test files and documentation from secret scanning
+paths-ignore:
+  - "**/*.test.js"
+  - "**/*.spec.js"
+  - "test-*.js"
+  - "test-*.md"
+  - "TEST_*.md"
+  - "HOW_TO_*.md"
+  - "**/*.example"
+  - "**/env.example"
+
+# Ignore known placeholder values
+matches-ignore:
+  - name: "Placeholder HMAC key"
+    match: "PLACEHOLDER-DO-NOT-USE-IN-PRODUCTION-GENERATE-REAL-KEY"
+  - name: "Test password values"
+    match: "test-value-123"
+

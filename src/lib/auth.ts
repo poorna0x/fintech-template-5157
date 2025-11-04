@@ -116,7 +116,7 @@ export const authenticateUser = async (email: string, password: string): Promise
           console.log('Verification result:', verifyResult);
           
           if (verifyResult.verified) {
-            console.log('Technician authentication successful');
+        console.log('Technician authentication successful');
             return {
               id: technician.id,
               email: technician.email,
@@ -145,15 +145,15 @@ export const authenticateUser = async (email: string, password: string): Promise
         console.warn('⚠️ WARNING: Password stored in plaintext. Please run migration script to hash passwords.');
         if (technician.password === password) {
           console.log('Technician authentication successful (legacy plaintext)');
-          return {
-            id: technician.id,
-            email: technician.email,
-            role: 'technician',
-            technicianId: technician.id,
-            fullName: technician.full_name
-          };
-        } else {
-          console.log('Password mismatch');
+        return {
+          id: technician.id,
+          email: technician.email,
+          role: 'technician',
+          technicianId: technician.id,
+          fullName: technician.full_name
+        };
+      } else {
+        console.log('Password mismatch');
           return null;
         }
       }

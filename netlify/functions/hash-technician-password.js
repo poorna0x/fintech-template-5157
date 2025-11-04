@@ -2,6 +2,7 @@
 // Uses bcrypt for secure password hashing
 const bcrypt = require('bcryptjs');
 const { getCorsHeaders, isOriginAllowed } = require('./cors-helper');
+const { rateLimiters } = require('./rate-limiter');
 
 exports.handler = async (event, context) => {
   const requestOrigin = event.headers.origin || event.headers.Origin;
@@ -13,6 +14,18 @@ exports.handler = async (event, context) => {
       statusCode: 200,
       headers: corsHeaders,
       body: '',
+    };
+  }
+
+  // SECURITY: Rate limiting (DoS protection - bcrypt is CPU-intensive)
+  const rateLimitResult = rateLimiters.hashing(event);
+  if (rateLimitResult) {
+    return {
+      ...rateLimitResult,
+      headers: {
+        ...rateLimitResult.headers,
+        ...corsHeaders
+      }
     };
   }
 

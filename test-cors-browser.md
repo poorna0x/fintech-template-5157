@@ -49,7 +49,7 @@ Test the actual endpoint (will be blocked by browser if CORS fails):
 fetch('https://hydrogenro.com/.netlify/functions/hash-technician-password', {
   method: 'POST',
   headers: { 'Content-Type': 'application/json' },
-  body: JSON.stringify({ password: 'test123' })
+  body: JSON.stringify({ password: 'test-value-123' }) // Test value only
 }).then(r => r.json()).then(data => {
   console.log('Success:', data);
 }).catch(err => {
@@ -78,7 +78,7 @@ This method lets you see the actual HTTP headers being sent and received.
    fetch('https://hydrogenro.com/.netlify/functions/hash-technician-password', {
      method: 'POST',
      headers: { 'Content-Type': 'application/json' },
-     body: JSON.stringify({ password: 'test123' })
+     body: JSON.stringify({ password: 'test-value-123' }) // Test value only
    })
    ```
 5. In the Network tab, find the request to `hash-technician-password`

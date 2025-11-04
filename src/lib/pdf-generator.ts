@@ -832,14 +832,14 @@ function createBillContent(data: PDFBillData): string {
           </tr>
         </thead>
         <tbody>
-            ${data.items.map(item => `
-              <tr>
+          ${data.items.map(item => `
+            <tr>
                 <td>${sanitizeForTemplate(item.description)}</td>
-                <td>${item.quantity}</td>
-                <td>₹${item.unitPrice.toLocaleString()}</td>
-                <td>₹${item.total.toLocaleString()}</td>
-              </tr>
-            `).join('')}
+              <td>${item.quantity}</td>
+              <td>₹${item.unitPrice.toLocaleString()}</td>
+              <td>₹${item.total.toLocaleString()}</td>
+            </tr>
+          `).join('')}
         </tbody>
       </table>
       
@@ -864,10 +864,10 @@ function createBillContent(data: PDFBillData): string {
       <!-- Notes and Terms -->
       ${data.notes || data.terms ? `
         <div class="notes-section">
-            ${data.notes ? `
-              <div class="notes-title">Additional Info:</div>
+          ${data.notes ? `
+            <div class="notes-title">Additional Info:</div>
               <div class="notes-content">${sanitizeForTemplate(data.notes)}</div>
-            ` : ''}
+          ` : ''}
           ${data.terms ? `
             <div class="notes-title" style="margin-top: 20px;">Terms & Conditions:</div>
             <div class="notes-content">

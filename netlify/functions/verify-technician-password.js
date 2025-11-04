@@ -2,6 +2,7 @@
 // Uses bcrypt for secure password hashing and comparison
 const bcrypt = require('bcryptjs');
 const { getCorsHeaders, isOriginAllowed } = require('./cors-helper');
+const { rateLimiters } = require('./rate-limiter');
 
 exports.handler = async (event, context) => {
   const requestOrigin = event.headers.origin || event.headers.Origin;
@@ -13,6 +14,21 @@ exports.handler = async (event, context) => {
       statusCode: 200,
       headers: corsHeaders,
       body: '',
+    };
+  }
+
+  // SECURITY: Rate limiting (brute force protection)
+  console.log('[Rate Limit] Checking rate limit...');
+  const rateLimitResult = rateLimiters.password(event);
+  console.log('[Rate Limit] Result:', rateLimitResult ? `BLOCKED (${rateLimitResult.statusCode})` : 'ALLOWED (null)');
+  if (rateLimitResult) {
+    console.log('[Rate Limit] Blocking request:', rateLimitResult.statusCode);
+    return {
+      ...rateLimitResult,
+      headers: {
+        ...rateLimitResult.headers,
+        ...corsHeaders
+      }
     };
   }
 

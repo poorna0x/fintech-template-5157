@@ -3,7 +3,7 @@
 
 const testAltchaVerification = async () => {
   const baseUrl = process.env.ALTCHA_TEST_URL || 'http://localhost:8888/.netlify/functions/altcha-verify';
-  const hmacKey = process.env.ALTCHA_HMAC_KEY || 'your-secret-hmac-key-change-in-production';
+  const hmacKey = process.env.ALTCHA_HMAC_KEY || 'PLACEHOLDER-DO-NOT-USE-IN-PRODUCTION-GENERATE-REAL-KEY';
   
   console.log('🧪 Testing ALTCHA Server-Side Verification');
   console.log('='.repeat(60));
