@@ -507,5 +507,47 @@
     .border-border {
       border-color: hsl(var(--border)) !important;
     }
+    
+    /* Safari date picker fix - prevent weird styling issues */
+    input[type="date"] {
+      -webkit-appearance: none !important;
+      appearance: none !important;
+      position: relative !important;
+      padding-right: 2.5rem !important;
+    }
+    
+    input[type="date"]::-webkit-calendar-picker-indicator {
+      position: absolute !important;
+      right: 0.5rem !important;
+      top: 50% !important;
+      transform: translateY(-50%) !important;
+      width: 1.5rem !important;
+      height: 1.5rem !important;
+      cursor: pointer !important;
+      opacity: 1 !important;
+      background: transparent !important;
+      padding: 0 !important;
+    }
+  }
+}
+
+/* Safari date picker global fixes */
+input[type="date"] {
+  -webkit-appearance: none;
+  appearance: none;
+  position: relative;
+}
+
+input[type="date"]::-webkit-calendar-picker-indicator {
+  cursor: pointer;
+  opacity: 1;
+}
+
+/* Prevent date picker from causing zoom on iOS */
+@supports (-webkit-touch-callout: none) {
+  input[type="date"],
+  input[type="time"],
+  input[type="datetime-local"] {
+    font-size: 16px !important;
   }
 }

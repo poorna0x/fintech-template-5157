@@ -1880,6 +1880,11 @@ const Booking: React.FC = () => {
                       ? 'border-2 border-black dark:border-white' 
                       : ''
                   }`}
+                  style={{
+                    WebkitAppearance: 'none',
+                    appearance: 'none',
+                    fontSize: '16px' // Prevents zoom on iOS
+                  }}
                 />
               </div>
               
