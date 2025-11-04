@@ -1,0 +1,116 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Production Rate Limiting Test</title>
+    <style>
+        body { font-family: monospace; padding: 20px; background: #1a1a1a; color: #0f0; max-width: 800px; margin: 0 auto; }
+        .test { margin: 10px 0; padding: 10px; border: 1px solid #0f0; }
+        .success { color: #0f0; }
+        .error { color: #f00; }
+        .blocked { color: #ff0; background: #330; padding: 5px; }
+        button { padding: 10px 20px; margin: 5px; background: #0f0; color: #000; border: none; cursor: pointer; font-size: 16px; }
+        button:hover { background: #0a0; }
+        #results { margin-top: 20px; }
+        input { padding: 8px; margin: 5px; width: 300px; background: #222; color: #0f0; border: 1px solid #0f0; }
+    </style>
+</head>
+<body>
+    <h1>🧪 Production Rate Limiting Test</h1>
+    <p>Test rate limiting on your production site:</p>
+    
+    <div>
+        <label>Production URL:</label><br>
+        <input type="text" id="prodUrl" value="https://hydrogenro.com" placeholder="https://hydrogenro.com">
+        <br><br>
+        <button onclick="testRateLimit()">Test Password Verification (5 req limit)</button>
+        <button onclick="clearResults()">Clear Results</button>
+    </div>
+    
+    <div id="results"></div>
+
+    <script>
+        async function testRateLimit() {
+            const prodUrl = document.getElementById('prodUrl').value;
+            const resultsDiv = document.getElementById('results');
+            resultsDiv.innerHTML = '<h2>Testing Rate Limiting...</h2>';
+            
+            const endpoint = `${prodUrl}/.netlify/functions/verify-technician-password`;
+            
+            for (let i = 1; i <= 7; i++) {
+                try {
+                    const start = Date.now();
+                    const response = await fetch(endpoint, {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'Origin': prodUrl
+                        },
+                        body: JSON.stringify({
+                            password: 'test',
+                            hashedPassword: '$2a$10$test'
+                        })
+                    });
+                    
+                    const elapsed = Date.now() - start;
+                    const data = await response.json();
+                    
+                    const resultDiv = document.createElement('div');
+                    resultDiv.className = 'test';
+                    
+                    if (response.status === 429) {
+                        resultDiv.innerHTML = `
+                            <span class="blocked">🚫 Request ${i}: BLOCKED (429 Rate Limited) ✅</span><br>
+                            Status: ${response.status}<br>
+                            Message: ${data.message || data.error || 'Rate limit exceeded'}<br>
+                            Retry-After: ${response.headers.get('Retry-After') || 'N/A'}<br>
+                            X-RateLimit-Remaining: ${response.headers.get('X-RateLimit-Remaining') || 'N/A'}<br>
+                            Time: ${elapsed}ms
+                        `;
+                        resultsDiv.appendChild(resultDiv);
+                        
+                        // Add success message
+                        const success = document.createElement('div');
+                        success.className = 'test blocked';
+                        success.innerHTML = '<h3>✅ SUCCESS: Rate limiting is WORKING in production!</h3>';
+                        resultsDiv.appendChild(success);
+                        break;
+                    } else if (response.status === 200) {
+                        resultDiv.innerHTML = `
+                            <span class="success">✅ Request ${i}: ALLOWED (200 OK)</span><br>
+                            Response: ${JSON.stringify(data)}<br>
+                            Time: ${elapsed}ms
+                        `;
+                        resultsDiv.appendChild(resultDiv);
+                    } else {
+                        resultDiv.innerHTML = `
+                            <span class="error">❓ Request ${i}: Status ${response.status}</span><br>
+                            Response: ${JSON.stringify(data)}<br>
+                            Time: ${elapsed}ms
+                        `;
+                        resultsDiv.appendChild(resultDiv);
+                    }
+                } catch (error) {
+                    const resultDiv = document.createElement('div');
+                    resultDiv.className = 'test error';
+                    resultDiv.innerHTML = `<span class="error">❌ Request ${i}: ERROR - ${error.message}</span>`;
+                    resultsDiv.appendChild(resultDiv);
+                }
+                
+                // Small delay between requests
+                await new Promise(r => setTimeout(r, 500));
+            }
+            
+            // Summary
+            const summary = document.createElement('div');
+            summary.className = 'test';
+            summary.innerHTML = '<h3>📊 Test Complete</h3>If you see 429 responses, rate limiting is working correctly in production!';
+            resultsDiv.appendChild(summary);
+        }
+        
+        function clearResults() {
+            document.getElementById('results').innerHTML = '';
+        }
+    </script>
+</body>
+</html>
+
