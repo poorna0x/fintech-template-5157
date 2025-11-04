@@ -6,6 +6,7 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Shield, Clock, DollarSign, Users, Award, Heart } from 'lucide-react';
 
 const About = () => {
+
   return (
     <div className="min-h-screen flex flex-col bg-background text-foreground">
       {/* SEO Meta Tags - These will be handled by the main index.html */}

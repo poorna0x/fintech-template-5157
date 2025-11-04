@@ -1,21 +1,36 @@
 import React from 'react';
 import { Button } from '@/components/ui/button';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
+import { useTheme } from '@/contexts/ThemeContext';
 
 interface PageHeroProps {
   badge?: string;
   title: string;
   description: string;
   showButtons?: boolean;
+  customDarkBgColor?: string;
 }
 
 const PageHero: React.FC<PageHeroProps> = ({ 
   badge = "Trusted by 3000+ customers",
   title,
   description,
-  showButtons = true 
+  showButtons = true,
+  customDarkBgColor
 }) => {
   const navigate = useNavigate();
+  const location = useLocation();
+  const { isDarkMode } = useTheme();
+
+  // Check if we're on About, Contact, or Services pages
+  const isSpecialPage = location.pathname === '/about' || 
+                        location.pathname === '/contact' || 
+                        location.pathname === '/services';
+  
+  // Apply custom color if provided in dark mode on these pages
+  const darkBgStyle = (isSpecialPage && isDarkMode && customDarkBgColor)
+    ? { backgroundColor: customDarkBgColor }
+    : {};
 
   const handleBookService = () => {
     navigate('/book');
@@ -26,15 +41,10 @@ const PageHero: React.FC<PageHeroProps> = ({
   };
 
   return (
-    <section className="relative w-full py-12 md:py-20 px-2 md:px-12 flex flex-col items-center justify-center overflow-hidden bg-background/95 backdrop-blur-md">
-      {/* Cosmic particle effect (background dots) */}
-      <div className="absolute inset-0 cosmic-grid opacity-0 md:opacity-30 dark:opacity-30"></div>
-      
-      {/* Gradient glow effect */}
-      <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[600px] rounded-full">
-        <div className="w-full h-full opacity-0 md:opacity-10 dark:opacity-10 bg-primary blur-[120px]"></div>
-      </div>
-      
+    <section 
+      className="relative w-full py-12 md:py-20 px-2 md:px-12 flex flex-col items-center justify-center overflow-hidden bg-background/95 backdrop-blur-md"
+      style={darkBgStyle}
+    >
       <div className="relative z-10 max-w-4xl text-center space-y-6">
         <div className="flex justify-center">
           <span className="inline-flex items-center gap-2 px-3 py-1 text-xs font-medium rounded-full bg-muted text-primary">
