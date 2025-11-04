@@ -1,21 +1,31 @@
 // Netlify Function for secure technician password verification
 // Uses bcrypt for secure password hashing and comparison
 const bcrypt = require('bcryptjs');
-
-// CORS headers
-const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'Content-Type',
-  'Access-Control-Allow-Methods': 'POST, OPTIONS',
-};
+const { getCorsHeaders, isOriginAllowed } = require('./cors-helper');
 
 exports.handler = async (event, context) => {
+  const requestOrigin = event.headers.origin || event.headers.Origin;
+  const corsHeaders = getCorsHeaders(requestOrigin);
+
   // Handle CORS preflight
   if (event.httpMethod === 'OPTIONS') {
     return {
       statusCode: 200,
       headers: corsHeaders,
       body: '',
+    };
+  }
+
+  // SECURITY: Check if origin is allowed
+  if (requestOrigin && !isOriginAllowed(requestOrigin)) {
+    return {
+      statusCode: 403,
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        error: 'Forbidden: Origin not allowed',
+      }),
     };
   }
 

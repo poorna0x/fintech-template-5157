@@ -1,19 +1,32 @@
 // Netlify Function for sending emails via Hostinger SMTP
 const nodemailer = require('nodemailer');
+const { getCorsHeaders, isOriginAllowed } = require('./cors-helper');
 
 exports.handler = async (event, context) => {
   console.log('Email function called:', event.httpMethod, event.body);
   
+  const requestOrigin = event.headers.origin || event.headers.Origin;
+  const corsHeaders = getCorsHeaders(requestOrigin);
+
   // Handle CORS preflight
   if (event.httpMethod === 'OPTIONS') {
     return {
       statusCode: 200,
-      headers: {
-        'Access-Control-Allow-Origin': '*',
-        'Access-Control-Allow-Headers': 'Content-Type',
-        'Access-Control-Allow-Methods': 'POST, OPTIONS',
-      },
+      headers: corsHeaders,
       body: '',
+    };
+  }
+
+  // SECURITY: Check if origin is allowed
+  if (requestOrigin && !isOriginAllowed(requestOrigin)) {
+    return {
+      statusCode: 403,
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        error: 'Forbidden: Origin not allowed',
+      }),
     };
   }
 
@@ -22,9 +35,8 @@ exports.handler = async (event, context) => {
     return {
       statusCode: 405,
       headers: {
-        'Access-Control-Allow-Origin': '*',
-        'Access-Control-Allow-Headers': 'Content-Type',
-        'Access-Control-Allow-Methods': 'POST, OPTIONS',
+        ...corsHeaders,
+        'Content-Type': 'application/json',
       },
       body: JSON.stringify({ error: 'Method not allowed' }),
     };
@@ -50,9 +62,8 @@ exports.handler = async (event, context) => {
       return {
         statusCode: 400,
         headers: {
-          'Access-Control-Allow-Origin': '*',
-          'Access-Control-Allow-Headers': 'Content-Type',
-          'Access-Control-Allow-Methods': 'POST, OPTIONS',
+          ...corsHeaders,
+          'Content-Type': 'application/json',
         },
         body: JSON.stringify({ error: 'Missing required fields: to, subject, html' }),
       };
@@ -64,9 +75,8 @@ exports.handler = async (event, context) => {
       return {
         statusCode: 500,
         headers: {
-          'Access-Control-Allow-Origin': '*',
-          'Access-Control-Allow-Headers': 'Content-Type',
-          'Access-Control-Allow-Methods': 'POST, OPTIONS',
+          ...corsHeaders,
+          'Content-Type': 'application/json',
         },
         body: JSON.stringify({ 
           error: 'Email configuration missing',
@@ -120,9 +130,8 @@ exports.handler = async (event, context) => {
     return {
       statusCode: 200,
       headers: {
-        'Access-Control-Allow-Origin': '*',
-        'Access-Control-Allow-Headers': 'Content-Type',
-        'Access-Control-Allow-Methods': 'POST, OPTIONS',
+        ...corsHeaders,
+        'Content-Type': 'application/json',
       },
       body: JSON.stringify({ 
         success: true, 
@@ -137,9 +146,8 @@ exports.handler = async (event, context) => {
     return {
       statusCode: 500,
       headers: {
-        'Access-Control-Allow-Origin': '*',
-        'Access-Control-Allow-Headers': 'Content-Type',
-        'Access-Control-Allow-Methods': 'POST, OPTIONS',
+        ...corsHeaders,
+        'Content-Type': 'application/json',
       },
       body: JSON.stringify({ 
         error: 'Failed to send email',

@@ -40,15 +40,10 @@ const HMAC_KEY = process.env.ALTCHA_HMAC_KEY || 'your-secret-hmac-key-change-in-
 // Simple in-memory store for challenges (in production, use Redis or database)
 const challengeStore = new Map();
 
-// CORS headers
-const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'Content-Type',
-  'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
-};
+const { getCorsHeaders, isOriginAllowed } = require('./cors-helper');
 
 // GET request: Generate challenge using official altcha-lib
-async function handleGet(event) {
+async function handleGet(event, corsHeaders) {
   try {
     const complexity = parseInt(event.queryStringParameters?.complexity || '14', 10);
     
@@ -113,7 +108,7 @@ async function handleGet(event) {
 }
 
 // POST request: Verify payload using official altcha-lib
-async function handlePost(event) {
+async function handlePost(event, corsHeaders) {
   try {
     // Parse request body
     let payload;
@@ -257,6 +252,9 @@ async function handlePost(event) {
 }
 
 exports.handler = async (event, context) => {
+  const requestOrigin = event.headers.origin || event.headers.Origin;
+  const corsHeaders = getCorsHeaders(requestOrigin);
+
   // Handle CORS preflight
   if (event.httpMethod === 'OPTIONS') {
     return {
@@ -266,13 +264,26 @@ exports.handler = async (event, context) => {
     };
   }
 
+  // SECURITY: Check if origin is allowed
+  if (requestOrigin && !isOriginAllowed(requestOrigin)) {
+    return {
+      statusCode: 403,
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        error: 'Forbidden: Origin not allowed',
+      }),
+    };
+  }
+
   try {
     if (event.httpMethod === 'GET') {
-      return await handleGet(event);
+      return await handleGet(event, corsHeaders);
     }
 
     if (event.httpMethod === 'POST') {
-      return await handlePost(event);
+      return await handlePost(event, corsHeaders);
     }
 
     // Method not allowed
