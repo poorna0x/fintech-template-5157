@@ -19,11 +19,24 @@ export default function QuotationModal({ isOpen, onClose, customer }: QuotationM
   const handlePrintQuotation = (quotation: Bill, action: 'print' | 'pdf' = 'print') => {
     setIsGenerating(true);
     
+    // Transform customer object from Bill format (fullName) to PDF format (name)
+    const customer = quotation.customer;
+    const customerAddress = typeof customer.address === 'object' ? customer.address : {};
+    
     const pdfData = {
       billNumber: quotation.billNumber,
       billDate: quotation.billDate,
       company: quotation.company,
-      customer: quotation.customer,
+      customer: {
+        name: customer.fullName || customer.name || 'Customer Name',
+        address: customerAddress.street || customer.address || '',
+        city: customerAddress.city || customer.city || '',
+        state: customerAddress.state || customer.state || '',
+        pincode: customerAddress.pincode || customer.pincode || '',
+        phone: customer.phone || '',
+        email: customer.email || '',
+        gstNumber: customer.gstNumber || ''
+      },
       items: quotation.items,
       subtotal: quotation.subtotal,
       totalTax: quotation.totalTax,
