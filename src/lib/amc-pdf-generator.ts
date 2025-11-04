@@ -887,69 +887,42 @@ export function generateAMCPDF(bill: Bill, action: 'print' | 'pdf' = 'print'): v
 }
 
 function handleMobilePrint(bill: Bill, action: 'print' | 'pdf'): void {
-  // Store original content and references
+  // Store original content for restoration
   const originalBodyHTML = document.body.innerHTML;
   const originalTitle = document.title;
-  const originalBodyChildren = Array.from(document.body.children);
-  const originalHeadChildren = Array.from(document.head.children);
+  const reactRootId = document.getElementById('root')?.id || 'root';
   
   // Store references to cleanup
-  let printStyles: HTMLStyleElement | null = null;
-  let amcContainer: HTMLDivElement | null = null;
   let afterPrintHandler: (() => void) | null = null;
-  let beforePrintHandler: (() => void) | null = null;
   
   const cleanup = () => {
     try {
-      // Remove print event listeners
+      // Remove print event listener
       if (afterPrintHandler) {
         window.removeEventListener('afterprint', afterPrintHandler);
       }
-      if (beforePrintHandler) {
-        window.removeEventListener('beforeprint', beforePrintHandler);
-      }
       
-      // Show original content first
-      originalBodyChildren.forEach((child) => {
-        if (child instanceof HTMLElement) {
-          child.style.display = '';
-        }
-      });
-      
-      // Remove AMC container
-      if (amcContainer && document.body.contains(amcContainer)) {
-        document.body.removeChild(amcContainer);
-      }
-      
-      // Remove print styles
-      if (printStyles && document.head.contains(printStyles)) {
-        document.head.removeChild(printStyles);
+      // Remove injected styles
+      const styleElement = document.getElementById('amc-print-styles');
+      if (styleElement && styleElement.parentNode) {
+        styleElement.parentNode.removeChild(styleElement);
       }
       
       // Restore original title
       document.title = originalTitle;
       
-      // Try to restore React state by triggering events
-      window.dispatchEvent(new Event('resize'));
-      window.dispatchEvent(new Event('focus'));
+      // Restore original body HTML
+      document.body.innerHTML = originalBodyHTML;
       
-      // Only reload if React components seem broken (after a delay)
-      setTimeout(() => {
-        // Check if React root is still functional
-        const reactRoot = document.getElementById('root');
-        if (!reactRoot || reactRoot.children.length === 0) {
-          // React seems broken, reload
-          window.location.reload();
-        }
-      }, 1000);
+      // Force page reload to fully restore React state
+      // This is the most reliable way on mobile
+      window.location.reload();
       
       isPrinting = false;
     } catch (error) {
       console.error('Error during cleanup:', error);
-      // If cleanup fails, reload the page as last resort
-      setTimeout(() => {
-        window.location.reload();
-      }, 500);
+      // If cleanup fails, reload the page
+      window.location.reload();
       isPrinting = false;
     }
   };
@@ -974,164 +947,50 @@ function handleMobilePrint(bill: Bill, action: 'print' | 'pdf'): void {
       agreementIntro: bill.agreementIntro
     };
     
-    // Generate AMC HTML
+        // Generate AMC HTML - this is a complete HTML document
     const amcHTML = generateAMCHTML(data);
     
-    // Hide all existing content instead of replacing it
-    const hideOriginalContent = () => {
-      originalBodyChildren.forEach((child) => {
-        if (child instanceof HTMLElement) {
-          child.style.display = 'none';
-        }
-      });
-    };
+    // Parse the HTML to extract body content and styles
+    const tempDiv = document.createElement('div');
+    tempDiv.innerHTML = amcHTML;
     
-    // Show original content
-    const showOriginalContent = () => {
-      originalBodyChildren.forEach((child) => {
-        if (child instanceof HTMLElement) {
-          child.style.display = '';
-        }
-      });
-    };
+    // Extract styles from head
+    const styleMatch = amcHTML.match(/<style[^>]*>([\s\S]*?)<\/style>/i);
+    const styles = styleMatch ? styleMatch[1] : '';
     
-    // Create a container for AMC content that will be printed
-    amcContainer = document.createElement('div');
-    amcContainer.id = 'amc-print-container';
-    amcContainer.innerHTML = amcHTML;
-    amcContainer.style.cssText = `
-      position: fixed;
-      top: 0;
-      left: 0;
-      width: 100%;
-      height: 100%;
-      overflow: auto;
-      background: white;
-      z-index: 999999;
-    `;
+    // Extract body content - find everything between <body> and </body>
+    const bodyMatch = amcHTML.match(/<body[^>]*>([\s\S]*?)<\/body>/i);
+    const bodyContent = bodyMatch ? bodyMatch[1] : '';
     
-    // Add optimized print styles
-    printStyles = document.createElement('style');
-    printStyles.id = 'mobile-print-styles';
-    printStyles.textContent = `
-      @import url('https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&display=swap');
-      
-      /* Hide original content - both for screen and print */
-      body > *:not(#amc-print-container) {
-        display: none !important;
-        visibility: hidden !important;
-      }
-      
-      #amc-print-container {
-        position: static !important;
-        width: 100% !important;
-        height: auto !important;
-        overflow: visible !important;
-        background: white !important;
-        display: block !important;
-        visibility: visible !important;
-      }
-      
-      #amc-print-container * {
-        margin: 0;
-        padding: 0;
-        box-sizing: border-box;
-      }
-      
-      @media print {
-        /* In print mode, absolutely ensure only AMC content is visible */
-        body > *:not(#amc-print-container) {
-          display: none !important;
-          visibility: hidden !important;
-          height: 0 !important;
-          width: 0 !important;
-          overflow: hidden !important;
-        }
-        
-        /* Ensure AMC container takes full page */
-        html, body {
-          width: 100% !important;
-          height: 100% !important;
-          margin: 0 !important;
-          padding: 0 !important;
-          overflow: visible !important;
-        }
-        
-        body {
-          margin: 0 !important;
-          padding: 0 !important;
-          background: white !important;
-          font-size: 12pt !important;
-          line-height: 1.6 !important;
-        }
-        
-        #amc-print-container {
-          position: static !important;
-          width: 100% !important;
-          height: auto !important;
-          margin: 0 !important;
-          padding: 0 !important;
-          overflow: visible !important;
-          background: white !important;
-        }
-        
-        @page {
-          size: A4 !important;
-          margin: 15mm !important;
-        }
-        
-        * {
-          -webkit-print-color-adjust: exact !important;
-          color-adjust: exact !important;
-          print-color-adjust: exact !important;
-        }
-      }
-      
-      /* On screen (non-print), ensure AMC container is visible and others are hidden */
-      @media screen {
-        #amc-print-container {
-          display: block !important;
-          visibility: visible !important;
-        }
-      }
-    `;
+    // Inject styles into head
+    const styleElement = document.createElement('style');
+    styleElement.id = 'amc-print-styles';
+    styleElement.textContent = styles;
+    document.head.appendChild(styleElement);
     
-    // Hide original content
-    hideOriginalContent();
-    
-    // Append AMC container and styles
-    document.body.appendChild(amcContainer);
-    document.head.appendChild(printStyles);
+    // COMPLETELY REPLACE body HTML with AMC document content (like desktop does with new window)
+    // This ensures ONLY the AMC content is visible when print dialog opens
+    document.body.innerHTML = bodyContent;
     document.title = `AMC Agreement - ${bill.billNumber}`;
     
     // Force a reflow to ensure content is rendered
-    void amcContainer.offsetHeight;
+    void document.body.offsetHeight;
     
     // Set up print event handlers
     afterPrintHandler = () => {
-      // Cleanup after print dialog closes
+      // Cleanup after print dialog closes - restore original page
       setTimeout(cleanup, 300);
     };
     
-    beforePrintHandler = () => {
-      // Ensure AMC content is visible and everything else is hidden before print
-      hideOriginalContent();
-      if (amcContainer) {
-        amcContainer.style.display = 'block';
-        amcContainer.style.visibility = 'visible';
-      }
-    };
-    
     window.addEventListener('afterprint', afterPrintHandler);
-    window.addEventListener('beforeprint', beforePrintHandler);
     
     // Wait for content to fully render, including images
-    const images = amcContainer.querySelectorAll('img');
+    const images = document.body.querySelectorAll('img');
     let imagesLoaded = 0;
     const totalImages = images.length;
     
-    if (totalImages === 0) {
-      // No images, proceed immediately after a short delay
+    const triggerPrint = () => {
+      // Small delay to ensure everything is rendered
       setTimeout(() => {
         window.print();
         // Fallback cleanup in case afterprint doesn't fire (some mobile browsers)
@@ -1140,22 +999,19 @@ function handleMobilePrint(bill: Bill, action: 'print' | 'pdf'): void {
             cleanup();
           }
         }, 5000); // 5 second fallback
-      }, 600); // Give time for fonts and styles to load
+      }, 500); // Give time for fonts and styles to load
+    };
+    
+    if (totalImages === 0) {
+      // No images, proceed immediately
+      triggerPrint();
     } else {
       // Wait for images to load
       const checkAndPrint = () => {
         imagesLoaded++;
         if (imagesLoaded === totalImages) {
           // All images loaded, trigger print
-          setTimeout(() => {
-            window.print();
-            // Fallback cleanup in case afterprint doesn't fire (some mobile browsers)
-            setTimeout(() => {
-              if (isPrinting) {
-                cleanup();
-              }
-            }, 5000); // 5 second fallback
-          }, 300);
+          triggerPrint();
         }
       };
       
@@ -1171,12 +1027,7 @@ function handleMobilePrint(bill: Bill, action: 'print' | 'pdf'): void {
       // Fallback: proceed after max 3 seconds even if images don't load
       setTimeout(() => {
         if (isPrinting) {
-          window.print();
-          setTimeout(() => {
-            if (isPrinting) {
-              cleanup();
-            }
-          }, 5000);
+          triggerPrint();
         }
       }, 3000);
     }
