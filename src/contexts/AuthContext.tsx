@@ -1,7 +1,7 @@
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 import { toast } from 'sonner';
 import { supabase } from '@/lib/supabase';
-import { authenticateUser, setAuthSession, getAuthSession, clearAuthSession } from '@/lib/auth';
+import { authenticateUser, setAuthSession, getAuthSession, clearAuthSession, isTechnicianEmail } from '@/lib/auth';
 import type { User as SupabaseUser } from '@supabase/supabase-js';
 
 export interface User {
@@ -91,13 +91,26 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       // First try custom authentication (for technicians)
       const customUser = await authenticateUser(email, password);
       if (customUser) {
+        console.log('Technician authentication successful:', customUser);
         setUser(customUser);
         setAuthSession(customUser);
         toast.success(`Welcome back, ${customUser.fullName || customUser.email}!`);
         return true;
       }
 
-      // If custom auth fails, try Supabase auth (for admins)
+      // Before trying Supabase auth, check if this email belongs to a technician
+      // If it does, don't try Supabase auth (even if technician auth failed)
+      const isTechnician = await isTechnicianEmail(email);
+      
+      if (isTechnician) {
+        console.log('Email belongs to a technician - not trying Supabase auth');
+        toast.error('Login failed. Please check your password or contact support.');
+        return false;
+      }
+      
+      // If not a technician, try Supabase auth (for admins only)
+      console.log('Not a technician email, trying Supabase auth for admin...');
+      
       const { data, error } = await supabase.auth.signInWithPassword({
         email: email,
         password: password,
@@ -116,6 +129,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
           role: userRole,
           fullName: data.user.user_metadata?.full_name || data.user.user_metadata?.name
         };
+        console.log('Supabase auth successful, user role:', userRole);
         setUser(user);
         toast.success(`Welcome back, ${user.fullName || user.email}!`);
         return true;
@@ -123,6 +137,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       
       return false;
     } catch (error) {
+      console.error('Login error:', error);
       toast.error('Login failed. Please try again.');
       return false;
     } finally {

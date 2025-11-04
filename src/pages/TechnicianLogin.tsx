@@ -36,10 +36,16 @@ const TechnicianLogin = () => {
       const success = await login(email, password);
       
       if (success) {
+        console.log('Login successful, navigating to technician dashboard...');
         // Request notification permission for job updates
         await requestNotificationPermission();
-        navigate('/technician');
+        // Small delay to ensure state is updated
+        setTimeout(() => {
+          console.log('Navigating to /technician');
+          navigate('/technician', { replace: true });
+        }, 100);
       } else {
+        console.log('Login failed - success was false');
         setError('Login failed. Please try again.');
       }
     } catch (err) {

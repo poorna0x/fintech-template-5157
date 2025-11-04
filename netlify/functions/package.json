@@ -4,6 +4,7 @@
   "description": "Netlify Functions for Hydrogen RO",
   "dependencies": {
     "altcha-lib": "^1.3.0",
+    "bcryptjs": "^2.4.3",
     "nodemailer": "^7.0.6"
   }
 }

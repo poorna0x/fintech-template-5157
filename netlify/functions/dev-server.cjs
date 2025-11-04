@@ -5,8 +5,9 @@
 const http = require('http');
 const url = require('url');
 
-// Import the altcha-verify function handler
+// Import function handlers
 const altchaVerify = require('./altcha-verify');
+const verifyTechnicianPassword = require('./verify-technician-password');
 
 const PORT = 8888;
 
@@ -23,8 +24,15 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
-  // Only handle the altcha-verify function
+  // Route to appropriate function
+  let handler = null;
   if (req.url.startsWith('/.netlify/functions/altcha-verify')) {
+    handler = altchaVerify;
+  } else if (req.url.startsWith('/.netlify/functions/verify-technician-password')) {
+    handler = verifyTechnicianPassword;
+  }
+
+  if (handler) {
     try {
       const parsedUrl = url.parse(req.url, true);
       
@@ -47,7 +55,7 @@ const server = http.createServer(async (req, res) => {
 
       const context = {};
       
-      const result = await altchaVerify.handler(event, context);
+      const result = await handler.handler(event, context);
       
       // Set response headers
       const headers = result.headers || {};
@@ -74,5 +82,6 @@ const server = http.createServer(async (req, res) => {
 server.listen(PORT, () => {
   console.log(`🚀 Netlify Functions Dev Server running on http://localhost:${PORT}`);
   console.log(`📡 ALTCHA function: http://localhost:${PORT}/.netlify/functions/altcha-verify`);
+  console.log(`🔐 Password verification: http://localhost:${PORT}/.netlify/functions/verify-technician-password`);
   console.log(`\n✅ Keep this running and use 'npm run dev:vite' in another terminal\n`);
 });
