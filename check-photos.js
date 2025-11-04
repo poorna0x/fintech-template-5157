@@ -1,11 +1,13 @@
 import { createClient } from '@supabase/supabase-js';
 
-// You'll need to set these environment variables or replace with actual values
-const supabaseUrl = 'https://cgpjfmbyxjetmzehkumo.supabase.co';
-const supabaseAnonKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNncGpmbWJ5eGpldG16ZWhrdW1vIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTc4Mjk4MjgsImV4cCI6MjA3MzQwNTgyOH0.f30aVh06s_FjEXbXuH-8LEwTx774QmnXQwztacK4NHI';
+// SECURITY: Use environment variables - NEVER hardcode credentials!
+const supabaseUrl = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL;
+const supabaseAnonKey = process.env.SUPABASE_ANON_KEY || process.env.VITE_SUPABASE_ANON_KEY;
 
 if (!supabaseUrl || !supabaseAnonKey) {
-  console.error('Supabase URL or Anon Key is not defined in environment variables.');
+  console.error('❌ SECURITY ERROR: Supabase URL or Anon Key is not defined in environment variables.');
+  console.error('Please set SUPABASE_URL and SUPABASE_ANON_KEY environment variables.');
+  console.error('Example: SUPABASE_URL=your_url SUPABASE_ANON_KEY=your_key node check-photos.js');
   process.exit(1);
 }
 
