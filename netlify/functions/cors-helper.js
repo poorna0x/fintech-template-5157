@@ -72,22 +72,6 @@ function getAllowedOrigin(requestOrigin) {
     return requestOrigin;
   }
 
-  // Allow Netlify preview/deploy URLs (for preview deployments and branch deploys)
-  // Pattern: https://<branch>--<site-name>.netlify.app
-  // Pattern: https://<deploy-id>--<site-name>.netlify.app
-  if (requestOrigin.includes('.netlify.app')) {
-    // Extract site name from URL
-    const netlifyMatch = requestOrigin.match(/https?:\/\/([^/]+)\.netlify\.app/);
-    if (netlifyMatch) {
-      const siteName = netlifyMatch[1];
-      // Allow if it's for hydrogenro site (for preview deployments)
-      // Or allow all netlify.app in development/preview contexts
-      if (!isProduction() || siteName.includes('hydrogenro')) {
-        return requestOrigin;
-      }
-    }
-  }
-
   // Origin not allowed
   return null;
 }
