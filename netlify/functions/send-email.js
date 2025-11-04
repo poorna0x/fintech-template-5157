@@ -108,8 +108,11 @@ exports.handler = async (event, context) => {
         user: process.env.HOSTINGER_EMAIL_USER, // Your Hostinger email
         pass: process.env.HOSTINGER_EMAIL_PASS, // Your Hostinger email password
       },
+      // SECURITY: Enable TLS certificate verification (was disabled - security risk)
+      // Remove rejectUnauthorized: false to prevent MITM attacks
       tls: {
-        rejectUnauthorized: false
+        // Certificate verification is now enabled by default
+        // Only disable if you have a specific reason and understand the security implications
       }
     });
 
