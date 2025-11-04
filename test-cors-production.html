@@ -1,0 +1,167 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>CORS Production Test</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      max-width: 800px;
+      margin: 50px auto;
+      padding: 20px;
+      background: #f5f5f5;
+    }
+    .test-container {
+      background: white;
+      padding: 20px;
+      border-radius: 8px;
+      margin-bottom: 20px;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    }
+    .test-result {
+      padding: 10px;
+      margin: 10px 0;
+      border-radius: 4px;
+      font-family: monospace;
+    }
+    .success {
+      background: #d4edda;
+      color: #155724;
+      border: 1px solid #c3e6cb;
+    }
+    .error {
+      background: #f8d7da;
+      color: #721c24;
+      border: 1px solid #f5c6cb;
+    }
+    .info {
+      background: #d1ecf1;
+      color: #0c5460;
+      border: 1px solid #bee5eb;
+    }
+    button {
+      background: #007bff;
+      color: white;
+      border: none;
+      padding: 10px 20px;
+      border-radius: 4px;
+      cursor: pointer;
+      margin: 5px;
+    }
+    button:hover {
+      background: #0056b3;
+    }
+    input {
+      padding: 8px;
+      border: 1px solid #ddd;
+      border-radius: 4px;
+      width: 300px;
+      margin: 5px;
+    }
+  </style>
+</head>
+<body>
+  <h1>🧪 CORS Production Test</h1>
+  <p>This page tests CORS configuration in production. Open browser console (F12) to see detailed results.</p>
+  
+  <div class="test-container">
+    <h2>Configuration</h2>
+    <label>Production URL:</label><br>
+    <input type="text" id="productionUrl" value="https://hydrogenro.com" placeholder="https://hydrogenro.com">
+    <br><br>
+    <button onclick="runAllTests()">Run All Tests</button>
+    <button onclick="clearResults()">Clear Results</button>
+  </div>
+
+  <div id="results"></div>
+
+  <script>
+    const resultsDiv = document.getElementById('results');
+    
+    function addResult(message, type = 'info') {
+      const div = document.createElement('div');
+      div.className = `test-result ${type}`;
+      div.textContent = message;
+      resultsDiv.appendChild(div);
+      console.log(`[${type.toUpperCase()}] ${message}`);
+    }
+
+    function clearResults() {
+      resultsDiv.innerHTML = '';
+    }
+
+    async function testCORS(functionName, origin, expected) {
+      const productionUrl = document.getElementById('productionUrl').value;
+      const url = `${productionUrl}/.netlify/functions/${functionName}`;
+      
+      try {
+        // Test OPTIONS preflight
+        const response = await fetch(url, {
+          method: 'OPTIONS',
+          headers: {
+            'Origin': origin,
+            'Access-Control-Request-Method': 'POST',
+          },
+        });
+
+        const corsOrigin = response.headers.get('Access-Control-Allow-Origin');
+        const status = response.status;
+
+        if (expected === 'allowed') {
+          if (corsOrigin === origin) {
+            return { success: true, message: `✅ Allowed (CORS: ${corsOrigin})` };
+          } else {
+            return { success: false, message: `❌ Not allowed (got: ${corsOrigin || 'none'}, expected: ${origin})` };
+          }
+        } else {
+          // Expected blocked
+          if (status === 403 || corsOrigin === 'null' || corsOrigin !== origin) {
+            return { success: true, message: `✅ Blocked correctly (CORS: ${corsOrigin || 'none'}, Status: ${status})` };
+          } else {
+            return { success: false, message: `❌ Not blocked (got: ${corsOrigin}, status: ${status})` };
+          }
+        }
+      } catch (error) {
+        return { success: false, message: `❌ Error: ${error.message}` };
+      }
+    }
+
+    async function runAllTests() {
+      clearResults();
+      addResult('🧪 Starting CORS tests...', 'info');
+      addResult('', 'info');
+      
+      const tests = [
+        { function: 'hash-technician-password', origin: 'https://hydrogenro.com', expected: 'allowed', desc: 'Production domain' },
+        { function: 'hash-technician-password', origin: 'https://www.hydrogenro.com', expected: 'allowed', desc: 'Production www' },
+        { function: 'hash-technician-password', origin: 'http://localhost:8080', expected: 'blocked', desc: 'Localhost (should be blocked)' },
+        { function: 'hash-technician-password', origin: 'https://malicious-site.com', expected: 'blocked', desc: 'Malicious origin' },
+      ];
+
+      let passed = 0;
+      let failed = 0;
+
+      for (const test of tests) {
+        addResult(`Testing: ${test.function} with origin: ${test.origin}`, 'info');
+        const result = await testCORS(test.function, test.origin, test.expected);
+        addResult(`${test.desc}: ${result.message}`, result.success ? 'success' : 'error');
+        
+        if (result.success) passed++;
+        else failed++;
+        
+        await new Promise(resolve => setTimeout(resolve, 500));
+      }
+
+      addResult('', 'info');
+      addResult(`📊 Results: ${passed} passed, ${failed} failed`, failed === 0 ? 'success' : 'error');
+    }
+
+    // Auto-run on page load
+    window.addEventListener('load', () => {
+      addResult('Ready to test. Click "Run All Tests" to start.', 'info');
+    });
+  </script>
+</body>
+</html>
+
