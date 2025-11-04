@@ -887,29 +887,74 @@ export function generateAMCPDF(bill: Bill, action: 'print' | 'pdf' = 'print'): v
 }
 
 function handleMobilePrint(bill: Bill, action: 'print' | 'pdf'): void {
+  // Store original content and references
+  const originalBodyHTML = document.body.innerHTML;
+  const originalTitle = document.title;
+  const originalBodyChildren = Array.from(document.body.children);
+  const originalHeadChildren = Array.from(document.head.children);
+  
+  // Store references to cleanup
+  let printStyles: HTMLStyleElement | null = null;
+  let amcContainer: HTMLDivElement | null = null;
+  let afterPrintHandler: (() => void) | null = null;
+  let beforePrintHandler: (() => void) | null = null;
+  
+  const cleanup = () => {
+    try {
+      // Remove print event listeners
+      if (afterPrintHandler) {
+        window.removeEventListener('afterprint', afterPrintHandler);
+      }
+      if (beforePrintHandler) {
+        window.removeEventListener('beforeprint', beforePrintHandler);
+      }
+      
+      // Show original content first
+      originalBodyChildren.forEach((child) => {
+        if (child instanceof HTMLElement) {
+          child.style.display = '';
+        }
+      });
+      
+      // Remove AMC container
+      if (amcContainer && document.body.contains(amcContainer)) {
+        document.body.removeChild(amcContainer);
+      }
+      
+      // Remove print styles
+      if (printStyles && document.head.contains(printStyles)) {
+        document.head.removeChild(printStyles);
+      }
+      
+      // Restore original title
+      document.title = originalTitle;
+      
+      // Try to restore React state by triggering events
+      window.dispatchEvent(new Event('resize'));
+      window.dispatchEvent(new Event('focus'));
+      
+      // Only reload if React components seem broken (after a delay)
+      setTimeout(() => {
+        // Check if React root is still functional
+        const reactRoot = document.getElementById('root');
+        if (!reactRoot || reactRoot.children.length === 0) {
+          // React seems broken, reload
+          window.location.reload();
+        }
+      }, 1000);
+      
+      isPrinting = false;
+    } catch (error) {
+      console.error('Error during cleanup:', error);
+      // If cleanup fails, reload the page as last resort
+      setTimeout(() => {
+        window.location.reload();
+      }, 500);
+      isPrinting = false;
+    }
+  };
+  
   try {
-    // Show a brief loading message
-    const loadingMessage = document.createElement('div');
-    loadingMessage.style.cssText = `
-      position: fixed;
-      top: 50%;
-      left: 50%;
-      transform: translate(-50%, -50%);
-      background: rgba(0, 0, 0, 0.8);
-      color: white;
-      padding: 20px;
-      border-radius: 8px;
-      z-index: 10000;
-      font-family: 'Poppins', sans-serif;
-      font-size: 16px;
-    `;
-    loadingMessage.textContent = 'Preparing AMC Agreement for printing...';
-    document.body.appendChild(loadingMessage);
-    
-    // Store original content
-    const originalBody = document.body.innerHTML;
-    const originalTitle = document.title;
-    
     const data: AMCPDFData = {
       billNumber: bill.billNumber,
       billDate: bill.billDate,
@@ -929,131 +974,218 @@ function handleMobilePrint(bill: Bill, action: 'print' | 'pdf'): void {
       agreementIntro: bill.agreementIntro
     };
     
-    // Replace body content temporarily
-    document.body.innerHTML = generateAMCHTML(data);
-    document.title = `AMC Agreement - ${bill.billNumber}`;
+    // Generate AMC HTML
+    const amcHTML = generateAMCHTML(data);
     
-    // Add optimized print styles for better A4 formatting
-    const printStyles = document.createElement('style');
+    // Hide all existing content instead of replacing it
+    const hideOriginalContent = () => {
+      originalBodyChildren.forEach((child) => {
+        if (child instanceof HTMLElement) {
+          child.style.display = 'none';
+        }
+      });
+    };
+    
+    // Show original content
+    const showOriginalContent = () => {
+      originalBodyChildren.forEach((child) => {
+        if (child instanceof HTMLElement) {
+          child.style.display = '';
+        }
+      });
+    };
+    
+    // Create a container for AMC content that will be printed
+    amcContainer = document.createElement('div');
+    amcContainer.id = 'amc-print-container';
+    amcContainer.innerHTML = amcHTML;
+    amcContainer.style.cssText = `
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      overflow: auto;
+      background: white;
+      z-index: 999999;
+    `;
+    
+    // Add optimized print styles
+    printStyles = document.createElement('style');
     printStyles.id = 'mobile-print-styles';
     printStyles.textContent = `
       @import url('https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&display=swap');
       
-      * {
+      /* Hide original content - both for screen and print */
+      body > *:not(#amc-print-container) {
+        display: none !important;
+        visibility: hidden !important;
+      }
+      
+      #amc-print-container {
+        position: static !important;
+        width: 100% !important;
+        height: auto !important;
+        overflow: visible !important;
+        background: white !important;
+        display: block !important;
+        visibility: visible !important;
+      }
+      
+      #amc-print-container * {
         margin: 0;
         padding: 0;
         box-sizing: border-box;
       }
       
-      body {
-        font-family: 'Poppins', sans-serif;
-        line-height: 1.6;
-        color: #333;
-        background: white;
-        margin: 0;
-        padding: 15mm;
-        font-size: 12px;
-        -webkit-text-size-adjust: 100%;
-      }
-      
-      .bill-container {
-        width: 100%;
-        max-width: 100%;
-        margin: 0;
-        background: white;
-        padding: 0;
-        box-shadow: 0 15px 35px rgba(0, 0, 0, 0.6), 0 8px 15px rgba(0, 0, 0, 0.4);
-        border-radius: 12px;
-      }
-      
-      .signature-seal {
-        width: 120px;
-        height: 120px;
-        margin: 20px auto 10px auto;
-        display: block;
-      }
-      
       @media print {
-        * {
-          -webkit-print-color-adjust: exact !important;
-          color-adjust: exact !important;
+        /* In print mode, absolutely ensure only AMC content is visible */
+        body > *:not(#amc-print-container) {
+          display: none !important;
+          visibility: hidden !important;
+          height: 0 !important;
+          width: 0 !important;
+          overflow: hidden !important;
+        }
+        
+        /* Ensure AMC container takes full page */
+        html, body {
+          width: 100% !important;
+          height: 100% !important;
+          margin: 0 !important;
+          padding: 0 !important;
+          overflow: visible !important;
         }
         
         body {
           margin: 0 !important;
-          padding: 15mm !important;
+          padding: 0 !important;
+          background: white !important;
           font-size: 12pt !important;
           line-height: 1.6 !important;
         }
         
-        .bill-container {
+        #amc-print-container {
+          position: static !important;
           width: 100% !important;
-          max-width: 100% !important;
+          height: auto !important;
           margin: 0 !important;
           padding: 0 !important;
-          box-shadow: none !important;
-          border-radius: 0 !important;
+          overflow: visible !important;
+          background: white !important;
         }
         
         @page {
           size: A4 !important;
           margin: 15mm !important;
         }
+        
+        * {
+          -webkit-print-color-adjust: exact !important;
+          color-adjust: exact !important;
+          print-color-adjust: exact !important;
+        }
+      }
+      
+      /* On screen (non-print), ensure AMC container is visible and others are hidden */
+      @media screen {
+        #amc-print-container {
+          display: block !important;
+          visibility: visible !important;
+        }
       }
     `;
     
-    // Add styles to document
+    // Hide original content
+    hideOriginalContent();
+    
+    // Append AMC container and styles
+    document.body.appendChild(amcContainer);
     document.head.appendChild(printStyles);
+    document.title = `AMC Agreement - ${bill.billNumber}`;
     
-    // Remove loading message
-    if (document.body.contains(loadingMessage)) {
-      document.body.removeChild(loadingMessage);
-    }
+    // Force a reflow to ensure content is rendered
+    void amcContainer.offsetHeight;
     
-    // Wait a moment for styles to apply, then print
-    setTimeout(() => {
-      if (action === 'print') {
-        // Direct print without preview
-        window.print();
-      } else {
-        // Save as PDF (browser will show save dialog)
-        window.print();
+    // Set up print event handlers
+    afterPrintHandler = () => {
+      // Cleanup after print dialog closes
+      setTimeout(cleanup, 300);
+    };
+    
+    beforePrintHandler = () => {
+      // Ensure AMC content is visible and everything else is hidden before print
+      hideOriginalContent();
+      if (amcContainer) {
+        amcContainer.style.display = 'block';
+        amcContainer.style.visibility = 'visible';
       }
-      
-      // Clean up after printing - restore original content
+    };
+    
+    window.addEventListener('afterprint', afterPrintHandler);
+    window.addEventListener('beforeprint', beforePrintHandler);
+    
+    // Wait for content to fully render, including images
+    const images = amcContainer.querySelectorAll('img');
+    let imagesLoaded = 0;
+    const totalImages = images.length;
+    
+    if (totalImages === 0) {
+      // No images, proceed immediately after a short delay
       setTimeout(() => {
-        try {
-          document.body.innerHTML = originalBody;
-          document.title = originalTitle;
-          if (document.head.contains(printStyles)) {
-            document.head.removeChild(printStyles);
+        window.print();
+        // Fallback cleanup in case afterprint doesn't fire (some mobile browsers)
+        setTimeout(() => {
+          if (isPrinting) {
+            cleanup();
           }
-          // Force a small re-render to ensure React components are restored
-          window.dispatchEvent(new Event('resize'));
-          // Also trigger a focus event to help restore React state
-          window.dispatchEvent(new Event('focus'));
-        } catch (restoreError) {
-          console.error('Error during cleanup:', restoreError);
-          // If restoration fails, try to reload the page as last resort
-          if (confirm('There was an issue restoring the page. Would you like to reload?')) {
-            window.location.reload();
-          }
+        }, 5000); // 5 second fallback
+      }, 600); // Give time for fonts and styles to load
+    } else {
+      // Wait for images to load
+      const checkAndPrint = () => {
+        imagesLoaded++;
+        if (imagesLoaded === totalImages) {
+          // All images loaded, trigger print
+          setTimeout(() => {
+            window.print();
+            // Fallback cleanup in case afterprint doesn't fire (some mobile browsers)
+            setTimeout(() => {
+              if (isPrinting) {
+                cleanup();
+              }
+            }, 5000); // 5 second fallback
+          }, 300);
         }
-        isPrinting = false; // Reset flag after cleanup
-      }, 1500); // Slightly longer timeout to ensure printing completes
-    }, 300); // Slightly longer delay for better rendering
+      };
+      
+      images.forEach((img) => {
+        if (img.complete) {
+          checkAndPrint();
+        } else {
+          img.onload = checkAndPrint;
+          img.onerror = checkAndPrint; // Proceed even if image fails
+        }
+      });
+      
+      // Fallback: proceed after max 3 seconds even if images don't load
+      setTimeout(() => {
+        if (isPrinting) {
+          window.print();
+          setTimeout(() => {
+            if (isPrinting) {
+              cleanup();
+            }
+          }, 5000);
+        }
+      }, 3000);
+    }
     
   } catch (error) {
     console.error('Error generating mobile AMC PDF:', error);
     alert('Error generating AMC Agreement. Please try again.');
-    // Ensure we restore the original content even if there's an error
-    try {
-      document.body.innerHTML = originalBody;
-      document.title = originalTitle;
-    } catch (restoreError) {
-      console.error('Error restoring original content:', restoreError);
-    }
-    isPrinting = false; // Reset flag on error
+    cleanup();
+    isPrinting = false;
   }
 }
 
