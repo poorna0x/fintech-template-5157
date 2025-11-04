@@ -514,6 +514,8 @@
       appearance: none !important;
       position: relative !important;
       padding-right: 2.5rem !important;
+      text-align: left !important;
+      text-align-last: left !important;
     }
     
     input[type="date"]::-webkit-calendar-picker-indicator {
@@ -541,6 +543,12 @@ input[type="date"] {
 input[type="date"]::-webkit-calendar-picker-indicator {
   cursor: pointer;
   opacity: 1;
+}
+
+/* Safari-specific text alignment fix */
+_::-webkit-full-page-media, _:future, :root input[type="date"] {
+  text-align: left !important;
+  text-align-last: left !important;
 }
 
 /* Prevent date picker from causing zoom on iOS */

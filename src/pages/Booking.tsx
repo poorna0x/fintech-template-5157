@@ -1875,7 +1875,7 @@ const Booking: React.FC = () => {
                   value={formData.serviceDate}
                   onChange={(e) => handleInputChange('serviceDate', e.target.value)}
                   min={new Date().toISOString().split('T')[0]}
-                  className={`mt-1 ${
+                  className={`mt-1 text-left ${
                     showValidation && !formData.serviceDate 
                       ? 'border-2 border-black dark:border-white' 
                       : ''
