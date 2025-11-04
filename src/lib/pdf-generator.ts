@@ -362,16 +362,70 @@ export function generateBillPDF(billData: PDFBillData, action: 'print' | 'pdf' =
 }
 
 function handleMobilePrint(billData: PDFBillData, action: 'print' | 'pdf'): void {
+  // Store original content for restoration
+  const originalBody = document.body.innerHTML;
+  const originalTitle = document.title;
+  
+  // Store references to cleanup
+  let afterPrintHandler: (() => void) | null = null;
+  let isPrinting = true;
+  
+  const cleanup = () => {
+    try {
+      // Remove print event listener
+      if (afterPrintHandler) {
+        window.removeEventListener('afterprint', afterPrintHandler);
+      }
+      
+      // Only cleanup if still printing (prevent duplicate cleanups)
+      if (!isPrinting) {
+        return;
+      }
+      
+      // Mark as no longer printing to prevent duplicate cleanup
+      isPrinting = false;
+      
+      // Remove injected styles
+      const printStyles = document.getElementById('mobile-print-styles');
+      if (printStyles && printStyles.parentNode) {
+        printStyles.parentNode.removeChild(printStyles);
+      }
+      
+      const additionalStyles = document.getElementById('mobile-pdf-format-fix');
+      if (additionalStyles && additionalStyles.parentNode) {
+        additionalStyles.parentNode.removeChild(additionalStyles);
+      }
+      
+      // Restore original title
+      document.title = originalTitle;
+      
+      // Restore original body HTML
+      document.body.innerHTML = originalBody;
+      
+      // Force page reload to fully restore React state
+      // This is the most reliable way on mobile
+      // Use a small delay before reload to ensure print is fully processed
+      setTimeout(() => {
+        window.location.reload();
+      }, 500);
+      
+    } catch (error) {
+      console.error('Error during cleanup:', error);
+      isPrinting = false;
+      // If cleanup fails, reload the page
+      setTimeout(() => {
+        window.location.reload();
+      }, 500);
+    }
+  };
+  
   try {
-    // Store original content
-    const originalBody = document.body.innerHTML;
-    const originalTitle = document.title;
-    
     // Create the bill content
     const billContent = createBillContent(billData);
     console.log('Mobile bill content generated:', billContent.substring(0, 200) + '...');
     
-    // Replace body content temporarily
+    // COMPLETELY REPLACE body HTML with bill document content (like desktop does with new window)
+    // This ensures ONLY the bill content is visible when print dialog opens
     document.body.innerHTML = billContent;
     document.title = `Bill - ${billData.billNumber}`;
     
@@ -733,48 +787,95 @@ function handleMobilePrint(billData: PDFBillData, action: 'print' | 'pdf'): void
     setTimeout(forceA4Format, 100);
     setTimeout(forceA4Format, 200);
     
-    // Wait a moment for styles to apply, then print
-    setTimeout(() => {
-      try {
-        if (action === 'print') {
-          // Direct print without preview
-          window.print();
-        } else {
-          // Save as PDF (browser will show save dialog)
-          window.print();
-        }
-        
-        // Clean up after printing - restore original content
-        setTimeout(() => {
-          try {
-            document.body.innerHTML = originalBody;
-            document.title = originalTitle;
-            if (document.head.contains(printStyles)) {
-              document.head.removeChild(printStyles);
-            }
-            if (document.head.contains(additionalStyles)) {
-              document.head.removeChild(additionalStyles);
-            }
-          } catch (cleanupError) {
-            console.error('Error during cleanup:', cleanupError);
-            // Force cleanup even if there's an error
-            location.reload();
-          }
-        }, 2000); // Longer timeout for mobile
-      } catch (printError) {
-        console.error('Error during print:', printError);
-        // Restore content immediately on error
-        document.body.innerHTML = originalBody;
-        document.title = originalTitle;
-        if (document.head.contains(printStyles)) {
-          document.head.removeChild(printStyles);
-        }
-        if (document.head.contains(additionalStyles)) {
-          document.head.removeChild(additionalStyles);
-        }
-        alert('Error generating PDF. Please try again.');
+    // Force a reflow to ensure content is rendered
+    void document.body.offsetHeight;
+    
+    // Set up print event handlers
+    let cleanupTimeout: ReturnType<typeof setTimeout> | null = null;
+    
+    afterPrintHandler = () => {
+      // Wait much longer before cleanup to ensure print is fully captured
+      // Mobile browsers may still be processing the print after dialog closes
+      if (cleanupTimeout) {
+        clearTimeout(cleanupTimeout);
       }
-    }, 300); // Longer delay for mobile
+      // Increased delay to 3 seconds - ensures print is captured before cleanup
+      cleanupTimeout = setTimeout(cleanup, 3000);
+    };
+    
+    window.addEventListener('afterprint', afterPrintHandler);
+    
+    // Wait for content to fully render, including images
+    const images = document.body.querySelectorAll('img');
+    let imagesLoaded = 0;
+    const totalImages = images.length;
+    
+    const triggerPrint = () => {
+      // Small delay to ensure everything is rendered
+      setTimeout(() => {
+        try {
+          if (action === 'print') {
+            // Direct print without preview
+            window.print();
+          } else {
+            // Save as PDF (browser will show save dialog)
+            window.print();
+          }
+          
+          // Fallback cleanup in case afterprint doesn't fire (some mobile browsers)
+          // Use longer delay - 8 seconds to ensure print is fully captured
+          setTimeout(() => {
+            if (isPrinting) {
+              cleanup();
+            }
+          }, 8000); // 8 second fallback - ensures print completes before cleanup
+        } catch (printError) {
+          console.error('Error during print:', printError);
+          alert('Error generating PDF. Please try again.');
+          cleanup();
+        }
+      }, 500); // Give time for fonts and styles to load
+    };
+    
+    if (totalImages === 0) {
+      // No images, proceed immediately
+      triggerPrint();
+    } else {
+      // Wait for images to load
+      const checkAndPrint = () => {
+        imagesLoaded++;
+        if (imagesLoaded === totalImages) {
+          // All images loaded, trigger print
+          triggerPrint();
+        }
+      };
+      
+      images.forEach((img) => {
+        if (img.complete) {
+          checkAndPrint();
+        } else {
+          img.onload = checkAndPrint;
+          img.onerror = checkAndPrint; // Proceed even if image fails
+        }
+      });
+      
+      // Fallback: proceed after max 3 seconds even if images don't load
+      setTimeout(() => {
+        if (isPrinting) {
+          triggerPrint();
+        }
+      }, 3000);
+    
+      // Additional safety: keep bill content visible for at least 10 seconds
+      // This ensures mobile browsers have time to capture the content
+      setTimeout(() => {
+        // Don't cleanup if already cleaned up
+        if (isPrinting) {
+          // This is just a safety net - cleanup should have happened by now
+          console.log('Safety timeout reached - keeping bill content visible');
+        }
+      }, 10000);
+    }
     
   } catch (error) {
     console.error('Error generating mobile bill PDF:', error);
