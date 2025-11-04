@@ -78,6 +78,7 @@ const Booking: React.FC = () => {
   const [isCaptchaVerified, setIsCaptchaVerified] = useState(false);
   const [showSecurityStep, setShowSecurityStep] = useState(false);
   const [captchaStartTime] = useState(Date.now());
+  const [backgroundVerificationFailed, setBackgroundVerificationFailed] = useState(false);
 
   // Location search states for service provider
   const [locationSearchQuery, setLocationSearchQuery] = useState('');
@@ -747,17 +748,32 @@ const Booking: React.FC = () => {
   }, []);
 
   // Check if security step should be shown (fallback if auto-verification fails)
+  // Start background ALTCHA verification when reaching step 5
   useEffect(() => {
     if (currentStep === 5 && !isCaptchaVerified) {
-      const timeSinceStart = Date.now() - captchaStartTime;
-      // Show security step if more than 3 seconds have passed without verification
-      if (timeSinceStart > 3000) {
-        setShowSecurityStep(true);
-      }
+      // Reset background verification state when entering step 5
+      setBackgroundVerificationFailed(false);
+      setShowSecurityStep(false);
     } else if (isCaptchaVerified) {
       setShowSecurityStep(false); // Hide if verified
+      setBackgroundVerificationFailed(false);
     }
-  }, [currentStep, isCaptchaVerified, captchaStartTime]);
+  }, [currentStep, isCaptchaVerified]);
+
+  // Check if background verification failed after timeout
+  useEffect(() => {
+    if (currentStep === 5 && !isCaptchaVerified && !backgroundVerificationFailed) {
+      const timeout = setTimeout(() => {
+        // If still not verified after 4 seconds, show manual verification
+        if (!isCaptchaVerified) {
+          setBackgroundVerificationFailed(true);
+          setShowSecurityStep(true);
+        }
+      }, 4000); // 4 second timeout
+
+      return () => clearTimeout(timeout);
+    }
+  }, [currentStep, isCaptchaVerified, backgroundVerificationFailed]);
 
   const nextStep = () => {
     if (currentStep < totalSteps) {
@@ -1967,8 +1983,27 @@ const Booking: React.FC = () => {
               </Card>
             </div>
             
-            {/* Fallback: Show security widget if auto-verification failed or took too long */}
-            {showSecurityStep && !isCaptchaVerified && (
+            {/* Background ALTCHA verification - runs silently in background (hidden) */}
+            {currentStep === 5 && !isCaptchaVerified && !backgroundVerificationFailed && (
+              <AltchaWidget 
+                onVerify={(verified) => {
+                  setIsCaptchaVerified(verified);
+                  if (verified) {
+                    setShowSecurityStep(false);
+                    setBackgroundVerificationFailed(false);
+                  } else {
+                    // Background verification failed, show manual widget
+                    setBackgroundVerificationFailed(true);
+                    setShowSecurityStep(true);
+                  }
+                }}
+                autoStart={true}
+                hidden={true}
+              />
+            )}
+
+            {/* Manual security widget - only shown if background verification failed */}
+            {showSecurityStep && !isCaptchaVerified && backgroundVerificationFailed && (
               <div className="border-t pt-6 mt-6 space-y-4">
                 <div className="text-center">
                   <h4 className="text-lg font-semibold text-foreground">Security Verification</h4>
@@ -1980,6 +2015,7 @@ const Booking: React.FC = () => {
                       setIsCaptchaVerified(verified);
                       if (verified) {
                         setShowSecurityStep(false);
+                        setBackgroundVerificationFailed(false);
                       }
                     }}
                     autoStart={true}
