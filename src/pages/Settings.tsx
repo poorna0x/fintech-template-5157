@@ -132,14 +132,48 @@ const Settings = () => {
     setEditTechnicianDialogOpen(true);
   };
 
+  // Helper function to hash password using serverless function
+  const hashPassword = async (password: string): Promise<string> => {
+    const apiUrl = import.meta.env.DEV
+      ? 'http://localhost:8888/.netlify/functions/hash-technician-password'
+      : '/.netlify/functions/hash-technician-password';
+
+    try {
+      const response = await fetch(apiUrl, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ password }),
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error('Password hashing API error:', response.status, errorText);
+        throw new Error('Failed to hash password. Please try again.');
+      }
+
+      const result = await response.json();
+      return result.hashedPassword;
+    } catch (error) {
+      console.error('Password hashing error:', error);
+      throw new Error('Password hashing service unavailable. Please ensure the development server is running.');
+    }
+  };
+
   const handleSaveTechnician = async () => {
     try {
-      const technicianData = {
+      // Hash password if provided (for new technicians or password updates)
+      let hashedPassword: string | undefined = undefined;
+      if (technicianFormData.password && technicianFormData.password.trim() !== '') {
+        hashedPassword = await hashPassword(technicianFormData.password);
+      }
+
+      const technicianData: any = {
         full_name: technicianFormData.fullName,
         phone: technicianFormData.phone,
         email: technicianFormData.email,
         employee_id: technicianFormData.employeeId,
-        password: technicianFormData.password,
         account_status: 'ACTIVE',
         skills: {
           serviceTypes: ['RO', 'SOFTENER', 'AC', 'APPLIANCE'],
@@ -178,17 +212,26 @@ const Settings = () => {
         updated_at: new Date().toISOString()
       };
 
+      // Add hashed password if provided
+      if (hashedPassword) {
+        technicianData.password = hashedPassword;
+      }
+
       if (editTechnicianDialogOpen && selectedTechnician) {
         // Update existing technician - only update password if provided
         const updateData = { ...technicianData };
-        if (!technicianFormData.password) {
-          delete updateData.password; // Don't update password if empty
+        if (!hashedPassword) {
+          delete updateData.password; // Don't update password if not provided
         }
         const { error } = await db.technicians.update(selectedTechnician.id, updateData);
         if (error) throw error;
         toast.success('Technician updated successfully');
       } else {
-        // Create new technician
+        // Create new technician - password is required
+        if (!hashedPassword) {
+          toast.error('Password is required when creating a new technician');
+          return;
+        }
         const { error } = await db.technicians.create(technicianData);
         if (error) throw error;
         toast.success('Technician created successfully');

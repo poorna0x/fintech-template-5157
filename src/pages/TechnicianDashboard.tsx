@@ -69,11 +69,14 @@ const TechnicianDashboard = () => {
   useEffect(() => {
     console.log('TechnicianDashboard: Checking auth status...', { isTechnician, user, loading, userRole: user?.role });
     
-    // Only redirect if we're sure the user is not a technician and not loading
-    // Also check if user exists and has technician role
-    if (!loading && (!user || (!isTechnician && user.role !== 'technician'))) {
-      console.log('Not a technician, redirecting to login...', { user, isTechnician });
-      navigate('/technician/login');
+    // Only redirect if loading is complete and user is not a technician
+    // Wait for loading to complete before checking auth status
+    if (!loading) {
+      // If no user or user is not a technician, redirect to login
+      if (!user || user.role !== 'technician') {
+        console.log('Not a technician, redirecting to login...', { user, isTechnician, userRole: user?.role });
+        navigate('/technician/login', { replace: true });
+      }
     }
   }, [isTechnician, navigate, user, loading]);
 
