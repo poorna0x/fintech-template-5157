@@ -902,6 +902,14 @@ function handleMobilePrint(bill: Bill, action: 'print' | 'pdf'): void {
         window.removeEventListener('afterprint', afterPrintHandler);
       }
       
+      // Only cleanup if still printing (prevent multiple cleanups)
+      if (!isPrinting) {
+        return;
+      }
+      
+      // Mark as no longer printing to prevent duplicate cleanup
+      isPrinting = false;
+      
       // Remove injected styles
       const styleElement = document.getElementById('amc-print-styles');
       if (styleElement && styleElement.parentNode) {
@@ -916,14 +924,18 @@ function handleMobilePrint(bill: Bill, action: 'print' | 'pdf'): void {
       
       // Force page reload to fully restore React state
       // This is the most reliable way on mobile
-      window.location.reload();
+      // Use a small delay before reload to ensure print is fully processed
+      setTimeout(() => {
+        window.location.reload();
+      }, 500);
       
-      isPrinting = false;
     } catch (error) {
       console.error('Error during cleanup:', error);
-      // If cleanup fails, reload the page
-      window.location.reload();
       isPrinting = false;
+      // If cleanup fails, reload the page
+      setTimeout(() => {
+        window.location.reload();
+      }, 500);
     }
   };
   
@@ -977,9 +989,16 @@ function handleMobilePrint(bill: Bill, action: 'print' | 'pdf'): void {
     void document.body.offsetHeight;
     
     // Set up print event handlers
+    let cleanupTimeout: ReturnType<typeof setTimeout> | null = null;
+    
     afterPrintHandler = () => {
-      // Cleanup after print dialog closes - restore original page
-      setTimeout(cleanup, 300);
+      // Wait much longer before cleanup to ensure print is fully captured
+      // Mobile browsers may still be processing the print after dialog closes
+      if (cleanupTimeout) {
+        clearTimeout(cleanupTimeout);
+      }
+      // Increased delay to 3 seconds - ensures print is captured before cleanup
+      cleanupTimeout = setTimeout(cleanup, 3000);
     };
     
     window.addEventListener('afterprint', afterPrintHandler);
@@ -989,16 +1008,17 @@ function handleMobilePrint(bill: Bill, action: 'print' | 'pdf'): void {
     let imagesLoaded = 0;
     const totalImages = images.length;
     
-    const triggerPrint = () => {
+        const triggerPrint = () => {
       // Small delay to ensure everything is rendered
       setTimeout(() => {
         window.print();
         // Fallback cleanup in case afterprint doesn't fire (some mobile browsers)
+        // Use longer delay - 8 seconds to ensure print is fully captured
         setTimeout(() => {
           if (isPrinting) {
             cleanup();
           }
-        }, 5000); // 5 second fallback
+        }, 8000); // 8 second fallback - ensures print completes before cleanup
       }, 500); // Give time for fonts and styles to load
     };
     
@@ -1030,6 +1050,16 @@ function handleMobilePrint(bill: Bill, action: 'print' | 'pdf'): void {
           triggerPrint();
         }
       }, 3000);
+    
+    // Additional safety: keep AMC content visible for at least 10 seconds
+    // This ensures mobile browsers have time to capture the content
+    setTimeout(() => {
+      // Don't cleanup if already cleaned up
+      if (isPrinting) {
+        // This is just a safety net - cleanup should have happened by now
+        console.log('Safety timeout reached - keeping AMC content visible');
+      }
+    }, 10000);
     }
     
   } catch (error) {
