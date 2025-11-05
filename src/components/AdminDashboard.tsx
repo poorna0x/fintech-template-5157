@@ -49,7 +49,8 @@ import {
   CalendarPlus,
   XCircle,
   CheckCircle2,
-  Filter
+  Filter,
+  Tag
 } from 'lucide-react';
 import { db, supabase } from '@/lib/supabase';
 import { Customer, Job, Technician } from '@/types';
@@ -251,7 +252,9 @@ const AdminDashboard = () => {
     description: '',
     priority: 'MEDIUM' as 'LOW' | 'MEDIUM' | 'HIGH' | 'URGENT',
     assigned_technician_id: '',
-    cost_agreed: 0,
+    cost_agreed: '',
+    lead_source: 'Direct call',
+    lead_source_custom: '',
     photos: [] as string[]
   });
   const [isCreatingJob, setIsCreatingJob] = useState(false);
@@ -275,6 +278,7 @@ const AdminDashboard = () => {
   const [showModelSuggestions, setShowModelSuggestions] = useState(false);
   const [dbBrands, setDbBrands] = useState<string[]>([]);
   const [dbModels, setDbModels] = useState<string[]>([]);
+  const [expandedDescriptions, setExpandedDescriptions] = useState<{[jobId: string]: boolean}>({});
   
   // Brand and model data - Comprehensive list of popular RO and Softener brands in India
   const brandData = {
@@ -1430,7 +1434,9 @@ const AdminDashboard = () => {
       description: '',
       priority: 'MEDIUM' as 'LOW' | 'MEDIUM' | 'HIGH' | 'URGENT',
       assigned_technician_id: '',
-      cost_agreed: 0,
+      cost_agreed: '',
+      lead_source: 'Direct call',
+      lead_source_custom: '',
       photos: [] as string[]
     };
     setNewJobFormData(initialFormData);
@@ -1444,10 +1450,6 @@ const AdminDashboard = () => {
     // Validate required fields
     if (!newJobFormData.scheduled_date) {
       toast.error('Please select a scheduled date');
-      return;
-    }
-    if (!newJobFormData.description.trim()) {
-      toast.error('Please enter a job description');
       return;
     }
 
@@ -1469,13 +1471,15 @@ const AdminDashboard = () => {
         service_location: selectedCustomerForJob.location,
         status: newJobFormData.assigned_technician_id ? 'ASSIGNED' : 'PENDING',
         priority: newJobFormData.priority,
-        description: newJobFormData.description,
-        requirements: [],
-        estimated_cost: newJobFormData.cost_agreed,
+        description: newJobFormData.description.trim() || '',
+        requirements: [{ 
+          lead_source: newJobFormData.lead_source === 'Other' ? (newJobFormData.lead_source_custom || 'Other') : newJobFormData.lead_source,
+          cost_range: newJobFormData.cost_agreed || ''
+        }],
+        estimated_cost: newJobFormData.cost_agreed ? (parseFloat(newJobFormData.cost_agreed.toString().split('-')[0].trim()) || 0) : 0,
         payment_status: 'PENDING',
         assigned_technician_id: newJobFormData.assigned_technician_id || null,
-        assigned_date: newJobFormData.assigned_technician_id ? new Date().toISOString() : null,
-        beforePhotos: newJobFormData.photos
+        assigned_date: newJobFormData.assigned_technician_id ? new Date().toISOString() : null
       };
 
       const { data: newJob, error } = await db.jobs.create(jobData);
@@ -3857,19 +3861,21 @@ const AdminDashboard = () => {
                     </div>
                     
                     {/* Email */}
-                    <div className="bg-white rounded-lg p-3 border border-gray-200 hover:border-gray-300 hover:shadow-sm transition-all duration-200">
-                      <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-3">
-                        <div className="w-8 h-8 sm:w-10 sm:h-10 bg-gray-100 rounded-lg flex items-center justify-center flex-shrink-0">
-                          <a href={`mailto:${customer.email}`} className="cursor-pointer">
-                            <Mail className="w-4 h-4 sm:w-5 sm:h-5 text-gray-600" />
-                          </a>
-                        </div>
-                        <div className="flex-1 min-w-0">
-                          <div className="text-sm font-semibold text-gray-900 truncate">{customer.email}</div>
-                          <div className="text-xs text-gray-500">Email</div>
+                    {customer.email && customer.email.trim() && !customer.email.toLowerCase().includes('nomail') && !customer.email.toLowerCase().includes('no@mail') && (
+                      <div className="bg-white rounded-lg p-3 border border-gray-200 hover:border-gray-300 hover:shadow-sm transition-all duration-200">
+                        <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-3">
+                          <div className="w-8 h-8 sm:w-10 sm:h-10 bg-gray-100 rounded-lg flex items-center justify-center flex-shrink-0">
+                            <a href={`mailto:${customer.email}`} className="cursor-pointer">
+                              <Mail className="w-4 h-4 sm:w-5 sm:h-5 text-gray-600" />
+                            </a>
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <div className="text-sm font-semibold text-gray-900 truncate">{customer.email}</div>
+                            <div className="text-xs text-gray-500">Email</div>
+                          </div>
                         </div>
                       </div>
-                    </div>
+                    )}
                     
                     {/* WhatsApp */}
                     <div className="bg-white rounded-lg p-3 border border-gray-200 hover:border-gray-300 hover:shadow-sm transition-all duration-200">
@@ -4070,27 +4076,36 @@ const AdminDashboard = () => {
                                     )}
                                     
                                     {/* Agreed Price - Only show if it exists and is greater than 0 */}
-                                    {((job as any).estimated_cost && (job as any).estimated_cost > 0) && (
-                                      <div className="flex items-start gap-2 sm:items-center">
-                                        <div className="w-4 h-4 text-gray-400 flex-shrink-0 mt-0.5 sm:mt-0 font-bold text-lg">₹</div>
-                                        <div className="min-w-0 flex-1">
-                                          <div className="text-xs text-gray-500">Agreed Price</div>
-                                          <div className="font-medium text-gray-900 break-words">
-                                            ₹{(job as any).estimated_cost}
-                                            {(job as any).actual_cost && (job as any).actual_cost !== (job as any).estimated_cost && (
-                                              <span className="text-xs text-gray-500 ml-1">
-                                                (Est: ₹{(job as any).estimated_cost})
-                                              </span>
+                                    {(() => {
+                                      const requirements = Array.isArray((job as any).requirements) ? (job as any).requirements : [];
+                                      const costRange = requirements.find((r: any) => r?.cost_range)?.cost_range;
+                                      const estimatedCost = (job as any).estimated_cost;
+                                      const hasCost = estimatedCost && parseFloat(estimatedCost) > 0;
+                                      
+                                      if (!hasCost) return null;
+                                      
+                                      return (
+                                        <div className="flex items-start gap-2 sm:items-center">
+                                          <div className="w-4 h-4 text-gray-400 flex-shrink-0 mt-0.5 sm:mt-0 font-bold text-lg">₹</div>
+                                          <div className="min-w-0 flex-1">
+                                            <div className="text-xs text-gray-500">Agreed Price</div>
+                                            <div className="font-medium text-gray-900 break-words">
+                                              {costRange && costRange.includes('-') ? `₹${costRange}` : `₹${estimatedCost}`}
+                                              {(job as any).actual_cost && (job as any).actual_cost !== estimatedCost && (
+                                                <span className="text-xs text-gray-500 ml-1">
+                                                  (Est: ₹{estimatedCost})
+                                                </span>
+                                              )}
+                                            </div>
+                                            {(job as any).actual_cost && parseFloat((job as any).actual_cost) > 0 && (
+                                              <div className="text-xs text-green-600">
+                                                Final: ₹{(job as any).actual_cost}
+                                              </div>
                                             )}
                                           </div>
-                                          {(job as any).actual_cost && (job as any).actual_cost > 0 && (
-                                            <div className="text-xs text-green-600">
-                                              Final: ₹{(job as any).actual_cost}
-                                            </div>
-                                          )}
                                         </div>
-                                      </div>
-                                    )}
+                                      );
+                                    })()}
                                     
                                     {((job as any).assigned_technician_id || job.assignedTechnician) && (
                                       <div className="flex items-start gap-2 sm:items-center">
@@ -4130,12 +4145,58 @@ const AdminDashboard = () => {
                                       </div>
                                     )}
                                     
-                                    {job.description && (
-                                      <div className="sm:col-span-2 lg:col-span-1">
-                                        <div className="text-xs text-gray-500">Description</div>
-                                        <div className="font-medium text-gray-900 break-words line-clamp-2">{job.description}</div>
-                                      </div>
-                                    )}
+                                    {job.description && job.description.trim() && job.description !== 'No description provided' && (() => {
+                                      const descriptionLength = job.description.length;
+                                      const maxLength = 150; // Show expand option if longer than 150 characters
+                                      const isExpanded = expandedDescriptions[job.id || ''] || false;
+                                      const shouldShowExpand = descriptionLength > maxLength;
+                                      const displayText = shouldShowExpand && !isExpanded 
+                                        ? job.description.substring(0, maxLength) + '...' 
+                                        : job.description;
+                                      
+                                      return (
+                                        <div className="flex items-start gap-2 sm:items-start">
+                                          <FileText className="w-4 h-4 text-gray-400 flex-shrink-0 mt-0.5" />
+                                          <div className="min-w-0 flex-1">
+                                            <div className="text-xs text-gray-500">Description</div>
+                                            <div className="font-medium text-gray-900 break-words">
+                                              {displayText}
+                                            </div>
+                                            {shouldShowExpand && (
+                                              <button
+                                                onClick={() => {
+                                                  setExpandedDescriptions(prev => ({
+                                                    ...prev,
+                                                    [job.id || '']: !isExpanded
+                                                  }));
+                                                }}
+                                                className="text-xs text-blue-600 hover:text-blue-800 mt-1 font-medium"
+                                              >
+                                                {isExpanded ? 'Show less' : 'Show more'}
+                                              </button>
+                                            )}
+                                          </div>
+                                        </div>
+                                      );
+                                    })()}
+                                    
+                                    {/* Lead Source */}
+                                    {(() => {
+                                      const requirements = Array.isArray((job as any).requirements) ? (job as any).requirements : [];
+                                      const leadSource = requirements.find((r: any) => r?.lead_source)?.lead_source;
+                                      if (leadSource) {
+                                        return (
+                                          <div className="flex items-start gap-2 sm:items-center">
+                                            <Tag className="w-4 h-4 text-gray-400 flex-shrink-0 mt-0.5 sm:mt-0" />
+                                            <div className="min-w-0 flex-1">
+                                              <div className="text-xs text-gray-500">Lead Source</div>
+                                              <div className="font-medium text-gray-900 break-words">{leadSource}</div>
+                                            </div>
+                                          </div>
+                                        );
+                                      }
+                                      return null;
+                                    })()}
                                     
                                     {/* Google Maps Link */}
                                     {(job as any)?.service_location?.googleLocation && (
@@ -5732,13 +5793,16 @@ const AdminDashboard = () => {
                   className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 appearance-none bg-white"
                 >
                   <option value="">No assignment</option>
-                  {technicians
-                    .filter(tech => !tech.status || tech.status === 'AVAILABLE')
-                    .map((technician) => (
+                  {technicians.length === 0 ? (
+                    <option value="" disabled>No technicians available</option>
+                  ) : (
+                    technicians.map((technician) => (
                       <option key={technician.id} value={technician.id}>
                         {technician.fullName || 'Unknown'} ({technician.employeeId || 'No ID'})
+                        {technician.status && technician.status !== 'AVAILABLE' ? ` - ${technician.status}` : ''}
                       </option>
-                    ))}
+                    ))
+                  )}
                 </select>
               </div>
             </div>
@@ -5856,12 +5920,12 @@ const AdminDashboard = () => {
             <div className="space-y-4 p-4 border border-gray-200 rounded-lg bg-gray-50">
               <h3 className="text-lg font-semibold text-gray-900">Job Details</h3>
               <div className="space-y-2">
-                <Label htmlFor="job_description">Description</Label>
+                <Label htmlFor="job_description">Description (Optional)</Label>
                 <Textarea
                   id="job_description"
                   value={newJobFormData.description}
                   onChange={(e) => handleNewJobFormChange('description', e.target.value)}
-                  placeholder="Describe the service requirements..."
+                  placeholder="Describe the service requirements (optional)..."
                   rows={4}
                 />
               </div>
@@ -5870,11 +5934,42 @@ const AdminDashboard = () => {
                 <Label htmlFor="job_cost_agreed">Cost Already Agreed (₹)</Label>
                 <Input
                   id="job_cost_agreed"
-                  type="number"
+                  type="text"
                   value={newJobFormData.cost_agreed}
-                  onChange={(e) => handleNewJobFormChange('cost_agreed', parseInt(e.target.value) || 0)}
-                  placeholder="0"
+                  onChange={(e) => {
+                    const value = e.target.value;
+                    // Allow numbers, dashes, and spaces for ranges like "400-500"
+                    if (value === '' || /^[\d\s-]+$/.test(value)) {
+                      handleNewJobFormChange('cost_agreed', value);
+                    }
+                  }}
+                  placeholder="e.g., 400 or 400-500"
                 />
+                <p className="text-xs text-gray-500">Enter a single amount or a range (e.g., 400-500)</p>
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="job_lead_source">Lead Source</Label>
+                <select
+                  id="job_lead_source"
+                  value={newJobFormData.lead_source}
+                  onChange={(e) => handleNewJobFormChange('lead_source', e.target.value)}
+                  className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 appearance-none bg-white"
+                >
+                  <option value="Direct call">Direct call</option>
+                  <option value="RO care india">RO care india</option>
+                  <option value="Home triangle">Home triangle</option>
+                  <option value="Other">Other</option>
+                </select>
+                {newJobFormData.lead_source === 'Other' && (
+                  <Input
+                    id="job_lead_source_custom"
+                    value={newJobFormData.lead_source_custom || ''}
+                    onChange={(e) => handleNewJobFormChange('lead_source_custom', e.target.value)}
+                    placeholder="Enter lead source"
+                    className="mt-2"
+                  />
+                )}
               </div>
             </div>
           </div>
