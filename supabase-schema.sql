@@ -33,7 +33,8 @@ CREATE TABLE customers (
     
     -- Additional info
     notes TEXT,
-    preferred_time_slot VARCHAR(20) CHECK (preferred_time_slot IN ('MORNING', 'AFTERNOON', 'EVENING')),
+    preferred_time_slot VARCHAR(20) CHECK (preferred_time_slot IN ('MORNING', 'AFTERNOON', 'EVENING', 'CUSTOM')),
+    custom_time VARCHAR(10), -- Exact time in HH:MM format when preferred_time_slot is CUSTOM
     preferred_language VARCHAR(20) DEFAULT 'ENGLISH' CHECK (preferred_language IN ('ENGLISH', 'HINDI', 'KANNADA', 'TAMIL', 'TELUGU')),
     
     -- Service cost information

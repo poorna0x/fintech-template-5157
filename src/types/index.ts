@@ -45,7 +45,8 @@ export interface Customer {
   // Additional Info
   notes?: string;
   behavior?: string; // Customer behavior notes
-  preferredTimeSlot?: 'MORNING' | 'AFTERNOON' | 'EVENING';
+  preferredTimeSlot?: 'MORNING' | 'AFTERNOON' | 'EVENING' | 'CUSTOM';
+  customTime?: string; // Exact time in HH:MM format when preferredTimeSlot is CUSTOM
   preferredLanguage?: 'ENGLISH' | 'HINDI' | 'KANNADA' | 'TAMIL' | 'TELUGU';
   
   // Service Cost Information

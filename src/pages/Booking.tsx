@@ -150,13 +150,23 @@ const Booking: React.FC = () => {
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Helper function to format time slot
-  const formatTimeSlot = (timeSlot: string) => {
+  const formatTimeSlot = (timeSlot: string, customTime?: string) => {
+    // If CUSTOM and custom time is provided, format and display it
+    if (timeSlot === 'CUSTOM' && customTime) {
+      const [hours, minutes] = customTime.split(':');
+      const hour24 = parseInt(hours);
+      const hour12 = hour24 > 12 ? hour24 - 12 : (hour24 === 0 ? 12 : hour24);
+      const ampm = hour24 >= 12 ? 'PM' : 'AM';
+      return `${hour12}:${minutes} ${ampm}`;
+    }
+    
     const timeMap: { [key: string]: string } = {
       'FIRST_HALF': 'Morning (9 AM - 1 PM)',
       'SECOND_HALF': 'Afternoon (1 PM - 6 PM)',
       'MORNING': 'Morning (9 AM - 1 PM)',
       'AFTERNOON': 'Afternoon (1 PM - 6 PM)',
-      'EVENING': 'Evening (6 PM - 9 PM)'
+      'EVENING': 'Evening (6 PM - 9 PM)',
+      'CUSTOM': 'Custom Time'
     };
     return timeMap[timeSlot] || timeSlot;
   };
@@ -1193,7 +1203,8 @@ const Booking: React.FC = () => {
             longitude: formData.coordinates.lng,
             formattedAddress: formData.address,
           },
-          preferred_time_slot: formData.preferredTime,
+          preferred_time_slot: (formData.preferredTime === 'FIRST_HALF' ? 'MORNING' : formData.preferredTime === 'SECOND_HALF' ? 'AFTERNOON' : 'CUSTOM') as 'MORNING' | 'AFTERNOON' | 'EVENING' | 'CUSTOM',
+          custom_time: formData.preferredTime === 'CUSTOM' && formData.preferredTimeCustom ? formData.preferredTimeCustom : null,
           updated_at: new Date().toISOString(),
         };
         
@@ -1260,7 +1271,8 @@ const Booking: React.FC = () => {
           model: formData.modelName || 'Not specified',
           status: 'ACTIVE' as const,
           customer_since: new Date().toISOString(),
-          preferred_time_slot: formData.preferredTime,
+          preferred_time_slot: (formData.preferredTime === 'FIRST_HALF' ? 'MORNING' : formData.preferredTime === 'SECOND_HALF' ? 'AFTERNOON' : 'CUSTOM') as 'MORNING' | 'AFTERNOON' | 'EVENING' | 'CUSTOM',
+          custom_time: formData.preferredTime === 'CUSTOM' && formData.preferredTimeCustom ? formData.preferredTimeCustom : null,
           preferred_language: 'ENGLISH' as const,
         };
 
@@ -1377,6 +1389,7 @@ const Booking: React.FC = () => {
         address: formData.address,
         serviceDate: formData.serviceDate,
         preferredTime: formData.preferredTime,
+        preferredTimeCustom: formData.preferredTimeCustom,
         description: formData.description,
         customerAction,
         images: formData.images,
@@ -2000,7 +2013,7 @@ const Booking: React.FC = () => {
                     </div>
                   )}
                   <div><strong>Service Date:</strong> {formData.serviceDate ? new Date(formData.serviceDate).toLocaleDateString() : 'Not selected'}</div>
-                  <div><strong>Time Slot:</strong> {formatTimeSlot(formData.preferredTime)}</div>
+                  <div><strong>Time Slot:</strong> {formatTimeSlot(formData.preferredTime, formData.preferredTimeCustom)}</div>
                   {formData.images.length > 0 && <div><strong>Images:</strong> {formData.images.length} uploaded</div>}
                 </CardContent>
               </Card>
@@ -2195,7 +2208,7 @@ const Booking: React.FC = () => {
                       <div>
                         <Label className="text-sm font-medium text-gray-500 dark:text-gray-400">Preferred Time</Label>
                         <p className="text-foreground font-medium">
-                          {formatTimeSlot(bookingDetails.preferredTime)}
+                          {formatTimeSlot(bookingDetails.preferredTime, bookingDetails.preferredTimeCustom)}
                         </p>
                       </div>
                     </div>
@@ -2222,7 +2235,7 @@ const Booking: React.FC = () => {
                       <div>
                         <Label className="text-sm font-medium text-gray-500 dark:text-gray-400">Time Slot</Label>
                         <p className="text-foreground font-medium">
-                          {formatTimeSlot(bookingDetails.preferredTime)}
+                          {formatTimeSlot(bookingDetails.preferredTime, bookingDetails.preferredTimeCustom)}
                         </p>
                       </div>
                     </div>

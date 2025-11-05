@@ -72,6 +72,29 @@ const generateJobNumber = (serviceType: 'RO' | 'SOFTENER'): string => {
 };
 
 // Map service types array to database service_type value
+// Helper function to format preferred time slot with custom time
+const formatPreferredTimeSlot = (timeSlot: string | undefined, customTime: string | null | undefined): string => {
+  if (!timeSlot) return 'Not specified';
+  
+  if (timeSlot === 'CUSTOM' && customTime) {
+    // Format custom time (HH:MM) to readable format (e.g., "2:30 PM")
+    const [hours, minutes] = customTime.split(':');
+    const hour24 = parseInt(hours);
+    const hour12 = hour24 > 12 ? hour24 - 12 : (hour24 === 0 ? 12 : hour24);
+    const ampm = hour24 >= 12 ? 'PM' : 'AM';
+    return `Custom: ${hour12}:${minutes} ${ampm}`;
+  }
+  
+  const timeSlotMap: { [key: string]: string } = {
+    'MORNING': 'Morning (9 AM - 1 PM)',
+    'AFTERNOON': 'Afternoon (1 PM - 6 PM)',
+    'EVENING': 'Evening (6 PM - 9 PM)',
+    'CUSTOM': 'Custom Time'
+  };
+  
+  return timeSlotMap[timeSlot] || timeSlot;
+};
+
 const mapServiceTypesToDbValue = (serviceTypes: string[]): string => {
   if (serviceTypes.length === 0) return 'RO'; // Default
   
@@ -153,6 +176,7 @@ const AdminDashboard = () => {
     notes: '',
     google_location: '',
     visible_address: '',
+    custom_time: '',
     address: {
       street: '',
       area: '',
@@ -568,6 +592,7 @@ const AdminDashboard = () => {
     lastServiceDate: customer.last_service_date,
     notes: customer.notes,
     preferredTimeSlot: customer.preferred_time_slot,
+    customTime: (customer as any).custom_time || null,
     preferredLanguage: customer.preferred_language,
     serviceCost: customer.service_cost,
     costAgreed: customer.cost_agreed,
@@ -1005,6 +1030,7 @@ const AdminDashboard = () => {
       notes: customer.notes || '',
       google_location: customer.location?.formattedAddress || '',
       visible_address: (customer as any).visible_address || (customer.address as any)?.visible_address || '',
+      custom_time: customer.customTime || (customer as any).custom_time || '',
       address: {
         street: [
           customer.address?.street,
@@ -1058,9 +1084,11 @@ const AdminDashboard = () => {
         brand: Object.values(editFormData.equipment).map(eq => eq.brand).join(', '),
         model: Object.values(editFormData.equipment).map(eq => eq.model).join(', '),
         preferred_language: (editFormData.native_language || 'ENGLISH') as 'ENGLISH' | 'HINDI' | 'KANNADA' | 'TAMIL' | 'TELUGU',
+        preferred_time_slot: (customer as any).preferred_time_slot || customer.preferredTimeSlot || 'MORNING',
         status: editFormData.status as 'ACTIVE' | 'INACTIVE' | 'BLOCKED',
         notes: editFormData.notes,
         visible_address: editFormData.visible_address || '',
+        custom_time: editFormData.custom_time || null,
         address: updatedAddress,
         location: updatedLocation
       });
@@ -4459,51 +4487,6 @@ const AdminDashboard = () => {
                                       return null;
                                     })()}
                                     
-                                    {/* Location */}
-                                    {(() => {
-                                      const jobCustomer = job.customer as any;
-                                      const visibleAddress = jobCustomer?.address?.visible_address || 
-                                                           (job as any)?.service_address?.visible_address || '';
-                                      const serviceAddress = (job as any)?.service_address || jobCustomer?.address || {};
-                                      const serviceLocation = (job as any)?.service_location || jobCustomer?.location || {};
-                                      
-                                      // Show location if we have any address data
-                                      const hasAddressData = visibleAddress || serviceAddress?.street || serviceAddress?.area || serviceAddress?.city;
-                                      
-                                      if (!hasAddressData) {
-                                        return null;
-                                      }
-                                      
-                                      return (
-                                        <div className="flex items-start gap-2 sm:items-center">
-                                          <MapPin className="w-4 h-4 text-gray-400 flex-shrink-0 mt-0.5 sm:mt-0" />
-                                          <div className="min-w-0 flex-1">
-                                            <div className="text-xs text-gray-500">Location</div>
-                                            {visibleAddress && String(visibleAddress).trim() ? (
-                                              <button
-                                                onClick={() => {
-                                                  setJobAddressDialogOpen(prev => ({ ...prev, [job.id]: true }));
-                                                }}
-                                                className="text-left hover:text-gray-700 transition-colors cursor-pointer underline-offset-2 hover:underline font-medium text-gray-900 break-words"
-                                                title="Click to view full address"
-                                              >
-                                                {String(visibleAddress).trim()}
-                                              </button>
-                                            ) : (
-                                              <button
-                                                onClick={() => {
-                                                  setJobAddressDialogOpen(prev => ({ ...prev, [job.id]: true }));
-                                                }}
-                                                className="text-left hover:text-gray-700 transition-colors cursor-pointer underline-offset-2 hover:underline font-medium text-gray-900 break-words"
-                                                title="Click to view full address"
-                                              >
-                                                {serviceAddress?.area || serviceAddress?.street || serviceAddress?.city || 'View Address'}
-                                              </button>
-                                            )}
-                                          </div>
-                                        </div>
-                                      );
-                                    })()}
                                   </div>
 
                                   {/* Photos Section - Mobile responsive */}
