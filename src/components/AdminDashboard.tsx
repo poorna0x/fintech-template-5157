@@ -99,6 +99,7 @@ const AdminDashboard = () => {
   const [selectedCustomerForQuotation, setSelectedCustomerForQuotation] = useState<Customer | null>(null);
   const [amcModalOpen, setAmcModalOpen] = useState(false);
   const [selectedCustomerForAMC, setSelectedCustomerForAMC] = useState<Customer | null>(null);
+  const [moreOptionsDialogOpen, setMoreOptionsDialogOpen] = useState<Record<string, boolean>>({});
   const [editFormData, setEditFormData] = useState({
     full_name: '',
     phone: '',
@@ -210,7 +211,7 @@ const AdminDashboard = () => {
   const [completeDialogOpen, setCompleteDialogOpen] = useState(false);
   const [selectedJobForComplete, setSelectedJobForComplete] = useState<Job | null>(null);
   const [completionNotes, setCompletionNotes] = useState('');
-  const [statusFilter, setStatusFilter] = useState<'ONGOING' | 'PENDING' | 'ASSIGNED' | 'IN_PROGRESS' | 'COMPLETED' | 'CANCELLED' | 'RESCHEDULED'>('ONGOING');
+  const [statusFilter, setStatusFilter] = useState<'ALL' | 'ONGOING' | 'PENDING' | 'ASSIGNED' | 'IN_PROGRESS' | 'COMPLETED' | 'CANCELLED' | 'RESCHEDULED'>('ALL');
   const [loadingCustomerJobs, setLoadingCustomerJobs] = useState<{[customerId: string]: boolean}>({});
   const [selectedJobPhotos, setSelectedJobPhotos] = useState<{jobId: string, photos: string[], type: 'before' | 'after'} | null>(null);
   const [jobToDelete, setJobToDelete] = useState<Job | null>(null);
@@ -329,19 +330,56 @@ const AdminDashboard = () => {
         db.technicians.getAll()
       ]);
 
+      // Log errors for debugging
+      if (customersResult.error) {
+        console.error('Error loading customers:', customersResult.error);
+        toast.error(`Failed to load customers: ${customersResult.error.message}`);
+      }
+      if (jobsResult.error) {
+        console.error('Error loading jobs:', jobsResult.error);
+      }
+      if (techniciansResult.error) {
+        console.error('Error loading technicians:', techniciansResult.error);
+      }
+
       if (customersResult.data) {
         const transformedCustomers = customersResult.data.map(transformCustomerData);
+        console.log(`Loaded ${transformedCustomers.length} customers`);
         setCustomers(transformedCustomers);
+      } else {
+        console.warn('No customer data received');
+        setCustomers([]);
       }
-      if (jobsResult.data) setJobs(jobsResult.data);
+      
+      if (jobsResult.data) {
+        console.log(`Loaded ${jobsResult.data.length} jobs`);
+        // Debug: Log first few jobs to see their structure
+        if (import.meta.env.DEV && jobsResult.data.length > 0) {
+          console.log('[Jobs Sample]', jobsResult.data.slice(0, 3).map(j => ({
+            id: j.id,
+            job_number: (j as any).job_number,
+            customer_id: (j as any).customer_id,
+            customerId: (j as any).customerId,
+            status: (j as any).status
+          })));
+        }
+        setJobs(jobsResult.data);
+      } else {
+        console.warn('No jobs data received');
+        setJobs([]);
+      }
+      
       if (techniciansResult.data) {
         const transformedTechnicians = techniciansResult.data.map(transformTechnicianData);
+        console.log(`Loaded ${transformedTechnicians.length} technicians`);
         setTechnicians(transformedTechnicians);
+      } else {
+        setTechnicians([]);
       }
 
     } catch (error) {
       console.error('Error loading dashboard data:', error);
-      toast.error('Failed to load dashboard data');
+      toast.error(`Failed to load dashboard data: ${error instanceof Error ? error.message : 'Unknown error'}`);
     } finally {
       setLoading(false);
     }
@@ -2404,51 +2442,83 @@ const AdminDashboard = () => {
   });
 
 
-  // Group all customers with their jobs (no filtering by status)
+    // Group all customers with their jobs (no filtering by status)
   const customersWithJobs = customers.map(customer => {
     const customerJobs = jobs
       .filter(job => {
         // Check both possible field names for customer ID
-        const jobCustomerId = job.customer_id || job.customerId;
-        return jobCustomerId === customer.id;
+        const jobCustomerId = (job as any).customer_id || job.customerId || (job as any).customerId;
+        const customerUuid = customer.id;
+        
+        // Debug logging in development
+        if (import.meta.env.DEV && jobs.length > 0 && jobs.indexOf(job) === 0) {
+          console.log('[Customer Jobs Match]', {
+            jobId: job.id,
+            jobCustomerId,
+            customerId: customerUuid,
+            match: jobCustomerId === customerUuid,
+            allJobIds: jobs.slice(0, 3).map(j => ({ id: j.id, customer_id: (j as any).customer_id || j.customerId }))
+          });
+        }
+        
+        return jobCustomerId === customerUuid;
       })
       .sort((a, b) => {
-        const aDate = new Date(a.scheduled_date || a.scheduledDate).getTime();
-        const bDate = new Date(b.scheduled_date || b.scheduledDate).getTime();
+        const aDate = new Date((a as any).scheduled_date || a.scheduledDate).getTime();
+        const bDate = new Date((b as any).scheduled_date || b.scheduledDate).getTime();
         return bDate - aDate; // Most recent first
       });
     
     return {
       customer,
       allJobs: customerJobs,
-      upcomingJobs: customerJobs.filter(job => ['PENDING', 'ASSIGNED', 'IN_PROGRESS'].includes(job.status)),
+      upcomingJobs: customerJobs.filter(job => ['PENDING', 'ASSIGNED', 'IN_PROGRESS'].includes(job.status)),                                                    
       completedJobs: customerJobs.filter(job => job.status === 'COMPLETED'),
       cancelledJobs: customerJobs.filter(job => job.status === 'CANCELLED')
     };
   });
+  
+  // Debug logging in development
+  if (import.meta.env.DEV) {
+    console.log('[Customers with Jobs]', {
+      totalCustomers: customers.length,
+      totalJobs: jobs.length,
+      customersWithJobsCount: customersWithJobs.filter(c => c.allJobs.length > 0).length,
+      customersWithJobs: customersWithJobs.slice(0, 3).map(c => ({
+        customerId: c.customer.id,
+        customerName: c.customer.fullName,
+        jobsCount: c.allJobs.length,
+        jobIds: c.allJobs.map(j => j.id)
+      }))
+    });
+  }
 
 
-  // Filter customers based on status filter
+    // Filter customers based on status filter
   const getFilteredCustomers = () => {
     let filteredCustomers = customersWithJobs;
     
     // Apply status filter
-    if (statusFilter === 'ONGOING') {
-      // Default: show customers with ongoing jobs (pending, assigned, in-progress)
+    if (statusFilter === 'ALL') {
+      // Show all customers regardless of job status (including those with no jobs)
+      filteredCustomers = customersWithJobs;
+    } else if (statusFilter === 'ONGOING') {
+      // Show customers with ongoing jobs (pending, assigned, in-progress)
       filteredCustomers = customersWithJobs.filter(({ allJobs }) => 
-        allJobs.some(job => ['PENDING', 'ASSIGNED', 'IN_PROGRESS'].includes(job.status))
+        allJobs.some(job => ['PENDING', 'ASSIGNED', 'IN_PROGRESS'].includes(job.status))                                                                        
       );
-      } else if (statusFilter === 'RESCHEDULED') {
-        // Filter for follow-up jobs (FOLLOW_UP status)
-        filteredCustomers = customersWithJobs.filter(({ allJobs }) => 
-          allJobs.some(job => job.status === 'FOLLOW_UP')
-        );
-      } else if (statusFilter === 'CANCELLED') {
-        // Filter for denied jobs (DENIED status)
-        filteredCustomers = customersWithJobs.filter(({ allJobs }) => 
-          allJobs.some(job => job.status === 'DENIED')
-        );
+    } else if (statusFilter === 'RESCHEDULED') {
+      // Filter for follow-up jobs (FOLLOW_UP status)
+      filteredCustomers = customersWithJobs.filter(({ allJobs }) => 
+        allJobs.some(job => job.status === 'FOLLOW_UP')
+      );
+    } else if (statusFilter === 'CANCELLED') {
+      // Filter for denied jobs (DENIED status)
+      filteredCustomers = customersWithJobs.filter(({ allJobs }) => 
+        allJobs.some(job => job.status === 'DENIED')
+      );
     } else {
+      // Filter by specific job status
       filteredCustomers = customersWithJobs.filter(({ allJobs }) => 
         allJobs.some(job => job.status === statusFilter)
       );
@@ -2675,16 +2745,24 @@ const AdminDashboard = () => {
           </Card>
         </div>
 
-        {/* Action Buttons Section */}
+                {/* Action Buttons Section */}
         <div className="mb-6">
           <div className="flex flex-col sm:flex-row gap-3 sm:gap-4">
+            <Button
+              onClick={() => setStatusFilter('ALL')}
+              variant={statusFilter === 'ALL' ? 'default' : 'outline'}
+              className="flex items-center gap-2"
+            >
+              <Users className="h-4 w-4" />
+              All Customers ({customers.length})
+            </Button>
             <Button
               onClick={() => setStatusFilter('ONGOING')}
               variant={statusFilter === 'ONGOING' ? 'default' : 'outline'}
               className="flex items-center gap-2"
             >
               <Clock className="h-4 w-4" />
-              Ongoing Jobs ({jobs.filter(job => ['PENDING', 'ASSIGNED', 'IN_PROGRESS'].includes(job.status)).length})
+              Ongoing Jobs ({jobs.filter(job => ['PENDING', 'ASSIGNED', 'IN_PROGRESS'].includes(job.status)).length})                                           
             </Button>
             <Button
               onClick={() => setStatusFilter('RESCHEDULED')}
@@ -2715,8 +2793,9 @@ const AdminDashboard = () => {
 
         {/* Customers with Jobs */}
         <div className="mb-6">
-          <h2 className="text-xl font-bold text-gray-900 mb-1">
-            {statusFilter === 'ONGOING' ? 'Customers with Ongoing Jobs' : 
+                    <h2 className="text-xl font-bold text-gray-900 mb-1">
+            {statusFilter === 'ALL' ? 'All Customers' :
+             statusFilter === 'ONGOING' ? 'Customers with Ongoing Jobs' : 
              statusFilter === 'RESCHEDULED' ? 'Customers with Follow-up Jobs' :
              statusFilter === 'CANCELLED' ? 'Customers with Denied Jobs' :
              statusFilter === 'COMPLETED' ? 'Customers with Completed Jobs' :
@@ -2724,13 +2803,15 @@ const AdminDashboard = () => {
           </h2>
           {!searchTerm.trim() && (
             <p className="text-xs text-gray-500 mb-3">
-              {statusFilter === 'ONGOING' 
-                ? `Showing ${displayedCustomers.length} customers with ongoing jobs (pending, assigned, in-progress)`
+              {statusFilter === 'ALL'
+                ? `Showing all ${displayedCustomers.length} customers (including those with no jobs)`
+                : statusFilter === 'ONGOING' 
+                ? `Showing ${displayedCustomers.length} customers with ongoing jobs (pending, assigned, in-progress)`                                           
                 : statusFilter === 'RESCHEDULED'
-                ? `Showing ${displayedCustomers.length} customers with follow-up jobs`
+                ? `Showing ${displayedCustomers.length} customers with follow-up jobs`                                                                          
                 : statusFilter === 'CANCELLED'
-                ? `Showing ${displayedCustomers.length} customers with denied jobs`
-                : `Showing ${displayedCustomers.length} customers with ${statusFilter.toLowerCase().replace('_', ' ')} jobs`
+                ? `Showing ${displayedCustomers.length} customers with denied jobs`                                                                             
+                : `Showing ${displayedCustomers.length} customers with ${statusFilter.toLowerCase().replace('_', ' ')} jobs`                                    
               }
             </p>
           )}
@@ -2803,38 +2884,100 @@ const AdminDashboard = () => {
                       History
                     </Button>
                     
-                    {/* Mobile 3 Dots Menu - Spans 2 columns */}
+                    {/* Mobile More Options Button - Opens Dialog */}
                     <div className="col-span-2">
-                      <DropdownMenu>
-                        <DropdownMenuTrigger asChild>
-                          <Button 
-                            variant="outline" 
-                            size="sm" 
-                            className="w-full flex items-center justify-center gap-2 h-10 bg-white hover:bg-gray-50 border-gray-300 hover:border-gray-400 text-gray-700 hover:text-gray-900 transition-all duration-200 rounded-md text-sm"
-                          >
-                            <MoreVertical className="w-4 h-4" />
-                            More Options
-                          </Button>
-                        </DropdownMenuTrigger>
-                        <DropdownMenuContent align="center" className="w-48">
-                          <DropdownMenuItem onClick={() => handleGenerateBill(customer)}>
-                            <Receipt className="mr-2 h-4 w-4" />
-                            Generate Bill
-                          </DropdownMenuItem>
-                          <DropdownMenuItem onClick={() => handleGenerateQuotation(customer)}>
-                            <FileText className="mr-2 h-4 w-4" />
-                            Generate Quotation
-                          </DropdownMenuItem>
-                          <DropdownMenuItem onClick={() => handleGenerateAMC(customer)}>
-                            <Star className="mr-2 h-4 w-4" />
-                            Generate AMC
-                          </DropdownMenuItem>
-                          <DropdownMenuItem onClick={() => toast.info('Reports coming soon')}>
-                            <FileText className="mr-2 h-4 w-4" />
-                            Reports
-                          </DropdownMenuItem>
-                        </DropdownMenuContent>
-                      </DropdownMenu>
+                      <Button 
+                        variant="outline" 
+                        size="sm" 
+                        className="w-full flex items-center justify-center gap-2 h-10 bg-white hover:bg-gray-50 border-gray-300 hover:border-gray-400 text-gray-700 hover:text-gray-900 transition-all duration-200 rounded-md text-sm"
+                        onClick={() => {
+                          setMoreOptionsDialogOpen(prev => ({
+                            ...prev,
+                            [customer.id]: true
+                          }));
+                        }}
+                      >
+                        <MoreVertical className="w-4 h-4" />
+                        More Options
+                      </Button>
+                      
+                      {/* More Options Dialog */}
+                      <Dialog 
+                        open={moreOptionsDialogOpen[customer.id] || false}
+                        onOpenChange={(open) => {
+                          setMoreOptionsDialogOpen(prev => ({
+                            ...prev,
+                            [customer.id]: open
+                          }));
+                        }}
+                      >
+                        <DialogContent className="sm:max-w-md">
+                          <DialogHeader>
+                            <DialogTitle>More Options</DialogTitle>
+                            <DialogDescription>
+                              Choose an action for {customer.fullName || 'this customer'}
+                            </DialogDescription>
+                          </DialogHeader>
+                          <div className="grid gap-2 py-4">
+                            <Button 
+                              variant="outline"
+                              className="w-full justify-start h-auto py-3 px-4"
+                              onClick={() => {
+                                setMoreOptionsDialogOpen(prev => ({ ...prev, [customer.id]: false }));
+                                handleGenerateBill(customer);
+                              }}
+                            >
+                              <Receipt className="mr-3 h-5 w-5" />
+                              <div className="text-left">
+                                <div className="font-medium">Generate Bill</div>
+                                <div className="text-xs text-muted-foreground">Create a bill for this customer</div>
+                              </div>
+                            </Button>
+                            <Button 
+                              variant="outline"
+                              className="w-full justify-start h-auto py-3 px-4"
+                              onClick={() => {
+                                setMoreOptionsDialogOpen(prev => ({ ...prev, [customer.id]: false }));
+                                handleGenerateQuotation(customer);
+                              }}
+                            >
+                              <FileText className="mr-3 h-5 w-5" />
+                              <div className="text-left">
+                                <div className="font-medium">Generate Quotation</div>
+                                <div className="text-xs text-muted-foreground">Create a quotation for this customer</div>
+                              </div>
+                            </Button>
+                            <Button 
+                              variant="outline"
+                              className="w-full justify-start h-auto py-3 px-4"
+                              onClick={() => {
+                                setMoreOptionsDialogOpen(prev => ({ ...prev, [customer.id]: false }));
+                                handleGenerateAMC(customer);
+                              }}
+                            >
+                              <Star className="mr-3 h-5 w-5" />
+                              <div className="text-left">
+                                <div className="font-medium">Generate AMC</div>
+                                <div className="text-xs text-muted-foreground">Create an AMC document for this customer</div>
+                              </div>
+                            </Button>
+                            <Button 
+                              variant="outline"
+                              className="w-full justify-start h-auto py-3 px-4"
+                              onClick={() => {
+                                setMoreOptionsDialogOpen(prev => ({ ...prev, [customer.id]: false }));
+                                toast.info('Reports coming soon');
+                              }}
+                            >
+                              <FileText className="mr-3 h-5 w-5" />
+                              <div className="text-left">
+                                <div className="font-medium">Reports</div>
+                                <div className="text-xs text-muted-foreground">View customer reports</div>
+                              </div>
+                            </Button>
+                          </div>
+                        </DialogContent>
+                      </Dialog>
                     </div>
                   </div>
 
@@ -3042,54 +3185,78 @@ const AdminDashboard = () => {
 
 
 
-                {/* Services Section - Only show if there are jobs */}
-                {allJobs.length > 0 && (
-                  <div className="p-4 bg-gray-50">
-                    <div className="mb-4">
-                      <h3 className="text-xl font-semibold text-gray-900 flex items-center gap-3">
-                        <div className="w-8 h-8 bg-gray-100 rounded-lg flex items-center justify-center">
-                          <Wrench className="w-4 h-4 text-gray-600" />
-                        </div>
-                        Service History ({allJobs.length})
-                      </h3>
-                      <p className="text-sm text-gray-600 mt-1">All service requests and job details</p>
+                                {/* Services Section - Always show, even if no jobs */}
+                <div className="p-4 bg-gray-50">
+                  <div className="mb-4">
+                    <h3 className="text-xl font-semibold text-gray-900 flex items-center gap-3">                                                              
+                      <div className="w-8 h-8 bg-gray-100 rounded-lg flex items-center justify-center">                                                       
+                        <Wrench className="w-4 h-4 text-gray-600" />
+                      </div>
+                      Service History ({allJobs.length})
+                    </h3>
+                    <p className="text-sm text-gray-600 mt-1">All service requests and job details</p>                                                        
+                  </div>
+                  
+                  {allJobs.length === 0 ? (
+                    <div className="text-center py-8 text-gray-500">
+                      <Wrench className="w-12 h-12 mx-auto mb-3 text-gray-400" />
+                      <p className="text-sm">No service history found for this customer</p>
                     </div>
+                  ) : (
 
-                    <div className="space-y-4">
+                                        <div className="space-y-4">
                       {(() => {
                         // Show jobs based on current filter
                         let jobsToShow = allJobs;
-                        if (statusFilter === 'ONGOING') {
+                        if (statusFilter === 'ALL') {
+                          // Show all jobs when filter is 'ALL'
+                          jobsToShow = allJobs;
+                        } else if (statusFilter === 'ONGOING') {
                           // Show ongoing jobs (pending, assigned, in-progress)
-                          jobsToShow = allJobs.filter(job => ['PENDING', 'ASSIGNED', 'IN_PROGRESS'].includes(job.status));
-      } else if (statusFilter === 'RESCHEDULED') {
-        // Show follow-up jobs (FOLLOW_UP status)
-        jobsToShow = allJobs.filter(job => job.status === 'FOLLOW_UP');
-      } else if (statusFilter === 'CANCELLED') {
-        // Show denied jobs (DENIED status)
-        jobsToShow = allJobs.filter(job => job.status === 'DENIED');
+                          jobsToShow = allJobs.filter(job => ['PENDING', 'ASSIGNED', 'IN_PROGRESS'].includes(job.status));                                      
+                        } else if (statusFilter === 'RESCHEDULED') {
+                          // Show follow-up jobs (FOLLOW_UP status)
+                          jobsToShow = allJobs.filter(job => job.status === 'FOLLOW_UP');
+                        } else if (statusFilter === 'CANCELLED') {
+                          // Show denied jobs (DENIED status)
+                          jobsToShow = allJobs.filter(job => job.status === 'DENIED');
                         } else if (statusFilter === 'COMPLETED') {
                           jobsToShow = completedJobs;
                         } else {
-                          jobsToShow = allJobs.filter(job => job.status === statusFilter);
+                          jobsToShow = allJobs.filter(job => job.status === statusFilter);                                                                      
                         }
                         
-                        return jobsToShow.map((job) => {
-                        const beforePhotos = Array.isArray(job.before_photos || job.beforePhotos) ? (job.before_photos || job.beforePhotos) : [];
-                        const afterPhotos = Array.isArray(job.after_photos || job.afterPhotos) ? (job.after_photos || job.afterPhotos) : [];
+                        // Debug logging
+                        if (import.meta.env.DEV) {
+                          console.log('[Service History]', {
+                            statusFilter,
+                            allJobsCount: allJobs.length,
+                            jobsToShowCount: jobsToShow.length,
+                            customerId: customer.id,
+                            customerName: customer.fullName
+                          });
+                        }
+                        
+                                                return jobsToShow.length === 0 ? (
+                          <div key="no-jobs" className="text-center py-8 text-gray-500">
+                            <p className="text-sm">No jobs match the current filter</p>
+                          </div>
+                        ) : jobsToShow.map((job) => {
+                        const beforePhotos = Array.isArray(job.before_photos || job.beforePhotos) ? (job.before_photos || job.beforePhotos) : [];               
+                        const afterPhotos = Array.isArray(job.after_photos || job.afterPhotos) ? (job.after_photos || job.afterPhotos) : [];                    
                         
                         const extractPhotoUrls = (photos: any[]) => {
                           return photos.map(photo => {
                             if (typeof photo === 'string') {
                               return photo;
-                            } else if (photo && typeof photo === 'object' && photo.secure_url) {
+                            } else if (photo && typeof photo === 'object' && photo.secure_url) {                                                                
                               return photo.secure_url;
                             }
                             return null;
                           }).filter(url => url !== null);
                         };
                         
-                        const allPhotos = [...extractPhotoUrls(beforePhotos), ...extractPhotoUrls(afterPhotos)];
+                        const allPhotos = [...extractPhotoUrls(beforePhotos), ...extractPhotoUrls(afterPhotos)];                                                
                         
                         return (
                           <div key={job.id} className="bg-white rounded-lg border border-gray-200 hover:border-gray-300 hover:shadow-sm transition-all duration-200 overflow-hidden group">
@@ -3335,8 +3502,8 @@ const AdminDashboard = () => {
                         });
                       })()}
                     </div>
-                  </div>
-                )}
+                  )}
+                </div>
               </Card>
             ))}
           </div>
