@@ -22,6 +22,12 @@ const AdminLogin = () => {
 
   const navigate = useNavigate();
 
+  // Force light/white theme for admin login page
+  useEffect(() => {
+    // Remove dark mode classes to ensure white theme
+    document.documentElement.classList.remove('dark-mode', 'dark');
+  }, []);
+
   // Auto-verify captcha in development mode when accessed from local network
   useEffect(() => {
     if (import.meta.env.DEV) {
@@ -123,7 +129,7 @@ const AdminLogin = () => {
   };
 
   return (
-    <div className="min-h-screen bg-background flex items-center justify-center p-4">
+    <div className="min-h-screen bg-white flex items-center justify-center p-4">
       <div className="w-full max-w-md">
         {/* Hydrogen RO Logo */}
         <div className="mb-8 flex justify-center">
