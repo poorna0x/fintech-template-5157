@@ -579,9 +579,10 @@ const AdminDashboard = () => {
     location: {
       latitude: customer.location?.latitude || 0,
       longitude: customer.location?.longitude || 0,
-      formattedAddress: customer.location?.formatted_address || '',
-      googlePlaceId: customer.location?.google_place_id
-    },
+      formattedAddress: customer.location?.formatted_address || customer.location?.formattedAddress || '',
+      googlePlaceId: customer.location?.google_place_id,
+      googleLocation: customer.location?.googleLocation || null
+    } as any,
     serviceType: customer.service_type,
     brand: customer.brand,
     model: customer.model,
@@ -1028,7 +1029,33 @@ const AdminDashboard = () => {
       native_language: customer.preferredLanguage || '',
       status: customer.status || '',
       notes: customer.notes || '',
-      google_location: customer.location?.formattedAddress || '',
+      google_location: (() => {
+        // First check for googleLocation field (actual Google Maps URL - including short URLs)
+        if ((customer.location as any)?.googleLocation) {
+          const googleLoc = (customer.location as any).googleLocation;
+          // Accept any Google Maps URL (including short URLs like maps.app.goo.gl)
+          if (googleLoc && typeof googleLoc === 'string' && 
+              (googleLoc.includes('google.com/maps') || googleLoc.includes('maps.app.goo.gl') || googleLoc.includes('goo.gl/maps')) &&
+              !googleLoc.includes('localhost') && 
+              !googleLoc.includes('127.0.0.1')) {
+            return googleLoc;
+          }
+        }
+        // If we have coordinates, always generate Google Maps link from coordinates
+        if (customer.location?.latitude && customer.location?.longitude && 
+            customer.location.latitude !== 0 && customer.location.longitude !== 0) {
+          return `https://www.google.com/maps/place/${customer.location.latitude},${customer.location.longitude}`;
+        }
+        // Only use formattedAddress if it's actually a proper Google Maps URL (not localhost)
+        if (customer.location?.formattedAddress && 
+            typeof customer.location.formattedAddress === 'string' &&
+            (customer.location.formattedAddress.includes('google.com/maps') || customer.location.formattedAddress.includes('maps.app.goo.gl')) &&
+            !customer.location.formattedAddress.includes('localhost') &&
+            !customer.location.formattedAddress.includes('127.0.0.1')) {
+          return customer.location.formattedAddress;
+        }
+        return '';
+      })(),
       visible_address: (customer as any).visible_address || (customer.address as any)?.visible_address || '',
       custom_time: customer.customTime || (customer as any).custom_time || '',
       address: {
@@ -1070,12 +1097,22 @@ const AdminDashboard = () => {
         pincode: editFormData.address.pincode
       };
 
-      const updatedLocation = {
-        ...editFormData.location,
-        formattedAddress: editFormData.google_location || editFormData.location.formattedAddress
+      // Save location - include googleLocation if provided
+      const updatedLocation: any = {
+        latitude: editFormData.location.latitude || 0,
+        longitude: editFormData.location.longitude || 0,
+        formattedAddress: editFormData.address.street || editFormData.location.formattedAddress || '',
       };
+      
+      // Always include googleLocation if it exists in editFormData or previous location
+      if (editFormData.google_location && editFormData.google_location.trim()) {
+        updatedLocation.googleLocation = editFormData.google_location;
+      } else if ((editFormData.location as any)?.googleLocation) {
+        // Preserve existing googleLocation if not being updated
+        updatedLocation.googleLocation = (editFormData.location as any).googleLocation;
+      }
 
-      const { error } = await db.customers.update(editingCustomer.id, {
+      const { data: updatedCustomerFromDb, error } = await db.customers.update(editingCustomer.id, {
         full_name: editFormData.full_name,
         phone: editFormData.phone,
         alternate_phone: editFormData.alternate_phone,
@@ -1084,7 +1121,7 @@ const AdminDashboard = () => {
         brand: Object.values(editFormData.equipment).map(eq => eq.brand).join(', '),
         model: Object.values(editFormData.equipment).map(eq => eq.model).join(', '),
         preferred_language: (editFormData.native_language || 'ENGLISH') as 'ENGLISH' | 'HINDI' | 'KANNADA' | 'TAMIL' | 'TELUGU',
-        preferred_time_slot: (customer as any).preferred_time_slot || customer.preferredTimeSlot || 'MORNING',
+        preferred_time_slot: (editingCustomer as any).preferred_time_slot || editingCustomer.preferredTimeSlot || 'MORNING',
         status: editFormData.status as 'ACTIVE' | 'INACTIVE' | 'BLOCKED',
         notes: editFormData.notes,
         visible_address: editFormData.visible_address || '',
@@ -1097,23 +1134,44 @@ const AdminDashboard = () => {
         throw new Error(error.message);
       }
 
-      // Update local state
-      setCustomers(customers.map(c => 
-        c.id === editingCustomer.id 
-          ? { 
-              ...c, 
-              full_name: editFormData.full_name,
-              alternatePhone: editFormData.alternate_phone,
-              service_type: mapServiceTypesToDbValue(editFormData.service_types),
-              behavior: editFormData.behavior,
-              preferredLanguage: (editFormData.native_language || 'ENGLISH') as 'ENGLISH' | 'HINDI' | 'KANNADA' | 'TAMIL' | 'TELUGU',
-              status: editFormData.status as 'ACTIVE' | 'INACTIVE' | 'BLOCKED',
-              notes: editFormData.notes,
-              address: updatedAddress,
-              location: updatedLocation
+      // Update local state using the data returned from DB update (ensures location.googleLocation is included)
+      if (updatedCustomerFromDb) {
+        const transformedCustomer = transformCustomerData(updatedCustomerFromDb);
+        setCustomers(prevCustomers => 
+          prevCustomers.map(c => c.id === editingCustomer.id ? transformedCustomer : c)
+        );
+      } else {
+        // Fallback: update local state manually if DB doesn't return updated data
+        setCustomers(prevCustomers => {
+          return prevCustomers.map(c => {
+            if (c.id === editingCustomer.id) {
+              // Create a completely new location object with googleLocation
+              const newLocation = {
+                latitude: updatedLocation.latitude,
+                longitude: updatedLocation.longitude,
+                formattedAddress: updatedLocation.formattedAddress,
+                googlePlaceId: c.location?.googlePlaceId,
+                googleLocation: updatedLocation.googleLocation || null
+              };
+              
+              // Create a new customer object with updated location
+              return { 
+                ...c, 
+                full_name: editFormData.full_name,
+                alternatePhone: editFormData.alternate_phone,
+                service_type: mapServiceTypesToDbValue(editFormData.service_types),
+                behavior: editFormData.behavior,
+                preferredLanguage: (editFormData.native_language || 'ENGLISH') as 'ENGLISH' | 'HINDI' | 'KANNADA' | 'TAMIL' | 'TELUGU',
+                status: editFormData.status as 'ACTIVE' | 'INACTIVE' | 'BLOCKED',
+                notes: editFormData.notes,
+                address: updatedAddress,
+                location: newLocation as any
+              };
             }
-          : c
-      ));
+            return c;
+          });
+        });
+      }
 
       // Reload brands/models from DB after update
       await loadBrandsAndModels();
@@ -1122,7 +1180,9 @@ const AdminDashboard = () => {
       setEditDialogOpen(false);
       setEditingCustomer(null);
     } catch (error) {
-      toast.error('Failed to update customer');
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
+      console.error('Error updating customer:', error);
+      toast.error(`Failed to update customer: ${errorMessage}`);
     } finally {
       setIsUpdating(false);
     }
@@ -1313,7 +1373,7 @@ const AdminDashboard = () => {
   };
 
   // Function to extract coordinates from Google Maps link
-  const extractCoordinatesFromGoogleMapsLink = (url: string) => {
+  const extractCoordinatesFromGoogleMapsLink = (url: string): { latitude: number; longitude: number } | null => {
     try {
       // Handle different Google Maps URL formats
       let lat, lng;
@@ -1339,8 +1399,26 @@ const AdminDashboard = () => {
         lng = parseFloat(queryMatch[2]);
       }
       
+      // Format 4: https://www.google.com/maps/search/?api=1&query=12.9716,77.5946
+      const searchMatch = url.match(/[?&]query=([0-9.-]+),([0-9.-]+)/);
+      if (searchMatch) {
+        lat = parseFloat(searchMatch[1]);
+        lng = parseFloat(searchMatch[2]);
+      }
+      
+      // Format 5: Google Maps share link with place name and coordinates
+      // https://www.google.com/maps/place/Some+Place/@12.9716,77.5946,15z
+      const placeWithNameMatch = url.match(/@([0-9.-]+),([0-9.-]+)/);
+      if (placeWithNameMatch && !lat) {
+        lat = parseFloat(placeWithNameMatch[1]);
+        lng = parseFloat(placeWithNameMatch[2]);
+      }
+      
       if (lat && lng && !isNaN(lat) && !isNaN(lng)) {
-        return { latitude: lat, longitude: lng };
+        // Validate coordinates are within reasonable bounds
+        if (lat >= -90 && lat <= 90 && lng >= -180 && lng <= 180) {
+          return { latitude: lat, longitude: lng };
+        }
       }
       
       return null;
@@ -1356,7 +1434,7 @@ const AdminDashboard = () => {
       google_location: value
     }));
 
-    // Try to extract coordinates from the link
+    // Try to extract coordinates from the link (if it's a full URL)
     if (value.trim()) {
       const coords = extractCoordinatesFromGoogleMapsLink(value);
       if (coords) {
@@ -1366,11 +1444,26 @@ const AdminDashboard = () => {
             ...prev.location,
             latitude: coords.latitude,
             longitude: coords.longitude,
-            formattedAddress: value
-          }
+            formattedAddress: prev.address.street || ''
+          },
+          google_location: value
         }));
-        toast.success('Coordinates extracted from Google Maps link!');
+        toast.success(`Coordinates extracted: ${coords.latitude}, ${coords.longitude}`);
+      } else if (value.includes('google.com/maps') || value.includes('maps.app.goo.gl') || value.includes('goo.gl/maps')) {
+        // If it's a Google Maps link (including short URLs) but we couldn't extract coordinates, still save it
+        toast.info('Google Maps link saved.');
       }
+    } else {
+      // Clear coordinates if link is cleared
+      setEditFormData(prev => ({
+        ...prev,
+        location: {
+          ...prev.location,
+          latitude: 0,
+          longitude: 0,
+          formattedAddress: ''
+        }
+      }));
     }
   };
 
@@ -4061,12 +4154,17 @@ const AdminDashboard = () => {
                         <div className="w-8 h-8 sm:w-10 sm:h-10 bg-gray-100 rounded-lg flex items-center justify-center flex-shrink-0">
                           <button
                             onClick={() => {
-                              if (customer.location?.formattedAddress) {
-                                window.open(customer.location.formattedAddress, '_blank', 'noopener,noreferrer');
+                              // Use googleLocation if available (including short URLs)
+                              const googleLoc = (customer.location as any)?.googleLocation;
+                              if (googleLoc && typeof googleLoc === 'string' && 
+                                  (googleLoc.includes('google.com/maps') || googleLoc.includes('maps.app.goo.gl') || googleLoc.includes('goo.gl/maps')) &&
+                                  !googleLoc.includes('localhost') && 
+                                  !googleLoc.includes('127.0.0.1')) {
+                                window.open(googleLoc, '_blank', 'noopener,noreferrer');
                               } else {
                                 const location = extractCoordinates(customer.location);
-                                if (location) {
-                                  openInGoogleMaps(location);
+                                if (location && location.latitude !== 0 && location.longitude !== 0) {
+                                  window.open(`https://www.google.com/maps/place/${location.latitude},${location.longitude}`, '_blank', 'noopener,noreferrer');
                                 } else {
                                   toast.error('Location data not available');
                                 }
@@ -4080,9 +4178,6 @@ const AdminDashboard = () => {
                         <div className="flex-1 min-w-0">
                           <div className="text-sm font-semibold text-gray-900 flex items-center gap-2">
                             Location
-                            {customer.location?.formattedAddress && (
-                              <Badge variant="secondary" className="text-xs bg-gray-100 text-gray-700">Exact</Badge>
-                            )}
                           </div>
                           <div className="text-xs text-gray-500">
                             {(customer.address as any)?.visible_address && String((customer.address as any).visible_address).trim() ? (
@@ -5132,89 +5227,33 @@ const AdminDashboard = () => {
 
               </div>
 
-              {/* Current Google Maps Location Display */}
-              <div className="p-4 bg-gray-50 rounded-lg border border-gray-200">
-                <div className="flex items-start justify-between mb-3">
-                  <div>
-                    <div className="text-sm font-medium text-gray-900 flex items-center gap-2">
-                      <MapPin className="w-4 h-4" />
-                      Current Google Maps Location
-                    </div>
-                    <div className="text-xs text-gray-700 mt-1">
-                      {editFormData?.location?.formattedAddress || 'No location data available'}
-                    </div>
-                    {(editFormData?.location?.latitude !== 0 || editFormData?.location?.longitude !== 0) && (
-                      <div className="text-xs text-gray-600 mt-1">
-                        Coordinates: {editFormData.location.latitude}, {editFormData.location.longitude}
-                      </div>
-                    )}
-                  </div>
-                  <div className="flex gap-2">
-                    {editFormData?.location?.formattedAddress && (
-                      <Button
-                        type="button"
-                        variant="outline"
-                        size="sm"
-                        onClick={() => {
-                          window.open(editFormData.location.formattedAddress, '_blank', 'noopener,noreferrer');
-                        }}
-                        className="text-gray-700 border-gray-300 hover:bg-gray-100"
-                      >
-                        <ExternalLink className="w-3 h-3 mr-1" />
-                        Open
-                      </Button>
-                    )}
+              {/* Google Maps Location Section */}
+              <div className="space-y-2">
+                <Label htmlFor="edit_google_location" className="text-sm font-medium text-gray-900">
+                  Google Maps Location
+                </Label>
+                <div className="flex gap-2">
+                  <Input
+                    id="edit_google_location"
+                    value={editFormData?.google_location || ''}
+                    onChange={(e) => handleGoogleMapsLinkChange(e.target.value)}
+                    placeholder="Paste Google Maps share link here..."
+                    className="text-sm flex-1"
+                  />
+                  {editFormData?.google_location && (
                     <Button
                       type="button"
                       variant="outline"
                       size="sm"
                       onClick={() => {
-                        if (editFormData.location.latitude && editFormData.location.longitude) {
-                          window.open(`https://www.google.com/maps/place/${editFormData.location.latitude},${editFormData.location.longitude}`, '_blank', 'noopener,noreferrer');
-                        }
+                        window.open(editFormData.google_location, '_blank', 'noopener,noreferrer');
                       }}
-                      className="text-gray-700 border-gray-300 hover:bg-gray-100"
-                    >
-                      <MapPin className="w-3 h-3 mr-1" />
-                      View
-                    </Button>
-                  </div>
-                </div>
-
-                {/* Google Maps Link Input */}
-                <div className="space-y-2">
-                  <Label htmlFor="edit_google_location" className="text-sm font-medium text-gray-900">
-                    Update Google Maps Link
-                  </Label>
-                  <div className="flex gap-2">
-                    <Input
-                      id="edit_google_location"
-                      value={editFormData?.google_location || ''}
-                      onChange={(e) => handleGoogleMapsLinkChange(e.target.value)}
-                      placeholder="Paste Google Maps share link here..."
-                      className="text-sm"
-                    />
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      onClick={() => {
-                        if (editFormData?.google_location) {
-                          window.open(editFormData.google_location, '_blank', 'noopener,noreferrer');
-                        } else {
-                          toast.error('No Google Maps link available');
-                        }
-                      }}
-                      disabled={!editFormData?.google_location}
                       className="whitespace-nowrap"
                     >
                       <ExternalLink className="w-3 h-3 mr-1" />
                       Test
                     </Button>
-                  </div>
-                  <p className="text-xs text-gray-600">
-                    Paste a Google Maps share link to update the exact location. This will override the geocoded coordinates.
-                  </p>
+                  )}
                 </div>
               </div>
             </div>
@@ -7022,14 +7061,6 @@ const AdminDashboard = () => {
               <div className="text-sm text-gray-900 whitespace-pre-wrap break-words">
                 {formatAddressForDisplay(customer.address) || 'No address available'}
               </div>
-              {customer.location?.formattedAddress && (
-                <div className="mt-4 pt-4 border-t border-gray-200">
-                  <div className="text-xs text-gray-500 mb-2">Google Maps Location:</div>
-                  <div className="text-xs text-gray-700 break-all">
-                    {customer.location.formattedAddress}
-                  </div>
-                </div>
-              )}
             </div>
             <DialogFooter>
               <Button

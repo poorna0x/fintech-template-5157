@@ -10,7 +10,7 @@ import { Badge } from '@/components/ui/badge';
 import { Progress } from '@/components/ui/progress';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { toast } from 'sonner';
-import { ChevronLeft, ChevronRight, MapPin, Camera, Upload, Check, Phone, Mail, User, Home, Clock, Wrench, Loader2, Search, Navigation, X } from 'lucide-react';
+import { ChevronLeft, ChevronRight, MapPin, Camera, Upload, Check, Phone, Mail, User, Home, Clock, Wrench, Loader2, Search, Navigation, X, ExternalLink } from 'lucide-react';
 import { db } from '@/lib/supabase';
 import { cloudinaryService, compressImage } from '@/lib/cloudinary';
 import { emailService } from '@/lib/email';
@@ -563,10 +563,13 @@ const Booking: React.FC = () => {
               lat: place.geometry.location.lat(),
               lng: place.geometry.location.lng()
             };
+            // Generate Google Maps link from coordinates
+            const googleMapsLink = `https://www.google.com/maps/place/${location.lat},${location.lng}`;
             setFormData(prev => ({
               ...prev,
               address: place.formatted_address || '',
-              coordinates: location
+              coordinates: location,
+              googleMapsLink: googleMapsLink
             }));
             setMapCenter(location);
             toast.success('Address set!');
@@ -637,10 +640,13 @@ const Booking: React.FC = () => {
             
             if (status === window.google.maps.GeocoderStatus.OK && results && results[0]) {
               const address = results[0].formatted_address;
+              // Generate Google Maps link from coordinates
+              const googleMapsLink = `https://www.google.com/maps/place/${location.lat},${location.lng}`;
               setFormData(prev => ({
                 ...prev,
                 address: address,
-                coordinates: location
+                coordinates: location,
+                googleMapsLink: googleMapsLink
               }));
               // Update the input field
               if (addressInputRef.current) {
@@ -729,9 +735,13 @@ const Booking: React.FC = () => {
 
   // Memoize the location change handler to prevent DraggableMap from re-rendering
   const handleMapLocationChange = useCallback(async (location: { lat: number; lng: number }) => {
+    // Generate Google Maps link from coordinates
+    const googleMapsLink = `https://www.google.com/maps/place/${location.lat},${location.lng}`;
+    
     setFormData(prev => ({
       ...prev,
-      coordinates: location
+      coordinates: location,
+      googleMapsLink: googleMapsLink
     }));
     setMapCenter(location);
     
@@ -1201,7 +1211,28 @@ const Booking: React.FC = () => {
           location: {
             latitude: formData.coordinates.lat,
             longitude: formData.coordinates.lng,
-            formattedAddress: formData.address,
+            formattedAddress: (() => {
+              // Clean the address - remove any URL prefixes
+              let cleanAddress = formData.address || '';
+              // Remove localhost URLs
+              if (cleanAddress.includes('localhost') || cleanAddress.includes('127.0.0.1')) {
+                // Extract just the address part after the URL
+                const match = cleanAddress.match(/localhost[:\d]*\/(.+)/i);
+                if (match) {
+                  cleanAddress = decodeURIComponent(match[1].replace(/\+/g, ' '));
+                } else {
+                  cleanAddress = '';
+                }
+              }
+              // Remove any http/https URLs
+              if (cleanAddress.startsWith('http://') || cleanAddress.startsWith('https://')) {
+                return '';
+              }
+              return cleanAddress;
+            })(),
+            googleLocation: formData.coordinates.lat !== 0 && formData.coordinates.lng !== 0
+              ? `https://www.google.com/maps/place/${formData.coordinates.lat},${formData.coordinates.lng}`
+              : null
           },
           preferred_time_slot: (formData.preferredTime === 'FIRST_HALF' ? 'MORNING' : formData.preferredTime === 'SECOND_HALF' ? 'AFTERNOON' : 'CUSTOM') as 'MORNING' | 'AFTERNOON' | 'EVENING' | 'CUSTOM',
           custom_time: formData.preferredTime === 'CUSTOM' && formData.preferredTimeCustom ? formData.preferredTimeCustom : null,
@@ -1263,8 +1294,30 @@ const Booking: React.FC = () => {
           location: {
             latitude: formData.coordinates.lat,
             longitude: formData.coordinates.lng,
-            formattedAddress: formData.address, // Keep full address with Plus Code for Google Maps
-            googleLocation: formData.googleMapsLink || null
+            formattedAddress: (() => {
+              // Clean the address - remove any URL prefixes
+              let cleanAddress = formData.address || '';
+              // Remove localhost URLs
+              if (cleanAddress.includes('localhost') || cleanAddress.includes('127.0.0.1')) {
+                // Extract just the address part after the URL
+                const match = cleanAddress.match(/localhost[:\d]*\/(.+)/i);
+                if (match) {
+                  cleanAddress = decodeURIComponent(match[1].replace(/\+/g, ' '));
+                } else {
+                  cleanAddress = '';
+                }
+              }
+              // Remove any http/https URLs
+              if (cleanAddress.startsWith('http://') || cleanAddress.startsWith('https://')) {
+                return '';
+              }
+              return cleanAddress;
+            })(),
+            googleLocation: formData.coordinates.lat !== 0 && formData.coordinates.lng !== 0
+              ? `https://www.google.com/maps/place/${formData.coordinates.lat},${formData.coordinates.lng}`
+              : (formData.googleMapsLink && formData.googleMapsLink.includes('google.com/maps') 
+                  ? formData.googleMapsLink 
+                  : null)
           },
           service_type: formData.serviceType,
           brand: formData.brandName || 'Not specified',
@@ -1341,8 +1394,30 @@ const Booking: React.FC = () => {
         service_location: {
           latitude: formData.coordinates.lat,
           longitude: formData.coordinates.lng,
-          formattedAddress: formData.address, // Keep full address with Plus Code for Google Maps
-          googleLocation: formData.googleMapsLink || null
+          formattedAddress: (() => {
+            // Clean the address - remove any URL prefixes
+            let cleanAddress = formData.address || '';
+            // Remove localhost URLs
+            if (cleanAddress.includes('localhost') || cleanAddress.includes('127.0.0.1')) {
+              // Extract just the address part after the URL
+              const match = cleanAddress.match(/localhost[:\d]*\/(.+)/i);
+              if (match) {
+                cleanAddress = decodeURIComponent(match[1].replace(/\+/g, ' '));
+              } else {
+                cleanAddress = '';
+              }
+            }
+            // Remove any http/https URLs
+            if (cleanAddress.startsWith('http://') || cleanAddress.startsWith('https://')) {
+              return '';
+            }
+            return cleanAddress;
+          })(),
+          googleLocation: formData.coordinates.lat !== 0 && formData.coordinates.lng !== 0
+            ? `https://www.google.com/maps/place/${formData.coordinates.lat},${formData.coordinates.lng}`
+            : (formData.googleMapsLink && formData.googleMapsLink.includes('google.com/maps') 
+                ? formData.googleMapsLink 
+                : null)
         },
         requirements: [{ 
           lead_source: 'Website',
@@ -1387,6 +1462,7 @@ const Booking: React.FC = () => {
         brandName: formData.brandName || 'Not specified',
         modelName: formData.modelName || 'Not specified',
         address: formData.address,
+        googleMapsLink: formData.googleMapsLink,
         serviceDate: formData.serviceDate,
         preferredTime: formData.preferredTime,
         preferredTimeCustom: formData.preferredTimeCustom,
@@ -2006,7 +2082,7 @@ const Booking: React.FC = () => {
                         href={formData.googleMapsLink} 
                         target="_blank" 
                         rel="noopener noreferrer"
-                        className="ml-1 text-blue-600 hover:text-blue-800 underline"
+                        className="ml-1 text-black hover:text-gray-700 font-medium transition-colors duration-200 underline"
                       >
                         🔗 Open in Maps
                       </a>
@@ -2247,7 +2323,20 @@ const Booking: React.FC = () => {
                       <MapPin className="w-4 h-4" />
                       Service Address
                     </h4>
-                    <p className="text-foreground">{bookingDetails.address}</p>
+                    <p className="text-foreground mb-3">
+                      {removePlusCode(bookingDetails.address)}
+                    </p>
+                    {bookingDetails.googleMapsLink && (
+                      <a
+                        href={bookingDetails.googleMapsLink}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="inline-flex items-center gap-2 text-black hover:text-gray-700 font-medium transition-colors duration-200 hover:underline"
+                      >
+                        <ExternalLink className="w-4 h-4" />
+                        Open in Maps
+                      </a>
+                    )}
                   </div>
 
                   {/* Description */}
