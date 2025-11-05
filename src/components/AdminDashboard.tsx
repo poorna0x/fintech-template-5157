@@ -267,6 +267,141 @@ const AdminDashboard = () => {
   const [customerHistory, setCustomerHistory] = useState<{[customerId: string]: Job[]}>({});
   const [selectedPhoto, setSelectedPhoto] = useState<{url: string, index: number, total: number} | null>(null);
   const [isCompressingImage, setIsCompressingImage] = useState(false);
+  
+  // Brand and model suggestions state
+  const [brandSuggestions, setBrandSuggestions] = useState<string[]>([]);
+  const [modelSuggestions, setModelSuggestions] = useState<string[]>([]);
+  const [showBrandSuggestions, setShowBrandSuggestions] = useState(false);
+  const [showModelSuggestions, setShowModelSuggestions] = useState(false);
+  const [dbBrands, setDbBrands] = useState<string[]>([]);
+  const [dbModels, setDbModels] = useState<string[]>([]);
+  
+  // Brand and model data - Comprehensive list of popular RO and Softener brands in India
+  const brandData = {
+    'K': ['Kent'],
+    'A': ['Aquaguard', 'AO Smith', 'Aqua Fresh'],
+    'P': ['Pureit', 'Protek'],
+    'L': ['Livpure', 'LG'],
+    'B': ['Blue Star'],
+    'T': ['Tata Swach'],
+    'E': ['Eureka Forbes'],
+    'S': ['Samsung', 'Supreme'],
+    'W': ['Whirlpool'],
+    'H': ['Havells', 'Hindware']
+  };
+
+  const modelData = {
+    'RO': {
+      'Kent': [
+        'Ace Plus 8 L RO+UV+UF+TDS',
+        'Ace Copper 8 L RO+UV+UF+TDS',
+        'Ace 8 L',
+        'Pearl ZW 8 L RO+UV+UF+TDS',
+        'Pride Plus 8 L',
+        'Prime Plus 9 L RO+UV+UF+TDS',
+        'Sterling Plus 6 L',
+        'Grand 8 L RO',
+        'Grand Plus 9 L RO+UV+UF+TDS',
+        'Grand Star 9 L',
+        'Excell Plus 7 L RO+UV+UF+TDS',
+        'Elegant Copper 8 L',
+        'Marvel',
+        'Sapphire'
+      ],
+      'Aquaguard': [
+        'Delight NXT RO+UV+UF Aquasaver',
+        'Delight RO+UV+UF 2X',
+        'Aura 2X RO+UV + Copper',
+        'Glory RO+UV+UF + Active Copper',
+        'Designo NXT Under-counter RO+UV Copper',
+        'Blaze Insta WS RO+UV Hot & Ambient',
+        'SlimGlass RO+UV'
+      ],
+      'Pureit': [
+        'Marvella 10 L RO+UV',
+        'Eco Water Saver RO+UV+MF+Mineral',
+        'RO+UV+MF+Copper+Minerial',
+        'Classic RO variants'
+      ],
+      'Livpure': [
+        'Pep Pro 7 L RO+UF',
+        'Glitz 7 L RO+UF',
+        'Glo Star RO+In-Tank UV+UF+Mineraliser',
+        'Allura Premia'
+      ],
+      'Blue Star': [
+        'Aristo 7 L RO+UV+UF with Pre-Filter',
+        'Mid-range models with taste boosters'
+      ],
+      'Havells': [
+        'Max Alkaline RO+UV',
+        'Fab Alkaline RO+UV'
+      ],
+      'AO Smith': [
+        'Z9 Pro Instant Hot & Ambient Purifier',
+        'Models with SCMT'
+      ],
+      'Tata Swach': [
+        'Cristella Plus RO Water Purifier',
+        'Other RO combo models'
+      ],
+      'LG': [
+        'Puricare WW180EP RO model',
+        'Models with mineral booster'
+      ],
+      'Protek': [
+        'Elite Plus 12 L RO+UV+UF'
+      ],
+      'Aqua Fresh': [
+        'Swift 15 L RO+UV+TDS'
+      ],
+      'Samsung': [
+        'PURE RO + UV + UF',
+        'PURE RO + UV + Mineral',
+        'PURE RO + UV + Alkaline'
+      ],
+      'Supreme': [
+        'Supreme RO + UV',
+        'Supreme RO + UV + UF',
+        'Supreme RO + UV + Mineral'
+      ],
+      'Whirlpool': [
+        'Whirlpool RO + UV',
+        'Whirlpool RO + UV + UF',
+        'Whirlpool RO + UV + Mineral'
+      ],
+      'Hindware': [
+        'Hindware RO + UV',
+        'Hindware RO + UV + UF'
+      ],
+      'Eureka Forbes': [
+        'Aquaguard RO + UV',
+        'Aquaguard RO + UV + UF'
+      ]
+    },
+    'SOFTENER': {
+      'Kent': [
+        'Grand Softener 25L',
+        'Grand Softener 50L'
+      ],
+      'Aquaguard': [
+        'Supreme Softener 25L',
+        'Supreme Softener 50L'
+      ],
+      'Pureit': [
+        'Pureit Softener 25L',
+        'Pureit Softener 50L'
+      ],
+      'Livpure': [
+        'Livpure Softener 25L',
+        'Livpure Softener 50L'
+      ],
+      'Blue Star': [
+        'Blue Star Softener 25L',
+        'Blue Star Softener 50L'
+      ]
+    }
+  };
 
   // Cleanup object URLs when component unmounts
   useEffect(() => {
@@ -439,6 +574,76 @@ const AdminDashboard = () => {
     }
   }, [assignJobDialogOpen]);
 
+  // Load unique brands and models from database
+  const loadBrandsAndModels = useCallback(async () => {
+    try {
+      // Fetch unique brands from customers
+      const { data: customerData, error: customerError } = await supabase
+        .from('customers')
+        .select('brand')
+        .not('brand', 'is', null)
+        .neq('brand', '')
+        .neq('brand', 'Not specified');
+      
+      // Fetch unique brands from jobs
+      const { data: jobData, error: jobError } = await supabase
+        .from('jobs')
+        .select('brand')
+        .not('brand', 'is', null)
+        .neq('brand', '')
+        .neq('brand', 'Not specified');
+      
+      // Fetch unique models from customers
+      const { data: customerModelData, error: customerModelError } = await supabase
+        .from('customers')
+        .select('model')
+        .not('model', 'is', null)
+        .neq('model', '')
+        .neq('model', 'Not specified');
+      
+      // Fetch unique models from jobs
+      const { data: jobModelData, error: jobModelError } = await supabase
+        .from('jobs')
+        .select('model')
+        .not('model', 'is', null)
+        .neq('model', '')
+        .neq('model', 'Not specified');
+      
+      if (!customerError && !jobError && !customerModelError && !jobModelError) {
+        // Extract all brands (handle comma-separated values)
+        const allBrands = new Set<string>();
+        [...(customerData || []), ...(jobData || [])].forEach(item => {
+          if (item.brand) {
+            item.brand.split(',').forEach((b: string) => {
+              const trimmed = b.trim();
+              if (trimmed && trimmed !== 'Not specified') {
+                allBrands.add(trimmed);
+              }
+            });
+          }
+        });
+        
+        // Extract all models (handle comma-separated values)
+        const allModels = new Set<string>();
+        [...(customerModelData || []), ...(jobModelData || [])].forEach(item => {
+          if (item.model) {
+            item.model.split(',').forEach((m: string) => {
+              const trimmed = m.trim();
+              if (trimmed && trimmed !== 'Not specified') {
+                allModels.add(trimmed);
+              }
+            });
+          }
+        });
+        
+        setDbBrands(Array.from(allBrands));
+        setDbModels(Array.from(allModels));
+      }
+    } catch (error) {
+      console.error('Error loading brands and models:', error);
+    }
+  }, []);
+
   // Load job counts for stats cards (lightweight query)
   const loadJobCounts = useCallback(async () => {
     try {
@@ -549,6 +754,9 @@ const AdminDashboard = () => {
 
       // Load job counts for stats
       await loadJobCounts();
+      
+      // Load brands and models from database
+      await loadBrandsAndModels();
       
       // Load initial jobs based on filter (defaults to ALL which shows ongoing)
       await loadFilteredJobs(statusFilter, currentPage);
@@ -750,6 +958,9 @@ const AdminDashboard = () => {
           : c
       ));
 
+      // Reload brands/models from DB after update
+      await loadBrandsAndModels();
+      
       toast.success('Customer updated successfully!');
       setEditDialogOpen(false);
       setEditingCustomer(null);
@@ -791,7 +1002,7 @@ const AdminDashboard = () => {
     });
   };
 
-  const handleEditEquipmentChange = (serviceType: string, field: 'brand' | 'model', value: string) => {
+  const handleEditEquipmentChange = (serviceType: string, field: 'brand' | 'model', value: string, showSuggestions: boolean = true) => {
     setEditFormData(prev => ({
       ...prev,
       equipment: {
@@ -802,6 +1013,88 @@ const AdminDashboard = () => {
         }
       }
     }));
+    
+    // Show suggestions if field is brand or model and showSuggestions is true
+    if (showSuggestions) {
+      if (field === 'brand') {
+        handleEditBrandInput(serviceType, value);
+      } else if (field === 'model') {
+        handleEditModelInput(serviceType, value);
+      }
+    }
+  };
+
+  // Handle brand input with suggestions for edit customer form
+  const handleEditBrandInput = (serviceType: string, value: string) => {
+    if (value.trim() === '') {
+      setShowBrandSuggestions(false);
+      return;
+    }
+    
+    const searchTerm = value.toLowerCase();
+    
+    // Combine local brands and DB brands
+    const allLocalBrands: string[] = [];
+    Object.values(brandData).forEach(brands => {
+      allLocalBrands.push(...brands);
+    });
+    
+    const allBrands = [...new Set([...allLocalBrands, ...dbBrands])];
+    
+    // Filter brands that match the search term
+    const filtered = allBrands.filter(brand => 
+      brand.toLowerCase().includes(searchTerm) && 
+      brand.toLowerCase() !== searchTerm.toLowerCase()
+    ).slice(0, 10);
+    
+    setBrandSuggestions(filtered);
+    setShowBrandSuggestions(filtered.length > 0);
+  };
+
+  // Handle model input with suggestions for edit customer form
+  const handleEditModelInput = (serviceType: string, value: string) => {
+    if (value.trim() === '') {
+      setShowModelSuggestions(false);
+      return;
+    }
+    
+    const searchTerm = value.toLowerCase();
+    const brand = editFormData.equipment[serviceType]?.brand || '';
+    
+    // Get models from local data
+    const localModels: string[] = [];
+    if (serviceType && brand && modelData[serviceType as keyof typeof modelData]) {
+      const brandKey = Object.keys(modelData[serviceType as keyof typeof modelData]).find(key => 
+        key.toLowerCase() === brand.toLowerCase()
+      );
+      if (brandKey && modelData[serviceType as keyof typeof modelData][brandKey as keyof typeof modelData[typeof serviceType]]) {
+        localModels.push(...(modelData[serviceType as keyof typeof modelData][brandKey as keyof typeof modelData[typeof serviceType]] || []));
+      }
+    }
+    
+    // Combine local models and DB models
+    const allModels = [...new Set([...localModels, ...dbModels])];
+    
+    // Filter models that match the search term
+    const filtered = allModels.filter(model => 
+      model.toLowerCase().includes(searchTerm) && 
+      model.toLowerCase() !== searchTerm.toLowerCase()
+    ).slice(0, 10);
+    
+    setModelSuggestions(filtered);
+    setShowModelSuggestions(filtered.length > 0);
+  };
+
+  // Select brand from suggestions for edit customer form
+  const selectEditBrand = (serviceType: string, brand: string) => {
+    handleEditEquipmentChange(serviceType, 'brand', brand, false);
+    setShowBrandSuggestions(false);
+  };
+
+  // Select model from suggestions for edit customer form
+  const selectEditModel = (serviceType: string, model: string) => {
+    handleEditEquipmentChange(serviceType, 'model', model, false);
+    setShowModelSuggestions(false);
   };
 
   // Function to geocode address and update coordinates
@@ -1100,13 +1393,37 @@ const AdminDashboard = () => {
     const now = new Date();
     const currentTime = now.toTimeString().slice(0, 5); // HH:MM format
     
+    // Extract brand and model from customer (may be comma-separated for multiple service types)
+    // For new job, we'll use the first brand/model or the one matching the service type
+    let customerBrand = customer.brand || '';
+    let customerModel = customer.model || '';
+    
+    // If comma-separated, try to match with service type or use first
+    if (customerBrand.includes(',')) {
+      const brands = customerBrand.split(',').map(b => b.trim());
+      const models = customerModel.split(',').map(m => m.trim());
+      const serviceTypes = parseDbServiceType(customer.service_type || '');
+      
+      // Use first brand/model, or try to match with service type
+      customerBrand = brands[0] || '';
+      customerModel = models[0] || '';
+      
+      // If service type is RO or SOFTENER, try to find matching brand/model
+      const selectedServiceType = (customer.serviceType === 'SOFTENER' ? 'SOFTENER' : 'RO');
+      const serviceTypeIndex = serviceTypes.indexOf(selectedServiceType);
+      if (serviceTypeIndex >= 0 && brands[serviceTypeIndex]) {
+        customerBrand = brands[serviceTypeIndex];
+        customerModel = models[serviceTypeIndex] || '';
+      }
+    }
+    
     // Initialize form data with proper defaults
     const initialFormData = {
       service_type: (customer.serviceType === 'SOFTENER' ? 'SOFTENER' : 'RO') as 'RO' | 'SOFTENER',
       service_sub_type: 'Installation',
       service_sub_type_custom: '',
-      brand: customer.brand || 'Not specified',
-      model: customer.model || 'Not specified',
+      brand: customerBrand || 'Not specified',
+      model: customerModel || 'Not specified',
       scheduled_date: tomorrowDateString, // Set to tomorrow by default
       scheduled_time_slot: 'MORNING' as 'MORNING' | 'AFTERNOON' | 'EVENING' | 'CUSTOM', // Set to morning by default
       scheduled_time_custom: currentTime, // Set to current time by default
@@ -1170,6 +1487,53 @@ const AdminDashboard = () => {
       // Add to local state
       setJobs([newJob, ...jobs]);
 
+      // Update customer record if brand/model changed
+      const brandChanged = newJobFormData.brand !== 'Not specified' && 
+                          newJobFormData.brand !== selectedCustomerForJob.brand;
+      const modelChanged = newJobFormData.model !== 'Not specified' && 
+                          newJobFormData.model !== selectedCustomerForJob.model;
+      
+      if (brandChanged || modelChanged) {
+        // Update customer brand/model
+        const serviceTypes = parseDbServiceType(selectedCustomerForJob.service_type || '');
+        const currentBrands = selectedCustomerForJob.brand ? selectedCustomerForJob.brand.split(',').map(b => b.trim()) : [];
+        const currentModels = selectedCustomerForJob.model ? selectedCustomerForJob.model.split(',').map(m => m.trim()) : [];
+        
+        // Find the index for the current service type
+        const serviceTypeIndex = serviceTypes.indexOf(newJobFormData.service_type);
+        
+        // Update brands and models arrays
+        const updatedBrands = [...currentBrands];
+        const updatedModels = [...currentModels];
+        
+        // Ensure arrays are long enough
+        while (updatedBrands.length < serviceTypes.length) updatedBrands.push('');
+        while (updatedModels.length < serviceTypes.length) updatedModels.push('');
+        
+        if (brandChanged && newJobFormData.brand !== 'Not specified') {
+          updatedBrands[serviceTypeIndex] = newJobFormData.brand;
+        }
+        if (modelChanged && newJobFormData.model !== 'Not specified') {
+          updatedModels[serviceTypeIndex] = newJobFormData.model;
+        }
+        
+        // Update customer in database
+        await db.customers.update(selectedCustomerForJob.id, {
+          brand: updatedBrands.join(', '),
+          model: updatedModels.join(', ')
+        });
+        
+        // Update local customer state
+        setCustomers(customers.map(c => 
+          c.id === selectedCustomerForJob.id 
+            ? { ...c, brand: updatedBrands.join(', '), model: updatedModels.join(', ') }
+            : c
+        ));
+        
+        // Reload brands/models from DB
+        await loadBrandsAndModels();
+      }
+
       // Send notification if technician is assigned
       if (newJobFormData.assigned_technician_id) {
         const assignedTechnician = technicians.find(t => t.id === newJobFormData.assigned_technician_id);
@@ -1200,6 +1564,84 @@ const AdminDashboard = () => {
       ...prev,
       [field]: value
     }));
+  };
+
+  // Handle brand input with suggestions
+  const handleBrandInput = (value: string) => {
+    handleNewJobFormChange('brand', value);
+    
+    if (value.trim() === '') {
+      setShowBrandSuggestions(false);
+      return;
+    }
+    
+    const searchTerm = value.toLowerCase();
+    
+    // Combine local brands and DB brands
+    const allLocalBrands: string[] = [];
+    Object.values(brandData).forEach(brands => {
+      allLocalBrands.push(...brands);
+    });
+    
+    const allBrands = [...new Set([...allLocalBrands, ...dbBrands])];
+    
+    // Filter brands that match the search term
+    const filtered = allBrands.filter(brand => 
+      brand.toLowerCase().includes(searchTerm) && 
+      brand.toLowerCase() !== searchTerm.toLowerCase()
+    ).slice(0, 10);
+    
+    setBrandSuggestions(filtered);
+    setShowBrandSuggestions(filtered.length > 0);
+  };
+
+  // Handle model input with suggestions
+  const handleModelInput = (value: string) => {
+    handleNewJobFormChange('model', value);
+    
+    if (value.trim() === '') {
+      setShowModelSuggestions(false);
+      return;
+    }
+    
+    const searchTerm = value.toLowerCase();
+    const serviceType = newJobFormData.service_type;
+    const brand = newJobFormData.brand;
+    
+    // Get models from local data
+    const localModels: string[] = [];
+    if (serviceType && brand && modelData[serviceType]) {
+      const brandKey = Object.keys(modelData[serviceType]).find(key => 
+        key.toLowerCase() === brand.toLowerCase()
+      );
+      if (brandKey && modelData[serviceType][brandKey as keyof typeof modelData[serviceType]]) {
+        localModels.push(...(modelData[serviceType][brandKey as keyof typeof modelData[serviceType]] || []));
+      }
+    }
+    
+    // Combine local models and DB models
+    const allModels = [...new Set([...localModels, ...dbModels])];
+    
+    // Filter models that match the search term
+    const filtered = allModels.filter(model => 
+      model.toLowerCase().includes(searchTerm) && 
+      model.toLowerCase() !== searchTerm.toLowerCase()
+    ).slice(0, 10);
+    
+    setModelSuggestions(filtered);
+    setShowModelSuggestions(filtered.length > 0);
+  };
+
+  // Select brand from suggestions
+  const selectBrand = (brand: string) => {
+    handleNewJobFormChange('brand', brand);
+    setShowBrandSuggestions(false);
+  };
+
+  // Select model from suggestions
+  const selectModel = (model: string) => {
+    handleNewJobFormChange('model', model);
+    setShowModelSuggestions(false);
   };
 
   const handleCloseNewJobDialog = () => {
@@ -4489,24 +4931,56 @@ const AdminDashboard = () => {
                         </div>
                         
                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                          <div className="space-y-2">
+                          <div className="space-y-2 relative">
                             <Label htmlFor={`edit_brand_${serviceType}`}>Brand</Label>
                             <Input
                               id={`edit_brand_${serviceType}`}
                               value={equipment.brand}
                               onChange={(e) => handleEditEquipmentChange(serviceType, 'brand', e.target.value)}
                               placeholder={`Enter ${serviceType} brand`}
+                              onBlur={() => {
+                                setTimeout(() => setShowBrandSuggestions(false), 200);
+                              }}
                             />
+                            {showBrandSuggestions && brandSuggestions.length > 0 && (
+                              <div className="absolute z-10 w-full mt-1 bg-card border border-border rounded-md shadow-lg max-h-40 overflow-y-auto">
+                                {brandSuggestions.map((brand, index) => (
+                                  <div
+                                    key={index}
+                                    className="px-3 py-2 hover:bg-accent hover:text-accent-foreground cursor-pointer text-sm text-foreground"
+                                    onClick={() => selectEditBrand(serviceType, brand)}
+                                  >
+                                    {brand}
+                                  </div>
+                                ))}
+                              </div>
+                            )}
                           </div>
 
-                          <div className="space-y-2">
+                          <div className="space-y-2 relative">
                             <Label htmlFor={`edit_model_${serviceType}`}>Model</Label>
                             <Input
                               id={`edit_model_${serviceType}`}
                               value={equipment.model}
                               onChange={(e) => handleEditEquipmentChange(serviceType, 'model', e.target.value)}
                               placeholder={`Enter ${serviceType} model`}
+                              onBlur={() => {
+                                setTimeout(() => setShowModelSuggestions(false), 200);
+                              }}
                             />
+                            {showModelSuggestions && modelSuggestions.length > 0 && (
+                              <div className="absolute z-10 w-full mt-1 bg-card border border-border rounded-md shadow-lg max-h-40 overflow-y-auto">
+                                {modelSuggestions.map((model, index) => (
+                                  <div
+                                    key={index}
+                                    className="px-3 py-2 hover:bg-accent hover:text-accent-foreground cursor-pointer text-sm text-foreground"
+                                    onClick={() => selectEditModel(serviceType, model)}
+                                  >
+                                    {model}
+                                  </div>
+                                ))}
+                              </div>
+                            )}
                           </div>
                         </div>
                       </div>
@@ -5110,46 +5584,82 @@ const AdminDashboard = () => {
                   )}
                 </div>
 
-                <div className="space-y-2">
+                <div className="space-y-2 relative">
                   <Label htmlFor="job_brand">Brand</Label>
                   <Input
                     id="job_brand"
-                    value={newJobFormData.brand}
-                    onChange={(e) => handleNewJobFormChange('brand', e.target.value)}
-                    placeholder="Not specified"
-                    onFocus={(e) => {
-                      if (e.target.value === 'Not specified') {
-                        e.target.value = '';
+                    value={newJobFormData.brand === 'Not specified' ? '' : newJobFormData.brand}
+                    onChange={(e) => handleBrandInput(e.target.value)}
+                    placeholder="Enter brand name"
+                    onFocus={() => {
+                      if (newJobFormData.brand === 'Not specified') {
                         handleNewJobFormChange('brand', '');
                       }
-                    }}
-                    onBlur={(e) => {
-                      if (e.target.value.trim() === '') {
-                        handleNewJobFormChange('brand', 'Not specified');
+                      if (newJobFormData.brand && newJobFormData.brand !== 'Not specified') {
+                        handleBrandInput(newJobFormData.brand);
                       }
                     }}
+                    onBlur={() => {
+                      setTimeout(() => {
+                        setShowBrandSuggestions(false);
+                        if (newJobFormData.brand.trim() === '') {
+                          handleNewJobFormChange('brand', 'Not specified');
+                        }
+                      }, 200);
+                    }}
                   />
+                  {showBrandSuggestions && brandSuggestions.length > 0 && (
+                    <div className="absolute z-10 w-full mt-1 bg-card border border-border rounded-md shadow-lg max-h-40 overflow-y-auto">
+                      {brandSuggestions.map((brand, index) => (
+                        <div
+                          key={index}
+                          className="px-3 py-2 hover:bg-accent hover:text-accent-foreground cursor-pointer text-sm text-foreground"
+                          onClick={() => selectBrand(brand)}
+                        >
+                          {brand}
+                        </div>
+                      ))}
+                    </div>
+                  )}
                 </div>
 
-                <div className="space-y-2">
+                <div className="space-y-2 relative">
                   <Label htmlFor="job_model">Model</Label>
                   <Input
                     id="job_model"
-                    value={newJobFormData.model}
-                    onChange={(e) => handleNewJobFormChange('model', e.target.value)}
-                    placeholder="Not specified"
-                    onFocus={(e) => {
-                      if (e.target.value === 'Not specified') {
-                        e.target.value = '';
+                    value={newJobFormData.model === 'Not specified' ? '' : newJobFormData.model}
+                    onChange={(e) => handleModelInput(e.target.value)}
+                    placeholder="Enter model name"
+                    onFocus={() => {
+                      if (newJobFormData.model === 'Not specified') {
                         handleNewJobFormChange('model', '');
                       }
-                    }}
-                    onBlur={(e) => {
-                      if (e.target.value.trim() === '') {
-                        handleNewJobFormChange('model', 'Not specified');
+                      if (newJobFormData.model && newJobFormData.model !== 'Not specified') {
+                        handleModelInput(newJobFormData.model);
                       }
                     }}
+                    onBlur={() => {
+                      setTimeout(() => {
+                        setShowModelSuggestions(false);
+                        if (newJobFormData.model.trim() === '') {
+                          handleNewJobFormChange('model', 'Not specified');
+                        }
+                      }, 200);
+                    }}
                   />
+                  {showModelSuggestions && modelSuggestions.length > 0 && (
+                    <div className="absolute z-10 w-full mt-1 bg-card border border-border rounded-md shadow-lg max-h-40 overflow-y-auto">
+                      {modelSuggestions.map((model, index) => (
+                        <div
+                          key={index}
+                          className="px-3 py-2 hover:bg-accent hover:text-accent-foreground cursor-pointer text-sm text-foreground"
+                          onClick={() => selectModel(model)}
+                        >
+                          {model}
+                        </div>
+                      ))}
+                    </div>
+                  )}
                 </div>
               </div>
             </div>
