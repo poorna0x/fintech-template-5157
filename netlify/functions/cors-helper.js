@@ -3,9 +3,8 @@
 
 // Default allowed origins (for development)
 const DEFAULT_ORIGINS = [
-  'http://localhost:8080',           // Vite dev server (legacy port)
-  'http://localhost:8084',           // Vite dev server (current port)
-  'https://localhost:8084',          // HTTPS variant for local testing
+  'http://localhost:8080',           // Vite dev server (HTTP)
+  'https://localhost:8080',          // Vite dev server (HTTPS)
   'http://localhost:5173',            // Vite default dev port
   'http://localhost:3000',           // Alternative dev port
   'http://localhost:8888',           // Netlify functions dev server
@@ -59,6 +58,11 @@ const ALLOWED_ORIGINS = getAllowedOrigins();
 
 // Get allowed origin based on request
 function getAllowedOrigin(requestOrigin) {
+  // TEMPORARY: Allow all origins for debugging - REMOVE IN PRODUCTION!
+  if (!isProduction()) {
+    return requestOrigin || '*'; // Allow all origins in development
+  }
+
   // If no origin header (same-origin request), allow it
   if (!requestOrigin) {
     return null; // Same-origin requests don't need CORS headers
@@ -91,6 +95,17 @@ function getAllowedOrigin(requestOrigin) {
 
 // Get CORS headers for response
 function getCorsHeaders(requestOrigin) {
+  // TEMPORARY: Allow all origins for debugging - REMOVE IN PRODUCTION!
+  if (!isProduction()) {
+    return {
+      'Access-Control-Allow-Origin': '*', // Allow all origins in development
+      'Access-Control-Allow-Methods': 'POST, GET, OPTIONS, PUT, DELETE',
+      'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+      'Access-Control-Allow-Credentials': 'false',
+    };
+  }
+
+  // Production code (original logic)
   const allowedOrigin = getAllowedOrigin(requestOrigin);
   
   if (!allowedOrigin) {

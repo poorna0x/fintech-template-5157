@@ -83,7 +83,7 @@ const AltchaWidget: React.FC<AltchaWidgetProps> = ({
       const isLocalNetwork = /^(192\.168\.|10\.|172\.(1[6-9]|2[0-9]|3[01])\.)/.test(window.location.hostname);
       if (isLocalNetwork) {
         // Use the current hostname and port for local network access
-        const port = window.location.port || '8084';
+        const port = window.location.port || '8080';
         apiUrl = `http://${window.location.hostname}:8888/.netlify/functions/altcha-verify`;
       } else {
         // Use localhost for local machine access

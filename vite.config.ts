@@ -7,11 +7,14 @@ import { componentTagger } from "lovable-tagger";
 export default defineConfig(({ mode }) => ({
   server: {
     host: "0.0.0.0", // Allow access from all network interfaces (including mobile devices)
-    port: 8084,
-    strictPort: false, // If 8084 is taken, try next available port
+    port: 8080,
+    strictPort: false, // If 8080 is taken, try next available port
+    // Using HTTP for local development - HTTPS causes SSL certificate issues with IP addresses
+    // For production, HTTPS is handled by the hosting provider (Netlify)
+    https: false, // Disabled for local network access compatibility
     hmr: {
       // Allow HMR over local network
-      clientPort: 8084,
+      clientPort: 8080,
     },
   },
   plugins: [

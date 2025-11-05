@@ -280,6 +280,7 @@ const AdminDashboard = () => {
   const [dbModels, setDbModels] = useState<string[]>([]);
   const [descriptionDialogOpen, setDescriptionDialogOpen] = useState(false);
   const [selectedJobDescription, setSelectedJobDescription] = useState<{jobId: string, description: string} | null>(null);
+  const [jobAddressDialogOpen, setJobAddressDialogOpen] = useState<{[jobId: string]: boolean}>({});
   const [lastCheckedJobId, setLastCheckedJobId] = useState<string | null>(null);
   const [isPollingEnabled, setIsPollingEnabled] = useState(true);
   const audioContextRef = React.useRef<AudioContext | null>(null);
@@ -549,7 +550,7 @@ const AdminDashboard = () => {
       state: customer.address?.state || '',
       pincode: customer.address?.pincode || '',
       landmark: customer.address?.landmark,
-      visible_address: customer.address?.visible_address || ''
+      visible_address: customer.visible_address || customer.address?.visible_address || ''
     },
     location: {
       latitude: customer.location?.latitude || 0,
@@ -1003,7 +1004,7 @@ const AdminDashboard = () => {
       status: customer.status || '',
       notes: customer.notes || '',
       google_location: customer.location?.formattedAddress || '',
-      visible_address: (customer.address as any)?.visible_address || '',
+      visible_address: (customer as any).visible_address || (customer.address as any)?.visible_address || '',
       address: {
         street: [
           customer.address?.street,
@@ -1040,8 +1041,7 @@ const AdminDashboard = () => {
         area: editFormData.address.area,
         city: editFormData.address.city,
         state: editFormData.address.state,
-        pincode: editFormData.address.pincode,
-        visible_address: editFormData.visible_address || ''
+        pincode: editFormData.address.pincode
       };
 
       const updatedLocation = {
@@ -1060,6 +1060,7 @@ const AdminDashboard = () => {
         preferred_language: (editFormData.native_language || 'ENGLISH') as 'ENGLISH' | 'HINDI' | 'KANNADA' | 'TAMIL' | 'TELUGU',
         status: editFormData.status as 'ACTIVE' | 'INACTIVE' | 'BLOCKED',
         notes: editFormData.notes,
+        visible_address: editFormData.visible_address || '',
         address: updatedAddress,
         location: updatedLocation
       });
@@ -3730,12 +3731,6 @@ const AdminDashboard = () => {
                         {customer.customerId || 'N/A'}
                       </div>
                     </div>
-                    {customer.brand && !customer.brand.toLowerCase().includes('not specified') && !customer.brand.toLowerCase().includes('n/a') && (
-                      <div className="text-xs text-gray-600 bg-gray-100 px-2 py-1 rounded-md inline-block">
-                        {customer.brand}
-                        {customer.model && !customer.model.toLowerCase().includes('not specified') && !customer.model.toLowerCase().includes('n/a') && ` ${customer.model}`}
-                      </div>
-                    )}
                   </div>
 
                   {/* Action Buttons - Mobile Grid */}
@@ -3890,14 +3885,6 @@ const AdminDashboard = () => {
                             {customer.customerId || 'N/A'}
                           </div>
                         </div>
-                        {(customer.brand || customer.model) && (
-                          <div className="text-sm text-gray-600 bg-gray-100 px-2 py-1 rounded-md">
-                            {[customer.brand, customer.model]
-                              .filter(Boolean)
-                              .filter(value => !value.toLowerCase().includes('not specified') && !value.toLowerCase().includes('n/a'))
-                              .join(' ')}
-                          </div>
-                        )}
                       </div>
                     </div>
                     
@@ -4363,8 +4350,8 @@ const AdminDashboard = () => {
                                         : job.description;
                                       
                                       return (
-                                        <div className="flex items-start gap-2">
-                                          <FileText className="w-4 h-4 text-gray-400 flex-shrink-0 mt-0.5" />
+                                        <div className="flex items-start gap-2 sm:items-center">
+                                          <FileText className="w-4 h-4 text-gray-400 flex-shrink-0 mt-0.5 sm:mt-0" />
                                           <div className="min-w-0 flex-1">
                                             <div className="text-xs text-gray-500">Description</div>
                                             <div className="font-medium text-gray-900 break-words">
@@ -4472,21 +4459,51 @@ const AdminDashboard = () => {
                                       return null;
                                     })()}
                                     
-                                    {/* Google Maps Link */}
-                                    {(job as any)?.service_location?.googleLocation && (
-                                      <div className="sm:col-span-2 lg:col-span-1">
-                                        <div className="text-xs text-gray-500">Location</div>
-                                        <a 
-                                          href={(job as any)?.service_location?.googleLocation}
-                                          target="_blank"
-                                          rel="noopener noreferrer"
-                                          className="inline-flex items-center gap-1 text-blue-600 hover:text-blue-800 text-sm font-medium"
-                                        >
-                                          <MapPin className="w-4 h-4" />
-                                          Open in Google Maps
-                                        </a>
-                                      </div>
-                                    )}
+                                    {/* Location */}
+                                    {(() => {
+                                      const jobCustomer = job.customer as any;
+                                      const visibleAddress = jobCustomer?.address?.visible_address || 
+                                                           (job as any)?.service_address?.visible_address || '';
+                                      const serviceAddress = (job as any)?.service_address || jobCustomer?.address || {};
+                                      const serviceLocation = (job as any)?.service_location || jobCustomer?.location || {};
+                                      
+                                      // Show location if we have any address data
+                                      const hasAddressData = visibleAddress || serviceAddress?.street || serviceAddress?.area || serviceAddress?.city;
+                                      
+                                      if (!hasAddressData) {
+                                        return null;
+                                      }
+                                      
+                                      return (
+                                        <div className="flex items-start gap-2 sm:items-center">
+                                          <MapPin className="w-4 h-4 text-gray-400 flex-shrink-0 mt-0.5 sm:mt-0" />
+                                          <div className="min-w-0 flex-1">
+                                            <div className="text-xs text-gray-500">Location</div>
+                                            {visibleAddress && String(visibleAddress).trim() ? (
+                                              <button
+                                                onClick={() => {
+                                                  setJobAddressDialogOpen(prev => ({ ...prev, [job.id]: true }));
+                                                }}
+                                                className="text-left hover:text-gray-700 transition-colors cursor-pointer underline-offset-2 hover:underline font-medium text-gray-900 break-words"
+                                                title="Click to view full address"
+                                              >
+                                                {String(visibleAddress).trim()}
+                                              </button>
+                                            ) : (
+                                              <button
+                                                onClick={() => {
+                                                  setJobAddressDialogOpen(prev => ({ ...prev, [job.id]: true }));
+                                                }}
+                                                className="text-left hover:text-gray-700 transition-colors cursor-pointer underline-offset-2 hover:underline font-medium text-gray-900 break-words"
+                                                title="Click to view full address"
+                                              >
+                                                {serviceAddress?.area || serviceAddress?.street || serviceAddress?.city || 'View Address'}
+                                              </button>
+                                            )}
+                                          </div>
+                                        </div>
+                                      );
+                                    })()}
                                   </div>
 
                                   {/* Photos Section - Mobile responsive */}
@@ -5079,7 +5096,7 @@ const AdminDashboard = () => {
               <h3 className="text-lg font-semibold text-gray-900">Address Information</h3>
               <div className="space-y-4">
                 <div className="space-y-2">
-                  <Label htmlFor="edit_visible_address">Visible Address (One Word)</Label>
+                  <Label htmlFor="edit_visible_address">Location</Label>
                   <div className="relative">
                     <Input
                       id="edit_visible_address"
@@ -5115,7 +5132,7 @@ const AdminDashboard = () => {
                       </div>
                     )}
                   </div>
-                  <p className="text-xs text-gray-500">A short one-word identifier (area name or type) for quick recognition. Start typing to see suggestions.</p>
+                  <p className="text-xs text-gray-500">Enter a one-word location identifier for quick recognition. Start typing to see suggestions.</p>
                 </div>
 
                 <div className="space-y-2">
@@ -7071,6 +7088,97 @@ const AdminDashboard = () => {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* Job Address Dialog */}
+      {jobs.map((job) => {
+        const jobCustomer = job.customer as any;
+        const serviceAddress = (job as any)?.service_address || jobCustomer?.address || {};
+        const serviceLocation = (job as any)?.service_location || jobCustomer?.location || {};
+        
+        return (
+          <Dialog
+            key={job.id}
+            open={jobAddressDialogOpen[job.id] || false}
+            onOpenChange={(open) => {
+              setJobAddressDialogOpen(prev => ({ ...prev, [job.id]: open }));
+            }}
+          >
+            <DialogContent className="sm:max-w-md">
+              <DialogHeader>
+                <DialogTitle>Full Address</DialogTitle>
+                <DialogDescription>
+                  Complete address for job {job?.job_number || job?.jobNumber || job.id}
+                </DialogDescription>
+              </DialogHeader>
+              <div className="py-4">
+                <div className="text-sm text-gray-900 whitespace-pre-wrap break-words">
+                  {(() => {
+                    const address = serviceAddress;
+                    if (!address || (!address.street && !address.area)) {
+                      return 'No address available';
+                    }
+                    
+                    const parts = [];
+                    if (address.visible_address) {
+                      parts.push(`Location: ${address.visible_address}`);
+                    }
+                    if (address.street) parts.push(address.street);
+                    if (address.area) parts.push(address.area);
+                    if (address.city) parts.push(address.city);
+                    if (address.state) parts.push(address.state);
+                    if (address.pincode) parts.push(address.pincode);
+                    if (address.landmark) parts.push(`Landmark: ${address.landmark}`);
+                    
+                    return parts.length > 0 ? parts.join(', ') : 'No address available';
+                  })()}
+                </div>
+                {serviceLocation?.formattedAddress && (
+                  <div className="mt-4 pt-4 border-t border-gray-200">
+                    <div className="text-xs text-gray-500 mb-2">Google Maps Location:</div>
+                    <div className="text-xs text-gray-700 break-all">
+                      {serviceLocation.formattedAddress}
+                    </div>
+                    {serviceLocation?.formattedAddress && (
+                      <a
+                        href={serviceLocation.formattedAddress}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="inline-flex items-center gap-1 text-blue-600 hover:text-blue-800 text-sm font-medium mt-2"
+                      >
+                        <MapPin className="w-4 h-4" />
+                        Open in Google Maps
+                      </a>
+                    )}
+                  </div>
+                )}
+                {(serviceLocation?.latitude && serviceLocation?.longitude) && (
+                  <div className="mt-2">
+                    <a
+                      href={`https://www.google.com/maps/place/${serviceLocation.latitude},${serviceLocation.longitude}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-flex items-center gap-1 text-blue-600 hover:text-blue-800 text-sm font-medium"
+                    >
+                      <MapPin className="w-4 h-4" />
+                      Open in Google Maps
+                    </a>
+                  </div>
+                )}
+              </div>
+              <DialogFooter>
+                <Button
+                  variant="outline"
+                  onClick={() => {
+                    setJobAddressDialogOpen(prev => ({ ...prev, [job.id]: false }));
+                  }}
+                >
+                  Close
+                </Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
+        );
+      })}
     </div>
   );
 };
