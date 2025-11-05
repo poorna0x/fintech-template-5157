@@ -250,7 +250,7 @@ const EnhancedBookingForm = () => {
         status: 'PENDING' as const,
         priority: data.urgency,
         description: data.description,
-        requirements: [],
+        requirements: [{ lead_source: 'Website' }],
         estimated_cost: 0, // Will be updated by admin
         payment_status: 'PENDING' as const,
       };

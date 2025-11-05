@@ -253,7 +253,7 @@ const AdminDashboard = () => {
     priority: 'MEDIUM' as 'LOW' | 'MEDIUM' | 'HIGH' | 'URGENT',
     assigned_technician_id: '',
     cost_agreed: '',
-    lead_source: 'Direct call',
+    lead_source: 'Website',
     lead_source_custom: '',
     photos: [] as string[]
   });
@@ -278,7 +278,11 @@ const AdminDashboard = () => {
   const [showModelSuggestions, setShowModelSuggestions] = useState(false);
   const [dbBrands, setDbBrands] = useState<string[]>([]);
   const [dbModels, setDbModels] = useState<string[]>([]);
-  const [expandedDescriptions, setExpandedDescriptions] = useState<{[jobId: string]: boolean}>({});
+  const [descriptionDialogOpen, setDescriptionDialogOpen] = useState(false);
+  const [selectedJobDescription, setSelectedJobDescription] = useState<{jobId: string, description: string} | null>(null);
+  const [lastCheckedJobId, setLastCheckedJobId] = useState<string | null>(null);
+  const [isPollingEnabled, setIsPollingEnabled] = useState(true);
+  const audioContextRef = React.useRef<AudioContext | null>(null);
   
   // Brand and model data - Comprehensive list of popular RO and Softener brands in India
   const brandData = {
@@ -485,9 +489,10 @@ const AdminDashboard = () => {
     serviceSubTypeCustom: '',
     description: '',
     scheduledDate: '',
-    scheduledTimeSlot: 'MORNING' as 'MORNING' | 'AFTERNOON' | 'EVENING' | 'CUSTOM',
+    scheduledTimeSlot: 'MORNING' as 'MORNING' | 'AFTERNOON' | 'EVENING' | 'CUSTOM' | 'FLEXIBLE',
     scheduledTimeCustom: '',
-    priority: 'MEDIUM' as 'LOW' | 'MEDIUM' | 'HIGH' | 'URGENT'
+    lead_source: 'Direct call',
+    lead_source_custom: ''
   });
   const [photoToDelete, setPhotoToDelete] = useState<{jobId: string, photoIndex: number, photoUrl: string} | null>(null);
   const [deletePhotoDialogOpen, setDeletePhotoDialogOpen] = useState(false);
@@ -644,7 +649,6 @@ const AdminDashboard = () => {
         setDbModels(Array.from(allModels));
       }
     } catch (error) {
-      console.error('Error loading brands and models:', error);
     }
   }, []);
 
@@ -653,12 +657,10 @@ const AdminDashboard = () => {
     try {
       const { data, error } = await db.jobs.getCounts();
       if (error) {
-        console.error('Error loading job counts:', error);
       } else if (data) {
         setJobCounts(data);
       }
     } catch (error) {
-      console.error('Error loading job counts:', error);
     }
   }, []);
 
@@ -671,7 +673,6 @@ const AdminDashboard = () => {
         // For ALL, we need customers with their jobs - load ongoing jobs only for display
         const { data, error } = await db.jobs.getOngoing();
         if (error) {
-          console.error('Error loading ongoing jobs:', error);
           setJobs([]);
         } else {
           setJobs(data || []);
@@ -680,7 +681,6 @@ const AdminDashboard = () => {
         // Load all ongoing jobs (usually not too many)
         const { data, error } = await db.jobs.getOngoing();
         if (error) {
-          console.error('Error loading ongoing jobs:', error);
           setJobs([]);
         } else {
           setJobs(data || []);
@@ -692,7 +692,6 @@ const AdminDashboard = () => {
         const statuses = filter === 'COMPLETED' ? ['COMPLETED'] : ['DENIED', 'CANCELLED'];
         const { data, error, count, totalPages: pages } = await db.jobs.getByStatusPaginated(statuses, page, pageSize);
         if (error) {
-          console.error(`Error loading ${filter} jobs:`, error);
           setJobs([]);
         } else {
           setJobs(data || []);
@@ -703,7 +702,6 @@ const AdminDashboard = () => {
         // Load follow-up jobs (usually not too many)
         const { data, error, count, totalPages: pages } = await db.jobs.getByStatusPaginated(['FOLLOW_UP', 'RESCHEDULED'], page, pageSize);
         if (error) {
-          console.error('Error loading follow-up jobs:', error);
           setJobs([]);
         } else {
           setJobs(data || []);
@@ -712,7 +710,6 @@ const AdminDashboard = () => {
         }
       }
     } catch (error) {
-      console.error('Error loading filtered jobs:', error);
       setJobs([]);
     } finally {
       setLoading(false);
@@ -732,25 +729,20 @@ const AdminDashboard = () => {
 
       // Log errors for debugging
       if (customersResult.error) {
-        console.error('Error loading customers:', customersResult.error);
         toast.error(`Failed to load customers: ${customersResult.error.message}`);
       }
       if (techniciansResult.error) {
-        console.error('Error loading technicians:', techniciansResult.error);
       }
 
       if (customersResult.data) {
         const transformedCustomers = customersResult.data.map(transformCustomerData);
-        console.log(`Loaded ${transformedCustomers.length} customers`);
         setCustomers(transformedCustomers);
       } else {
-        console.warn('No customer data received');
         setCustomers([]);
       }
       
       if (techniciansResult.data) {
         const transformedTechnicians = techniciansResult.data.map(transformTechnicianData);
-        console.log(`Loaded ${transformedTechnicians.length} technicians`);
         setTechnicians(transformedTechnicians);
       } else {
         setTechnicians([]);
@@ -766,7 +758,6 @@ const AdminDashboard = () => {
       await loadFilteredJobs(statusFilter, currentPage);
 
     } catch (error) {
-      console.error('Error loading dashboard data:', error);
       toast.error(`Failed to load dashboard data: ${error instanceof Error ? error.message : 'Unknown error'}`);
     } finally {
       setLoading(false);
@@ -784,6 +775,23 @@ const AdminDashboard = () => {
     initialize();
   }, []);
 
+  // Set initial last checked job ID after jobs are loaded
+  useEffect(() => {
+    if (isInitialLoad || lastCheckedJobId || jobs.length === 0) return;
+    
+    const pendingJobs = jobs.filter(j => j.status === 'PENDING');
+    if (pendingJobs.length > 0) {
+      const mostRecent = pendingJobs.sort((a, b) => {
+        const aTime = new Date((a as any).created_at || (a as any).createdAt || 0).getTime();
+        const bTime = new Date((b as any).created_at || (b as any).createdAt || 0).getTime();
+        return bTime - aTime;
+      })[0];
+      if (mostRecent.id) {
+        setLastCheckedJobId(mostRecent.id);
+      }
+    }
+  }, [isInitialLoad, jobs, lastCheckedJobId]);
+
   // Reload jobs when filter changes (but not on initial load)
   useEffect(() => {
     if (isInitialLoad) return;
@@ -800,6 +808,123 @@ const AdminDashboard = () => {
     }
   }, [currentPage, statusFilter, loadFilteredJobs]);
 
+  // Initialize audio context on user interaction
+  useEffect(() => {
+    const initAudioContext = () => {
+      if (!audioContextRef.current) {
+        try {
+          audioContextRef.current = new (window.AudioContext || (window as any).webkitAudioContext)();
+        } catch (error) {
+        }
+      }
+    };
+
+    // Initialize on first user interaction
+    const handleUserInteraction = () => {
+      initAudioContext();
+      // Remove listeners after first interaction
+      document.removeEventListener('click', handleUserInteraction);
+      document.removeEventListener('keydown', handleUserInteraction);
+    };
+
+    document.addEventListener('click', handleUserInteraction, { once: true });
+    document.addEventListener('keydown', handleUserInteraction, { once: true });
+
+    return () => {
+      document.removeEventListener('click', handleUserInteraction);
+      document.removeEventListener('keydown', handleUserInteraction);
+    };
+  }, []);
+
+  // Function to play notification sound - plays 5 times
+  const playNotificationSound = useCallback(async () => {
+    try {
+      // Create or get audio context
+      if (!audioContextRef.current) {
+        audioContextRef.current = new (window.AudioContext || (window as any).webkitAudioContext)();
+      }
+
+      const audioContext = audioContextRef.current;
+
+      // Resume audio context if suspended (browser autoplay policy)
+      if (audioContext.state === 'suspended') {
+        await audioContext.resume();
+      }
+
+      // Play the beep 5 times with small gaps between
+      const beepDuration = 0.3; // Each beep is 0.3 seconds
+      const gapDuration = 0.2; // 0.2 second gap between beeps
+      const totalDuration = (beepDuration + gapDuration) * 5 - gapDuration; // Total ~2.3 seconds
+
+      for (let i = 0; i < 5; i++) {
+        const startTime = audioContext.currentTime + i * (beepDuration + gapDuration);
+        
+        const oscillator = audioContext.createOscillator();
+        const gainNode = audioContext.createGain();
+        
+        oscillator.connect(gainNode);
+        gainNode.connect(audioContext.destination);
+        
+        oscillator.frequency.value = 800; // Original frequency
+        oscillator.type = 'sine';
+        
+        gainNode.gain.setValueAtTime(0.3, startTime);
+        gainNode.gain.exponentialRampToValueAtTime(0.01, startTime + beepDuration);
+        
+        oscillator.start(startTime);
+        oscillator.stop(startTime + beepDuration);
+      }
+    } catch (error) {
+    }
+  }, []);
+
+  // Poll for new jobs and play notification sound
+  useEffect(() => {
+    if (isInitialLoad || !isPollingEnabled) return;
+
+    const checkForNewJobs = async () => {
+      try {
+        // Check for new pending jobs (most recent first)
+        const { data: newJobs, error } = await db.jobs.getByStatusPaginated(['PENDING'], 1, 5);
+        
+        if (error || !newJobs || newJobs.length === 0) return;
+
+        // Get the most recent job ID
+        const mostRecentJob = newJobs[0];
+        const mostRecentJobId = mostRecentJob?.id;
+
+        if (!mostRecentJobId) return;
+
+        // If we have a last checked ID and it's different, we have a new job
+        if (lastCheckedJobId && lastCheckedJobId !== mostRecentJobId) {
+          // New job detected - play sound
+          playNotificationSound();
+          
+          // Show a toast notification
+          toast.info('New lead received!', {
+            description: `Job ${String((mostRecentJob as any).job_number || mostRecentJobId || '')} - ${String((mostRecentJob.customer as any)?.full_name || 'New Customer')}`,
+            duration: 5000,
+          });
+        }
+
+        // Update the last checked job ID
+        setLastCheckedJobId(mostRecentJobId);
+      } catch (error) {
+      }
+    };
+
+    // Poll every 10 seconds
+    const interval = setInterval(checkForNewJobs, 10000);
+
+    // Initial check after a short delay
+    const timeout = setTimeout(checkForNewJobs, 2000);
+
+    return () => {
+      clearInterval(interval);
+      clearTimeout(timeout);
+    };
+  }, [isInitialLoad, isPollingEnabled, lastCheckedJobId, jobs, playNotificationSound]);
+
   const handleDeleteCustomer = async () => {
     if (!customerToDelete) return;
     
@@ -815,7 +940,6 @@ const AdminDashboard = () => {
       setDeleteDialogOpen(false);
       setCustomerToDelete(null);
     } catch (error) {
-      console.error('Error deleting customer:', error);
       toast.error('Failed to delete customer');
     }
   };
@@ -969,7 +1093,6 @@ const AdminDashboard = () => {
       setEditDialogOpen(false);
       setEditingCustomer(null);
     } catch (error) {
-      console.error('Error updating customer:', error);
       toast.error('Failed to update customer');
     } finally {
       setIsUpdating(false);
@@ -1145,7 +1268,6 @@ const AdminDashboard = () => {
         throw new Error('No location found for this address');
       }
     } catch (error) {
-      console.error('Geocoding error:', error);
       toast.error('Failed to geocode address. Please check the address or enter coordinates manually.');
     }
   };
@@ -1194,7 +1316,6 @@ const AdminDashboard = () => {
       
       return null;
     } catch (error) {
-      console.error('Error extracting coordinates:', error);
       return null;
     }
   };
@@ -1301,15 +1422,11 @@ const AdminDashboard = () => {
         },
         service_type: (() => {
           const selectedTypes = addFormData.service_types;
-          console.log('Selected service types:', selectedTypes);
-          
           // Valid service types that are supported by the database
           const validTypes = ['RO', 'SOFTENER'];
           
           // Filter out any invalid service types
           const validSelectedTypes = selectedTypes.filter(type => validTypes.includes(type));
-          console.log('Valid selected types:', validSelectedTypes);
-          
           // Based on testing, only basic service types are allowed in the database
           if (validSelectedTypes.length === 0) return 'RO';
           if (validSelectedTypes.length === 1) return validSelectedTypes[0];
@@ -1372,7 +1489,6 @@ const AdminDashboard = () => {
 
       setAddDialogOpen(false);
     } catch (error) {
-      console.error('Error creating customer:', error);
       toast.error('Failed to create customer');
     } finally {
       setIsCreating(false);
@@ -1435,7 +1551,7 @@ const AdminDashboard = () => {
       priority: 'MEDIUM' as 'LOW' | 'MEDIUM' | 'HIGH' | 'URGENT',
       assigned_technician_id: '',
       cost_agreed: '',
-      lead_source: 'Direct call',
+      lead_source: 'Website',
       lead_source_custom: '',
       photos: [] as string[]
     };
@@ -1452,11 +1568,48 @@ const AdminDashboard = () => {
       toast.error('Please select a scheduled date');
       return;
     }
+    
+    if (!newJobFormData.lead_source || newJobFormData.lead_source.trim() === '') {
+      toast.error('Please select a lead source');
+      return;
+    }
+    
+    if (newJobFormData.lead_source === 'Other' && (!newJobFormData.lead_source_custom || newJobFormData.lead_source_custom.trim() === '')) {
+      toast.error('Please enter a custom lead source');
+      return;
+    }
 
     setIsCreatingJob(true);
     try {
       // Generate job number
       const jobNumber = generateJobNumber(newJobFormData.service_type);
+
+      // Convert CUSTOM or FLEXIBLE time slot to valid database value
+      let scheduledTimeSlot: 'MORNING' | 'AFTERNOON' | 'EVENING' = 'MORNING';
+      let customTimeInRequirements = null;
+      let isFlexible = false;
+      
+      if (newJobFormData.scheduled_time_slot === 'CUSTOM' && newJobFormData.scheduled_time_custom) {
+        // Store custom time in requirements
+        customTimeInRequirements = newJobFormData.scheduled_time_custom;
+        // Parse the custom time (format: HH:MM)
+        const [hours, minutes] = newJobFormData.scheduled_time_custom.split(':').map(Number);
+        const hour24 = hours;
+        
+        // Convert to time slot based on hour
+        if (hour24 < 13) {
+          scheduledTimeSlot = 'MORNING';
+        } else if (hour24 < 18) {
+          scheduledTimeSlot = 'AFTERNOON';
+        } else {
+          scheduledTimeSlot = 'EVENING';
+        }
+      } else if (newJobFormData.scheduled_time_slot === 'FLEXIBLE') {
+        isFlexible = true;
+        scheduledTimeSlot = 'MORNING'; // Default to MORNING for flexible
+      } else {
+        scheduledTimeSlot = newJobFormData.scheduled_time_slot as 'MORNING' | 'AFTERNOON' | 'EVENING';
+      }
 
       const jobData = {
         job_number: jobNumber,
@@ -1466,7 +1619,7 @@ const AdminDashboard = () => {
         brand: newJobFormData.brand === 'Not specified' ? '' : newJobFormData.brand,
         model: newJobFormData.model === 'Not specified' ? '' : newJobFormData.model,
         scheduled_date: newJobFormData.scheduled_date,
-        scheduled_time_slot: newJobFormData.scheduled_time_slot === 'CUSTOM' ? newJobFormData.scheduled_time_custom : newJobFormData.scheduled_time_slot,
+        scheduled_time_slot: scheduledTimeSlot,
         service_address: selectedCustomerForJob.address,
         service_location: selectedCustomerForJob.location,
         status: newJobFormData.assigned_technician_id ? 'ASSIGNED' : 'PENDING',
@@ -1474,7 +1627,9 @@ const AdminDashboard = () => {
         description: newJobFormData.description.trim() || '',
         requirements: [{ 
           lead_source: newJobFormData.lead_source === 'Other' ? (newJobFormData.lead_source_custom || 'Other') : newJobFormData.lead_source,
-          cost_range: newJobFormData.cost_agreed || ''
+          cost_range: newJobFormData.cost_agreed || '',
+          custom_time: customTimeInRequirements,
+          flexible_time: isFlexible
         }],
         estimated_cost: newJobFormData.cost_agreed ? (parseFloat(newJobFormData.cost_agreed.toString().split('-')[0].trim()) || 0) : 0,
         payment_status: 'PENDING',
@@ -1556,7 +1711,6 @@ const AdminDashboard = () => {
       toast.success(`Job ${newJob.job_number} created successfully!`);
       handleCloseNewJobDialog();
     } catch (error) {
-      console.error('Error creating job:', error);
       toast.error('Failed to create job');
     } finally {
       setIsCreatingJob(false);
@@ -1695,7 +1849,6 @@ const AdminDashboard = () => {
           
           return uploadResult.secure_url;
         } catch (error) {
-          console.error(`Error uploading ${file.name}:`, error);
           // Keep thumbnail if upload fails
           return thumbnails[index];
         }
@@ -1706,7 +1859,6 @@ const AdminDashboard = () => {
       
       toast.success(`${files.length} photo(s) processed successfully!`);
     } catch (error) {
-      console.error('Error processing photos:', error);
       toast.error(`Failed to process photos: ${error instanceof Error ? error.message : 'Unknown error'}`);
     }
   };
@@ -1743,7 +1895,6 @@ const AdminDashboard = () => {
       const { data: customer, error: customerError } = await db.customers.getByCustomerId(customerId);
       
       if (customerError || !customer) {
-        console.error('Customer not found:', customerError);
         throw new Error(`Customer not found: ${customerError?.message || 'Unknown error'}`);
       }
       
@@ -1751,13 +1902,7 @@ const AdminDashboard = () => {
       const { data: jobs, error } = await db.jobs.getByCustomerId(customer.id);
       
       if (error) {
-        console.error('Error fetching jobs:', error);
-        console.error('Error details:', {
-          message: error.message,
-          details: error.details,
-          hint: error.hint,
-          code: error.code
-        });
+
         throw error;
       }
       
@@ -1765,15 +1910,7 @@ const AdminDashboard = () => {
       const allPhotos: string[] = [];
       
       if (jobs && jobs.length > 0) {
-        console.log('Jobs found for customer:', jobs.length);
         jobs.forEach((job, index) => {
-          console.log(`Job ${index}:`, {
-            id: job.id,
-            job_number: job.job_number || job.jobNumber,
-            before_photos: job.before_photos || job.beforePhotos,
-            images: job.images
-          });
-          
           // Extract URLs from Cloudinary objects or use as-is if already strings
           const extractPhotoUrls = (photos: any[]) => {
             if (!Array.isArray(photos)) return [];
@@ -1790,35 +1927,28 @@ const AdminDashboard = () => {
           // Add photos from before_photos field (treating it as general photos)
           const jobPhotos = Array.isArray(job.before_photos || job.beforePhotos) ? (job.before_photos || job.beforePhotos) : [];
           const extractedPhotos = extractPhotoUrls(jobPhotos);
-          console.log(`Job ${index} extracted photos from before_photos:`, extractedPhotos);
           allPhotos.push(...extractedPhotos);
           
           // Also check if there are photos in the images field (for backward compatibility)
           const jobImages = Array.isArray(job.images) ? job.images : [];
           const extractedImages = extractPhotoUrls(jobImages);
-          console.log(`Job ${index} extracted photos from images:`, extractedImages);
           allPhotos.push(...extractedImages);
           
           // Also check after_photos field
           const jobAfterPhotos = Array.isArray(job.after_photos || job.afterPhotos) ? (job.after_photos || job.afterPhotos) : [];
           const extractedAfterPhotos = extractPhotoUrls(jobAfterPhotos);
-          console.log(`Job ${index} extracted photos from after_photos:`, extractedAfterPhotos);
           allPhotos.push(...extractedAfterPhotos);
         });
       }
-      
-      console.log('Total photos found:', allPhotos.length, allPhotos);
-      console.log('Storing photos with key:', customerId);
+
       setCustomerPhotos(prev => {
         const newState = {
           ...prev,
           [customerId]: allPhotos
         };
-        console.log('Updated customerPhotos state:', newState);
         return newState;
       });
     } catch (error) {
-      console.error('Error loading photos:', error);
       toast.error('Failed to load photos');
     } finally {
       setIsLoadingPhotos(false);
@@ -1850,19 +1980,12 @@ const AdminDashboard = () => {
         }
         
         try {
-          console.log(`Processing file: ${file.name}, size: ${file.size}, type: ${file.type}`);
-          
           // Compress image for better performance
           const compressedFile = await compressImage(file, 800, 0.8);
-          console.log(`Compressed file: ${compressedFile.name}, size: ${compressedFile.size}`);
-          
           // Upload to Cloudinary
-          console.log('Uploading to Cloudinary...');
           const uploadResult = await cloudinaryService.uploadImage(compressedFile, 'ro-service');
-          console.log('Cloudinary upload result:', uploadResult);
           uploadedPhotos.push(uploadResult.secure_url);
         } catch (error) {
-          console.error(`Error uploading ${file.name} to Cloudinary:`, error);
           toast.error(`Failed to upload ${file.name}: ${error.message || 'Unknown error'}`);
         }
       }
@@ -1902,7 +2025,6 @@ const AdminDashboard = () => {
             });
 
             if (updateError) {
-              console.error('Error updating job with photos:', updateError);
               toast.warning('Photos uploaded but failed to save to database');
             } else {
               toast.success(`${uploadedPhotos.length} photo(s) uploaded and saved successfully!`);
@@ -1932,21 +2054,18 @@ const AdminDashboard = () => {
 
             const { error: createError } = await db.jobs.create(jobData);
             if (createError) {
-              console.error('Error creating job for photos:', createError);
               toast.warning('Photos uploaded but failed to save to database');
             } else {
               toast.success(`${uploadedPhotos.length} photo(s) uploaded and saved successfully!`);
             }
           }
         } catch (error) {
-          console.error('Error saving photos to database:', error);
           toast.warning('Photos uploaded but failed to save to database');
         }
       } else {
         toast.error('No valid photos were uploaded');
       }
     } catch (error) {
-      console.error('Error uploading photos:', error);
       toast.error('Failed to upload photos');
     } finally {
       setIsUploadingPhoto(false);
@@ -1988,7 +2107,6 @@ const AdminDashboard = () => {
         [customerId]: customerJobs
       }));
     } catch (error) {
-      console.error('Error loading history:', error);
       toast.error('Failed to load service history');
     }
   };
@@ -2329,7 +2447,6 @@ const AdminDashboard = () => {
       // Refresh jobs data
       await loadDashboardData();
     } catch (error) {
-      console.error('Error assigning job:', error);
       toast.error('Failed to assign job');
     }
   };
@@ -2388,7 +2505,6 @@ const AdminDashboard = () => {
       // Refresh jobs data
       await loadDashboardData();
     } catch (error) {
-      console.error('Error creating assignment requests:', error);
       toast.error('Failed to send assignment requests');
     } finally {
       setIsCreatingAssignmentRequests(false);
@@ -2409,7 +2525,6 @@ const AdminDashboard = () => {
       const { data, error } = await db.jobs.getByCustomerId(customerId);
       
       if (error) {
-        console.error('Error loading customer jobs:', error);
         return;
       }
 
@@ -2418,7 +2533,6 @@ const AdminDashboard = () => {
         [customerId]: data?.slice(0, 3) || [] // Only keep 3 most recent jobs
       }));
     } catch (error) {
-      console.error('Error loading customer jobs:', error);
     } finally {
       setLoadingCustomerJobs(prev => ({
         ...prev,
@@ -2459,7 +2573,6 @@ const AdminDashboard = () => {
       setJobToReassign(null);
       setSelectedTechnicianForReassign('');
     } catch (error) {
-      console.error('Reassign error:', error);
       toast.error('Failed to reassign job');
     }
   };
@@ -2492,6 +2605,30 @@ const AdminDashboard = () => {
       }
     }
     
+    // Extract lead_source from requirements
+    let leadSource = 'Direct call';
+    let leadSourceCustom = '';
+    try {
+      const requirements = (job as any).requirements;
+      if (requirements) {
+        let reqs = requirements;
+        if (typeof reqs === 'string') {
+          reqs = JSON.parse(reqs);
+        }
+        if (Array.isArray(reqs)) {
+          const req = reqs.find((r: any) => r?.lead_source);
+          if (req?.lead_source) {
+            leadSource = req.lead_source === 'Other' ? 'Other' : req.lead_source;
+            leadSourceCustom = req.lead_source === 'Other' ? (req.lead_source_custom || '') : '';
+          }
+        } else if (reqs && typeof reqs === 'object' && reqs.lead_source) {
+          leadSource = reqs.lead_source === 'Other' ? 'Other' : reqs.lead_source;
+          leadSourceCustom = reqs.lead_source === 'Other' ? (reqs.lead_source_custom || '') : '';
+        }
+      }
+    } catch (e) {
+    }
+
     setEditJobFormData({
       serviceType: (job.service_type || job.serviceType || 'RO') as 'RO' | 'SOFTENER',
       serviceSubType: isCustomSubType ? 'Custom' : serviceSubType,
@@ -2500,7 +2637,8 @@ const AdminDashboard = () => {
       scheduledDate: job.scheduled_date || job.scheduledDate || '',
       scheduledTimeSlot: isCustomTimeSlot ? 'CUSTOM' : (timeSlot as 'MORNING' | 'AFTERNOON' | 'EVENING'),
       scheduledTimeCustom: customTimeValue,
-      priority: (job.priority || 'MEDIUM') as 'LOW' | 'MEDIUM' | 'HIGH' | 'URGENT'
+      lead_source: leadSource,
+      lead_source_custom: leadSourceCustom
     });
     setEditJobDialogOpen(true);
   };
@@ -2511,14 +2649,58 @@ const AdminDashboard = () => {
     try {
       // Convert time picker value to readable format for custom time
       let timeSlotValue = editJobFormData.scheduledTimeSlot;
+      let customTimeInRequirements = null;
+      
       if (editJobFormData.scheduledTimeSlot === 'CUSTOM' && editJobFormData.scheduledTimeCustom) {
-        // Convert HH:MM to readable format (e.g., "14:30" to "2:30 PM")
+        // Store custom time in requirements and convert to time slot for DB
+        customTimeInRequirements = editJobFormData.scheduledTimeCustom;
+        // Convert HH:MM to time slot based on hour
         const [hours, minutes] = editJobFormData.scheduledTimeCustom.split(':');
         const hour24 = parseInt(hours);
-        const hour12 = hour24 === 0 ? 12 : hour24 > 12 ? hour24 - 12 : hour24;
-        const ampm = hour24 >= 12 ? 'PM' : 'AM';
-        timeSlotValue = `${hour12}:${minutes} ${ampm}`;
+        if (hour24 < 13) {
+          timeSlotValue = 'MORNING';
+        } else if (hour24 < 18) {
+          timeSlotValue = 'AFTERNOON';
+        } else {
+          timeSlotValue = 'EVENING';
+        }
+      } else if (editJobFormData.scheduledTimeSlot === 'FLEXIBLE') {
+        timeSlotValue = 'MORNING'; // Default to MORNING for flexible, store in requirements
       }
+
+      // Get existing requirements or create new one
+      let requirements = (jobToEdit as any).requirements || [];
+      if (typeof requirements === 'string') {
+        try {
+          requirements = JSON.parse(requirements);
+        } catch (e) {
+          requirements = [];
+        }
+      }
+      if (!Array.isArray(requirements)) {
+        requirements = [requirements];
+      }
+      
+      // Update or add lead_source and custom_time
+      const leadSourceValue = editJobFormData.lead_source === 'Other' 
+        ? (editJobFormData.lead_source_custom || 'Other')
+        : editJobFormData.lead_source;
+      
+      // Find existing requirement object or create new one
+      let reqObj = requirements.find((r: any) => r && typeof r === 'object') || {};
+      reqObj.lead_source = leadSourceValue;
+      if (editJobFormData.lead_source === 'Other' && editJobFormData.lead_source_custom) {
+        reqObj.lead_source_custom = editJobFormData.lead_source_custom;
+      }
+      if (customTimeInRequirements) {
+        reqObj.custom_time = customTimeInRequirements;
+      }
+      if (editJobFormData.scheduledTimeSlot === 'FLEXIBLE') {
+        reqObj.flexible_time = true;
+      }
+      
+      // Replace requirements array with updated object
+      requirements = [reqObj];
 
       const { error } = await db.jobs.update(jobToEdit.id, {
         service_type: editJobFormData.serviceType,
@@ -2526,7 +2708,7 @@ const AdminDashboard = () => {
         description: editJobFormData.description,
         scheduled_date: editJobFormData.scheduledDate,
         scheduled_time_slot: timeSlotValue,
-        priority: editJobFormData.priority
+        requirements: requirements
       });
 
       if (error) {
@@ -2544,7 +2726,7 @@ const AdminDashboard = () => {
               description: editJobFormData.description,
               scheduledDate: editJobFormData.scheduledDate,
               scheduledTimeSlot: timeSlotValue,
-              priority: editJobFormData.priority
+              requirements: requirements
             }
           : job
       ));
@@ -2553,7 +2735,6 @@ const AdminDashboard = () => {
       setEditJobDialogOpen(false);
       setJobToEdit(null);
     } catch (error) {
-      console.error('Edit job error:', error);
       toast.error('Failed to update job');
     }
   };
@@ -2608,7 +2789,6 @@ const AdminDashboard = () => {
         }
       }
     } catch (error) {
-      console.error('Error updating job status:', error);
       toast.error('Failed to update job status');
     }
   };
@@ -2710,7 +2890,6 @@ const AdminDashboard = () => {
             : 'Follow-up scheduled successfully'
       );
     } catch (error) {
-      console.error('Error scheduling follow-up:', error);
       toast.error('Failed to schedule follow-up');
     }
   };
@@ -2773,7 +2952,6 @@ const AdminDashboard = () => {
       setSelectedJobForDeny(null);
       setDenyReason('');
     } catch (error) {
-      console.error('Error denying job:', error);
       toast.error('Failed to deny job');
     }
   };
@@ -2836,7 +3014,6 @@ const AdminDashboard = () => {
       setSelectedJobForComplete(null);
       setCompletionNotes('');
     } catch (error) {
-      console.error('Error completing job:', error);
       toast.error('Failed to complete job');
     }
   };
@@ -2866,7 +3043,6 @@ const AdminDashboard = () => {
       setDeleteJobDialogOpen(false);
       setJobToDelete(null);
     } catch (error) {
-      console.error('Error deleting job:', error);
       toast.error('Failed to delete job');
     }
   };
@@ -2887,7 +3063,6 @@ const AdminDashboard = () => {
 
       toast.success(`Customer status updated to ${newStatus}`);
     } catch (error) {
-      console.error('Error updating customer status:', error);
       toast.error('Failed to update customer status');
     }
   };
@@ -2908,7 +3083,6 @@ const AdminDashboard = () => {
       setSelectedJobPhotos({ jobId, photos: validPhotos, type: type as 'before' | 'after' });
       setPhotoGalleryOpen(true);
     } catch (error) {
-      console.error('Error opening photo gallery:', error);
       toast.error('Failed to open photo gallery');
     }
   };
@@ -2973,8 +3147,6 @@ const AdminDashboard = () => {
       
       toast.success('Download started');
     } catch (error) {
-      console.error('Error downloading photo:', error);
-      
       // Method 2: Fallback - open in new tab for manual save
       try {
         const newWindow = window.open(photoUrl, '_blank', 'noopener,noreferrer');
@@ -2984,7 +3156,6 @@ const AdminDashboard = () => {
           throw new Error('Popup blocked');
         }
       } catch (fallbackError) {
-        console.error('Fallback download failed:', fallbackError);
         toast.error('Unable to download. Please right-click the photo and select "Save image as"');
       }
     }
@@ -2996,7 +3167,6 @@ const AdminDashboard = () => {
       await navigator.clipboard.writeText(photoUrl);
       toast.success('Photo link copied to clipboard');
     } catch (error) {
-      console.error('Error copying link:', error);
       toast.error('Failed to copy link');
     }
   };
@@ -3090,7 +3260,6 @@ const AdminDashboard = () => {
       setDeletePhotoDialogOpen(false);
       setPhotoToDelete(null);
     } catch (error) {
-      console.error('Error deleting photo:', error);
       toast.error('Failed to delete photo');
     } finally {
       setIsDeletingPhoto(false);
@@ -3152,16 +3321,7 @@ const AdminDashboard = () => {
         const jobCustomerId = (job as any).customer_id || job.customerId || (job as any).customerId;
         const customerUuid = customer.id;
         
-        // Debug logging in development
-        if (import.meta.env.DEV && jobs.length > 0 && jobs.indexOf(job) === 0) {
-          console.log('[Customer Jobs Match]', {
-            jobId: job.id,
-            jobCustomerId,
-            customerId: customerUuid,
-            match: jobCustomerId === customerUuid,
-            allJobIds: jobs.slice(0, 3).map(j => ({ id: j.id, customer_id: (j as any).customer_id || j.customerId }))
-          });
-        }
+        // Customer Jobs Match - silently continue
         
         return jobCustomerId === customerUuid;
       })
@@ -3180,20 +3340,7 @@ const AdminDashboard = () => {
     };
   });
   
-  // Debug logging in development
-  if (import.meta.env.DEV) {
-    console.log('[Customers with Jobs]', {
-      totalCustomers: customers.length,
-      totalJobs: jobs.length,
-      customersWithJobsCount: customersWithJobs.filter(c => c.allJobs.length > 0).length,
-      customersWithJobs: customersWithJobs.slice(0, 3).map(c => ({
-        customerId: c.customer.id,
-        customerName: c.customer.fullName,
-        jobsCount: c.allJobs.length,
-        jobIds: c.allJobs.map(j => j.id)
-      }))
-    });
-  }
+  // Customers with Jobs processing complete
 
 
     // Filter customers based on status filter
@@ -3583,12 +3730,10 @@ const AdminDashboard = () => {
                         {customer.customerId || 'N/A'}
                       </div>
                     </div>
-                    {(customer.brand || customer.model) && (
+                    {customer.brand && !customer.brand.toLowerCase().includes('not specified') && !customer.brand.toLowerCase().includes('n/a') && (
                       <div className="text-xs text-gray-600 bg-gray-100 px-2 py-1 rounded-md inline-block">
-                        {[customer.brand, customer.model]
-                          .filter(Boolean)
-                          .filter(value => !value.toLowerCase().includes('not specified') && !value.toLowerCase().includes('n/a'))
-                          .join(' ')}
+                        {customer.brand}
+                        {customer.model && !customer.model.toLowerCase().includes('not specified') && !customer.model.toLowerCase().includes('n/a') && ` ${customer.model}`}
                       </div>
                     )}
                   </div>
@@ -3991,13 +4136,6 @@ const AdminDashboard = () => {
                         
                         // Debug logging
                         if (import.meta.env.DEV) {
-                          console.log('[Service History]', {
-                            statusFilter,
-                            allJobsCount: allJobs.length,
-                            jobsToShowCount: jobsToShow.length,
-                            customerId: customer.id,
-                            customerName: customer.fullName
-                          });
                         }
                         
                                                 return jobsToShow.length === 0 ? (
@@ -4029,15 +4167,12 @@ const AdminDashboard = () => {
                                   {/* Mobile: Stack badges vertically, Desktop: Horizontal */}
                                   <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-3 mb-3">
                                     <div className="flex items-center gap-2 flex-wrap">
-                                      <div className="bg-gray-100 text-gray-800 px-2 sm:px-3 py-1 rounded-md font-mono text-xs sm:text-sm font-semibold">
-                                        {job.job_number || job.jobNumber}
-                                      </div>
+                                      <Badge className="bg-blue-100 text-blue-800 border-0">
+                                        {job.service_type || job.serviceType} {job.service_sub_type || job.serviceSubType}
+                                      </Badge>
                                       {getStatusBadge(job.status)}
                                     </div>
                                     <div className="flex items-center gap-2 flex-wrap">
-                                      <Badge variant="outline" className="text-xs border-gray-300 text-gray-600">
-                                        {job.service_type || job.serviceType} - {job.service_sub_type || job.serviceSubType}
-                                      </Badge>
                                       {allPhotos.length > 0 && (
                                         <div className="flex items-center gap-1 text-xs text-gray-600 bg-gray-50 px-2 py-1 rounded-md">
                                           <Camera className="w-3 h-3" />
@@ -4056,7 +4191,57 @@ const AdminDashboard = () => {
                                           {new Date(job.scheduled_date || job.scheduledDate).toLocaleDateString()}
                                         </div>
                                         <div className="text-xs text-gray-600">
-                                          {job.scheduled_time_slot || job.scheduledTimeSlot || 'Time not specified'}
+                                          {(() => {
+                                            // Handle requirements - could be array, object, or string
+                                            let requirements = (job as any).requirements;
+                                            
+                                            // If it's a string, parse it
+                                            if (typeof requirements === 'string') {
+                                              try {
+                                                requirements = JSON.parse(requirements);
+                                              } catch (e) {
+                                                requirements = [];
+                                              }
+                                            }
+                                            
+                                            // If it's an object (not array), convert to array
+                                            if (requirements && typeof requirements === 'object' && !Array.isArray(requirements)) {
+                                              requirements = [requirements];
+                                            }
+                                            
+                                            // Ensure it's an array
+                                            if (!Array.isArray(requirements)) {
+                                              requirements = [];
+                                            }
+                                            
+                                            // Check if there's a custom time in requirements
+                                            const customTime = requirements.find((r: any) => r?.custom_time)?.custom_time;
+                                            
+                                            if (customTime) {
+                                              // Format the time nicely (e.g., "14:30" -> "2:30 PM")
+                                              const [hours, minutes] = customTime.split(':');
+                                              const hour24 = parseInt(hours);
+                                              const hour12 = hour24 > 12 ? hour24 - 12 : (hour24 === 0 ? 12 : hour24);
+                                              const ampm = hour24 >= 12 ? 'PM' : 'AM';
+                                              return `${hour12}:${minutes} ${ampm}`;
+                                            }
+                                            
+                                            // Check for flexible time
+                                            const isFlexible = requirements.find((r: any) => r?.flexible_time)?.flexible_time;
+                                            if (isFlexible) {
+                                              return 'Flexible';
+                                            }
+                                            
+                                            // Otherwise show the time slot
+                                            const timeSlot = job.scheduled_time_slot || job.scheduledTimeSlot || 'Time not specified';
+                                            // Map time slots to readable format
+                                            const timeSlotMap: { [key: string]: string } = {
+                                              'MORNING': 'Morning (9 AM - 1 PM)',
+                                              'AFTERNOON': 'Afternoon (1 PM - 6 PM)',
+                                              'EVENING': 'Evening (6 PM - 9 PM)'
+                                            };
+                                            return timeSlotMap[timeSlot] || timeSlot;
+                                          })()}
                                         </div>
                                       </div>
                                     </div>
@@ -4077,10 +4262,31 @@ const AdminDashboard = () => {
                                     
                                     {/* Agreed Price - Only show if it exists and is greater than 0 */}
                                     {(() => {
-                                      const requirements = Array.isArray((job as any).requirements) ? (job as any).requirements : [];
+                                      // Handle requirements - could be array, object, or string
+                                      let requirements = (job as any).requirements;
+                                      
+                                      // If it's a string, parse it
+                                      if (typeof requirements === 'string') {
+                                        try {
+                                          requirements = JSON.parse(requirements);
+                                        } catch (e) {
+                                          requirements = [];
+                                        }
+                                      }
+                                      
+                                      // If it's an object (not array), convert to array
+                                      if (requirements && typeof requirements === 'object' && !Array.isArray(requirements)) {
+                                        requirements = [requirements];
+                                      }
+                                      
+                                      // Ensure it's an array
+                                      if (!Array.isArray(requirements)) {
+                                        requirements = [];
+                                      }
+                                      
                                       const costRange = requirements.find((r: any) => r?.cost_range)?.cost_range;
                                       const estimatedCost = (job as any).estimated_cost;
-                                      const hasCost = estimatedCost && parseFloat(estimatedCost) > 0;
+                                      const hasCost = estimatedCost && parseFloat(String(estimatedCost)) > 0;
                                       
                                       if (!hasCost) return null;
                                       
@@ -4090,16 +4296,18 @@ const AdminDashboard = () => {
                                           <div className="min-w-0 flex-1">
                                             <div className="text-xs text-gray-500">Agreed Price</div>
                                             <div className="font-medium text-gray-900 break-words">
-                                              {costRange && costRange.includes('-') ? `₹${costRange}` : `₹${estimatedCost}`}
-                                              {(job as any).actual_cost && (job as any).actual_cost !== estimatedCost && (
+                                              {costRange && typeof costRange === 'string' && costRange.includes('-') 
+                                                ? `₹${costRange}` 
+                                                : `₹${estimatedCost ? String(estimatedCost) : '0'}`}
+                                              {(job as any).actual_cost && String((job as any).actual_cost) !== String(estimatedCost) && (
                                                 <span className="text-xs text-gray-500 ml-1">
-                                                  (Est: ₹{estimatedCost})
+                                                  (Est: ₹{estimatedCost ? String(estimatedCost) : '0'})
                                                 </span>
                                               )}
                                             </div>
-                                            {(job as any).actual_cost && parseFloat((job as any).actual_cost) > 0 && (
+                                            {(job as any).actual_cost && parseFloat(String((job as any).actual_cost)) > 0 && (
                                               <div className="text-xs text-green-600">
-                                                Final: ₹{(job as any).actual_cost}
+                                                Final: ₹{String((job as any).actual_cost)}
                                               </div>
                                             )}
                                           </div>
@@ -4122,13 +4330,14 @@ const AdminDashboard = () => {
                                               let technician = technicians.find(t => t.id === technicianId);
                                               
                                               // If not found, try case-insensitive match
-                                              if (!technician) {
-                                                technician = technicians.find(t => t.id?.toLowerCase() === technicianId?.toLowerCase());
+                                              if (!technician && technicianId && typeof technicianId === 'string') {
+                                                technician = technicians.find(t => t.id && typeof t.id === 'string' && t.id.toLowerCase() === technicianId.toLowerCase());
                                               }
                                               
                                               // If still not found, try partial match
-                                              if (!technician) {
-                                                technician = technicians.find(t => t.id?.includes(technicianId?.substring(0, 8)));
+                                              if (!technician && technicianId && typeof technicianId === 'string' && technicianId.length > 0) {
+                                                const partialId = technicianId.substring(0, 8);
+                                                technician = technicians.find(t => t.id && typeof t.id === 'string' && t.id.includes(partialId));
                                               }
                                               
                                               if (technician) {
@@ -4148,14 +4357,13 @@ const AdminDashboard = () => {
                                     {job.description && job.description.trim() && job.description !== 'No description provided' && (() => {
                                       const descriptionLength = job.description.length;
                                       const maxLength = 150; // Show expand option if longer than 150 characters
-                                      const isExpanded = expandedDescriptions[job.id || ''] || false;
                                       const shouldShowExpand = descriptionLength > maxLength;
-                                      const displayText = shouldShowExpand && !isExpanded 
+                                      const displayText = shouldShowExpand 
                                         ? job.description.substring(0, maxLength) + '...' 
                                         : job.description;
                                       
                                       return (
-                                        <div className="flex items-start gap-2 sm:items-start">
+                                        <div className="flex items-start gap-2">
                                           <FileText className="w-4 h-4 text-gray-400 flex-shrink-0 mt-0.5" />
                                           <div className="min-w-0 flex-1">
                                             <div className="text-xs text-gray-500">Description</div>
@@ -4165,14 +4373,15 @@ const AdminDashboard = () => {
                                             {shouldShowExpand && (
                                               <button
                                                 onClick={() => {
-                                                  setExpandedDescriptions(prev => ({
-                                                    ...prev,
-                                                    [job.id || '']: !isExpanded
-                                                  }));
+                                                  setSelectedJobDescription({
+                                                    jobId: job.id || '',
+                                                    description: job.description
+                                                  });
+                                                  setDescriptionDialogOpen(true);
                                                 }}
                                                 className="text-xs text-blue-600 hover:text-blue-800 mt-1 font-medium"
                                               >
-                                                {isExpanded ? 'Show less' : 'Show more'}
+                                                Show more
                                               </button>
                                             )}
                                           </div>
@@ -4182,9 +4391,74 @@ const AdminDashboard = () => {
                                     
                                     {/* Lead Source */}
                                     {(() => {
-                                      const requirements = Array.isArray((job as any).requirements) ? (job as any).requirements : [];
-                                      const leadSource = requirements.find((r: any) => r?.lead_source)?.lead_source;
-                                      if (leadSource) {
+                                      // Handle requirements - could be array, object, or string
+                                      let requirements = (job as any).requirements;
+                                      
+                                      
+                                      // If it's a string, parse it
+                                      if (typeof requirements === 'string') {
+                                        try {
+                                          requirements = JSON.parse(requirements);
+                                        } catch (e) {
+                                          requirements = [];
+                                        }
+                                      }
+                                      
+                                      // If it's null or undefined, set to empty array
+                                      if (!requirements) {
+                                        requirements = [];
+                                      }
+                                      
+                                      // If it's an object (not array), convert to array
+                                      if (requirements && typeof requirements === 'object' && !Array.isArray(requirements)) {
+                                        // Check if it has lead_source directly
+                                        if (requirements.lead_source) {
+                                          return (
+                                            <div className="flex items-start gap-2 sm:items-center">
+                                              <Tag className="w-4 h-4 text-gray-400 flex-shrink-0 mt-0.5 sm:mt-0" />
+                                              <div className="min-w-0 flex-1">
+                                                <div className="text-xs text-gray-500">Lead Source</div>
+                                                <div className="font-medium text-gray-900 break-words">{requirements.lead_source}</div>
+                                              </div>
+                                            </div>
+                                          );
+                                        }
+                                        // Otherwise convert to array
+                                        requirements = [requirements];
+                                      }
+                                      
+                                      // Ensure it's an array
+                                      if (!Array.isArray(requirements)) {
+                                        requirements = [];
+                                      }
+                                      
+                                      // Find lead_source in the array
+                                      let leadSource: string | null = null;
+                                      
+                                      // Try to find lead_source in the array
+                                      for (const req of requirements) {
+                                        if (req && typeof req === 'object') {
+                                          if (req.lead_source) {
+                                            leadSource = req.lead_source;
+                                            break;
+                                          }
+                                        }
+                                      }
+                                      
+                                      // If still no lead_source found, check if requirements array has objects with nested properties
+                                      if (!leadSource && requirements.length > 0) {
+                                        // Sometimes Supabase returns it as an array with numeric keys
+                                        const flatReq = requirements.flat();
+                                        for (const req of flatReq) {
+                                          if (req && typeof req === 'object' && req.lead_source) {
+                                            leadSource = req.lead_source;
+                                            break;
+                                          }
+                                        }
+                                      }
+                                      
+                                      // Don't show lead source if it's "Website"
+                                      if (leadSource && leadSource !== 'Website') {
                                         return (
                                           <div className="flex items-start gap-2 sm:items-center">
                                             <Tag className="w-4 h-4 text-gray-400 flex-shrink-0 mt-0.5 sm:mt-0" />
@@ -5235,7 +5509,6 @@ const AdminDashboard = () => {
                             }
                           }}
                           onError={(e) => {
-                            console.error('Image failed to load:', photo);
                             e.currentTarget.style.display = 'none';
                           }}
                         />
@@ -5382,7 +5655,6 @@ const AdminDashboard = () => {
                 alt={`Photo ${selectedPhoto.index + 1}`}
                 className="max-w-full max-h-full object-contain"
                 onError={(e) => {
-                  console.error('Image failed to load:', selectedPhoto.url);
                   e.currentTarget.style.display = 'none';
                 }}
               />
@@ -5748,9 +6020,10 @@ const AdminDashboard = () => {
                     onChange={(e) => handleNewJobFormChange('scheduled_time_slot', e.target.value)}
                     className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 appearance-none bg-white"
                   >
-                    <option value="MORNING">Morning (9 AM - 12 PM)</option>
-                    <option value="AFTERNOON">Afternoon (12 PM - 5 PM)</option>
-                    <option value="EVENING">Evening (5 PM - 8 PM)</option>
+                    <option value="MORNING">Morning (9 AM - 1 PM)</option>
+                    <option value="AFTERNOON">Afternoon (1 PM - 6 PM)</option>
+                    <option value="EVENING">Evening (6 PM - 9 PM)</option>
+                    <option value="FLEXIBLE">Flexible</option>
                     <option value="CUSTOM">Custom Time</option>
                   </select>
                   {newJobFormData.scheduled_time_slot === 'CUSTOM' && (
@@ -5765,20 +6038,6 @@ const AdminDashboard = () => {
                 </div>
 
 
-                <div className="space-y-2">
-                  <Label htmlFor="job_priority">Priority</Label>
-                  <select
-                    id="job_priority"
-                    value={newJobFormData.priority || 'MEDIUM'}
-                    onChange={(e) => handleNewJobFormChange('priority', e.target.value)}
-                    className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 appearance-none bg-white"
-                  >
-                    <option value="LOW">Low</option>
-                    <option value="MEDIUM">Medium</option>
-                    <option value="HIGH">High</option>
-                    <option value="URGENT">Urgent</option>
-                  </select>
-                </div>
               </div>
             </div>
 
@@ -5949,13 +6208,15 @@ const AdminDashboard = () => {
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="job_lead_source">Lead Source</Label>
+                <Label htmlFor="job_lead_source">Lead Source *</Label>
                 <select
                   id="job_lead_source"
                   value={newJobFormData.lead_source}
                   onChange={(e) => handleNewJobFormChange('lead_source', e.target.value)}
+                  required
                   className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 appearance-none bg-white"
                 >
+                  <option value="Website">Website</option>
                   <option value="Direct call">Direct call</option>
                   <option value="RO care india">RO care india</option>
                   <option value="Home triangle">Home triangle</option>
@@ -6046,17 +6307,6 @@ const AdminDashboard = () => {
               {(() => {
                 const customerId = (selectedCustomerForPhotos as any).customer_id;
                 const photos = customerPhotos[customerId];
-                console.log('Upload area check:', {
-                  customerId,
-                  photos,
-                  photosLength: photos ? photos.length : 0,
-                  shouldShowUpload: !photos || photos.length === 0,
-                  selectedCustomerForPhotos,
-                  allCustomerPhotosKeys: Object.keys(customerPhotos)
-                });
-                console.log('Full selectedCustomerForPhotos object:', selectedCustomerForPhotos);
-                console.log('Customer ID from customer_id:', (selectedCustomerForPhotos as any).customer_id);
-                console.log('Customer ID from customerId:', (selectedCustomerForPhotos as any).customerId);
                 return !photos || photos.length === 0;
               })() && (
                 <div
@@ -6110,13 +6360,7 @@ const AdminDashboard = () => {
               {(() => {
                 const customerId = (selectedCustomerForPhotos as any).customer_id;
                 const photos = customerPhotos[customerId];
-                console.log('Photo display check:', {
-                  customerId,
-                  photos,
-                  photosLength: photos ? photos.length : 0,
-                  isLoadingPhotos,
-                  customerPhotosKeys: Object.keys(customerPhotos)
-                });
+                // Photo display check
                 return !isLoadingPhotos && photos && photos.length > 0;
               })() && (
                 <div className="space-y-4">
@@ -6532,9 +6776,10 @@ const AdminDashboard = () => {
                     <SelectValue placeholder="Select time slot" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="MORNING">Morning (9:00 AM - 12:00 PM)</SelectItem>
-                    <SelectItem value="AFTERNOON">Afternoon (12:00 PM - 5:00 PM)</SelectItem>
-                    <SelectItem value="EVENING">Evening (5:00 PM - 8:00 PM)</SelectItem>
+                    <SelectItem value="MORNING">Morning (9 AM - 1 PM)</SelectItem>
+                    <SelectItem value="AFTERNOON">Afternoon (1 PM - 6 PM)</SelectItem>
+                    <SelectItem value="EVENING">Evening (6 PM - 9 PM)</SelectItem>
+                    <SelectItem value="FLEXIBLE">Flexible</SelectItem>
                     <SelectItem value="CUSTOM">Custom Time</SelectItem>
                   </SelectContent>
                 </Select>
@@ -6548,23 +6793,6 @@ const AdminDashboard = () => {
                 )}
               </div>
 
-              <div>
-                <Label htmlFor="edit-priority">Priority</Label>
-                <Select 
-                  value={editJobFormData.priority} 
-                  onValueChange={(value) => setEditJobFormData(prev => ({ ...prev, priority: value }))}
-                >
-                  <SelectTrigger>
-                    <SelectValue placeholder="Select priority" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="LOW">Low</SelectItem>
-                    <SelectItem value="MEDIUM">Medium</SelectItem>
-                    <SelectItem value="HIGH">High</SelectItem>
-                    <SelectItem value="URGENT">Urgent</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
 
             </div>
 
@@ -6577,6 +6805,38 @@ const AdminDashboard = () => {
                 placeholder="Job description and special instructions..."
                 rows={3}
               />
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div>
+                <Label htmlFor="edit-lead-source">Lead Source</Label>
+                <Select 
+                  value={editJobFormData.lead_source} 
+                  onValueChange={(value) => setEditJobFormData(prev => ({ ...prev, lead_source: value }))}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select lead source" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="Website">Website</SelectItem>
+                    <SelectItem value="Direct call">Direct call</SelectItem>
+                    <SelectItem value="RO care india">RO care india</SelectItem>
+                    <SelectItem value="Home triangle">Home triangle</SelectItem>
+                    <SelectItem value="Other">Other</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              {editJobFormData.lead_source === 'Other' && (
+                <div>
+                  <Label htmlFor="edit-lead-source-custom">Custom Lead Source</Label>
+                  <Input
+                    id="edit-lead-source-custom"
+                    value={editJobFormData.lead_source_custom}
+                    onChange={(e) => setEditJobFormData(prev => ({ ...prev, lead_source_custom: e.target.value }))}
+                    placeholder="Enter custom lead source"
+                  />
+                </div>
+              )}
             </div>
           </div>
 
@@ -6784,6 +7044,33 @@ const AdminDashboard = () => {
           </DialogContent>
         </Dialog>
       ))}
+      
+      {/* Description Dialog */}
+      <Dialog open={descriptionDialogOpen} onOpenChange={setDescriptionDialogOpen}>
+        <DialogContent className="sm:max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>Job Description</DialogTitle>
+            <DialogDescription>
+              Full description for job {(() => {
+                const job = jobs.find(j => j.id === selectedJobDescription?.jobId);
+                return job?.job_number || job?.jobNumber || selectedJobDescription?.jobId || 'N/A';
+              })()}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="py-4">
+            <div className="prose max-w-none">
+              <p className="text-gray-900 whitespace-pre-wrap break-words">
+                {selectedJobDescription?.description || 'No description available'}
+              </p>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setDescriptionDialogOpen(false)}>
+              Close
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 };

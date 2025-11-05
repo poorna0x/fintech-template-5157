@@ -51,7 +51,8 @@ interface FormData {
   
   // Scheduling
   serviceDate: string;
-  preferredTime: 'FIRST_HALF' | 'SECOND_HALF';
+  preferredTime: 'FIRST_HALF' | 'SECOND_HALF' | 'CUSTOM';
+  preferredTimeCustom?: string;
   
   // Additional Information
   description: string;
@@ -151,10 +152,10 @@ const Booking: React.FC = () => {
   // Helper function to format time slot
   const formatTimeSlot = (timeSlot: string) => {
     const timeMap: { [key: string]: string } = {
-      'FIRST_HALF': 'Morning (9 AM - 2 PM)',
-      'SECOND_HALF': 'Afternoon (2 PM - 6 PM)',
-      'MORNING': 'Morning (9 AM - 2 PM)',
-      'AFTERNOON': 'Afternoon (2 PM - 6 PM)',
+      'FIRST_HALF': 'Morning (9 AM - 1 PM)',
+      'SECOND_HALF': 'Afternoon (1 PM - 6 PM)',
+      'MORNING': 'Morning (9 AM - 1 PM)',
+      'AFTERNOON': 'Afternoon (1 PM - 6 PM)',
       'EVENING': 'Evening (6 PM - 9 PM)'
     };
     return timeMap[timeSlot] || timeSlot;
@@ -1316,7 +1317,7 @@ const Booking: React.FC = () => {
         description: formData.description,
         before_photos: imageUrls,
         scheduled_date: formData.serviceDate ? new Date(formData.serviceDate).toISOString().split('T')[0] : new Date().toISOString().split('T')[0],
-        scheduled_time_slot: (formData.preferredTime === 'FIRST_HALF' ? 'MORNING' : 'AFTERNOON') as 'MORNING' | 'AFTERNOON' | 'EVENING',
+        scheduled_time_slot: (formData.preferredTime === 'FIRST_HALF' ? 'MORNING' : formData.preferredTime === 'SECOND_HALF' ? 'AFTERNOON' : 'MORNING') as 'MORNING' | 'AFTERNOON' | 'EVENING',
         estimated_duration: 120,
         service_address: {
           street: removePlusCode(formData.address),
@@ -1331,7 +1332,10 @@ const Booking: React.FC = () => {
           formattedAddress: formData.address, // Keep full address with Plus Code for Google Maps
           googleLocation: formData.googleMapsLink || null
         },
-        requirements: [],
+        requirements: [{ 
+          lead_source: 'Website',
+          custom_time: formData.preferredTime === 'CUSTOM' && formData.preferredTimeCustom ? formData.preferredTimeCustom : null
+        }],
         estimated_cost: 0,
         payment_status: 'PENDING' as const,
       };
@@ -1890,7 +1894,7 @@ const Booking: React.FC = () => {
               
               <div>
                 <Label htmlFor="preferredTime">Time Slot *</Label>
-                <Select value={formData.preferredTime} onValueChange={(value: 'FIRST_HALF' | 'SECOND_HALF') => handleInputChange('preferredTime', value)}>
+                <Select value={formData.preferredTime} onValueChange={(value: 'FIRST_HALF' | 'SECOND_HALF' | 'CUSTOM') => handleInputChange('preferredTime', value)}>
                   <SelectTrigger className={`mt-1 ${
                     showValidation && !formData.preferredTime 
                       ? 'border-2 border-black dark:border-white' 
@@ -1899,10 +1903,24 @@ const Booking: React.FC = () => {
                     <SelectValue placeholder="Select preferred time" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="FIRST_HALF">Morning (9 AM - 2 PM)</SelectItem>
-                    <SelectItem value="SECOND_HALF">Afternoon (2 PM - 8 PM)</SelectItem>
+                    <SelectItem value="FIRST_HALF">Morning (9 AM - 1 PM)</SelectItem>
+                    <SelectItem value="SECOND_HALF">Afternoon (1 PM - 6 PM)</SelectItem>
+                    <SelectItem value="CUSTOM">Custom Time</SelectItem>
                   </SelectContent>
                 </Select>
+                {formData.preferredTime === 'CUSTOM' && (
+                  <Input
+                    type="time"
+                    value={formData.preferredTimeCustom || ''}
+                    onChange={(e) => handleInputChange('preferredTimeCustom', e.target.value)}
+                    className="mt-2"
+                    style={{
+                      WebkitAppearance: 'none',
+                      appearance: 'none',
+                      fontSize: '16px'
+                    }}
+                  />
+                )}
               </div>
               
               <div className="bg-muted/50 p-4 rounded-lg">

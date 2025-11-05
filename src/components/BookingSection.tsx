@@ -391,7 +391,7 @@ const BookingSection = () => {
         status: 'PENDING' as const,
         priority: 'MEDIUM' as const,
         description: formData.problemDescription,
-        requirements: [],
+        requirements: [{ lead_source: 'Website' }],
         estimated_cost: 0,
         payment_status: 'PENDING' as const,
         before_photos: formData.images,
