@@ -3,7 +3,9 @@
 
 // Default allowed origins (for development)
 const DEFAULT_ORIGINS = [
-  'http://localhost:8080',           // Vite dev server (configured in vite.config.ts)
+  'http://localhost:8080',           // Vite dev server (legacy port)
+  'http://localhost:8084',           // Vite dev server (current port)
+  'https://localhost:8084',          // HTTPS variant for local testing
   'http://localhost:5173',            // Vite default dev port
   'http://localhost:3000',           // Alternative dev port
   'http://localhost:8888',           // Netlify functions dev server
@@ -68,8 +70,19 @@ function getAllowedOrigin(requestOrigin) {
   }
 
   // For development, allow localhost with any port (only if not in production)
-  if (!isProduction() && requestOrigin.startsWith('http://localhost:')) {
+  // Support both HTTP and HTTPS for localhost
+  if (!isProduction() && (requestOrigin.startsWith('http://localhost:') || requestOrigin.startsWith('https://localhost:'))) {
     return requestOrigin;
+  }
+
+  // For development, allow local network IPs (192.168.x.x, 10.x.x.x, 172.16-31.x.x) with any port
+  // This enables testing from mobile devices on the same network
+  // Support both HTTP and HTTPS for local development
+  if (!isProduction()) {
+    const localNetworkPattern = /^https?:\/\/(192\.168\.\d{1,3}\.\d{1,3}|10\.\d{1,3}\.\d{1,3}\.\d{1,3}|172\.(1[6-9]|2[0-9]|3[01])\.\d{1,3}\.\d{1,3})(:\d+)?\/?$/;
+    if (localNetworkPattern.test(requestOrigin)) {
+      return requestOrigin;
+    }
   }
 
   // Origin not allowed

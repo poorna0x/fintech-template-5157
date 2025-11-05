@@ -1017,7 +1017,7 @@ function handleMobilePrint(bill: Bill, action: 'print' | 'pdf'): void {
         setTimeout(() => {
           if (isPrinting) {
             cleanup();
-          }
+        }
         }, 8000); // 8 second fallback - ensures print completes before cleanup
       }, 500); // Give time for fonts and styles to load
     };
@@ -1045,7 +1045,7 @@ function handleMobilePrint(bill: Bill, action: 'print' | 'pdf'): void {
       });
       
       // Fallback: proceed after max 3 seconds even if images don't load
-      setTimeout(() => {
+    setTimeout(() => {
         if (isPrinting) {
           triggerPrint();
         }
@@ -1053,7 +1053,7 @@ function handleMobilePrint(bill: Bill, action: 'print' | 'pdf'): void {
     
     // Additional safety: keep AMC content visible for at least 10 seconds
     // This ensures mobile browsers have time to capture the content
-    setTimeout(() => {
+      setTimeout(() => {
       // Don't cleanup if already cleaned up
       if (isPrinting) {
         // This is just a safety net - cleanup should have happened by now

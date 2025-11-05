@@ -5,11 +5,68 @@ import { Database } from '@/types';
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
 const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
 
-if (!supabaseUrl || !supabaseAnonKey) {
-  throw new Error('Missing Supabase environment variables');
+// Debug logging in development
+if (import.meta.env.DEV) {
+  console.log('[Supabase Config] URL:', supabaseUrl ? '✓ Set' : '✗ Missing');
+  console.log('[Supabase Config] Anon Key:', supabaseAnonKey ? '✓ Set (' + supabaseAnonKey.substring(0, 20) + '...)' : '✗ Missing');
 }
 
-export const supabase = createClient<Database>(supabaseUrl, supabaseAnonKey);
+if (!supabaseUrl || !supabaseAnonKey) {
+  const errorMsg = `Missing Supabase environment variables. URL: ${!!supabaseUrl}, Key: ${!!supabaseAnonKey}`;
+  console.error('[Supabase Config]', errorMsg);
+  throw new Error(errorMsg);
+}
+
+// Create Supabase client with better error handling for local development
+export const supabase = createClient<Database>(supabaseUrl, supabaseAnonKey, {
+  auth: {
+    // Use localStorage for session persistence (works across HTTP/HTTPS)
+    storage: typeof window !== 'undefined' ? window.localStorage : undefined,
+    autoRefreshToken: true,
+    persistSession: true,
+    detectSessionInUrl: true,
+    // Don't redirect on auth errors - let the app handle it
+    flowType: 'pkce',
+  },
+  global: {
+    // Better error handling and ensure API key is sent
+    fetch: (url, options = {}) => {
+      // Ensure apikey header is always included
+      // Convert headers to a plain object if needed, then back to Headers
+      const existingHeaders = options.headers || {};
+      const headers = new Headers(existingHeaders instanceof Headers ? existingHeaders : existingHeaders);
+      
+      // Always set apikey header if not present (Supabase requires this)
+      if (!headers.has('apikey') && supabaseAnonKey) {
+        headers.set('apikey', supabaseAnonKey);
+      }
+      // Set Authorization header if not present (for auth requests)
+      if (!headers.has('Authorization') && supabaseAnonKey) {
+        headers.set('Authorization', `Bearer ${supabaseAnonKey}`);
+      }
+      
+      // Log in development for debugging
+      if (import.meta.env.DEV) {
+        console.log('[Supabase Request]', url.toString());
+        console.log('[Supabase Headers]', {
+          hasApikey: headers.has('apikey'),
+          hasAuthorization: headers.has('Authorization'),
+        });
+      }
+      
+      return fetch(url, {
+        ...options,
+        headers: headers,
+      }).catch((error) => {
+        // Log fetch errors for debugging
+        if (import.meta.env.DEV) {
+          console.error('[Supabase Fetch Error]', error);
+        }
+        throw error;
+      });
+    },
+  },
+});
 
 // Database helper functions
 export const db = {
@@ -242,6 +299,129 @@ export const db = {
         .eq('id', id);
       
       return { data: null, error };
+    },
+
+    // Get job counts by status (for stats without loading all data)
+    async getCounts() {
+      try {
+        const [ongoingResult, followupResult, deniedResult, completedResult] = await Promise.all([
+          supabase
+            .from('jobs')
+            .select('*', { count: 'exact', head: true })
+            .in('status', ['PENDING', 'ASSIGNED', 'IN_PROGRESS']),
+          supabase
+            .from('jobs')
+            .select('*', { count: 'exact', head: true })
+            .in('status', ['FOLLOW_UP', 'RESCHEDULED']),
+          supabase
+            .from('jobs')
+            .select('*', { count: 'exact', head: true })
+            .in('status', ['DENIED', 'CANCELLED']),
+          supabase
+            .from('jobs')
+            .select('*', { count: 'exact', head: true })
+            .eq('status', 'COMPLETED')
+        ]);
+        
+        return {
+          data: {
+            ongoing: ongoingResult.count || 0,
+            followup: followupResult.count || 0,
+            denied: deniedResult.count || 0,
+            completed: completedResult.count || 0
+          },
+          error: ongoingResult.error || followupResult.error || deniedResult.error || completedResult.error
+        };
+      } catch (error) {
+        console.error('Error in getCounts:', error);
+        return {
+          data: { ongoing: 0, followup: 0, denied: 0, completed: 0 },
+          error: error instanceof Error ? error : new Error('Unknown error')
+        };
+      }
+    },
+
+    // Get jobs by status with pagination
+    async getByStatusPaginated(statuses: string[], page: number = 1, pageSize: number = 20) {
+      const from = (page - 1) * pageSize;
+      const to = from + pageSize - 1;
+      
+      const { data, error, count } = await supabase
+        .from('jobs')
+        .select(`
+          *,
+          customer:customers(
+            id,
+            customer_id,
+            full_name,
+            phone,
+            email,
+            alternate_phone,
+            address,
+            location,
+            service_type,
+            brand,
+            model,
+            installation_date,
+            warranty_expiry,
+            status,
+            customer_since,
+            last_service_date,
+            notes,
+            preferred_time_slot,
+            preferred_language,
+            created_at,
+            updated_at
+          )
+        `, { count: 'exact' })
+        .in('status', statuses)
+        .order('created_at', { ascending: false })
+        .range(from, to);
+      
+      return { 
+        data: data || [], 
+        error, 
+        count: count || 0,
+        page,
+        pageSize,
+        totalPages: count ? Math.ceil(count / pageSize) : 0
+      };
+    },
+
+    // Get ongoing jobs (PENDING, ASSIGNED, IN_PROGRESS) - no pagination needed as they're usually fewer
+    async getOngoing() {
+      const { data, error } = await supabase
+        .from('jobs')
+        .select(`
+          *,
+          customer:customers(
+            id,
+            customer_id,
+            full_name,
+            phone,
+            email,
+            alternate_phone,
+            address,
+            location,
+            service_type,
+            brand,
+            model,
+            installation_date,
+            warranty_expiry,
+            status,
+            customer_since,
+            last_service_date,
+            notes,
+            preferred_time_slot,
+            preferred_language,
+            created_at,
+            updated_at
+          )
+        `)
+        .in('status', ['PENDING', 'ASSIGNED', 'IN_PROGRESS'])
+        .order('created_at', { ascending: false });
+      
+      return { data: data || [], error };
     }
   },
   

@@ -56,7 +56,10 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
           });
         }
       } catch (error) {
-        // Silent error handling
+        // Log errors in development for debugging
+        if (import.meta.env.DEV) {
+          console.error('Auth session check error:', error);
+        }
       } finally {
         setLoading(false);
         setInitialized(true);

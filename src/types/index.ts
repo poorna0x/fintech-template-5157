@@ -18,6 +18,7 @@ export interface Customer {
     state: string;
     pincode: string;
     landmark?: string;
+    visible_address?: string; // One-word identifier for quick recognition
   };
   
   // Location Data (Google Maps Integration)

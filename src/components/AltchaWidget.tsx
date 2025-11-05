@@ -63,7 +63,7 @@ const AltchaWidget: React.FC<AltchaWidgetProps> = ({
     onAutoSubmitRef.current = onAutoSubmit;
   }, [onVerify, onAutoSubmit]);
 
-    useEffect(() => {
+  useEffect(() => {
     const widget = widgetRef.current;
     if (!widget) return;
     
@@ -76,9 +76,22 @@ const AltchaWidget: React.FC<AltchaWidgetProps> = ({
     }
 
     // Configure the widget
-    const apiUrl = import.meta.env.DEV
-      ? 'http://localhost:8888/.netlify/functions/altcha-verify'
-      : '/.netlify/functions/altcha-verify';
+    // In development, use hostname if accessed from local network, otherwise localhost
+    let apiUrl: string;
+    if (import.meta.env.DEV) {
+      // Check if we're accessing from a local network IP (not localhost)
+      const isLocalNetwork = /^(192\.168\.|10\.|172\.(1[6-9]|2[0-9]|3[01])\.)/.test(window.location.hostname);
+      if (isLocalNetwork) {
+        // Use the current hostname and port for local network access
+        const port = window.location.port || '8084';
+        apiUrl = `http://${window.location.hostname}:8888/.netlify/functions/altcha-verify`;
+      } else {
+        // Use localhost for local machine access
+        apiUrl = 'http://localhost:8888/.netlify/functions/altcha-verify';
+      }
+    } else {
+      apiUrl = '/.netlify/functions/altcha-verify';
+    }
 
     const widgetElement = widget as any; // Type assertion for web component
 
@@ -211,11 +224,11 @@ const AltchaWidget: React.FC<AltchaWidgetProps> = ({
       }
     };
 
-        // Verify payload with server
+    // Verify payload with server
     const verifyWithServer = async (payload: string) => {
       // Prevent duplicate verification requests
       if (isVerifyingRef.current) {
-        console.log('Verification already in progress, skipping duplicate request');                                                                            
+        console.log('Verification already in progress, skipping duplicate request');
         return;
       }
       
@@ -249,7 +262,7 @@ const AltchaWidget: React.FC<AltchaWidgetProps> = ({
               throw new Error(errorData.error || 'Verification failed. Please refresh the page and try again.');
             }
           } else {
-            throw new Error(errorData.error || `Server error: ${response.status}`);
+          throw new Error(errorData.error || `Server error: ${response.status}`);
           }
         }
         
@@ -333,9 +346,9 @@ const AltchaWidget: React.FC<AltchaWidgetProps> = ({
     widget.addEventListener('statechange', handleStateChange as EventListener);
     widget.addEventListener('verified', handleVerified as EventListener);
 
-        return () => {
+    return () => {
       widget.removeEventListener('load', handleLoad);
-      widget.removeEventListener('statechange', handleStateChange as EventListener);                                                                            
+      widget.removeEventListener('statechange', handleStateChange as EventListener);
       widget.removeEventListener('verified', handleVerified as EventListener);
       // Cleanup MutationObserver
       if (logoObserver) {

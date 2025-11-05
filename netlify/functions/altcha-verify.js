@@ -231,10 +231,10 @@ async function handlePost(event, corsHeaders) {
         // The verifySolution function will check the cryptographic signature
       }
       
-            console.log('Calling verifySolution with HMAC_KEY:', HMAC_KEY.length, 'bytes');                                                                           
+      console.log('Calling verifySolution with HMAC_KEY:', HMAC_KEY.length, 'bytes');
       try {
-        verified = await verifySolution(payload, HMAC_KEY, true);
-        console.log('Verification result:', verified);
+      verified = await verifySolution(payload, HMAC_KEY, true);
+      console.log('Verification result:', verified);
       } catch (verifyError) {
         console.error('verifySolution threw an error:', verifyError.message);
         // If verification throws, treat as failed

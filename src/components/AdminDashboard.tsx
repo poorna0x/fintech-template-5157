@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import AdminHeader from '@/components/AdminHeader';
@@ -14,6 +14,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
+import { Pagination, PaginationContent, PaginationItem, PaginationLink, PaginationNext, PaginationPrevious } from '@/components/ui/pagination';
 import { 
   Users, 
   Wrench, 
@@ -50,14 +51,13 @@ import {
   CheckCircle2,
   Filter
 } from 'lucide-react';
-import { db } from '@/lib/supabase';
+import { db, supabase } from '@/lib/supabase';
 import { Customer, Job, Technician } from '@/types';
 import { cloudinaryService, compressImage } from '@/lib/cloudinary';
 import { toast } from 'sonner';
 import { openInGoogleMaps, extractCoordinates, formatAddressForDisplay } from '@/lib/maps';
 import FollowUpModal from '@/components/FollowUpModal';
 import { sendNotification, createJobAssignedNotification, createJobCompletedNotification, createJobCancelledNotification, createJobAssignmentRequestNotification } from '@/lib/notifications';
-import CustomerServicesManager from './CustomerServicesManager';
 import BillModal from './BillModal';
 import AMCModal from './AMCModal';
 import QuotationModal from './QuotationModal';
@@ -68,6 +68,45 @@ const generateJobNumber = (serviceType: 'RO' | 'SOFTENER'): string => {
   const timestamp = Date.now().toString().slice(-6);
   const random = Math.floor(Math.random() * 100).toString().padStart(2, '0');
   return `${prefix}${timestamp}${random}`;
+};
+
+// Map service types array to database service_type value
+const mapServiceTypesToDbValue = (serviceTypes: string[]): string => {
+  if (serviceTypes.length === 0) return 'RO'; // Default
+  
+  const sortedTypes = [...serviceTypes].sort();
+  const hasRO = sortedTypes.includes('RO');
+  const hasSOFTENER = sortedTypes.includes('SOFTENER');
+  const hasAC = sortedTypes.includes('AC');
+  const hasAPPLIANCE = sortedTypes.includes('APPLIANCE');
+  
+  // Check for ALL_SERVICES (RO, SOFTENER, AC)
+  if (hasRO && hasSOFTENER && hasAC && sortedTypes.length === 3) {
+    return 'ALL_SERVICES';
+  }
+  
+  // Check for RO_SOFTENER
+  if (hasRO && hasSOFTENER && sortedTypes.length === 2) {
+    return 'RO_SOFTENER';
+  }
+  
+  // Check for RO_AC
+  if (hasRO && hasAC && sortedTypes.length === 2) {
+    return 'RO_AC';
+  }
+  
+  // Check for SOFTENER_AC
+  if (hasSOFTENER && hasAC && sortedTypes.length === 2) {
+    return 'SOFTENER_AC';
+  }
+  
+  // Single service types
+  if (sortedTypes.length === 1) {
+    return sortedTypes[0];
+  }
+  
+  // Fallback: if multiple types not matching above, use first one
+  return sortedTypes[0] || 'RO';
 };
 
 // WhatsApp Icon Component
@@ -112,6 +151,7 @@ const AdminDashboard = () => {
     status: '',
     notes: '',
     google_location: '',
+    visible_address: '',
     address: {
       street: '',
       area: '',
@@ -128,6 +168,74 @@ const AdminDashboard = () => {
     cost_agreed: false
   });
   const [isUpdating, setIsUpdating] = useState(false);
+  const [visibleAddressSuggestions, setVisibleAddressSuggestions] = useState(false);
+  const [addressDialogOpen, setAddressDialogOpen] = useState<{[customerId: string]: boolean}>({});
+  
+  const bangaloreAreas = [
+    // Popular Areas
+    'Bansawadi', 'Koramangala', 'Whitefield', 'Indiranagar', 'HSR', 'BTM', 'JP Nagar',
+    'Malleshwaram', 'Rajajinagar', 'Vijayanagar', 'Basavanagudi', 'Banashankari', 'Jayanagar',
+    'Yelahanka', 'Hebbal', 'RT Nagar', 'Vasanthnagar', 'Cunningham', 'Frazer Town', 'Marathahalli',
+    'Bellandur', 'Electronic City', 'Bommanahalli', 'Bommasandra', 'Kadubeesanahalli', 'Mahadevapura',
+    'KR Puram', 'HAL', 'Domlur', 'Ulsoor', 'Richmond', 'Shivajinagar', 'Cox Town', 'Cooke Town',
+    'Austin Town', 'Richards Town', 'Murphy Town', 'Benson Town', 'HBR Layout', 'Kalyan Nagar',
+    'Sahakara Nagar', 'Mathikere', 'Yeshwanthpur', 'Peenya', 'Chamrajpet', 'Chickpet', 'Gandhinagar',
+    'Majestic', 'City Market', 'KR Market', 'Lalbagh', 'BTM Layout', 'Hosur Road', 'Bannerghatta',
+    'Jigani', 'Anekal', 'Varthur', 'Sarjapur', 'Hoodi', 'Kundalahalli', 'Brookefield', 'Kaggadasapura',
+    'Nagavara', 'Thanisandra', 'Hennur', 'Horamavu', 'Kothanur', 'Ramamurthy Nagar', 'Banaswadi',
+    'CV Raman Nagar', 'Murugeshpalya', 'Adugodi', 'Wilson Garden', 'Richmond Town', 'Shanti Nagar',
+    'Ashok Nagar', 'MG Road', 'Brigade Road', 'Commercial Street', 'Residency Road', 'Cubbon Park',
+    'Vidhana Soudha', 'Cantonment', 'Bowring', 'Richmond Circle', 'Lavelle Road', 'St Marks Road',
+    'Kasturba Road', 'Nrupathunga Road', 'Hudson Circle', 'Kempegowda', 'Majestic Bus Stand',
+    // Additional North Bangalore
+    'Sanjay Nagar', 'Gokula', 'Attiguppe', 'Vijaya Nagar', 'Nagarbhavi', 'Kengeri', 'Rajajinagar Extension',
+    'Basaveshwara Nagar', 'Vijayanagar Extension', 'Yeshwanthpur Industrial', 'Nelamangala', 'Doddaballapur',
+    'Devanahalli', 'Yelahanka New Town', 'Jakkur', 'Bagalur', 'Vidyaranyapura', 'MS Palya', 'Byatarayanapura',
+    // Additional South Bangalore
+    'BTM 2nd Stage', 'BTM 1st Stage', 'Uttarahalli', 'Girinagar',
+    'JP Nagar 1st Phase', 'JP Nagar 2nd Phase', 'JP Nagar 3rd Phase', 'JP Nagar 4th Phase', 'JP Nagar 5th Phase',
+    'JP Nagar 6th Phase', 'JP Nagar 7th Phase', 'JP Nagar 8th Phase', 'JP Nagar 9th Phase', 'Bannerghatta Road',
+    'Arekere', 'Hulimavu', 'Begur', 'HSR Sector 1', 'HSR Sector 2', 'HSR Sector 3', 'HSR Sector 4',
+    'HSR Sector 5', 'HSR Sector 6', 'HSR Sector 7', 'Arakere Mico Layout', 'Bommanahalli', 'Singasandra',
+    'Hosa Road', 'Konanakunte', 'Doddakallasandra', 'Vijaya Bank Layout', 'Padmanabhanagar', 'Hosur',
+    // Additional East Bangalore
+    'Whitefield Main Road', 'ITPL', 'Kadugodi', 'Varthur Kodi', 'Panathur', 'Kundalahalli Gate',
+    'AECS Layout', 'Doddanekundi', 'Marathahalli Bridge', 'Varthur Road', 'Whitefield Road', 'Hope Farm',
+    'Budigere', 'Avalahalli', 'Bidrahalli', 'Kannamangala', 'Vaddarahalli', 'Chikkajala', 'Bagalur',
+    'KR Puram Railway Station', 'Baiyappanahalli', 'Hennur Main Road', 'Kalyan Nagar Main Road',
+    // Additional West Bangalore
+    'Rajajinagar Industrial', 'Peenya Industrial', 'Jalahalli', 'Dasarahalli', 'Nagasandra', 'Tumkur Road',
+    'Nelamangala Road', 'Magadi Road', 'Mysore Road', 'Kengeri Satellite Town', 'Rajarajeshwari Nagar',
+    'Kumbalgodu', 'Anjanapura', 'Nayandahalli', 'Kengeri', 'Uttarahalli Hobli', 'Bidadi', 'Ramanagara',
+    // Additional Central Bangalore
+    'MG Road', 'Brigade Road', 'Commercial Street', 'Residency Road', 'Cubbon Park', 'Vidhana Soudha',
+    'Cantonment', 'Bowring', 'Richmond Circle', 'Lavelle Road', 'St Marks Road', 'Kasturba Road',
+    'Nrupathunga Road', 'Hudson Circle', 'Kempegowda Bus Stand', 'Shivajinagar Bus Stand', 'Russell Market',
+    'Church Street', 'Rest House Road', 'Cunningham Road', 'Miller Road', 'Palace Road',
+    'Kempegowda', 'Majestic Bus Stand', 'City Railway Station',
+    // Outer Areas
+    'Nelamangala', 'Doddaballapur', 'Devanahalli', 'Hoskote', 'Anekal', 'Jigani', 'Bidadi', 'Ramanagara',
+    'Magadi', 'Tumkur', 'Kolar', 'Chikkaballapur',
+    // Layouts and Extensions
+    'HBR Layout', 'HRBR Layout', 'KHB Layout', 'ARE Layout', 'BEML Layout', 'BEL Layout', 'ISRO Layout',
+    'BDA Layout', 'BDA Complex', 'NRI Layout', 'Prestige Layout', 'Prestige Shantiniketan',
+    // Generic Types
+    'Home', 'Office', 'Shop', 'Factory', 'Warehouse', 'Residence', 'Apartment', 'Villa', 'House',
+    'Showroom', 'Workshop', 'Store', 'Building', 'Complex', 'Tower', 'Plaza', 'Mall'
+  ];
+
+  const filteredAddressSuggestions = useMemo(() => {
+    if (!editFormData?.visible_address || editFormData.visible_address.trim().length === 0) {
+      return [];
+    }
+    const searchTerm = editFormData.visible_address.toLowerCase();
+    // Remove duplicates and filter
+    const uniqueAreas = [...new Set(bangaloreAreas)];
+    return uniqueAreas.filter(area => 
+      area.toLowerCase().includes(searchTerm)
+    ).slice(0, 12); // Limit to 12 suggestions
+  }, [editFormData?.visible_address]);
+
   const [addDialogOpen, setAddDialogOpen] = useState(false);
   const [newJobDialogOpen, setNewJobDialogOpen] = useState(false);
   const [selectedCustomerForJob, setSelectedCustomerForJob] = useState<Customer | null>(null);
@@ -196,7 +304,6 @@ const AdminDashboard = () => {
   const [currentStep, setCurrentStep] = useState(1);
   const [formErrors, setFormErrors] = useState<{[key: string]: string}>({});
   const [isCreating, setIsCreating] = useState(false);
-  const [customerServices, setCustomerServices] = useState<{[key: string]: any[]}>({});
   const [existingCustomer, setExistingCustomer] = useState<Customer | null>(null);
   const [overrideDialogOpen, setOverrideDialogOpen] = useState(false);
   const [shouldUpdateExisting, setShouldUpdateExisting] = useState(false);
@@ -213,6 +320,18 @@ const AdminDashboard = () => {
   const [completionNotes, setCompletionNotes] = useState('');
   const [statusFilter, setStatusFilter] = useState<'ALL' | 'ONGOING' | 'PENDING' | 'ASSIGNED' | 'IN_PROGRESS' | 'COMPLETED' | 'CANCELLED' | 'RESCHEDULED'>('ALL');
   const [loadingCustomerJobs, setLoadingCustomerJobs] = useState<{[customerId: string]: boolean}>({});
+  // Pagination state
+  const [currentPage, setCurrentPage] = useState<number>(1);
+  const [pageSize] = useState<number>(20);
+  const [totalPages, setTotalPages] = useState<number>(0);
+  const [totalCount, setTotalCount] = useState<number>(0);
+  // Job counts for stats cards (loaded separately)
+  const [jobCounts, setJobCounts] = useState<{ongoing: number; followup: number; denied: number; completed: number}>({
+    ongoing: 0,
+    followup: 0,
+    denied: 0,
+    completed: 0
+  });
   const [selectedJobPhotos, setSelectedJobPhotos] = useState<{jobId: string, photos: string[], type: 'before' | 'after'} | null>(null);
   const [jobToDelete, setJobToDelete] = useState<Job | null>(null);
   const [deleteJobDialogOpen, setDeleteJobDialogOpen] = useState(false);
@@ -285,7 +404,8 @@ const AdminDashboard = () => {
       city: customer.address?.city || '',
       state: customer.address?.state || '',
       pincode: customer.address?.pincode || '',
-      landmark: customer.address?.landmark
+      landmark: customer.address?.landmark,
+      visible_address: customer.address?.visible_address || ''
     },
     location: {
       latitude: customer.location?.latitude || 0,
@@ -319,14 +439,85 @@ const AdminDashboard = () => {
     }
   }, [assignJobDialogOpen]);
 
+  // Load job counts for stats cards (lightweight query)
+  const loadJobCounts = useCallback(async () => {
+    try {
+      const { data, error } = await db.jobs.getCounts();
+      if (error) {
+        console.error('Error loading job counts:', error);
+      } else if (data) {
+        setJobCounts(data);
+      }
+    } catch (error) {
+      console.error('Error loading job counts:', error);
+    }
+  }, []);
+
+  // Load jobs based on current filter (optimized)
+  const loadFilteredJobs = useCallback(async (filter: typeof statusFilter, page: number = 1) => {
+    try {
+      setLoading(true);
+      
+      if (filter === 'ALL') {
+        // For ALL, we need customers with their jobs - load ongoing jobs only for display
+        const { data, error } = await db.jobs.getOngoing();
+        if (error) {
+          console.error('Error loading ongoing jobs:', error);
+          setJobs([]);
+        } else {
+          setJobs(data || []);
+        }
+      } else if (filter === 'ONGOING') {
+        // Load all ongoing jobs (usually not too many)
+        const { data, error } = await db.jobs.getOngoing();
+        if (error) {
+          console.error('Error loading ongoing jobs:', error);
+          setJobs([]);
+        } else {
+          setJobs(data || []);
+          setTotalCount(data?.length || 0);
+          setTotalPages(1);
+        }
+      } else if (filter === 'COMPLETED' || filter === 'CANCELLED') {
+        // Use pagination for completed and denied jobs
+        const statuses = filter === 'COMPLETED' ? ['COMPLETED'] : ['DENIED', 'CANCELLED'];
+        const { data, error, count, totalPages: pages } = await db.jobs.getByStatusPaginated(statuses, page, pageSize);
+        if (error) {
+          console.error(`Error loading ${filter} jobs:`, error);
+          setJobs([]);
+        } else {
+          setJobs(data || []);
+          setTotalCount(count || 0);
+          setTotalPages(pages || 0);
+        }
+      } else if (filter === 'RESCHEDULED') {
+        // Load follow-up jobs (usually not too many)
+        const { data, error, count, totalPages: pages } = await db.jobs.getByStatusPaginated(['FOLLOW_UP', 'RESCHEDULED'], page, pageSize);
+        if (error) {
+          console.error('Error loading follow-up jobs:', error);
+          setJobs([]);
+        } else {
+          setJobs(data || []);
+          setTotalCount(count || 0);
+          setTotalPages(pages || 0);
+        }
+      }
+    } catch (error) {
+      console.error('Error loading filtered jobs:', error);
+      setJobs([]);
+    } finally {
+      setLoading(false);
+    }
+  }, [pageSize]);
+
   const loadDashboardData = async () => {
     try {
       setLoading(true);
       
-      // Load customers, jobs, and technicians in parallel
-      const [customersResult, jobsResult, techniciansResult] = await Promise.all([
+      // Load customers and technicians (always needed)
+      // Only load jobs for ongoing view initially
+      const [customersResult, techniciansResult] = await Promise.all([
         db.customers.getAll(),
-        db.jobs.getAll(),
         db.technicians.getAll()
       ]);
 
@@ -334,9 +525,6 @@ const AdminDashboard = () => {
       if (customersResult.error) {
         console.error('Error loading customers:', customersResult.error);
         toast.error(`Failed to load customers: ${customersResult.error.message}`);
-      }
-      if (jobsResult.error) {
-        console.error('Error loading jobs:', jobsResult.error);
       }
       if (techniciansResult.error) {
         console.error('Error loading technicians:', techniciansResult.error);
@@ -351,24 +539,6 @@ const AdminDashboard = () => {
         setCustomers([]);
       }
       
-      if (jobsResult.data) {
-        console.log(`Loaded ${jobsResult.data.length} jobs`);
-        // Debug: Log first few jobs to see their structure
-        if (import.meta.env.DEV && jobsResult.data.length > 0) {
-          console.log('[Jobs Sample]', jobsResult.data.slice(0, 3).map(j => ({
-            id: j.id,
-            job_number: (j as any).job_number,
-            customer_id: (j as any).customer_id,
-            customerId: (j as any).customerId,
-            status: (j as any).status
-          })));
-        }
-        setJobs(jobsResult.data);
-      } else {
-        console.warn('No jobs data received');
-        setJobs([]);
-      }
-      
       if (techniciansResult.data) {
         const transformedTechnicians = techniciansResult.data.map(transformTechnicianData);
         console.log(`Loaded ${transformedTechnicians.length} technicians`);
@@ -376,6 +546,12 @@ const AdminDashboard = () => {
       } else {
         setTechnicians([]);
       }
+
+      // Load job counts for stats
+      await loadJobCounts();
+      
+      // Load initial jobs based on filter (defaults to ALL which shows ongoing)
+      await loadFilteredJobs(statusFilter, currentPage);
 
     } catch (error) {
       console.error('Error loading dashboard data:', error);
@@ -385,10 +561,32 @@ const AdminDashboard = () => {
     }
   };
 
+  const [isInitialLoad, setIsInitialLoad] = useState(true);
+
   // Load data on component mount
   useEffect(() => {
-    loadDashboardData();
+    const initialize = async () => {
+      await loadDashboardData();
+      setIsInitialLoad(false);
+    };
+    initialize();
   }, []);
+
+  // Reload jobs when filter changes (but not on initial load)
+  useEffect(() => {
+    if (isInitialLoad) return;
+    setCurrentPage(1); // Reset to first page when filter changes
+    loadFilteredJobs(statusFilter, 1);
+    // Refresh counts when filter changes
+    loadJobCounts();
+  }, [statusFilter, loadFilteredJobs, loadJobCounts, isInitialLoad]);
+
+  // Reload jobs when page changes (for paginated views)
+  useEffect(() => {
+    if (statusFilter === 'COMPLETED' || statusFilter === 'CANCELLED' || statusFilter === 'RESCHEDULED') {
+      loadFilteredJobs(statusFilter, currentPage);
+    }
+  }, [currentPage, statusFilter, loadFilteredJobs]);
 
   const handleDeleteCustomer = async () => {
     if (!customerToDelete) return;
@@ -410,12 +608,38 @@ const AdminDashboard = () => {
     }
   };
 
+  // Parse database service_type value back to array of service types
+  const parseDbServiceType = (serviceType: string): string[] => {
+    if (!serviceType) return ['RO']; // Default
+    
+    switch (serviceType) {
+      case 'ALL_SERVICES':
+        return ['RO', 'SOFTENER', 'AC'];
+      case 'RO_SOFTENER':
+        return ['RO', 'SOFTENER'];
+      case 'RO_AC':
+        return ['RO', 'AC'];
+      case 'SOFTENER_AC':
+        return ['SOFTENER', 'AC'];
+      case 'RO':
+      case 'SOFTENER':
+      case 'AC':
+      case 'APPLIANCE':
+        return [serviceType];
+      default:
+        // Try to parse comma-separated values (for backward compatibility)
+        if (serviceType.includes(',')) {
+          return serviceType.split(',').map((s: string) => s.trim());
+        }
+        return [serviceType];
+    }
+  };
+
   const handleEditCustomer = (customer: Customer) => {
     setEditingCustomer(customer);
     
-    // Parse service types from the stored string
-    const serviceTypes = customer.service_type ? 
-      customer.service_type.split(',').map((s: string) => s.trim()) : [];
+    // Parse service types from the database value
+    const serviceTypes = parseDbServiceType(customer.service_type || '');
     
     // Parse equipment from brands and models
     const equipment: {[serviceType: string]: {brand: string, model: string}} = {};
@@ -443,6 +667,7 @@ const AdminDashboard = () => {
       status: customer.status || '',
       notes: customer.notes || '',
       google_location: customer.location?.formattedAddress || '',
+      visible_address: (customer.address as any)?.visible_address || '',
       address: {
         street: [
           customer.address?.street,
@@ -479,7 +704,8 @@ const AdminDashboard = () => {
         area: editFormData.address.area,
         city: editFormData.address.city,
         state: editFormData.address.state,
-        pincode: editFormData.address.pincode
+        pincode: editFormData.address.pincode,
+        visible_address: editFormData.visible_address || ''
       };
 
       const updatedLocation = {
@@ -492,7 +718,7 @@ const AdminDashboard = () => {
         phone: editFormData.phone,
         alternate_phone: editFormData.alternate_phone,
         email: editFormData.email,
-        service_type: editFormData.service_types.join(', ') as 'RO' | 'SOFTENER',
+        service_type: mapServiceTypesToDbValue(editFormData.service_types),
         brand: Object.values(editFormData.equipment).map(eq => eq.brand).join(', '),
         model: Object.values(editFormData.equipment).map(eq => eq.model).join(', '),
         preferred_language: (editFormData.native_language || 'ENGLISH') as 'ENGLISH' | 'HINDI' | 'KANNADA' | 'TAMIL' | 'TELUGU',
@@ -513,7 +739,7 @@ const AdminDashboard = () => {
               ...c, 
               full_name: editFormData.full_name,
               alternatePhone: editFormData.alternate_phone,
-              service_type: editFormData.service_types.join(', ') as 'RO' | 'SOFTENER',
+              service_type: mapServiceTypesToDbValue(editFormData.service_types),
               behavior: editFormData.behavior,
               preferredLanguage: (editFormData.native_language || 'ENGLISH') as 'ENGLISH' | 'HINDI' | 'KANNADA' | 'TAMIL' | 'TELUGU',
               status: editFormData.status as 'ACTIVE' | 'INACTIVE' | 'BLOCKED',
@@ -1723,12 +1949,6 @@ const AdminDashboard = () => {
     }
   };
 
-  const handleServicesUpdate = (customerId: string, services: any[]) => {
-    setCustomerServices(prev => ({
-      ...prev,
-      [customerId]: services
-    }));
-  };
 
   // Load jobs for a specific customer
   const loadCustomerJobs = async (customerId: string) => {
@@ -1956,57 +2176,93 @@ const AdminDashboard = () => {
   // Handle follow-up submission
   const handleFollowUpSubmit = async (jobId: string, followUpData: {
     followUpDate: string;
-    followUpTime: string;
-    followUpNotes?: string;
+    followUpReason: string;
+    parentFollowUpId?: string;
+    rescheduleFollowUpId?: string;
   }) => {
     try {
-      const { error } = await db.jobs.update(jobId, {
-        status: 'FOLLOW_UP',
-        follow_up_date: followUpData.followUpDate,
-        follow_up_time: followUpData.followUpTime,
-        follow_up_notes: followUpData.followUpNotes || '',
-        follow_up_scheduled_by: user?.id || 'admin',
-        follow_up_scheduled_at: new Date().toISOString()
-      });
+      // If rescheduling, delete the old follow-up first
+      if (followUpData.rescheduleFollowUpId) {
+        const { error: deleteError } = await supabase
+          .from('follow_ups')
+          .delete()
+          .eq('id', followUpData.rescheduleFollowUpId);
 
-      if (error) {
-        throw new Error(error.message);
+        if (deleteError) {
+          throw new Error(deleteError.message);
+        }
       }
 
-      // Update local state
-      setJobs(prev => prev.map(job => 
-        job.id === jobId ? { 
-          ...job, 
+      // Create follow-up record in follow_ups table
+      const { data: followUpRecord, error: followUpError } = await supabase
+        .from('follow_ups')
+        .insert({
+          job_id: jobId,
+          parent_follow_up_id: followUpData.parentFollowUpId || null,
+          follow_up_date: followUpData.followUpDate,
+          reason: followUpData.followUpReason,
+          notes: null,
+          scheduled_by: user?.id || 'admin',
+          completed: false
+        })
+        .select()
+        .single();
+
+      if (followUpError) {
+        throw new Error(followUpError.message);
+      }
+
+      // If this is the first follow-up (no parent), update job status
+      if (!followUpData.parentFollowUpId) {
+        const { error: jobError } = await db.jobs.update(jobId, {
           status: 'FOLLOW_UP',
-          followUpDate: followUpData.followUpDate,
-          followUpTime: followUpData.followUpTime,
-          followUpNotes: followUpData.followUpNotes || '',
-          followUpScheduledBy: user?.id || 'admin',
-          followUpScheduledAt: new Date().toISOString()
-        } : job
-      ));
-
-      setCustomerJobs(prev => {
-        const updated = { ...prev };
-        Object.keys(updated).forEach(customerId => {
-          updated[customerId] = updated[customerId].map(job => 
-            job.id === jobId ? { 
-              ...job, 
-              status: 'FOLLOW_UP',
-              followUpDate: followUpData.followUpDate,
-              followUpTime: followUpData.followUpTime,
-              followUpNotes: followUpData.followUpNotes || '',
-              followUpScheduledBy: user?.id || 'admin',
-              followUpScheduledAt: new Date().toISOString()
-            } : job
-          );
+          follow_up_date: followUpData.followUpDate,
+          follow_up_notes: followUpData.followUpReason,
+          follow_up_scheduled_by: user?.id || 'admin',
+          follow_up_scheduled_at: new Date().toISOString()
         });
-        return updated;
-      });
 
-      toast.success('Follow-up scheduled successfully');
-      setFollowUpModalOpen(false);
-      setSelectedJobForFollowUp(null);
+        if (jobError) {
+          throw new Error(jobError.message);
+        }
+
+        // Update local state
+        setJobs(prev => prev.map(job => 
+          job.id === jobId ? { 
+            ...job, 
+            status: 'FOLLOW_UP',
+            followUpDate: followUpData.followUpDate,
+            followUpNotes: followUpData.followUpReason,
+            followUpScheduledBy: user?.id || 'admin',
+            followUpScheduledAt: new Date().toISOString()
+          } : job
+        ));
+
+        setCustomerJobs(prev => {
+          const updated = { ...prev };
+          Object.keys(updated).forEach(customerId => {
+            updated[customerId] = updated[customerId].map(job => 
+              job.id === jobId ? { 
+                ...job, 
+                status: 'FOLLOW_UP',
+                followUpDate: followUpData.followUpDate,
+                followUpNotes: followUpData.followUpReason + (followUpData.followUpNotes ? ` - ${followUpData.followUpNotes}` : ''),
+                followUpScheduledBy: user?.id || 'admin',
+                followUpScheduledAt: new Date().toISOString()
+              } : job
+            );
+          });
+          return updated;
+        });
+      }
+
+      toast.success(
+        followUpData.rescheduleFollowUpId 
+          ? 'Follow-up rescheduled successfully' 
+          : followUpData.parentFollowUpId 
+            ? 'Nested follow-up added successfully' 
+            : 'Follow-up scheduled successfully'
+      );
     } catch (error) {
       console.error('Error scheduling follow-up:', error);
       toast.error('Failed to schedule follow-up');
@@ -2496,6 +2752,34 @@ const AdminDashboard = () => {
 
     // Filter customers based on status filter
   const getFilteredCustomers = () => {
+    // For COMPLETED and CANCELLED, use jobs directly since they're paginated
+    if (statusFilter === 'COMPLETED' || statusFilter === 'CANCELLED') {
+      // Group loaded jobs by customer
+      const customerMap = new Map<string, { customer: Customer; allJobs: Job[] }>();
+      
+      jobs.forEach(job => {
+        const customer = (job as any).customer || job.customer;
+        if (!customer) return;
+        
+        const customerId = customer.id;
+        if (!customerMap.has(customerId)) {
+          customerMap.set(customerId, {
+            customer: transformCustomerData(customer),
+            allJobs: []
+          });
+        }
+        customerMap.get(customerId)!.allJobs.push(job);
+      });
+      
+      return Array.from(customerMap.values()).map(({ customer, allJobs }) => ({
+        customer,
+        allJobs,
+        upcomingJobs: allJobs.filter(job => ['PENDING', 'ASSIGNED', 'IN_PROGRESS'].includes(job.status)),
+        completedJobs: allJobs.filter(job => job.status === 'COMPLETED'),
+        cancelledJobs: allJobs.filter(job => job.status === 'CANCELLED' || job.status === 'DENIED')
+      }));
+    }
+    
     let filteredCustomers = customersWithJobs;
     
     // Apply status filter
@@ -2508,14 +2792,37 @@ const AdminDashboard = () => {
         allJobs.some(job => ['PENDING', 'ASSIGNED', 'IN_PROGRESS'].includes(job.status))                                                                        
       );
     } else if (statusFilter === 'RESCHEDULED') {
-      // Filter for follow-up jobs (FOLLOW_UP status)
+      // For RESCHEDULED, use jobs if loaded via pagination, otherwise filter customersWithJobs
+      if (jobs.length > 0 && jobs.some(j => ['FOLLOW_UP', 'RESCHEDULED'].includes(j.status))) {
+        const customerMap = new Map<string, { customer: Customer; allJobs: Job[] }>();
+        jobs.forEach(job => {
+          const customer = (job as any).customer || job.customer;
+          if (!customer) return;
+          const customerId = customer.id;
+          if (!customerMap.has(customerId)) {
+            customerMap.set(customerId, {
+              customer: transformCustomerData(customer),
+              allJobs: []
+            });
+          }
+          customerMap.get(customerId)!.allJobs.push(job);
+        });
+        return Array.from(customerMap.values()).map(({ customer, allJobs }) => ({
+          customer,
+          allJobs,
+          upcomingJobs: allJobs.filter(job => ['PENDING', 'ASSIGNED', 'IN_PROGRESS'].includes(job.status)),
+          completedJobs: allJobs.filter(job => job.status === 'COMPLETED'),
+          cancelledJobs: allJobs.filter(job => job.status === 'CANCELLED' || job.status === 'DENIED')
+        }));
+      }
+      // Filter for follow-up jobs (FOLLOW_UP and RESCHEDULED status)
       filteredCustomers = customersWithJobs.filter(({ allJobs }) => 
-        allJobs.some(job => job.status === 'FOLLOW_UP')
+        allJobs.some(job => ['FOLLOW_UP', 'RESCHEDULED'].includes(job.status))
       );
     } else if (statusFilter === 'CANCELLED') {
-      // Filter for denied jobs (DENIED status)
+      // Already handled above
       filteredCustomers = customersWithJobs.filter(({ allJobs }) => 
-        allJobs.some(job => job.status === 'DENIED')
+        allJobs.some(job => ['DENIED', 'CANCELLED'].includes(job.status))
       );
     } else {
       // Filter by specific job status
@@ -2567,6 +2874,11 @@ const AdminDashboard = () => {
   const assignedJobs = jobs.filter(job => job.status === 'ASSIGNED');
   const inProgressJobs = jobs.filter(job => job.status === 'IN_PROGRESS');
   const completedJobs = jobs.filter(job => job.status === 'COMPLETED');
+  
+  // New stats for the dashboard cards
+  const ongoingJobs = jobs.filter(job => ['PENDING', 'ASSIGNED', 'IN_PROGRESS'].includes(job.status));
+  const followupJobs = jobs.filter(job => ['FOLLOW_UP', 'RESCHEDULED'].includes(job.status));
+  const deniedJobs = jobs.filter(job => ['DENIED', 'CANCELLED'].includes(job.status));
 
   // Show login form if not authenticated
   if (authLoading) {
@@ -2690,105 +3002,95 @@ const AdminDashboard = () => {
           )}
         </div>
 
-        {/* Stats Cards - Mobile First */}
+        {/* Stats Cards - Clickable Filter Buttons */}
         <div className="grid grid-cols-2 gap-3 mb-6 sm:grid-cols-4 sm:gap-6">
-          <Card className="bg-white border-gray-200 p-3 sm:p-6">
+          <Card 
+            className={`border-2 p-3 sm:p-6 cursor-pointer transition-all hover:shadow-md ${
+              statusFilter === 'ONGOING' 
+                ? 'bg-blue-50 border-blue-500 shadow-md' 
+                : 'bg-white border-gray-200 hover:border-gray-300'
+            }`}
+            onClick={() => setStatusFilter('ONGOING')}
+          >
             <div className="flex items-center justify-between mb-2">
-              <Users className="h-5 w-5 text-blue-600 sm:h-4 sm:w-4" />
+              <Wrench className={`h-5 w-5 sm:h-4 sm:w-4 ${statusFilter === 'ONGOING' ? 'text-blue-600' : 'text-blue-600'}`} />
               <div className="text-right">
-                <div className="text-lg font-bold text-gray-900 sm:text-2xl">{customers.length}</div>
-                <p className="text-xs text-gray-500">Customers</p>
+                <div className={`text-lg font-bold sm:text-2xl ${statusFilter === 'ONGOING' ? 'text-blue-900' : 'text-gray-900'}`}>
+                  {jobCounts.ongoing}
+                </div>
+                <p className="text-xs text-gray-500">Ongoing</p>
               </div>
             </div>
             <p className="text-xs text-gray-500">
-                {customers.filter(c => c.status === 'ACTIVE').length} active
+                {pendingJobs.length} pending, {inProgressJobs.length} in progress
               </p>
           </Card>
 
-          <Card className="bg-white border-gray-200 p-3 sm:p-6">
+          <Card 
+            className={`border-2 p-3 sm:p-6 cursor-pointer transition-all hover:shadow-md ${
+              statusFilter === 'RESCHEDULED' 
+                ? 'bg-indigo-50 border-indigo-500 shadow-md' 
+                : 'bg-white border-gray-200 hover:border-gray-300'
+            }`}
+            onClick={() => setStatusFilter('RESCHEDULED')}
+          >
             <div className="flex items-center justify-between mb-2">
-              <Clock className="h-5 w-5 text-yellow-600 sm:h-4 sm:w-4" />
+              <CalendarPlus className={`h-5 w-5 sm:h-4 sm:w-4 ${statusFilter === 'RESCHEDULED' ? 'text-indigo-600' : 'text-indigo-600'}`} />
               <div className="text-right">
-                <div className="text-lg font-bold text-gray-900 sm:text-2xl">{pendingJobs.length}</div>
-                <p className="text-xs text-gray-500">Pending</p>
+                <div className={`text-lg font-bold sm:text-2xl ${statusFilter === 'RESCHEDULED' ? 'text-indigo-900' : 'text-gray-900'}`}>
+                  {jobCounts.followup}
+                </div>
+                <p className="text-xs text-gray-500">Followup</p>
               </div>
             </div>
             <p className="text-xs text-gray-500">
-                {assignedJobs.length} assigned
+                Jobs requiring follow-up
               </p>
           </Card>
 
-          <Card className="bg-white border-gray-200 p-3 sm:p-6">
+          <Card 
+            className={`border-2 p-3 sm:p-6 cursor-pointer transition-all hover:shadow-md ${
+              statusFilter === 'CANCELLED' 
+                ? 'bg-red-50 border-red-500 shadow-md' 
+                : 'bg-white border-gray-200 hover:border-gray-300'
+            }`}
+            onClick={() => setStatusFilter('CANCELLED')}
+          >
             <div className="flex items-center justify-between mb-2">
-              <Wrench className="h-5 w-5 text-orange-600 sm:h-4 sm:w-4" />
+              <XCircle className={`h-5 w-5 sm:h-4 sm:w-4 ${statusFilter === 'CANCELLED' ? 'text-red-600' : 'text-red-600'}`} />
               <div className="text-right">
-                <div className="text-lg font-bold text-gray-900 sm:text-2xl">{inProgressJobs.length}</div>
-                <p className="text-xs text-gray-500">In Progress</p>
+                <div className={`text-lg font-bold sm:text-2xl ${statusFilter === 'CANCELLED' ? 'text-red-900' : 'text-gray-900'}`}>
+                  {jobCounts.denied}
+                </div>
+                <p className="text-xs text-gray-500">Denied</p>
               </div>
             </div>
             <p className="text-xs text-gray-500">
-              {completedJobs.length} completed
-            </p>
-          </Card>
-
-          <Card className="bg-white border-gray-200 p-3 sm:p-6">
-            <div className="flex items-center justify-between mb-2">
-              <Users className="h-5 w-5 text-green-600 sm:h-4 sm:w-4" />
-              <div className="text-right">
-                <div className="text-lg font-bold text-gray-900 sm:text-2xl">{technicians.length}</div>
-                <p className="text-xs text-gray-500">Technicians</p>
-              </div>
-            </div>
-            <p className="text-xs text-gray-500">
-                {technicians.filter(t => t.status === 'AVAILABLE').length} available
+                Cancelled or denied jobs
               </p>
           </Card>
-        </div>
 
-                {/* Action Buttons Section */}
-        <div className="mb-6">
-          <div className="flex flex-col sm:flex-row gap-3 sm:gap-4">
-            <Button
-              onClick={() => setStatusFilter('ALL')}
-              variant={statusFilter === 'ALL' ? 'default' : 'outline'}
-              className="flex items-center gap-2"
-            >
-              <Users className="h-4 w-4" />
-              All Customers ({customers.length})
-            </Button>
-            <Button
-              onClick={() => setStatusFilter('ONGOING')}
-              variant={statusFilter === 'ONGOING' ? 'default' : 'outline'}
-              className="flex items-center gap-2"
-            >
-              <Clock className="h-4 w-4" />
-              Ongoing Jobs ({jobs.filter(job => ['PENDING', 'ASSIGNED', 'IN_PROGRESS'].includes(job.status)).length})                                           
-            </Button>
-            <Button
-              onClick={() => setStatusFilter('RESCHEDULED')}
-              variant={statusFilter === 'RESCHEDULED' ? 'default' : 'outline'}
-              className="flex items-center gap-2"
-            >
-              <CalendarPlus className="h-4 w-4" />
-              Follow-up Jobs ({jobs.filter(job => job.status === 'FOLLOW_UP').length})
-            </Button>
-            <Button
-              onClick={() => setStatusFilter('CANCELLED')}
-              variant={statusFilter === 'CANCELLED' ? 'default' : 'outline'}
-              className="flex items-center gap-2"
-            >
-              <XCircle className="h-4 w-4" />
-              Denied Jobs ({jobs.filter(job => job.status === 'DENIED').length})
-            </Button>
-            <Button
-              onClick={() => setStatusFilter('COMPLETED')}
-              variant={statusFilter === 'COMPLETED' ? 'default' : 'outline'}
-              className="flex items-center gap-2"
-            >
-              <CheckCircle2 className="h-4 w-4" />
-              Completed Jobs ({jobs.filter(job => job.status === 'COMPLETED').length})
-            </Button>
-          </div>
+          <Card 
+            className={`border-2 p-3 sm:p-6 cursor-pointer transition-all hover:shadow-md ${
+              statusFilter === 'COMPLETED' 
+                ? 'bg-green-50 border-green-500 shadow-md' 
+                : 'bg-white border-gray-200 hover:border-gray-300'
+            }`}
+            onClick={() => setStatusFilter('COMPLETED')}
+          >
+            <div className="flex items-center justify-between mb-2">
+              <CheckCircle className={`h-5 w-5 sm:h-4 sm:w-4 ${statusFilter === 'COMPLETED' ? 'text-green-600' : 'text-green-600'}`} />
+              <div className="text-right">
+                <div className={`text-lg font-bold sm:text-2xl ${statusFilter === 'COMPLETED' ? 'text-green-900' : 'text-gray-900'}`}>
+                  {jobCounts.completed}
+                </div>
+                <p className="text-xs text-gray-500">Completed</p>
+              </div>
+            </div>
+            <p className="text-xs text-gray-500">
+                Successfully completed jobs
+              </p>
+          </Card>
         </div>
 
         {/* Customers with Jobs */}
@@ -3175,7 +3477,20 @@ const AdminDashboard = () => {
                             )}
                           </div>
                           <div className="text-xs text-gray-500">
-                            {customer.location?.formattedAddress ? 'Exact Location' : 'View on Map'}
+                            {(customer.address as any)?.visible_address && String((customer.address as any).visible_address).trim() ? (
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setAddressDialogOpen(prev => ({ ...prev, [customer.id]: true }));
+                                }}
+                                className="text-left hover:text-gray-700 transition-colors cursor-pointer underline-offset-2 hover:underline"
+                                title="Click to view full address"
+                              >
+                                {String((customer.address as any).visible_address).trim()}
+                              </button>
+                            ) : (
+                              <span>Location</span>
+                            )}
                           </div>
                         </div>
                       </div>
@@ -3454,6 +3769,12 @@ const AdminDashboard = () => {
                                           </DropdownMenuItem>
                                         </>
                                       )}
+                                      {(job.status === 'FOLLOW_UP' || job.status === 'RESCHEDULED') && (
+                                        <DropdownMenuItem onClick={() => handleScheduleFollowUp(job)}>
+                                          <CalendarPlus className="mr-2 h-4 w-4" />
+                                          Schedule Follow-up
+                                        </DropdownMenuItem>
+                                      )}
                                       {job.status === 'IN_PROGRESS' && (
                                         <DropdownMenuItem onClick={() => handleCompleteJob(job)}>
                                           <CheckCircle2 className="mr-2 h-4 w-4" />
@@ -3507,6 +3828,70 @@ const AdminDashboard = () => {
               </Card>
             ))}
           </div>
+          
+          {/* Pagination Controls - Only show for paginated views */}
+          {(statusFilter === 'COMPLETED' || statusFilter === 'CANCELLED' || statusFilter === 'RESCHEDULED') && totalPages > 1 && (
+            <div className="mt-6 flex items-center justify-between">
+              <div className="text-sm text-gray-600">
+                Showing page {currentPage} of {totalPages} ({totalCount} total)
+              </div>
+              <Pagination>
+                <PaginationContent>
+                  <PaginationItem>
+                    <PaginationPrevious 
+                      href="#" 
+                      onClick={(e) => {
+                        e.preventDefault();
+                        if (currentPage > 1) {
+                          setCurrentPage(currentPage - 1);
+                        }
+                      }}
+                      className={currentPage === 1 ? 'pointer-events-none opacity-50' : 'cursor-pointer'}
+                    />
+                  </PaginationItem>
+                  {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
+                    let pageNum;
+                    if (totalPages <= 5) {
+                      pageNum = i + 1;
+                    } else if (currentPage <= 3) {
+                      pageNum = i + 1;
+                    } else if (currentPage >= totalPages - 2) {
+                      pageNum = totalPages - 4 + i;
+                    } else {
+                      pageNum = currentPage - 2 + i;
+                    }
+                    return (
+                      <PaginationItem key={pageNum}>
+                        <PaginationLink
+                          href="#"
+                          onClick={(e) => {
+                            e.preventDefault();
+                            setCurrentPage(pageNum);
+                          }}
+                          isActive={currentPage === pageNum}
+                          className="cursor-pointer"
+                        >
+                          {pageNum}
+                        </PaginationLink>
+                      </PaginationItem>
+                    );
+                  })}
+                  <PaginationItem>
+                    <PaginationNext 
+                      href="#" 
+                      onClick={(e) => {
+                        e.preventDefault();
+                        if (currentPage < totalPages) {
+                          setCurrentPage(currentPage + 1);
+                        }
+                      }}
+                      className={currentPage === totalPages ? 'pointer-events-none opacity-50' : 'cursor-pointer'}
+                    />
+                  </PaginationItem>
+                </PaginationContent>
+              </Pagination>
+            </div>
+          )}
         </div>
 
       </main>
@@ -3803,74 +4188,9 @@ const AdminDashboard = () => {
                         })}
                       </div>
                     </div>
-                    <div>
-                      <span className="font-medium text-gray-600">Native Language:</span>
-                      <p className="text-gray-900">
-                        {addFormData.native_language ? 
-                          addFormData.native_language.charAt(0) + addFormData.native_language.slice(1).toLowerCase() :
-                          'Not specified'}
-                      </p>
-                    </div>
-                    <div>
-                      <span className="font-medium text-gray-600">Behavior:</span>
-                      <p className="text-gray-900">
-                        {addFormData.behavior ? 
-                          addFormData.behavior.charAt(0).toUpperCase() + addFormData.behavior.slice(1).toLowerCase()
-                          : 'Not specified'
-                        }
-                      </p>
-                    </div>
                   </div>
             </div>
 
-                <div className="space-y-2">
-                  <Label htmlFor="add_behavior" className="text-sm font-medium">Customer Behavior</Label>
-                  <Select value={addFormData.behavior || ''} onValueChange={(value) => handleAddFormChange('behavior', value)}>
-                    <SelectTrigger className="text-sm">
-                      <SelectValue placeholder="Select customer behavior" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="GOOD">Good</SelectItem>
-                      <SelectItem value="AVERAGE">Average</SelectItem>
-                      <SelectItem value="BAD">Bad</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-
-                <div className="space-y-2">
-                  <Label htmlFor="add_native_language">Native Language</Label>
-                  <Select value={addFormData.native_language || ''} onValueChange={(value) => handleAddFormChange('native_language', value)}>
-                    <SelectTrigger>
-                      <SelectValue placeholder="Select native language" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="ENGLISH">English</SelectItem>
-                      <SelectItem value="HINDI">Hindi</SelectItem>
-                      <SelectItem value="KANNADA">Kannada</SelectItem>
-                      <SelectItem value="TAMIL">Tamil</SelectItem>
-                      <SelectItem value="TELUGU">Telugu</SelectItem>
-                      <SelectItem value="MARATHI">Marathi</SelectItem>
-                      <SelectItem value="GUJARATI">Gujarati</SelectItem>
-                      <SelectItem value="BENGALI">Bengali</SelectItem>
-                      <SelectItem value="PUNJABI">Punjabi</SelectItem>
-                      <SelectItem value="URDU">Urdu</SelectItem>
-                      <SelectItem value="MALAYALAM">Malayalam</SelectItem>
-                      <SelectItem value="ODIA">Odia</SelectItem>
-                      <SelectItem value="OTHER">Other</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-
-                <div className="space-y-2">
-                  <Label htmlFor="add_notes">Additional Notes</Label>
-                  <Textarea
-                    id="add_notes"
-                    value={addFormData.notes}
-                    onChange={(e) => handleAddFormChange('notes', e.target.value)}
-                    placeholder="Enter any additional notes or special requirements"
-                    rows={3}
-                  />
-                </div>
 
             </div>
             )}
@@ -3982,6 +4302,46 @@ const AdminDashboard = () => {
               <h3 className="text-lg font-semibold text-gray-900">Address Information</h3>
               <div className="space-y-4">
                 <div className="space-y-2">
+                  <Label htmlFor="edit_visible_address">Visible Address (One Word)</Label>
+                  <div className="relative">
+                    <Input
+                      id="edit_visible_address"
+                      value={editFormData?.visible_address || ''}
+                      onChange={(e) => {
+                        handleEditFormChange('visible_address', e.target.value);
+                        setVisibleAddressSuggestions(e.target.value.length > 0);
+                      }}
+                      onFocus={() => setVisibleAddressSuggestions((editFormData?.visible_address || '').length > 0)}
+                      onBlur={() => {
+                        setTimeout(() => setVisibleAddressSuggestions(false), 200);
+                      }}
+                      placeholder="e.g., Bansawadi, Koramangala, Whitefield, etc."
+                      maxLength={20}
+                      className="text-sm"
+                    />
+                    {visibleAddressSuggestions && filteredAddressSuggestions.length > 0 && (
+                      <div className="absolute z-50 w-full mt-1 bg-white border border-gray-300 rounded-md shadow-lg max-h-48 overflow-y-auto">
+                        {filteredAddressSuggestions.map((suggestion, idx) => (
+                          <button
+                            key={idx}
+                            type="button"
+                            onMouseDown={(e) => {
+                              e.preventDefault();
+                              handleEditFormChange('visible_address', suggestion);
+                              setVisibleAddressSuggestions(false);
+                            }}
+                            className="w-full text-left px-3 py-2 hover:bg-gray-100 text-sm"
+                          >
+                            {suggestion}
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                  <p className="text-xs text-gray-500">A short one-word identifier (area name or type) for quick recognition. Start typing to see suggestions.</p>
+                </div>
+
+                <div className="space-y-2">
                   <Label htmlFor="edit_full_address">Complete Address</Label>
                   <Textarea
                     id="edit_full_address"
@@ -3996,18 +4356,18 @@ const AdminDashboard = () => {
               </div>
 
               {/* Current Google Maps Location Display */}
-              <div className="p-4 bg-blue-50 rounded-lg border border-blue-200">
+              <div className="p-4 bg-gray-50 rounded-lg border border-gray-200">
                 <div className="flex items-start justify-between mb-3">
                   <div>
-                    <div className="text-sm font-medium text-blue-900 flex items-center gap-2">
+                    <div className="text-sm font-medium text-gray-900 flex items-center gap-2">
                       <MapPin className="w-4 h-4" />
                       Current Google Maps Location
                     </div>
-                    <div className="text-xs text-blue-700 mt-1">
+                    <div className="text-xs text-gray-700 mt-1">
                       {editFormData?.location?.formattedAddress || 'No location data available'}
                     </div>
                     {(editFormData?.location?.latitude !== 0 || editFormData?.location?.longitude !== 0) && (
-                      <div className="text-xs text-blue-600 mt-1">
+                      <div className="text-xs text-gray-600 mt-1">
                         Coordinates: {editFormData.location.latitude}, {editFormData.location.longitude}
                       </div>
                     )}
@@ -4021,7 +4381,7 @@ const AdminDashboard = () => {
                         onClick={() => {
                           window.open(editFormData.location.formattedAddress, '_blank', 'noopener,noreferrer');
                         }}
-                        className="text-blue-600 border-blue-300 hover:bg-blue-100"
+                        className="text-gray-700 border-gray-300 hover:bg-gray-100"
                       >
                         <ExternalLink className="w-3 h-3 mr-1" />
                         Open
@@ -4036,7 +4396,7 @@ const AdminDashboard = () => {
                           window.open(`https://www.google.com/maps/place/${editFormData.location.latitude},${editFormData.location.longitude}`, '_blank', 'noopener,noreferrer');
                         }
                       }}
-                      className="text-blue-600 border-blue-300 hover:bg-blue-100"
+                      className="text-gray-700 border-gray-300 hover:bg-gray-100"
                     >
                       <MapPin className="w-3 h-3 mr-1" />
                       View
@@ -4046,7 +4406,7 @@ const AdminDashboard = () => {
 
                 {/* Google Maps Link Input */}
                 <div className="space-y-2">
-                  <Label htmlFor="edit_google_location" className="text-sm font-medium text-blue-900">
+                  <Label htmlFor="edit_google_location" className="text-sm font-medium text-gray-900">
                     Update Google Maps Link
                   </Label>
                   <div className="flex gap-2">
@@ -4075,7 +4435,7 @@ const AdminDashboard = () => {
                       Test
                     </Button>
                   </div>
-                  <p className="text-xs text-blue-600">
+                  <p className="text-xs text-gray-600">
                     Paste a Google Maps share link to update the exact location. This will override the geocoded coordinates.
                   </p>
                 </div>
@@ -4090,10 +4450,8 @@ const AdminDashboard = () => {
                 <Label>Service Types</Label>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   {[
-                    { value: 'RO', label: 'RO (Reverse Osmosis)', icon: '💧' },
-                    { value: 'SOFTENER', label: 'Water Softener', icon: '🧂' },
-                    { value: 'AC', label: 'AC Services', icon: '❄️' },
-                    { value: 'APPLIANCE', label: 'Home Appliances', icon: '🏠' }
+                    { value: 'RO', label: 'RO (Reverse Osmosis)' },
+                    { value: 'SOFTENER', label: 'Water Softener' }
                   ].map((service) => (
                     <div
                       key={service.value}
@@ -4105,7 +4463,6 @@ const AdminDashboard = () => {
                       }`}
                     >
                       <div className="flex items-center gap-2">
-                        <span className="text-lg">{service.icon}</span>
                         <span className="text-sm font-medium">{service.label}</span>
                       </div>
                     </div>
@@ -4119,10 +4476,8 @@ const AdminDashboard = () => {
                   <Label className="text-base font-semibold">Equipment Details</Label>
                   {editFormData?.service_types?.map((serviceType) => {
                     const serviceInfo = [
-                      { value: 'RO', label: 'RO (Reverse Osmosis)', icon: '💧' },
-                      { value: 'SOFTENER', label: 'Water Softener', icon: '🧂' },
-                      { value: 'AC', label: 'AC Services', icon: '❄️' },
-                      { value: 'APPLIANCE', label: 'Home Appliances', icon: '🏠' }
+                      { value: 'RO', label: 'RO (Reverse Osmosis)' },
+                      { value: 'SOFTENER', label: 'Water Softener' }
                     ].find(s => s.value === serviceType);
                     
                     const equipment = editFormData?.equipment?.[serviceType] || { brand: '', model: '' };
@@ -4130,7 +4485,6 @@ const AdminDashboard = () => {
                     return (
                       <div key={serviceType} className="bg-gray-50 p-4 rounded-lg space-y-3">
                         <div className="flex items-center gap-2">
-                          <span className="text-lg">{serviceInfo?.icon}</span>
                           <span className="font-medium text-gray-900">{serviceInfo?.label}</span>
                         </div>
                         
@@ -4162,97 +4516,6 @@ const AdminDashboard = () => {
               )}
             </div>
 
-            {/* Additional Information */}
-            <div className="space-y-4">
-              <h3 className="text-lg font-semibold text-gray-900">Additional Information</h3>
-              
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <Label htmlFor="edit_behavior" className="text-sm font-medium">Customer Behavior</Label>
-                  <Select value={editFormData?.behavior || ''} onValueChange={(value) => handleEditFormChange('behavior', value)}>
-                    <SelectTrigger className="text-sm">
-                      <SelectValue placeholder="Select customer behavior" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="GOOD">Good</SelectItem>
-                      <SelectItem value="AVERAGE">Average</SelectItem>
-                      <SelectItem value="BAD">Bad</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-
-                <div className="space-y-2">
-                  <Label htmlFor="edit_native_language">Native Language</Label>
-                  <Select value={editFormData?.native_language || ''} onValueChange={(value) => handleEditFormChange('native_language', value)}>
-                    <SelectTrigger>
-                      <SelectValue placeholder="Select native language" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="ENGLISH">English</SelectItem>
-                      <SelectItem value="HINDI">Hindi</SelectItem>
-                      <SelectItem value="KANNADA">Kannada</SelectItem>
-                      <SelectItem value="TAMIL">Tamil</SelectItem>
-                      <SelectItem value="TELUGU">Telugu</SelectItem>
-                      <SelectItem value="MARATHI">Marathi</SelectItem>
-                      <SelectItem value="GUJARATI">Gujarati</SelectItem>
-                      <SelectItem value="BENGALI">Bengali</SelectItem>
-                      <SelectItem value="PUNJABI">Punjabi</SelectItem>
-                      <SelectItem value="URDU">Urdu</SelectItem>
-                      <SelectItem value="MALAYALAM">Malayalam</SelectItem>
-                      <SelectItem value="ODIA">Odia</SelectItem>
-                      <SelectItem value="OTHER">Other</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-
-              </div>
-
-              <div className="space-y-2">
-                <Label htmlFor="edit_notes">Additional Info</Label>
-                <Textarea
-                  id="edit_notes"
-                  value={editFormData?.notes || ''}
-                  onChange={(e) => handleEditFormChange('notes', e.target.value)}
-                  placeholder="Enter any additional notes"
-                  rows={3}
-                />
-              </div>
-
-            </div>
-
-            {/* Customer Services Manager */}
-            <div className="pt-6 border-t border-gray-200">
-              <div className="flex items-center justify-between mb-4">
-                <h3 className="text-lg font-semibold text-gray-900">Customer Services</h3>
-                <Button
-                  onClick={() => {
-                    // Navigate to booking page with pre-filled customer data
-                    const customerData = {
-                      customerId: editingCustomer?.id,
-                      customerName: (editingCustomer as any)?.full_name,
-                      phone: editingCustomer?.phone,
-                      email: editingCustomer?.email,
-                      address: (editingCustomer as any)?.address || '',
-                      serviceType: editFormData.service_types.join(', ') || 'RO'
-                    };
-                    // Store customer data in sessionStorage for pre-filling
-                    sessionStorage.setItem('prefillCustomerData', JSON.stringify(customerData));
-                    // Navigate to booking page
-                    window.location.href = '/booking';
-                  }}
-                  className="bg-green-600 hover:bg-green-700 text-white"
-                >
-                  <Plus className="w-4 h-4 mr-2" />
-                  Create New Service
-                </Button>
-              </div>
-              <CustomerServicesManager
-                customerId={editingCustomer?.id || ''}
-                customerName={(editingCustomer as any)?.full_name || ''}
-                services={customerServices[editingCustomer?.id || ''] || []}
-                onServicesUpdate={(services) => handleServicesUpdate(editingCustomer?.id || '', services)}
-              />
-            </div>
           </div>
 
           <DialogFooter>
@@ -5873,6 +6136,49 @@ const AdminDashboard = () => {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* Address Dialog */}
+      {customers.map((customer) => (
+        <Dialog
+          key={customer.id}
+          open={addressDialogOpen[customer.id] || false}
+          onOpenChange={(open) => {
+            setAddressDialogOpen(prev => ({ ...prev, [customer.id]: open }));
+          }}
+        >
+          <DialogContent className="sm:max-w-md">
+            <DialogHeader>
+              <DialogTitle>Full Address</DialogTitle>
+              <DialogDescription>
+                Complete address for {customer.fullName || 'Customer'}
+              </DialogDescription>
+            </DialogHeader>
+            <div className="py-4">
+              <div className="text-sm text-gray-900 whitespace-pre-wrap break-words">
+                {formatAddressForDisplay(customer.address) || 'No address available'}
+              </div>
+              {customer.location?.formattedAddress && (
+                <div className="mt-4 pt-4 border-t border-gray-200">
+                  <div className="text-xs text-gray-500 mb-2">Google Maps Location:</div>
+                  <div className="text-xs text-gray-700 break-all">
+                    {customer.location.formattedAddress}
+                  </div>
+                </div>
+              )}
+            </div>
+            <DialogFooter>
+              <Button
+                variant="outline"
+                onClick={() => {
+                  setAddressDialogOpen(prev => ({ ...prev, [customer.id]: false }));
+                }}
+              >
+                Close
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+      ))}
     </div>
   );
 };
