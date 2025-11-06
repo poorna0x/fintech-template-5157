@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import AdminHeader from '@/components/AdminHeader';
@@ -195,6 +195,11 @@ const AdminDashboard = () => {
   const [isUpdating, setIsUpdating] = useState(false);
   const [visibleAddressSuggestions, setVisibleAddressSuggestions] = useState(false);
   const [addressDialogOpen, setAddressDialogOpen] = useState<{[customerId: string]: boolean}>({});
+  
+  // Auto-save refs
+  const autoSaveTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const lastSavedFormDataRef = useRef<string>('');
+  const hasUnsavedChangesRef = useRef(false);
   
   const bangaloreAreas = [
     // Popular Areas
@@ -905,6 +910,146 @@ const AdminDashboard = () => {
     }
   }, []);
 
+  // Auto-save after 5 seconds of inactivity
+  useEffect(() => {
+    // Only auto-save if there's an editing customer and we're not currently updating
+    if (!editingCustomer || isUpdating) return;
+
+    // Compare current form data with last saved to detect changes
+    const currentFormDataString = JSON.stringify(editFormData);
+    const hasChanges = currentFormDataString !== lastSavedFormDataRef.current;
+
+    if (!hasChanges) {
+      // No changes, clear any existing timer
+      if (autoSaveTimerRef.current) {
+        clearTimeout(autoSaveTimerRef.current);
+        autoSaveTimerRef.current = null;
+      }
+      hasUnsavedChangesRef.current = false;
+      return;
+    }
+
+    // Mark that we have unsaved changes
+    hasUnsavedChangesRef.current = true;
+
+    // Clear existing timer if any
+    if (autoSaveTimerRef.current) {
+      clearTimeout(autoSaveTimerRef.current);
+    }
+
+    // Set new timer for 5 seconds
+    autoSaveTimerRef.current = setTimeout(async () => {
+      // Only save if we still have unsaved changes and editing customer exists
+      if (hasUnsavedChangesRef.current && editingCustomer && !isUpdating) {
+        try {
+          // Use the same logic as handleUpdateCustomer
+          const updatedAddress = {
+            street: editFormData.address.street,
+            area: editFormData.address.area,
+            city: editFormData.address.city,
+            state: editFormData.address.state,
+            pincode: editFormData.address.pincode
+          };
+
+          const updatedLocation: any = {
+            latitude: editFormData.location.latitude || 0,
+            longitude: editFormData.location.longitude || 0,
+            formattedAddress: editFormData.address.street || editFormData.location.formattedAddress || '',
+          };
+          
+          if (editFormData.google_location && editFormData.google_location.trim()) {
+            updatedLocation.googleLocation = editFormData.google_location;
+          } else if ((editFormData.location as any)?.googleLocation) {
+            updatedLocation.googleLocation = (editFormData.location as any).googleLocation;
+          }
+
+          const { data: updatedCustomerFromDb, error } = await db.customers.update(editingCustomer.id, {
+            full_name: editFormData.full_name,
+            phone: editFormData.phone,
+            alternate_phone: editFormData.alternate_phone,
+            email: editFormData.email,
+            service_type: mapServiceTypesToDbValue(editFormData.service_types),
+            brand: Object.values(editFormData.equipment).map(eq => eq.brand).join(', '),
+            model: Object.values(editFormData.equipment).map(eq => eq.model).join(', '),
+            preferred_language: (editFormData.native_language || 'ENGLISH') as 'ENGLISH' | 'HINDI' | 'KANNADA' | 'TAMIL' | 'TELUGU',
+            preferred_time_slot: (editingCustomer as any).preferred_time_slot || editingCustomer.preferredTimeSlot || 'MORNING',
+            status: editFormData.status as 'ACTIVE' | 'INACTIVE' | 'BLOCKED',
+            notes: editFormData.notes,
+            visible_address: editFormData.visible_address ? editFormData.visible_address.substring(0, 20) : '',
+            custom_time: editFormData.custom_time || null,
+            address: updatedAddress,
+            location: updatedLocation
+          });
+
+          if (error) {
+            throw new Error(error.message);
+          }
+
+          // Update local state
+          if (updatedCustomerFromDb) {
+            const transformedCustomer = transformCustomerData(updatedCustomerFromDb);
+            setCustomers(prevCustomers => 
+              prevCustomers.map(c => c.id === editingCustomer.id ? transformedCustomer : c)
+            );
+          } else {
+            setCustomers(prevCustomers => {
+              return prevCustomers.map(c => {
+                if (c.id === editingCustomer.id) {
+                  const newLocation = {
+                    latitude: updatedLocation.latitude,
+                    longitude: updatedLocation.longitude,
+                    formattedAddress: updatedLocation.formattedAddress,
+                    googlePlaceId: c.location?.googlePlaceId,
+                    googleLocation: updatedLocation.googleLocation || null
+                  };
+                  
+                  return { 
+                    ...c, 
+                    full_name: editFormData.full_name,
+                    alternatePhone: editFormData.alternate_phone,
+                    service_type: mapServiceTypesToDbValue(editFormData.service_types),
+                    behavior: editFormData.behavior,
+                    preferredLanguage: (editFormData.native_language || 'ENGLISH') as 'ENGLISH' | 'HINDI' | 'KANNADA' | 'TAMIL' | 'TELUGU',
+                    status: editFormData.status as 'ACTIVE' | 'INACTIVE' | 'BLOCKED',
+                    notes: editFormData.notes,
+                    address: updatedAddress,
+                    location: newLocation as any
+                  };
+                }
+                return c;
+              });
+            });
+          }
+
+          // Update tracking refs
+          lastSavedFormDataRef.current = JSON.stringify(editFormData);
+          hasUnsavedChangesRef.current = false;
+          
+          // If dialog is closed, clear editing customer after auto-save
+          if (!editDialogOpen) {
+            setEditingCustomer(null);
+          }
+          
+          toast.success('Customer auto-saved successfully!');
+        } catch (error) {
+          const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
+          console.error('Error auto-saving customer:', error);
+          toast.error(`Auto-save failed: ${errorMessage}`);
+        }
+      }
+      
+      autoSaveTimerRef.current = null;
+    }, 5000); // 5 seconds
+
+    // Cleanup on unmount or when dependencies change
+    return () => {
+      if (autoSaveTimerRef.current) {
+        clearTimeout(autoSaveTimerRef.current);
+        autoSaveTimerRef.current = null;
+      }
+    };
+  }, [editFormData, editingCustomer, isUpdating, editDialogOpen]);
+
   // Poll for new jobs and play notification sound
   useEffect(() => {
     if (isInitialLoad || !isPollingEnabled) return;
@@ -1079,6 +1224,70 @@ const AdminDashboard = () => {
       service_cost: customer.serviceCost || 0,
       cost_agreed: customer.costAgreed || false
     });
+    // Initialize last saved form data for auto-save tracking
+    lastSavedFormDataRef.current = JSON.stringify({
+      full_name: customer.full_name || customer.fullName || '',
+      phone: customer.phone || '',
+      alternate_phone: customer.alternate_phone || customer.alternatePhone || '',
+      email: customer.email || '',
+      service_types: serviceTypes,
+      equipment: equipment,
+      behavior: customer.behavior || '',
+      native_language: customer.preferredLanguage || '',
+      status: customer.status || '',
+      notes: customer.notes || '',
+      google_location: (() => {
+        if ((customer.location as any)?.googleLocation) {
+          const googleLoc = (customer.location as any).googleLocation;
+          if (googleLoc && typeof googleLoc === 'string' && 
+              (googleLoc.includes('google.com/maps') || googleLoc.includes('maps.app.goo.gl') || googleLoc.includes('goo.gl/maps')) &&
+              !googleLoc.includes('localhost') && 
+              !googleLoc.includes('127.0.0.1')) {
+            return googleLoc;
+          }
+        }
+        if (customer.location?.latitude && customer.location?.longitude && 
+            customer.location.latitude !== 0 && customer.location.longitude !== 0) {
+          return `https://www.google.com/maps/place/${customer.location.latitude},${customer.location.longitude}`;
+        }
+        if (customer.location?.formattedAddress && 
+            typeof customer.location.formattedAddress === 'string' &&
+            (customer.location.formattedAddress.includes('google.com/maps') || customer.location.formattedAddress.includes('maps.app.goo.gl')) &&
+            !customer.location.formattedAddress.includes('localhost') &&
+            !customer.location.formattedAddress.includes('127.0.0.1')) {
+          return customer.location.formattedAddress;
+        }
+        return '';
+      })(),
+      visible_address: (customer as any).visible_address || (customer.address as any)?.visible_address || '',
+      custom_time: customer.customTime || (customer as any).custom_time || '',
+      address: {
+        street: [
+          customer.address?.street,
+          customer.address?.area,
+          customer.address?.city,
+          customer.address?.state,
+          customer.address?.pincode
+        ].filter(Boolean).join(', ') || '',
+        area: customer.address?.area || '',
+        city: customer.address?.city || '',
+        state: customer.address?.state || '',
+        pincode: customer.address?.pincode || ''
+      },
+      location: {
+        latitude: customer.location?.latitude || 0,
+        longitude: customer.location?.longitude || 0,
+        formattedAddress: customer.location?.formattedAddress || ''
+      },
+      service_cost: customer.serviceCost || 0,
+      cost_agreed: customer.costAgreed || false
+    });
+    hasUnsavedChangesRef.current = false;
+    // Clear any existing auto-save timer
+    if (autoSaveTimerRef.current) {
+      clearTimeout(autoSaveTimerRef.current);
+      autoSaveTimerRef.current = null;
+    }
     setEditDialogOpen(true);
   };
 
@@ -1124,7 +1333,7 @@ const AdminDashboard = () => {
         preferred_time_slot: (editingCustomer as any).preferred_time_slot || editingCustomer.preferredTimeSlot || 'MORNING',
         status: editFormData.status as 'ACTIVE' | 'INACTIVE' | 'BLOCKED',
         notes: editFormData.notes,
-        visible_address: editFormData.visible_address || '',
+        visible_address: editFormData.visible_address ? editFormData.visible_address.substring(0, 20) : '',
         custom_time: editFormData.custom_time || null,
         address: updatedAddress,
         location: updatedLocation
@@ -1175,6 +1384,14 @@ const AdminDashboard = () => {
 
       // Reload brands/models from DB after update
       await loadBrandsAndModels();
+      
+      // Update last saved form data and clear auto-save timer
+      lastSavedFormDataRef.current = JSON.stringify(editFormData);
+      hasUnsavedChangesRef.current = false;
+      if (autoSaveTimerRef.current) {
+        clearTimeout(autoSaveTimerRef.current);
+        autoSaveTimerRef.current = null;
+      }
       
       toast.success('Customer updated successfully!');
       setEditDialogOpen(false);
