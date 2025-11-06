@@ -508,9 +508,10 @@ const AdminDashboard = () => {
   const [selectedJobForComplete, setSelectedJobForComplete] = useState<Job | null>(null);
   const [completionNotes, setCompletionNotes] = useState('');
   // Complete job multi-step form state
-  const [completeJobStep, setCompleteJobStep] = useState<1 | 2 | 3>(1);
+  const [completeJobStep, setCompleteJobStep] = useState<1 | 2 | 3 | 4>(1);
   const [billAmount, setBillAmount] = useState<string>('');
   const [billPhotos, setBillPhotos] = useState<string[]>([]);
+  const [paymentPhotos, setPaymentPhotos] = useState<string[]>([]);
   const [amcDateGiven, setAmcDateGiven] = useState<string>('');
   const [amcEndDate, setAmcEndDate] = useState<string>('');
   const [amcYears, setAmcYears] = useState<number>(1);
@@ -3695,6 +3696,7 @@ const AdminDashboard = () => {
     setCompleteJobStep(1);
     setBillAmount('');
     setBillPhotos([]);
+    setPaymentPhotos([]);
     // Set default AMC date to today
     const today = new Date().toISOString().split('T')[0];
     setAmcDateGiven(today);
@@ -3727,7 +3729,13 @@ const AdminDashboard = () => {
       return;
     }
 
-    // On step 3, submit the form
+    // On step 3, move to step 4
+    if (completeJobStep === 3) {
+      setCompleteJobStep(4);
+      return;
+    }
+
+    // On step 4, submit the form
     try {
       // Prepare update data
       const updateData: any = {
@@ -3757,12 +3765,17 @@ const AdminDashboard = () => {
         }
       }
 
-      // Remove existing bill_photos and amc_info entries
-      requirements = requirements.filter((req: any) => !req.bill_photos && !req.amc_info);
+      // Remove existing bill_photos, payment_photos and amc_info entries
+      requirements = requirements.filter((req: any) => !req.bill_photos && !req.payment_photos && !req.amc_info);
 
       // Add bill photos if any
       if (billPhotos.length > 0) {
         requirements.push({ bill_photos: billPhotos });
+      }
+
+      // Add payment photos if any (stored in secondary account)
+      if (paymentPhotos.length > 0) {
+        requirements.push({ payment_photos: paymentPhotos });
       }
 
       // Add AMC info if provided
@@ -3778,7 +3791,7 @@ const AdminDashboard = () => {
       }
 
       // Update requirements if we have any changes
-      if (billPhotos.length > 0 || (hasAMC && amcDateGiven && amcEndDate)) {
+      if (billPhotos.length > 0 || paymentPhotos.length > 0 || (hasAMC && amcDateGiven && amcEndDate)) {
         updateData.requirements = JSON.stringify(requirements);
       }
 
@@ -3828,9 +3841,10 @@ const AdminDashboard = () => {
       setCompleteJobStep(1);
       setBillAmount('');
       setBillPhotos([]);
+      setPaymentPhotos([]);
       setAmcDateGiven(new Date().toISOString().split('T')[0]);
       setAmcEndDate('');
-      setAmcYears(2);
+      setAmcYears(1);
       setAmcIncludesPrefilter(false);
       setHasAMC(false);
     } catch (error) {
@@ -7901,6 +7915,7 @@ const AdminDashboard = () => {
               {completeJobStep === 1 && 'Enter the bill amount for this job'}
               {completeJobStep === 2 && 'Upload bill photo (optional)'}
               {completeJobStep === 3 && 'Add AMC information (optional)'}
+              {completeJobStep === 4 && 'Upload payment photo (optional)'}
             </DialogDescription>
           </DialogHeader>
           
@@ -7927,17 +7942,21 @@ const AdminDashboard = () => {
 
             {/* Step Indicator */}
             <div className="flex items-center justify-center mb-6">
-              <div className="flex items-center space-x-2">
-                <div className={`flex items-center justify-center w-8 h-8 rounded-full ${completeJobStep >= 1 ? 'bg-green-600 text-white' : 'bg-gray-200 text-gray-600'}`}>
+              <div className="flex items-center space-x-1 sm:space-x-2">
+                <div className={`flex items-center justify-center w-7 h-7 sm:w-8 sm:h-8 rounded-full text-xs sm:text-sm ${completeJobStep >= 1 ? 'bg-green-600 text-white' : 'bg-gray-200 text-gray-600'}`}>
                   1
                 </div>
-                <div className={`w-12 sm:w-16 h-1 ${completeJobStep >= 2 ? 'bg-green-600' : 'bg-gray-200'}`}></div>
-                <div className={`flex items-center justify-center w-8 h-8 rounded-full ${completeJobStep >= 2 ? 'bg-green-600 text-white' : 'bg-gray-200 text-gray-600'}`}>
+                <div className={`w-8 sm:w-12 h-1 ${completeJobStep >= 2 ? 'bg-green-600' : 'bg-gray-200'}`}></div>
+                <div className={`flex items-center justify-center w-7 h-7 sm:w-8 sm:h-8 rounded-full text-xs sm:text-sm ${completeJobStep >= 2 ? 'bg-green-600 text-white' : 'bg-gray-200 text-gray-600'}`}>
                   2
                 </div>
-                <div className={`w-12 sm:w-16 h-1 ${completeJobStep >= 3 ? 'bg-green-600' : 'bg-gray-200'}`}></div>
-                <div className={`flex items-center justify-center w-8 h-8 rounded-full ${completeJobStep >= 3 ? 'bg-green-600 text-white' : 'bg-gray-200 text-gray-600'}`}>
+                <div className={`w-8 sm:w-12 h-1 ${completeJobStep >= 3 ? 'bg-green-600' : 'bg-gray-200'}`}></div>
+                <div className={`flex items-center justify-center w-7 h-7 sm:w-8 sm:h-8 rounded-full text-xs sm:text-sm ${completeJobStep >= 3 ? 'bg-green-600 text-white' : 'bg-gray-200 text-gray-600'}`}>
                   3
+                </div>
+                <div className={`w-8 sm:w-12 h-1 ${completeJobStep >= 4 ? 'bg-green-600' : 'bg-gray-200'}`}></div>
+                <div className={`flex items-center justify-center w-7 h-7 sm:w-8 sm:h-8 rounded-full text-xs sm:text-sm ${completeJobStep >= 4 ? 'bg-green-600 text-white' : 'bg-gray-200 text-gray-600'}`}>
+                  4
                 </div>
               </div>
             </div>
@@ -8078,6 +8097,27 @@ const AdminDashboard = () => {
                 )}
               </div>
             )}
+
+            {/* Step 4: Payment Photo */}
+            {completeJobStep === 4 && (
+              <div className="space-y-4">
+                <div>
+                  <Label>Payment Photo (Optional)</Label>
+                  <p className="text-sm text-gray-500 mb-2">Upload a photo of the payment receipt. You can skip this step.</p>
+                  <ImageUpload
+                    onImagesChange={(images) => setPaymentPhotos(images)}
+                    maxImages={5}
+                    folder="payment-receipts"
+                    title="Upload Payment Photo"
+                    description="Upload photo of payment receipt (highly optimized, stored in secondary account)"
+                    maxWidth={800}
+                    quality={0.3}
+                    aggressiveCompression={true}
+                    useSecondaryAccount={true}
+                  />
+                </div>
+              </div>
+            )}
           </div>
 
           <DialogFooter className="px-6 py-4 flex-shrink-0 border-t">
@@ -8085,7 +8125,7 @@ const AdminDashboard = () => {
               variant="outline"
               onClick={() => {
                 if (completeJobStep > 1) {
-                  setCompleteJobStep((prev) => (prev - 1) as 1 | 2 | 3);
+                  setCompleteJobStep((prev) => (prev - 1) as 1 | 2 | 3 | 4);
                 } else {
                   setCompleteDialogOpen(false);
                   setSelectedJobForComplete(null);
@@ -8093,6 +8133,7 @@ const AdminDashboard = () => {
                   setCompleteJobStep(1);
                   setBillAmount('');
                   setBillPhotos([]);
+                  setPaymentPhotos([]);
                   const today = new Date().toISOString().split('T')[0];
                   setAmcDateGiven(today);
                   setAmcEndDate('');
@@ -8127,12 +8168,23 @@ const AdminDashboard = () => {
                 Skip AMC
               </Button>
             )}
+            {completeJobStep === 4 && (
+              <Button
+                variant="outline"
+                onClick={() => {
+                  // Skip payment photo and submit
+                  handleCompleteJobSubmit();
+                }}
+              >
+                Skip
+              </Button>
+            )}
             <Button
               onClick={handleCompleteJobSubmit}
               className="bg-green-600 hover:bg-green-700"
               disabled={completeJobStep === 3 && hasAMC && (!amcDateGiven || !amcEndDate)}
             >
-              {completeJobStep === 3 ? 'Complete Job' : 'Next'}
+              {completeJobStep === 4 ? 'Complete Job' : 'Next'}
             </Button>
           </DialogFooter>
         </DialogContent>

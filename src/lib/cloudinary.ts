@@ -18,6 +18,7 @@ export interface CloudinaryConfig {
 
 class CloudinaryService {
   private config: CloudinaryConfig;
+  private secondaryConfig: CloudinaryConfig | null;
 
   constructor() {
     this.config = {
@@ -25,16 +26,60 @@ class CloudinaryService {
       uploadPreset: import.meta.env.VITE_CLOUDINARY_UPLOAD_PRESET || '',
       apiKey: import.meta.env.VITE_CLOUDINARY_API_KEY || '',
     };
+
+    // Secondary Cloudinary account for optimized/temporary images
+    const secondaryCloudName = import.meta.env.VITE_CLOUDINARY_SECONDARY_CLOUD_NAME;
+    const secondaryUploadPreset = import.meta.env.VITE_CLOUDINARY_SECONDARY_UPLOAD_PRESET;
+    const secondaryApiKey = import.meta.env.VITE_CLOUDINARY_SECONDARY_API_KEY;
+
+    if (secondaryCloudName && secondaryUploadPreset) {
+      this.secondaryConfig = {
+        cloudName: secondaryCloudName,
+        uploadPreset: secondaryUploadPreset,
+        apiKey: secondaryApiKey || '',
+      };
+    } else {
+      this.secondaryConfig = null;
+    }
   }
 
-  async uploadImage(file: File, folder: string = 'ro-service'): Promise<CloudinaryUploadResult> {
-    if (!this.config.cloudName || !this.config.uploadPreset) {
+  async uploadImage(file: File, folder: string = 'ro-service', useSecondary: boolean = false): Promise<CloudinaryUploadResult> {
+    // Use secondary account if requested, otherwise use primary
+    let activeConfig: CloudinaryConfig;
+    let isUsingSecondary = false;
+    
+    if (useSecondary) {
+      // Secondary account is required
+      if (!this.secondaryConfig) {
+        throw new Error('Secondary Cloudinary account is not configured. Please add VITE_CLOUDINARY_SECONDARY_CLOUD_NAME and VITE_CLOUDINARY_SECONDARY_UPLOAD_PRESET to your environment variables.');
+      }
+      activeConfig = this.secondaryConfig;
+      isUsingSecondary = true;
+      
+      // Debug logging in development
+      if (import.meta.env.DEV) {
+        console.log('[Cloudinary] Using secondary account:', {
+          cloudName: activeConfig.cloudName,
+          uploadPreset: activeConfig.uploadPreset,
+          hasApiKey: !!activeConfig.apiKey
+        });
+      }
+    } else {
+      // Use primary account
+      if (!this.config.cloudName || !this.config.uploadPreset) {
+        throw new Error('Primary Cloudinary configuration is missing. Please check your environment variables.');
+      }
+      activeConfig = this.config;
+    }
+    
+    // Validate active config
+    if (!activeConfig.cloudName || !activeConfig.uploadPreset) {
       throw new Error('Cloudinary configuration is missing. Please check your environment variables.');
     }
 
     const formData = new FormData();
     formData.append('file', file);
-    formData.append('upload_preset', this.config.uploadPreset);
+    formData.append('upload_preset', activeConfig.uploadPreset);
     formData.append('folder', folder);
     
     // Note: For unsigned uploads, only these parameters are allowed:
@@ -44,7 +89,7 @@ class CloudinaryService {
 
     try {
       const response = await fetch(
-        `https://api.cloudinary.com/v1_1/${this.config.cloudName}/image/upload`,
+        `https://api.cloudinary.com/v1_1/${activeConfig.cloudName}/image/upload`,
         {
           method: 'POST',
           body: formData,
@@ -55,21 +100,55 @@ class CloudinaryService {
 
       if (!response.ok) {
         const errorText = await response.text();
+        let errorJson: any = {};
+        
+        try {
+          errorJson = JSON.parse(errorText);
+        } catch {
+          // Not JSON, use text as is
+        }
+        
+        // Debug logging in development
+        if (import.meta.env.DEV) {
+          console.error('[Cloudinary Upload Error]', {
+            status: response.status,
+            statusText: response.statusText,
+            accountType: isUsingSecondary ? 'Secondary' : 'Primary',
+            cloudName: activeConfig.cloudName,
+            uploadPreset: activeConfig.uploadPreset,
+            errorText: errorText,
+            errorJson: errorJson
+          });
+        }
         
         // Check for specific error messages
-        if (errorText.includes('Upload preset must be specified')) {
-          throw new Error('Upload preset not found. Please check your Cloudinary configuration.');
+        if (errorText.includes('Upload preset must be specified') || errorJson?.error?.message?.includes('preset')) {
+          const accountType = isUsingSecondary ? 'Secondary' : 'Primary';
+          throw new Error(`${accountType} Cloudinary upload preset "${activeConfig.uploadPreset}" not found. Please verify the preset name in your Cloudinary dashboard and environment variables.`);
         }
         
-        if (errorText.includes('Invalid upload preset')) {
-          throw new Error('Upload preset is invalid. Please ensure it is set to "Unsigned" mode in your Cloudinary dashboard.');
+        if (errorText.includes('Invalid upload preset') || errorJson?.error?.message?.includes('Invalid')) {
+          const accountType = isUsingSecondary ? 'Secondary' : 'Primary';
+          throw new Error(`${accountType} Cloudinary upload preset "${activeConfig.uploadPreset}" is invalid. Please ensure it exists and is set to "Unsigned" mode in your Cloudinary dashboard.`);
         }
         
-        if (errorText.includes('unsigned upload')) {
-          throw new Error('Upload preset must be configured as "Unsigned" mode. Please check your Cloudinary dashboard settings.');
+        if (errorText.includes('unsigned upload') || errorJson?.error?.message?.includes('unsigned')) {
+          const accountType = isUsingSecondary ? 'Secondary' : 'Primary';
+          throw new Error(`${accountType} Cloudinary upload preset "${activeConfig.uploadPreset}" must be configured as "Unsigned" mode. Go to Settings → Upload → Upload presets and set signing mode to "Unsigned".`);
         }
         
-        throw new Error(`Upload failed: ${response.statusText} - ${errorText}`);
+        if (errorText.includes('Unknown API key') || errorText.includes('Unauthorized') || response.status === 401 || response.status === 403) {
+          if (isUsingSecondary) {
+            const errorMsg = errorJson?.error?.message || errorText;
+            throw new Error(`Secondary Cloudinary account error: ${errorMsg}. Please verify:\n1. Cloud Name: ${activeConfig.cloudName}\n2. Upload Preset: ${activeConfig.uploadPreset}\n3. Preset is set to "Unsigned" mode\n4. Environment variables are loaded (restart dev server after adding them)`);
+          } else {
+            throw new Error('Primary Cloudinary API key is invalid. Please check your environment variables.');
+          }
+        }
+        
+        const accountType = isUsingSecondary ? 'Secondary' : 'Primary';
+        const errorMsg = errorJson?.error?.message || errorText;
+        throw new Error(`${accountType} Cloudinary upload failed (${response.status}): ${errorMsg}`);
       }
 
       const result = await response.json();
@@ -100,17 +179,19 @@ class CloudinaryService {
     }
   }
 
-  async uploadMultipleImages(files: File[], folder: string = 'ro-service'): Promise<CloudinaryUploadResult[]> {
-    const uploadPromises = files.map(file => this.uploadImage(file, folder));
+  async uploadMultipleImages(files: File[], folder: string = 'ro-service', useSecondary: boolean = false): Promise<CloudinaryUploadResult[]> {
+    const uploadPromises = files.map(file => this.uploadImage(file, folder, useSecondary));
     return Promise.all(uploadPromises);
   }
 
-  getImageUrl(publicId: string, transformations?: string): string {
-    if (!this.config.cloudName) {
+  getImageUrl(publicId: string, transformations?: string, useSecondary: boolean = false): string {
+    const activeConfig = useSecondary && this.secondaryConfig ? this.secondaryConfig : this.config;
+    
+    if (!activeConfig.cloudName) {
       throw new Error('Cloudinary cloud name is not configured');
     }
 
-    const baseUrl = `https://res.cloudinary.com/${this.config.cloudName}/image/upload`;
+    const baseUrl = `https://res.cloudinary.com/${activeConfig.cloudName}/image/upload`;
     const transformString = transformations ? `/${transformations}` : '';
     
     return `${baseUrl}${transformString}/${publicId}`;
@@ -123,8 +204,9 @@ class CloudinaryService {
     height?: number;
     quality?: 'auto' | number;
     format?: 'auto' | 'webp' | 'jpg' | 'png';
+    useSecondary?: boolean;
   } = {}): string {
-    const { width, height, quality = 'auto', format = 'auto' } = options;
+    const { width, height, quality = 'auto', format = 'auto', useSecondary = false } = options;
     
     const transformations = [];
     if (width) transformations.push(`w_${width}`);
@@ -132,7 +214,7 @@ class CloudinaryService {
     if (quality) transformations.push(`q_${quality}`);
     if (format) transformations.push(`f_${format}`);
     
-    return this.getImageUrl(publicId, transformations.join(','));
+    return this.getImageUrl(publicId, transformations.join(','), useSecondary);
   }
 
   // Test Cloudinary configuration
@@ -172,15 +254,17 @@ class CloudinaryService {
   }
 
   // Delete image from Cloudinary
-  async deleteImage(publicId: string): Promise<boolean> {
-    if (!this.config.apiKey) {
+  async deleteImage(publicId: string, useSecondary: boolean = false): Promise<boolean> {
+    const activeConfig = useSecondary && this.secondaryConfig ? this.secondaryConfig : this.config;
+    
+    if (!activeConfig.apiKey) {
       console.warn('Cloudinary API key not configured. Cannot delete image.');
       return false;
     }
 
     try {
       const response = await fetch(
-        `https://api.cloudinary.com/v1_1/${this.config.cloudName}/image/destroy`,
+        `https://api.cloudinary.com/v1_1/${activeConfig.cloudName}/image/destroy`,
         {
           method: 'POST',
           headers: {
@@ -188,7 +272,7 @@ class CloudinaryService {
           },
           body: JSON.stringify({
             public_id: publicId,
-            api_key: this.config.apiKey,
+            api_key: activeConfig.apiKey,
             timestamp: Math.round(new Date().getTime() / 1000),
           }),
         }
@@ -199,6 +283,11 @@ class CloudinaryService {
       console.error('Error deleting image:', error);
       return false;
     }
+  }
+
+  // Check if secondary account is available
+  hasSecondaryAccount(): boolean {
+    return this.secondaryConfig !== null;
   }
 }
 

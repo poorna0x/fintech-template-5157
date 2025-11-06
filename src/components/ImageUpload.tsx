@@ -16,6 +16,8 @@ interface ImageUploadProps {
   maxWidth?: number;
   quality?: number;
   aggressiveCompression?: boolean; // For documents/bills that don't need high quality
+  // Use secondary Cloudinary account for optimized/temporary images
+  useSecondaryAccount?: boolean;
 }
 
 interface UploadedImage {
@@ -35,6 +37,7 @@ const ImageUpload: React.FC<ImageUploadProps> = ({
   maxWidth = 1280,
   quality,
   aggressiveCompression = false,
+  useSecondaryAccount = false,
 }) => {
   const [uploadedImages, setUploadedImages] = useState<UploadedImage[]>([]);
   const [isUploading, setIsUploading] = useState(false);
@@ -87,14 +90,20 @@ const ImageUpload: React.FC<ImageUploadProps> = ({
           let compressionQuality: number;
           
           if (aggressiveCompression) {
-            // For bills/documents - more aggressive compression
-            compressionWidth = 1024; // Smaller width for documents
-            if (fileSizeMB > 2) {
-              compressionQuality = quality || 0.4; // Very aggressive for large files
-            } else if (fileSizeMB > 1) {
-              compressionQuality = quality || 0.5; // Aggressive
+            // For bills/documents/payment receipts - more aggressive compression
+            // If quality is explicitly set very low (like 0.3), use it directly
+            if (quality && quality < 0.4) {
+              compressionWidth = 800; // Even smaller for very low quality
+              compressionQuality = quality;
             } else {
-              compressionQuality = quality || 0.6; // Moderate
+              compressionWidth = 1024; // Smaller width for documents
+              if (fileSizeMB > 2) {
+                compressionQuality = quality || 0.4; // Very aggressive for large files
+              } else if (fileSizeMB > 1) {
+                compressionQuality = quality || 0.5; // Aggressive
+              } else {
+                compressionQuality = quality || 0.6; // Moderate
+              }
             }
           } else {
             // For regular photos - balanced compression
@@ -114,7 +123,7 @@ const ImageUpload: React.FC<ImageUploadProps> = ({
 
           // Upload to Cloudinary with progress tracking
           // Note: Cloudinary will apply additional optimizations during upload
-          const uploadResult = await cloudinaryService.uploadImage(compressedFile, folder);
+          const uploadResult = await cloudinaryService.uploadImage(compressedFile, folder, useSecondaryAccount);
           
           // Log compression stats (for debugging)
           const originalSize = (file.size / 1024).toFixed(2);
