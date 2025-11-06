@@ -12,6 +12,10 @@ interface ImageUploadProps {
   title?: string;
   description?: string;
   className?: string;
+  // Compression options
+  maxWidth?: number;
+  quality?: number;
+  aggressiveCompression?: boolean; // For documents/bills that don't need high quality
 }
 
 interface UploadedImage {
@@ -28,6 +32,9 @@ const ImageUpload: React.FC<ImageUploadProps> = ({
   title = 'Upload Images',
   description = 'Upload images to help us understand your service needs',
   className = '',
+  maxWidth = 1280,
+  quality,
+  aggressiveCompression = false,
 }) => {
   const [uploadedImages, setUploadedImages] = useState<UploadedImage[]>([]);
   const [isUploading, setIsUploading] = useState(false);
@@ -71,18 +78,49 @@ const ImageUpload: React.FC<ImageUploadProps> = ({
         }
 
         try {
-          // Maximum compression for RO service images (quality not important)
+          // Optimize compression based on file size and settings
           let compressedFile: File;
-          if (file.size > 1 * 1024 * 1024) { // > 1MB
-            compressedFile = await compressImage(file, 1280, 0.5); // Very aggressive compression
+          const fileSizeMB = file.size / (1024 * 1024);
+          
+          // Determine compression settings
+          let compressionWidth = maxWidth;
+          let compressionQuality: number;
+          
+          if (aggressiveCompression) {
+            // For bills/documents - more aggressive compression
+            compressionWidth = 1024; // Smaller width for documents
+            if (fileSizeMB > 2) {
+              compressionQuality = quality || 0.4; // Very aggressive for large files
+            } else if (fileSizeMB > 1) {
+              compressionQuality = quality || 0.5; // Aggressive
+            } else {
+              compressionQuality = quality || 0.6; // Moderate
+            }
           } else {
-            compressedFile = await compressImage(file, 1280, 0.6); // Aggressive compression
+            // For regular photos - balanced compression
+            if (fileSizeMB > 2) {
+              compressionQuality = quality || 0.5; // Aggressive for large files
+            } else if (fileSizeMB > 1) {
+              compressionQuality = quality || 0.6; // Moderate
+            } else {
+              compressionQuality = quality || 0.7; // Good quality
+            }
           }
+          
+          // Use WebP format for better compression (especially for bills/documents)
+          compressedFile = await compressImage(file, compressionWidth, compressionQuality, true);
 
           setUploadProgress(prev => ({ ...prev, [fileId]: 50 }));
 
           // Upload to Cloudinary with progress tracking
+          // Note: Cloudinary will apply additional optimizations during upload
           const uploadResult = await cloudinaryService.uploadImage(compressedFile, folder);
+          
+          // Log compression stats (for debugging)
+          const originalSize = (file.size / 1024).toFixed(2);
+          const compressedSize = (compressedFile.size / 1024).toFixed(2);
+          const reduction = ((1 - compressedFile.size / file.size) * 100).toFixed(1);
+          console.log(`Image optimized: ${originalSize}KB → ${compressedSize}KB (${reduction}% reduction)`);
           
           setUploadProgress(prev => ({ ...prev, [fileId]: 100 }));
 

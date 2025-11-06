@@ -227,41 +227,71 @@ export const validateImageFile = (file: File): { valid: boolean; error?: string 
   return { valid: true };
 };
 
-export const compressImage = (file: File, maxWidth: number = 1280, quality: number = 0.6): Promise<File> => {
+export const compressImage = (file: File, maxWidth: number = 1280, quality: number = 0.6, useWebP: boolean = true): Promise<File> => {
   return new Promise((resolve, reject) => {
     const canvas = document.createElement('canvas');
     const ctx = canvas.getContext('2d');
     const img = new Image();
 
     img.onload = () => {
-      // Calculate new dimensions
+      // Calculate new dimensions while maintaining aspect ratio
       let { width, height } = img;
       if (width > maxWidth) {
         height = (height * maxWidth) / width;
         width = maxWidth;
       }
 
+      // Ensure dimensions are even numbers (better compression)
+      width = Math.floor(width / 2) * 2;
+      height = Math.floor(height / 2) * 2;
+
       canvas.width = width;
       canvas.height = height;
+
+      // Use high-quality image rendering
+      if (ctx) {
+        ctx.imageSmoothingEnabled = true;
+        ctx.imageSmoothingQuality = 'high';
+      }
 
       // Draw and compress
       ctx?.drawImage(img, 0, 0, width, height);
       
-      canvas.toBlob(
-        (blob) => {
-          if (blob) {
-            const compressedFile = new File([blob], file.name, {
-              type: file.type,
-              lastModified: Date.now(),
-            });
-            resolve(compressedFile);
-          } else {
-            reject(new Error('Failed to compress image'));
-          }
-        },
-        file.type,
-        quality
-      );
+      // Try WebP first for better compression, fallback to JPEG if not supported
+      const tryCompress = (format: string, outputQuality: number, isFallback: boolean = false) => {
+        canvas.toBlob(
+          (blob) => {
+            if (blob) {
+              // Generate filename with appropriate extension
+              const ext = format === 'image/webp' ? '.webp' : '.jpg';
+              const fileName = file.name.replace(/\.[^/.]+$/, '') + ext;
+              const compressedFile = new File([blob], fileName, {
+                type: format,
+                lastModified: Date.now(),
+              });
+              resolve(compressedFile);
+            } else if (!isFallback && useWebP && format === 'image/webp') {
+              // WebP failed, try JPEG as fallback
+              tryCompress('image/jpeg', quality, true);
+            } else {
+              reject(new Error('Failed to compress image'));
+            }
+          },
+          format,
+          outputQuality
+        );
+      };
+      
+      // Try WebP first if enabled (better compression)
+      if (useWebP) {
+        // WebP typically needs slightly higher quality for same visual result
+        const webpQuality = Math.min(quality + 0.1, 0.9);
+        tryCompress('image/webp', webpQuality);
+      } else {
+        // Use original format or JPEG
+        const outputFormat = file.type || 'image/jpeg';
+        tryCompress(outputFormat, quality);
+      }
     };
 
     img.onerror = () => reject(new Error('Failed to load image'));

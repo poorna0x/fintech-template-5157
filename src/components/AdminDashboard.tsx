@@ -62,6 +62,14 @@ import { sendNotification, createJobAssignedNotification, createJobCompletedNoti
 import BillModal from './BillModal';
 import AMCModal from './AMCModal';
 import QuotationModal from './QuotationModal';
+import ImageUpload from '@/components/ImageUpload';
+
+declare global {
+  interface Window {
+    google: typeof google;
+    initMap: () => void;
+  }
+}
 
 // Generate job number utility
 const generateJobNumber = (serviceType: 'RO' | 'SOFTENER'): string => {
@@ -196,10 +204,18 @@ const AdminDashboard = () => {
   const [visibleAddressSuggestions, setVisibleAddressSuggestions] = useState(false);
   const [addressDialogOpen, setAddressDialogOpen] = useState<{[customerId: string]: boolean}>({});
   
+  // Location and distance tracking
+  const [currentLocation, setCurrentLocation] = useState<{ lat: number; lng: number } | null>(null);
+  const [customerDistances, setCustomerDistances] = useState<Record<string, { distance: string; duration: string; isCalculating: boolean }>>({});
+  const [isGettingLocation, setIsGettingLocation] = useState(false);
+  
   // Auto-save refs
   const autoSaveTimerRef = useRef<NodeJS.Timeout | null>(null);
   const lastSavedFormDataRef = useRef<string>('');
   const hasUnsavedChangesRef = useRef(false);
+  
+  // Ref to store calculateDistanceAndTime function to avoid circular dependency
+  const calculateDistanceAndTimeRef = useRef<((origin: { lat: number; lng: number }, destination: { lat: number; lng: number }, customerId: string) => Promise<void>) | null>(null);
   
   const bangaloreAreas = [
     // Popular Areas
@@ -491,6 +507,15 @@ const AdminDashboard = () => {
   const [completeDialogOpen, setCompleteDialogOpen] = useState(false);
   const [selectedJobForComplete, setSelectedJobForComplete] = useState<Job | null>(null);
   const [completionNotes, setCompletionNotes] = useState('');
+  // Complete job multi-step form state
+  const [completeJobStep, setCompleteJobStep] = useState<1 | 2 | 3>(1);
+  const [billAmount, setBillAmount] = useState<string>('');
+  const [billPhotos, setBillPhotos] = useState<string[]>([]);
+  const [amcDateGiven, setAmcDateGiven] = useState<string>('');
+  const [amcEndDate, setAmcEndDate] = useState<string>('');
+  const [amcYears, setAmcYears] = useState<number>(1);
+  const [amcIncludesPrefilter, setAmcIncludesPrefilter] = useState<boolean>(false);
+  const [hasAMC, setHasAMC] = useState<boolean>(false);
   const [statusFilter, setStatusFilter] = useState<'ALL' | 'ONGOING' | 'PENDING' | 'ASSIGNED' | 'IN_PROGRESS' | 'COMPLETED' | 'CANCELLED' | 'RESCHEDULED'>('ALL');
   const [loadingCustomerJobs, setLoadingCustomerJobs] = useState<{[customerId: string]: boolean}>({});
   // Pagination state
@@ -1644,6 +1669,292 @@ const AdminDashboard = () => {
     }
   };
 
+  // Helper function to ensure Google Maps is loaded
+  const ensureGoogleMapsLoaded = useCallback((): Promise<void> => {
+    return new Promise((resolve, reject) => {
+      // Check if already loaded
+      if (window.google && window.google.maps && window.google.maps.DistanceMatrixService) {
+        resolve();
+        return;
+      }
+
+      const apiKey = import.meta.env.VITE_GOOGLE_MAPS_API_KEY;
+      if (!apiKey) {
+        reject(new Error('Google Maps API key not configured'));
+        return;
+      }
+
+      // Check if script is already being loaded
+      const existingScript = document.querySelector('script[src*="maps.googleapis.com"]');
+      if (existingScript) {
+        // Wait for it to load
+        const checkInterval = setInterval(() => {
+          if (window.google && window.google.maps && window.google.maps.DistanceMatrixService) {
+            clearInterval(checkInterval);
+            resolve();
+          }
+        }, 100);
+
+        // Timeout after 10 seconds
+        setTimeout(() => {
+          clearInterval(checkInterval);
+          if (window.google && window.google.maps && window.google.maps.DistanceMatrixService) {
+            resolve();
+          } else {
+            reject(new Error('Google Maps failed to load'));
+          }
+        }, 10000);
+        return;
+      }
+
+      // Load the script
+      const script = document.createElement('script');
+      script.src = `https://maps.googleapis.com/maps/api/js?key=${apiKey}&libraries=places&loading=async`;
+      script.async = true;
+      script.defer = true;
+      
+      script.onload = () => {
+        console.log('Google Maps script loaded, waiting for DistanceMatrixService...');
+        // Wait a bit for DistanceMatrixService to be available
+        let attempts = 0;
+        const maxAttempts = 50; // 5 seconds max
+        const checkInterval = setInterval(() => {
+          attempts++;
+          if (window.google && window.google.maps && window.google.maps.DistanceMatrixService) {
+            console.log('DistanceMatrixService is now available');
+            clearInterval(checkInterval);
+            resolve();
+          } else if (attempts >= maxAttempts) {
+            console.error('DistanceMatrixService not available after waiting');
+            clearInterval(checkInterval);
+            reject(new Error('DistanceMatrixService not available after loading'));
+          }
+        }, 100);
+      };
+      
+      script.onerror = () => {
+        reject(new Error('Failed to load Google Maps'));
+      };
+      
+      document.head.appendChild(script);
+    });
+  }, []);
+
+  // Calculate distance and time using Google Maps Distance Matrix API
+  const calculateDistanceAndTime = useCallback(async (
+    origin: { lat: number; lng: number },
+    destination: { lat: number; lng: number },
+    customerId: string
+  ) => {
+    console.log('Starting distance calculation:', { origin, destination, customerId });
+    
+    // Validate coordinates
+    if (!origin || !destination) {
+      console.error('Invalid origin or destination');
+      setCustomerDistances(prev => ({
+        ...prev,
+        [customerId]: { ...prev[customerId], isCalculating: false }
+      }));
+      toast.error('Invalid location coordinates');
+      return;
+    }
+
+    // Validate coordinate ranges
+    if (
+      !origin.lat || !origin.lng || 
+      !destination.lat || !destination.lng ||
+      origin.lat === 0 && origin.lng === 0 ||
+      destination.lat === 0 && destination.lng === 0 ||
+      origin.lat < -90 || origin.lat > 90 ||
+      origin.lng < -180 || origin.lng > 180 ||
+      destination.lat < -90 || destination.lat > 90 ||
+      destination.lng < -180 || destination.lng > 180
+    ) {
+      console.error('Invalid coordinate values:', { origin, destination });
+      setCustomerDistances(prev => ({
+        ...prev,
+        [customerId]: { ...prev[customerId], isCalculating: false }
+      }));
+      toast.error('Invalid location coordinates. Please check the customer location.');
+      return;
+    }
+    
+    // Set calculating state
+    setCustomerDistances(prev => ({
+      ...prev,
+      [customerId]: { ...prev[customerId], isCalculating: true }
+    }));
+
+    try {
+      // Ensure Google Maps is loaded
+      console.log('Ensuring Google Maps is loaded...');
+      await ensureGoogleMapsLoaded();
+      console.log('Google Maps loaded');
+
+      // Now safely use DistanceMatrixService
+      if (!window.google?.maps?.DistanceMatrixService) {
+        throw new Error('DistanceMatrixService not available');
+      }
+
+      console.log('Creating DistanceMatrixService...');
+      const distanceMatrix = new window.google.maps.DistanceMatrixService();
+      
+      console.log('Calling getDistanceMatrix...', { 
+        origin: { lat: origin.lat, lng: origin.lng }, 
+        destination: { lat: destination.lat, lng: destination.lng }
+      });
+      
+      // Set a timeout to prevent getting stuck
+      const timeoutId = setTimeout(() => {
+        console.error('Distance calculation timeout');
+        setCustomerDistances(prev => ({
+          ...prev,
+          [customerId]: { ...prev[customerId], isCalculating: false }
+        }));
+        toast.error('Distance calculation timed out. Please try again.');
+      }, 15000); // 15 second timeout
+      
+      // Try DRIVING first (motor bike/scooty), fallback to BICYCLING only if needed
+      const tryCalculateDistance = (travelMode: google.maps.TravelMode, modeName: string, isRetry: boolean = false) => {
+        const originCoords = { lat: Number(origin.lat), lng: Number(origin.lng) };
+        const destCoords = { lat: Number(destination.lat), lng: Number(destination.lng) };
+        
+        console.log(`Trying ${modeName} mode:`, { origin: originCoords, destination: destCoords });
+        
+        distanceMatrix.getDistanceMatrix(
+          {
+            origins: [originCoords],
+            destinations: [destCoords],
+            travelMode: travelMode,
+            unitSystem: window.google.maps.UnitSystem.METRIC,
+          },
+          (response, status) => {
+            console.log(`Distance Matrix callback (${modeName}):`, { status, response });
+            
+            if (status === window.google.maps.DistanceMatrixStatus.OK && response) {
+              const result = response.rows[0].elements[0];
+              console.log('Distance Matrix result:', result);
+              
+              if (result.status === window.google.maps.DistanceMatrixElementStatus.OK) {
+                clearTimeout(timeoutId);
+                // Convert distance to km if needed
+                let distanceText = result.distance.text;
+                if (result.distance.value < 1000) {
+                  distanceText = `${(result.distance.value / 1000).toFixed(2)} km`;
+                }
+
+                // If duration is not available, show only distance
+                const durationText = result.duration?.text || null;
+
+                console.log('Setting distance:', { distance: distanceText, duration: durationText, mode: modeName });
+                setCustomerDistances(prev => ({
+                  ...prev,
+                  [customerId]: {
+                    distance: distanceText,
+                    duration: durationText || '',
+                    isCalculating: false,
+                    mode: modeName
+                  }
+                }));
+              } else if (result.status === window.google.maps.DistanceMatrixElementStatus.ZERO_RESULTS) {
+                console.error(`Distance Matrix ZERO_RESULTS with ${modeName} mode:`, { origin: originCoords, destination: destCoords });
+                
+                // Try fallback: DRIVING -> BICYCLING (motor bike -> bicycle)
+                if (travelMode === window.google.maps.TravelMode.DRIVING && !isRetry) {
+                  console.log('DRIVING returned ZERO_RESULTS, trying BICYCLING mode as fallback...');
+                  tryCalculateDistance(window.google.maps.TravelMode.BICYCLING, 'BICYCLING', true);
+                } else {
+                  clearTimeout(timeoutId);
+                  setCustomerDistances(prev => ({
+                    ...prev,
+                    [customerId]: { ...prev[customerId], isCalculating: false }
+                  }));
+                  toast.error('No route found. Please check if the location coordinates are valid.');
+                }
+              } else {
+                clearTimeout(timeoutId);
+                console.error('Distance Matrix element status error:', result.status);
+                setCustomerDistances(prev => ({
+                  ...prev,
+                  [customerId]: { ...prev[customerId], isCalculating: false }
+                }));
+                toast.error(`Could not calculate distance: ${result.status}`);
+              }
+            } else {
+              clearTimeout(timeoutId);
+              console.error('Distance Matrix status error:', status);
+              setCustomerDistances(prev => ({
+                ...prev,
+                [customerId]: { ...prev[customerId], isCalculating: false }
+              }));
+              toast.error(`Distance calculation failed: ${status}`);
+            }
+          }
+        );
+      };
+      
+      // Start with DRIVING mode (motor bike/scooty), fallback to BICYCLING if needed
+      tryCalculateDistance(window.google.maps.TravelMode.DRIVING, 'DRIVING', false);
+    } catch (error) {
+      console.error('Error calculating distance:', error);
+      setCustomerDistances(prev => ({
+        ...prev,
+        [customerId]: { ...prev[customerId], isCalculating: false }
+      }));
+      toast.error(`Failed to calculate distance: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
+  }, [ensureGoogleMapsLoaded]);
+
+  // Store the function in ref whenever it changes
+  useEffect(() => {
+    calculateDistanceAndTimeRef.current = calculateDistanceAndTime;
+  }, [calculateDistanceAndTime]);
+
+  // Calculate distance when address dialog opens
+  useEffect(() => {
+    Object.keys(addressDialogOpen).forEach(customerId => {
+      if (addressDialogOpen[customerId] && currentLocation) {
+        const customer = customers.find(c => c.id === customerId);
+        if (customer) {
+          let customerLocation = extractCoordinates(customer.location);
+          console.log('Customer location extracted:', customerLocation, 'from:', customer.location);
+          
+          // If no coordinates from location, try to extract from Google Maps link
+          if (!customerLocation || customerLocation.latitude === 0 || customerLocation.longitude === 0) {
+            const googleLoc = (customer.location as any)?.googleLocation;
+            if (googleLoc && typeof googleLoc === 'string') {
+              const coordsFromLink = extractCoordinatesFromGoogleMapsLink(googleLoc);
+              if (coordsFromLink) {
+                customerLocation = coordsFromLink;
+                console.log('Extracted coordinates from Google Maps link:', customerLocation);
+              }
+            }
+          }
+          
+          if (customerLocation && 
+              customerLocation.latitude !== 0 && 
+              customerLocation.longitude !== 0 &&
+              customerLocation.latitude >= -90 && customerLocation.latitude <= 90 &&
+              customerLocation.longitude >= -180 && customerLocation.longitude <= 180) {
+            // Only calculate if not already calculated or calculating
+            if (!customerDistances[customerId] || (!customerDistances[customerId].isCalculating && !customerDistances[customerId].distance)) {
+              if (calculateDistanceAndTimeRef.current) {
+                console.log('Triggering distance calculation from useEffect');
+                calculateDistanceAndTimeRef.current(
+                  currentLocation,
+                  { lat: customerLocation.latitude, lng: customerLocation.longitude },
+                  customerId
+                );
+              }
+            }
+          } else {
+            console.warn('Invalid customer location:', customerLocation);
+          }
+        }
+      }
+    });
+  }, [addressDialogOpen, currentLocation, customers, customerDistances]);
+
   // Function to handle Google Maps link changes
   const handleGoogleMapsLinkChange = (value: string) => {
     setEditFormData(prev => ({
@@ -1683,6 +1994,63 @@ const AdminDashboard = () => {
       }));
     }
   };
+
+  // Get current location
+  const getCurrentLocation = useCallback(() => {
+    if (!navigator.geolocation) {
+      toast.error('Geolocation is not supported by your browser');
+      return;
+    }
+
+    setIsGettingLocation(true);
+    navigator.geolocation.getCurrentPosition(
+      (position) => {
+        const location = {
+          lat: position.coords.latitude,
+          lng: position.coords.longitude
+        };
+        setCurrentLocation(location);
+        setIsGettingLocation(false);
+        toast.success('Location captured! Calculating distances...');
+        
+        // Calculate distances for all customers with valid locations
+        customers.forEach(customer => {
+          const customerLocation = extractCoordinates(customer.location);
+          if (customerLocation && customerLocation.latitude !== 0 && customerLocation.longitude !== 0) {
+            if (calculateDistanceAndTimeRef.current) {
+              calculateDistanceAndTimeRef.current(
+                location, 
+                { lat: customerLocation.latitude, lng: customerLocation.longitude }, 
+                customer.id
+              );
+            }
+          }
+        });
+      },
+      (error) => {
+        setIsGettingLocation(false);
+        let errorMsg = 'Failed to get your location';
+        switch (error.code) {
+          case error.PERMISSION_DENIED:
+            errorMsg = 'Permission denied. Please allow location access.';
+            break;
+          case error.POSITION_UNAVAILABLE:
+            errorMsg = 'Location information unavailable.';
+            break;
+          case error.TIMEOUT:
+            errorMsg = 'Location request timed out.';
+            break;
+        }
+        toast.error(errorMsg);
+      },
+      {
+        enableHighAccuracy: true,
+        timeout: 10000,
+        maximumAge: 0,
+      }
+    );
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [customers]);
 
   const confirmDelete = (customer: Customer) => {
     setCustomerToDelete(customer);
@@ -3295,10 +3663,46 @@ const AdminDashboard = () => {
     }
   };
 
+  // Calculate AMC end date: agreement date + years - 1 day
+  const calculateAMCEndDate = (agreementDate: string, years: number) => {
+    if (!agreementDate) return;
+    const startDate = new Date(agreementDate);
+    const endDate = new Date(startDate);
+    endDate.setFullYear(endDate.getFullYear() + years);
+    // Subtract 1 day (AMC covers up to that date - 1 day)
+    endDate.setDate(endDate.getDate() - 1);
+    setAmcEndDate(endDate.toISOString().split('T')[0]);
+  };
+
   // Handle job completion
-  const handleCompleteJob = (job: Job) => {
-    setSelectedJobForComplete(job);
+  const handleCompleteJob = async (job: Job) => {
+    // Fetch full job data with customer if not already loaded
+    let jobWithCustomer = job;
+    if (!job.customer || !job.serviceType) {
+      try {
+        const { data: fullJob, error } = await db.jobs.getById(job.id);
+        if (!error && fullJob) {
+          jobWithCustomer = fullJob as Job;
+        }
+      } catch (error) {
+        console.error('Error fetching job details:', error);
+        // Continue with the job data we have
+      }
+    }
+    
+    setSelectedJobForComplete(jobWithCustomer);
     setCompletionNotes('');
+    setCompleteJobStep(1);
+    setBillAmount('');
+    setBillPhotos([]);
+    // Set default AMC date to today
+    const today = new Date().toISOString().split('T')[0];
+    setAmcDateGiven(today);
+    setAmcYears(1);
+    // Calculate end date with default 1 year
+    calculateAMCEndDate(today, 1);
+    setAmcIncludesPrefilter(false);
+    setHasAMC(false);
     setCompleteDialogOpen(true);
   };
 
@@ -3306,14 +3710,79 @@ const AdminDashboard = () => {
   const handleCompleteJobSubmit = async () => {
     if (!selectedJobForComplete) return;
 
+    // Validate bill amount on step 1
+    if (completeJobStep === 1) {
+      if (!billAmount || parseFloat(billAmount) <= 0) {
+        toast.error('Please enter a valid bill amount');
+        return;
+      }
+      // Move to step 2
+      setCompleteJobStep(2);
+      return;
+    }
+
+    // On step 2, move to step 3 if not skipping
+    if (completeJobStep === 2) {
+      setCompleteJobStep(3);
+      return;
+    }
+
+    // On step 3, submit the form
     try {
-      const { error } = await db.jobs.update(selectedJobForComplete.id, {
+      // Prepare update data
+      const updateData: any = {
         status: 'COMPLETED',
         end_time: new Date().toISOString(),
         completion_notes: completionNotes.trim(),
         completed_by: user?.id || 'admin',
-        completed_at: new Date().toISOString()
-      });
+        completed_at: new Date().toISOString(),
+        actual_cost: parseFloat(billAmount) || 0,
+        payment_amount: parseFloat(billAmount) || 0,
+      };
+
+      // Handle requirements - merge bill photos and AMC info
+      const currentRequirements = selectedJobForComplete.requirements || [];
+      let requirements: any[] = [];
+      
+      if (Array.isArray(currentRequirements)) {
+        requirements = [...currentRequirements];
+      } else if (typeof currentRequirements === 'string') {
+        try {
+          requirements = JSON.parse(currentRequirements);
+          if (!Array.isArray(requirements)) {
+            requirements = [];
+          }
+        } catch {
+          requirements = [];
+        }
+      }
+
+      // Remove existing bill_photos and amc_info entries
+      requirements = requirements.filter((req: any) => !req.bill_photos && !req.amc_info);
+
+      // Add bill photos if any
+      if (billPhotos.length > 0) {
+        requirements.push({ bill_photos: billPhotos });
+      }
+
+      // Add AMC info if provided
+      if (hasAMC && amcDateGiven && amcEndDate) {
+        requirements.push({ 
+          amc_info: {
+            date_given: amcDateGiven,
+            end_date: amcEndDate,
+            years: amcYears,
+            includes_prefilter: amcIncludesPrefilter
+          }
+        });
+      }
+
+      // Update requirements if we have any changes
+      if (billPhotos.length > 0 || (hasAMC && amcDateGiven && amcEndDate)) {
+        updateData.requirements = JSON.stringify(requirements);
+      }
+
+      const { error } = await db.jobs.update(selectedJobForComplete.id, updateData);
 
       if (error) {
         throw new Error(error.message);
@@ -3327,7 +3796,9 @@ const AdminDashboard = () => {
           end_time: new Date().toISOString(),
           completionNotes: completionNotes.trim(),
           completedBy: user?.id || 'admin',
-          completedAt: new Date().toISOString()
+          completedAt: new Date().toISOString(),
+          actual_cost: parseFloat(billAmount) || 0,
+          payment_amount: parseFloat(billAmount) || 0,
         } : job
       ));
 
@@ -3341,7 +3812,9 @@ const AdminDashboard = () => {
               end_time: new Date().toISOString(),
               completionNotes: completionNotes.trim(),
               completedBy: user?.id || 'admin',
-              completedAt: new Date().toISOString()
+              completedAt: new Date().toISOString(),
+              actual_cost: parseFloat(billAmount) || 0,
+              payment_amount: parseFloat(billAmount) || 0,
             } : job
           );
         });
@@ -3352,6 +3825,14 @@ const AdminDashboard = () => {
       setCompleteDialogOpen(false);
       setSelectedJobForComplete(null);
       setCompletionNotes('');
+      setCompleteJobStep(1);
+      setBillAmount('');
+      setBillPhotos([]);
+      setAmcDateGiven(new Date().toISOString().split('T')[0]);
+      setAmcEndDate('');
+      setAmcYears(2);
+      setAmcIncludesPrefilter(false);
+      setHasAMC(false);
     } catch (error) {
       toast.error('Failed to complete job');
     }
@@ -4371,7 +4852,7 @@ const AdminDashboard = () => {
                         <div className="w-8 h-8 sm:w-10 sm:h-10 bg-gray-100 rounded-lg flex items-center justify-center flex-shrink-0">
                           <button
                             onClick={() => {
-                              // Use googleLocation if available (including short URLs)
+                              // Open Google Maps
                               const googleLoc = (customer.location as any)?.googleLocation;
                               if (googleLoc && typeof googleLoc === 'string' && 
                                   (googleLoc.includes('google.com/maps') || googleLoc.includes('maps.app.goo.gl') || googleLoc.includes('goo.gl/maps')) &&
@@ -4393,23 +4874,225 @@ const AdminDashboard = () => {
                           </button>
                         </div>
                         <div className="flex-1 min-w-0">
-                          <div className="text-sm font-semibold text-gray-900 flex items-center gap-2">
+                          <div className="text-sm font-semibold text-gray-900">
                             Location
                           </div>
-                          <div className="text-xs text-gray-500">
+                          <div className="text-xs">
                             {(customer.address as any)?.visible_address && String((customer.address as any).visible_address).trim() ? (
                               <button
-                                onClick={(e) => {
+                                onClick={async (e) => {
                                   e.stopPropagation();
+                                  
+                                  // First, get current location if not already set
+                                  if (!currentLocation) {
+                                    if (!navigator.geolocation) {
+                                      toast.error('Geolocation is not supported by your browser');
+                                      return;
+                                    }
+                                    
+                                    setIsGettingLocation(true);
+                                    navigator.geolocation.getCurrentPosition(
+                                      (position) => {
+                                        const location = {
+                                          lat: position.coords.latitude,
+                                          lng: position.coords.longitude
+                                        };
+                                        setCurrentLocation(location);
+                                        setIsGettingLocation(false);
+                                        
+                                        // Calculate distance for this customer
+                                        let customerLocation = extractCoordinates(customer.location);
+                                        
+                                        // If no coordinates, try to extract from Google Maps link
+                                        if (!customerLocation || customerLocation.latitude === 0 || customerLocation.longitude === 0) {
+                                          const googleLoc = (customer.location as any)?.googleLocation;
+                                          if (googleLoc && typeof googleLoc === 'string') {
+                                            const coordsFromLink = extractCoordinatesFromGoogleMapsLink(googleLoc);
+                                            if (coordsFromLink) {
+                                              customerLocation = coordsFromLink;
+                                            }
+                                          }
+                                        }
+                                        
+                                        if (customerLocation && 
+                                            customerLocation.latitude !== 0 && 
+                                            customerLocation.longitude !== 0 &&
+                                            customerLocation.latitude >= -90 && customerLocation.latitude <= 90 &&
+                                            customerLocation.longitude >= -180 && customerLocation.longitude <= 180) {
+                                          if (calculateDistanceAndTimeRef.current) {
+                                            calculateDistanceAndTimeRef.current(
+                                              location,
+                                              { lat: customerLocation.latitude, lng: customerLocation.longitude },
+                                              customer.id
+                                            );
+                                          }
+                                        } else {
+                                          toast.error('Customer location coordinates are invalid');
+                                        }
+                                      },
+                                      (error) => {
+                                        setIsGettingLocation(false);
+                                        toast.error('Failed to get your location');
+                                      },
+                                      {
+                                        enableHighAccuracy: true,
+                                        timeout: 10000,
+                                        maximumAge: 0,
+                                      }
+                                    );
+                                  } else {
+                                    // Calculate distance if location is already set
+                                    let customerLocation = extractCoordinates(customer.location);
+                                    
+                                    // If no coordinates, try to extract from Google Maps link
+                                    if (!customerLocation || customerLocation.latitude === 0 || customerLocation.longitude === 0) {
+                                      const googleLoc = (customer.location as any)?.googleLocation;
+                                      if (googleLoc && typeof googleLoc === 'string') {
+                                        const coordsFromLink = extractCoordinatesFromGoogleMapsLink(googleLoc);
+                                        if (coordsFromLink) {
+                                          customerLocation = coordsFromLink;
+                                        }
+                                      }
+                                    }
+                                    
+                                    if (customerLocation && 
+                                        customerLocation.latitude !== 0 && 
+                                        customerLocation.longitude !== 0 &&
+                                        customerLocation.latitude >= -90 && customerLocation.latitude <= 90 &&
+                                        customerLocation.longitude >= -180 && customerLocation.longitude <= 180) {
+                                      if (calculateDistanceAndTimeRef.current) {
+                                        calculateDistanceAndTimeRef.current(
+                                          currentLocation,
+                                          { lat: customerLocation.latitude, lng: customerLocation.longitude },
+                                          customer.id
+                                        );
+                                      }
+                                    } else {
+                                      toast.error('Customer location coordinates are invalid');
+                                    }
+                                  }
+                                  
+                                  // Also open address dialog
                                   setAddressDialogOpen(prev => ({ ...prev, [customer.id]: true }));
                                 }}
-                                className="text-left hover:text-gray-700 transition-colors cursor-pointer underline-offset-2 hover:underline"
-                                title="Click to view full address"
+                                className="text-left text-black hover:text-gray-700 hover:underline transition-colors cursor-pointer font-medium w-full text-left"
+                                title="Click to view full address and calculate distance"
                               >
                                 {String((customer.address as any).visible_address).trim()}
                               </button>
                             ) : (
-                              <span>Location</span>
+                              <button
+                                onClick={async (e) => {
+                                  e.stopPropagation();
+                                  
+                                  // First, get current location if not already set
+                                  if (!currentLocation) {
+                                    if (!navigator.geolocation) {
+                                      toast.error('Geolocation is not supported by your browser');
+                                      return;
+                                    }
+                                    
+                                    setIsGettingLocation(true);
+                                    navigator.geolocation.getCurrentPosition(
+                                      (position) => {
+                                        const location = {
+                                          lat: position.coords.latitude,
+                                          lng: position.coords.longitude
+                                        };
+                                        setCurrentLocation(location);
+                                        setIsGettingLocation(false);
+                                        
+                                        // Calculate distance for this customer
+                                        let customerLocation = extractCoordinates(customer.location);
+                                        
+                                        // If no coordinates, try to extract from Google Maps link
+                                        if (!customerLocation || customerLocation.latitude === 0 || customerLocation.longitude === 0) {
+                                          const googleLoc = (customer.location as any)?.googleLocation;
+                                          if (googleLoc && typeof googleLoc === 'string') {
+                                            const coordsFromLink = extractCoordinatesFromGoogleMapsLink(googleLoc);
+                                            if (coordsFromLink) {
+                                              customerLocation = coordsFromLink;
+                                            }
+                                          }
+                                        }
+                                        
+                                        if (customerLocation && 
+                                            customerLocation.latitude !== 0 && 
+                                            customerLocation.longitude !== 0 &&
+                                            customerLocation.latitude >= -90 && customerLocation.latitude <= 90 &&
+                                            customerLocation.longitude >= -180 && customerLocation.longitude <= 180) {
+                                          if (calculateDistanceAndTimeRef.current) {
+                                            calculateDistanceAndTimeRef.current(
+                                              location,
+                                              { lat: customerLocation.latitude, lng: customerLocation.longitude },
+                                              customer.id
+                                            );
+                                          }
+                                        } else {
+                                          toast.error('Customer location coordinates are invalid');
+                                        }
+                                      },
+                                      (error) => {
+                                        setIsGettingLocation(false);
+                                        toast.error('Failed to get your location');
+                                      },
+                                      {
+                                        enableHighAccuracy: true,
+                                        timeout: 10000,
+                                        maximumAge: 0,
+                                      }
+                                    );
+                                  } else {
+                                    // Calculate distance if location is already set
+                                    let customerLocation = extractCoordinates(customer.location);
+                                    
+                                    // If no coordinates, try to extract from Google Maps link
+                                    if (!customerLocation || customerLocation.latitude === 0 || customerLocation.longitude === 0) {
+                                      const googleLoc = (customer.location as any)?.googleLocation;
+                                      if (googleLoc && typeof googleLoc === 'string') {
+                                        const coordsFromLink = extractCoordinatesFromGoogleMapsLink(googleLoc);
+                                        if (coordsFromLink) {
+                                          customerLocation = coordsFromLink;
+                                        }
+                                      }
+                                    }
+                                    
+                                    if (customerLocation && 
+                                        customerLocation.latitude !== 0 && 
+                                        customerLocation.longitude !== 0 &&
+                                        customerLocation.latitude >= -90 && customerLocation.latitude <= 90 &&
+                                        customerLocation.longitude >= -180 && customerLocation.longitude <= 180) {
+                                      if (calculateDistanceAndTimeRef.current) {
+                                        calculateDistanceAndTimeRef.current(
+                                          currentLocation,
+                                          { lat: customerLocation.latitude, lng: customerLocation.longitude },
+                                          customer.id
+                                        );
+                                      }
+                                    } else {
+                                      toast.error('Customer location coordinates are invalid');
+                                    }
+                                  }
+                                  
+                                  // Also open address dialog
+                                  setAddressDialogOpen(prev => ({ ...prev, [customer.id]: true }));
+                                }}
+                                className="text-left text-black hover:text-gray-700 hover:underline transition-colors cursor-pointer font-medium w-full text-left"
+                                title="Click to view full address and calculate distance"
+                              >
+                                Location
+                              </button>
+                            )}
+                            {customerDistances[customer.id] && (
+                              <div className="mt-1 text-xs font-medium text-black">
+                                {customerDistances[customer.id].isCalculating ? (
+                                  <span className="text-gray-400">Calculating...</span>
+                                ) : (
+                                  <>
+                                    {customerDistances[customer.id].distance} • {customerDistances[customer.id].duration}
+                                  </>
+                                )}
+                              </div>
                             )}
                           </div>
                         </div>
@@ -4828,6 +5511,13 @@ const AdminDashboard = () => {
                                       </Button>
                                     </DropdownMenuTrigger>
                                     <DropdownMenuContent align="end" className="w-48">
+                                      {/* Complete Job - First option for all active statuses */}
+                                      {(job.status === 'PENDING' || job.status === 'ASSIGNED' || job.status === 'IN_PROGRESS' || job.status === 'FOLLOW_UP' || job.status === 'RESCHEDULED') && (
+                                        <DropdownMenuItem onClick={() => handleCompleteJob(job)}>
+                                          <CheckCircle2 className="mr-2 h-4 w-4" />
+                                          Complete Job
+                                        </DropdownMenuItem>
+                                      )}
                                       {job.status === 'PENDING' && (
                                         <DropdownMenuItem onClick={() => handleAssignJob(job)}>
                                           <Wrench className="mr-2 h-4 w-4" />
@@ -4838,12 +5528,6 @@ const AdminDashboard = () => {
                                         <DropdownMenuItem onClick={() => handleJobStatusUpdate(job.id, 'IN_PROGRESS')}>
                                           <Clock className="mr-2 h-4 w-4" />
                                           Start Job
-                                        </DropdownMenuItem>
-                                      )}
-                                      {job.status === 'IN_PROGRESS' && (
-                                        <DropdownMenuItem onClick={() => handleJobStatusUpdate(job.id, 'COMPLETED')}>
-                                          <CheckCircle className="mr-2 h-4 w-4" />
-                                          Complete Job
                                         </DropdownMenuItem>
                                       )}
                                       {(job.status === 'PENDING' || job.status === 'ASSIGNED' || job.status === 'IN_PROGRESS') && (
@@ -4862,12 +5546,6 @@ const AdminDashboard = () => {
                                         <DropdownMenuItem onClick={() => handleScheduleFollowUp(job)}>
                                           <CalendarPlus className="mr-2 h-4 w-4" />
                                           Schedule Follow-up
-                                        </DropdownMenuItem>
-                                      )}
-                                      {job.status === 'IN_PROGRESS' && (
-                                        <DropdownMenuItem onClick={() => handleCompleteJob(job)}>
-                                          <CheckCircle2 className="mr-2 h-4 w-4" />
-                                          Mark as Completed
                                         </DropdownMenuItem>
                                       )}
                                       <DropdownMenuItem 
@@ -7200,59 +7878,261 @@ const AdminDashboard = () => {
       </Dialog>
 
       {/* Complete Job Dialog */}
-      <Dialog open={completeDialogOpen} onOpenChange={setCompleteDialogOpen}>
-        <DialogContent className="max-w-md">
-          <DialogHeader>
+      <Dialog open={completeDialogOpen} onOpenChange={(open) => {
+        if (!open) {
+          setCompleteDialogOpen(false);
+          setSelectedJobForComplete(null);
+          setCompletionNotes('');
+          setCompleteJobStep(1);
+          setBillAmount('');
+          setBillPhotos([]);
+          const today = new Date().toISOString().split('T')[0];
+          setAmcDateGiven(today);
+          setAmcEndDate('');
+          setAmcYears(1);
+          setAmcIncludesPrefilter(false);
+          setHasAMC(false);
+        }
+      }}>
+        <DialogContent className="w-[95vw] sm:w-[500px] max-w-[500px] h-[85vh] sm:h-[600px] max-h-[85vh] flex flex-col p-0">
+          <DialogHeader className="px-6 pt-6 pb-4 flex-shrink-0 border-b">
             <DialogTitle>Complete Job</DialogTitle>
             <DialogDescription>
-              Mark this job as completed and add any completion notes.
+              {completeJobStep === 1 && 'Enter the bill amount for this job'}
+              {completeJobStep === 2 && 'Upload bill photo (optional)'}
+              {completeJobStep === 3 && 'Add AMC information (optional)'}
             </DialogDescription>
           </DialogHeader>
           
-          {selectedJobForComplete && (
-            <div className="p-3 bg-gray-50 rounded-lg mb-4">
-              <div className="text-sm font-medium text-gray-900">
-                Job: {(selectedJobForComplete as any).job_number || selectedJobForComplete.jobNumber}
+          {/* Scrollable Content */}
+          <div className="flex-1 overflow-y-auto px-6 py-4">
+            {selectedJobForComplete && (
+              <div className="p-3 bg-gray-50 rounded-lg mb-4">
+                <div className="text-sm font-medium text-gray-900">
+                  Job: {(selectedJobForComplete as any).job_number || selectedJobForComplete.jobNumber}
+                </div>
+                <div className="text-sm text-gray-600">
+                  {(selectedJobForComplete.serviceType || (selectedJobForComplete as any).service_type || 'N/A')} - {(selectedJobForComplete.serviceSubType || (selectedJobForComplete as any).service_sub_type || 'N/A')}
+                </div>
+                <div className="text-sm text-gray-600">
+                  Customer: {
+                    selectedJobForComplete.customer?.fullName || 
+                    (selectedJobForComplete.customer as any)?.full_name ||
+                    (selectedJobForComplete.customer as any)?.name ||
+                    'Unknown'
+                  }
+                </div>
               </div>
-              <div className="text-sm text-gray-600">
-                {selectedJobForComplete.serviceType} - {selectedJobForComplete.serviceSubType}
-              </div>
-              <div className="text-sm text-gray-600">
-                Customer: {selectedJobForComplete.customer?.fullName || 'Unknown'}
-              </div>
-            </div>
-          )}
+            )}
 
-          <div className="space-y-4">
-            <div>
-              <Label htmlFor="completion-notes">Completion Notes (Optional)</Label>
-              <Textarea
-                id="completion-notes"
-                placeholder="Add any notes about the job completion..."
-                value={completionNotes}
-                onChange={(e) => setCompletionNotes(e.target.value)}
-                rows={3}
-                className="mt-1"
-              />
+            {/* Step Indicator */}
+            <div className="flex items-center justify-center mb-6">
+              <div className="flex items-center space-x-2">
+                <div className={`flex items-center justify-center w-8 h-8 rounded-full ${completeJobStep >= 1 ? 'bg-green-600 text-white' : 'bg-gray-200 text-gray-600'}`}>
+                  1
+                </div>
+                <div className={`w-12 sm:w-16 h-1 ${completeJobStep >= 2 ? 'bg-green-600' : 'bg-gray-200'}`}></div>
+                <div className={`flex items-center justify-center w-8 h-8 rounded-full ${completeJobStep >= 2 ? 'bg-green-600 text-white' : 'bg-gray-200 text-gray-600'}`}>
+                  2
+                </div>
+                <div className={`w-12 sm:w-16 h-1 ${completeJobStep >= 3 ? 'bg-green-600' : 'bg-gray-200'}`}></div>
+                <div className={`flex items-center justify-center w-8 h-8 rounded-full ${completeJobStep >= 3 ? 'bg-green-600 text-white' : 'bg-gray-200 text-gray-600'}`}>
+                  3
+                </div>
+              </div>
             </div>
+
+            {/* Step 1: Bill Amount */}
+            {completeJobStep === 1 && (
+              <div className="space-y-4">
+                <div>
+                  <Label htmlFor="bill-amount">Bill Amount *</Label>
+                  <Input
+                    id="bill-amount"
+                    type="number"
+                    placeholder="Enter bill amount"
+                    value={billAmount}
+                    onChange={(e) => setBillAmount(e.target.value)}
+                    className="mt-1"
+                    min="0"
+                    step="0.01"
+                  />
+                </div>
+                <div>
+                  <Label htmlFor="completion-notes">Completion Notes (Optional)</Label>
+                  <Textarea
+                    id="completion-notes"
+                    placeholder="Add any notes about the job completion..."
+                    value={completionNotes}
+                    onChange={(e) => setCompletionNotes(e.target.value)}
+                    rows={3}
+                    className="mt-1"
+                  />
+                </div>
+              </div>
+            )}
+
+            {/* Step 2: Bill Photo */}
+            {completeJobStep === 2 && (
+              <div className="space-y-4">
+                <div>
+                  <Label>Bill Photo (Optional)</Label>
+                  <p className="text-sm text-gray-500 mb-2">Upload a photo of the bill. You can skip this step.</p>
+                  <ImageUpload
+                    onImagesChange={(images) => setBillPhotos(images)}
+                    maxImages={5}
+                    folder="bills"
+                    title="Upload Bill Photo"
+                    description="Upload photo of the bill (automatically optimized for smaller file size)"
+                    maxWidth={1024}
+                    quality={0.5}
+                    aggressiveCompression={true}
+                  />
+                </div>
+              </div>
+            )}
+
+            {/* Step 3: AMC Info */}
+            {completeJobStep === 3 && (
+              <div className="space-y-4">
+                <div className="flex items-center space-x-2">
+                  <input
+                    type="checkbox"
+                    id="has-amc"
+                    checked={hasAMC}
+                    onChange={(e) => {
+                      setHasAMC(e.target.checked);
+                      // Reset to default when enabling AMC
+                      if (e.target.checked) {
+                        const today = new Date().toISOString().split('T')[0];
+                        setAmcDateGiven(today);
+                        setAmcYears(1);
+                        calculateAMCEndDate(today, 1);
+                      }
+                    }}
+                    className="w-4 h-4"
+                  />
+                  <Label htmlFor="has-amc" className="cursor-pointer">This job includes AMC</Label>
+                </div>
+
+                {hasAMC && (
+                  <div className="space-y-4 pl-6 border-l-2 border-gray-200">
+                    <div>
+                      <Label htmlFor="amc-date-given">AMC Date of Agreement *</Label>
+                      <Input
+                        id="amc-date-given"
+                        type="date"
+                        value={amcDateGiven}
+                        onChange={(e) => {
+                          setAmcDateGiven(e.target.value);
+                          if (e.target.value) {
+                            calculateAMCEndDate(e.target.value, amcYears);
+                          }
+                        }}
+                        className="mt-1"
+                        max={new Date().toISOString().split('T')[0]}
+                      />
+                    </div>
+                    <div>
+                      <Label htmlFor="amc-years">Number of Years *</Label>
+                      <Select value={amcYears.toString()} onValueChange={(value) => {
+                        const years = parseInt(value);
+                        setAmcYears(years);
+                        if (amcDateGiven) {
+                          calculateAMCEndDate(amcDateGiven, years);
+                        }
+                      }}>
+                        <SelectTrigger className="mt-1">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="1">1 Year</SelectItem>
+                          <SelectItem value="2">2 Years</SelectItem>
+                          <SelectItem value="3">3 Years</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div>
+                      <Label htmlFor="amc-end-date">AMC End Date *</Label>
+                      <Input
+                        id="amc-end-date"
+                        type="date"
+                        value={amcEndDate}
+                        onChange={(e) => setAmcEndDate(e.target.value)}
+                        className="mt-1"
+                        min={amcDateGiven}
+                        readOnly
+                      />
+                    </div>
+                    <div className="flex items-center space-x-2">
+                      <input
+                        type="checkbox"
+                        id="amc-prefilter"
+                        checked={amcIncludesPrefilter}
+                        onChange={(e) => setAmcIncludesPrefilter(e.target.checked)}
+                        className="w-4 h-4"
+                      />
+                      <Label htmlFor="amc-prefilter" className="cursor-pointer">Includes Prefilter</Label>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
           </div>
 
-          <DialogFooter>
+          <DialogFooter className="px-6 py-4 flex-shrink-0 border-t">
             <Button
               variant="outline"
               onClick={() => {
-                setCompleteDialogOpen(false);
-                setSelectedJobForComplete(null);
-                setCompletionNotes('');
+                if (completeJobStep > 1) {
+                  setCompleteJobStep((prev) => (prev - 1) as 1 | 2 | 3);
+                } else {
+                  setCompleteDialogOpen(false);
+                  setSelectedJobForComplete(null);
+                  setCompletionNotes('');
+                  setCompleteJobStep(1);
+                  setBillAmount('');
+                  setBillPhotos([]);
+                  const today = new Date().toISOString().split('T')[0];
+                  setAmcDateGiven(today);
+                  setAmcEndDate('');
+                  setAmcYears(1);
+                  setAmcIncludesPrefilter(false);
+                  setHasAMC(false);
+                }
               }}
             >
-              Cancel
+              {completeJobStep > 1 ? 'Back' : 'Cancel'}
             </Button>
+            {completeJobStep === 2 && (
+              <Button
+                variant="outline"
+                onClick={() => {
+                  setCompleteJobStep(3);
+                }}
+              >
+                Skip
+              </Button>
+            )}
+            {completeJobStep === 3 && hasAMC && (!amcDateGiven || !amcEndDate) && (
+              <Button
+                variant="outline"
+                onClick={() => {
+                  setHasAMC(false);
+                  setAmcDateGiven('');
+                  setAmcEndDate('');
+                  setAmcIncludesPrefilter(false);
+                }}
+              >
+                Skip AMC
+              </Button>
+            )}
             <Button
               onClick={handleCompleteJobSubmit}
               className="bg-green-600 hover:bg-green-700"
+              disabled={completeJobStep === 3 && hasAMC && (!amcDateGiven || !amcEndDate)}
             >
-              Complete Job
+              {completeJobStep === 3 ? 'Complete Job' : 'Next'}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -7274,9 +8154,35 @@ const AdminDashboard = () => {
                 Complete address for {customer.fullName || 'Customer'}
               </DialogDescription>
             </DialogHeader>
-            <div className="py-4">
+            <div className="py-4 space-y-4">
               <div className="text-sm text-gray-900 whitespace-pre-wrap break-words">
                 {formatAddressForDisplay(customer.address) || 'No address available'}
+              </div>
+              
+              {/* Distance and Time */}
+              <div className="pt-3 border-t border-gray-200">
+                <div className="text-sm font-semibold text-gray-900 mb-2">Distance & Time</div>
+                {customerDistances[customer.id] ? (
+                  <div className="text-sm">
+                    {customerDistances[customer.id].isCalculating ? (
+                      <span className="text-gray-500">Calculating...</span>
+                    ) : (
+                      <div className="flex items-center gap-2 text-black font-medium">
+                        <span>{customerDistances[customer.id].distance}</span>
+                        {customerDistances[customer.id].duration && (
+                          <>
+                            <span className="text-gray-400">•</span>
+                            <span>{customerDistances[customer.id].duration}</span>
+                          </>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                ) : currentLocation ? (
+                  <div className="text-xs text-gray-500">Calculating distance...</div>
+                ) : (
+                  <div className="text-xs text-gray-500">Click location text to calculate distance</div>
+                )}
               </div>
             </div>
             <DialogFooter>
