@@ -1983,7 +1983,14 @@ const Booking: React.FC = () => {
               
               <div>
                 <Label htmlFor="preferredTime">Time Slot *</Label>
-                <Select value={formData.preferredTime} onValueChange={(value: 'FIRST_HALF' | 'SECOND_HALF' | 'CUSTOM') => handleInputChange('preferredTime', value)}>
+                <Select value={formData.preferredTime} onValueChange={(value: 'FIRST_HALF' | 'SECOND_HALF' | 'CUSTOM') => {
+                  // Clear custom time when CUSTOM is selected
+                  if (value === 'CUSTOM') {
+                    setFormData(prev => ({ ...prev, preferredTime: value, preferredTimeCustom: '' }));
+                  } else {
+                    handleInputChange('preferredTime', value);
+                  }
+                }}>
                   <SelectTrigger className={`mt-1 ${
                     showValidation && !formData.preferredTime 
                       ? 'border-2 border-black dark:border-white' 
@@ -1997,19 +2004,107 @@ const Booking: React.FC = () => {
                     <SelectItem value="CUSTOM">Custom Time</SelectItem>
                   </SelectContent>
                 </Select>
-                {formData.preferredTime === 'CUSTOM' && (
-                  <Input
-                    type="time"
-                    value={formData.preferredTimeCustom || ''}
-                    onChange={(e) => handleInputChange('preferredTimeCustom', e.target.value)}
-                    className="mt-2"
-                    style={{
-                      WebkitAppearance: 'none',
-                      appearance: 'none',
-                      fontSize: '16px'
-                    }}
-                  />
-                )}
+                {formData.preferredTime === 'CUSTOM' && (() => {
+                  // Parse 24-hour format (HH:MM) to 12-hour format components
+                  const parseTime = (time24: string) => {
+                    if (!time24 || !time24.includes(':')) {
+                      return { hour: undefined, minute: undefined, period: 'AM' };
+                    }
+                    const [hours, minutes] = time24.split(':');
+                    const hour24 = parseInt(hours, 10);
+                    if (isNaN(hour24)) {
+                      return { hour: undefined, minute: undefined, period: 'AM' };
+                    }
+                    let hour12 = hour24 % 12;
+                    if (hour12 === 0) hour12 = 12;
+                    const period = hour24 >= 12 ? 'PM' : 'AM';
+                    return {
+                      hour: String(hour12),
+                      minute: minutes || '00',
+                      period
+                    };
+                  };
+
+                  // Convert 12-hour format components to 24-hour format (HH:MM)
+                  const formatTime24 = (hour: string | undefined, minute: string | undefined, period: string) => {
+                    if (!hour || !minute) return '';
+                    let hour24 = parseInt(hour, 10);
+                    if (isNaN(hour24)) return '';
+                    if (period === 'PM' && hour24 !== 12) {
+                      hour24 += 12;
+                    } else if (period === 'AM' && hour24 === 12) {
+                      hour24 = 0;
+                    }
+                    return `${String(hour24).padStart(2, '0')}:${minute.padStart(2, '0')}`;
+                  };
+
+                  const timeParts = parseTime(formData.preferredTimeCustom || '');
+
+                  return (
+                    <div className="mt-2 flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
+                      <div className="flex items-center gap-2 flex-1 min-w-0">
+                        {/* Hour Select */}
+                        <Select
+                          value={timeParts.hour || ''}
+                          onValueChange={(hour) => {
+                            const newTime = formatTime24(hour, timeParts.minute || '00', timeParts.period);
+                            handleInputChange('preferredTimeCustom', newTime);
+                          }}
+                        >
+                          <SelectTrigger className="flex-1 sm:flex-none sm:w-20 min-w-0">
+                            <SelectValue placeholder="Hour" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {Array.from({ length: 12 }, (_, i) => i + 1).map((h) => (
+                              <SelectItem key={h} value={String(h)}>
+                                {h}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+
+                        <span className="text-lg font-semibold flex-shrink-0">:</span>
+
+                        {/* Minute Select */}
+                        <Select
+                          value={timeParts.minute || ''}
+                          onValueChange={(minute) => {
+                            const newTime = formatTime24(timeParts.hour || '12', minute, timeParts.period);
+                            handleInputChange('preferredTimeCustom', newTime);
+                          }}
+                        >
+                          <SelectTrigger className="flex-1 sm:flex-none sm:w-20 min-w-0">
+                            <SelectValue placeholder="Min" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {Array.from({ length: 60 }, (_, i) => String(i).padStart(2, '0')).map((m) => (
+                              <SelectItem key={m} value={m}>
+                                {m}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+
+                        {/* AM/PM Select */}
+                        <Select
+                          value={timeParts.period}
+                          onValueChange={(period) => {
+                            const newTime = formatTime24(timeParts.hour || '12', timeParts.minute || '00', period);
+                            handleInputChange('preferredTimeCustom', newTime);
+                          }}
+                        >
+                          <SelectTrigger className="flex-1 sm:flex-none sm:w-20 min-w-0">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="AM">AM</SelectItem>
+                            <SelectItem value="PM">PM</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+                    </div>
+                  );
+                })()}
               </div>
               
               <div className="bg-muted/50 p-4 rounded-lg">
