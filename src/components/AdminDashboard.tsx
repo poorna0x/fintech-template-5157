@@ -261,8 +261,11 @@ const AdminDashboard = () => {
     'Church Street', 'Rest House Road', 'Cunningham Road', 'Miller Road', 'Palace Road',
     'Kempegowda', 'Majestic Bus Stand', 'City Railway Station',
     // Outer Areas
-    'Nelamangala', 'Doddaballapur', 'Devanahalli', 'Hoskote', 'Anekal', 'Jigani', 'Bidadi', 'Ramanagara',
-    'Magadi', 'Tumkur', 'Kolar', 'Chikkaballapur',
+    'Nelamangala', 'Doddaballapur', 'Devanahalli', 'Hoskote', 'Anekal', 'Jigani', 'Bidadi', 'Ramanagara', 'Ramanagaram',
+    'Magadi', 'Tumkur', 'Tumkuru', 'Kolar', 'Kolar City', 'Chikkaballapur',
+    // Additional Areas - Kaknpura side and nearby
+    'Adda', 'Kaknpura', 'Kakanpura', 'Kaknepura', 'Kaknepura Side', 'Kaknpura Side',
+    'Ttible', 'Ttibble', 'Tibble', 'Tibble Side',
     // Layouts and Extensions
     'HBR Layout', 'HRBR Layout', 'KHB Layout', 'ARE Layout', 'BEML Layout', 'BEL Layout', 'ISRO Layout',
     'BDA Layout', 'BDA Complex', 'NRI Layout', 'Prestige Layout', 'Prestige Shantiniketan',
@@ -295,14 +298,18 @@ const AdminDashboard = () => {
     'Nagasandra', 'Nagavara', 'Nayandahalli', 'Nelamangala', 'Nelamangala Road', 'NRI Layout',
     'Nrupathunga Road', 'Padmanabhanagar', 'Palace Road', 'Panathur', 'Peenya', 'Peenya Industrial',
     'Prestige Layout', 'Prestige Shantiniketan', 'Rajarajeshwari Nagar', 'Rajajinagar', 'Rajajinagar Extension',
-    'Rajajinagar Industrial', 'Ramamurthy Nagar', 'Ramanagara', 'Residency Road', 'Rest House Road',
+    'Rajajinagar Industrial', 'Ramamurthy Nagar', 'Ramanagara', 'Ramanagaram', 'Residency Road', 'Rest House Road',
     'Richmond', 'Richmond Circle', 'Richmond Town', 'RT Nagar', 'Russell Market', 'Sahakara Nagar',
     'Sanjay Nagar', 'Sarjapur', 'Shanti Nagar', 'Shivajinagar', 'Shivajinagar Bus Stand', 'Singasandra', 'Seshadripuram',
-    'St Marks Road', 'Thanisandra', 'Tumkur', 'Tumkur Road', 'Ulsoor', 'Uttarahalli', 'Uttarahalli Hobli',
+    'St Marks Road', 'Thanisandra', 'Tumkur', 'Tumkuru', 'Tumkur Road', 'Ulsoor', 'Uttarahalli', 'Uttarahalli Hobli',
     'Vaddarahalli', 'Varthur', 'Varthur Kodi', 'Varthur Road', 'Vasanthnagar', 'Vidhana Soudha',
     'Vidyaranyapura', 'Vijaya Bank Layout', 'Vijaya Nagar', 'Vijayanagar', 'Vijayanagar Extension',
     'Whitefield', 'Whitefield Main Road', 'Whitefield Road', 'Wilson Garden', 'Yelahanka', 'Yelahanka New Town',
     'Yeshwanthpur', 'Yeshwanthpur Industrial',
+    // Additional Areas - Kaknpura side, Ramanagara, Kolar, Tumkur
+    'Adda', 'Kaknpura', 'Kakanpura', 'Kaknepura', 'Kaknepura Side', 'Kaknpura Side',
+    'Ttible', 'Ttibble', 'Tibble', 'Tibble Side',
+    'Ramanagaram', 'Kolar City', 'Tumkuru',
     // Additional Popular Areas
     'Adugodi', 'AECS Layout', 'Anekal', 'Anjanapura', 'Arakere Mico Layout', 'Arekere', 'Ashok Nagar',
     'Attiguppe', 'Austin Town', 'Avalahalli', 'Baiyappanahalli', 'Banaswadi', 'Bannerghatta Road',
