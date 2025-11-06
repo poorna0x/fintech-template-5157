@@ -267,8 +267,196 @@ const AdminDashboard = () => {
     'BDA Layout', 'BDA Complex', 'NRI Layout', 'Prestige Layout', 'Prestige Shantiniketan',
     // Generic Types
     'Home', 'Office', 'Shop', 'Factory', 'Warehouse', 'Residence', 'Apartment', 'Villa', 'House',
-    'Showroom', 'Workshop', 'Store', 'Building', 'Complex', 'Tower', 'Plaza', 'Mall'
+    'Showroom', 'Workshop', 'Store', 'Building', 'Complex', 'Tower', 'Plaza', 'Mall',
+    // More Areas - Extended Coverage
+    'Agara', 'Akshayanagar', 'Amruthahalli', 'Anandnagar', 'Ananthapura', 'Anjanapura', 'Arakere',
+    'Arekere', 'Avalahalli', 'Bagalur', 'Baiyappanahalli', 'Banaswadi', 'Bannerghatta', 'Basapura',
+    'G.B palya', 'GB palya', 'GB Palya', 'Hongasandra', 'Mico Layout', 'Arakere Mico Layout',
+    'Basavanagudi', 'Basaveshwara Nagar', 'Begur', 'Bellandur', 'BEML Layout', 'Benson Town',
+    'Bhairava Nagar', 'Bidadi', 'Bidrahalli', 'Bommanahalli', 'Bommasandra', 'Brigade Road',
+    'Brookefield', 'BTM', 'BTM Layout', 'Budigere', 'Byatarayanapura', 'Chamrajpet', 'Chickpet',
+    'Chikkaballapur', 'Chikkajala', 'Church Street', 'City Market', 'Commercial Street', 'Cooke Town',
+    'Cox Town', 'Cubbon Park', 'Cunningham', 'CV Raman Nagar', 'Dasarahalli', 'Devanahalli',
+    'Doddaballapur', 'Doddakallasandra', 'Doddanekundi', 'Domlur', 'Electronic City', 'Frazer Town',
+    'Gandhinagar', 'Girinagar', 'Gokula', 'HAL', 'Hebbal', 'Hennur', 'Hennur Main Road', 'Hoodi',
+    'Hope Farm', 'Horamavu', 'Hosa Road', 'Hoskote', 'Hosur', 'Hosur Road', 'HSR', 'HSR Sector 1',
+    'HSR Sector 2', 'HSR Sector 3', 'HSR Sector 4', 'HSR Sector 5', 'HSR Sector 6', 'HSR Sector 7',
+    'Hudson Circle', 'Hulimavu', 'Indiranagar', 'ITPL', 'Jakkur', 'Jalahalli', 'Jayanagar', 'Jigani',
+    'JP Nagar', 'JP Nagar 1st Phase', 'JP Nagar 2nd Phase', 'JP Nagar 3rd Phase', 'JP Nagar 4th Phase',
+    'JP Nagar 5th Phase', 'JP Nagar 6th Phase', 'JP Nagar 7th Phase', 'JP Nagar 8th Phase', 'JP Nagar 9th Phase',
+    'Kadubeesanahalli', 'Kadugodi', 'Kaggadasapura', 'Kalyan Nagar', 'Kalyan Nagar Main Road',
+    'Kannamangala', 'Kasturba Road', 'Kempegowda', 'Kempegowda Bus Stand', 'Kengeri', 'Kengeri Satellite Town',
+    'Konanakunte', 'Koramangala', 'Kothanur', 'KR Market', 'KR Puram', 'KR Puram Railway Station',
+    'Kumbalgodu', 'Kundalahalli', 'Kundalahalli Gate', 'Lalbagh', 'Lavelle Road', 'Magadi', 'Magadi Road',
+    'Mahadevapura', 'Majestic', 'Majestic Bus Stand', 'Marathahalli', 'Marathahalli Bridge', 'Mathikere',
+    'MG Road', 'Miller Road', 'MS Palya', 'Murphy Town', 'Murugeshpalya', 'Mysore Road', 'Nagarbhavi',
+    'Nagasandra', 'Nagavara', 'Nayandahalli', 'Nelamangala', 'Nelamangala Road', 'NRI Layout',
+    'Nrupathunga Road', 'Padmanabhanagar', 'Palace Road', 'Panathur', 'Peenya', 'Peenya Industrial',
+    'Prestige Layout', 'Prestige Shantiniketan', 'Rajarajeshwari Nagar', 'Rajajinagar', 'Rajajinagar Extension',
+    'Rajajinagar Industrial', 'Ramamurthy Nagar', 'Ramanagara', 'Residency Road', 'Rest House Road',
+    'Richmond', 'Richmond Circle', 'Richmond Town', 'RT Nagar', 'Russell Market', 'Sahakara Nagar',
+    'Sanjay Nagar', 'Sarjapur', 'Shanti Nagar', 'Shivajinagar', 'Shivajinagar Bus Stand', 'Singasandra',
+    'St Marks Road', 'Thanisandra', 'Tumkur', 'Tumkur Road', 'Ulsoor', 'Uttarahalli', 'Uttarahalli Hobli',
+    'Vaddarahalli', 'Varthur', 'Varthur Kodi', 'Varthur Road', 'Vasanthnagar', 'Vidhana Soudha',
+    'Vidyaranyapura', 'Vijaya Bank Layout', 'Vijaya Nagar', 'Vijayanagar', 'Vijayanagar Extension',
+    'Whitefield', 'Whitefield Main Road', 'Whitefield Road', 'Wilson Garden', 'Yelahanka', 'Yelahanka New Town',
+    'Yeshwanthpur', 'Yeshwanthpur Industrial',
+    // Additional Popular Areas
+    'Adugodi', 'AECS Layout', 'Anekal', 'Anjanapura', 'Arakere Mico Layout', 'Arekere', 'Ashok Nagar',
+    'Attiguppe', 'Austin Town', 'Avalahalli', 'Baiyappanahalli', 'Banaswadi', 'Bannerghatta Road',
+    'Basapura', 'Basaveshwara Nagar', 'BEML Layout', 'Bhairava Nagar', 'Bidrahalli', 'Bommanahalli',
+    'Bommasandra', 'Brigade Road', 'Brookefield', 'BTM 1st Stage', 'BTM 2nd Stage', 'Budigere',
+    'Byatarayanapura', 'Chikkajala', 'City Railway Station', 'Commercial Street', 'Cooke Town',
+    'Cox Town', 'Cunningham Road', 'CV Raman Nagar', 'Dasarahalli', 'Devanahalli', 'Doddaballapur',
+    'Doddakallasandra', 'Doddanekundi', 'Domlur', 'Electronic City', 'Frazer Town', 'Gandhinagar',
+    'Girinagar', 'Gokula', 'HAL', 'Hebbal', 'Hennur', 'Hennur Main Road', 'Hoodi', 'Hope Farm',
+    'Horamavu', 'Hosa Road', 'Hoskote', 'Hosur', 'Hosur Road', 'HSR Sector 1', 'HSR Sector 2',
+    'HSR Sector 3', 'HSR Sector 4', 'HSR Sector 5', 'HSR Sector 6', 'HSR Sector 7', 'Hudson Circle',
+    'Hulimavu', 'Indiranagar', 'ITPL', 'Jakkur', 'Jalahalli', 'Jayanagar', 'Jigani', 'JP Nagar 1st Phase',
+    'JP Nagar 2nd Phase', 'JP Nagar 3rd Phase', 'JP Nagar 4th Phase', 'JP Nagar 5th Phase',
+    'JP Nagar 6th Phase', 'JP Nagar 7th Phase', 'JP Nagar 8th Phase', 'JP Nagar 9th Phase',
+    'Kadubeesanahalli', 'Kadugodi', 'Kaggadasapura', 'Kalyan Nagar', 'Kalyan Nagar Main Road',
+    'Kannamangala', 'Kasturba Road', 'Kempegowda', 'Kempegowda Bus Stand', 'Kengeri',
+    'Kengeri Satellite Town', 'Konanakunte', 'Koramangala', 'Kothanur', 'KR Market', 'KR Puram',
+    'KR Puram Railway Station', 'Kumbalgodu', 'Kundalahalli', 'Kundalahalli Gate', 'Lalbagh',
+    'Lavelle Road', 'Magadi', 'Magadi Road', 'Mahadevapura', 'Majestic', 'Majestic Bus Stand',
+    'Marathahalli', 'Marathahalli Bridge', 'Mathikere', 'MG Road', 'Miller Road', 'MS Palya',
+    'Murphy Town', 'Murugeshpalya', 'Mysore Road', 'Nagarbhavi', 'Nagasandra', 'Nagavara',
+    'Nayandahalli', 'Nelamangala', 'Nelamangala Road', 'NRI Layout', 'Nrupathunga Road',
+    'Padmanabhanagar', 'Palace Road', 'Panathur', 'Peenya', 'Peenya Industrial', 'Prestige Layout',
+    'Prestige Shantiniketan', 'Rajarajeshwari Nagar', 'Rajajinagar', 'Rajajinagar Extension',
+    'Rajajinagar Industrial', 'Ramamurthy Nagar', 'Ramanagara', 'Residency Road', 'Rest House Road',
+    'Richmond', 'Richmond Circle', 'Richmond Town', 'RT Nagar', 'Russell Market', 'Sahakara Nagar',
+    'Sanjay Nagar', 'Sarjapur', 'Shanti Nagar', 'Shivajinagar', 'Shivajinagar Bus Stand', 'Singasandra',
+    'St Marks Road', 'Thanisandra', 'Tumkur', 'Tumkur Road', 'Ulsoor', 'Uttarahalli',
+    'Uttarahalli Hobli', 'Vaddarahalli', 'Varthur', 'Varthur Kodi', 'Varthur Road', 'Vasanthnagar',
+    'Vidhana Soudha', 'Vidyaranyapura', 'Vijaya Bank Layout', 'Vijaya Nagar', 'Vijayanagar',
+    'Vijayanagar Extension', 'Whitefield', 'Whitefield Main Road', 'Whitefield Road', 'Wilson Garden',
+    'Yelahanka', 'Yelahanka New Town', 'Yeshwanthpur', 'Yeshwanthpur Industrial'
   ];
+
+  // Calculate Levenshtein distance for fuzzy matching (handles typos)
+  const levenshteinDistance = (str1: string, str2: string): number => {
+    const s1 = str1.toLowerCase();
+    const s2 = str2.toLowerCase();
+    const matrix: number[][] = [];
+
+    for (let i = 0; i <= s2.length; i++) {
+      matrix[i] = [i];
+    }
+
+    for (let j = 0; j <= s1.length; j++) {
+      matrix[0][j] = j;
+    }
+
+    for (let i = 1; i <= s2.length; i++) {
+      for (let j = 1; j <= s1.length; j++) {
+        if (s2.charAt(i - 1) === s1.charAt(j - 1)) {
+          matrix[i][j] = matrix[i - 1][j - 1];
+        } else {
+          matrix[i][j] = Math.min(
+            matrix[i - 1][j - 1] + 1, // substitution
+            matrix[i][j - 1] + 1,     // insertion
+            matrix[i - 1][j] + 1      // deletion
+          );
+        }
+      }
+    }
+
+    return matrix[s2.length][s1.length];
+  };
+
+  // Calculate similarity score (0-1, where 1 is perfect match)
+  const calculateSimilarity = (str1: string, str2: string): number => {
+    const maxLen = Math.max(str1.length, str2.length);
+    if (maxLen === 0) return 1;
+    const distance = levenshteinDistance(str1, str2);
+    return 1 - (distance / maxLen);
+  };
+
+  // Reusable function to extract location from any address string
+  const extractLocationFromAddressString = (completeAddress: string): string | null => {
+    if (!completeAddress || completeAddress.trim().length === 0) {
+      return null;
+    }
+
+    // Remove duplicates from bangaloreAreas
+    const uniqueAreas = [...new Set(bangaloreAreas)];
+    
+    // Split address by common delimiters and extract potential location keywords
+    const addressParts = completeAddress
+      .split(/[,\s]+/)
+      .map(part => part.trim())
+      .filter(part => part.length > 2); // Filter out very short parts
+
+    // First, try exact matches (highest priority)
+    for (const part of addressParts) {
+      const partLower = part.toLowerCase();
+      const exactMatch = uniqueAreas.find(area => 
+        area.toLowerCase() === partLower
+      );
+      if (exactMatch) {
+        return exactMatch;
+      }
+    }
+
+    // Second, try partial matches (area contains part or part contains area)
+    for (const part of addressParts) {
+      if (part.length < 3) continue; // Skip very short parts
+      const partLower = part.toLowerCase();
+      const partialMatch = uniqueAreas.find(area => {
+        const areaLower = area.toLowerCase();
+        return areaLower.includes(partLower) || partLower.includes(areaLower);
+      });
+      if (partialMatch) {
+        return partialMatch;
+      }
+    }
+
+    // Third, try multi-word matches (e.g., "G.B palya" should match "G.B palya")
+    for (let i = 0; i < addressParts.length - 1; i++) {
+      const twoWordPart = `${addressParts[i]} ${addressParts[i + 1]}`.toLowerCase();
+      const multiWordMatch = uniqueAreas.find(area => 
+        area.toLowerCase() === twoWordPart ||
+        area.toLowerCase().includes(twoWordPart) ||
+        twoWordPart.includes(area.toLowerCase())
+      );
+      if (multiWordMatch) {
+        return multiWordMatch;
+      }
+    }
+
+    // Last resort: fuzzy matching for typos (only for longer parts and with stricter threshold)
+    let bestMatch: string | null = null;
+    let bestScore = 0.75; // Higher threshold (75%) to avoid false matches
+
+    for (const part of addressParts) {
+      if (part.length < 5) continue; // Skip short parts for fuzzy matching
+
+      for (const area of uniqueAreas) {
+        // Skip if lengths are too different (more than 40% difference - stricter)
+        const lengthDiff = Math.abs(area.length - part.length) / Math.max(area.length, part.length);
+        if (lengthDiff > 0.4) continue;
+
+        // Calculate similarity
+        const similarity = calculateSimilarity(part, area);
+        
+        // Only use fuzzy match if similarity is high enough
+        if (similarity > bestScore) {
+          bestScore = similarity;
+          bestMatch = area;
+        }
+      }
+    }
+
+    return bestMatch;
+  };
+
+  // Extract location keywords from complete address and match with location array (for edit form)
+  const extractLocationFromAddress = useMemo(() => {
+    const completeAddress = editFormData?.address?.street || '';
+    return extractLocationFromAddressString(completeAddress);
+  }, [editFormData?.address?.street]);
 
   const filteredAddressSuggestions = useMemo(() => {
     if (!editFormData?.visible_address || editFormData.visible_address.trim().length === 0) {
@@ -1116,14 +1304,14 @@ const AdminDashboard = () => {
               
               // Only notify if job was created in the last 30 seconds (truly new)
               if (timeDiff <= 30) {
-                // New job detected - play sound
-                playNotificationSound();
-                
-                // Show a toast notification
-                toast.info('New lead received!', {
-                  description: `Job ${String((mostRecentJob as any).job_number || mostRecentJobId || '')} - ${String((mostRecentJob.customer as any)?.full_name || 'New Customer')}`,
-                  duration: 5000,
-                });
+          // New job detected - play sound
+          playNotificationSound();
+          
+          // Show a toast notification
+          toast.info('New lead received!', {
+            description: `Job ${String((mostRecentJob as any).job_number || mostRecentJobId || '')} - ${String((mostRecentJob.customer as any)?.full_name || 'New Customer')}`,
+            duration: 5000,
+          });
               }
             }
           }
@@ -1464,6 +1652,13 @@ const AdminDashboard = () => {
       [field]: value
     }));
   };
+
+  // Auto-suggest location when complete address changes and location field is empty
+  useEffect(() => {
+    if (extractLocationFromAddress && !editFormData?.visible_address) {
+      handleEditFormChange('visible_address', extractLocationFromAddress);
+    }
+  }, [extractLocationFromAddress, editFormData?.visible_address]);
 
   const handleEditServiceTypeToggle = (serviceType: string) => {
     setEditFormData(prev => {
@@ -2135,6 +2330,9 @@ const AdminDashboard = () => {
   const createCustomer = async () => {
     setIsCreating(true);
     try {
+      // Auto-extract location from address
+      const extractedLocation = extractLocationFromAddressString(addFormData.address);
+      
       // Create customer data with default location (you can enhance this later)
       const customerData = {
         // Don't set customer_id - let the database generate it using the function
@@ -2155,6 +2353,7 @@ const AdminDashboard = () => {
           longitude: 77.5946,
           formattedAddress: addFormData.address
         },
+        visible_address: extractedLocation ? extractedLocation.substring(0, 20) : '', // Auto-extracted location
         service_type: (() => {
           const selectedTypes = addFormData.service_types;
           // Valid service types that are supported by the database
@@ -7948,24 +8147,24 @@ const AdminDashboard = () => {
           
           {/* Scrollable Content */}
           <div className="flex-1 overflow-y-auto px-6 py-4">
-            {selectedJobForComplete && (
-              <div className="p-3 bg-gray-50 rounded-lg mb-4">
-                <div className="text-sm font-medium text-gray-900">
-                  Job: {(selectedJobForComplete as any).job_number || selectedJobForComplete.jobNumber}
-                </div>
-                <div className="text-sm text-gray-600">
+          {selectedJobForComplete && (
+            <div className="p-3 bg-gray-50 rounded-lg mb-4">
+              <div className="text-sm font-medium text-gray-900">
+                Job: {(selectedJobForComplete as any).job_number || selectedJobForComplete.jobNumber}
+              </div>
+              <div className="text-sm text-gray-600">
                   {(selectedJobForComplete.serviceType || (selectedJobForComplete as any).service_type || 'N/A')} - {(selectedJobForComplete.serviceSubType || (selectedJobForComplete as any).service_sub_type || 'N/A')}
-                </div>
-                <div className="text-sm text-gray-600">
+              </div>
+              <div className="text-sm text-gray-600">
                   Customer: {
                     selectedJobForComplete.customer?.fullName || 
                     (selectedJobForComplete.customer as any)?.full_name ||
                     (selectedJobForComplete.customer as any)?.name ||
                     'Unknown'
                   }
-                </div>
               </div>
-            )}
+            </div>
+          )}
 
             {/* Step Indicator */}
             <div className="flex items-center justify-center mb-6">
@@ -7990,7 +8189,7 @@ const AdminDashboard = () => {
 
             {/* Step 1: Bill Amount */}
             {completeJobStep === 1 && (
-              <div className="space-y-4">
+          <div className="space-y-4">
                 <div>
                   <Label htmlFor="bill-amount">Bill Amount *</Label>
                   <Input
@@ -8004,18 +8203,18 @@ const AdminDashboard = () => {
                     step="0.01"
                   />
                 </div>
-                <div>
-                  <Label htmlFor="completion-notes">Completion Notes (Optional)</Label>
-                  <Textarea
-                    id="completion-notes"
-                    placeholder="Add any notes about the job completion..."
-                    value={completionNotes}
-                    onChange={(e) => setCompletionNotes(e.target.value)}
-                    rows={3}
-                    className="mt-1"
-                  />
-                </div>
-              </div>
+            <div>
+              <Label htmlFor="completion-notes">Completion Notes (Optional)</Label>
+              <Textarea
+                id="completion-notes"
+                placeholder="Add any notes about the job completion..."
+                value={completionNotes}
+                onChange={(e) => setCompletionNotes(e.target.value)}
+                rows={3}
+                className="mt-1"
+              />
+            </div>
+          </div>
             )}
 
             {/* Step 2: Bill Photo */}
@@ -8154,9 +8353,9 @@ const AdminDashboard = () => {
                 if (completeJobStep > 1) {
                   setCompleteJobStep((prev) => (prev - 1) as 1 | 2 | 3 | 4);
                 } else {
-                  setCompleteDialogOpen(false);
-                  setSelectedJobForComplete(null);
-                  setCompletionNotes('');
+                setCompleteDialogOpen(false);
+                setSelectedJobForComplete(null);
+                setCompletionNotes('');
                   setCompleteJobStep(1);
                   setBillAmount('');
                   setBillPhotos([]);
