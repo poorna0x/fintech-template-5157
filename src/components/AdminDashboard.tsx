@@ -1085,24 +1085,51 @@ const AdminDashboard = () => {
         // Check for new pending jobs (most recent first)
         const { data: newJobs, error } = await db.jobs.getByStatusPaginated(['PENDING'], 1, 5);
         
-        if (error || !newJobs || newJobs.length === 0) return;
+        if (error || !newJobs || newJobs.length === 0) {
+          // If no pending jobs, clear the last checked ID to avoid false positives
+          if (newJobs && newJobs.length === 0) {
+            setLastCheckedJobId(null);
+          }
+          return;
+        }
 
-        // Get the most recent job ID
+        // Get the most recent job
         const mostRecentJob = newJobs[0];
         const mostRecentJobId = mostRecentJob?.id;
+        const mostRecentJobCreatedAt = mostRecentJob?.created_at || mostRecentJob?.createdAt;
 
         if (!mostRecentJobId) return;
 
-        // If we have a last checked ID and it's different, we have a new job
-        if (lastCheckedJobId && lastCheckedJobId !== mostRecentJobId) {
-          // New job detected - play sound
-          playNotificationSound();
-          
-          // Show a toast notification
-          toast.info('New lead received!', {
-            description: `Job ${String((mostRecentJob as any).job_number || mostRecentJobId || '')} - ${String((mostRecentJob.customer as any)?.full_name || 'New Customer')}`,
-            duration: 5000,
-          });
+        // Only show notification if:
+        // 1. We have a last checked ID AND it's different (job changed)
+        // 2. AND the new job was created AFTER we last checked (truly new job)
+        // OR we don't have a last checked ID yet (first time checking)
+        if (lastCheckedJobId) {
+          // We've checked before - only notify if it's a truly NEW job
+          if (lastCheckedJobId !== mostRecentJobId) {
+            // Job ID changed - check if it's actually a new job or just reordering
+            // If the most recent job was created recently (within last 30 seconds), it's likely new
+            if (mostRecentJobCreatedAt) {
+              const jobCreatedAt = new Date(mostRecentJobCreatedAt);
+              const now = new Date();
+              const timeDiff = (now.getTime() - jobCreatedAt.getTime()) / 1000; // seconds
+              
+              // Only notify if job was created in the last 30 seconds (truly new)
+              if (timeDiff <= 30) {
+                // New job detected - play sound
+                playNotificationSound();
+                
+                // Show a toast notification
+                toast.info('New lead received!', {
+                  description: `Job ${String((mostRecentJob as any).job_number || mostRecentJobId || '')} - ${String((mostRecentJob.customer as any)?.full_name || 'New Customer')}`,
+                  duration: 5000,
+                });
+              }
+            }
+          }
+        } else {
+          // First time checking - just set the ID, don't notify
+          // (to avoid notifying on page load)
         }
 
         // Update the last checked job ID
