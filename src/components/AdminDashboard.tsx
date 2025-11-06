@@ -213,6 +213,7 @@ const AdminDashboard = () => {
   const autoSaveTimerRef = useRef<NodeJS.Timeout | null>(null);
   const lastSavedFormDataRef = useRef<string>('');
   const hasUnsavedChangesRef = useRef(false);
+  const locationManuallyEditedRef = useRef(false); // Track if user manually edited location field
   
   // Ref to store calculateDistanceAndTime function to avoid circular dependency
   const calculateDistanceAndTimeRef = useRef<((origin: { lat: number; lng: number }, destination: { lat: number; lng: number }, customerId: string) => Promise<void>) | null>(null);
@@ -272,6 +273,7 @@ const AdminDashboard = () => {
     'Agara', 'Akshayanagar', 'Amruthahalli', 'Anandnagar', 'Ananthapura', 'Anjanapura', 'Arakere',
     'Arekere', 'Avalahalli', 'Bagalur', 'Baiyappanahalli', 'Banaswadi', 'Bannerghatta', 'Basapura',
     'G.B palya', 'GB palya', 'GB Palya', 'Hongasandra', 'Mico Layout', 'Arakere Mico Layout',
+    'HSR Layout', 'Somasandrapalya', 'ITI Layout',
     'Basavanagudi', 'Basaveshwara Nagar', 'Begur', 'Bellandur', 'BEML Layout', 'Benson Town',
     'Bhairava Nagar', 'Bidadi', 'Bidrahalli', 'Bommanahalli', 'Bommasandra', 'Brigade Road',
     'Brookefield', 'BTM', 'BTM Layout', 'Budigere', 'Byatarayanapura', 'Chamrajpet', 'Chickpet',
@@ -375,6 +377,7 @@ const AdminDashboard = () => {
   };
 
   // Reusable function to extract location from any address string
+  // Only returns a match if it's confident - otherwise returns null
   const extractLocationFromAddressString = (completeAddress: string): string | null => {
     if (!completeAddress || completeAddress.trim().length === 0) {
       return null;
@@ -389,7 +392,7 @@ const AdminDashboard = () => {
       .map(part => part.trim())
       .filter(part => part.length > 2); // Filter out very short parts
 
-    // First, try exact matches (highest priority)
+    // First, try exact matches (highest priority - most confident)
     for (const part of addressParts) {
       const partLower = part.toLowerCase();
       const exactMatch = uniqueAreas.find(area => 
@@ -400,48 +403,57 @@ const AdminDashboard = () => {
       }
     }
 
-    // Second, try partial matches (area contains part or part contains area)
-    for (const part of addressParts) {
-      if (part.length < 3) continue; // Skip very short parts
-      const partLower = part.toLowerCase();
-      const partialMatch = uniqueAreas.find(area => {
-        const areaLower = area.toLowerCase();
-        return areaLower.includes(partLower) || partLower.includes(areaLower);
-      });
-      if (partialMatch) {
-        return partialMatch;
-      }
-    }
-
-    // Third, try multi-word matches (e.g., "G.B palya" should match "G.B palya")
+    // Second, try multi-word exact matches (e.g., "G.B palya" should match "G.B palya")
+    // This is more confident than partial matches
     for (let i = 0; i < addressParts.length - 1; i++) {
       const twoWordPart = `${addressParts[i]} ${addressParts[i + 1]}`.toLowerCase();
       const multiWordMatch = uniqueAreas.find(area => 
-        area.toLowerCase() === twoWordPart ||
-        area.toLowerCase().includes(twoWordPart) ||
-        twoWordPart.includes(area.toLowerCase())
+        area.toLowerCase() === twoWordPart
       );
       if (multiWordMatch) {
         return multiWordMatch;
       }
     }
 
-    // Last resort: fuzzy matching for typos (only for longer parts and with stricter threshold)
+    // Third, try strict partial matches (only if part is significant length and match is substantial)
+    // Only match if the part is at least 5 characters and the match covers at least 70% of the shorter string
+    for (const part of addressParts) {
+      if (part.length < 5) continue; // Require at least 5 characters for partial match
+      const partLower = part.toLowerCase();
+      const partialMatch = uniqueAreas.find(area => {
+        const areaLower = area.toLowerCase();
+        // Only match if one contains the other AND the overlap is substantial
+        if (areaLower.includes(partLower)) {
+          // Part must be at least 70% of the area name
+          return partLower.length >= areaLower.length * 0.7;
+        }
+        if (partLower.includes(areaLower)) {
+          // Area must be at least 70% of the part
+          return areaLower.length >= partLower.length * 0.7;
+        }
+        return false;
+      });
+      if (partialMatch) {
+        return partialMatch;
+      }
+    }
+
+    // Last resort: fuzzy matching for typos (very strict - only for longer parts with high similarity)
     let bestMatch: string | null = null;
-    let bestScore = 0.75; // Higher threshold (75%) to avoid false matches
+    let bestScore = 0.85; // Very high threshold (85%) to avoid false matches
 
     for (const part of addressParts) {
-      if (part.length < 5) continue; // Skip short parts for fuzzy matching
+      if (part.length < 6) continue; // Require at least 6 characters for fuzzy matching
 
       for (const area of uniqueAreas) {
-        // Skip if lengths are too different (more than 40% difference - stricter)
+        // Skip if lengths are too different (more than 30% difference - very strict)
         const lengthDiff = Math.abs(area.length - part.length) / Math.max(area.length, part.length);
-        if (lengthDiff > 0.4) continue;
+        if (lengthDiff > 0.3) continue;
 
         // Calculate similarity
         const similarity = calculateSimilarity(part, area);
         
-        // Only use fuzzy match if similarity is high enough
+        // Only use fuzzy match if similarity is very high
         if (similarity > bestScore) {
           bestScore = similarity;
           bestMatch = area;
@@ -449,6 +461,7 @@ const AdminDashboard = () => {
       }
     }
 
+    // Only return match if we found a confident one, otherwise return null
     return bestMatch;
   };
 
@@ -1524,6 +1537,7 @@ const AdminDashboard = () => {
       cost_agreed: customer.costAgreed || false
     });
     hasUnsavedChangesRef.current = false;
+    locationManuallyEditedRef.current = false; // Reset flag when opening edit dialog
     // Clear any existing auto-save timer
     if (autoSaveTimerRef.current) {
       clearTimeout(autoSaveTimerRef.current);
@@ -1654,8 +1668,9 @@ const AdminDashboard = () => {
   };
 
   // Auto-suggest location when complete address changes and location field is empty
+  // Only auto-fill if user hasn't manually edited the location field
   useEffect(() => {
-    if (extractLocationFromAddress && !editFormData?.visible_address) {
+    if (extractLocationFromAddress && !editFormData?.visible_address && !locationManuallyEditedRef.current) {
       handleEditFormChange('visible_address', extractLocationFromAddress);
     }
   }, [extractLocationFromAddress, editFormData?.visible_address]);
@@ -1838,50 +1853,62 @@ const AdminDashboard = () => {
   };
 
   // Function to extract coordinates from Google Maps link
+  // Prioritizes more precise coordinates (!3d!4d format) over less precise ones (@ format)
   const extractCoordinatesFromGoogleMapsLink = (url: string): { latitude: number; longitude: number } | null => {
     try {
       // Handle different Google Maps URL formats
-      let lat, lng;
+      let lat: number | null = null;
+      let lng: number | null = null;
       
-      // Format 1: https://www.google.com/maps/place/12.9716,77.5946
+      // Format 1 (HIGHEST PRIORITY): !3d!4d format - Most precise coordinates
+      // Example: /data=!3d12.8998394!4d77.6507961
+      // This format contains the exact location coordinates
+      const preciseMatch = url.match(/!3d([0-9.-]+)!4d([0-9.-]+)/);
+      if (preciseMatch) {
+        lat = parseFloat(preciseMatch[1]);
+        lng = parseFloat(preciseMatch[2]);
+        if (lat && lng && !isNaN(lat) && !isNaN(lng) && lat >= -90 && lat <= 90 && lng >= -180 && lng <= 180) {
+          return { latitude: lat, longitude: lng };
+        }
+      }
+      
+      // Format 2: https://www.google.com/maps/place/12.9716,77.5946
       const placeMatch = url.match(/\/place\/([0-9.-]+),([0-9.-]+)/);
       if (placeMatch) {
         lat = parseFloat(placeMatch[1]);
         lng = parseFloat(placeMatch[2]);
+        if (lat && lng && !isNaN(lat) && !isNaN(lng) && lat >= -90 && lat <= 90 && lng >= -180 && lng <= 180) {
+          return { latitude: lat, longitude: lng };
+        }
       }
       
-      // Format 2: https://www.google.com/maps/@12.9716,77.5946,15z
+      // Format 3: https://www.google.com/maps/@12.9716,77.5946,15z
+      // Note: This is less precise than !3d!4d format, so we check it after
       const atMatch = url.match(/@([0-9.-]+),([0-9.-]+)/);
       if (atMatch) {
         lat = parseFloat(atMatch[1]);
         lng = parseFloat(atMatch[2]);
+        if (lat && lng && !isNaN(lat) && !isNaN(lng) && lat >= -90 && lat <= 90 && lng >= -180 && lng <= 180) {
+          return { latitude: lat, longitude: lng };
+        }
       }
       
-      // Format 3: https://maps.google.com/maps?q=12.9716,77.5946
+      // Format 4: https://maps.google.com/maps?q=12.9716,77.5946
       const queryMatch = url.match(/[?&]q=([0-9.-]+),([0-9.-]+)/);
       if (queryMatch) {
         lat = parseFloat(queryMatch[1]);
         lng = parseFloat(queryMatch[2]);
+        if (lat && lng && !isNaN(lat) && !isNaN(lng) && lat >= -90 && lat <= 90 && lng >= -180 && lng <= 180) {
+          return { latitude: lat, longitude: lng };
+        }
       }
       
-      // Format 4: https://www.google.com/maps/search/?api=1&query=12.9716,77.5946
+      // Format 5: https://www.google.com/maps/search/?api=1&query=12.9716,77.5946
       const searchMatch = url.match(/[?&]query=([0-9.-]+),([0-9.-]+)/);
       if (searchMatch) {
         lat = parseFloat(searchMatch[1]);
         lng = parseFloat(searchMatch[2]);
-      }
-      
-      // Format 5: Google Maps share link with place name and coordinates
-      // https://www.google.com/maps/place/Some+Place/@12.9716,77.5946,15z
-      const placeWithNameMatch = url.match(/@([0-9.-]+),([0-9.-]+)/);
-      if (placeWithNameMatch && !lat) {
-        lat = parseFloat(placeWithNameMatch[1]);
-        lng = parseFloat(placeWithNameMatch[2]);
-      }
-      
-      if (lat && lng && !isNaN(lat) && !isNaN(lng)) {
-        // Validate coordinates are within reasonable bounds
-        if (lat >= -90 && lat <= 90 && lng >= -180 && lng <= 180) {
+        if (lat && lng && !isNaN(lat) && !isNaN(lng) && lat >= -90 && lat <= 90 && lng >= -180 && lng <= 180) {
           return { latitude: lat, longitude: lng };
         }
       }
@@ -2178,8 +2205,136 @@ const AdminDashboard = () => {
     });
   }, [addressDialogOpen, currentLocation, customers, customerDistances]);
 
-  // Function to handle Google Maps link changes
-  const handleGoogleMapsLinkChange = (value: string) => {
+
+  // Reverse geocode coordinates to get address using Google Maps Geocoder API
+  const reverseGeocode = async (lat: number, lng: number): Promise<string | null> => {
+    try {
+      // First try Google Maps Geocoder API if available
+      if (window.google && window.google.maps && window.google.maps.Geocoder) {
+        return new Promise((resolve) => {
+          const geocoder = new window.google.maps.Geocoder();
+          geocoder.geocode(
+            { location: { lat, lng } },
+            (results, status) => {
+              if (status === window.google.maps.GeocoderStatus.OK && results && results[0]) {
+                resolve(results[0].formatted_address);
+              } else {
+                // Fallback to OpenStreetMap if Google fails
+                resolve(reverseGeocodeOpenStreetMap(lat, lng));
+              }
+            }
+          );
+        });
+      } else {
+        // Fallback to OpenStreetMap if Google Maps not loaded
+        return reverseGeocodeOpenStreetMap(lat, lng);
+      }
+    } catch (error) {
+      console.error('Reverse geocoding error:', error);
+      // Fallback to OpenStreetMap on error
+      return reverseGeocodeOpenStreetMap(lat, lng);
+    }
+  };
+
+  // Fallback: Reverse geocode using OpenStreetMap Nominatim (free)
+  const reverseGeocodeOpenStreetMap = async (lat: number, lng: number): Promise<string | null> => {
+    try {
+      const response = await fetch(
+        `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}&addressdetails=1`,
+        {
+          headers: {
+            'User-Agent': 'RO-Service-Management-App' // Required by Nominatim
+          }
+        }
+      );
+      
+      if (!response.ok) return null;
+      
+      const data = await response.json();
+      if (data && data.display_name) {
+        return data.display_name;
+      }
+      return null;
+    } catch (error) {
+      console.error('OpenStreetMap reverse geocoding error:', error);
+      return null;
+    }
+  };
+
+  // Function to fetch address from Google Maps location link
+  const fetchAddressFromGoogleLocation = async () => {
+    const googleLocation = editFormData?.google_location || '';
+    
+    if (!googleLocation.trim()) {
+      toast.error('Please enter a Google Maps link first');
+      return;
+    }
+
+    // Check if it's a valid Google Maps link
+    if (!googleLocation.includes('google.com/maps') && !googleLocation.includes('maps.app.goo.gl') && !googleLocation.includes('goo.gl/maps')) {
+      toast.error('Please enter a valid Google Maps link');
+      return;
+    }
+
+    // Extract coordinates from the link
+    const coords = extractCoordinatesFromGoogleMapsLink(googleLocation);
+    if (!coords) {
+      toast.error('Could not extract coordinates from this link. Short links may not work.');
+      return;
+    }
+
+    try {
+      // Show loading toast
+      const loadingToast = toast.loading('Fetching address from Google Maps...');
+
+      // Ensure Google Maps is loaded before reverse geocoding
+      const apiKey = import.meta.env.VITE_GOOGLE_MAPS_API_KEY;
+      if (apiKey && (!window.google || !window.google.maps || !window.google.maps.Geocoder)) {
+        // Load Google Maps if not already loaded
+        await loadGoogleMapsScript();
+      }
+
+      // Extract address from coordinates using reverse geocoding
+      const address = await reverseGeocode(coords.latitude, coords.longitude);
+      
+      // Extract location keyword from address
+      const extractedLocation = address ? extractLocationFromAddressString(address) : null;
+      
+      setEditFormData(prev => ({
+        ...prev,
+        location: {
+          ...prev.location,
+          latitude: coords.latitude,
+          longitude: coords.longitude,
+          formattedAddress: address || prev.address.street || ''
+        },
+        address: {
+          ...prev.address,
+          street: address || prev.address.street || ''
+        },
+        visible_address: (!locationManuallyEditedRef.current && extractedLocation) 
+          ? extractedLocation.substring(0, 20) 
+          : prev.visible_address
+      }));
+      
+      toast.dismiss(loadingToast);
+      
+      if (address) {
+        toast.success(`Address fetched: ${address.substring(0, 50)}${address.length > 50 ? '...' : ''}`);
+        if (extractedLocation && !locationManuallyEditedRef.current) {
+          toast.info(`Location identified: ${extractedLocation}`);
+        }
+      } else {
+        toast.success(`Coordinates extracted: ${coords.latitude}, ${coords.longitude}`);
+        toast.warning('Could not fetch address. Coordinates saved.');
+      }
+    } catch (error) {
+      console.error('Error fetching address:', error);
+      toast.error('Failed to fetch address. Please try again.');
+    }
+  };
+
+  const handleGoogleMapsLinkChange = async (value: string) => {
     setEditFormData(prev => ({
       ...prev,
       google_location: value
@@ -2189,20 +2344,48 @@ const AdminDashboard = () => {
     if (value.trim()) {
       const coords = extractCoordinatesFromGoogleMapsLink(value);
       if (coords) {
+        // Ensure Google Maps is loaded before reverse geocoding
+        const apiKey = import.meta.env.VITE_GOOGLE_MAPS_API_KEY;
+        if (apiKey && (!window.google || !window.google.maps || !window.google.maps.Geocoder)) {
+          // Load Google Maps if not already loaded
+          await loadGoogleMapsScript();
+        }
+
+        // Extract address from coordinates using reverse geocoding
+        const address = await reverseGeocode(coords.latitude, coords.longitude);
+        
+        // Extract location keyword from address
+        const extractedLocation = address ? extractLocationFromAddressString(address) : null;
+        
         setEditFormData(prev => ({
           ...prev,
           location: {
             ...prev.location,
             latitude: coords.latitude,
             longitude: coords.longitude,
-            formattedAddress: prev.address.street || ''
+            formattedAddress: address || prev.address.street || ''
           },
+          address: {
+            ...prev.address,
+            street: address || prev.address.street || ''
+          },
+          visible_address: (!locationManuallyEditedRef.current && extractedLocation) 
+            ? extractedLocation.substring(0, 20) 
+            : prev.visible_address,
           google_location: value
         }));
+        
+        if (address) {
+          toast.success(`Address extracted: ${address.substring(0, 50)}${address.length > 50 ? '...' : ''}`);
+          if (extractedLocation && !locationManuallyEditedRef.current) {
+            toast.info(`Location identified: ${extractedLocation}`);
+          }
+        } else {
         toast.success(`Coordinates extracted: ${coords.latitude}, ${coords.longitude}`);
+        }
       } else if (value.includes('google.com/maps') || value.includes('maps.app.goo.gl') || value.includes('goo.gl/maps')) {
         // If it's a Google Maps link (including short URLs) but we couldn't extract coordinates, still save it
-        toast.info('Google Maps link saved.');
+        toast.info('Google Maps link saved. Note: Short links cannot extract address automatically.');
       }
     } else {
       // Clear coordinates if link is cleared
@@ -2216,6 +2399,78 @@ const AdminDashboard = () => {
         }
       }));
     }
+  };
+
+  // Load Google Maps script if not already loaded
+  const loadGoogleMapsScript = (): Promise<void> => {
+    return new Promise((resolve) => {
+      // Check if already loaded
+      if (window.google && window.google.maps && window.google.maps.Geocoder) {
+        resolve();
+        return;
+      }
+
+      const apiKey = import.meta.env.VITE_GOOGLE_MAPS_API_KEY;
+      if (!apiKey) {
+        // No API key, skip loading (will use OpenStreetMap fallback)
+        resolve();
+        return;
+      }
+
+      // Check if script is already being loaded
+      const existingScript = document.querySelector('script[src*="maps.googleapis.com"]');
+      if (existingScript) {
+        // Wait for it to load
+        const checkInterval = setInterval(() => {
+          if (window.google && window.google.maps && window.google.maps.Geocoder) {
+            clearInterval(checkInterval);
+            resolve();
+          }
+        }, 100);
+
+        // Timeout after 10 seconds
+        setTimeout(() => {
+          clearInterval(checkInterval);
+          if (window.google && window.google.maps && window.google.maps.Geocoder) {
+            resolve();
+          } else {
+            // Resolve anyway, will use fallback
+            resolve();
+          }
+        }, 10000);
+        return;
+      }
+
+      // Load the script
+      const script = document.createElement('script');
+      script.src = `https://maps.googleapis.com/maps/api/js?key=${apiKey}&libraries=places&loading=async`;
+      script.async = true;
+      script.defer = true;
+      
+      script.onload = () => {
+        // Wait for Geocoder to be available
+        let attempts = 0;
+        const maxAttempts = 50; // 5 seconds max
+        const checkInterval = setInterval(() => {
+          attempts++;
+          if (window.google && window.google.maps && window.google.maps.Geocoder) {
+            clearInterval(checkInterval);
+            resolve();
+          } else if (attempts >= maxAttempts) {
+            clearInterval(checkInterval);
+            // Resolve anyway, will use fallback
+            resolve();
+          }
+        }, 100);
+      };
+      
+      script.onerror = () => {
+        // Resolve anyway, will use fallback
+        resolve();
+      };
+      
+      document.head.appendChild(script);
+    });
   };
 
   // Get current location
@@ -6315,6 +6570,7 @@ const AdminDashboard = () => {
                       id="edit_visible_address"
                       value={editFormData?.visible_address || ''}
                       onChange={(e) => {
+                        locationManuallyEditedRef.current = true; // Mark as manually edited
                         handleEditFormChange('visible_address', e.target.value);
                         setVisibleAddressSuggestions(e.target.value.length > 0);
                       }}
@@ -6334,6 +6590,7 @@ const AdminDashboard = () => {
                             type="button"
                             onMouseDown={(e) => {
                               e.preventDefault();
+                              locationManuallyEditedRef.current = true; // Mark as manually edited
                               handleEditFormChange('visible_address', suggestion);
                               setVisibleAddressSuggestions(false);
                             }}
@@ -6376,6 +6633,18 @@ const AdminDashboard = () => {
                     className="text-sm flex-1"
                   />
                   {editFormData?.google_location && (
+                    <>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={fetchAddressFromGoogleLocation}
+                        className="whitespace-nowrap"
+                        title="Fetch address from Google Maps link"
+                      >
+                        <Download className="w-3 h-3 mr-1" />
+                        Fetch Address
+                      </Button>
                     <Button
                       type="button"
                       variant="outline"
@@ -6384,10 +6653,12 @@ const AdminDashboard = () => {
                         window.open(editFormData.google_location, '_blank', 'noopener,noreferrer');
                       }}
                       className="whitespace-nowrap"
+                        title="Open in Google Maps"
                     >
                       <ExternalLink className="w-3 h-3 mr-1" />
                       Test
                     </Button>
+                    </>
                   )}
                 </div>
               </div>
