@@ -297,7 +297,7 @@ const AdminDashboard = () => {
     'Prestige Layout', 'Prestige Shantiniketan', 'Rajarajeshwari Nagar', 'Rajajinagar', 'Rajajinagar Extension',
     'Rajajinagar Industrial', 'Ramamurthy Nagar', 'Ramanagara', 'Residency Road', 'Rest House Road',
     'Richmond', 'Richmond Circle', 'Richmond Town', 'RT Nagar', 'Russell Market', 'Sahakara Nagar',
-    'Sanjay Nagar', 'Sarjapur', 'Shanti Nagar', 'Shivajinagar', 'Shivajinagar Bus Stand', 'Singasandra',
+    'Sanjay Nagar', 'Sarjapur', 'Shanti Nagar', 'Shivajinagar', 'Shivajinagar Bus Stand', 'Singasandra', 'Seshadripuram',
     'St Marks Road', 'Thanisandra', 'Tumkur', 'Tumkur Road', 'Ulsoor', 'Uttarahalli', 'Uttarahalli Hobli',
     'Vaddarahalli', 'Varthur', 'Varthur Kodi', 'Varthur Road', 'Vasanthnagar', 'Vidhana Soudha',
     'Vidyaranyapura', 'Vijaya Bank Layout', 'Vijaya Nagar', 'Vijayanagar', 'Vijayanagar Extension',
@@ -329,7 +329,7 @@ const AdminDashboard = () => {
     'Prestige Shantiniketan', 'Rajarajeshwari Nagar', 'Rajajinagar', 'Rajajinagar Extension',
     'Rajajinagar Industrial', 'Ramamurthy Nagar', 'Ramanagara', 'Residency Road', 'Rest House Road',
     'Richmond', 'Richmond Circle', 'Richmond Town', 'RT Nagar', 'Russell Market', 'Sahakara Nagar',
-    'Sanjay Nagar', 'Sarjapur', 'Shanti Nagar', 'Shivajinagar', 'Shivajinagar Bus Stand', 'Singasandra',
+    'Sanjay Nagar', 'Sarjapur', 'Shanti Nagar', 'Shivajinagar', 'Shivajinagar Bus Stand', 'Singasandra', 'Seshadripuram',
     'St Marks Road', 'Thanisandra', 'Tumkur', 'Tumkur Road', 'Ulsoor', 'Uttarahalli',
     'Uttarahalli Hobli', 'Vaddarahalli', 'Varthur', 'Varthur Kodi', 'Varthur Road', 'Vasanthnagar',
     'Vidhana Soudha', 'Vidyaranyapura', 'Vijaya Bank Layout', 'Vijaya Nagar', 'Vijayanagar',
@@ -1455,7 +1455,62 @@ const AdminDashboard = () => {
         }
         return '';
       })(),
-      visible_address: (customer as any).visible_address || (customer.address as any)?.visible_address || '',
+      visible_address: (() => {
+        // Get existing location from database
+        const existingLocation = (customer as any).visible_address || (customer.address as any)?.visible_address || '';
+        
+        // If location already has a value, use it (don't overwrite)
+        if (existingLocation && existingLocation.trim().length > 0) {
+          return existingLocation;
+        }
+        
+        // If location is empty, extract from complete address using our matching logic
+        // Build full address from all available address fields
+        let addressParts = [
+          customer.address?.street,
+          customer.address?.area,
+          customer.address?.city,
+          customer.address?.state,
+          customer.address?.pincode
+        ].filter(Boolean);
+        
+        // Also check if there's a formatted address in location (but avoid duplicates)
+        if (customer.location?.formattedAddress && 
+            !customer.location.formattedAddress.includes('google.com/maps') &&
+            !customer.location.formattedAddress.includes('localhost')) {
+          const formattedAddr = customer.location.formattedAddress.trim();
+          // Check if formattedAddress is already included in any of the address parts
+          const isDuplicate = addressParts.some(part => {
+            if (!part) return false;
+            const partStr = String(part).toLowerCase();
+            const formattedStr = formattedAddr.toLowerCase();
+            // Check if one contains the other (to avoid duplicates)
+            return partStr.includes(formattedStr) || formattedStr.includes(partStr);
+          });
+          if (!isDuplicate && formattedAddr.length > 0) {
+            addressParts.push(formattedAddr);
+          }
+        }
+        
+        // Remove exact duplicates and join
+        const uniqueAddressParts = Array.from(new Set(addressParts.map(String).filter(Boolean)));
+        const completeAddress = uniqueAddressParts.join(', ') || '';
+        
+        // Extract location from the full address using our matching logic with Bangalore areas
+        const extractedLocation = extractLocationFromAddressString(completeAddress);
+        
+        // Debug logging
+        if (completeAddress) {
+          if (extractedLocation) {
+            console.log('✅ Extracted location from complete address (location was empty):', extractedLocation, 'from:', completeAddress);
+          } else {
+            console.log('⚠️ Could not extract location from complete address:', completeAddress);
+          }
+        }
+        
+        // Return extracted location if found, otherwise empty string
+        return extractedLocation || '';
+      })(),
       custom_time: customer.customTime || (customer as any).custom_time || '',
       address: {
         street: [
@@ -1513,7 +1568,62 @@ const AdminDashboard = () => {
         }
         return '';
       })(),
-      visible_address: (customer as any).visible_address || (customer.address as any)?.visible_address || '',
+      visible_address: (() => {
+        // Get existing location from database
+        const existingLocation = (customer as any).visible_address || (customer.address as any)?.visible_address || '';
+        
+        // If location already has a value, use it (don't overwrite)
+        if (existingLocation && existingLocation.trim().length > 0) {
+          return existingLocation;
+        }
+        
+        // If location is empty, extract from complete address using our matching logic
+        // Build full address from all available address fields
+        let addressParts = [
+          customer.address?.street,
+          customer.address?.area,
+          customer.address?.city,
+          customer.address?.state,
+          customer.address?.pincode
+        ].filter(Boolean);
+        
+        // Also check if there's a formatted address in location (but avoid duplicates)
+        if (customer.location?.formattedAddress && 
+            !customer.location.formattedAddress.includes('google.com/maps') &&
+            !customer.location.formattedAddress.includes('localhost')) {
+          const formattedAddr = customer.location.formattedAddress.trim();
+          // Check if formattedAddress is already included in any of the address parts
+          const isDuplicate = addressParts.some(part => {
+            if (!part) return false;
+            const partStr = String(part).toLowerCase();
+            const formattedStr = formattedAddr.toLowerCase();
+            // Check if one contains the other (to avoid duplicates)
+            return partStr.includes(formattedStr) || formattedStr.includes(partStr);
+          });
+          if (!isDuplicate && formattedAddr.length > 0) {
+            addressParts.push(formattedAddr);
+          }
+        }
+        
+        // Remove exact duplicates and join
+        const uniqueAddressParts = Array.from(new Set(addressParts.map(String).filter(Boolean)));
+        const completeAddress = uniqueAddressParts.join(', ') || '';
+        
+        // Extract location from the full address using our matching logic with Bangalore areas
+        const extractedLocation = extractLocationFromAddressString(completeAddress);
+        
+        // Debug logging
+        if (completeAddress) {
+          if (extractedLocation) {
+            console.log('✅ Extracted location from complete address (location was empty):', extractedLocation, 'from:', completeAddress);
+          } else {
+            console.log('⚠️ Could not extract location from complete address:', completeAddress);
+          }
+        }
+        
+        // Return extracted location if found, otherwise empty string
+        return extractedLocation || '';
+      })(),
       custom_time: customer.customTime || (customer as any).custom_time || '',
       address: {
         street: [
@@ -1667,13 +1777,52 @@ const AdminDashboard = () => {
     }));
   };
 
-  // Auto-suggest location when complete address changes and location field is empty
-  // Only auto-fill if user hasn't manually edited the location field
+  // Auto-extract location when edit dialog opens or address changes
+  // Always try to extract when address changes, but only update if user hasn't manually edited
   useEffect(() => {
-    if (extractLocationFromAddress && !editFormData?.visible_address && !locationManuallyEditedRef.current) {
-      handleEditFormChange('visible_address', extractLocationFromAddress);
+    // Only run when edit dialog is open
+    if (!editDialogOpen) return;
+    
+    const address = editFormData?.address?.street || '';
+    const currentLocation = editFormData?.visible_address || '';
+    
+    // Always try to extract when address changes (if user hasn't manually edited)
+    if (address && address.trim().length > 0 && !locationManuallyEditedRef.current) {
+      const extracted = extractLocationFromAddressString(address);
+      if (extracted) {
+        // Always update location if we found a match (even if location already has a value)
+        // This ensures location stays in sync with address changes
+        if (currentLocation !== extracted) {
+          handleEditFormChange('visible_address', extracted);
+          console.log('✅ Auto-extracted location from address:', extracted, 'from:', address);
+        }
+      } else if (address && !currentLocation) {
+        // Only log if we couldn't extract and location is empty
+        console.log('⚠️ Could not extract location from complete address:', address);
+      }
     }
-  }, [extractLocationFromAddress, editFormData?.visible_address]);
+  }, [editDialogOpen, editFormData?.address?.street]);
+
+  // Force extraction when dialog first opens
+  useEffect(() => {
+    if (editDialogOpen && editingCustomer && !locationManuallyEditedRef.current) {
+      // Small delay to ensure form data is set
+      const timer = setTimeout(() => {
+        const address = editFormData?.address?.street || '';
+        const currentLocation = editFormData?.visible_address || '';
+        
+        if (address && address.trim().length > 0) {
+          const extracted = extractLocationFromAddressString(address);
+          if (extracted && (!currentLocation || currentLocation !== extracted)) {
+            handleEditFormChange('visible_address', extracted);
+            console.log('✅ Force-extracted location on dialog open:', extracted, 'from:', address);
+          }
+        }
+      }, 200);
+      
+      return () => clearTimeout(timer);
+    }
+  }, [editDialogOpen, editingCustomer?.id]);
 
   const handleEditServiceTypeToggle = (serviceType: string) => {
     setEditFormData(prev => {
@@ -1850,6 +1999,21 @@ const AdminDashboard = () => {
         [field]: value
       }
     }));
+    
+    // If Complete Address (street) changed, try to extract location immediately
+    if (field === 'street' && value && !locationManuallyEditedRef.current) {
+      // Small delay to ensure state is updated
+      setTimeout(() => {
+        const extracted = extractLocationFromAddressString(value);
+        if (extracted) {
+          setEditFormData(prev => ({
+            ...prev,
+            visible_address: extracted
+          }));
+          console.log('✅ Auto-extracted location from changed address:', extracted, 'from:', value);
+        }
+      }, 100);
+    }
   };
 
   // Function to extract coordinates from Google Maps link
