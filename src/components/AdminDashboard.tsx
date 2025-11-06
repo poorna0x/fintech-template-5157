@@ -1796,9 +1796,16 @@ const AdminDashboard = () => {
           handleEditFormChange('visible_address', extracted);
           console.log('✅ Auto-extracted location from address:', extracted, 'from:', address);
         }
-      } else if (address && !currentLocation) {
-        // Only log if we couldn't extract and location is empty
-        console.log('⚠️ Could not extract location from complete address:', address);
+      } else {
+        // If we couldn't extract and there's an old location, clear it
+        // This ensures location doesn't stay when address changes to something that doesn't match
+        if (currentLocation && currentLocation.trim().length > 0) {
+          handleEditFormChange('visible_address', '');
+          console.log('⚠️ Could not extract location from new address, cleared old location:', address);
+        } else if (address) {
+          // Only log if we couldn't extract and location is already empty
+          console.log('⚠️ Could not extract location from complete address:', address);
+        }
       }
     }
   }, [editDialogOpen, editFormData?.address?.street]);
@@ -2011,6 +2018,18 @@ const AdminDashboard = () => {
             visible_address: extracted
           }));
           console.log('✅ Auto-extracted location from changed address:', extracted, 'from:', value);
+        } else {
+          // If extraction fails, clear old location if it exists
+          setEditFormData(prev => {
+            if (prev.visible_address && prev.visible_address.trim().length > 0) {
+              console.log('⚠️ Could not extract location from new address, clearing old location');
+              return {
+                ...prev,
+                visible_address: ''
+              };
+            }
+            return prev;
+          });
         }
       }, 100);
     }
