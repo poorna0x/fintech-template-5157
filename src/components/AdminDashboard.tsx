@@ -2046,7 +2046,18 @@ const AdminDashboard = () => {
         }
       }
       
-      // Format 3: https://www.google.com/maps/@12.9716,77.5946,15z
+      // Format 3: https://www.google.com/maps/search/12.914741,+77.551615
+      // This is a search URL with coordinates directly in the path
+      const searchPathMatch = url.match(/\/search\/([0-9.-]+),\+?([0-9.-]+)/);
+      if (searchPathMatch) {
+        lat = parseFloat(searchPathMatch[1]);
+        lng = parseFloat(searchPathMatch[2]);
+        if (lat && lng && !isNaN(lat) && !isNaN(lng) && lat >= -90 && lat <= 90 && lng >= -180 && lng <= 180) {
+          return { latitude: lat, longitude: lng };
+        }
+      }
+      
+      // Format 4: https://www.google.com/maps/@12.9716,77.5946,15z
       // Note: This is less precise than !3d!4d format, so we check it after
       const atMatch = url.match(/@([0-9.-]+),([0-9.-]+)/);
       if (atMatch) {
@@ -2057,7 +2068,7 @@ const AdminDashboard = () => {
         }
       }
       
-      // Format 4: https://maps.google.com/maps?q=12.9716,77.5946
+      // Format 5: https://maps.google.com/maps?q=12.9716,77.5946
       const queryMatch = url.match(/[?&]q=([0-9.-]+),([0-9.-]+)/);
       if (queryMatch) {
         lat = parseFloat(queryMatch[1]);
@@ -2067,7 +2078,7 @@ const AdminDashboard = () => {
         }
       }
       
-      // Format 5: https://www.google.com/maps/search/?api=1&query=12.9716,77.5946
+      // Format 6: https://www.google.com/maps/search/?api=1&query=12.9716,77.5946
       const searchMatch = url.match(/[?&]query=([0-9.-]+),([0-9.-]+)/);
       if (searchMatch) {
         lat = parseFloat(searchMatch[1]);
