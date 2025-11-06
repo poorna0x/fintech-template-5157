@@ -124,6 +124,13 @@ const DraggableMap = ({ center, onLocationChange, zoom = 15, height = '400px' }:
     }
   }, [center.lat, center.lng, marker, map]);
 
+  // Separate effect for zoom to ensure it always updates
+  useEffect(() => {
+    if (map) {
+      map.setZoom(zoom);
+    }
+  }, [zoom, map]);
+
   return (
     <div className="relative w-full rounded-lg overflow-hidden border-2 border-gray-300 shadow-lg">
       {!isMapLoaded && (

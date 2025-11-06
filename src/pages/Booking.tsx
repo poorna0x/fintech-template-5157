@@ -95,6 +95,7 @@ const Booking: React.FC = () => {
   const addressAutocompleteRef = useRef<google.maps.places.Autocomplete | null>(null);
   const [currentLocationLoading, setCurrentLocationLoading] = useState(false);
   const [mapCenter, setMapCenter] = useState<{ lat: number; lng: number }>({ lat: 12.9716, lng: 77.5946 });
+  const [mapZoom, setMapZoom] = useState<number>(15);
 
   // Get tomorrow's date
   const getTomorrowDate = () => {
@@ -653,6 +654,7 @@ const Booking: React.FC = () => {
                 addressInputRef.current.value = address;
               }
               setMapCenter(location);
+              setMapZoom(19); // Zoom all the way in to current location
               toast.success('Location captured successfully!');
             } else {
               toast.error('Could not get address for this location');
@@ -1844,6 +1846,7 @@ const Booking: React.FC = () => {
                     <DraggableMap
                       center={mapCenter}
                       onLocationChange={handleMapLocationChange}
+                      zoom={mapZoom}
                       height="300px"
                     />
                   </div>
