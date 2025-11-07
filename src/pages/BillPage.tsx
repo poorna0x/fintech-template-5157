@@ -119,7 +119,8 @@ export default function BillPage() {
              paymentStatus: bill.paymentStatus,
              paymentMethod: bill.paymentMethod,
              notes: bill.notes,
-             terms: bill.terms
+             terms: bill.terms,
+             hideGstInHeader: (bill as any).hideGstInHeader || false
            };
     
     generateBillPDF(pdfData);

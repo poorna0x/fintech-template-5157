@@ -68,6 +68,7 @@ export default function BillGenerator({ customer, onPrint }: BillGeneratorProps)
   const [isEditingTerms, setIsEditingTerms] = useState(false);
   const [newTerm, setNewTerm] = useState('');
   const [isEditingNotes, setIsEditingNotes] = useState(false);
+  const [hideGstInHeader, setHideGstInHeader] = useState(false);
 
   // Editable customer information state
   const [isEditingCustomer, setIsEditingCustomer] = useState(false);
@@ -222,9 +223,10 @@ export default function BillGenerator({ customer, onPrint }: BillGeneratorProps)
       notes: notes.join('\n'),
       terms: showValidityNote ? `${validityNote}\n\n${terms}` : terms,
       serviceType: customerServiceType,
+      hideGstInHeader,
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString()
-    };
+    } as any;
 
     onPrint?.(bill, action);
   };
@@ -248,6 +250,18 @@ export default function BillGenerator({ customer, onPrint }: BillGeneratorProps)
             <CardTitle>Bill Information</CardTitle>
           </CardHeader>
           <CardContent className="space-y-3 sm:space-y-4">
+            <div className="flex items-center space-x-2 pb-2 border-b">
+              <input
+                type="checkbox"
+                id="hideGstInHeader"
+                checked={hideGstInHeader}
+                onChange={(e) => setHideGstInHeader(e.target.checked)}
+                className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+              />
+              <Label htmlFor="hideGstInHeader" className="text-sm font-medium cursor-pointer">
+                Hide GST Number in Header
+              </Label>
+            </div>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
               <div>
                 <Label htmlFor="billNumber">Bill Number</Label>

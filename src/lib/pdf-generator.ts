@@ -44,6 +44,7 @@ export interface PDFBillData {
   paymentMethod?: string;
   notes?: string;
   terms?: string;
+  hideGstInHeader?: boolean;
 }
 
 export function generateBillPDF(billData: PDFBillData, action: 'print' | 'pdf' = 'print'): void {
@@ -249,6 +250,54 @@ export function generateBillPDF(billData: PDFBillData, action: 'print' | 'pdf' =
           .terms-list li {
             margin-bottom: 8px;
             list-style-type: disc;
+          }
+          
+          .signatures {
+            display: flex;
+            justify-content: center;
+            margin: 30px 15px 20px 15px;
+            padding-top: 20px;
+            border-top: 1px solid #e5e7eb;
+          }
+          
+          .signature-box {
+            text-align: center;
+            padding-top: 15px;
+          }
+          
+          .signature-label {
+            font-weight: bold;
+            color: #000000;
+            margin-bottom: 5px;
+            font-size: 14px;
+          }
+          
+          .signature-seal {
+            width: 120px;
+            height: 120px;
+            margin: 20px auto 10px auto;
+            display: block;
+          }
+          
+          @media (max-width: 768px) {
+            .signature-seal {
+              width: 80px;
+              height: 80px;
+              margin: 15px auto 8px auto;
+            }
+            
+            .signature-label {
+              font-size: 12px;
+            }
+            
+            .signature-date {
+              font-size: 10px;
+            }
+          }
+          
+          .signature-date {
+            font-size: 12px;
+            color: #6b7280;
           }
           
           .footer {
@@ -615,6 +664,20 @@ function handleMobilePrint(billData: PDFBillData, action: 'print' | 'pdf'): void
         list-style-type: disc;
       }
       
+      .signature-seal {
+        width: 80px !important;
+        height: 80px !important;
+        margin: 15px auto 8px auto !important;
+      }
+      
+      .signature-label {
+        font-size: 12px !important;
+      }
+      
+      .signature-date {
+        font-size: 10px !important;
+      }
+      
       .footer {
         margin: 15px 15px 0 15px;
         padding: 10px 0;
@@ -894,7 +957,7 @@ function createBillContent(data: PDFBillData): string {
         <div class="company-details">
           <div>${data.company.address}, ${data.company.city} - ${data.company.pincode}</div>
           <div>Phone: ${data.company.phone} | Email: ${data.company.email}</div>
-          <div>GST: ${data.company.gstNumber}</div>
+          ${!data.hideGstInHeader ? `<div>GST: ${data.company.gstNumber}</div>` : ''}
           ${data.company.website ? `<div>Website: ${data.company.website}</div>` : ''}
         </div>
       </div>
@@ -982,6 +1045,20 @@ function createBillContent(data: PDFBillData): string {
           ` : ''}
         </div>
       ` : ''}
+      
+      <!-- Signatures -->
+      <div class="signatures">
+        <div class="signature-box">
+          <div class="signature-label" style="text-align: center;">Authorized Signatory</div>
+          <div style="font-size: 12px; color: #6b7280; margin-bottom: 5px; text-align: center;">M/s Hydrogen RO</div>
+          <img src="/HydrogenROSeal.webp" alt="Hydrogen RO Seal" class="signature-seal" />
+          <div class="signature-date" style="text-align: center;">Date: ${new Date().toLocaleDateString('en-IN', { 
+            day: '2-digit', 
+            month: '2-digit', 
+            year: 'numeric' 
+          })}</div>
+        </div>
+      </div>
       
       <!-- Footer -->
       <div class="footer">
@@ -1185,6 +1262,53 @@ function generateBillHTML(data: PDFBillData): string {
           list-style-type: disc;
         }
         
+        .signatures {
+          display: flex;
+          justify-content: center;
+          margin: 30px 15px 20px 15px;
+          padding-top: 20px;
+          border-top: 1px solid #e5e7eb;
+        }
+        
+        .signature-box {
+          text-align: center;
+          padding-top: 15px;
+        }
+        
+        .signature-label {
+          font-weight: bold;
+          color: #000000;
+          margin-bottom: 5px;
+          font-size: 14px;
+        }
+        
+        .signature-seal {
+          width: 120px;
+          height: 120px;
+          margin: 20px auto 10px auto;
+          display: block;
+        }
+        
+        @media (max-width: 768px) {
+          .signature-seal {
+            width: 80px;
+            height: 80px;
+            margin: 15px auto 8px auto;
+          }
+          
+          .signature-label {
+            font-size: 12px;
+          }
+          
+          .signature-date {
+            font-size: 10px;
+          }
+        }
+        
+        .signature-date {
+          font-size: 12px;
+          color: #6b7280;
+        }
         
         .footer {
           margin: 15px 15px 0 15px;
@@ -1315,7 +1439,7 @@ function generateBillHTML(data: PDFBillData): string {
           <div class="company-details">
             <div>${data.company.address}, ${data.company.city} - ${data.company.pincode}</div>
             <div>Phone: ${data.company.phone} | Email: ${data.company.email}</div>
-            <div>GST: ${data.company.gstNumber}</div>
+            ${!data.hideGstInHeader ? `<div>GST: ${data.company.gstNumber}</div>` : ''}
             ${data.company.website ? `<div>Website: ${data.company.website}</div>` : ''}
           </div>
         </div>
@@ -1403,6 +1527,20 @@ function generateBillHTML(data: PDFBillData): string {
             ` : ''}
           </div>
         ` : ''}
+        
+        <!-- Signatures -->
+        <div class="signatures">
+          <div class="signature-box">
+            <div class="signature-label" style="text-align: center;">Authorized Signatory</div>
+            <div style="font-size: 12px; color: #6b7280; margin-bottom: 5px; text-align: center;">M/s Hydrogen RO</div>
+            <img src="/HydrogenROSeal.webp" alt="Hydrogen RO Seal" class="signature-seal" />
+            <div class="signature-date" style="text-align: center;">Date: ${new Date().toLocaleDateString('en-IN', { 
+              day: '2-digit', 
+              month: '2-digit', 
+              year: 'numeric' 
+            })}</div>
+          </div>
+        </div>
         
         <!-- Footer -->
         <div class="footer">
