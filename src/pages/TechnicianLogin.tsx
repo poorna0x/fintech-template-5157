@@ -9,6 +9,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Wrench, Eye, EyeOff, Droplets } from 'lucide-react';
 import AltchaWidget from '@/components/AltchaWidget';
+import { registerTechnicianPWA } from '@/lib/pwa';
 
 const TechnicianLogin = () => {
   const [email, setEmail] = useState('');
@@ -22,6 +23,10 @@ const TechnicianLogin = () => {
 
   const { login } = useAuth();
   const navigate = useNavigate();
+  useEffect(() => {
+    registerTechnicianPWA();
+  }, []);
+
 
   // Auto-verify captcha in development mode when accessed from local network
   useEffect(() => {

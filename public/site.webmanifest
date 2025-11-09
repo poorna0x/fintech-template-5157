@@ -2,6 +2,8 @@
   "name": "Hydrogen RO - Water Purifier Services Bengaluru",
   "short_name": "Hydrogen RO",
   "description": "Best RO water purifier installation, repair & maintenance services in Bengaluru, Karnataka. Expert technicians, same-day service, 24/7 emergency support.",
+  "id": "/",
+  "scope": "/",
   "start_url": "/",
   "display": "standalone",
   "background_color": "#ffffff",
@@ -45,6 +47,20 @@
       "src": "/favicon.ico",
       "sizes": "48x48",
       "type": "image/x-icon"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "Technician Dashboard",
+      "short_name": "Technician",
+      "description": "Open the technician dashboard to view your assigned jobs.",
+      "url": "/technician"
+    },
+    {
+      "name": "Technician Login",
+      "short_name": "Tech Login",
+      "description": "Quickly jump to the technician login screen.",
+      "url": "/technician/login"
     }
   ],
   "categories": ["business", "utilities", "lifestyle"],
