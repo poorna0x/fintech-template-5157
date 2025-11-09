@@ -9,6 +9,7 @@ import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Shield, Eye, EyeOff, Droplets } from 'lucide-react';
 import { toast } from 'sonner';
 import AltchaWidget from '@/components/AltchaWidget';
+import { registerAdminPWA } from '@/lib/pwa';
 
 const AdminLogin = () => {
   const [email, setEmail] = useState('');
@@ -26,6 +27,10 @@ const AdminLogin = () => {
   useEffect(() => {
     // Remove dark mode classes to ensure white theme
     document.documentElement.classList.remove('dark-mode', 'dark');
+  }, []);
+
+  useEffect(() => {
+    registerAdminPWA();
   }, []);
 
   // Auto-verify captcha in development mode when accessed from local network

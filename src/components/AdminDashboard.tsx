@@ -52,6 +52,7 @@ import {
   Tag
 } from 'lucide-react';
 import { db, supabase } from '@/lib/supabase';
+import { registerAdminPWA } from '@/lib/pwa';
 import { Customer, Job, Technician } from '@/types';
 import { cloudinaryService, compressImage } from '@/lib/cloudinary';
 import { toast } from 'sonner';
@@ -769,6 +770,10 @@ const AdminDashboard = () => {
   const [selectedTechnicianIds, setSelectedTechnicianIds] = useState<string[]>([]);
   const [isCreatingAssignmentRequests, setIsCreatingAssignmentRequests] = useState(false);
   const [assignmentType, setAssignmentType] = useState<'direct' | 'bulk'>('direct');
+
+  useEffect(() => {
+    registerAdminPWA();
+  }, []);
 
   // Generate employee ID
   const generateEmployeeId = (): string => {

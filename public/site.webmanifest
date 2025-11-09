@@ -61,6 +61,18 @@
       "short_name": "Tech Login",
       "description": "Quickly jump to the technician login screen.",
       "url": "/technician/login"
+    },
+    {
+      "name": "Admin Dashboard",
+      "short_name": "Admin",
+      "description": "Open the admin dashboard to manage jobs and technicians.",
+      "url": "/admin"
+    },
+    {
+      "name": "Admin Settings",
+      "short_name": "Admin Settings",
+      "description": "Configure application preferences and integrations.",
+      "url": "/settings"
     }
   ],
   "categories": ["business", "utilities", "lifestyle"],

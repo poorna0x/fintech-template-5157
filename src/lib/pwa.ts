@@ -1,39 +1,61 @@
-const SW_URL = '/technician-sw.js';
-const SW_SCOPE = '/technician/';
+interface RegisterOptions {
+  swUrl: string;
+  scope: string;
+  label: string;
+}
 
-let registrationPromise: Promise<ServiceWorkerRegistration> | null = null;
+const registrationPromises = new Map<string, Promise<ServiceWorkerRegistration | null>>();
 
 const isStandalone = () => {
   return window.matchMedia('(display-mode: standalone)').matches || (navigator as any).standalone === true;
 };
 
-export const registerTechnicianPWA = () => {
+const registerPWA = ({ swUrl, scope, label }: RegisterOptions) => {
   if (import.meta.env.DEV) {
     return Promise.resolve(null);
   }
 
   if (!('serviceWorker' in navigator)) {
-    console.warn('[Technician PWA] Service workers are not supported in this browser.');
+    console.warn(`[${label}] Service workers are not supported in this browser.`);
     return Promise.resolve(null);
   }
 
-  if (registrationPromise) {
-    return registrationPromise;
+  const key = `${swUrl}|${scope}`;
+  const cachedPromise = registrationPromises.get(key);
+  if (cachedPromise) {
+    return cachedPromise;
   }
 
-  registrationPromise = navigator.serviceWorker
-    .register(SW_URL, { scope: SW_SCOPE })
+  const registrationPromise = navigator.serviceWorker
+    .register(swUrl, { scope })
     .then((registration) => {
-      console.info('[Technician PWA] Service worker registered:', registration.scope);
+      console.info(`[${label}] Service worker registered:`, registration.scope);
       return registration;
     })
     .catch((error) => {
-      console.error('[Technician PWA] Service worker registration failed:', error);
-      registrationPromise = null;
+      console.error(`[${label}] Service worker registration failed:`, error);
+      registrationPromises.delete(key);
       return null;
     });
 
+  registrationPromises.set(key, registrationPromise);
   return registrationPromise;
+};
+
+export const registerTechnicianPWA = () => {
+  return registerPWA({
+    swUrl: '/technician-sw.js',
+    scope: '/technician/',
+    label: 'Technician PWA',
+  });
+};
+
+export const registerAdminPWA = () => {
+  return registerPWA({
+    swUrl: '/admin-sw.js',
+    scope: '/admin/',
+    label: 'Admin PWA',
+  });
 };
 
 export const getInstallPromptEvent = () => {
