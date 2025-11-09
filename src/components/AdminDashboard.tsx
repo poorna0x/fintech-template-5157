@@ -5864,6 +5864,32 @@ const AdminDashboard = () => {
                         };
                         
                         const allPhotos = [...extractPhotoUrls(beforePhotos), ...extractPhotoUrls(afterPhotos)];                                                
+                        const followUpDate = (job as any).follow_up_date || job.followUpDate || null;
+                        const followUpTime = (job as any).follow_up_time || job.followUpTime || null;
+                        const followUpNotes = (job as any).follow_up_notes || job.followUpNotes || '';
+                        const followUpScheduledAt = (job as any).follow_up_scheduled_at || job.followUpScheduledAt || null;
+                        const followUpScheduledBy = (job as any).follow_up_scheduled_by || job.followUpScheduledBy || null;
+                        const formattedFollowUpDate = followUpDate ? new Date(followUpDate).toLocaleDateString() : null;
+                        const formattedFollowUpTime = followUpTime ? (() => {
+                          const timeString = String(followUpTime);
+                          const [hours, minutes] = timeString.split(':');
+                          if (!hours || !minutes) {
+                            return timeString;
+                          }
+                          const hourNum = parseInt(hours, 10);
+                          if (Number.isNaN(hourNum)) {
+                            return timeString;
+                          }
+                          const normalizedHour = ((hourNum % 12) + 12) % 12 || 12;
+                          const suffix = hourNum >= 12 ? 'PM' : 'AM';
+                          return `${normalizedHour}:${minutes.padEnd(2, '0')} ${suffix}`;
+                        })() : null;
+                        const formattedFollowUpScheduledAt = followUpScheduledAt ? new Date(followUpScheduledAt).toLocaleString() : null;
+                        const formattedFollowUpScheduledBy = followUpScheduledBy === 'admin'
+                          ? 'Admin'
+                          : followUpScheduledBy === 'technician'
+                            ? 'Technician'
+                            : followUpScheduledBy || null;
                         
                         return (
                           <div key={job.id} className="bg-white rounded-lg border border-gray-200 hover:border-gray-300 hover:shadow-sm transition-all duration-200 overflow-hidden group">
@@ -5951,6 +5977,35 @@ const AdminDashboard = () => {
                                         </div>
                                       </div>
                                     </div>
+                                    {(formattedFollowUpDate || formattedFollowUpTime) && (
+                                      <div className="flex items-start gap-2 sm:items-center">
+                                        <CalendarPlus className="w-4 h-4 text-indigo-500 flex-shrink-0 mt-0.5 sm:mt-0" />
+                                        <div className="min-w-0 flex-1">
+                                          <div className="text-xs text-gray-500">Follow-up Scheduled</div>
+                                          <div className="font-medium text-gray-900 break-words">
+                                            {formattedFollowUpDate || 'Date not set'}
+                                            {formattedFollowUpTime ? ` • ${formattedFollowUpTime}` : ''}
+                                          </div>
+                                          {formattedFollowUpScheduledAt && (
+                                            <div className="text-xs text-gray-500">
+                                              Scheduled on {formattedFollowUpScheduledAt}
+                                              {formattedFollowUpScheduledBy ? ` by ${formattedFollowUpScheduledBy}` : ''}
+                                            </div>
+                                          )}
+                                        </div>
+                                      </div>
+                                    )}
+                                    {followUpNotes && (
+                                      <div className="flex items-start gap-2 sm:items-center">
+                                        <MessageCircle className="w-4 h-4 text-indigo-500 flex-shrink-0 mt-0.5 sm:mt-0" />
+                                        <div className="min-w-0 flex-1">
+                                          <div className="text-xs text-gray-500">Follow-up Notes</div>
+                                          <div className="font-medium text-gray-900 break-words">
+                                            {followUpNotes}
+                                          </div>
+                                        </div>
+                                      </div>
+                                    )}
                                     
                                     {(job.brand && job.model && 
                                       !job.brand.toLowerCase().includes('not specified') && 
@@ -7405,13 +7460,14 @@ const AdminDashboard = () => {
                           No technicians available
                         </SelectItem>
                       ) : (
-                        technicians
-                          .filter(tech => !tech.status || tech.status === 'AVAILABLE')
-                          .map((technician) => (
-                            <SelectItem key={technician.id} value={technician.id || 'unknown'}>
-                              {technician.fullName || 'Unknown'} ({technician.employeeId || 'No ID'})
-                            </SelectItem>
-                          ))
+                        technicians.map((technician) => (
+                          <SelectItem
+                            key={technician.id}
+                            value={technician.id || 'unknown'}
+                          >
+                            {technician.fullName || 'Unknown Technician'}
+                          </SelectItem>
+                        ))
                       )}
                     </SelectContent>
                   </Select>
@@ -7427,28 +7483,35 @@ const AdminDashboard = () => {
                     <p className="text-sm text-gray-500">No technicians available</p>
                   ) : (
                     technicians
-                      .filter(tech => !tech.status || tech.status === 'AVAILABLE')
-                      .map((technician) => (
-                        <div key={technician.id} className="flex items-center space-x-2">
-                          <input
-                            type="checkbox"
-                            id={`tech-${technician.id}`}
-                            value={technician.id}
-                            checked={selectedTechnicianIds.includes(technician.id || '')}
-                            onChange={(e) => {
-                              if (e.target.checked) {
-                                setSelectedTechnicianIds(prev => [...prev, technician.id || '']);
-                              } else {
-                                setSelectedTechnicianIds(prev => prev.filter(id => id !== technician.id));
-                              }
-                            }}
-                            className="h-4 w-4 text-blue-600 rounded"
-                          />
-                          <label htmlFor={`tech-${technician.id}`} className="text-sm text-gray-700">
-                            {technician.fullName || 'Unknown'} ({technician.employeeId || 'No ID'})
-                          </label>
-                        </div>
-                      ))
+                      .map((technician) => {
+                        const technicianId = technician.id || '';
+                        const isSelected = selectedTechnicianIds.includes(technicianId);
+
+                        return (
+                          <div key={technician.id} className="flex items-center space-x-2">
+                            <input
+                              type="checkbox"
+                              id={`tech-${technician.id}`}
+                              value={technicianId}
+                              checked={isSelected}
+                              onChange={(e) => {
+                                if (e.target.checked) {
+                                  setSelectedTechnicianIds(prev => [...prev, technicianId]);
+                                } else {
+                                  setSelectedTechnicianIds(prev => prev.filter(id => id !== technicianId));
+                                }
+                              }}
+                              className="h-4 w-4 text-blue-600 rounded"
+                            />
+                            <label
+                              htmlFor={`tech-${technician.id}`}
+                              className="text-sm text-gray-700"
+                            >
+                              {technician.fullName || 'Unknown Technician'}
+                            </label>
+                          </div>
+                        );
+                      })
                   )}
                 </div>
                 <p className="text-xs text-gray-500 mt-1">

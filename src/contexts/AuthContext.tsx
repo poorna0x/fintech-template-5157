@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
+import React, { createContext, useContext, useState, useEffect, useRef, ReactNode } from 'react';
 import { toast } from 'sonner';
 import { supabase } from '@/lib/supabase';
 import { authenticateUser, setAuthSession, getAuthSession, clearAuthSession, isTechnicianEmail } from '@/lib/auth';
@@ -28,7 +28,18 @@ interface AuthProviderProps {
 }
 
 export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
-  const [user, setUser] = useState<User | null>(null);
+  const technicianSessionRef = useRef(false);
+  const [user, setUser] = useState<User | null>(() => {
+    if (typeof window === 'undefined') {
+      return null;
+    }
+    const existingSession = getAuthSession();
+    if (existingSession) {
+      technicianSessionRef.current = existingSession.role === 'technician';
+      return existingSession;
+    }
+    return null;
+  });
   const [loading, setLoading] = useState(true);
   const [initialized, setInitialized] = useState(false);
 
@@ -41,6 +52,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         if (customSession) {
           setUser(customSession);
           setLoading(false);
+          technicianSessionRef.current = true;
           return;
         }
 
@@ -54,6 +66,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
             role: userRole,
             fullName: session.user.user_metadata?.full_name || session.user.user_metadata?.name
           });
+          technicianSessionRef.current = false;
         }
       } catch (error) {
         // Log errors in development for debugging
@@ -70,7 +83,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
 
     // Listen for Supabase auth changes (for admins)
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
-      if (event === 'SIGNED_IN' && session?.user) {
+      if (session?.user) {
         const userRole = session.user.user_metadata?.role || session.user.app_metadata?.role || 'admin';
         setUser({
           id: session.user.id,
@@ -78,14 +91,60 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
           role: userRole,
           fullName: session.user.user_metadata?.full_name || session.user.user_metadata?.name
         });
-      } else if (event === 'SIGNED_OUT') {
+        technicianSessionRef.current = false;
+        setLoading(false);
+        return;
+      }
+
+      const customSession = getAuthSession();
+      if (customSession) {
+        setUser(prev => {
+          if (prev && prev.id === customSession.id && prev.role === customSession.role) {
+            return prev;
+          }
+          return customSession;
+        });
+        technicianSessionRef.current = customSession.role === 'technician';
+        setLoading(false);
+        return;
+      }
+
+      if (event === 'SIGNED_OUT' || event === 'INITIAL_SESSION' || event === 'TOKEN_REFRESHED') {
         setUser(null);
       }
+
       setLoading(false);
     });
 
     return () => subscription.unsubscribe();
   }, []);
+
+  // Keep technician session in sync from localStorage
+  useEffect(() => {
+    const restoreSessionFromStorage = () => {
+      const storedSession = getAuthSession();
+      if (storedSession) {
+        setUser(prev => {
+          // Avoid unnecessary state updates if session is unchanged
+          if (prev && prev.id === storedSession.id && prev.role === storedSession.role) {
+            return prev;
+          }
+          return storedSession;
+        });
+        technicianSessionRef.current = storedSession.role === 'technician';
+      }
+    };
+
+    // Attempt to restore immediately if user is missing post-initialization
+    if (initialized && !user) {
+      restoreSessionFromStorage();
+    }
+
+    window.addEventListener('storage', restoreSessionFromStorage);
+    return () => {
+      window.removeEventListener('storage', restoreSessionFromStorage);
+    };
+  }, [initialized, user]);
 
   const login = async (email: string, password: string): Promise<boolean> => {
     try {
@@ -95,8 +154,22 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       const customUser = await authenticateUser(email, password);
       if (customUser) {
         console.log('Technician authentication successful:', customUser);
+        
+        // Ensure any existing Supabase session is cleared so it doesn't override technician auth on reload
+        try {
+          const { error: signOutError } = await supabase.auth.signOut();
+          if (signOutError && import.meta.env.DEV) {
+            console.warn('Warning clearing Supabase session after technician login:', signOutError);
+          }
+        } catch (signOutErr) {
+          if (import.meta.env.DEV) {
+            console.warn('Failed to clear Supabase session after technician login:', signOutErr);
+          }
+        }
+        
         setUser(customUser);
         setAuthSession(customUser);
+        technicianSessionRef.current = true;
         toast.success(`Welcome back, ${customUser.fullName || customUser.email}!`);
         return true;
       }
@@ -134,6 +207,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         };
         console.log('Supabase auth successful, user role:', userRole);
         setUser(user);
+        technicianSessionRef.current = false;
         toast.success(`Welcome back, ${user.fullName || user.email}!`);
         return true;
       }
@@ -152,6 +226,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     try {
       // Clear custom auth session (for technicians)
       clearAuthSession();
+      technicianSessionRef.current = false;
       
       // Sign out from Supabase auth (for admins)
       await supabase.auth.signOut();
