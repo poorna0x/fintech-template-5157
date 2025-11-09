@@ -34,7 +34,6 @@ import {
   ExternalLink,
   Camera,
   History,
-  MessageCircle,
   Settings,
   Receipt,
   FileText,
@@ -5885,14 +5884,38 @@ const AdminDashboard = () => {
                           return `${normalizedHour}:${minutes.padEnd(2, '0')} ${suffix}`;
                         })() : null;
                         const formattedFollowUpScheduledAt = followUpScheduledAt ? new Date(followUpScheduledAt).toLocaleString() : null;
-                        const formattedFollowUpScheduledBy = followUpScheduledBy === 'admin'
-                          ? 'Admin'
-                          : followUpScheduledBy === 'technician'
-                            ? 'Technician'
-                            : followUpScheduledBy || null;
+                        const followUpScheduledByTechnician = followUpScheduledBy
+                          ? technicians.find(tech => tech.id === followUpScheduledBy)
+                          : null;
+                        const followUpScheduledByName =
+                          followUpScheduledByTechnician?.fullName ||
+                          (followUpScheduledBy === 'admin' ? 'Admin' : undefined) ||
+                          (followUpScheduledBy === 'technician' ? 'Technician' : undefined) ||
+                          'Admin';
                         
                         return (
-                          <div key={job.id} className="bg-white rounded-lg border border-gray-200 hover:border-gray-300 hover:shadow-sm transition-all duration-200 overflow-hidden group">
+                          <React.Fragment key={job.id}>
+                            {job.status === 'FOLLOW_UP' && (formattedFollowUpDate || formattedFollowUpTime || followUpNotes || formattedFollowUpScheduledAt) && (
+                              <div className="mt-4 mb-2">
+                                <div className="flex items-start gap-3 rounded-md border border-gray-200 px-3 py-2">
+                                  <CalendarPlus className="w-4 h-4 text-gray-500 mt-0.5" />
+                                  <div className="space-y-1 text-sm text-gray-900">
+                                    <div className="font-semibold">
+                                      Follow-up scheduled for {formattedFollowUpDate || 'Date not set'}
+                                      {formattedFollowUpTime ? ` at ${formattedFollowUpTime}` : ''}
+                                    </div>
+                                    <div className="text-gray-700">
+                                      <span className="text-gray-500">Reason:</span> {followUpNotes || 'Not confirmed'}
+                                    </div>
+                                    <div className="text-xs text-gray-500">
+                                      Scheduled by {followUpScheduledByName}
+                                      {formattedFollowUpScheduledAt ? ` on ${formattedFollowUpScheduledAt}` : ''}
+                                    </div>
+                                  </div>
+                                </div>
+                              </div>
+                            )}
+                            <div className="bg-white rounded-lg border border-gray-200 hover:border-gray-300 hover:shadow-sm transition-all duration-200 overflow-hidden group">
                             <div className="p-3 sm:p-4">
                               <div className="flex items-start justify-between mb-4">
                                 <div className="flex-1 min-w-0">
@@ -5977,36 +6000,6 @@ const AdminDashboard = () => {
                                         </div>
                                       </div>
                                     </div>
-                                    {(formattedFollowUpDate || formattedFollowUpTime) && (
-                                      <div className="flex items-start gap-2 sm:items-center">
-                                        <CalendarPlus className="w-4 h-4 text-indigo-500 flex-shrink-0 mt-0.5 sm:mt-0" />
-                                        <div className="min-w-0 flex-1">
-                                          <div className="text-xs text-gray-500">Follow-up Scheduled</div>
-                                          <div className="font-medium text-gray-900 break-words">
-                                            {formattedFollowUpDate || 'Date not set'}
-                                            {formattedFollowUpTime ? ` • ${formattedFollowUpTime}` : ''}
-                                          </div>
-                                          {formattedFollowUpScheduledAt && (
-                                            <div className="text-xs text-gray-500">
-                                              Scheduled on {formattedFollowUpScheduledAt}
-                                              {formattedFollowUpScheduledBy ? ` by ${formattedFollowUpScheduledBy}` : ''}
-                                            </div>
-                                          )}
-                                        </div>
-                                      </div>
-                                    )}
-                                    {followUpNotes && (
-                                      <div className="flex items-start gap-2 sm:items-center">
-                                        <MessageCircle className="w-4 h-4 text-indigo-500 flex-shrink-0 mt-0.5 sm:mt-0" />
-                                        <div className="min-w-0 flex-1">
-                                          <div className="text-xs text-gray-500">Follow-up Notes</div>
-                                          <div className="font-medium text-gray-900 break-words">
-                                            {followUpNotes}
-                                          </div>
-                                        </div>
-                                      </div>
-                                    )}
-                                    
                                     {(job.brand && job.model && 
                                       !job.brand.toLowerCase().includes('not specified') && 
                                       !job.brand.toLowerCase().includes('n/a') &&
@@ -6337,6 +6330,7 @@ const AdminDashboard = () => {
                               </div>
                             </div>
                           </div>
+                          </React.Fragment>
                         );
                         });
                       })()}
