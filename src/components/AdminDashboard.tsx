@@ -5170,24 +5170,23 @@ const AdminDashboard = () => {
   };
 
   // Filter data based on search term (case insensitive)
+  // Search by name, phone, email, and customer ID only
   const filteredCustomers = customers.filter(customer => {
     if (!searchTerm.trim()) return true; // Show all customers if search is empty
     
     const searchLower = searchTerm.toLowerCase();
+    const searchTermClean = searchTerm.trim();
+    
     return (
-      customer.customerId?.toLowerCase().includes(searchLower) ||
-      customer.fullName?.toLowerCase().includes(searchLower) ||
-      customer.phone?.includes(searchTerm) ||
-      customer.alternate_phone?.includes(searchTerm) ||
-      customer.email?.toLowerCase().includes(searchLower) ||
-      customer.preferredLanguage?.toLowerCase().includes(searchLower) ||
-      customer.serviceType?.toLowerCase().includes(searchLower) ||
-      customer.brand?.toLowerCase().includes(searchLower) ||
-      customer.model?.toLowerCase().includes(searchLower) ||
-      customer.behavior?.toLowerCase().includes(searchLower) ||
-      customer.address?.street?.toLowerCase().includes(searchLower) ||
-      customer.address?.area?.toLowerCase().includes(searchLower) ||
-      customer.address?.pincode?.includes(searchTerm)
+      // Customer ID search
+      (customer.customerId || customer.customer_id)?.toLowerCase().includes(searchLower) ||
+      // Name search
+      (customer.fullName || customer.full_name)?.toLowerCase().includes(searchLower) ||
+      // Phone search (exact match or partial)
+      customer.phone?.includes(searchTermClean) ||
+      (customer.alternatePhone || customer.alternate_phone)?.includes(searchTermClean) ||
+      // Email search
+      customer.email?.toLowerCase().includes(searchLower)
     );
   });
 
@@ -5427,7 +5426,7 @@ const AdminDashboard = () => {
             <div className="relative flex-1">
             <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
               <Input
-                placeholder="Search by customer ID, name, phone, email, language, behavior, service type, brand, model, area, pincode..."
+                placeholder="Search by customer ID, name, phone, or email..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 onKeyPress={handleSearchKeyPress}
