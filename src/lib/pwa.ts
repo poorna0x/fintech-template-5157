@@ -5,10 +5,38 @@ interface RegisterOptions {
 }
 
 const registrationPromises = new Map<string, Promise<ServiceWorkerRegistration | null>>();
+let globalInstallPromptHandler: ((event: Event) => void) | null = null;
+let isPWAEnabled = false;
 
 const isStandalone = () => {
   return window.matchMedia('(display-mode: standalone)').matches || (navigator as any).standalone === true;
 };
+
+// Initialize global handler to prevent install prompts on non-PWA pages
+const initGlobalInstallPromptHandler = () => {
+  if (globalInstallPromptHandler) {
+    return; // Already initialized
+  }
+
+  globalInstallPromptHandler = (event: Event) => {
+    // Only allow install prompt on PWA-enabled pages
+    if (!isPWAEnabled) {
+      event.preventDefault();
+      // Stop the event from propagating
+      event.stopImmediatePropagation();
+      console.log('[PWA] Install prompt blocked - not on PWA-enabled page');
+    }
+  };
+
+  // Use capture phase to intercept before other handlers
+  window.addEventListener('beforeinstallprompt', globalInstallPromptHandler, { capture: true });
+  console.log('[PWA] Global install prompt handler initialized - blocking prompts on non-PWA pages');
+};
+
+// Initialize on module load
+if (typeof window !== 'undefined') {
+  initGlobalInstallPromptHandler();
+}
 
 const registerPWA = ({ swUrl, scope, label }: RegisterOptions) => {
   if (import.meta.env.DEV) {
@@ -43,6 +71,10 @@ const registerPWA = ({ swUrl, scope, label }: RegisterOptions) => {
 };
 
 export const registerTechnicianPWA = () => {
+  // Enable PWA for technician pages
+  isPWAEnabled = true;
+  console.log('[PWA] Technician PWA enabled - install prompts allowed');
+  
   return registerPWA({
     swUrl: '/technician-sw.js',
     scope: '/technician/',
@@ -51,6 +83,10 @@ export const registerTechnicianPWA = () => {
 };
 
 export const registerAdminPWA = () => {
+  // Enable PWA for admin pages
+  isPWAEnabled = true;
+  console.log('[PWA] Admin PWA enabled - install prompts allowed');
+  
   return registerPWA({
     swUrl: '/admin-sw.js',
     scope: '/admin/',
@@ -58,9 +94,22 @@ export const registerAdminPWA = () => {
   });
 };
 
+// Disable PWA when leaving PWA-enabled pages
+export const disablePWA = () => {
+  isPWAEnabled = false;
+  console.log('[PWA] PWA disabled - install prompts blocked');
+};
+
 export const getInstallPromptEvent = () => {
   return new Promise<BeforeInstallPromptEvent | null>((resolve) => {
     if (isStandalone()) {
+      resolve(null);
+      return;
+    }
+
+    // Only allow install prompt if PWA is enabled
+    if (!isPWAEnabled) {
+      console.log('[PWA] Install prompt request blocked - PWA not enabled on this page');
       resolve(null);
       return;
     }

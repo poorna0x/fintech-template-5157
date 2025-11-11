@@ -82,8 +82,26 @@ const server = http.createServer(async (req, res) => {
   }
 });
 
-server.listen(PORT, () => {
+server.listen(PORT, '0.0.0.0', () => {
+  const os = require('os');
+  const networkInterfaces = os.networkInterfaces();
+  const addresses = [];
+  
+  // Get all local IP addresses
+  Object.keys(networkInterfaces).forEach((interfaceName) => {
+    networkInterfaces[interfaceName].forEach((iface) => {
+      if (iface.family === 'IPv4' && !iface.internal) {
+        addresses.push(iface.address);
+      }
+    });
+  });
+  
   console.log(`🚀 Netlify Functions Dev Server running on http://localhost:${PORT}`);
+  if (addresses.length > 0) {
+    addresses.forEach((addr) => {
+      console.log(`   Also accessible at http://${addr}:${PORT}`);
+    });
+  }
   console.log(`📡 ALTCHA function: http://localhost:${PORT}/.netlify/functions/altcha-verify`);
   console.log(`🔐 Password verification: http://localhost:${PORT}/.netlify/functions/verify-technician-password`);
   console.log(`🔒 Password hashing: http://localhost:${PORT}/.netlify/functions/hash-technician-password`);

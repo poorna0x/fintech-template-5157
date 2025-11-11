@@ -41,7 +41,7 @@ import { db } from '@/lib/supabase';
 import { Job, JobAssignmentRequest } from '@/types';
 import { sendNotification, createJobCompletedNotification, createJobAssignmentRequestNotification, createJobAssignmentAcceptedNotification, createJobAssignmentRejectedNotification } from '@/lib/notifications';
 import FollowUpModal from '@/components/FollowUpModal';
-import { registerTechnicianPWA } from '@/lib/pwa';
+import { registerTechnicianPWA, disablePWA } from '@/lib/pwa';
 import { extractCoordinates, formatAddressForDisplay } from '@/lib/maps';
 import ImageUpload from '@/components/ImageUpload';
 import { Label } from '@/components/ui/label';
@@ -74,6 +74,11 @@ const TechnicianDashboard = () => {
   const [denyDialogOpen, setDenyDialogOpen] = useState(false);
   useEffect(() => {
     registerTechnicianPWA();
+    
+    // Cleanup: disable PWA when component unmounts
+    return () => {
+      disablePWA();
+    };
   }, []);
 
   const [selectedJobForDeny, setSelectedJobForDeny] = useState<Job | null>(null);

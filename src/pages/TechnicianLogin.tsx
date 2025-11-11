@@ -9,7 +9,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Wrench, Eye, EyeOff, Droplets } from 'lucide-react';
 import AltchaWidget from '@/components/AltchaWidget';
-import { registerTechnicianPWA } from '@/lib/pwa';
+import { registerTechnicianPWA, disablePWA } from '@/lib/pwa';
 
 const TechnicianLogin = () => {
   const [email, setEmail] = useState('');
@@ -25,6 +25,11 @@ const TechnicianLogin = () => {
   const navigate = useNavigate();
   useEffect(() => {
     registerTechnicianPWA();
+    
+    // Cleanup: disable PWA when component unmounts
+    return () => {
+      disablePWA();
+    };
   }, []);
 
 

@@ -81,9 +81,22 @@ export const authenticateUser = async (email: string, password: string): Promise
       
       if (isHashed) {
         // Password is hashed - use server-side verification
-        const apiUrl = import.meta.env.DEV 
-          ? 'http://localhost:8888/.netlify/functions/verify-technician-password'
-          : '/.netlify/functions/verify-technician-password';
+        // Detect if we're on mobile/local network and use the correct API URL
+        let apiUrl = '/.netlify/functions/verify-technician-password';
+        
+        if (import.meta.env.DEV) {
+          // In development, check if we're accessing from local network (mobile)
+          const hostname = window.location.hostname;
+          const isLocalNetwork = /^(192\.168\.|10\.|172\.(1[6-9]|2[0-9]|3[01])\.)/.test(hostname);
+          
+          if (isLocalNetwork) {
+            // Use the same hostname but port 8888 (dev server port)
+            apiUrl = `http://${hostname}:8888/.netlify/functions/verify-technician-password`;
+          } else {
+            // Localhost access - use netlify dev server
+            apiUrl = 'http://localhost:8888/.netlify/functions/verify-technician-password';
+          }
+        }
         
         try {
           console.log('Calling password verification API:', apiUrl);
@@ -104,10 +117,12 @@ export const authenticateUser = async (email: string, password: string): Promise
             console.error('Password verification API error:', verifyResponse.status, verifyResponse.statusText);
             const errorText = await verifyResponse.text();
             console.error('Error details:', errorText);
-            // If verification API is unavailable (404), show helpful error
-            if (verifyResponse.status === 404) {
-              console.error('❌ Password verification API not found. Make sure dev server is running: npm run dev:server');
-              throw new Error('Password verification service unavailable. Please ensure the development server is running.');
+            // If verification API is unavailable (404 or network error), show helpful error
+            if (verifyResponse.status === 404 || verifyResponse.status === 0) {
+              console.error('❌ Password verification API not found or unreachable.');
+              console.error('⚠️ Make sure dev server is running: npm run dev:server');
+              console.error(`⚠️ API URL attempted: ${apiUrl}`);
+              throw new Error('Password verification service unavailable. Please ensure the development server is running on port 8888.');
             }
             return null;
           }
@@ -128,7 +143,7 @@ export const authenticateUser = async (email: string, password: string): Promise
             console.log('Password mismatch:', verifyResult.error || 'Unknown error');
             return null;
           }
-        } catch (verifyError) {
+        } catch (verifyError: any) {
           console.error('Password verification error:', verifyError);
           console.error('Error details:', verifyError.message);
           // If verification API fails, we cannot verify hashed passwords
@@ -136,6 +151,13 @@ export const authenticateUser = async (email: string, password: string): Promise
           // Since technician was found, we should NOT try Supabase auth
           console.error('❌ Cannot verify password - verification API unavailable');
           console.error('⚠️ Make sure dev server is running: npm run dev:server');
+          console.error(`⚠️ API URL attempted: ${apiUrl}`);
+          
+          // Check if it's a network error (CORS, connection refused, etc.)
+          if (verifyError.message?.includes('Failed to fetch') || verifyError.message?.includes('NetworkError') || verifyError.name === 'TypeError') {
+            throw new Error('Cannot connect to password verification service. Please ensure the development server is running on port 8888 and accessible from your network.');
+          }
+          
           // Throw error to prevent Supabase auth fallback
           throw new Error('Password verification failed - service unavailable');
         }

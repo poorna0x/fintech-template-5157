@@ -52,7 +52,7 @@ import {
   Tag
 } from 'lucide-react';
 import { db, supabase } from '@/lib/supabase';
-import { registerAdminPWA } from '@/lib/pwa';
+import { registerAdminPWA, disablePWA } from '@/lib/pwa';
 import { Customer, Job, Technician } from '@/types';
 import { cloudinaryService, compressImage } from '@/lib/cloudinary';
 import { toast } from 'sonner';
@@ -773,6 +773,11 @@ const AdminDashboard = () => {
 
   useEffect(() => {
     registerAdminPWA();
+    
+    // Cleanup: disable PWA when component unmounts
+    return () => {
+      disablePWA();
+    };
   }, []);
 
   // Generate employee ID

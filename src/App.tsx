@@ -2,14 +2,15 @@ import { Toaster } from "@/components/ui/toaster";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { BrowserRouter, Routes, Route } from "react-router-dom";
+import { BrowserRouter, Routes, Route, useLocation } from "react-router-dom";
 import { ThemeProvider } from "./contexts/ThemeContext";
 import { SecurityProvider } from "./contexts/SecurityContext";
 import { AuthProvider } from "./contexts/AuthContext";
-import { Suspense, lazy } from "react";
+import { Suspense, lazy, useEffect } from "react";
 import Index from "./pages/Index";
 import NotFound from "./pages/NotFound";
 import PerformanceMonitor from "./components/PerformanceMonitor";
+import { disablePWA } from "@/lib/pwa";
 
 // Lazy load heavy components for better performance
 const AdminDashboard = lazy(() => import("./components/AdminDashboard"));
@@ -59,6 +60,24 @@ const queryClient = new QueryClient({
   },
 });
 
+// Component to handle PWA enable/disable based on route
+const PWARouteHandler = () => {
+  const location = useLocation();
+
+  useEffect(() => {
+    // Only enable PWA on technician and admin pages
+    const isPWAPage = location.pathname.startsWith('/technician') || location.pathname.startsWith('/admin');
+    
+    if (!isPWAPage) {
+      disablePWA();
+    }
+    // Note: PWA is enabled by registerTechnicianPWA() or registerAdminPWA() 
+    // when those components mount, so we don't need to enable it here
+  }, [location.pathname]);
+
+  return null;
+};
+
 const App = () => (
   <QueryClientProvider client={queryClient}>
     <ThemeProvider>
@@ -69,6 +88,7 @@ const App = () => (
             <Toaster />
             <Sonner />
             <BrowserRouter>
+              <PWARouteHandler />
               <Suspense fallback={<LoadingSpinner />}>
                 <Routes>
                   <Route path="/" element={<Index />} />

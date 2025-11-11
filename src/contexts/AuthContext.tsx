@@ -180,7 +180,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       
       if (isTechnician) {
         console.log('Email belongs to a technician - not trying Supabase auth');
-        toast.error('Login failed. Please check your password or contact support.');
+        toast.error('Invalid credentials. Please check your email and password.');
         return false;
       }
       
