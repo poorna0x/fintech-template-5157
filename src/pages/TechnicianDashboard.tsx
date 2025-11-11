@@ -1,4 +1,4 @@
-import React, { useState, useEffect, Fragment } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { useNavigate } from 'react-router-dom';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -130,21 +130,50 @@ const TechnicianDashboard = () => {
     if (user?.technicianId) {
       loadAssignedJobs();
       loadAssignmentRequests();
-      getCurrentLocation();
     }
   }, [user?.technicianId]);
 
-  // Get current location
-  const getCurrentLocation = () => {
+  // Get current location and update in database
+  const getCurrentLocation = async () => {
     if (navigator.geolocation) {
       navigator.geolocation.getCurrentPosition(
-        (position) => {
+        async (position) => {
           const location = {
             lat: position.coords.latitude,
             lng: position.coords.longitude
           };
           setCurrentLocation(location);
           console.log('Current location:', location);
+
+          // Update technician location and set status to AVAILABLE in database
+          if (user?.technicianId) {
+            try {
+              const locationData = {
+                latitude: position.coords.latitude,
+                longitude: position.coords.longitude,
+                lastUpdated: new Date().toISOString(),
+                accuracy: position.coords.accuracy || null
+              };
+
+              const { error, data } = await db.technicians.update(user.technicianId, {
+                current_location: locationData,
+                status: 'AVAILABLE' // Automatically set to AVAILABLE when location is updated
+              });
+
+              if (error) {
+                console.error('Error updating technician location:', error);
+                toast.error(`Failed to update location: ${error.message}`);
+              } else {
+                console.log('✅ Technician location and status updated successfully:', {
+                  location: locationData,
+                  updatedData: data
+                });
+                toast.success('Location updated successfully', { duration: 2000 });
+              }
+            } catch (error) {
+              console.error('Error updating technician location:', error);
+            }
+          }
         },
         (error) => {
           console.error('Error getting location:', error);
@@ -233,6 +262,21 @@ const TechnicianDashboard = () => {
 
     return () => clearInterval(interval);
   }, [user?.technicianId, assignmentRequests.length]);
+
+  // Periodic location update (every 5 minutes)
+  useEffect(() => {
+    if (!user?.technicianId) return;
+
+    // Update location immediately on mount
+    getCurrentLocation();
+
+    // Then update every 5 minutes
+    const locationInterval = setInterval(() => {
+      getCurrentLocation();
+    }, 5 * 60 * 1000); // 5 minutes
+
+    return () => clearInterval(locationInterval);
+  }, [user?.technicianId]);
 
   // Filter jobs based on search and status
   useEffect(() => {
@@ -1586,7 +1630,7 @@ const TechnicianDashboard = () => {
               })() : null;
               
               return (
-                <Fragment key={job.id}>
+                <div key={job.id}>
                   {job.status === 'FOLLOW_UP' && (formattedFollowUpDate || formattedFollowUpTime || followUpNotes) && (
                     <div className="mb-4">
                       <div className="flex items-start gap-3 rounded-md border border-purple-200 bg-purple-50 px-4 py-3">
@@ -1850,7 +1894,7 @@ const TechnicianDashboard = () => {
                   </div>
                 </CardContent>
               </Card>
-                </Fragment>
+                </div>
               );
             })
           )}

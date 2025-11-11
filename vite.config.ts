@@ -16,6 +16,23 @@ export default defineConfig(({ mode }) => ({
       // Allow HMR over local network
       clientPort: 8080,
     },
+    proxy: {
+      // Proxy Netlify functions to avoid CORS issues
+      '/.netlify/functions': {
+        target: 'http://localhost:8888',
+        changeOrigin: true,
+        secure: false,
+        rewrite: (path) => path, // Keep the path as-is
+        configure: (proxy, options) => {
+          proxy.on('error', (err, req, res) => {
+            console.log('Proxy error:', err);
+          });
+          proxy.on('proxyReq', (proxyReq, req, res) => {
+            console.log('Proxying request to:', proxyReq.path);
+          });
+        },
+      },
+    },
   },
   plugins: [
     react(),

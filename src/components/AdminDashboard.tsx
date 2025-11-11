@@ -59,6 +59,7 @@ import { toast } from 'sonner';
 import { openInGoogleMaps, extractCoordinates, formatAddressForDisplay } from '@/lib/maps';
 import FollowUpModal from '@/components/FollowUpModal';
 import { sendNotification, createJobAssignedNotification, createJobCompletedNotification, createJobCancelledNotification, createJobAssignmentRequestNotification } from '@/lib/notifications';
+import { calculateTechnicianDistances, TechnicianDistance } from '@/lib/distance';
 import BillModal from './BillModal';
 import AMCModal from './AMCModal';
 import QuotationModal from './QuotationModal';
@@ -770,6 +771,8 @@ const AdminDashboard = () => {
   const [selectedTechnicianIds, setSelectedTechnicianIds] = useState<string[]>([]);
   const [isCreatingAssignmentRequests, setIsCreatingAssignmentRequests] = useState(false);
   const [assignmentType, setAssignmentType] = useState<'direct' | 'bulk'>('direct');
+  const [technicianDistances, setTechnicianDistances] = useState<TechnicianDistance[]>([]);
+  const [loadingDistances, setLoadingDistances] = useState(false);
 
   useEffect(() => {
     registerAdminPWA();
@@ -806,6 +809,40 @@ const AdminDashboard = () => {
     createdAt: tech.created_at,
     updatedAt: tech.updated_at
   });
+
+  // Reload technicians to get latest location data
+  const reloadTechnicians = useCallback(async () => {
+    try {
+      const { data, error } = await db.technicians.getAll();
+      if (error) {
+        console.error('Error reloading technicians:', error);
+        return;
+      }
+      if (data) {
+        const transformedTechnicians = data.map(transformTechnicianData);
+        console.log('🔄 Reloaded technicians with latest locations:', {
+          rawData: data.map(t => ({
+            id: t.id,
+            name: t.full_name,
+            current_location: t.current_location,
+            currentLocationType: typeof t.current_location,
+            currentLocationValue: t.current_location
+          })),
+          transformed: transformedTechnicians.map(t => ({
+            name: t.fullName,
+            id: t.id,
+            hasLocation: !!t.currentLocation,
+            location: t.currentLocation,
+            locationType: typeof t.currentLocation,
+            status: t.status
+          }))
+        });
+        setTechnicians(transformedTechnicians);
+      }
+    } catch (error) {
+      console.error('Error reloading technicians:', error);
+    }
+  }, []);
 
   // Transform customer data from database format to frontend format
   const transformCustomerData = (customer: any): Customer => ({
@@ -855,8 +892,18 @@ const AdminDashboard = () => {
       setAssignmentType('direct');
       setSelectedTechnicianId('');
       setSelectedTechnicianIds([]);
+      setTechnicianDistances([]);
     }
   }, [assignJobDialogOpen]);
+
+  // Auto-refresh technicians periodically (every 30 seconds) to get latest locations
+  useEffect(() => {
+    const interval = setInterval(() => {
+      reloadTechnicians();
+    }, 30000); // Refresh every 30 seconds
+
+    return () => clearInterval(interval);
+  }, [reloadTechnicians]);
 
   // Load unique brands and models from database
   const loadBrandsAndModels = useCallback(async () => {
@@ -1018,6 +1065,22 @@ const AdminDashboard = () => {
       
       if (techniciansResult.data) {
         const transformedTechnicians = techniciansResult.data.map(transformTechnicianData);
+        console.log('📊 Loaded technicians with locations:', {
+          rawData: techniciansResult.data.map(t => ({
+            id: t.id,
+            name: t.full_name,
+            current_location: t.current_location,
+            currentLocationType: typeof t.current_location
+          })),
+          transformed: transformedTechnicians.map(t => ({
+            name: t.fullName,
+            id: t.id,
+            hasLocation: !!t.currentLocation,
+            location: t.currentLocation,
+            locationType: typeof t.currentLocation,
+            status: t.status
+          }))
+        });
         setTechnicians(transformedTechnicians);
       } else {
         setTechnicians([]);
@@ -3830,13 +3893,75 @@ const AdminDashboard = () => {
   };
 
 
+
   // Job assignment functions
-  const handleAssignJob = (job: Job) => {
+  const handleAssignJob = async (job: Job) => {
     setJobToAssign(job);
     setSelectedTechnicianId('');
     setSelectedTechnicianIds([]);
     setAssignmentType('direct');
+    setTechnicianDistances([]);
     setAssignJobDialogOpen(true);
+
+    // Reload technicians to get latest location data
+    await reloadTechnicians();
+
+    // Calculate distances for all technicians
+    await calculateDistancesForJob(job);
+  };
+
+  // Calculate distances from job location to all technicians
+  const calculateDistancesForJob = async (job: Job) => {
+    // Get job location
+    const jobLocation = (job.serviceLocation as any) || (job.customer as any)?.location;
+    
+    if (!jobLocation?.latitude || !jobLocation?.longitude) {
+      console.warn('⚠️ Job location not available for distance calculation');
+      return;
+    }
+
+    const apiKey = import.meta.env.VITE_GOOGLE_MAPS_API_KEY;
+    if (!apiKey) {
+      console.warn('⚠️ Google Maps API key not configured');
+      toast.warning('Google Maps API key not configured. Distance calculation disabled.');
+      return;
+    }
+
+    // Log technicians with their locations
+    console.log('🔍 Calculating distances for job:', {
+      jobLocation: { lat: jobLocation.latitude, lng: jobLocation.longitude },
+      technicians: technicians.map(t => ({
+        name: t.fullName,
+        id: t.id,
+        hasCurrentLocation: !!t.currentLocation,
+        hasCurrent_location: !!(t as any).current_location,
+        currentLocation: t.currentLocation,
+        current_location: (t as any).current_location,
+        status: t.status,
+        // Check raw data
+        rawTech: t
+      }))
+    });
+
+    setLoadingDistances(true);
+    try {
+      const distances = await calculateTechnicianDistances(
+        {
+          latitude: jobLocation.latitude,
+          longitude: jobLocation.longitude,
+        },
+        technicians,
+        apiKey
+      );
+
+      console.log('📏 Distance calculation results:', distances);
+      setTechnicianDistances(distances);
+    } catch (error) {
+      console.error('❌ Error calculating distances:', error);
+      toast.error('Failed to calculate distances. You can still assign manually.');
+    } finally {
+      setLoadingDistances(false);
+    }
   };
 
   const handleSaveJobAssignment = async () => {
@@ -5916,7 +6041,7 @@ const AdminDashboard = () => {
                           'Admin';
                         
                         return (
-                          <React.Fragment key={job.id}>
+                          <div key={job.id}>
                             {job.status === 'FOLLOW_UP' && (formattedFollowUpDate || formattedFollowUpTime || followUpNotes || formattedFollowUpScheduledAt) && (
                               <div className="mt-4 mb-2">
                                 <div className="flex items-start gap-3 rounded-md border border-gray-200 px-3 py-2">
@@ -6352,7 +6477,7 @@ const AdminDashboard = () => {
                               </div>
                             </div>
                           </div>
-                          </React.Fragment>
+                          </div>
                         );
                         });
                       })()}
@@ -7383,7 +7508,7 @@ const AdminDashboard = () => {
 
       {/* Job Assignment Dialog */}
       <Dialog open={assignJobDialogOpen} onOpenChange={setAssignJobDialogOpen}>
-        <DialogContent className="sm:max-w-2xl">
+        <DialogContent className="sm:max-w-2xl max-h-[90vh] flex flex-col">
           <DialogHeader>
             <DialogTitle>Assign Job to Technician(s)</DialogTitle>
             <DialogDescription>
@@ -7391,7 +7516,7 @@ const AdminDashboard = () => {
             </DialogDescription>
           </DialogHeader>
           
-          <div className="space-y-6">
+          <div className="space-y-6 overflow-y-auto flex-1 pr-2">
             <div>
               <Label htmlFor="job-info">Job Details</Label>
               <div className="mt-1 p-4 bg-gray-50 rounded-md">
@@ -7464,72 +7589,332 @@ const AdminDashboard = () => {
 
               {/* Direct Assignment */}
               {assignmentType === 'direct' && (
-                <div>
-                  <Label htmlFor="technician-select">Select Technician</Label>
-                  <Select value={selectedTechnicianId} onValueChange={setSelectedTechnicianId}>
-                    <SelectTrigger>
-                      <SelectValue placeholder="Choose a technician" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {technicians.length === 0 ? (
-                        <SelectItem value="no-technicians" disabled>
-                          No technicians available
-                        </SelectItem>
-                      ) : (
-                        technicians.map((technician) => (
-                          <SelectItem
-                            key={technician.id}
-                            value={technician.id || 'unknown'}
-                          >
-                            {technician.fullName || 'Unknown Technician'}
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between">
+                    <Label htmlFor="technician-select">Select Technician</Label>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={async () => {
+                        await reloadTechnicians();
+                        if (jobToAssign) {
+                          await calculateDistancesForJob(jobToAssign);
+                        }
+                      }}
+                      className="text-xs"
+                    >
+                      🔄 Refresh Locations
+                    </Button>
+                  </div>
+                  {loadingDistances ? (
+                    <div className="flex items-center justify-center p-4">
+                      <div className="w-5 h-5 border-2 border-blue-600 border-t-transparent rounded-full animate-spin mr-2" />
+                      <span className="text-sm text-gray-600">Calculating distances...</span>
+                    </div>
+                  ) : (
+                    <Select value={selectedTechnicianId} onValueChange={setSelectedTechnicianId}>
+                      <SelectTrigger>
+                        <SelectValue placeholder="Choose a technician" />
+                      </SelectTrigger>
+                      <SelectContent className="max-h-[300px] overflow-y-auto">
+                        {technicians.length === 0 ? (
+                          <SelectItem value="no-technicians" disabled>
+                            No technicians available
                           </SelectItem>
-                        ))
-                      )}
-                    </SelectContent>
-                  </Select>
+                        ) : (
+                          // Sort technicians by distance if available
+                          (() => {
+                            const sortedTechnicians = [...technicians].sort((a, b) => {
+                              const distA = technicianDistances.find(d => d.technicianId === a.id);
+                              const distB = technicianDistances.find(d => d.technicianId === b.id);
+                              
+                              if (!distA?.distance || distA.distance.status !== 'OK') return 1;
+                              if (!distB?.distance || distB.distance.status !== 'OK') return -1;
+                              
+                              return distA.distance.distance.value - distB.distance.distance.value;
+                            });
+
+                            return sortedTechnicians.map((technician) => {
+                              const distanceInfo = technicianDistances.find(d => d.technicianId === technician.id);
+                              const hasDistance = distanceInfo?.distance && distanceInfo.distance.status === 'OK';
+                              
+                              // Determine why location is unavailable
+                              let distanceText = '';
+                              if (hasDistance) {
+                                distanceText = `${distanceInfo.distance.distance.text} (${distanceInfo.distance.duration.text})`;
+                              } else {
+                                const hasLocation = technician.currentLocation?.latitude && technician.currentLocation?.longitude;
+                                if (!hasLocation) {
+                                  distanceText = 'No location data - Technician needs to open dashboard';
+                                } else if (distanceInfo?.distance?.status === 'ZERO_RESULTS') {
+                                  distanceText = 'Route not found';
+                                } else {
+                                  distanceText = 'Location unavailable';
+                                }
+                              }
+                              
+                              const rank = distanceInfo?.rank;
+
+                              return (
+                                <SelectItem
+                                  key={technician.id}
+                                  value={technician.id || 'unknown'}
+                                >
+                                  <div className="flex items-center justify-between w-full">
+                                    <div className="flex items-center gap-2">
+                                      {rank && rank <= 3 && (
+                                        <span className="text-xs font-bold text-blue-600">#{rank}</span>
+                                      )}
+                                      <span>{technician.fullName || 'Unknown Technician'}</span>
+                                      <Badge 
+                                        variant={technician.status === 'AVAILABLE' ? 'default' : technician.status === 'BUSY' ? 'secondary' : 'outline'}
+                                        className="text-xs"
+                                        title={
+                                          technician.status === 'OFFLINE' 
+                                            ? 'Technician is offline or hasn\'t opened their dashboard recently'
+                                            : technician.status === 'BUSY'
+                                            ? 'Technician is currently working on a job'
+                                            : technician.status === 'ON_BREAK'
+                                            ? 'Technician is on break'
+                                            : 'Technician is available'
+                                        }
+                                      >
+                                        {technician.status || 'OFFLINE'}
+                                      </Badge>
+                                    </div>
+                                    <span className="text-xs text-gray-500 ml-2">{distanceText}</span>
+                                  </div>
+                                </SelectItem>
+                              );
+                            });
+                          })()
+                        )}
+                      </SelectContent>
+                    </Select>
+                  )}
+                  
+                  {/* Show detailed technician list with distances */}
+                  {technicianDistances.length > 0 && !loadingDistances && (
+                    <div className="mt-3 p-3 bg-gray-50 rounded-md space-y-2 max-h-[300px] overflow-y-auto">
+                      <Label className="text-sm font-semibold text-gray-700">Technicians ranked by distance:</Label>
+                      {technicians
+                        .map(tech => {
+                          const distanceInfo = technicianDistances.find(d => d.technicianId === tech.id);
+                          return { tech, distanceInfo };
+                        })
+                        .sort((a, b) => {
+                          if (!a.distanceInfo?.distance || a.distanceInfo.distance.status !== 'OK') return 1;
+                          if (!b.distanceInfo?.distance || b.distanceInfo.distance.status !== 'OK') return -1;
+                          return a.distanceInfo.distance.distance.value - b.distanceInfo.distance.distance.value;
+                        })
+                        .map(({ tech, distanceInfo }) => {
+                          const hasDistance = distanceInfo?.distance && distanceInfo.distance.status === 'OK';
+                          const hasLocation = tech.currentLocation?.latitude && tech.currentLocation?.longitude;
+                          const isSelected = selectedTechnicianId === tech.id;
+                          
+                          return (
+                            <div
+                              key={tech.id}
+                              onClick={() => setSelectedTechnicianId(tech.id)}
+                              className={`p-2 rounded border cursor-pointer transition-colors ${
+                                isSelected 
+                                  ? 'border-blue-500 bg-blue-50' 
+                                  : 'border-gray-200 hover:border-gray-300 hover:bg-gray-100'
+                              }`}
+                            >
+                              <div className="flex items-center justify-between">
+                                <div className="flex items-center gap-2">
+                                  {distanceInfo?.rank && (
+                                    <span className={`text-sm font-bold ${
+                                      distanceInfo.rank === 1 ? 'text-green-600' :
+                                      distanceInfo.rank === 2 ? 'text-blue-600' :
+                                      distanceInfo.rank === 3 ? 'text-purple-600' :
+                                      'text-gray-500'
+                                    }`}>
+                                      #{distanceInfo.rank}
+                                    </span>
+                                  )}
+                                  <span className="font-medium">{tech.fullName || 'Unknown'}</span>
+                                  <Badge 
+                                    variant={tech.status === 'AVAILABLE' ? 'default' : tech.status === 'BUSY' ? 'secondary' : 'outline'}
+                                    className="text-xs"
+                                    title={
+                                      tech.status === 'OFFLINE' 
+                                        ? 'Technician is offline or hasn\'t opened their dashboard recently'
+                                        : tech.status === 'BUSY'
+                                        ? 'Technician is currently working on a job'
+                                        : tech.status === 'ON_BREAK'
+                                        ? 'Technician is on break'
+                                        : 'Technician is available'
+                                    }
+                                  >
+                                    {tech.status || 'OFFLINE'}
+                                  </Badge>
+                                  {tech.status === 'OFFLINE' && tech.currentLocation?.lastUpdated && (
+                                    <span className="text-xs text-gray-400" title={`Last location update: ${new Date(tech.currentLocation.lastUpdated).toLocaleString()}`}>
+                                      (No recent activity)
+                                    </span>
+                                  )}
+                                </div>
+                                <div className="text-right">
+                                  {hasDistance ? (
+                                    <div className="text-sm">
+                                      <div className="font-semibold text-gray-900">
+                                        {distanceInfo.distance.distance.text}
+                                      </div>
+                                      <div className="text-xs text-gray-500">
+                                        {distanceInfo.distance.duration.text}
+                                      </div>
+                                    </div>
+                                  ) : hasLocation ? (
+                                    <div className="text-xs text-gray-400">Distance calculation failed</div>
+                                  ) : (
+                                    <div className="text-xs text-gray-400" title="Technician needs to open their dashboard to share location">
+                                      No location data
+                                    </div>
+                                  )}
+                                </div>
+                              </div>
+                            </div>
+                          );
+                        })}
+                    </div>
+                  )}
                 </div>
               )}
 
               {/* Bulk Assignment */}
               {assignmentType === 'bulk' && (
                 <div>
-                <Label htmlFor="technicians-select">Select Multiple Technicians</Label>
-                <div className="mt-2 space-y-2 max-h-48 overflow-y-auto border rounded-md p-3">
-                  {technicians.length === 0 ? (
-                    <p className="text-sm text-gray-500">No technicians available</p>
-                  ) : (
-                    technicians
-                      .map((technician) => {
-                        const technicianId = technician.id || '';
-                        const isSelected = selectedTechnicianIds.includes(technicianId);
-
-                        return (
-                          <div key={technician.id} className="flex items-center space-x-2">
-                            <input
-                              type="checkbox"
-                              id={`tech-${technician.id}`}
-                              value={technicianId}
-                              checked={isSelected}
-                              onChange={(e) => {
-                                if (e.target.checked) {
-                                  setSelectedTechnicianIds(prev => [...prev, technicianId]);
-                                } else {
-                                  setSelectedTechnicianIds(prev => prev.filter(id => id !== technicianId));
-                                }
-                              }}
-                              className="h-4 w-4 text-blue-600 rounded"
-                            />
-                            <label
-                              htmlFor={`tech-${technician.id}`}
-                              className="text-sm text-gray-700"
-                            >
-                              {technician.fullName || 'Unknown Technician'}
-                            </label>
-                          </div>
-                        );
-                      })
-                  )}
+                <div className="flex items-center justify-between mb-2">
+                  <Label htmlFor="technicians-select">Select Multiple Technicians</Label>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={async () => {
+                      await reloadTechnicians();
+                      if (jobToAssign) {
+                        await calculateDistancesForJob(jobToAssign);
+                      }
+                    }}
+                    className="text-xs"
+                  >
+                    🔄 Refresh Locations
+                  </Button>
                 </div>
+                {loadingDistances ? (
+                  <div className="flex items-center justify-center p-4">
+                    <div className="w-5 h-5 border-2 border-blue-600 border-t-transparent rounded-full animate-spin mr-2" />
+                    <span className="text-sm text-gray-600">Calculating distances...</span>
+                  </div>
+                ) : (
+                  <div className="mt-2 space-y-2 max-h-[400px] overflow-y-auto border rounded-md p-3">
+                    {technicians.length === 0 ? (
+                      <p className="text-sm text-gray-500">No technicians available</p>
+                    ) : (
+                      technicians
+                        .map(tech => {
+                          const distanceInfo = technicianDistances.find(d => d.technicianId === tech.id);
+                          return { tech, distanceInfo };
+                        })
+                        .sort((a, b) => {
+                          if (!a.distanceInfo?.distance || a.distanceInfo.distance.status !== 'OK') return 1;
+                          if (!b.distanceInfo?.distance || b.distanceInfo.distance.status !== 'OK') return -1;
+                          return a.distanceInfo.distance.distance.value - b.distanceInfo.distance.distance.value;
+                        })
+                        .map(({ tech, distanceInfo }) => {
+                          const technicianId = tech.id || '';
+                          const isSelected = selectedTechnicianIds.includes(technicianId);
+                          const hasDistance = distanceInfo?.distance && distanceInfo.distance.status === 'OK';
+                          const hasLocation = tech.currentLocation?.latitude && tech.currentLocation?.longitude;
+
+                          return (
+                            <div 
+                              key={tech.id} 
+                              className={`flex items-center justify-between p-2 rounded border ${
+                                isSelected ? 'border-blue-500 bg-blue-50' : 'border-gray-200'
+                              }`}
+                            >
+                              <div className="flex items-center space-x-2 flex-1">
+                                <input
+                                  type="checkbox"
+                                  id={`tech-${tech.id}`}
+                                  value={technicianId}
+                                  checked={isSelected}
+                                  onChange={(e) => {
+                                    if (e.target.checked) {
+                                      setSelectedTechnicianIds(prev => [...prev, technicianId]);
+                                    } else {
+                                      setSelectedTechnicianIds(prev => prev.filter(id => id !== technicianId));
+                                    }
+                                  }}
+                                  className="h-4 w-4 text-blue-600 rounded"
+                                />
+                                <div className="flex items-center gap-2 flex-1">
+                                  {distanceInfo?.rank && (
+                                    <span className={`text-xs font-bold ${
+                                      distanceInfo.rank === 1 ? 'text-green-600' :
+                                      distanceInfo.rank === 2 ? 'text-blue-600' :
+                                      distanceInfo.rank === 3 ? 'text-purple-600' :
+                                      'text-gray-500'
+                                    }`}>
+                                      #{distanceInfo.rank}
+                                    </span>
+                                  )}
+                                  <label
+                                    htmlFor={`tech-${tech.id}`}
+                                    className="text-sm text-gray-700 font-medium cursor-pointer flex-1"
+                                  >
+                                    {tech.fullName || 'Unknown Technician'}
+                                  </label>
+                                  <Badge 
+                                    variant={tech.status === 'AVAILABLE' ? 'default' : tech.status === 'BUSY' ? 'secondary' : 'outline'}
+                                    className="text-xs"
+                                    title={
+                                      tech.status === 'OFFLINE' 
+                                        ? 'Technician is offline or hasn\'t opened their dashboard recently'
+                                        : tech.status === 'BUSY'
+                                        ? 'Technician is currently working on a job'
+                                        : tech.status === 'ON_BREAK'
+                                        ? 'Technician is on break'
+                                        : 'Technician is available'
+                                    }
+                                  >
+                                    {tech.status || 'OFFLINE'}
+                                  </Badge>
+                                  {tech.status === 'OFFLINE' && tech.currentLocation?.lastUpdated && (
+                                    <span className="text-xs text-gray-400 ml-1" title={`Last location update: ${new Date(tech.currentLocation.lastUpdated).toLocaleString()}`}>
+                                      (No recent activity)
+                                    </span>
+                                  )}
+                                </div>
+                              </div>
+                              {hasDistance && (
+                                <div className="text-right text-xs">
+                                  <div className="font-semibold text-gray-900">
+                                    {distanceInfo.distance.distance.text}
+                                  </div>
+                                  <div className="text-gray-500">
+                                    {distanceInfo.distance.duration.text}
+                                  </div>
+                                </div>
+                              )}
+                              {!hasDistance && hasLocation && (
+                                <div className="text-xs text-gray-400">Distance calc failed</div>
+                              )}
+                              {!hasDistance && !hasLocation && (
+                                <div className="text-xs text-gray-400" title="Technician needs to open their dashboard to share location">
+                                  No location data
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })
+                    )}
+                  </div>
+                )}
                 <p className="text-xs text-gray-500 mt-1">
                   Selected: {selectedTechnicianIds.length} technician{selectedTechnicianIds.length !== 1 ? 's' : ''}
                 </p>
@@ -7538,7 +7923,7 @@ const AdminDashboard = () => {
             </div>
           </div>
           
-          <DialogFooter>
+          <DialogFooter className="mt-4 flex-shrink-0">
             <Button
               variant="outline"
               onClick={() => {
