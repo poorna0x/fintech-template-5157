@@ -7,6 +7,7 @@ import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from '@/components/ui/dialog';
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
 import { Textarea } from '@/components/ui/textarea';
 import { 
   DropdownMenu,
@@ -88,7 +89,7 @@ const TechnicianDashboard = () => {
   const [completeDialogOpen, setCompleteDialogOpen] = useState(false);
   const [selectedJobForComplete, setSelectedJobForComplete] = useState<Job | null>(null);
   const [completionNotes, setCompletionNotes] = useState('');
-  const [completeJobStep, setCompleteJobStep] = useState<1 | 2 | 3 | 4>(1);
+  const [completeJobStep, setCompleteJobStep] = useState<1 | 2 | 3 | 4 | 5>(1);
   const [billAmount, setBillAmount] = useState<string>('');
   const [billPhotos, setBillPhotos] = useState<string[]>([]);
   const [paymentPhotos, setPaymentPhotos] = useState<string[]>([]);
@@ -98,6 +99,8 @@ const TechnicianDashboard = () => {
   const [amcIncludesPrefilter, setAmcIncludesPrefilter] = useState<boolean>(false);
   const [hasAMC, setHasAMC] = useState<boolean>(false);
   const [paymentMode, setPaymentMode] = useState<'CASH' | 'ONLINE' | ''>('');
+  const [billAmountConfirmOpen, setBillAmountConfirmOpen] = useState(false);
+  const [customerHasPrefilter, setCustomerHasPrefilter] = useState<boolean | null>(null);
 
   // Phone popup state
   const [phonePopupOpen, setPhonePopupOpen] = useState(false);
@@ -663,8 +666,8 @@ const TechnicianDashboard = () => {
         toast.error('Please enter a valid bill amount');
         return;
       }
-      // Move to step 2
-      setCompleteJobStep(2);
+      // Show confirmation dialog
+      setBillAmountConfirmOpen(true);
       return;
     }
 
@@ -680,7 +683,13 @@ const TechnicianDashboard = () => {
       return;
     }
 
-    // On step 4, submit the form
+    // On step 4, move to step 5
+    if (completeJobStep === 4) {
+      setCompleteJobStep(5);
+      return;
+    }
+
+    // On step 5, submit the form
     try {
       // Prepare update data
       const updateData: any = {
@@ -747,6 +756,16 @@ const TechnicianDashboard = () => {
         throw new Error(error.message);
       }
 
+      // Update customer prefilter status if provided
+      if (customerHasPrefilter !== null && selectedJobForComplete.customer) {
+        const customerId = (selectedJobForComplete.customer as any).id || selectedJobForComplete.customer.id;
+        if (customerId) {
+          await db.customers.update(customerId, {
+            has_prefilter: customerHasPrefilter
+          });
+        }
+      }
+
       // Update local state
       setJobs(prev => prev.map(job => 
         job.id === selectedJobForComplete.id ? { 
@@ -775,6 +794,7 @@ const TechnicianDashboard = () => {
       setAmcIncludesPrefilter(false);
       setHasAMC(false);
       setPaymentMode('');
+      setCustomerHasPrefilter(null);
     } catch (error) {
       console.error('Error completing job:', error);
       toast.error('Failed to complete job');
@@ -861,9 +881,36 @@ const TechnicianDashboard = () => {
               
               if (Array.isArray(requirements)) {
                 requirements.forEach((req: any) => {
-                  if (req.bill_photos && Array.isArray(req.bill_photos)) allPhotos.push(...req.bill_photos);
-                  if (req.payment_photos && Array.isArray(req.payment_photos)) allPhotos.push(...req.payment_photos);
+                  if (req.bill_photos && Array.isArray(req.bill_photos)) {
+                    req.bill_photos.forEach((photo: string) => {
+                      if (photo && typeof photo === 'string' && photo.trim() !== '') {
+                        allPhotos.push(photo.trim());
+                      }
+                    });
+                  }
+                  if (req.payment_photos && Array.isArray(req.payment_photos)) {
+                    req.payment_photos.forEach((photo: string) => {
+                      if (photo && typeof photo === 'string' && photo.trim() !== '') {
+                        allPhotos.push(photo.trim());
+                      }
+                    });
+                  }
                 });
+              } else if (typeof requirements === 'object' && requirements !== null) {
+                if (requirements.bill_photos && Array.isArray(requirements.bill_photos)) {
+                  requirements.bill_photos.forEach((photo: string) => {
+                    if (photo && typeof photo === 'string' && photo.trim() !== '') {
+                      allPhotos.push(photo.trim());
+                    }
+                  });
+                }
+                if (requirements.payment_photos && Array.isArray(requirements.payment_photos)) {
+                  requirements.payment_photos.forEach((photo: string) => {
+                    if (photo && typeof photo === 'string' && photo.trim() !== '') {
+                      allPhotos.push(photo.trim());
+                    }
+                  });
+                }
               }
             } catch (e) {
               // Ignore parse errors
@@ -1396,7 +1443,6 @@ const TechnicianDashboard = () => {
 
                                 {/* Photos */}
                                 {(() => {
-                                  const jobPhotos = getAllJobPhotos(job);
                                   const customerId = (customer as any)?.id || customer?.id;
                                   return (
                                     <div className="bg-white rounded-lg p-3 border border-gray-200 hover:border-gray-300 hover:shadow-sm transition-all duration-200">
@@ -1415,7 +1461,8 @@ const TechnicianDashboard = () => {
                                                 setPhotosDialogOpen(true);
                                                 setLoadingCustomerPhotos(false);
                                               } else {
-                                                // Fallback to job photos only
+                                                // Fallback to job photos only - only load when button is clicked
+                                                const jobPhotos = getAllJobPhotos(job);
                                                 setSelectedJobPhotos({ jobId: job.id, photos: jobPhotos });
                                                 setPhotosDialogOpen(true);
                                               }
@@ -1433,9 +1480,7 @@ const TechnicianDashboard = () => {
                                               ? 'Loading...'
                                               : customerId
                                                 ? 'View all customer photos'
-                                                : jobPhotos.length > 0 
-                                                  ? `${jobPhotos.length} photo(s)`
-                                                  : 'No photos'}
+                                                : 'View photos'}
                                           </div>
                                         </div>
                                       </div>
@@ -1794,7 +1839,6 @@ const TechnicianDashboard = () => {
                         
                           {/* Photos */}
                           {(() => {
-                            const jobPhotos = getAllJobPhotos(job);
                             const customerId = (job.customer as any)?.id || job.customer?.id;
                             return (
                               <div className="bg-white rounded-lg p-3 border border-gray-200 hover:border-gray-300 hover:shadow-sm transition-all duration-200">
@@ -1813,7 +1857,8 @@ const TechnicianDashboard = () => {
                                           setPhotosDialogOpen(true);
                                           setLoadingCustomerPhotos(false);
                                         } else {
-                                          // Fallback to job photos only
+                                          // Fallback to job photos only - only load when button is clicked
+                                          const jobPhotos = getAllJobPhotos(job);
                                           setSelectedJobPhotos({ jobId: job.id, photos: jobPhotos });
                                           setPhotosDialogOpen(true);
                                         }
@@ -1831,9 +1876,7 @@ const TechnicianDashboard = () => {
                                         ? 'Loading...'
                                         : customerId
                                           ? 'View all customer photos'
-                                          : jobPhotos.length > 0 
-                                            ? `${jobPhotos.length} photo(s)`
-                                            : 'No photos'}
+                                          : 'View photos'}
                       </div>
                     </div>
                                 </div>
@@ -2068,6 +2111,44 @@ const TechnicianDashboard = () => {
           </DialogContent>
         </Dialog>
 
+        {/* Bill Amount Confirmation Dialog */}
+        <AlertDialog open={billAmountConfirmOpen} onOpenChange={setBillAmountConfirmOpen}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>Confirm Bill Amount</AlertDialogTitle>
+              <AlertDialogDescription>
+                Please confirm the bill amount before proceeding:
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <div className="py-4">
+              <div className="text-center">
+                <div className="text-3xl font-bold text-gray-900 mb-2">
+                  ₹{parseFloat(billAmount || '0').toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                </div>
+                <div className="text-sm text-gray-500">
+                  {selectedJobForComplete && (
+                    <>
+                      Job: {(selectedJobForComplete as any).job_number || selectedJobForComplete.jobNumber}
+                    </>
+                  )}
+                </div>
+              </div>
+            </div>
+            <AlertDialogFooter>
+              <AlertDialogCancel>Cancel</AlertDialogCancel>
+              <AlertDialogAction
+                onClick={() => {
+                  setBillAmountConfirmOpen(false);
+                  setCompleteJobStep(2);
+                }}
+                className="bg-black hover:bg-gray-800 text-white"
+              >
+                Confirm & Continue
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
+
         {/* Follow-up Modal */}
         <FollowUpModal
           isOpen={followUpModalOpen}
@@ -2167,6 +2248,7 @@ const TechnicianDashboard = () => {
             {completeJobStep === 2 && 'Upload bill photo (optional)'}
             {completeJobStep === 3 && 'Add AMC information (optional)'}
             {completeJobStep === 4 && 'Select payment mode and upload payment photo (optional)'}
+            {completeJobStep === 5 && 'Does the customer have a prefilter?'}
               </DialogDescription>
             </DialogHeader>
             
@@ -2209,6 +2291,10 @@ const TechnicianDashboard = () => {
                   <div className={`flex items-center justify-center w-7 h-7 sm:w-8 sm:h-8 rounded-full text-xs sm:text-sm ${completeJobStep >= 4 ? 'bg-black text-white' : 'bg-gray-200 text-gray-600'}`}>
                     4
                   </div>
+                  <div className={`w-8 sm:w-12 h-1 ${completeJobStep >= 5 ? 'bg-black' : 'bg-gray-200'}`}></div>
+                  <div className={`flex items-center justify-center w-7 h-7 sm:w-8 sm:h-8 rounded-full text-xs sm:text-sm ${completeJobStep >= 5 ? 'bg-black text-white' : 'bg-gray-200 text-gray-600'}`}>
+                    5
+                  </div>
                 </div>
               </div>
 
@@ -2227,6 +2313,11 @@ const TechnicianDashboard = () => {
                       min="0"
                       step="0.01"
                     />
+                    {billAmount && parseFloat(billAmount) > 0 && (
+                      <p className="text-sm text-gray-600 mt-2">
+                        Bill Amount: ₹{parseFloat(billAmount).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                      </p>
+                    )}
                   </div>
                   <div>
                     <Label htmlFor="completion-notes">Completion Notes (Optional)</Label>
@@ -2246,14 +2337,13 @@ const TechnicianDashboard = () => {
               {completeJobStep === 2 && (
                 <div className="space-y-4">
                   <div>
-                    <Label>Bill Photo (Optional)</Label>
-                    <p className="text-sm text-gray-500 mb-2">Upload a photo of the bill. You can skip this step.</p>
+                    <Label>Upload Bill Photo</Label>
                     <ImageUpload
                       onImagesChange={(images) => setBillPhotos(images)}
                       maxImages={5}
                       folder="bills"
-                      title="Upload Bill Photo"
-                      description="Upload photo of the bill (automatically optimized for smaller file size)"
+                      title=""
+                      description=""
                       maxWidth={1024}
                       quality={0.5}
                       aggressiveCompression={true}
@@ -2369,19 +2459,73 @@ const TechnicianDashboard = () => {
                   </div>
                   
                   <div>
-                    <Label>Payment Photo (Optional)</Label>
-                    <p className="text-sm text-gray-500 mb-2">Upload a photo of the payment receipt. You can skip this step.</p>
+                    <Label>Payment Photo</Label>
                     <ImageUpload
                       onImagesChange={(images) => setPaymentPhotos(images)}
                       maxImages={5}
                       folder="payment-receipts"
-                      title="Upload Payment Photo"
-                      description="Upload photo of payment receipt (highly optimized, stored in secondary account)"
+                      title=""
+                      description=""
                       maxWidth={800}
                       quality={0.3}
                       aggressiveCompression={true}
                       useSecondaryAccount={true}
                     />
+                  </div>
+                </div>
+              )}
+
+              {/* Step 5: Prefilter Question */}
+              {completeJobStep === 5 && (
+                <div className="space-y-4">
+                  <div className="space-y-3">
+                    <Label className="text-base font-semibold">Does the customer have a prefilter?</Label>
+                    <div className="grid grid-cols-2 gap-4">
+                      <button
+                        type="button"
+                        onClick={() => setCustomerHasPrefilter(true)}
+                        className={`p-4 rounded-lg border-2 transition-all duration-200 ${
+                          customerHasPrefilter === true
+                            ? 'border-black bg-black text-white shadow-md'
+                            : 'border-gray-300 bg-white text-gray-700 hover:border-gray-400 hover:bg-gray-50'
+                        }`}
+                      >
+                        <div className="flex flex-col items-center gap-2">
+                          <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center ${
+                            customerHasPrefilter === true
+                              ? 'border-white bg-white'
+                              : 'border-gray-400'
+                          }`}>
+                            {customerHasPrefilter === true && (
+                              <div className="w-2.5 h-2.5 rounded-full bg-black"></div>
+                            )}
+                          </div>
+                          <span className="font-medium text-sm">Yes</span>
+                        </div>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setCustomerHasPrefilter(false)}
+                        className={`p-4 rounded-lg border-2 transition-all duration-200 ${
+                          customerHasPrefilter === false
+                            ? 'border-black bg-black text-white shadow-md'
+                            : 'border-gray-300 bg-white text-gray-700 hover:border-gray-400 hover:bg-gray-50'
+                        }`}
+                      >
+                        <div className="flex flex-col items-center gap-2">
+                          <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center ${
+                            customerHasPrefilter === false
+                              ? 'border-white bg-white'
+                              : 'border-gray-400'
+                          }`}>
+                            {customerHasPrefilter === false && (
+                              <div className="w-2.5 h-2.5 rounded-full bg-black"></div>
+                            )}
+                          </div>
+                          <span className="font-medium text-sm">No</span>
+                        </div>
+                      </button>
+                    </div>
                   </div>
                 </div>
               )}
@@ -2392,7 +2536,7 @@ const TechnicianDashboard = () => {
                 variant="outline"
                 onClick={() => {
                   if (completeJobStep > 1) {
-                    setCompleteJobStep((prev) => (prev - 1) as 1 | 2 | 3 | 4);
+                    setCompleteJobStep((prev) => (prev - 1) as 1 | 2 | 3 | 4 | 5);
                   } else {
                   setCompleteDialogOpen(false);
                   setSelectedJobForComplete(null);
@@ -2408,6 +2552,7 @@ const TechnicianDashboard = () => {
                     setAmcIncludesPrefilter(false);
                     setHasAMC(false);
                     setPaymentMode('');
+                    setCustomerHasPrefilter(null);
                   }
                 }}
               >
@@ -2441,7 +2586,7 @@ const TechnicianDashboard = () => {
                 className="bg-black hover:bg-gray-800 text-white"
                 disabled={(completeJobStep === 3 && hasAMC && (!amcDateGiven || !amcEndDate)) || (completeJobStep === 4 && !paymentMode)}
               >
-                {completeJobStep === 4 ? 'Complete Job' : 'Next'}
+                {completeJobStep === 5 ? 'Complete Job' : 'Next'}
               </Button>
             </DialogFooter>
           </DialogContent>

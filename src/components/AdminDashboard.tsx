@@ -186,6 +186,7 @@ const AdminDashboard = () => {
     google_location: '',
     visible_address: '',
     custom_time: '',
+    has_prefilter: null as boolean | null,
     address: {
       street: '',
       area: '',
@@ -1286,6 +1287,7 @@ const AdminDashboard = () => {
             notes: editFormData.notes,
             visible_address: editFormData.visible_address ? editFormData.visible_address.substring(0, 20) : '',
             custom_time: editFormData.custom_time || null,
+            has_prefilter: editFormData.has_prefilter,
             address: updatedAddress,
             location: updatedLocation
           });
@@ -1512,6 +1514,7 @@ const AdminDashboard = () => {
       native_language: customer.preferredLanguage || '',
       status: customer.status || '',
       notes: customer.notes || '',
+      has_prefilter: (customer as any).has_prefilter ?? null,
       google_location: (() => {
         // First check for googleLocation field (actual Google Maps URL - including short URLs)
         if ((customer.location as any)?.googleLocation) {
@@ -3417,6 +3420,52 @@ const AdminDashboard = () => {
           const jobImages = Array.isArray(job.images) ? job.images : [];
           const extractedImages = extractPhotoUrls(jobImages);
           extractedImages.forEach(url => photoSet.add(url));
+          
+          // Get photos from job requirements (bill photos, payment photos)
+          if (job.requirements) {
+            try {
+              const requirements = typeof job.requirements === 'string' 
+                ? JSON.parse(job.requirements) 
+                : job.requirements;
+              
+              if (Array.isArray(requirements)) {
+                requirements.forEach((req: any) => {
+                  if (req.bill_photos && Array.isArray(req.bill_photos)) {
+                    req.bill_photos.forEach((photo: string) => {
+                      if (photo && typeof photo === 'string' && photo.trim() !== '') {
+                        photoSet.add(photo.trim());
+                      }
+                    });
+                  }
+                  if (req.payment_photos && Array.isArray(req.payment_photos)) {
+                    req.payment_photos.forEach((photo: string) => {
+                      if (photo && typeof photo === 'string' && photo.trim() !== '') {
+                        photoSet.add(photo.trim());
+                      }
+                    });
+                  }
+                });
+              } else if (typeof requirements === 'object' && requirements !== null) {
+                if (requirements.bill_photos && Array.isArray(requirements.bill_photos)) {
+                  requirements.bill_photos.forEach((photo: string) => {
+                    if (photo && typeof photo === 'string' && photo.trim() !== '') {
+                      photoSet.add(photo.trim());
+                    }
+                  });
+                }
+                if (requirements.payment_photos && Array.isArray(requirements.payment_photos)) {
+                  requirements.payment_photos.forEach((photo: string) => {
+                    if (photo && typeof photo === 'string' && photo.trim() !== '') {
+                      photoSet.add(photo.trim());
+                    }
+                  });
+                }
+              }
+            } catch (e) {
+              // Ignore parse errors
+              console.error('Error parsing requirements:', e);
+            }
+          }
           
           // Log for debugging
           if (extractedBeforePhotos.length > 0 || extractedAfterPhotos.length > 0 || extractedImages.length > 0) {
@@ -7329,6 +7378,51 @@ const AdminDashboard = () => {
                   })}
                 </div>
               )}
+            </div>
+
+            {/* Additional Information */}
+            <div className="space-y-4">
+              <h3 className="text-lg font-semibold text-gray-900">Additional Information</h3>
+              <div className="space-y-4">
+                <div className="space-y-2">
+                  <Label>Does the customer have a prefilter?</Label>
+                  <div className="flex gap-4">
+                    <div className="flex items-center space-x-2">
+                      <input
+                        type="radio"
+                        id="edit-prefilter-yes"
+                        name="edit-prefilter"
+                        checked={editFormData.has_prefilter === true}
+                        onChange={() => handleEditFormChange('has_prefilter', true)}
+                        className="w-4 h-4"
+                      />
+                      <Label htmlFor="edit-prefilter-yes" className="cursor-pointer">Yes</Label>
+                    </div>
+                    <div className="flex items-center space-x-2">
+                      <input
+                        type="radio"
+                        id="edit-prefilter-no"
+                        name="edit-prefilter"
+                        checked={editFormData.has_prefilter === false}
+                        onChange={() => handleEditFormChange('has_prefilter', false)}
+                        className="w-4 h-4"
+                      />
+                      <Label htmlFor="edit-prefilter-no" className="cursor-pointer">No</Label>
+                    </div>
+                    <div className="flex items-center space-x-2">
+                      <input
+                        type="radio"
+                        id="edit-prefilter-unknown"
+                        name="edit-prefilter"
+                        checked={editFormData.has_prefilter === null}
+                        onChange={() => handleEditFormChange('has_prefilter', null)}
+                        className="w-4 h-4"
+                      />
+                      <Label htmlFor="edit-prefilter-unknown" className="cursor-pointer">Not Set</Label>
+                    </div>
+                  </div>
+                </div>
+              </div>
             </div>
 
           </div>

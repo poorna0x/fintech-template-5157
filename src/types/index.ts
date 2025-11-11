@@ -53,6 +53,10 @@ export interface Customer {
   serviceCost?: number;
   costAgreed?: boolean;
   
+  // Prefilter Information
+  hasPrefilter?: boolean;
+  has_prefilter?: boolean; // Alternative field name used in database
+  
   // Timestamps
   createdAt: string;
   updatedAt: string;
