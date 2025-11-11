@@ -70,6 +70,15 @@ class CloudinaryService {
         throw new Error('Primary Cloudinary configuration is missing. Please check your environment variables.');
       }
       activeConfig = this.config;
+      
+      // Debug logging in development
+      if (import.meta.env.DEV) {
+        console.log('[Cloudinary] Using PRIMARY (main) account:', {
+          cloudName: activeConfig.cloudName,
+          uploadPreset: activeConfig.uploadPreset,
+          folder: folder
+        });
+      }
     }
     
     // Validate active config

@@ -519,6 +519,8 @@ const AdminDashboard = () => {
   const [customerPhotos, setCustomerPhotos] = useState<{[customerId: string]: string[]}>({});
   const [isUploadingPhoto, setIsUploadingPhoto] = useState(false);
   const [isLoadingPhotos, setIsLoadingPhotos] = useState(false);
+  const [isDragOverPhotos, setIsDragOverPhotos] = useState(false);
+  const [uploadingThumbnails, setUploadingThumbnails] = useState<{[key: string]: {url: string, uploading: boolean}}>({});
   const [historyDialogOpen, setHistoryDialogOpen] = useState(false);
   const [selectedCustomerForHistory, setSelectedCustomerForHistory] = useState<Customer | null>(null);
   const [customerHistory, setCustomerHistory] = useState<{[customerId: string]: Job[]}>({});
@@ -3256,8 +3258,8 @@ const AdminDashboard = () => {
           // Aggressive compression for low file size (max 800px width, 0.4 quality)
           const compressedFile = await compressImage(file, 800, 0.4);
           
-          // Upload to Cloudinary using the proper service with size optimization
-          const uploadResult = await cloudinaryService.uploadImage(compressedFile, 'ro-service');
+          // Upload to Cloudinary using the proper service with size optimization - explicitly use primary (main) account
+          const uploadResult = await cloudinaryService.uploadImage(compressedFile, 'ro-service', false);
           
           // Replace thumbnail with actual uploaded URL
           setNewJobFormData(prev => ({
@@ -3322,49 +3324,65 @@ const AdminDashboard = () => {
       const { data: jobs, error } = await db.jobs.getByCustomerId(customer.id);
       
       if (error) {
-
         throw error;
       }
       
-      // Extract all photos from jobs (using before_photos as general photos)
-      const allPhotos: string[] = [];
+      // Extract all photos from ALL jobs (using before_photos, after_photos, and images fields)
+      const photoSet = new Set<string>(); // Use Set to avoid duplicates
+      
+      // Extract URLs from Cloudinary objects or use as-is if already strings
+      const extractPhotoUrls = (photos: any[]): string[] => {
+        if (!Array.isArray(photos)) return [];
+        return photos.map(photo => {
+          if (typeof photo === 'string' && photo.trim() !== '') {
+            return photo.trim();
+          } else if (photo && typeof photo === 'object' && photo.secure_url) {
+            return photo.secure_url;
+          }
+          return null;
+        }).filter((url): url is string => {
+          return url !== null && url !== '';
+        });
+      };
       
       if (jobs && jobs.length > 0) {
+        console.log(`Loading photos from ${jobs.length} job(s) for customer ${customerId}`);
+        
         jobs.forEach((job, index) => {
-          // Extract URLs from Cloudinary objects or use as-is if already strings
-          const extractPhotoUrls = (photos: any[]) => {
-            if (!Array.isArray(photos)) return [];
-            return photos.map(photo => {
-              if (typeof photo === 'string') {
-                return photo;
-              } else if (photo && typeof photo === 'object' && photo.secure_url) {
-                return photo.secure_url;
-              }
-              return null;
-            }).filter(url => url !== null);
-          };
+          // Add photos from before_photos field
+          const jobBeforePhotos = Array.isArray(job.before_photos || job.beforePhotos) 
+            ? (job.before_photos || job.beforePhotos) 
+            : [];
+          const extractedBeforePhotos = extractPhotoUrls(jobBeforePhotos);
+          extractedBeforePhotos.forEach(url => photoSet.add(url));
           
-          // Add photos from before_photos field (treating it as general photos)
-          const jobPhotos = Array.isArray(job.before_photos || job.beforePhotos) ? (job.before_photos || job.beforePhotos) : [];
-          const extractedPhotos = extractPhotoUrls(jobPhotos);
-          allPhotos.push(...extractedPhotos);
+          // Add photos from after_photos field
+          const jobAfterPhotos = Array.isArray(job.after_photos || job.afterPhotos) 
+            ? (job.after_photos || job.afterPhotos) 
+            : [];
+          const extractedAfterPhotos = extractPhotoUrls(jobAfterPhotos);
+          extractedAfterPhotos.forEach(url => photoSet.add(url));
           
           // Also check if there are photos in the images field (for backward compatibility)
           const jobImages = Array.isArray(job.images) ? job.images : [];
           const extractedImages = extractPhotoUrls(jobImages);
-          allPhotos.push(...extractedImages);
+          extractedImages.forEach(url => photoSet.add(url));
           
-          // Also check after_photos field
-          const jobAfterPhotos = Array.isArray(job.after_photos || job.afterPhotos) ? (job.after_photos || job.afterPhotos) : [];
-          const extractedAfterPhotos = extractPhotoUrls(jobAfterPhotos);
-          allPhotos.push(...extractedAfterPhotos);
+          // Log for debugging
+          if (extractedBeforePhotos.length > 0 || extractedAfterPhotos.length > 0 || extractedImages.length > 0) {
+            console.log(`Job ${job.job_number || job.jobNumber || index + 1}: ${extractedBeforePhotos.length} before, ${extractedAfterPhotos.length} after, ${extractedImages.length} images`);
+          }
         });
       }
+      
+      // Convert Set to Array
+      const uniquePhotos = Array.from(photoSet);
+      console.log(`Total unique photos found: ${uniquePhotos.length}`);
 
       setCustomerPhotos(prev => {
         const newState = {
           ...prev,
-          [customerId]: allPhotos
+          [customerId]: uniquePhotos
         };
         return newState;
       });
@@ -3380,9 +3398,34 @@ const AdminDashboard = () => {
 
     setIsUploadingPhoto(true);
     setIsCompressingImage(true);
+    const customerId = selectedCustomerForPhotos.customer_id || selectedCustomerForPhotos.customerId;
+    
+    // Create thumbnails immediately for preview
+    const thumbnailMap: {[key: string]: {url: string, uploading: boolean}} = {};
+    const fileArray = Array.from(files);
+    
+    fileArray.forEach((file, index) => {
+      // Validate file type
+      if (!file.type.startsWith('image/')) {
+        return;
+      }
+      
+      // Validate file size (10MB limit)
+      if (file.size > 10 * 1024 * 1024) {
+        return;
+      }
+      
+      // Create thumbnail URL
+      const thumbnailUrl = URL.createObjectURL(file);
+      const thumbnailId = `uploading-${Date.now()}-${index}`;
+      thumbnailMap[thumbnailId] = { url: thumbnailUrl, uploading: true };
+    });
+    
+    // Set thumbnails immediately
+    setUploadingThumbnails(prev => ({ ...prev, ...thumbnailMap }));
+    
     try {
       const uploadedPhotos: string[] = [];
-      const customerId = selectedCustomerForPhotos.customer_id || selectedCustomerForPhotos.customerId;
       
       for (let i = 0; i < files.length; i++) {
         const file = files[i];
@@ -3399,28 +3442,60 @@ const AdminDashboard = () => {
           continue;
         }
         
+        const thumbnailId = Object.keys(thumbnailMap)[i];
+        
         try {
           // Compress image for better performance
           const compressedFile = await compressImage(file, 800, 0.8);
-          // Upload to Cloudinary
-          const uploadResult = await cloudinaryService.uploadImage(compressedFile, 'ro-service');
-          uploadedPhotos.push(uploadResult.secure_url);
+          // Upload to Cloudinary - explicitly use primary (main) account
+          const uploadResult = await cloudinaryService.uploadImage(compressedFile, 'ro-service', false);
+          if (uploadResult && uploadResult.secure_url) {
+            uploadedPhotos.push(uploadResult.secure_url);
+            console.log(`✅ Photo uploaded to main Cloudinary: ${uploadResult.secure_url}`);
+            
+            // Remove thumbnail and add to photos immediately
+            if (thumbnailId) {
+              setUploadingThumbnails(prev => {
+                const newThumbnails = { ...prev };
+                delete newThumbnails[thumbnailId];
+                return newThumbnails;
+              });
+              
+              // Add to customer photos immediately - ensure it shows right away
+              setCustomerPhotos(prev => {
+                const currentPhotos = prev[customerId] || [];
+                // Check if photo already exists to avoid duplicates
+                if (!currentPhotos.includes(uploadResult.secure_url)) {
+                  return {
+                    ...prev,
+                    [customerId]: [...currentPhotos, uploadResult.secure_url]
+                  };
+                }
+                return prev;
+              });
+              console.log(`Photo added to state for customer ${customerId}:`, uploadResult.secure_url);
+            }
+          } else {
+            throw new Error('Upload succeeded but no URL returned');
+          }
         } catch (error) {
-          toast.error(`Failed to upload ${file.name}: ${error.message || 'Unknown error'}`);
+          console.error(`❌ Failed to upload ${file.name}:`, error);
+          toast.error(`Failed to upload ${file.name}: ${error instanceof Error ? error.message : 'Unknown error'}`);
+          
+          // Remove failed thumbnail
+          if (thumbnailId) {
+            setUploadingThumbnails(prev => {
+              const newThumbnails = { ...prev };
+              delete newThumbnails[thumbnailId];
+              return newThumbnails;
+            });
+          }
         }
       }
 
       if (uploadedPhotos.length > 0) {
-        // Update local state
-        setCustomerPhotos(prev => ({
-          ...prev,
-          [customerId]: [
-            ...(prev[customerId] || []),
-            ...uploadedPhotos
-          ]
-        }));
-
-        // Save to database - find the customer's latest job and add photos to it
+        // Photos are already added to state during upload loop above
+        // Now save to database - find the customer's latest job and add photos to it
         try {
           // Get customer's UUID
           const { data: customer, error: customerError } = await db.customers.getByCustomerId(customerId);
@@ -3448,6 +3523,20 @@ const AdminDashboard = () => {
               toast.warning('Photos uploaded but failed to save to database');
             } else {
               toast.success(`${uploadedPhotos.length} photo(s) uploaded and saved successfully!`);
+              // Reload photos to ensure we have the latest from database, but keep existing photos
+              const currentPhotos = customerPhotos[customerId] || [];
+              await loadCustomerPhotos(customerId);
+              // Ensure uploaded photos are still visible after reload
+              setTimeout(() => {
+                setCustomerPhotos(prev => {
+                  const existing = prev[customerId] || [];
+                  const allPhotos = [...new Set([...uploadedPhotos, ...existing])];
+                  return {
+                    ...prev,
+                    [customerId]: allPhotos
+                  };
+                });
+              }, 500);
             }
           } else {
             // No jobs found, create a new job for this customer
@@ -3477,6 +3566,20 @@ const AdminDashboard = () => {
               toast.warning('Photos uploaded but failed to save to database');
             } else {
               toast.success(`${uploadedPhotos.length} photo(s) uploaded and saved successfully!`);
+              // Reload photos to ensure we have the latest from database, but keep existing photos
+              const currentPhotos = customerPhotos[customerId] || [];
+              await loadCustomerPhotos(customerId);
+              // Ensure uploaded photos are still visible after reload
+              setTimeout(() => {
+                setCustomerPhotos(prev => {
+                  const existing = prev[customerId] || [];
+                  const allPhotos = [...new Set([...uploadedPhotos, ...existing])];
+                  return {
+                    ...prev,
+                    [customerId]: allPhotos
+                  };
+                });
+              }, 500);
             }
           }
         } catch (error) {
@@ -3490,21 +3593,146 @@ const AdminDashboard = () => {
     } finally {
       setIsUploadingPhoto(false);
       setIsCompressingImage(false);
+      // Clean up any remaining thumbnails
+      setUploadingThumbnails({});
     }
   };
 
   const handleDragOver = (e: React.DragEvent) => {
     e.preventDefault();
     e.stopPropagation();
+    setIsDragOverPhotos(true);
+  };
+
+  const handleDragLeave = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragOverPhotos(false);
   };
 
   const handleDrop = (e: React.DragEvent) => {
     e.preventDefault();
     e.stopPropagation();
+    setIsDragOverPhotos(false);
     
     const files = e.dataTransfer.files;
     if (files.length > 0) {
       handlePhotoUpload(files);
+    }
+  };
+
+  const handleCameraCapture = async () => {
+    if (!selectedCustomerForPhotos) return;
+    
+    try {
+      // Check if getUserMedia is available
+      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+        toast.error('Camera access is not available in this browser');
+        return;
+      }
+
+      // Request camera access
+      const stream = await navigator.mediaDevices.getUserMedia({ 
+        video: { facingMode: 'environment' } // Use back camera on mobile
+      });
+
+      // Create video element to show camera preview
+      const video = document.createElement('video');
+      video.srcObject = stream;
+      video.autoplay = true;
+      video.playsInline = true;
+      video.style.width = '100%';
+      video.style.height = '100%';
+      video.style.objectFit = 'cover';
+
+      // Create a dialog/modal for camera preview
+      const cameraDialog = document.createElement('div');
+      cameraDialog.style.position = 'fixed';
+      cameraDialog.style.top = '0';
+      cameraDialog.style.left = '0';
+      cameraDialog.style.width = '100%';
+      cameraDialog.style.height = '100%';
+      cameraDialog.style.backgroundColor = 'rgba(0, 0, 0, 0.9)';
+      cameraDialog.style.zIndex = '9999';
+      cameraDialog.style.display = 'flex';
+      cameraDialog.style.flexDirection = 'column';
+      cameraDialog.style.alignItems = 'center';
+      cameraDialog.style.justifyContent = 'center';
+      cameraDialog.style.gap = '20px';
+
+      const videoContainer = document.createElement('div');
+      videoContainer.style.width = '90%';
+      videoContainer.style.maxWidth = '600px';
+      videoContainer.style.aspectRatio = '4/3';
+      videoContainer.style.backgroundColor = 'black';
+      videoContainer.style.borderRadius = '8px';
+      videoContainer.style.overflow = 'hidden';
+      videoContainer.style.position = 'relative';
+      videoContainer.appendChild(video);
+
+      const buttonContainer = document.createElement('div');
+      buttonContainer.style.display = 'flex';
+      buttonContainer.style.gap = '10px';
+
+      const captureButton = document.createElement('button');
+      captureButton.textContent = 'Capture Photo';
+      captureButton.style.padding = '12px 24px';
+      captureButton.style.backgroundColor = '#3b82f6';
+      captureButton.style.color = 'white';
+      captureButton.style.border = 'none';
+      captureButton.style.borderRadius = '8px';
+      captureButton.style.cursor = 'pointer';
+      captureButton.style.fontSize = '16px';
+      captureButton.style.fontWeight = '600';
+
+      const cancelButton = document.createElement('button');
+      cancelButton.textContent = 'Cancel';
+      cancelButton.style.padding = '12px 24px';
+      cancelButton.style.backgroundColor = '#6b7280';
+      cancelButton.style.color = 'white';
+      cancelButton.style.border = 'none';
+      cancelButton.style.borderRadius = '8px';
+      cancelButton.style.cursor = 'pointer';
+      cancelButton.style.fontSize = '16px';
+
+      const closeCamera = () => {
+        stream.getTracks().forEach(track => track.stop());
+        document.body.removeChild(cameraDialog);
+      };
+
+      captureButton.onclick = () => {
+        // Create canvas to capture the photo
+        const canvas = document.createElement('canvas');
+        canvas.width = video.videoWidth;
+        canvas.height = video.videoHeight;
+        const ctx = canvas.getContext('2d');
+        if (ctx) {
+          ctx.drawImage(video, 0, 0);
+          canvas.toBlob((blob) => {
+            if (blob) {
+              // Convert blob to File
+              const file = new File([blob], `camera-photo-${Date.now()}.jpg`, { type: 'image/jpeg' });
+              // Create a DataTransfer object to get a proper FileList
+              const dataTransfer = new DataTransfer();
+              dataTransfer.items.add(file);
+              handlePhotoUpload(dataTransfer.files);
+            }
+            closeCamera();
+          }, 'image/jpeg', 0.9);
+        }
+      };
+
+      cancelButton.onclick = closeCamera;
+
+      buttonContainer.appendChild(captureButton);
+      buttonContainer.appendChild(cancelButton);
+      cameraDialog.appendChild(videoContainer);
+      cameraDialog.appendChild(buttonContainer);
+      document.body.appendChild(cameraDialog);
+
+    } catch (error) {
+      console.error('Error accessing camera:', error);
+      toast.error('Failed to access camera. Please check permissions.');
     }
   };
 
@@ -5353,7 +5581,7 @@ const AdminDashboard = () => {
                     <Button 
                       variant="outline" 
                       size="sm" 
-                      className="flex items-center justify-center gap-2 h-10 bg-white hover:bg-gray-50 border-gray-300 hover:border-gray-400 text-gray-700 hover:text-gray-900 transition-all duration-200 rounded-md text-sm"
+                      className="flex items-center justify-center gap-2 h-10"
                       onClick={() => handleNewJob(customer)}
                     >
                       <Plus className="w-4 h-4" />
@@ -5362,10 +5590,19 @@ const AdminDashboard = () => {
                     <Button 
                       variant="outline" 
                       size="sm" 
-                      className="flex items-center justify-center gap-2 h-10 bg-white hover:bg-gray-50 border-gray-300 hover:border-gray-400 text-gray-700 hover:text-gray-900 transition-all duration-200 rounded-md text-sm"
+                      className="flex items-center justify-center gap-2 h-10"
                       onClick={() => handleViewPhotos(customer)}
+                      disabled={isLoadingPhotos}
                     >
-                      <Camera className="w-4 h-4" />
+                      {isLoadingPhotos && selectedCustomerForPhotos?.customer_id === (customer.customer_id || customer.customerId) ? (
+                        <div className="flex items-center gap-1">
+                          <div className="w-2 h-2 bg-black rounded-full animate-bounce" style={{ animationDelay: '0ms' }}></div>
+                          <div className="w-2 h-2 bg-black rounded-full animate-bounce" style={{ animationDelay: '150ms' }}></div>
+                          <div className="w-2 h-2 bg-black rounded-full animate-bounce" style={{ animationDelay: '300ms' }}></div>
+                        </div>
+                      ) : (
+                        <Camera className="w-4 h-4" />
+                      )}
                       Photos
                     </Button>
                     <Button 
@@ -5508,7 +5745,7 @@ const AdminDashboard = () => {
                       <Button 
                         variant="outline" 
                         size="sm" 
-                        className="flex items-center gap-2 h-8 px-3 bg-white hover:bg-gray-50 border-gray-300 hover:border-gray-400 text-gray-700 hover:text-gray-900 transition-all duration-200 rounded-md text-xs"
+                        className="flex items-center gap-2 h-8 px-3"
                         onClick={() => handleNewJob(customer)}
                       >
                         <Plus className="w-3 h-3" />
@@ -5517,10 +5754,19 @@ const AdminDashboard = () => {
                       <Button 
                         variant="outline" 
                         size="sm" 
-                        className="flex items-center gap-2 h-8 px-3 bg-white hover:bg-gray-50 border-gray-300 hover:border-gray-400 text-gray-700 hover:text-gray-900 transition-all duration-200 rounded-md text-xs"
+                        className="flex items-center gap-2 h-8 px-3"
                         onClick={() => handleViewPhotos(customer)}
+                        disabled={isLoadingPhotos}
                       >
-                        <Camera className="w-3 h-3" />
+                        {isLoadingPhotos && selectedCustomerForPhotos?.customer_id === (customer.customer_id || customer.customerId) ? (
+                          <div className="flex items-center gap-0.5">
+                            <div className="w-1.5 h-1.5 bg-black rounded-full animate-bounce" style={{ animationDelay: '0ms' }}></div>
+                            <div className="w-1.5 h-1.5 bg-black rounded-full animate-bounce" style={{ animationDelay: '150ms' }}></div>
+                            <div className="w-1.5 h-1.5 bg-black rounded-full animate-bounce" style={{ animationDelay: '300ms' }}></div>
+                          </div>
+                        ) : (
+                          <Camera className="w-3 h-3" />
+                        )}
                         Photos
                       </Button>
                       <Button 
@@ -8267,17 +8513,25 @@ const AdminDashboard = () => {
           
           {selectedCustomerForPhotos && (
             <div className="space-y-6">
-              {/* Upload Area - Only show if no photos or when adding */}
+              {/* Upload Area - Only show if no photos and no uploading thumbnails */}
               {(() => {
-                const customerId = (selectedCustomerForPhotos as any).customer_id;
-                const photos = customerPhotos[customerId];
-                return !photos || photos.length === 0;
+                const customerId = selectedCustomerForPhotos?.customer_id || selectedCustomerForPhotos?.customerId;
+                const photos = customerPhotos[customerId || ''];
+                const uploadingCount = Object.keys(uploadingThumbnails).length;
+                return (!photos || photos.length === 0) && uploadingCount === 0;
               })() && (
                 <div
-                  className="border-2 border-dashed border-gray-300 rounded-lg p-12 text-center hover:border-blue-400 hover:bg-blue-50 transition-colors cursor-pointer"
+                  className={`border-2 border-dashed rounded-lg p-12 text-center transition-all duration-200 ${
+                    isDragOverPhotos 
+                      ? 'border-blue-500 bg-blue-100 scale-105' 
+                      : 'border-gray-300 hover:border-blue-400 hover:bg-blue-50'
+                  } ${isUploadingPhoto ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}`}
                   onDragOver={handleDragOver}
+                  onDragLeave={handleDragLeave}
                   onDrop={handleDrop}
-                  onClick={() => {
+                  onClick={(e) => {
+                    // Don't trigger file input if clicking on buttons
+                    if ((e.target as HTMLElement).closest('button')) return;
                     const input = document.createElement('input');
                     input.type = 'file';
                     input.multiple = true;
@@ -8289,21 +8543,64 @@ const AdminDashboard = () => {
                     input.click();
                   }}
                 >
-                  <div className="space-y-4">
+                  <div className="space-y-6">
                     <div className="relative">
-                      <Camera className="w-16 h-16 mx-auto text-gray-400" />
+                      <Camera className={`w-16 h-16 mx-auto ${isDragOverPhotos ? 'text-blue-500' : 'text-gray-400'}`} />
                       {isCompressingImage && (
                         <div className="absolute inset-0 flex items-center justify-center">
-                          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+                          <div className="flex items-center gap-1">
+                            <div className="w-3 h-3 bg-black rounded-full animate-bounce" style={{ animationDelay: '0ms' }}></div>
+                            <div className="w-3 h-3 bg-black rounded-full animate-bounce" style={{ animationDelay: '150ms' }}></div>
+                            <div className="w-3 h-3 bg-black rounded-full animate-bounce" style={{ animationDelay: '300ms' }}></div>
+                          </div>
                         </div>
                       )}
                     </div>
-                    <div className="space-y-2">
+                    <div className="space-y-3">
                       <div className="text-xl font-medium text-gray-600">
-                        {isUploadingPhoto ? 'Uploading and optimizing...' : 'No photos found - Drop photos here or click to upload'}
+                        {isUploadingPhoto ? 'Uploading photos...' : isDragOverPhotos ? 'Drop photos here' : 'No photos found'}
                       </div>
                       <div className="text-sm text-gray-500">
-                        Supports JPG, PNG, GIF up to 10MB each • Images will be automatically optimized and saved to database
+                        Drag & drop photos here, click to browse, or use camera capture
+                      </div>
+                      <div className="flex flex-col sm:flex-row gap-3 justify-center items-center pt-2">
+                        <Button
+                          type="button"
+                          variant="outline"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            const input = document.createElement('input');
+                            input.type = 'file';
+                            input.multiple = true;
+                            input.accept = 'image/*';
+                            input.onchange = (e) => {
+                              const files = (e.target as HTMLInputElement).files;
+                              if (files) handlePhotoUpload(files);
+                            };
+                            input.click();
+                          }}
+                          disabled={isUploadingPhoto}
+                          className="flex items-center gap-2"
+                        >
+                          <Upload className="w-4 h-4" />
+                          Browse Files
+                        </Button>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleCameraCapture();
+                          }}
+                          disabled={isUploadingPhoto}
+                          className="flex items-center gap-2"
+                        >
+                          <Camera className="w-4 h-4" />
+                          Capture Photo
+                        </Button>
+                      </div>
+                      <div className="text-xs text-gray-400 pt-2">
+                        Supports JPG, PNG, GIF up to 10MB • All photos stored in Cloudinary
                       </div>
                     </div>
                   </div>
@@ -8314,7 +8611,11 @@ const AdminDashboard = () => {
               {isLoadingPhotos && (
                 <div className="flex items-center justify-center py-12">
                   <div className="flex flex-col items-center gap-3">
-                    <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+                    <div className="flex items-center gap-1">
+                      <div className="w-3 h-3 bg-black rounded-full animate-bounce" style={{ animationDelay: '0ms' }}></div>
+                      <div className="w-3 h-3 bg-black rounded-full animate-bounce" style={{ animationDelay: '150ms' }}></div>
+                      <div className="w-3 h-3 bg-black rounded-full animate-bounce" style={{ animationDelay: '300ms' }}></div>
+                    </div>
                     <p className="text-sm text-gray-600">Loading photos...</p>
                   </div>
                 </div>
@@ -8322,43 +8623,92 @@ const AdminDashboard = () => {
 
               {/* Photo Grid */}
               {(() => {
-                const customerId = (selectedCustomerForPhotos as any).customer_id;
-                const photos = customerPhotos[customerId];
-                // Photo display check
-                return !isLoadingPhotos && photos && photos.length > 0;
+                const customerId = selectedCustomerForPhotos?.customer_id || selectedCustomerForPhotos?.customerId;
+                const photos = customerPhotos[customerId || ''];
+                const uploadingCount = Object.keys(uploadingThumbnails).length;
+                // Photo display check - show if we have photos OR uploading thumbnails
+                return !isLoadingPhotos && customerId && ((photos && photos.length > 0) || uploadingCount > 0);
               })() && (
                 <div className="space-y-4">
-                  <div className="flex items-center justify-between">
+                  <div className="flex items-center justify-between flex-wrap gap-3">
                     <h3 className="text-lg font-medium">
-                      {customerPhotos[(selectedCustomerForPhotos as any).customer_id].length} Photo{customerPhotos[(selectedCustomerForPhotos as any).customer_id].length !== 1 ? 's' : ''}
+                      {(() => {
+                        const customerId = selectedCustomerForPhotos?.customer_id || selectedCustomerForPhotos?.customerId;
+                        const photoCount = customerPhotos[customerId || '']?.length || 0;
+                        const uploadingCount = Object.keys(uploadingThumbnails).length;
+                        const total = photoCount + uploadingCount;
+                        return `${total} Photo${total !== 1 ? 's' : ''}${uploadingCount > 0 ? ` (${uploadingCount} uploading...)` : ''}`;
+                      })()}
                     </h3>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => {
-                        const input = document.createElement('input');
-                        input.type = 'file';
-                        input.multiple = true;
-                        input.accept = 'image/*';
-                        input.onchange = (e) => {
-                          const files = (e.target as HTMLInputElement).files;
-                          if (files) handlePhotoUpload(files);
-                        };
-                        input.click();
-                      }}
-                      disabled={isUploadingPhoto}
-                    >
-                      <Plus className="w-4 h-4 mr-2" />
-                      Add More
-                    </Button>
+                    <div className="flex gap-2">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => {
+                          const input = document.createElement('input');
+                          input.type = 'file';
+                          input.multiple = true;
+                          input.accept = 'image/*';
+                          input.onchange = (e) => {
+                            const files = (e.target as HTMLInputElement).files;
+                            if (files) handlePhotoUpload(files);
+                          };
+                          input.click();
+                        }}
+                        disabled={isUploadingPhoto}
+                        className="flex items-center gap-2"
+                      >
+                        <Upload className="w-4 h-4" />
+                        Add Files
+                      </Button>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={handleCameraCapture}
+                        disabled={isUploadingPhoto}
+                        className="flex items-center gap-2"
+                      >
+                        <Camera className="w-4 h-4" />
+                        Capture
+                      </Button>
+                    </div>
                   </div>
                   
                   <div 
-                    className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4"
+                    className={`grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4 p-4 rounded-lg border-2 border-dashed transition-all ${
+                      isDragOverPhotos 
+                        ? 'border-blue-500 bg-blue-50' 
+                        : 'border-transparent'
+                    }`}
                     onDragOver={handleDragOver}
+                    onDragLeave={handleDragLeave}
                     onDrop={handleDrop}
                   >
-                    {customerPhotos[(selectedCustomerForPhotos as any).customer_id].map((photo, index) => (
+                    {/* Show uploading thumbnails first */}
+                    {Object.entries(uploadingThumbnails).map(([thumbnailId, thumbnail]) => (
+                      <div key={thumbnailId} className="relative group">
+                        <div className="w-full h-40 bg-gray-100 rounded-lg border-2 border-dashed border-blue-400 overflow-hidden relative">
+                          <img
+                            src={thumbnail.url}
+                            alt="Uploading..."
+                            className="w-full h-full object-cover opacity-60"
+                          />
+                          <div className="absolute inset-0 flex items-center justify-center bg-black/20">
+                            <div className="flex flex-col items-center gap-2">
+                              <div className="flex items-center gap-1">
+                                <div className="w-2 h-2 bg-white rounded-full animate-bounce" style={{ animationDelay: '0ms' }}></div>
+                                <div className="w-2 h-2 bg-white rounded-full animate-bounce" style={{ animationDelay: '150ms' }}></div>
+                                <div className="w-2 h-2 bg-white rounded-full animate-bounce" style={{ animationDelay: '300ms' }}></div>
+                              </div>
+                              <span className="text-xs text-white font-medium">Uploading...</span>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                    
+                    {/* Show uploaded photos */}
+                    {customerPhotos[selectedCustomerForPhotos?.customer_id || selectedCustomerForPhotos?.customerId || '']?.map((photo, index) => (
                       <div key={`${selectedCustomerForPhotos.id}-${index}`} className="relative group">
                         <div className="w-full h-40 bg-gray-100 rounded-lg border border-gray-200 overflow-hidden cursor-pointer">
                           <img
@@ -8373,11 +8723,14 @@ const AdminDashboard = () => {
                               const placeholder = e.currentTarget.nextElementSibling as HTMLElement;
                               if (placeholder) placeholder.style.display = 'flex';
                             }}
-                            onClick={() => setSelectedPhoto({
-                              url: photo,
-                              index: index,
-                              total: customerPhotos[(selectedCustomerForPhotos as any).customer_id].length
-                            })}
+                            onClick={() => {
+                              const customerId = selectedCustomerForPhotos?.customer_id || selectedCustomerForPhotos?.customerId || '';
+                              setSelectedPhoto({
+                                url: photo,
+                                index: index,
+                                total: customerPhotos[customerId]?.length || 0
+                              });
+                            }}
                           />
                           <div 
                             className="w-full h-full flex items-center justify-center text-gray-400"
@@ -8388,51 +8741,6 @@ const AdminDashboard = () => {
                               <div className="text-xs">Failed to load</div>
                             </div>
                           </div>
-                        </div>
-                        
-                        {/* Photo Actions */}
-                        <div className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                          <DropdownMenu>
-                            <DropdownMenuTrigger asChild>
-                              <Button size="sm" variant="secondary" className="h-8 w-8 p-0">
-                                <MoreVertical className="w-4 h-4" />
-                              </Button>
-                            </DropdownMenuTrigger>
-                            <DropdownMenuContent align="end">
-                              <DropdownMenuItem onClick={() => setSelectedPhoto({
-                                url: photo,
-                                index: index,
-                                total: customerPhotos[(selectedCustomerForPhotos as any).customer_id].length
-                              })}>
-                                <Eye className="w-4 h-4 mr-2" />
-                                View
-                              </DropdownMenuItem>
-                              <DropdownMenuItem onClick={() => {
-                                const link = document.createElement('a');
-                                link.href = photo;
-                                link.download = `photo-${index + 1}.jpg`;
-                                link.click();
-                              }}>
-                                <Download className="w-4 h-4 mr-2" />
-                                Download
-                              </DropdownMenuItem>
-                              <DropdownMenuItem 
-                                onClick={() => {
-                                  if (photo.startsWith('blob:')) {
-                                    URL.revokeObjectURL(photo);
-                                  }
-                                  setCustomerPhotos(prev => ({
-                                    ...prev,
-                                    [(selectedCustomerForPhotos as any).customer_id]: prev[(selectedCustomerForPhotos as any).customer_id].filter((_, i) => i !== index)
-                                  }));
-                                }}
-                                className="text-red-600"
-                              >
-                                <Trash2 className="w-4 h-4 mr-2" />
-                                Delete
-                              </DropdownMenuItem>
-                            </DropdownMenuContent>
-                          </DropdownMenu>
                         </div>
                       </div>
                     ))}
