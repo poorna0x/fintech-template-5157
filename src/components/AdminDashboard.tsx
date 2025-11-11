@@ -728,7 +728,7 @@ const AdminDashboard = () => {
   const [amcYears, setAmcYears] = useState<number>(1);
   const [amcIncludesPrefilter, setAmcIncludesPrefilter] = useState<boolean>(false);
   const [hasAMC, setHasAMC] = useState<boolean>(false);
-  const [statusFilter, setStatusFilter] = useState<'ALL' | 'ONGOING' | 'PENDING' | 'ASSIGNED' | 'IN_PROGRESS' | 'COMPLETED' | 'CANCELLED' | 'RESCHEDULED'>('ALL');
+  const [statusFilter, setStatusFilter] = useState<'ALL' | 'ONGOING' | 'PENDING' | 'ASSIGNED' | 'IN_PROGRESS' | 'COMPLETED' | 'CANCELLED' | 'RESCHEDULED'>('ONGOING');
   const [loadingCustomerJobs, setLoadingCustomerJobs] = useState<{[customerId: string]: boolean}>({});
   // Pagination state
   const [currentPage, setCurrentPage] = useState<number>(1);
@@ -3737,24 +3737,68 @@ const AdminDashboard = () => {
   };
 
   // History management functions
-  const handleViewHistory = (customer: Customer) => {
+  const handleViewHistory = async (customer: Customer) => {
     setSelectedCustomerForHistory(customer);
     setHistoryDialogOpen(true);
-    // Load customer history if not already loaded
-    if (!customerHistory[customer.id]) {
-      loadCustomerHistory(customer.id);
-    }
+    // Always reload customer history to get the latest data
+    const customerId = customer.customer_id || customer.customerId;
+    await loadCustomerHistory(customerId);
   };
 
   const loadCustomerHistory = async (customerId: string) => {
     try {
-      // Filter jobs for this customer
-      const customerJobs = jobs.filter(job => job.customerId === customerId);
+      // Get customer by customer_id to get UUID
+      const { data: customer, error: customerError } = await db.customers.getByCustomerId(customerId);
+      
+      if (customerError || !customer) {
+        toast.error('Customer not found');
+        return;
+      }
+
+      // Fetch all jobs for this customer from database
+      const { data: customerJobs, error: jobsError } = await db.jobs.getByCustomerId(customer.id);
+      
+      if (jobsError) {
+        toast.error('Failed to load service history');
+        return;
+      }
+
+      // Enrich jobs with technician information
+      const enrichedJobs = customerJobs?.map(job => {
+        const technicianId = job.assigned_technician_id || job.assignedTechnicianId;
+        const technician = technicianId ? technicians.find(t => t.id === technicianId) : null;
+        
+        return {
+          ...job,
+          jobNumber: job.job_number || job.jobNumber,
+          serviceType: job.service_type || job.serviceType,
+          serviceSubType: job.service_sub_type || job.serviceSubType,
+          scheduledDate: job.scheduled_date || job.scheduledDate,
+          scheduledTimeSlot: job.scheduled_time_slot || job.scheduledTimeSlot,
+          assignedTechnician: technician ? {
+            id: technician.id,
+            fullName: technician.fullName,
+            phone: technician.phone
+          } : null,
+          completedAt: job.completedAt || job.completed_at,
+          createdAt: job.createdAt || job.created_at,
+          updatedAt: job.updatedAt || job.updated_at
+        };
+      }) || [];
+
+      // Sort by date (newest first)
+      enrichedJobs.sort((a, b) => {
+        const dateA = new Date(a.completedAt || a.scheduledDate || a.createdAt || 0).getTime();
+        const dateB = new Date(b.completedAt || b.scheduledDate || b.createdAt || 0).getTime();
+        return dateB - dateA;
+      });
+
       setCustomerHistory(prev => ({
         ...prev,
-        [customerId]: customerJobs
+        [customerId]: enrichedJobs
       }));
     } catch (error) {
+      console.error('Error loading customer history:', error);
       toast.error('Failed to load service history');
     }
   };
@@ -5581,7 +5625,7 @@ const AdminDashboard = () => {
                     <Button 
                       variant="outline" 
                       size="sm" 
-                      className="flex items-center justify-center gap-2 h-10"
+                      className="flex items-center justify-center gap-2 h-10 bg-white hover:bg-gray-50 border-gray-300 hover:border-gray-400 text-gray-700 hover:text-gray-900 transition-all duration-200 rounded-md text-sm"
                       onClick={() => handleNewJob(customer)}
                     >
                       <Plus className="w-4 h-4" />
@@ -5590,7 +5634,7 @@ const AdminDashboard = () => {
                     <Button 
                       variant="outline" 
                       size="sm" 
-                      className="flex items-center justify-center gap-2 h-10"
+                      className="flex items-center justify-center gap-2 h-10 bg-white hover:bg-gray-50 border-gray-300 hover:border-gray-400 text-gray-700 hover:text-gray-900 transition-all duration-200 rounded-md text-sm"
                       onClick={() => handleViewPhotos(customer)}
                       disabled={isLoadingPhotos}
                     >
@@ -5745,7 +5789,7 @@ const AdminDashboard = () => {
                       <Button 
                         variant="outline" 
                         size="sm" 
-                        className="flex items-center gap-2 h-8 px-3"
+                        className="flex items-center gap-2 h-8 px-3 bg-white hover:bg-gray-50 border-gray-300 hover:border-gray-400 text-gray-700 hover:text-gray-900 transition-all duration-200 rounded-md text-xs"
                         onClick={() => handleNewJob(customer)}
                       >
                         <Plus className="w-3 h-3" />
@@ -5754,7 +5798,7 @@ const AdminDashboard = () => {
                       <Button 
                         variant="outline" 
                         size="sm" 
-                        className="flex items-center gap-2 h-8 px-3"
+                        className="flex items-center gap-2 h-8 px-3 bg-white hover:bg-gray-50 border-gray-300 hover:border-gray-400 text-gray-700 hover:text-gray-900 transition-all duration-200 rounded-md text-xs"
                         onClick={() => handleViewPhotos(customer)}
                         disabled={isLoadingPhotos}
                       >
@@ -8806,70 +8850,197 @@ const AdminDashboard = () => {
             </DialogDescription>
           </DialogHeader>
           
-          {selectedCustomerForHistory && (
-            <div className="space-y-4">
-              {customerHistory[selectedCustomerForHistory.id]?.length > 0 ? (
-                <div className="space-y-4">
-                  {customerHistory[selectedCustomerForHistory.id].map((job) => (
-                    <Card key={job.id} className="p-3 sm:p-4">
-                      <div className="flex items-start justify-between">
-                        <div className="space-y-2 flex-1 min-w-0">
-                          <div className="flex flex-col sm:flex-row sm:items-center gap-2">
+          {selectedCustomerForHistory && (() => {
+            const customerId = selectedCustomerForHistory.customer_id || selectedCustomerForHistory.customerId;
+            const history = customerHistory[customerId] || [];
+            
+            return (
+              <div className="space-y-4">
+                {history.length > 0 ? (
+                  <div className="space-y-4">
+                    {history.map((job, index) => {
+                    const lastServiceDate = job.completedAt || job.scheduledDate || job.createdAt;
+                    const serviceDate = lastServiceDate ? new Date(lastServiceDate) : null;
+                    
+                    return (
+                      <Card key={job.id} className="p-4 border-l-4 border-l-blue-500">
+                        <div className="space-y-4">
+                          {/* Header with Job Number and Status */}
+                          <div className="flex items-start justify-between flex-wrap gap-3">
                             <div className="flex items-center gap-2 flex-wrap">
-                              <Badge variant="outline" className="font-mono text-xs">
-                                {job.jobNumber}
+                              <Badge variant="outline" className="font-mono text-xs font-semibold">
+                                {job.jobNumber || job.job_number || `Job #${index + 1}`}
                               </Badge>
                               <Badge 
                                 variant={
                                   job.status === 'COMPLETED' ? 'default' :
                                   job.status === 'IN_PROGRESS' ? 'secondary' :
-                                  job.status === 'CANCELLED' ? 'destructive' : 'outline'
+                                  job.status === 'CANCELLED' ? 'destructive' : 
+                                  job.status === 'ASSIGNED' ? 'outline' : 'outline'
                                 }
                                 className="text-xs"
                               >
-                                {job.status.replace('_', ' ')}
+                                {job.status?.replace('_', ' ') || 'PENDING'}
                               </Badge>
+                              {job.priority && (
+                                <Badge variant="outline" className="text-xs">
+                                  {job.priority}
+                                </Badge>
+                              )}
+                            </div>
+                            {serviceDate && (
+                              <div className="text-right">
+                                <div className="text-sm font-semibold text-gray-900">
+                                  {job.completedAt ? 'Completed' : job.status === 'IN_PROGRESS' ? 'In Progress' : 'Scheduled'}
+                                </div>
+                                <div className="text-xs text-gray-500">
+                                  {serviceDate.toLocaleDateString('en-IN', { 
+                                    day: 'numeric', 
+                                    month: 'short', 
+                                    year: 'numeric' 
+                                  })}
+                                </div>
+                                {job.completedAt && (
+                                  <div className="text-xs text-gray-500">
+                                    {new Date(job.completedAt).toLocaleTimeString('en-IN', { 
+                                      hour: '2-digit', 
+                                      minute: '2-digit' 
+                                    })}
+                                  </div>
+                                )}
+                              </div>
+                            )}
+                          </div>
+
+                          {/* Service Details */}
+                          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <div className="space-y-2">
+                              <div className="flex items-center gap-2">
+                                <Wrench className="w-4 h-4 text-gray-500" />
+                                <div>
+                                  <div className="text-sm font-semibold text-gray-900">
+                                    {job.serviceType || job.service_type || 'N/A'} - {job.serviceSubType || job.service_sub_type || 'N/A'}
+                                  </div>
+                                  {(job.brand && job.model && 
+                                    !job.brand.toLowerCase().includes('not specified') && 
+                                    !job.brand.toLowerCase().includes('n/a') &&
+                                    !job.model.toLowerCase().includes('not specified') && 
+                                    !job.model.toLowerCase().includes('n/a')) && (
+                                    <div className="text-xs text-gray-600">
+                                      {job.brand} {job.model}
+                                    </div>
+                                  )}
+                                </div>
+                              </div>
+                            </div>
+
+                            {/* Technician Information */}
+                            <div className="space-y-2">
+                              {job.assignedTechnician ? (
+                                <div className="flex items-center gap-2">
+                                  <User className="w-4 h-4 text-gray-500" />
+                                  <div>
+                                    <div className="text-sm font-semibold text-gray-900">
+                                      {job.assignedTechnician.fullName}
+                                    </div>
+                                    {job.assignedTechnician.phone && (
+                                      <div className="text-xs text-gray-600">
+                                        {job.assignedTechnician.phone}
+                                      </div>
+                                    )}
+                                  </div>
+                                </div>
+                              ) : (
+                                <div className="flex items-center gap-2 text-sm text-gray-500">
+                                  <User className="w-4 h-4" />
+                                  <span>No technician assigned</span>
+                                </div>
+                              )}
                             </div>
                           </div>
-                          <div className="text-base sm:text-lg font-medium break-words">{job.serviceType} - {job.serviceSubType}</div>
-                          {(job.brand && job.model && 
-                            !job.brand.toLowerCase().includes('not specified') && 
-                            !job.brand.toLowerCase().includes('n/a') &&
-                            !job.model.toLowerCase().includes('not specified') && 
-                            !job.model.toLowerCase().includes('n/a')) && (
-                            <div className="text-sm text-gray-600 break-words">
-                              {job.brand} {job.model}
+
+                          {/* Schedule Information */}
+                          {job.scheduledDate && (
+                            <div className="flex items-center gap-2 text-sm text-gray-600">
+                              <Calendar className="w-4 h-4" />
+                              <span>
+                                Scheduled: {new Date(job.scheduledDate).toLocaleDateString('en-IN', { 
+                                  day: 'numeric', 
+                                  month: 'short', 
+                                  year: 'numeric' 
+                                })}
+                                {job.scheduledTimeSlot && (
+                                  <span className="ml-1">
+                                    ({job.scheduledTimeSlot.replace('_', ' ')})
+                                  </span>
+                                )}
+                              </span>
                             </div>
                           )}
-                          <div className="text-sm text-gray-500 break-words">
-                            Scheduled: {new Date(job.scheduledDate).toLocaleDateString()} at {job.scheduledTimeSlot?.toLowerCase() || 'Time not specified'}
-                          </div>
+
+                          {/* Description */}
                           {job.description && (
-                            <div className="text-sm text-gray-700 mt-2 break-words line-clamp-3">
-                              {job.description}
+                            <div className="text-sm text-gray-700 bg-gray-50 p-3 rounded-md">
+                              <div className="font-medium mb-1">Description:</div>
+                              <div className="break-words">{job.description}</div>
+                            </div>
+                          )}
+
+                          {/* Financial Information */}
+                          <div className="grid grid-cols-2 md:grid-cols-4 gap-3 pt-2 border-t">
+                            {job.estimated_cost !== undefined && job.estimated_cost > 0 && (
+                              <div>
+                                <div className="text-xs text-gray-500">Estimated Cost</div>
+                                <div className="text-sm font-semibold">₹{job.estimated_cost}</div>
+                              </div>
+                            )}
+                            {job.actual_cost !== undefined && job.actual_cost > 0 && (
+                              <div>
+                                <div className="text-xs text-gray-500">Actual Cost</div>
+                                <div className="text-sm font-semibold">₹{job.actual_cost}</div>
+                              </div>
+                            )}
+                            {job.payment_status && (
+                              <div>
+                                <div className="text-xs text-gray-500">Payment Status</div>
+                                <Badge 
+                                  variant={job.payment_status === 'PAID' ? 'default' : 'outline'}
+                                  className="text-xs mt-1"
+                                >
+                                  {job.payment_status}
+                                </Badge>
+                              </div>
+                            )}
+                            {job.estimatedDuration && (
+                              <div>
+                                <div className="text-xs text-gray-500">Duration</div>
+                                <div className="text-sm font-semibold">{job.estimatedDuration} min</div>
+                              </div>
+                            )}
+                          </div>
+
+                          {/* Completion Notes */}
+                          {job.completionNotes && (
+                            <div className="text-sm text-gray-700 bg-green-50 p-3 rounded-md border border-green-200">
+                              <div className="font-medium mb-1 text-green-800">Completion Notes:</div>
+                              <div className="break-words text-green-900">{job.completionNotes}</div>
                             </div>
                           )}
                         </div>
-                        <div className="text-right text-sm text-gray-500">
-                          <div>Priority: {job.priority}</div>
-                          <div>Duration: {job.estimatedDuration} min</div>
-                          {job.assignedTechnician && (
-                            <div>Technician: {job.assignedTechnician.fullName}</div>
-                          )}
-                        </div>
-                      </div>
-                    </Card>
-                  ))}
-                </div>
-              ) : (
-                <div className="text-center py-8 text-gray-500">
-                  <History className="w-12 h-12 mx-auto mb-4 text-gray-300" />
-                  <div className="text-lg font-medium">No service history yet</div>
-                  <div className="text-sm">Create a new job to start building service history</div>
-                </div>
-              )}
-            </div>
-          )}
+                      </Card>
+                    );
+                    })}
+                  </div>
+                ) : (
+                  <div className="text-center py-8 text-gray-500">
+                    <History className="w-12 h-12 mx-auto mb-4 text-gray-300" />
+                    <div className="text-lg font-medium">No service history yet</div>
+                    <div className="text-sm">Create a new job to start building service history</div>
+                  </div>
+                )}
+              </div>
+            );
+          })()}
         </DialogContent>
       </Dialog>
 
