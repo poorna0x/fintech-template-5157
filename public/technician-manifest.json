@@ -1,6 +1,6 @@
 {
   "name": "Hydrogen RO/Technician",
-  "short_name": "Tech",
+  "short_name": "Technician",
   "description": "Technician dashboard for managing assigned jobs and completing service requests",
   "id": "/technician",
   "scope": "/technician/",

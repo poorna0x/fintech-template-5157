@@ -103,7 +103,8 @@ const TechnicianDashboard = () => {
 
   // Photos dialog state
   const [photosDialogOpen, setPhotosDialogOpen] = useState(false);
-  const [selectedJobPhotos, setSelectedJobPhotos] = useState<{jobId: string, photos: string[]} | null>(null);
+  const [selectedJobPhotos, setSelectedJobPhotos] = useState<{jobId: string, photos: string[], customerId?: string} | null>(null);
+  const [loadingCustomerPhotos, setLoadingCustomerPhotos] = useState(false);
 
   // Address dialog state
   const [addressDialogOpen, setAddressDialogOpen] = useState<{[jobId: string]: boolean}>({});
@@ -747,12 +748,70 @@ const TechnicianDashboard = () => {
   // Helper function to get all photos for a job
   const getAllJobPhotos = (job: Job): string[] => {
     const photos: string[] = [];
+    
+    // Get photos from job
     if (job.beforePhotos && Array.isArray(job.beforePhotos)) photos.push(...job.beforePhotos);
     if (job.before_photos && Array.isArray(job.before_photos)) photos.push(...job.before_photos);
     if (job.afterPhotos && Array.isArray(job.afterPhotos)) photos.push(...job.afterPhotos);
     if (job.after_photos && Array.isArray(job.after_photos)) photos.push(...job.after_photos);
     if (job.images && Array.isArray(job.images)) photos.push(...job.images);
-    return photos.filter(photo => photo && photo.trim() !== '');
+    
+    // Remove duplicates and filter out empty values
+    const uniquePhotos = Array.from(new Set(photos.filter(photo => photo && photo.trim() !== '')));
+    return uniquePhotos;
+  };
+
+  // Helper function to get all photos for a customer from all their jobs
+  const getAllCustomerPhotos = async (customerId: string): Promise<string[]> => {
+    try {
+      setLoadingCustomerPhotos(true);
+      const { data: customerJobs, error } = await db.jobs.getByCustomerId(customerId);
+      
+      if (error) {
+        console.error('Error fetching customer jobs:', error);
+        return [];
+      }
+      
+      const allPhotos: string[] = [];
+      
+      if (customerJobs && Array.isArray(customerJobs)) {
+        customerJobs.forEach((job: any) => {
+          // Get photos from each job
+          if (job.beforePhotos && Array.isArray(job.beforePhotos)) allPhotos.push(...job.beforePhotos);
+          if (job.before_photos && Array.isArray(job.before_photos)) allPhotos.push(...job.before_photos);
+          if (job.afterPhotos && Array.isArray(job.afterPhotos)) allPhotos.push(...job.afterPhotos);
+          if (job.after_photos && Array.isArray(job.after_photos)) allPhotos.push(...job.after_photos);
+          if (job.images && Array.isArray(job.images)) allPhotos.push(...job.images);
+          
+          // Get photos from job requirements (bill photos, payment photos)
+          if (job.requirements) {
+            try {
+              const requirements = typeof job.requirements === 'string' 
+                ? JSON.parse(job.requirements) 
+                : job.requirements;
+              
+              if (Array.isArray(requirements)) {
+                requirements.forEach((req: any) => {
+                  if (req.bill_photos && Array.isArray(req.bill_photos)) allPhotos.push(...req.bill_photos);
+                  if (req.payment_photos && Array.isArray(req.payment_photos)) allPhotos.push(...req.payment_photos);
+                });
+              }
+            } catch (e) {
+              // Ignore parse errors
+            }
+          }
+        });
+      }
+      
+      // Remove duplicates and filter out empty values
+      const uniquePhotos = Array.from(new Set(allPhotos.filter(photo => photo && photo.trim() !== '')));
+      return uniquePhotos;
+    } catch (error) {
+      console.error('Error in getAllCustomerPhotos:', error);
+      return [];
+    } finally {
+      setLoadingCustomerPhotos(false);
+    }
   };
 
   // Helper function to get ordinal suffix (1st, 2nd, 3rd, 4th, etc.)
@@ -1271,21 +1330,32 @@ const TechnicianDashboard = () => {
 
                                 {/* Photos */}
                                 {(() => {
-                                  const jobForPhotos = { ...job, customer } as Job;
-                                  const photos = getAllJobPhotos(jobForPhotos);
+                                  const jobPhotos = getAllJobPhotos(job);
+                                  const customerId = (customer as any)?.id || customer?.id;
                                   return (
                                     <div className="bg-white rounded-lg p-3 border border-gray-200 hover:border-gray-300 hover:shadow-sm transition-all duration-200">
                                       <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-3">
                                         <div className="w-8 h-8 sm:w-10 sm:h-10 bg-gray-100 rounded-lg flex items-center justify-center flex-shrink-0">
                                           <button
-                                            onClick={() => {
-                                              if (photos.length > 0) {
-                                                setSelectedJobPhotos({ jobId: job.id, photos });
+                                            onClick={async () => {
+                                              if (customerId) {
+                                                setLoadingCustomerPhotos(true);
+                                                const allCustomerPhotos = await getAllCustomerPhotos(customerId);
+                                                setSelectedJobPhotos({ 
+                                                  jobId: job.id, 
+                                                  photos: allCustomerPhotos,
+                                                  customerId 
+                                                });
+                                                setPhotosDialogOpen(true);
+                                                setLoadingCustomerPhotos(false);
+                                              } else {
+                                                // Fallback to job photos only
+                                                setSelectedJobPhotos({ jobId: job.id, photos: jobPhotos });
                                                 setPhotosDialogOpen(true);
                                               }
                                             }}
                                             className="cursor-pointer"
-                                            disabled={photos.length === 0}
+                                            disabled={loadingCustomerPhotos}
                                           >
                                             <Camera className="w-4 h-4 sm:w-5 sm:h-5 text-gray-600" />
                                           </button>
@@ -1293,9 +1363,13 @@ const TechnicianDashboard = () => {
                                         <div className="flex-1 min-w-0">
                                           <div className="text-sm font-semibold text-gray-900">Photos</div>
                                           <div className="text-xs text-gray-500">
-                                            {photos.length > 0 
-                                              ? `${photos.length} photo(s)`
-                                              : 'No photos'}
+                                            {loadingCustomerPhotos 
+                                              ? 'Loading...'
+                                              : customerId
+                                                ? 'View all customer photos'
+                                                : jobPhotos.length > 0 
+                                                  ? `${jobPhotos.length} photo(s)`
+                                                  : 'No photos'}
                                           </div>
                                         </div>
                                       </div>
@@ -1605,33 +1679,53 @@ const TechnicianDashboard = () => {
                         </div>
                         
                           {/* Photos */}
-                          <div className="bg-white rounded-lg p-3 border border-gray-200 hover:border-gray-300 hover:shadow-sm transition-all duration-200">
-                            <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-3">
-                              <div className="w-8 h-8 sm:w-10 sm:h-10 bg-gray-100 rounded-lg flex items-center justify-center flex-shrink-0">
-                                <button
-                                  onClick={() => {
-                                    const photos = getAllJobPhotos(job);
-                                    if (photos.length > 0) {
-                                      setSelectedJobPhotos({ jobId: job.id, photos });
-                                      setPhotosDialogOpen(true);
-                                    }
-                                  }}
-                                  className="cursor-pointer"
-                                  disabled={getAllJobPhotos(job).length === 0}
-                                >
-                                  <Camera className="w-4 h-4 sm:w-5 sm:h-5 text-gray-600" />
-                                </button>
-                          </div>
-                              <div className="flex-1 min-w-0">
-                                <div className="text-sm font-semibold text-gray-900">Photos</div>
-                                <div className="text-xs text-gray-500">
-                                  {getAllJobPhotos(job).length > 0 
-                                    ? `${getAllJobPhotos(job).length} photo(s)`
-                                    : 'No photos'}
+                          {(() => {
+                            const jobPhotos = getAllJobPhotos(job);
+                            const customerId = (job.customer as any)?.id || job.customer?.id;
+                            return (
+                              <div className="bg-white rounded-lg p-3 border border-gray-200 hover:border-gray-300 hover:shadow-sm transition-all duration-200">
+                                <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-3">
+                                  <div className="w-8 h-8 sm:w-10 sm:h-10 bg-gray-100 rounded-lg flex items-center justify-center flex-shrink-0">
+                                    <button
+                                      onClick={async () => {
+                                        if (customerId) {
+                                          setLoadingCustomerPhotos(true);
+                                          const allCustomerPhotos = await getAllCustomerPhotos(customerId);
+                                          setSelectedJobPhotos({ 
+                                            jobId: job.id, 
+                                            photos: allCustomerPhotos,
+                                            customerId 
+                                          });
+                                          setPhotosDialogOpen(true);
+                                          setLoadingCustomerPhotos(false);
+                                        } else {
+                                          // Fallback to job photos only
+                                          setSelectedJobPhotos({ jobId: job.id, photos: jobPhotos });
+                                          setPhotosDialogOpen(true);
+                                        }
+                                      }}
+                                      className="cursor-pointer"
+                                      disabled={loadingCustomerPhotos}
+                                    >
+                                      <Camera className="w-4 h-4 sm:w-5 sm:h-5 text-gray-600" />
+                                    </button>
+                                  </div>
+                                  <div className="flex-1 min-w-0">
+                                    <div className="text-sm font-semibold text-gray-900">Photos</div>
+                                    <div className="text-xs text-gray-500">
+                                      {loadingCustomerPhotos 
+                                        ? 'Loading...'
+                                        : customerId
+                                          ? 'View all customer photos'
+                                          : jobPhotos.length > 0 
+                                            ? `${jobPhotos.length} photo(s)`
+                                            : 'No photos'}
+                                    </div>
+                                  </div>
                                 </div>
-                          </div>
-                      </div>
-                    </div>
+                              </div>
+                            );
+                          })()}
 
                           {/* WhatsApp - Last */}
                           {job.customer?.phone && (
@@ -2299,10 +2393,12 @@ const TechnicianDashboard = () => {
             <DialogHeader>
               <DialogTitle className="flex items-center gap-2">
                 <Camera className="w-5 h-5 text-blue-600" />
-                Job Photos
+                {selectedJobPhotos?.customerId ? 'Customer Photos' : 'Job Photos'}
               </DialogTitle>
               <DialogDescription>
-                All photos associated with this job
+                {selectedJobPhotos?.customerId 
+                  ? 'All photos associated with this customer from all jobs'
+                  : 'All photos associated with this job'}
               </DialogDescription>
             </DialogHeader>
             {selectedJobPhotos && selectedJobPhotos.photos.length > 0 ? (
