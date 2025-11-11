@@ -266,37 +266,38 @@ const TechnicianDashboard = () => {
   }, [user?.technicianId, assignmentRequests.length]);
 
   // Periodic location update (every 5 minutes) - ONLY when app is open and visible
-  useEffect(() => {
-    if (!user?.technicianId) return;
+  // TEMPORARILY DISABLED - Can be re-enabled later
+  // useEffect(() => {
+  //   if (!user?.technicianId) return;
 
-    // Update location immediately on mount (only if page is visible)
-    if (!document.hidden) {
-      getCurrentLocation();
-    }
+  //   // Update location immediately on mount (only if page is visible)
+  //   if (!document.hidden) {
+  //     getCurrentLocation();
+  //   }
 
-    // Then update every 5 minutes - ONLY if page is visible
-    const locationInterval = setInterval(() => {
-      // Only update location if the page is visible (app is open and active)
-      if (!document.hidden) {
-        getCurrentLocation();
-      }
-    }, 5 * 60 * 1000); // 5 minutes
+  //   // Then update every 5 minutes - ONLY if page is visible
+  //   const locationInterval = setInterval(() => {
+  //     // Only update location if the page is visible (app is open and active)
+  //     if (!document.hidden) {
+  //       getCurrentLocation();
+  //     }
+  //   }, 5 * 60 * 1000); // 5 minutes
 
-    // Also listen for visibility changes to update when app becomes visible again
-    const handleVisibilityChange = () => {
-      if (!document.hidden && user?.technicianId) {
-        // Update location when app becomes visible again
-        getCurrentLocation();
-      }
-    };
+  //   // Also listen for visibility changes to update when app becomes visible again
+  //   const handleVisibilityChange = () => {
+  //     if (!document.hidden && user?.technicianId) {
+  //       // Update location when app becomes visible again
+  //       getCurrentLocation();
+  //     }
+  //   };
 
-    document.addEventListener('visibilitychange', handleVisibilityChange);
+  //   document.addEventListener('visibilitychange', handleVisibilityChange);
 
-    return () => {
-      clearInterval(locationInterval);
-      document.removeEventListener('visibilitychange', handleVisibilityChange);
-    };
-  }, [user?.technicianId]);
+  //   return () => {
+  //     clearInterval(locationInterval);
+  //     document.removeEventListener('visibilitychange', handleVisibilityChange);
+  //   };
+  // }, [user?.technicianId]);
 
   // Filter jobs based on search and status
   useEffect(() => {
@@ -346,12 +347,16 @@ const TechnicianDashboard = () => {
 
     try {
       setJobsLoading(true);
+      console.time('loadAssignedJobs'); // Performance timing
       const { data, error } = await db.jobs.getByTechnicianId(user.technicianId);
+      console.timeEnd('loadAssignedJobs'); // Performance timing
       
       if (error) {
+        console.error('Error loading assigned jobs:', error);
         throw new Error(error.message);
       }
 
+      console.log('Loaded jobs count:', data?.length || 0);
       setJobs(data || []);
     } catch (error) {
       console.error('Error loading assigned jobs:', error);
@@ -1076,9 +1081,9 @@ const TechnicianDashboard = () => {
     const dotSize = size === 'sm' ? 'w-2 h-2' : size === 'lg' ? 'w-4 h-4' : 'w-3 h-3';
     return (
       <div className="flex items-center justify-center space-x-1">
-        <div className={`${dotSize} bg-blue-600 rounded-full animate-bounce`} style={{ animationDelay: '0ms' }}></div>
-        <div className={`${dotSize} bg-blue-600 rounded-full animate-bounce`} style={{ animationDelay: '150ms' }}></div>
-        <div className={`${dotSize} bg-blue-600 rounded-full animate-bounce`} style={{ animationDelay: '300ms' }}></div>
+        <div className={`${dotSize} bg-black rounded-full animate-bounce`} style={{ animationDelay: '0ms' }}></div>
+        <div className={`${dotSize} bg-black rounded-full animate-bounce`} style={{ animationDelay: '150ms' }}></div>
+        <div className={`${dotSize} bg-black rounded-full animate-bounce`} style={{ animationDelay: '300ms' }}></div>
       </div>
     );
   };
@@ -1113,7 +1118,7 @@ const TechnicianDashboard = () => {
   return (
     <div className="min-h-screen bg-gray-50">
       {/* Header */}
-      <div className="sticky top-0 z-50 pt-8 px-4 bg-background/95 backdrop-blur-md border-b border-border/50">
+      <div className="pt-8 px-4 bg-background/95 backdrop-blur-md border-b border-border/50">
         <header className="w-full max-w-7xl mx-auto py-3 px-6 md:px-8 flex items-center justify-between relative">
           {/* Spacer for balance */}
           <div className="w-16"></div>

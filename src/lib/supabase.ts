@@ -287,7 +287,12 @@ export const db = {
           service_address,
           service_location,
           customer:customers(
-            *,
+            id,
+            customer_id,
+            full_name,
+            phone,
+            alternate_phone,
+            email,
             visible_address,
             address,
             location
