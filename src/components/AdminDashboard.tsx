@@ -7623,7 +7623,8 @@ const AdminDashboard = () => {
                             No technicians available
                           </SelectItem>
                         ) : (
-                          // Sort technicians by distance if available
+                          // Sort technicians by travel time (duration) if available
+                          // Time is more important than distance in cities like Bengaluru
                           (() => {
                             const sortedTechnicians = [...technicians].sort((a, b) => {
                               const distA = technicianDistances.find(d => d.technicianId === a.id);
@@ -7632,7 +7633,7 @@ const AdminDashboard = () => {
                               if (!distA?.distance || distA.distance.status !== 'OK') return 1;
                               if (!distB?.distance || distB.distance.status !== 'OK') return -1;
                               
-                              return distA.distance.distance.value - distB.distance.distance.value;
+                              return distA.distance.duration.value - distB.distance.duration.value;
                             });
 
                             return sortedTechnicians.map((technician) => {
@@ -7640,9 +7641,10 @@ const AdminDashboard = () => {
                               const hasDistance = distanceInfo?.distance && distanceInfo.distance.status === 'OK';
                               
                               // Determine why location is unavailable
+                              // Show time prominently since it's more important than distance
                               let distanceText = '';
                               if (hasDistance) {
-                                distanceText = `${distanceInfo.distance.distance.text} (${distanceInfo.distance.duration.text})`;
+                                distanceText = `${distanceInfo.distance.duration.text} • ${distanceInfo.distance.distance.text}`;
                               } else {
                                 const hasLocation = technician.currentLocation?.latitude && technician.currentLocation?.longitude;
                                 if (!hasLocation) {
@@ -7697,7 +7699,7 @@ const AdminDashboard = () => {
                   {/* Show detailed technician list with distances */}
                   {technicianDistances.length > 0 && !loadingDistances && (
                     <div className="mt-3 p-3 bg-gray-50 rounded-md space-y-2 max-h-[300px] overflow-y-auto">
-                      <Label className="text-sm font-semibold text-gray-700">Technicians ranked by distance:</Label>
+                      <Label className="text-sm font-semibold text-gray-700">Technicians ranked by travel time:</Label>
                       {technicians
                         .map(tech => {
                           const distanceInfo = technicianDistances.find(d => d.technicianId === tech.id);
@@ -7706,7 +7708,7 @@ const AdminDashboard = () => {
                         .sort((a, b) => {
                           if (!a.distanceInfo?.distance || a.distanceInfo.distance.status !== 'OK') return 1;
                           if (!b.distanceInfo?.distance || b.distanceInfo.distance.status !== 'OK') return -1;
-                          return a.distanceInfo.distance.distance.value - b.distanceInfo.distance.distance.value;
+                          return a.distanceInfo.distance.duration.value - b.distanceInfo.distance.duration.value;
                         })
                         .map(({ tech, distanceInfo }) => {
                           const hasDistance = distanceInfo?.distance && distanceInfo.distance.status === 'OK';
@@ -7761,10 +7763,10 @@ const AdminDashboard = () => {
                                   {hasDistance ? (
                                     <div className="text-sm">
                                       <div className="font-semibold text-gray-900">
-                                        {distanceInfo.distance.distance.text}
+                                        {distanceInfo.distance.duration.text}
                                       </div>
                                       <div className="text-xs text-gray-500">
-                                        {distanceInfo.distance.duration.text}
+                                        {distanceInfo.distance.distance.text}
                                       </div>
                                     </div>
                                   ) : hasLocation ? (
@@ -7822,7 +7824,7 @@ const AdminDashboard = () => {
                         .sort((a, b) => {
                           if (!a.distanceInfo?.distance || a.distanceInfo.distance.status !== 'OK') return 1;
                           if (!b.distanceInfo?.distance || b.distanceInfo.distance.status !== 'OK') return -1;
-                          return a.distanceInfo.distance.distance.value - b.distanceInfo.distance.distance.value;
+                          return a.distanceInfo.distance.duration.value - b.distanceInfo.distance.duration.value;
                         })
                         .map(({ tech, distanceInfo }) => {
                           const technicianId = tech.id || '';
@@ -7894,10 +7896,10 @@ const AdminDashboard = () => {
                               {hasDistance && (
                                 <div className="text-right text-xs">
                                   <div className="font-semibold text-gray-900">
-                                    {distanceInfo.distance.distance.text}
+                                    {distanceInfo.distance.duration.text}
                                   </div>
                                   <div className="text-gray-500">
-                                    {distanceInfo.distance.duration.text}
+                                    {distanceInfo.distance.distance.text}
                                   </div>
                                 </div>
                               )}

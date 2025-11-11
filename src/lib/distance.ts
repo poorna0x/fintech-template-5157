@@ -179,11 +179,12 @@ export async function calculateTechnicianDistances(
     }
   );
 
-  // Sort by distance and add rank
+  // Sort by duration (travel time) and add rank
+  // Time is more important than distance in cities like Bengaluru due to traffic
   technicianDistances.sort((a, b) => {
     if (!a.distance || a.distance.status !== 'OK') return 1;
     if (!b.distance || b.distance.status !== 'OK') return -1;
-    return a.distance.distance.value - b.distance.distance.value;
+    return a.distance.duration.value - b.distance.duration.value;
   });
 
   // Add rank
