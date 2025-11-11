@@ -2445,50 +2445,8 @@ const AdminDashboard = () => {
     calculateDistanceAndTimeRef.current = calculateDistanceAndTime;
   }, [calculateDistanceAndTime]);
 
-  // Calculate distance when address dialog opens
-  useEffect(() => {
-    Object.keys(addressDialogOpen).forEach(customerId => {
-      if (addressDialogOpen[customerId] && currentLocation) {
-        const customer = customers.find(c => c.id === customerId);
-        if (customer) {
-          let customerLocation = extractCoordinates(customer.location);
-          console.log('Customer location extracted:', customerLocation, 'from:', customer.location);
-          
-          // If no coordinates from location, try to extract from Google Maps link
-          if (!customerLocation || customerLocation.latitude === 0 || customerLocation.longitude === 0) {
-            const googleLoc = (customer.location as any)?.googleLocation;
-            if (googleLoc && typeof googleLoc === 'string') {
-              const coordsFromLink = extractCoordinatesFromGoogleMapsLink(googleLoc);
-              if (coordsFromLink) {
-                customerLocation = coordsFromLink;
-                console.log('Extracted coordinates from Google Maps link:', customerLocation);
-              }
-            }
-          }
-          
-          if (customerLocation && 
-              customerLocation.latitude !== 0 && 
-              customerLocation.longitude !== 0 &&
-              customerLocation.latitude >= -90 && customerLocation.latitude <= 90 &&
-              customerLocation.longitude >= -180 && customerLocation.longitude <= 180) {
-            // Only calculate if not already calculated or calculating
-            if (!customerDistances[customerId] || (!customerDistances[customerId].isCalculating && !customerDistances[customerId].distance)) {
-              if (calculateDistanceAndTimeRef.current) {
-                console.log('Triggering distance calculation from useEffect');
-                calculateDistanceAndTimeRef.current(
-                  currentLocation,
-                  { lat: customerLocation.latitude, lng: customerLocation.longitude },
-                  customerId
-                );
-              }
-            }
-          } else {
-            console.warn('Invalid customer location:', customerLocation);
-          }
-        }
-      }
-    });
-  }, [addressDialogOpen, currentLocation, customers, customerDistances]);
+  // Don't calculate distance automatically when address dialog opens
+  // User will click button to calculate manually
 
 
   // Reverse geocode coordinates to get address using Google Maps Geocoder API
@@ -2774,21 +2732,9 @@ const AdminDashboard = () => {
         };
         setCurrentLocation(location);
         setIsGettingLocation(false);
-        toast.success('Location captured! Calculating distances...');
+        toast.success('Location captured!');
         
-        // Calculate distances for all customers with valid locations
-        customers.forEach(customer => {
-          const customerLocation = extractCoordinates(customer.location);
-          if (customerLocation && customerLocation.latitude !== 0 && customerLocation.longitude !== 0) {
-            if (calculateDistanceAndTimeRef.current) {
-              calculateDistanceAndTimeRef.current(
-                location, 
-                { lat: customerLocation.latitude, lng: customerLocation.longitude }, 
-                customer.id
-              );
-            }
-          }
-        });
+        // Don't calculate distances automatically - user will click button in dialog
       },
       (error) => {
         setIsGettingLocation(false);
@@ -3906,8 +3852,7 @@ const AdminDashboard = () => {
     // Reload technicians to get latest location data
     await reloadTechnicians();
 
-    // Calculate distances for all technicians
-    await calculateDistancesForJob(job);
+    // Don't calculate distances automatically - user will click button to calculate
   };
 
   // Calculate distances from job location to all technicians
@@ -5741,36 +5686,6 @@ const AdminDashboard = () => {
                                         };
                                         setCurrentLocation(location);
                                         setIsGettingLocation(false);
-                                        
-                                        // Calculate distance for this customer
-                                        let customerLocation = extractCoordinates(customer.location);
-                                        
-                                        // If no coordinates, try to extract from Google Maps link
-                                        if (!customerLocation || customerLocation.latitude === 0 || customerLocation.longitude === 0) {
-                                          const googleLoc = (customer.location as any)?.googleLocation;
-                                          if (googleLoc && typeof googleLoc === 'string') {
-                                            const coordsFromLink = extractCoordinatesFromGoogleMapsLink(googleLoc);
-                                            if (coordsFromLink) {
-                                              customerLocation = coordsFromLink;
-                                            }
-                                          }
-                                        }
-                                        
-                                        if (customerLocation && 
-                                            customerLocation.latitude !== 0 && 
-                                            customerLocation.longitude !== 0 &&
-                                            customerLocation.latitude >= -90 && customerLocation.latitude <= 90 &&
-                                            customerLocation.longitude >= -180 && customerLocation.longitude <= 180) {
-                                          if (calculateDistanceAndTimeRef.current) {
-                                            calculateDistanceAndTimeRef.current(
-                                              location,
-                                              { lat: customerLocation.latitude, lng: customerLocation.longitude },
-                                              customer.id
-                                            );
-                                          }
-                                        } else {
-                                          toast.error('Customer location coordinates are invalid');
-                                        }
                                       },
                                       (error) => {
                                         setIsGettingLocation(false);
@@ -5782,39 +5697,9 @@ const AdminDashboard = () => {
                                         maximumAge: 0,
                                       }
                                     );
-                                  } else {
-                                    // Calculate distance if location is already set
-                                    let customerLocation = extractCoordinates(customer.location);
-                                    
-                                    // If no coordinates, try to extract from Google Maps link
-                                    if (!customerLocation || customerLocation.latitude === 0 || customerLocation.longitude === 0) {
-                                      const googleLoc = (customer.location as any)?.googleLocation;
-                                      if (googleLoc && typeof googleLoc === 'string') {
-                                        const coordsFromLink = extractCoordinatesFromGoogleMapsLink(googleLoc);
-                                        if (coordsFromLink) {
-                                          customerLocation = coordsFromLink;
-                                        }
-                                      }
-                                    }
-                                    
-                                    if (customerLocation && 
-                                        customerLocation.latitude !== 0 && 
-                                        customerLocation.longitude !== 0 &&
-                                        customerLocation.latitude >= -90 && customerLocation.latitude <= 90 &&
-                                        customerLocation.longitude >= -180 && customerLocation.longitude <= 180) {
-                                      if (calculateDistanceAndTimeRef.current) {
-                                        calculateDistanceAndTimeRef.current(
-                                          currentLocation,
-                                          { lat: customerLocation.latitude, lng: customerLocation.longitude },
-                                          customer.id
-                                        );
-                                      }
-                                    } else {
-                                      toast.error('Customer location coordinates are invalid');
-                                    }
                                   }
                                   
-                                  // Also open address dialog
+                                  // Open address dialog (don't calculate automatically)
                                   setAddressDialogOpen(prev => ({ ...prev, [customer.id]: true }));
                                 }}
                                 className="text-left text-black hover:text-gray-700 hover:underline transition-colors cursor-pointer font-medium w-full text-left"
@@ -5843,36 +5728,6 @@ const AdminDashboard = () => {
                                         };
                                         setCurrentLocation(location);
                                         setIsGettingLocation(false);
-                                        
-                                        // Calculate distance for this customer
-                                        let customerLocation = extractCoordinates(customer.location);
-                                        
-                                        // If no coordinates, try to extract from Google Maps link
-                                        if (!customerLocation || customerLocation.latitude === 0 || customerLocation.longitude === 0) {
-                                          const googleLoc = (customer.location as any)?.googleLocation;
-                                          if (googleLoc && typeof googleLoc === 'string') {
-                                            const coordsFromLink = extractCoordinatesFromGoogleMapsLink(googleLoc);
-                                            if (coordsFromLink) {
-                                              customerLocation = coordsFromLink;
-                                            }
-                                          }
-                                        }
-                                        
-                                        if (customerLocation && 
-                                            customerLocation.latitude !== 0 && 
-                                            customerLocation.longitude !== 0 &&
-                                            customerLocation.latitude >= -90 && customerLocation.latitude <= 90 &&
-                                            customerLocation.longitude >= -180 && customerLocation.longitude <= 180) {
-                                          if (calculateDistanceAndTimeRef.current) {
-                                            calculateDistanceAndTimeRef.current(
-                                              location,
-                                              { lat: customerLocation.latitude, lng: customerLocation.longitude },
-                                              customer.id
-                                            );
-                                          }
-                                        } else {
-                                          toast.error('Customer location coordinates are invalid');
-                                        }
                                       },
                                       (error) => {
                                         setIsGettingLocation(false);
@@ -5884,39 +5739,9 @@ const AdminDashboard = () => {
                                         maximumAge: 0,
                                       }
                                     );
-                                  } else {
-                                    // Calculate distance if location is already set
-                                    let customerLocation = extractCoordinates(customer.location);
-                                    
-                                    // If no coordinates, try to extract from Google Maps link
-                                    if (!customerLocation || customerLocation.latitude === 0 || customerLocation.longitude === 0) {
-                                      const googleLoc = (customer.location as any)?.googleLocation;
-                                      if (googleLoc && typeof googleLoc === 'string') {
-                                        const coordsFromLink = extractCoordinatesFromGoogleMapsLink(googleLoc);
-                                        if (coordsFromLink) {
-                                          customerLocation = coordsFromLink;
-                                        }
-                                      }
-                                    }
-                                    
-                                    if (customerLocation && 
-                                        customerLocation.latitude !== 0 && 
-                                        customerLocation.longitude !== 0 &&
-                                        customerLocation.latitude >= -90 && customerLocation.latitude <= 90 &&
-                                        customerLocation.longitude >= -180 && customerLocation.longitude <= 180) {
-                                      if (calculateDistanceAndTimeRef.current) {
-                                        calculateDistanceAndTimeRef.current(
-                                          currentLocation,
-                                          { lat: customerLocation.latitude, lng: customerLocation.longitude },
-                                          customer.id
-                                        );
-                                      }
-                                    } else {
-                                      toast.error('Customer location coordinates are invalid');
-                                    }
                                   }
                                   
-                                  // Also open address dialog
+                                  // Open address dialog (don't calculate automatically)
                                   setAddressDialogOpen(prev => ({ ...prev, [customer.id]: true }));
                                 }}
                                 className="text-left text-black hover:text-gray-700 hover:underline transition-colors cursor-pointer font-medium w-full text-left"
@@ -7551,6 +7376,33 @@ const AdminDashboard = () => {
               </div>
             </div>
 
+            {/* Calculate Distance & Time Button */}
+            <div className="flex items-center justify-center py-3 border-t border-b">
+              <Button
+                type="button"
+                variant="default"
+                onClick={async () => {
+                  if (jobToAssign) {
+                    await calculateDistancesForJob(jobToAssign);
+                  }
+                }}
+                disabled={loadingDistances || !jobToAssign}
+                className="bg-blue-600 hover:bg-blue-700"
+              >
+                {loadingDistances ? (
+                  <>
+                    <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin mr-2" />
+                    Calculating...
+                  </>
+                ) : (
+                  <>
+                    <MapPin className="w-4 h-4 mr-2" />
+                    Calculate Distance & Time
+                  </>
+                )}
+              </Button>
+            </div>
+
             {/* Assignment Type Selection */}
             <div className="space-y-4">
               <div>
@@ -7591,7 +7443,7 @@ const AdminDashboard = () => {
               {assignmentType === 'direct' && (
                 <div className="space-y-3">
                   <div className="flex items-center justify-between">
-                    <Label htmlFor="technician-select">Select Technician</Label>
+                  <Label htmlFor="technician-select">Select Technician</Label>
                     <Button
                       type="button"
                       variant="outline"
@@ -7613,16 +7465,16 @@ const AdminDashboard = () => {
                       <span className="text-sm text-gray-600">Calculating distances...</span>
                     </div>
                   ) : (
-                    <Select value={selectedTechnicianId} onValueChange={setSelectedTechnicianId}>
-                      <SelectTrigger>
-                        <SelectValue placeholder="Choose a technician" />
-                      </SelectTrigger>
+                  <Select value={selectedTechnicianId} onValueChange={setSelectedTechnicianId}>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Choose a technician" />
+                    </SelectTrigger>
                       <SelectContent className="max-h-[300px] overflow-y-auto">
-                        {technicians.length === 0 ? (
-                          <SelectItem value="no-technicians" disabled>
-                            No technicians available
-                          </SelectItem>
-                        ) : (
+                      {technicians.length === 0 ? (
+                        <SelectItem value="no-technicians" disabled>
+                          No technicians available
+                        </SelectItem>
+                      ) : (
                           // Sort technicians by travel time (duration) if available
                           // Time is more important than distance in cities like Bengaluru
                           (() => {
@@ -7659,10 +7511,10 @@ const AdminDashboard = () => {
                               const rank = distanceInfo?.rank;
 
                               return (
-                                <SelectItem
-                                  key={technician.id}
-                                  value={technician.id || 'unknown'}
-                                >
+                          <SelectItem
+                            key={technician.id}
+                            value={technician.id || 'unknown'}
+                          >
                                   <div className="flex items-center justify-between w-full">
                                     <div className="flex items-center gap-2">
                                       {rank && rank <= 3 && (
@@ -7687,13 +7539,13 @@ const AdminDashboard = () => {
                                     </div>
                                     <span className="text-xs text-gray-500 ml-2">{distanceText}</span>
                                   </div>
-                                </SelectItem>
+                          </SelectItem>
                               );
                             });
                           })()
-                        )}
-                      </SelectContent>
-                    </Select>
+                      )}
+                    </SelectContent>
+                  </Select>
                   )}
                   
                   {/* Show detailed technician list with distances */}
@@ -7790,7 +7642,7 @@ const AdminDashboard = () => {
               {assignmentType === 'bulk' && (
                 <div>
                 <div className="flex items-center justify-between mb-2">
-                  <Label htmlFor="technicians-select">Select Multiple Technicians</Label>
+                <Label htmlFor="technicians-select">Select Multiple Technicians</Label>
                   <Button
                     type="button"
                     variant="outline"
@@ -7813,10 +7665,10 @@ const AdminDashboard = () => {
                   </div>
                 ) : (
                   <div className="mt-2 space-y-2 max-h-[400px] overflow-y-auto border rounded-md p-3">
-                    {technicians.length === 0 ? (
-                      <p className="text-sm text-gray-500">No technicians available</p>
-                    ) : (
-                      technicians
+                  {technicians.length === 0 ? (
+                    <p className="text-sm text-gray-500">No technicians available</p>
+                  ) : (
+                    technicians
                         .map(tech => {
                           const distanceInfo = technicianDistances.find(d => d.technicianId === tech.id);
                           return { tech, distanceInfo };
@@ -7828,11 +7680,11 @@ const AdminDashboard = () => {
                         })
                         .map(({ tech, distanceInfo }) => {
                           const technicianId = tech.id || '';
-                          const isSelected = selectedTechnicianIds.includes(technicianId);
+                        const isSelected = selectedTechnicianIds.includes(technicianId);
                           const hasDistance = distanceInfo?.distance && distanceInfo.distance.status === 'OK';
                           const hasLocation = tech.currentLocation?.latitude && tech.currentLocation?.longitude;
 
-                          return (
+                        return (
                             <div 
                               key={tech.id} 
                               className={`flex items-center justify-between p-2 rounded border ${
@@ -7840,20 +7692,20 @@ const AdminDashboard = () => {
                               }`}
                             >
                               <div className="flex items-center space-x-2 flex-1">
-                                <input
-                                  type="checkbox"
+                            <input
+                              type="checkbox"
                                   id={`tech-${tech.id}`}
-                                  value={technicianId}
-                                  checked={isSelected}
-                                  onChange={(e) => {
-                                    if (e.target.checked) {
-                                      setSelectedTechnicianIds(prev => [...prev, technicianId]);
-                                    } else {
-                                      setSelectedTechnicianIds(prev => prev.filter(id => id !== technicianId));
-                                    }
-                                  }}
-                                  className="h-4 w-4 text-blue-600 rounded"
-                                />
+                              value={technicianId}
+                              checked={isSelected}
+                              onChange={(e) => {
+                                if (e.target.checked) {
+                                  setSelectedTechnicianIds(prev => [...prev, technicianId]);
+                                } else {
+                                  setSelectedTechnicianIds(prev => prev.filter(id => id !== technicianId));
+                                }
+                              }}
+                              className="h-4 w-4 text-blue-600 rounded"
+                            />
                                 <div className="flex items-center gap-2 flex-1">
                                   {distanceInfo?.rank && (
                                     <span className={`text-xs font-bold ${
@@ -7865,12 +7717,12 @@ const AdminDashboard = () => {
                                       #{distanceInfo.rank}
                                     </span>
                                   )}
-                                  <label
+                            <label
                                     htmlFor={`tech-${tech.id}`}
                                     className="text-sm text-gray-700 font-medium cursor-pointer flex-1"
-                                  >
+                            >
                                     {tech.fullName || 'Unknown Technician'}
-                                  </label>
+                            </label>
                                   <Badge 
                                     variant={tech.status === 'AVAILABLE' ? 'default' : tech.status === 'BUSY' ? 'secondary' : 'outline'}
                                     className="text-xs"
@@ -7911,11 +7763,11 @@ const AdminDashboard = () => {
                                   No location data
                                 </div>
                               )}
-                            </div>
-                          );
-                        })
-                    )}
-                  </div>
+                          </div>
+                        );
+                      })
+                  )}
+                </div>
                 )}
                 <p className="text-xs text-gray-500 mt-1">
                   Selected: {selectedTechnicianIds.length} technician{selectedTechnicianIds.length !== 1 ? 's' : ''}
@@ -9377,7 +9229,57 @@ const AdminDashboard = () => {
               
               {/* Distance and Time */}
               <div className="pt-3 border-t border-gray-200">
-                <div className="text-sm font-semibold text-gray-900 mb-2">Distance & Time</div>
+                <div className="flex items-center justify-between mb-2">
+                  <div className="text-sm font-semibold text-gray-900">Distance & Time</div>
+                  <Button
+                    type="button"
+                    variant="default"
+                    size="sm"
+                    onClick={async () => {
+                      if (!currentLocation) {
+                        toast.error('Your location is not available. Please enable location services.');
+                        return;
+                      }
+                      
+                      const customerLocation = extractCoordinates(customer.location);
+                      let finalCustomerLocation = customerLocation;
+                      
+                      // If no coordinates from location, try to extract from Google Maps link
+                      if (!finalCustomerLocation || finalCustomerLocation.latitude === 0 || finalCustomerLocation.longitude === 0) {
+                        const googleMapsLink = customer.location?.formattedAddress;
+                        if (googleMapsLink && (googleMapsLink.includes('google.com/maps') || googleMapsLink.includes('maps.app.goo.gl'))) {
+                          finalCustomerLocation = extractCoordinates({ formattedAddress: googleMapsLink });
+                        }
+                      }
+                      
+                      if (finalCustomerLocation && finalCustomerLocation.latitude && finalCustomerLocation.longitude) {
+                        if (calculateDistanceAndTimeRef.current) {
+                          await calculateDistanceAndTimeRef.current(
+                            currentLocation,
+                            { lat: finalCustomerLocation.latitude, lng: finalCustomerLocation.longitude },
+                            customer.id
+                          );
+                        }
+                      } else {
+                        toast.error('Customer location coordinates are invalid');
+                      }
+                    }}
+                    disabled={customerDistances[customer.id]?.isCalculating || !currentLocation}
+                    className="bg-black hover:bg-gray-800 text-white text-xs h-7 px-2"
+                  >
+                    {customerDistances[customer.id]?.isCalculating ? (
+                      <>
+                        <div className="w-2.5 h-2.5 border-2 border-white border-t-transparent rounded-full animate-spin mr-1" />
+                        <span className="text-xs">Calculating...</span>
+                      </>
+                    ) : (
+                      <>
+                        <MapPin className="w-2.5 h-2.5 mr-1" />
+                        <span className="text-xs">Calculate</span>
+                      </>
+                    )}
+                  </Button>
+                </div>
                 {customerDistances[customer.id] ? (
                   <div className="text-sm">
                     {customerDistances[customer.id].isCalculating ? (
@@ -9394,10 +9296,8 @@ const AdminDashboard = () => {
                       </div>
                     )}
                   </div>
-                ) : currentLocation ? (
-                  <div className="text-xs text-gray-500">Calculating distance...</div>
                 ) : (
-                  <div className="text-xs text-gray-500">Click location text to calculate distance</div>
+                  <div className="text-xs text-gray-500">Click "Calculate" button to get distance and time</div>
                 )}
               </div>
             </div>
