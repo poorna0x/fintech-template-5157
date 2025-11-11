@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, Fragment } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { useNavigate } from 'react-router-dom';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -1553,15 +1553,63 @@ const TechnicianDashboard = () => {
               </CardContent>
             </Card>
           ) : (
-            filteredJobs.map((job) => (
-              <Card 
-                key={job.id} 
-                className={`hover:shadow-md transition-shadow ${
-                  job.status === 'IN_PROGRESS' 
-                    ? 'border-2 border-orange-500' 
-                    : 'border border-gray-200'
-                }`}
-              >
+            filteredJobs.map((job) => {
+              // Extract follow-up information
+              const followUpDate = (job as any).follow_up_date || job.followUpDate || null;
+              const followUpTime = (job as any).follow_up_time || job.followUpTime || null;
+              const followUpNotes = (job as any).follow_up_notes || job.followUpNotes || '';
+              
+              // Format follow-up date like "Monday, 7th November"
+              const formattedFollowUpDate = followUpDate ? (() => {
+                const date = new Date(followUpDate);
+                const dayName = date.toLocaleDateString('en-US', { weekday: 'long' });
+                const dayOfMonth = date.getDate();
+                const monthName = date.toLocaleDateString('en-US', { month: 'long' });
+                const ordinalSuffix = getOrdinalSuffix(dayOfMonth);
+                return `${dayName}, ${dayOfMonth}${ordinalSuffix} ${monthName}`;
+              })() : null;
+              
+              // Format follow-up time
+              const formattedFollowUpTime = followUpTime ? (() => {
+                const timeString = String(followUpTime);
+                const [hours, minutes] = timeString.split(':');
+                if (!hours || !minutes) {
+                  return timeString;
+                }
+                const hourNum = parseInt(hours, 10);
+                if (Number.isNaN(hourNum)) {
+                  return timeString;
+                }
+                const normalizedHour = ((hourNum % 12) + 12) % 12 || 12;
+                const suffix = hourNum >= 12 ? 'PM' : 'AM';
+                return `${normalizedHour}:${minutes.padEnd(2, '0')} ${suffix}`;
+              })() : null;
+              
+              return (
+                <Fragment key={job.id}>
+                  {job.status === 'FOLLOW_UP' && (formattedFollowUpDate || formattedFollowUpTime || followUpNotes) && (
+                    <div className="mb-4">
+                      <div className="flex items-start gap-3 rounded-md border border-purple-200 bg-purple-50 px-4 py-3">
+                        <CalendarPlus className="w-5 h-5 text-purple-600 mt-0.5 flex-shrink-0" />
+                        <div className="space-y-1 text-sm text-gray-900 flex-1">
+                          <div className="font-semibold text-purple-900">
+                            Follow-up scheduled for {formattedFollowUpDate || 'Date not set'}
+                            {formattedFollowUpTime ? ` at ${formattedFollowUpTime}` : ''}
+                          </div>
+                          <div className="text-gray-700">
+                            <span className="text-gray-500 font-medium">Reason:</span> {followUpNotes || 'Not specified'}
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                  <Card 
+                    className={`hover:shadow-md transition-shadow ${
+                      job.status === 'IN_PROGRESS' 
+                        ? 'border-2 border-orange-500' 
+                        : 'border border-gray-200'
+                    }`}
+                  >
                 <CardContent className="p-6">
                   <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4">
                     <div className="flex-1 min-w-0">
@@ -1709,7 +1757,7 @@ const TechnicianDashboard = () => {
                                     >
                                       <Camera className="w-4 h-4 sm:w-5 sm:h-5 text-gray-600" />
                                     </button>
-                                  </div>
+                          </div>
                                   <div className="flex-1 min-w-0">
                                     <div className="text-sm font-semibold text-gray-900">Photos</div>
                                     <div className="text-xs text-gray-500">
@@ -1720,8 +1768,8 @@ const TechnicianDashboard = () => {
                                           : jobPhotos.length > 0 
                                             ? `${jobPhotos.length} photo(s)`
                                             : 'No photos'}
-                                    </div>
-                                  </div>
+                      </div>
+                    </div>
                                 </div>
                               </div>
                             );
@@ -1802,7 +1850,9 @@ const TechnicianDashboard = () => {
                   </div>
                 </CardContent>
               </Card>
-            ))
+                </Fragment>
+              );
+            })
           )}
         </div>
 
