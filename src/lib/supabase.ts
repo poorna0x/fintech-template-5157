@@ -284,7 +284,14 @@ export const db = {
         .from('jobs')
         .select(`
           *,
-          customer:customers(*)
+          service_address,
+          service_location,
+          customer:customers(
+            *,
+            visible_address,
+            address,
+            location
+          )
         `)
         .eq('assigned_technician_id', technicianId)
         .order('created_at', { ascending: false });
@@ -628,12 +635,15 @@ export const db = {
             estimated_cost,
             priority,
             status,
+            service_address,
+            service_location,
             customer:customers(
               id,
               customer_id,
               full_name,
               phone,
               email,
+              visible_address,
               address,
               location
             )

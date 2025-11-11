@@ -6,8 +6,14 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from '@/components/ui/dialog';
 import { Textarea } from '@/components/ui/textarea';
+import { 
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 import { 
   Wrench, 
   Search, 
@@ -27,7 +33,8 @@ import {
   CalendarPlus,
   XCircle,
   Camera,
-  MessageCircle
+  MessageCircle,
+  MoreVertical
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { db } from '@/lib/supabase';
@@ -35,6 +42,7 @@ import { Job, JobAssignmentRequest } from '@/types';
 import { sendNotification, createJobCompletedNotification, createJobAssignmentRequestNotification, createJobAssignmentAcceptedNotification, createJobAssignmentRejectedNotification } from '@/lib/notifications';
 import FollowUpModal from '@/components/FollowUpModal';
 import { registerTechnicianPWA } from '@/lib/pwa';
+import { extractCoordinates, formatAddressForDisplay } from '@/lib/maps';
 
 const TechnicianDashboard = () => {
   const { user, logout, isTechnician, loading } = useAuth();
@@ -76,12 +84,13 @@ const TechnicianDashboard = () => {
   const [phonePopupOpen, setPhonePopupOpen] = useState(false);
   const [selectedCustomerPhone, setSelectedCustomerPhone] = useState<{phone: string, alternate_phone?: string, full_name?: string} | null>(null);
 
-  // Location dialog state
-  const [locationDialogOpen, setLocationDialogOpen] = useState<{[jobId: string]: boolean}>({});
-
   // Photos dialog state
   const [photosDialogOpen, setPhotosDialogOpen] = useState(false);
   const [selectedJobPhotos, setSelectedJobPhotos] = useState<{jobId: string, photos: string[]} | null>(null);
+
+  // Address dialog state
+  const [addressDialogOpen, setAddressDialogOpen] = useState<{[jobId: string]: boolean}>({});
+  const [selectedJobForAddress, setSelectedJobForAddress] = useState<Job | null>(null);
 
   // Redirect if not technician
   useEffect(() => {
@@ -632,9 +641,13 @@ const TechnicianDashboard = () => {
   };
 
   const getStatusBadge = (status: string) => {
+    // Don't show badge for ASSIGNED status
+    if (status === 'ASSIGNED') {
+      return null;
+    }
+
     const statusConfig = {
       PENDING: { color: 'bg-yellow-100 text-yellow-800', icon: Clock },
-      ASSIGNED: { color: 'bg-blue-100 text-blue-800', icon: Wrench },
       IN_PROGRESS: { color: 'bg-orange-100 text-orange-800', icon: Play },
       COMPLETED: { color: 'bg-green-100 text-green-800', icon: CheckCircle },
       CANCELLED: { color: 'bg-red-100 text-red-800', icon: AlertCircle },
@@ -658,57 +671,71 @@ const TechnicianDashboard = () => {
     switch (job.status) {
       case 'ASSIGNED':
         return (
-          <div className="flex flex-col sm:flex-row gap-2">
+          <div className="flex items-center gap-2">
             <Button
               size="sm"
               onClick={() => handleStatusUpdate(job.id, 'IN_PROGRESS')}
               disabled={isUpdating}
-              className="bg-orange-600 hover:bg-orange-700 w-full sm:w-auto"
+              className="bg-orange-600 hover:bg-orange-700"
             >
               <Play className="w-4 h-4 mr-1" />
               Start Job
             </Button>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
             <Button
               size="sm"
               variant="outline"
-              onClick={() => handleScheduleFollowUp(job)}
-              className="w-full sm:w-auto"
+                  className="h-9 w-9 p-0"
             >
-              <CalendarPlus className="w-4 h-4 mr-1" />
-              Follow-up
+                  <MoreVertical className="w-4 h-4" />
             </Button>
-            <Button
-              size="sm"
-              variant="outline"
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                <DropdownMenuItem onClick={() => handleScheduleFollowUp(job)}>
+                  <CalendarPlus className="w-4 h-4 mr-2" />
+                  Follow-up
+                </DropdownMenuItem>
+                <DropdownMenuItem 
               onClick={() => handleDenyJob(job)}
-              className="w-full sm:w-auto text-red-600 border-red-300 hover:bg-red-50"
+                  className="text-red-600 focus:text-red-600 focus:bg-red-50"
             >
-              <XCircle className="w-4 h-4 mr-1" />
+                  <XCircle className="w-4 h-4 mr-2" />
               Deny
-            </Button>
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
           </div>
         );
       case 'IN_PROGRESS':
         return (
-          <div className="flex flex-col sm:flex-row gap-2">
+          <div className="flex items-center gap-2">
             <Button
               size="sm"
               onClick={() => handleCompleteJob(job)}
               disabled={isUpdating}
-              className="bg-green-600 hover:bg-green-700 w-full sm:w-auto"
+              className="bg-green-600 hover:bg-green-700"
             >
               <CheckCircle className="w-4 h-4 mr-1" />
               Complete Job
             </Button>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
             <Button
               size="sm"
               variant="outline"
-              onClick={() => handleScheduleFollowUp(job)}
-              className="w-full sm:w-auto"
+                  className="h-9 w-9 p-0"
             >
-              <CalendarPlus className="w-4 h-4 mr-1" />
-              Follow-up
+                  <MoreVertical className="w-4 h-4" />
             </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                <DropdownMenuItem onClick={() => handleScheduleFollowUp(job)}>
+                  <CalendarPlus className="w-4 h-4 mr-2" />
+                  Follow-up
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
           </div>
         );
       default:
@@ -990,12 +1017,25 @@ const TechnicianDashboard = () => {
                                         <div className="w-8 h-8 sm:w-10 sm:h-10 bg-gray-100 rounded-lg flex items-center justify-center flex-shrink-0">
                                           <button
                                             onClick={() => {
-                                              if ((address as any)?.visible_address || (address as any)?.address) {
-                                                setLocationDialogOpen(prev => ({ ...prev, [job.id]: true }));
+                                              // Open Google Maps exactly like in admin dashboard
+                                              const customerLocation = customer?.location;
+                                              const googleLoc = customerLocation?.googleLocation;
+                                              
+                                              if (googleLoc && typeof googleLoc === 'string' && 
+                                                  (googleLoc.includes('google.com/maps') || googleLoc.includes('maps.app.goo.gl') || googleLoc.includes('goo.gl/maps')) &&
+                                                  !googleLoc.includes('localhost') && 
+                                                  !googleLoc.includes('127.0.0.1')) {
+                                                window.open(googleLoc, '_blank', 'noopener,noreferrer');
+                                              } else {
+                                                const location = extractCoordinates(customerLocation);
+                                                if (location && location.latitude !== 0 && location.longitude !== 0) {
+                                                  window.open(`https://www.google.com/maps/place/${location.latitude},${location.longitude}`, '_blank', 'noopener,noreferrer');
+                                                } else {
+                                                  toast.error('Location data not available');
+                                                }
                                               }
                                             }}
                                             className="cursor-pointer"
-                                            disabled={!((address as any)?.visible_address || (address as any)?.address)}
                                           >
                                             <MapPin className="w-4 h-4 sm:w-5 sm:h-5 text-gray-600" />
                                           </button>
@@ -1003,11 +1043,42 @@ const TechnicianDashboard = () => {
                                         <div className="flex-1 min-w-0">
                                           <div className="text-sm font-semibold text-gray-900">Location</div>
                                           <div className="text-xs text-gray-500">
-                                            {(address as any)?.visible_address 
-                                              ? (address as any).visible_address
-                                              : (address as any)?.address
-                                              ? 'View Address'
-                                              : 'No location'}
+                                            {(() => {
+                                              // Exactly like admin dashboard - check both customer.visible_address and customer.address.visible_address
+                                              const customerData = customer as any;
+                                              const visibleAddress = customerData?.visible_address || (customerData?.address as any)?.visible_address || (address as any)?.visible_address;
+                                              
+                                              if (visibleAddress && String(visibleAddress).trim()) {
+                                                return (
+                                                  <button
+                                                    onClick={(e) => {
+                                                      e.stopPropagation();
+                                                      setSelectedJobForAddress(job as any);
+                                                      setAddressDialogOpen(prev => ({ ...prev, [(job as any).id]: true }));
+                                                    }}
+                                                    className="text-left text-black hover:text-gray-700 hover:underline transition-colors cursor-pointer font-medium w-full text-left"
+                                                    title="Click to view full address"
+                                                  >
+                                                    {String(visibleAddress).trim()}
+                                                  </button>
+                                                );
+                                              }
+                                              
+                                              // If no visible_address, check if there's any address
+                                              return (customerData?.address || address) ? (
+                                                <button
+                                                  onClick={(e) => {
+                                                    e.stopPropagation();
+                                                    setSelectedJobForAddress(job as any);
+                                                    setAddressDialogOpen(prev => ({ ...prev, [(job as any).id]: true }));
+                                                  }}
+                                                  className="text-left text-gray-500 hover:text-gray-700 hover:underline transition-colors cursor-pointer"
+                                                  title="Click to view full address"
+                                                >
+                                                  View Address
+                                                </button>
+                                              ) : 'No location';
+                                            })()}
                             </div>
                                         </div>
                                       </div>
@@ -1190,7 +1261,14 @@ const TechnicianDashboard = () => {
             </Card>
           ) : (
             filteredJobs.map((job) => (
-              <Card key={job.id} className="hover:shadow-md transition-shadow">
+              <Card 
+                key={job.id} 
+                className={`hover:shadow-md transition-shadow ${
+                  job.status === 'IN_PROGRESS' 
+                    ? 'border-2 border-orange-500' 
+                    : 'border border-gray-200'
+                }`}
+              >
                 <CardContent className="p-6">
                   <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4">
                     <div className="flex-1 min-w-0">
@@ -1230,8 +1308,8 @@ const TechnicianDashboard = () => {
                                   <div className="text-sm font-semibold text-gray-900 truncate">{job.customer.phone}</div>
                                   <div className="text-xs text-gray-500">Primary</div>
                         </div>
-                              </div>
-                            </div>
+                          </div>
+                        </div>
                           )}
 
                           {/* WhatsApp */}
@@ -1247,13 +1325,13 @@ const TechnicianDashboard = () => {
                                       <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893A11.821 11.821 0 0020.885 3.488"/>
                                     </svg>
                                   </button>
-                          </div>
+                        </div>
                                 <div className="flex-1 min-w-0">
                                   <div className="text-sm font-semibold text-gray-900">WhatsApp</div>
                                   <div className="text-xs text-gray-500">Send Message</div>
-                        </div>
-                              </div>
+                          </div>
                             </div>
+                        </div>
                           )}
 
                           {/* Location - Always shown */}
@@ -1262,29 +1340,73 @@ const TechnicianDashboard = () => {
                               <div className="w-8 h-8 sm:w-10 sm:h-10 bg-gray-100 rounded-lg flex items-center justify-center flex-shrink-0">
                                 <button
                                   onClick={() => {
-                                    if ((job.serviceAddress as any)?.visible_address || (job.serviceAddress as any)?.address) {
-                                      setLocationDialogOpen(prev => ({ ...prev, [job.id]: true }));
+                                    // Open Google Maps exactly like in admin dashboard
+                                    const customerLocation = (job.customer as any)?.location;
+                                    const googleLoc = customerLocation?.googleLocation;
+                                    
+                                    if (googleLoc && typeof googleLoc === 'string' && 
+                                        (googleLoc.includes('google.com/maps') || googleLoc.includes('maps.app.goo.gl') || googleLoc.includes('goo.gl/maps')) &&
+                                        !googleLoc.includes('localhost') && 
+                                        !googleLoc.includes('127.0.0.1')) {
+                                      window.open(googleLoc, '_blank', 'noopener,noreferrer');
+                                    } else {
+                                      const location = extractCoordinates(customerLocation);
+                                      if (location && location.latitude !== 0 && location.longitude !== 0) {
+                                        window.open(`https://www.google.com/maps/place/${location.latitude},${location.longitude}`, '_blank', 'noopener,noreferrer');
+                                      } else {
+                                        toast.error('Location data not available');
+                                      }
                                     }
                                   }}
                                   className="cursor-pointer"
-                                  disabled={!((job.serviceAddress as any)?.visible_address || (job.serviceAddress as any)?.address)}
                                 >
                                   <MapPin className="w-4 h-4 sm:w-5 sm:h-5 text-gray-600" />
                                 </button>
-                              </div>
+                          </div>
                               <div className="flex-1 min-w-0">
                                 <div className="text-sm font-semibold text-gray-900">Location</div>
                                 <div className="text-xs text-gray-500">
-                                  {(job.serviceAddress as any)?.visible_address 
-                                    ? (job.serviceAddress as any).visible_address
-                                    : (job.serviceAddress as any)?.address
-                                    ? 'View Address'
-                                    : 'No location'}
+                                  {(() => {
+                                    // Exactly like admin dashboard - check both customer.visible_address and customer.address.visible_address
+                                    const customer = job.customer as any;
+                                    const visibleAddress = customer?.visible_address || (customer?.address as any)?.visible_address;
+                                    
+                                    if (visibleAddress && String(visibleAddress).trim()) {
+                                      return (
+                                        <button
+                                          onClick={(e) => {
+                                            e.stopPropagation();
+                                            setSelectedJobForAddress(job);
+                                            setAddressDialogOpen(prev => ({ ...prev, [job.id]: true }));
+                                          }}
+                                          className="text-left text-black hover:text-gray-700 hover:underline transition-colors cursor-pointer font-medium w-full text-left"
+                                          title="Click to view full address"
+                                        >
+                                          {String(visibleAddress).trim()}
+                                        </button>
+                                      );
+                                    }
+                                    
+                                    // If no visible_address, check if there's any address
+                                    return customer?.address ? (
+                                      <button
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          setSelectedJobForAddress(job);
+                                          setAddressDialogOpen(prev => ({ ...prev, [job.id]: true }));
+                                        }}
+                                        className="text-left text-gray-500 hover:text-gray-700 hover:underline transition-colors cursor-pointer"
+                                        title="Click to view full address"
+                                      >
+                                        View Address
+                                      </button>
+                                    ) : 'No location';
+                                  })()}
                                 </div>
                               </div>
-                            </div>
-                        </div>
-                        
+                      </div>
+                    </div>
+
                           {/* Photos */}
                           <div className="bg-white rounded-lg p-3 border border-gray-200 hover:border-gray-300 hover:shadow-sm transition-all duration-200">
                             <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-3">
@@ -1302,25 +1424,25 @@ const TechnicianDashboard = () => {
                                 >
                                   <Camera className="w-4 h-4 sm:w-5 sm:h-5 text-gray-600" />
                                 </button>
-                          </div>
+                              </div>
                               <div className="flex-1 min-w-0">
                                 <div className="text-sm font-semibold text-gray-900">Photos</div>
                                 <div className="text-xs text-gray-500">
                                   {getAllJobPhotos(job).length > 0 
                                     ? `${getAllJobPhotos(job).length} photo(s)`
                                     : 'No photos'}
-                                </div>
+                              </div>
                               </div>
                             </div>
-                          </div>
-                        </div>
-                        
+                              </div>
+                            </div>
+                            
                         {/* Scheduled Time and Date */}
                         <div className="flex items-center gap-2 text-sm">
                           <Calendar className="w-4 h-4 text-gray-500" />
                           <span className="font-medium text-gray-700">{formatScheduledTime(job)}</span>
-                          </div>
-
+                            </div>
+                            
                         {/* Equipment */}
                         {job.brand && job.model && (
                           <div className="text-sm">
@@ -1334,7 +1456,7 @@ const TechnicianDashboard = () => {
                           <div className="text-sm">
                             <span className="font-medium text-gray-700">Amount: </span>
                             <span className="text-gray-600">₹{((job as any).agreed_amount || (job as any).estimated_cost || (job.customer as any)?.serviceCost || 0).toLocaleString('en-IN')}</span>
-                        </div>
+                          </div>
                         ) : null}
                         
                         {/* Description */}
@@ -1349,56 +1471,6 @@ const TechnicianDashboard = () => {
 
                     <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 sm:ml-4">
                       {getStatusActions(job)}
-                      
-                      <Dialog>
-                        <DialogTrigger asChild>
-                          <Button variant="outline" size="sm" className="w-full sm:w-auto">
-                            <Eye className="w-4 h-4 mr-1" />
-                            Details
-                          </Button>
-                        </DialogTrigger>
-                        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
-                          <DialogHeader>
-                            <DialogTitle>Job Details - {(job.customer as any)?.full_name || (job as any).job_number}</DialogTitle>
-                            <DialogDescription>
-                              Complete information for this service job
-                            </DialogDescription>
-                          </DialogHeader>
-                          
-                          <div className="space-y-4">
-                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                              <div>
-                                <label className="text-sm font-medium text-gray-700">Customer Name</label>
-                                <p className="text-sm text-gray-900">{(job.customer as any)?.full_name}</p>
-                              </div>
-                              <div>
-                                <label className="text-sm font-medium text-gray-700">Phone</label>
-                                <p className="text-sm text-gray-900">{job.customer?.phone}</p>
-                              </div>
-                              <div>
-                                <label className="text-sm font-medium text-gray-700">Email</label>
-                                <p className="text-sm text-gray-900">{job.customer?.email}</p>
-                              </div>
-                              <div>
-                                <label className="text-sm font-medium text-gray-700">Status</label>
-                                <div className="mt-1">{getStatusBadge(job.status)}</div>
-                              </div>
-                            </div>
-                            
-                            <div>
-                              <label className="text-sm font-medium text-gray-700">Service Address</label>
-                              <p className="text-sm text-gray-900">
-                                {(job.serviceAddress as any)?.address || 'Address not available'}
-                              </p>
-                            </div>
-                            
-                            <div>
-                              <label className="text-sm font-medium text-gray-700">Description</label>
-                              <p className="text-sm text-gray-900">{job.description}</p>
-                            </div>
-                          </div>
-                        </DialogContent>
-                      </Dialog>
                     </div>
                   </div>
                 </CardContent>
@@ -1731,61 +1803,6 @@ const TechnicianDashboard = () => {
           </DialogContent>
         </Dialog>
 
-        {/* Location Dialog */}
-        {filteredJobs.map((job) => {
-          if (!locationDialogOpen[job.id]) return null;
-          const address = job.serviceAddress as any;
-          return (
-            <Dialog 
-              key={`location-${job.id}`}
-              open={locationDialogOpen[job.id] || false} 
-              onOpenChange={(open) => setLocationDialogOpen(prev => ({ ...prev, [job.id]: open }))}
-            >
-              <DialogContent className="max-w-md">
-                <DialogHeader>
-                  <DialogTitle className="flex items-center gap-2">
-                    <MapPin className="w-5 h-5 text-blue-600" />
-                    Full Address
-                  </DialogTitle>
-                  <DialogDescription>
-                    Complete address for {(job.customer as any)?.full_name || 'customer'}
-                  </DialogDescription>
-                </DialogHeader>
-                <div className="space-y-2">
-                  {address?.visible_address && (
-                    <div className="p-3 bg-blue-50 rounded-lg border border-blue-200">
-                    <div className="text-xs text-blue-600 font-medium mb-1">Location</div>
-                    <div className="font-semibold text-gray-900">{address.visible_address}</div>
-                  </div>
-                  )}
-                  <div className="p-3 bg-gray-50 rounded-lg">
-                    <div className="text-xs text-gray-600 font-medium mb-2">Complete Address</div>
-                    <div className="text-sm text-gray-900 whitespace-pre-line">
-                      {formatAddressForDisplay(address)}
-                    </div>
-                  </div>
-                  {distances[job.id] && (
-                    <div className="p-3 bg-green-50 rounded-lg border border-green-200">
-                      <div className="text-sm text-green-700">
-                        <MapPin className="w-4 h-4 inline mr-1" />
-                        {distances[job.id]} km away
-                      </div>
-                    </div>
-                  )}
-                </div>
-                <div className="flex justify-end pt-4 border-t">
-                  <Button 
-                    variant="outline" 
-                    onClick={() => setLocationDialogOpen(prev => ({ ...prev, [job.id]: false }))}
-                  >
-                    Close
-                  </Button>
-                </div>
-              </DialogContent>
-            </Dialog>
-          );
-        })}
-
         {/* Photos Dialog */}
         <Dialog open={photosDialogOpen} onOpenChange={setPhotosDialogOpen}>
           <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
@@ -1844,6 +1861,48 @@ const TechnicianDashboard = () => {
             </div>
           </DialogContent>
         </Dialog>
+
+        {/* Address Dialog */}
+        {selectedJobForAddress && (
+          <Dialog
+            open={addressDialogOpen[selectedJobForAddress.id] || false}
+            onOpenChange={(open) => {
+              setAddressDialogOpen(prev => ({ ...prev, [selectedJobForAddress.id]: open }));
+              if (!open) {
+                setSelectedJobForAddress(null);
+              }
+            }}
+          >
+            <DialogContent className="sm:max-w-md">
+              <DialogHeader>
+                <DialogTitle>Full Address</DialogTitle>
+                <DialogDescription>
+                  Complete address for {(selectedJobForAddress.customer as any)?.full_name || (selectedJobForAddress.customer as any)?.fullName || 'Customer'}
+                </DialogDescription>
+              </DialogHeader>
+              <div className="py-4 space-y-4">
+                <div className="text-sm text-gray-900 whitespace-pre-wrap break-words">
+                  {(() => {
+                    const customer = selectedJobForAddress.customer as any;
+                    const address = customer?.address || (selectedJobForAddress as any)?.service_address;
+                    return formatAddressForDisplay(address) || 'No address available';
+                  })()}
+                </div>
+              </div>
+              <DialogFooter>
+                <Button
+                  variant="outline"
+                  onClick={() => {
+                    setAddressDialogOpen(prev => ({ ...prev, [selectedJobForAddress.id]: false }));
+                    setSelectedJobForAddress(null);
+                  }}
+                >
+                  Close
+                </Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
+        )}
       </div>
     </div>
   );
