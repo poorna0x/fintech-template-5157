@@ -75,6 +75,17 @@ export const registerTechnicianPWA = () => {
   isPWAEnabled = true;
   console.log('[PWA] Technician PWA enabled - install prompts allowed');
   
+  // Dynamically set manifest link for technician PWA
+  if (typeof document !== 'undefined') {
+    let manifestLink = document.querySelector('link[rel="manifest"]') as HTMLLinkElement;
+    if (!manifestLink) {
+      manifestLink = document.createElement('link');
+      manifestLink.rel = 'manifest';
+      document.head.appendChild(manifestLink);
+    }
+    manifestLink.href = '/technician-manifest.json';
+  }
+  
   return registerPWA({
     swUrl: '/technician-sw.js',
     scope: '/technician/',
@@ -87,6 +98,17 @@ export const registerAdminPWA = () => {
   isPWAEnabled = true;
   console.log('[PWA] Admin PWA enabled - install prompts allowed');
   
+  // Dynamically set manifest link for admin PWA
+  if (typeof document !== 'undefined') {
+    let manifestLink = document.querySelector('link[rel="manifest"]') as HTMLLinkElement;
+    if (!manifestLink) {
+      manifestLink = document.createElement('link');
+      manifestLink.rel = 'manifest';
+      document.head.appendChild(manifestLink);
+    }
+    manifestLink.href = '/admin-manifest.json';
+  }
+  
   return registerPWA({
     swUrl: '/admin-sw.js',
     scope: '/admin/',
@@ -98,6 +120,14 @@ export const registerAdminPWA = () => {
 export const disablePWA = () => {
   isPWAEnabled = false;
   console.log('[PWA] PWA disabled - install prompts blocked');
+  
+  // Reset manifest link to default
+  if (typeof document !== 'undefined') {
+    const manifestLink = document.querySelector('link[rel="manifest"]') as HTMLLinkElement;
+    if (manifestLink) {
+      manifestLink.href = '/site.webmanifest';
+    }
+  }
 };
 
 export const getInstallPromptEvent = () => {
