@@ -25,7 +25,9 @@ import {
   User,
   Eye,
   CalendarPlus,
-  XCircle
+  XCircle,
+  Camera,
+  MessageCircle
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { db } from '@/lib/supabase';
@@ -69,6 +71,17 @@ const TechnicianDashboard = () => {
   const [completeDialogOpen, setCompleteDialogOpen] = useState(false);
   const [selectedJobForComplete, setSelectedJobForComplete] = useState<Job | null>(null);
   const [completionNotes, setCompletionNotes] = useState('');
+
+  // Phone popup state
+  const [phonePopupOpen, setPhonePopupOpen] = useState(false);
+  const [selectedCustomerPhone, setSelectedCustomerPhone] = useState<{phone: string, alternate_phone?: string, full_name?: string} | null>(null);
+
+  // Location dialog state
+  const [locationDialogOpen, setLocationDialogOpen] = useState<{[jobId: string]: boolean}>({});
+
+  // Photos dialog state
+  const [photosDialogOpen, setPhotosDialogOpen] = useState(false);
+  const [selectedJobPhotos, setSelectedJobPhotos] = useState<{jobId: string, photos: string[]} | null>(null);
 
   // Redirect if not technician
   useEffect(() => {
@@ -548,6 +561,76 @@ const TechnicianDashboard = () => {
     }
   };
 
+  // Helper function to handle phone click
+  const handlePhoneClick = (customer: any) => {
+    const phone = customer?.phone;
+    const alternatePhone = customer?.alternate_phone || customer?.alternatePhone;
+    const fullName = customer?.full_name || customer?.fullName;
+    
+    if (alternatePhone) {
+      setSelectedCustomerPhone({ phone, alternate_phone: alternatePhone, full_name: fullName });
+      setPhonePopupOpen(true);
+    } else if (phone) {
+      window.location.href = `tel:${phone}`;
+    }
+  };
+
+  // Helper function to handle WhatsApp click
+  const handleWhatsAppClick = (phone: string) => {
+    const cleanPhone = phone.replace(/[^0-9]/g, '');
+    const whatsappUrl = `https://wa.me/${cleanPhone}`;
+    window.open(whatsappUrl, '_blank', 'noopener,noreferrer');
+  };
+
+  // Helper function to format address for display
+  const formatAddressForDisplay = (address: any) => {
+    if (!address) return 'Address not available';
+    const parts = [];
+    if (address.street) parts.push(address.street);
+    if (address.area) parts.push(address.area);
+    if (address.city) parts.push(address.city);
+    if (address.state) parts.push(address.state);
+    if (address.pincode) parts.push(address.pincode);
+    return parts.join(', ') || 'Address not available';
+  };
+
+  // Helper function to get all photos for a job
+  const getAllJobPhotos = (job: Job): string[] => {
+    const photos: string[] = [];
+    if (job.beforePhotos && Array.isArray(job.beforePhotos)) photos.push(...job.beforePhotos);
+    if (job.before_photos && Array.isArray(job.before_photos)) photos.push(...job.before_photos);
+    if (job.afterPhotos && Array.isArray(job.afterPhotos)) photos.push(...job.afterPhotos);
+    if (job.after_photos && Array.isArray(job.after_photos)) photos.push(...job.after_photos);
+    if (job.images && Array.isArray(job.images)) photos.push(...job.images);
+    return photos.filter(photo => photo && photo.trim() !== '');
+  };
+
+  // Helper function to format scheduled time
+  const formatScheduledTime = (job: Job): string => {
+    const scheduledDate = (job as any).scheduled_date || job.scheduledDate;
+    const scheduledTimeSlot = (job as any).scheduled_time_slot || job.scheduledTimeSlot;
+    const customTime = (job.customer as any)?.customTime || (job.customer as any)?.custom_time;
+    
+    if (!scheduledDate) return 'Not scheduled';
+    
+    const date = new Date(scheduledDate);
+    const dateStr = date.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' });
+    
+    if (scheduledTimeSlot === 'CUSTOM' && customTime) {
+      return `${dateStr} at ${customTime}`;
+    } else if (scheduledTimeSlot) {
+      const timeSlotMap: {[key: string]: string} = {
+        'MORNING': 'Morning (9 AM - 12 PM)',
+        'AFTERNOON': 'Afternoon (12 PM - 5 PM)',
+        'EVENING': 'Evening (5 PM - 8 PM)',
+        'CUSTOM': customTime || 'Custom Time'
+      };
+      return `${dateStr} - ${timeSlotMap[scheduledTimeSlot] || scheduledTimeSlot}`;
+    }
+    
+    return dateStr;
+  };
+
   const getStatusBadge = (status: string) => {
     const statusConfig = {
       PENDING: { color: 'bg-yellow-100 text-yellow-800', icon: Clock },
@@ -844,8 +927,8 @@ const TechnicianDashboard = () => {
                         <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4">
                           <div className="flex-1 min-w-0">
                             <div className="flex items-center gap-2 mb-2">
-                              <span className="font-mono font-bold text-lg text-gray-900">
-                                {job?.job_number}
+                              <span className="font-bold text-lg text-gray-900">
+                                {customer?.full_name || 'N/A'}
                               </span>
                               <Badge className="bg-orange-100 text-orange-800 border-0">
                                 <Clock className="w-3 h-3 mr-1" />
@@ -853,33 +936,157 @@ const TechnicianDashboard = () => {
                               </Badge>
                             </div>
                             
-                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-sm text-gray-600">
-                              <div>
-                                <p><strong>Customer:</strong> {customer?.full_name || 'N/A'}</p>
-                                <p><strong>Service:</strong> {job?.service_type} - {job?.service_sub_type}</p>
-                                <p><strong>Brand/Model:</strong> {job?.brand} {job?.model}</p>
-                                {distances[job?.id] && (
-                                  <p className="text-blue-600 font-medium">
-                                    <MapPin className="w-3 h-3 inline mr-1" />
-                                    {distances[job?.id]} km away
-                                  </p>
+                            <div className="space-y-3">
+                              {/* Contact Information - Admin Style: 4 items - Desktop 1 row, Mobile 2x2 */}
+                              <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 lg:gap-4">
+                                {/* Phone */}
+                                {customer?.phone && (
+                                  <div className="bg-white rounded-lg p-3 border border-gray-200 hover:border-gray-300 hover:shadow-sm transition-all duration-200">
+                                    <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-3">
+                                      <div className="w-8 h-8 sm:w-10 sm:h-10 bg-gray-100 rounded-lg flex items-center justify-center flex-shrink-0">
+                                        <button
+                                          onClick={() => handlePhoneClick(customer)}
+                                          className="cursor-pointer"
+                                        >
+                                          <Phone className="w-4 h-4 sm:w-5 sm:h-5 text-gray-600" />
+                                        </button>
+                                      </div>
+                                      <div className="flex-1 min-w-0">
+                                        <div className="text-sm font-semibold text-gray-900 truncate">{customer.phone}</div>
+                                        <div className="text-xs text-gray-500">Primary</div>
+                                      </div>
+                                    </div>
+                                  </div>
                                 )}
+
+                                {/* WhatsApp */}
+                                {customer?.phone && (
+                                  <div className="bg-white rounded-lg p-3 border border-gray-200 hover:border-gray-300 hover:shadow-sm transition-all duration-200">
+                                    <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-3">
+                                      <div className="w-8 h-8 sm:w-10 sm:h-10 bg-gray-100 rounded-lg flex items-center justify-center flex-shrink-0">
+                                        <button
+                                          onClick={() => handleWhatsAppClick(customer.phone || '')}
+                                          className="cursor-pointer"
+                                        >
+                                          <svg className="w-4 h-4 sm:w-5 sm:h-5 text-gray-600" fill="currentColor" viewBox="0 0 24 24">
+                                            <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893A11.821 11.821 0 0020.885 3.488"/>
+                                          </svg>
+                                        </button>
                               </div>
-                              <div>
-                                <p><strong>Date:</strong> {job?.scheduled_date}</p>
-                                <p><strong>Time:</strong> {job?.scheduled_time_slot}</p>
-                                <p><strong>Priority:</strong> {job?.priority}</p>
-                                {!distances[job?.id] && currentLocation && (
-                                  <p className="text-gray-400 text-xs">Distance calculating...</p>
+                                      <div className="flex-1 min-w-0">
+                                        <div className="text-sm font-semibold text-gray-900">WhatsApp</div>
+                                        <div className="text-xs text-gray-500">Send Message</div>
+                                      </div>
+                                    </div>
+                                  </div>
                                 )}
+
+                                {/* Location - Always shown */}
+                                {(() => {
+                                  const address = customer?.address || (job as any)?.service_address;
+                                  return (
+                                    <div className="bg-white rounded-lg p-3 border border-gray-200 hover:border-gray-300 hover:shadow-sm transition-all duration-200">
+                                      <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-3">
+                                        <div className="w-8 h-8 sm:w-10 sm:h-10 bg-gray-100 rounded-lg flex items-center justify-center flex-shrink-0">
+                                          <button
+                                            onClick={() => {
+                                              if ((address as any)?.visible_address || (address as any)?.address) {
+                                                setLocationDialogOpen(prev => ({ ...prev, [job.id]: true }));
+                                              }
+                                            }}
+                                            className="cursor-pointer"
+                                            disabled={!((address as any)?.visible_address || (address as any)?.address)}
+                                          >
+                                            <MapPin className="w-4 h-4 sm:w-5 sm:h-5 text-gray-600" />
+                                          </button>
                               </div>
+                                        <div className="flex-1 min-w-0">
+                                          <div className="text-sm font-semibold text-gray-900">Location</div>
+                                          <div className="text-xs text-gray-500">
+                                            {(address as any)?.visible_address 
+                                              ? (address as any).visible_address
+                                              : (address as any)?.address
+                                              ? 'View Address'
+                                              : 'No location'}
                             </div>
-                            
+                                        </div>
+                                      </div>
+                                    </div>
+                                  );
+                                })()}
+
+                                {/* Photos */}
+                                {(() => {
+                                  const jobForPhotos = { ...job, customer } as Job;
+                                  const photos = getAllJobPhotos(jobForPhotos);
+                                  return (
+                                    <div className="bg-white rounded-lg p-3 border border-gray-200 hover:border-gray-300 hover:shadow-sm transition-all duration-200">
+                                      <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-3">
+                                        <div className="w-8 h-8 sm:w-10 sm:h-10 bg-gray-100 rounded-lg flex items-center justify-center flex-shrink-0">
+                                          <button
+                                            onClick={() => {
+                                              if (photos.length > 0) {
+                                                setSelectedJobPhotos({ jobId: job.id, photos });
+                                                setPhotosDialogOpen(true);
+                                              }
+                                            }}
+                                            className="cursor-pointer"
+                                            disabled={photos.length === 0}
+                                          >
+                                            <Camera className="w-4 h-4 sm:w-5 sm:h-5 text-gray-600" />
+                                          </button>
+                                        </div>
+                                        <div className="flex-1 min-w-0">
+                                          <div className="text-sm font-semibold text-gray-900">Photos</div>
+                                          <div className="text-xs text-gray-500">
+                                            {photos.length > 0 
+                                              ? `${photos.length} photo(s)`
+                                              : 'No photos'}
+                                          </div>
+                                        </div>
+                                      </div>
+                                    </div>
+                                  );
+                                })()}
+                              </div>
+
+                              {/* Scheduled Time */}
+                              {job?.scheduled_date && (
+                                <div className="flex items-center gap-2 text-sm">
+                                  <Calendar className="w-4 h-4 text-gray-500" />
+                                  <span className="font-medium text-gray-700">
+                                    {(() => {
+                                      const jobForFormat = { ...job, customer } as Job;
+                                      return formatScheduledTime(jobForFormat);
+                                    })()}
+                                  </span>
+                                </div>
+                              )}
+
+                              {/* Equipment */}
+                              {job?.brand && job?.model && (
+                                <div className="text-sm">
+                                  <span className="font-medium text-gray-700">Equipment: </span>
+                                  <span className="text-gray-600">{job.brand} - {job.model}</span>
+                            </div>
+                              )}
+
+                              {/* Agreed Amount */}
+                              {job?.agreed_amount || job?.estimated_cost || customer?.serviceCost ? (
+                                <div className="text-sm">
+                                  <span className="font-medium text-gray-700">Amount: </span>
+                                  <span className="text-gray-600">₹{(job?.agreed_amount || job?.estimated_cost || customer?.serviceCost || 0).toLocaleString('en-IN')}</span>
+                                </div>
+                              ) : null}
+
+                              {/* Description */}
                             {job?.description && (
-                              <p className="mt-2 text-sm text-gray-700">
-                                <strong>Description:</strong> {job.description}
-                              </p>
-                            )}
+                                <div className="text-sm">
+                                  <span className="font-medium text-gray-700">Description: </span>
+                                  <span className="text-gray-600">{job.description}</span>
+                                </div>
+                              )}
+                            </div>
                           </div>
                           
                           <div className="flex flex-col sm:flex-row gap-2">
@@ -989,8 +1196,8 @@ const TechnicianDashboard = () => {
                     <div className="flex-1 min-w-0">
                       <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-3 mb-3">
                         <div className="flex items-center gap-2">
-                          <span className="font-mono font-bold text-lg text-gray-900">
-                            {(job as any).job_number}
+                          <span className="font-bold text-lg text-gray-900">
+                            {(job.customer as any)?.full_name || 'N/A'}
                           </span>
                           {getStatusBadge(job.status)}
                           {distances[job.id] && (
@@ -1004,50 +1211,137 @@ const TechnicianDashboard = () => {
                         </span>
                       </div>
 
-                      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 text-sm text-gray-600 mb-4">
-                        <div>
-                          <div className="font-medium text-gray-700">Customer</div>
-                          <div className="flex items-center gap-2">
-                            <span>{(job.customer as any)?.full_name}</span>
-                            <a 
-                              href={`tel:${job.customer?.phone}`}
-                              className="text-blue-600 hover:text-blue-800"
-                            >
-                              <Phone className="w-4 h-4" />
-                            </a>
+                      <div className="space-y-3 mb-4">
+                        {/* Contact Information - Admin Style: 4 items - Desktop 1 row, Mobile 2x2 */}
+                        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 lg:gap-4">
+                          {/* Phone */}
+                          {job.customer?.phone && (
+                            <div className="bg-white rounded-lg p-3 border border-gray-200 hover:border-gray-300 hover:shadow-sm transition-all duration-200">
+                              <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-3">
+                                <div className="w-8 h-8 sm:w-10 sm:h-10 bg-gray-100 rounded-lg flex items-center justify-center flex-shrink-0">
+                                  <button
+                                    onClick={() => handlePhoneClick(job.customer)}
+                                    className="cursor-pointer"
+                                  >
+                                    <Phone className="w-4 h-4 sm:w-5 sm:h-5 text-gray-600" />
+                                  </button>
                           </div>
+                                <div className="flex-1 min-w-0">
+                                  <div className="text-sm font-semibold text-gray-900 truncate">{job.customer.phone}</div>
+                                  <div className="text-xs text-gray-500">Primary</div>
                         </div>
-                        
-                        <div>
-                          <div className="font-medium text-gray-700">Scheduled</div>
-                          <div className="flex items-center gap-1">
-                            <Calendar className="w-4 h-4" />
-                            {new Date((job as any).scheduled_date || job.scheduledDate).toLocaleDateString()} - {(job as any).scheduled_time_slot || job.scheduledTimeSlot}
-                          </div>
-                        </div>
-                        
-                        <div>
-                          <div className="font-medium text-gray-700">Equipment</div>
-                          <div>{job.brand} - {job.model}</div>
-                        </div>
-                        
-                        <div>
-                          <div className="font-medium text-gray-700">Location</div>
-                          <div className="flex items-center gap-1">
-                            <MapPin className="w-4 h-4" />
-                            {(job.serviceAddress as any)?.address || 'Address not available'}
-                          </div>
-                          {distances[job.id] && (
-                            <div className="mt-1 text-sm text-blue-600 font-medium">
-                              📍 {distances[job.id]} km away
+                              </div>
                             </div>
                           )}
+
+                          {/* WhatsApp */}
+                          {job.customer?.phone && (
+                            <div className="bg-white rounded-lg p-3 border border-gray-200 hover:border-gray-300 hover:shadow-sm transition-all duration-200">
+                              <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-3">
+                                <div className="w-8 h-8 sm:w-10 sm:h-10 bg-gray-100 rounded-lg flex items-center justify-center flex-shrink-0">
+                                  <button
+                                    onClick={() => handleWhatsAppClick(job.customer?.phone || '')}
+                                    className="cursor-pointer"
+                                  >
+                                    <svg className="w-4 h-4 sm:w-5 sm:h-5 text-gray-600" fill="currentColor" viewBox="0 0 24 24">
+                                      <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893A11.821 11.821 0 0020.885 3.488"/>
+                                    </svg>
+                                  </button>
+                          </div>
+                                <div className="flex-1 min-w-0">
+                                  <div className="text-sm font-semibold text-gray-900">WhatsApp</div>
+                                  <div className="text-xs text-gray-500">Send Message</div>
+                        </div>
+                              </div>
+                            </div>
+                          )}
+
+                          {/* Location - Always shown */}
+                          <div className="bg-white rounded-lg p-3 border border-gray-200 hover:border-gray-300 hover:shadow-sm transition-all duration-200">
+                            <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-3">
+                              <div className="w-8 h-8 sm:w-10 sm:h-10 bg-gray-100 rounded-lg flex items-center justify-center flex-shrink-0">
+                                <button
+                                  onClick={() => {
+                                    if ((job.serviceAddress as any)?.visible_address || (job.serviceAddress as any)?.address) {
+                                      setLocationDialogOpen(prev => ({ ...prev, [job.id]: true }));
+                                    }
+                                  }}
+                                  className="cursor-pointer"
+                                  disabled={!((job.serviceAddress as any)?.visible_address || (job.serviceAddress as any)?.address)}
+                                >
+                                  <MapPin className="w-4 h-4 sm:w-5 sm:h-5 text-gray-600" />
+                                </button>
+                              </div>
+                              <div className="flex-1 min-w-0">
+                                <div className="text-sm font-semibold text-gray-900">Location</div>
+                                <div className="text-xs text-gray-500">
+                                  {(job.serviceAddress as any)?.visible_address 
+                                    ? (job.serviceAddress as any).visible_address
+                                    : (job.serviceAddress as any)?.address
+                                    ? 'View Address'
+                                    : 'No location'}
+                                </div>
+                              </div>
+                            </div>
                         </div>
                         
+                          {/* Photos */}
+                          <div className="bg-white rounded-lg p-3 border border-gray-200 hover:border-gray-300 hover:shadow-sm transition-all duration-200">
+                            <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-3">
+                              <div className="w-8 h-8 sm:w-10 sm:h-10 bg-gray-100 rounded-lg flex items-center justify-center flex-shrink-0">
+                                <button
+                                  onClick={() => {
+                                    const photos = getAllJobPhotos(job);
+                                    if (photos.length > 0) {
+                                      setSelectedJobPhotos({ jobId: job.id, photos });
+                                      setPhotosDialogOpen(true);
+                                    }
+                                  }}
+                                  className="cursor-pointer"
+                                  disabled={getAllJobPhotos(job).length === 0}
+                                >
+                                  <Camera className="w-4 h-4 sm:w-5 sm:h-5 text-gray-600" />
+                                </button>
+                          </div>
+                              <div className="flex-1 min-w-0">
+                                <div className="text-sm font-semibold text-gray-900">Photos</div>
+                                <div className="text-xs text-gray-500">
+                                  {getAllJobPhotos(job).length > 0 
+                                    ? `${getAllJobPhotos(job).length} photo(s)`
+                                    : 'No photos'}
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                        
+                        {/* Scheduled Time and Date */}
+                        <div className="flex items-center gap-2 text-sm">
+                          <Calendar className="w-4 h-4 text-gray-500" />
+                          <span className="font-medium text-gray-700">{formatScheduledTime(job)}</span>
+                          </div>
+
+                        {/* Equipment */}
+                        {job.brand && job.model && (
+                          <div className="text-sm">
+                            <span className="font-medium text-gray-700">Equipment: </span>
+                            <span className="text-gray-600">{job.brand} - {job.model}</span>
+                            </div>
+                          )}
+
+                        {/* Agreed Amount */}
+                        {(job as any).agreed_amount || (job as any).estimated_cost || (job.customer as any)?.serviceCost ? (
+                          <div className="text-sm">
+                            <span className="font-medium text-gray-700">Amount: </span>
+                            <span className="text-gray-600">₹{((job as any).agreed_amount || (job as any).estimated_cost || (job.customer as any)?.serviceCost || 0).toLocaleString('en-IN')}</span>
+                        </div>
+                        ) : null}
+                        
+                        {/* Description */}
                         {job.description && (
-                          <div className="md:col-span-2 lg:col-span-1">
-                            <div className="font-medium text-gray-700">Description</div>
-                            <div className="truncate">{job.description}</div>
+                          <div className="text-sm">
+                            <span className="font-medium text-gray-700">Description: </span>
+                            <span className="text-gray-600">{job.description}</span>
                           </div>
                         )}
                       </div>
@@ -1065,7 +1359,7 @@ const TechnicianDashboard = () => {
                         </DialogTrigger>
                         <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
                           <DialogHeader>
-                            <DialogTitle>Job Details - {(job as any).job_number}</DialogTitle>
+                            <DialogTitle>Job Details - {(job.customer as any)?.full_name || (job as any).job_number}</DialogTitle>
                             <DialogDescription>
                               Complete information for this service job
                             </DialogDescription>
@@ -1134,8 +1428,8 @@ const TechnicianDashboard = () => {
                       {/* Job Info */}
                       <div className="bg-gray-50 p-4 rounded-lg">
                         <div className="flex items-center gap-2 mb-3">
-                          <span className="font-mono font-bold text-xl text-gray-900">
-                            {job?.job_number}
+                          <span className="font-bold text-xl text-gray-900">
+                            {customer?.full_name || 'N/A'}
                           </span>
                           <Badge className="bg-orange-100 text-orange-800 border-0">
                             <Clock className="w-3 h-3 mr-1" />
@@ -1376,6 +1670,176 @@ const TechnicianDashboard = () => {
               >
                 <CheckCircle className="w-4 h-4 mr-2" />
                 Complete Job
+              </Button>
+            </div>
+          </DialogContent>
+        </Dialog>
+
+        {/* Phone Numbers Dialog */}
+        <Dialog open={phonePopupOpen} onOpenChange={setPhonePopupOpen}>
+          <DialogContent className="max-w-md">
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2">
+                <Phone className="w-5 h-5 text-blue-600" />
+                Contact Numbers
+              </DialogTitle>
+              <DialogDescription>
+                Choose a phone number to call for {selectedCustomerPhone?.full_name || 'customer'}
+              </DialogDescription>
+            </DialogHeader>
+            <div className="space-y-4">
+              {/* Primary Phone */}
+              {selectedCustomerPhone?.phone && (
+                <div className="flex items-center justify-between p-4 bg-blue-50 rounded-lg border border-blue-200">
+                  <div>
+                    <div className="font-semibold text-gray-900">{selectedCustomerPhone.phone}</div>
+                    <div className="text-sm text-blue-600 font-medium">Primary Number</div>
+      </div>
+                  <a 
+                    href={`tel:${selectedCustomerPhone.phone}`}
+                    className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg font-medium transition-colors"
+                  >
+                    Call
+                  </a>
+                </div>
+              )}
+              
+              {/* Secondary Phone */}
+              {selectedCustomerPhone?.alternate_phone && (
+                <div className="flex items-center justify-between p-4 bg-gray-50 rounded-lg border border-gray-200">
+                  <div>
+                    <div className="font-semibold text-gray-900">{selectedCustomerPhone.alternate_phone}</div>
+                    <div className="text-sm text-gray-600 font-medium">Secondary Number</div>
+                  </div>
+                  <a 
+                    href={`tel:${selectedCustomerPhone.alternate_phone}`}
+                    className="bg-gray-600 hover:bg-gray-700 text-white px-4 py-2 rounded-lg font-medium transition-colors"
+                  >
+                    Call
+                  </a>
+                </div>
+              )}
+            </div>
+            <div className="flex justify-end pt-4 border-t">
+              <Button 
+                variant="outline" 
+                onClick={() => setPhonePopupOpen(false)}
+              >
+                Close
+              </Button>
+            </div>
+          </DialogContent>
+        </Dialog>
+
+        {/* Location Dialog */}
+        {filteredJobs.map((job) => {
+          if (!locationDialogOpen[job.id]) return null;
+          const address = job.serviceAddress as any;
+          return (
+            <Dialog 
+              key={`location-${job.id}`}
+              open={locationDialogOpen[job.id] || false} 
+              onOpenChange={(open) => setLocationDialogOpen(prev => ({ ...prev, [job.id]: open }))}
+            >
+              <DialogContent className="max-w-md">
+                <DialogHeader>
+                  <DialogTitle className="flex items-center gap-2">
+                    <MapPin className="w-5 h-5 text-blue-600" />
+                    Full Address
+                  </DialogTitle>
+                  <DialogDescription>
+                    Complete address for {(job.customer as any)?.full_name || 'customer'}
+                  </DialogDescription>
+                </DialogHeader>
+                <div className="space-y-2">
+                  {address?.visible_address && (
+                    <div className="p-3 bg-blue-50 rounded-lg border border-blue-200">
+                    <div className="text-xs text-blue-600 font-medium mb-1">Location</div>
+                    <div className="font-semibold text-gray-900">{address.visible_address}</div>
+                  </div>
+                  )}
+                  <div className="p-3 bg-gray-50 rounded-lg">
+                    <div className="text-xs text-gray-600 font-medium mb-2">Complete Address</div>
+                    <div className="text-sm text-gray-900 whitespace-pre-line">
+                      {formatAddressForDisplay(address)}
+                    </div>
+                  </div>
+                  {distances[job.id] && (
+                    <div className="p-3 bg-green-50 rounded-lg border border-green-200">
+                      <div className="text-sm text-green-700">
+                        <MapPin className="w-4 h-4 inline mr-1" />
+                        {distances[job.id]} km away
+                      </div>
+                    </div>
+                  )}
+                </div>
+                <div className="flex justify-end pt-4 border-t">
+                  <Button 
+                    variant="outline" 
+                    onClick={() => setLocationDialogOpen(prev => ({ ...prev, [job.id]: false }))}
+                  >
+                    Close
+                  </Button>
+                </div>
+              </DialogContent>
+            </Dialog>
+          );
+        })}
+
+        {/* Photos Dialog */}
+        <Dialog open={photosDialogOpen} onOpenChange={setPhotosDialogOpen}>
+          <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2">
+                <Camera className="w-5 h-5 text-blue-600" />
+                Job Photos
+              </DialogTitle>
+              <DialogDescription>
+                All photos associated with this job
+              </DialogDescription>
+            </DialogHeader>
+            {selectedJobPhotos && selectedJobPhotos.photos.length > 0 ? (
+              <div className="grid grid-cols-2 md:grid-cols-3 gap-4 py-4">
+                {selectedJobPhotos.photos.map((photo, index) => (
+                  <div key={index} className="relative group">
+                    <div className="w-full h-48 bg-gray-100 rounded-lg border border-gray-200 overflow-hidden cursor-pointer">
+                      <img
+                        src={photo}
+                        alt={`Photo ${index + 1}`}
+                        className="w-full h-full object-cover transition-transform group-hover:scale-105"
+                        onError={(e) => {
+                          (e.target as HTMLImageElement).style.display = 'none';
+                          const placeholder = (e.target as HTMLImageElement).nextElementSibling as HTMLElement;
+                          if (placeholder) placeholder.style.display = 'flex';
+                        }}
+                        onClick={() => window.open(photo, '_blank', 'noopener,noreferrer')}
+                      />
+                      <div 
+                        className="hidden w-full h-full items-center justify-center bg-gray-200 text-gray-400"
+                        style={{ display: 'none' }}
+                      >
+                        <Camera className="w-8 h-8" />
+                      </div>
+                    </div>
+                    <div className="mt-1 text-xs text-center text-gray-500">Photo {index + 1}</div>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="py-8 text-center text-gray-500">
+                <Camera className="w-12 h-12 mx-auto mb-4 text-gray-300" />
+                <p>No photos available for this job</p>
+              </div>
+            )}
+            <div className="flex justify-end pt-4 border-t">
+              <Button 
+                variant="outline" 
+                onClick={() => {
+                  setPhotosDialogOpen(false);
+                  setSelectedJobPhotos(null);
+                }}
+              >
+                Close
               </Button>
             </div>
           </DialogContent>
