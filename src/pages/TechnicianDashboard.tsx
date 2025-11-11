@@ -43,6 +43,8 @@ import { sendNotification, createJobCompletedNotification, createJobAssignmentRe
 import FollowUpModal from '@/components/FollowUpModal';
 import { registerTechnicianPWA } from '@/lib/pwa';
 import { extractCoordinates, formatAddressForDisplay } from '@/lib/maps';
+import ImageUpload from '@/components/ImageUpload';
+import { Label } from '@/components/ui/label';
 
 const TechnicianDashboard = () => {
   const { user, logout, isTechnician, loading } = useAuth();
@@ -79,6 +81,16 @@ const TechnicianDashboard = () => {
   const [completeDialogOpen, setCompleteDialogOpen] = useState(false);
   const [selectedJobForComplete, setSelectedJobForComplete] = useState<Job | null>(null);
   const [completionNotes, setCompletionNotes] = useState('');
+  const [completeJobStep, setCompleteJobStep] = useState<1 | 2 | 3 | 4>(1);
+  const [billAmount, setBillAmount] = useState<string>('');
+  const [billPhotos, setBillPhotos] = useState<string[]>([]);
+  const [paymentPhotos, setPaymentPhotos] = useState<string[]>([]);
+  const [amcDateGiven, setAmcDateGiven] = useState<string>('');
+  const [amcEndDate, setAmcEndDate] = useState<string>('');
+  const [amcYears, setAmcYears] = useState<number>(1);
+  const [amcIncludesPrefilter, setAmcIncludesPrefilter] = useState<boolean>(false);
+  const [hasAMC, setHasAMC] = useState<boolean>(false);
+  const [paymentMode, setPaymentMode] = useState<'CASH' | 'ONLINE' | ''>('');
 
   // Phone popup state
   const [phonePopupOpen, setPhonePopupOpen] = useState(false);
@@ -523,24 +535,138 @@ const TechnicianDashboard = () => {
     }
   };
 
-  const handleCompleteJob = (job: Job) => {
-    setSelectedJobForComplete(job);
+  // Calculate AMC end date helper
+  const calculateAMCEndDate = (agreementDate: string, years: number) => {
+    if (!agreementDate) return;
+    const startDate = new Date(agreementDate);
+    const endDate = new Date(startDate);
+    endDate.setFullYear(endDate.getFullYear() + years);
+    // Subtract 1 day (AMC covers up to that date - 1 day)
+    endDate.setDate(endDate.getDate() - 1);
+    setAmcEndDate(endDate.toISOString().split('T')[0]);
+  };
+
+  const handleCompleteJob = async (job: Job) => {
+    // Fetch full job data with customer if not already loaded
+    let jobWithCustomer = job;
+    if (!job.customer || !job.serviceType) {
+      try {
+        const { data: fullJob, error } = await db.jobs.getById(job.id);
+        if (!error && fullJob) {
+          jobWithCustomer = fullJob as Job;
+        }
+      } catch (error) {
+        console.error('Error fetching job details:', error);
+        // Continue with the job data we have
+      }
+    }
+    
+    setSelectedJobForComplete(jobWithCustomer);
+    setCompletionNotes('');
+    setCompleteJobStep(1);
+    setBillAmount('');
+    setBillPhotos([]);
+    setPaymentPhotos([]);
+    // Set default AMC date to today
+    const today = new Date().toISOString().split('T')[0];
+    setAmcDateGiven(today);
+    setAmcYears(1);
+    // Calculate end date with default 1 year
+    calculateAMCEndDate(today, 1);
+    setAmcIncludesPrefilter(false);
+    setHasAMC(false);
+    setPaymentMode('');
     setCompleteDialogOpen(true);
   };
 
   const handleCompleteJobSubmit = async () => {
-    if (!selectedJobForComplete) {
+    if (!selectedJobForComplete) return;
+
+    // Validate bill amount on step 1
+    if (completeJobStep === 1) {
+      if (!billAmount || parseFloat(billAmount) <= 0) {
+        toast.error('Please enter a valid bill amount');
+        return;
+      }
+      // Move to step 2
+      setCompleteJobStep(2);
       return;
     }
 
+    // On step 2, move to step 3 if not skipping
+    if (completeJobStep === 2) {
+      setCompleteJobStep(3);
+      return;
+    }
+
+    // On step 3, move to step 4
+    if (completeJobStep === 3) {
+      setCompleteJobStep(4);
+      return;
+    }
+
+    // On step 4, submit the form
     try {
-      const { error } = await db.jobs.update(selectedJobForComplete.id, {
+      // Prepare update data
+      const updateData: any = {
         status: 'COMPLETED',
         end_time: new Date().toISOString(),
-        completion_notes: completionNotes,
+        completion_notes: completionNotes.trim(),
         completed_by: user?.id || 'technician',
-        completed_at: new Date().toISOString()
-      });
+        completed_at: new Date().toISOString(),
+        actual_cost: parseFloat(billAmount) || 0,
+        payment_amount: parseFloat(billAmount) || 0,
+        payment_method: paymentMode || 'CASH',
+      };
+
+      // Handle requirements - merge bill photos and AMC info
+      const currentRequirements = selectedJobForComplete.requirements || [];
+      let requirements: any[] = [];
+      
+      if (Array.isArray(currentRequirements)) {
+        requirements = [...currentRequirements];
+      } else if (typeof currentRequirements === 'string') {
+        try {
+          requirements = JSON.parse(currentRequirements);
+          if (!Array.isArray(requirements)) {
+            requirements = [];
+          }
+        } catch {
+          requirements = [];
+        }
+      }
+
+      // Remove existing bill_photos, payment_photos and amc_info entries
+      requirements = requirements.filter((req: any) => !req.bill_photos && !req.payment_photos && !req.amc_info);
+
+      // Add bill photos if any
+      if (billPhotos.length > 0) {
+        requirements.push({ bill_photos: billPhotos });
+      }
+
+      // Add payment photos if any (stored in secondary account)
+      if (paymentPhotos.length > 0) {
+        requirements.push({ payment_photos: paymentPhotos });
+      }
+
+      // Add AMC info if provided
+      if (hasAMC && amcDateGiven && amcEndDate) {
+        requirements.push({ 
+          amc_info: {
+            date_given: amcDateGiven,
+            end_date: amcEndDate,
+            years: amcYears,
+            includes_prefilter: amcIncludesPrefilter
+          }
+        });
+      }
+
+      // Update requirements if we have any changes
+      if (billPhotos.length > 0 || paymentPhotos.length > 0 || (hasAMC && amcDateGiven && amcEndDate)) {
+        updateData.requirements = JSON.stringify(requirements);
+      }
+
+      const { error } = await db.jobs.update(selectedJobForComplete.id, updateData);
 
       if (error) {
         throw new Error(error.message);
@@ -548,22 +674,32 @@ const TechnicianDashboard = () => {
 
       // Update local state
       setJobs(prev => prev.map(job => 
-        job.id === selectedJobForComplete.id 
-          ? { 
+        job.id === selectedJobForComplete.id ? { 
               ...job, 
               status: 'COMPLETED',
               end_time: new Date().toISOString(),
-              completionNotes: completionNotes,
+          completionNotes: completionNotes.trim(),
               completedBy: user?.id || 'technician',
-              completedAt: new Date().toISOString()
-            }
-          : job
+          completedAt: new Date().toISOString(),
+          actual_cost: parseFloat(billAmount) || 0,
+          payment_amount: parseFloat(billAmount) || 0,
+        } : job
       ));
       
       toast.success('Job completed successfully');
       setCompleteDialogOpen(false);
       setSelectedJobForComplete(null);
       setCompletionNotes('');
+      setCompleteJobStep(1);
+      setBillAmount('');
+      setBillPhotos([]);
+      setPaymentPhotos([]);
+      setAmcDateGiven(new Date().toISOString().split('T')[0]);
+      setAmcEndDate('');
+      setAmcYears(1);
+      setAmcIncludesPrefilter(false);
+      setHasAMC(false);
+      setPaymentMode('');
     } catch (error) {
       console.error('Error completing job:', error);
       toast.error('Failed to complete job');
@@ -986,28 +1122,6 @@ const TechnicianDashboard = () => {
                                   </div>
                                 )}
 
-                                {/* WhatsApp */}
-                                {customer?.phone && (
-                                  <div className="bg-white rounded-lg p-3 border border-gray-200 hover:border-gray-300 hover:shadow-sm transition-all duration-200">
-                                    <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-3">
-                                      <div className="w-8 h-8 sm:w-10 sm:h-10 bg-gray-100 rounded-lg flex items-center justify-center flex-shrink-0">
-                                        <button
-                                          onClick={() => handleWhatsAppClick(customer.phone || '')}
-                                          className="cursor-pointer"
-                                        >
-                                          <svg className="w-4 h-4 sm:w-5 sm:h-5 text-gray-600" fill="currentColor" viewBox="0 0 24 24">
-                                            <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893A11.821 11.821 0 0020.885 3.488"/>
-                                          </svg>
-                                        </button>
-                              </div>
-                                      <div className="flex-1 min-w-0">
-                                        <div className="text-sm font-semibold text-gray-900">WhatsApp</div>
-                                        <div className="text-xs text-gray-500">Send Message</div>
-                                      </div>
-                                    </div>
-                                  </div>
-                                )}
-
                                 {/* Location - Always shown */}
                                 {(() => {
                                   const address = customer?.address || (job as any)?.service_address;
@@ -1119,6 +1233,28 @@ const TechnicianDashboard = () => {
                                     </div>
                                   );
                                 })()}
+
+                                {/* WhatsApp - Last */}
+                                {customer?.phone && (
+                                  <div className="bg-white rounded-lg p-3 border border-gray-200 hover:border-gray-300 hover:shadow-sm transition-all duration-200">
+                                    <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-3">
+                                      <div className="w-8 h-8 sm:w-10 sm:h-10 bg-gray-100 rounded-lg flex items-center justify-center flex-shrink-0">
+                                        <button
+                                          onClick={() => handleWhatsAppClick(customer.phone || '')}
+                                          className="cursor-pointer"
+                                        >
+                                          <svg className="w-4 h-4 sm:w-5 sm:h-5 text-gray-600" fill="currentColor" viewBox="0 0 24 24">
+                                            <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893A11.821 11.821 0 0020.885 3.488"/>
+                                          </svg>
+                                        </button>
+                              </div>
+                                      <div className="flex-1 min-w-0">
+                                        <div className="text-sm font-semibold text-gray-900">WhatsApp</div>
+                                        <div className="text-xs text-gray-500">Send Message</div>
+                                      </div>
+                                    </div>
+                                  </div>
+                                )}
                               </div>
 
                               {/* Scheduled Time */}
@@ -1131,7 +1267,7 @@ const TechnicianDashboard = () => {
                                       return formatScheduledTime(jobForFormat);
                                     })()}
                                   </span>
-                                </div>
+                            </div>
                               )}
 
                               {/* Equipment */}
@@ -1312,28 +1448,6 @@ const TechnicianDashboard = () => {
                         </div>
                           )}
 
-                          {/* WhatsApp */}
-                          {job.customer?.phone && (
-                            <div className="bg-white rounded-lg p-3 border border-gray-200 hover:border-gray-300 hover:shadow-sm transition-all duration-200">
-                              <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-3">
-                                <div className="w-8 h-8 sm:w-10 sm:h-10 bg-gray-100 rounded-lg flex items-center justify-center flex-shrink-0">
-                                  <button
-                                    onClick={() => handleWhatsAppClick(job.customer?.phone || '')}
-                                    className="cursor-pointer"
-                                  >
-                                    <svg className="w-4 h-4 sm:w-5 sm:h-5 text-gray-600" fill="currentColor" viewBox="0 0 24 24">
-                                      <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893A11.821 11.821 0 0020.885 3.488"/>
-                                    </svg>
-                                  </button>
-                        </div>
-                                <div className="flex-1 min-w-0">
-                                  <div className="text-sm font-semibold text-gray-900">WhatsApp</div>
-                                  <div className="text-xs text-gray-500">Send Message</div>
-                          </div>
-                            </div>
-                        </div>
-                          )}
-
                           {/* Location - Always shown */}
                           <div className="bg-white rounded-lg p-3 border border-gray-200 hover:border-gray-300 hover:shadow-sm transition-all duration-200">
                             <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-3">
@@ -1362,7 +1476,7 @@ const TechnicianDashboard = () => {
                                 >
                                   <MapPin className="w-4 h-4 sm:w-5 sm:h-5 text-gray-600" />
                                 </button>
-                          </div>
+                        </div>
                               <div className="flex-1 min-w-0">
                                 <div className="text-sm font-semibold text-gray-900">Location</div>
                                 <div className="text-xs text-gray-500">
@@ -1402,11 +1516,11 @@ const TechnicianDashboard = () => {
                                       </button>
                                     ) : 'No location';
                                   })()}
-                                </div>
-                              </div>
+                          </div>
+                            </div>
                       </div>
-                    </div>
-
+                        </div>
+                        
                           {/* Photos */}
                           <div className="bg-white rounded-lg p-3 border border-gray-200 hover:border-gray-300 hover:shadow-sm transition-all duration-200">
                             <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-3">
@@ -1424,17 +1538,39 @@ const TechnicianDashboard = () => {
                                 >
                                   <Camera className="w-4 h-4 sm:w-5 sm:h-5 text-gray-600" />
                                 </button>
-                              </div>
+                          </div>
                               <div className="flex-1 min-w-0">
                                 <div className="text-sm font-semibold text-gray-900">Photos</div>
                                 <div className="text-xs text-gray-500">
                                   {getAllJobPhotos(job).length > 0 
                                     ? `${getAllJobPhotos(job).length} photo(s)`
                                     : 'No photos'}
+                                </div>
+                          </div>
+                      </div>
+                    </div>
+
+                          {/* WhatsApp - Last */}
+                          {job.customer?.phone && (
+                            <div className="bg-white rounded-lg p-3 border border-gray-200 hover:border-gray-300 hover:shadow-sm transition-all duration-200">
+                              <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-3">
+                                <div className="w-8 h-8 sm:w-10 sm:h-10 bg-gray-100 rounded-lg flex items-center justify-center flex-shrink-0">
+                                  <button
+                                    onClick={() => handleWhatsAppClick(job.customer?.phone || '')}
+                                    className="cursor-pointer"
+                                  >
+                                    <svg className="w-4 h-4 sm:w-5 sm:h-5 text-gray-600" fill="currentColor" viewBox="0 0 24 24">
+                                      <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893A11.821 11.821 0 0020.885 3.488"/>
+                                    </svg>
+                                  </button>
+                              </div>
+                                <div className="flex-1 min-w-0">
+                                  <div className="text-sm font-semibold text-gray-900">WhatsApp</div>
+                                  <div className="text-xs text-gray-500">Send Message</div>
                               </div>
                               </div>
-                            </div>
                               </div>
+                          )}
                             </div>
                             
                         {/* Scheduled Time and Date */}
@@ -1464,9 +1600,9 @@ const TechnicianDashboard = () => {
                           <div className="text-sm">
                             <span className="font-medium text-gray-700">Description: </span>
                             <span className="text-gray-600">{job.description}</span>
-                          </div>
+                            </div>
                         )}
-                      </div>
+                          </div>
                     </div>
 
                     <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 sm:ml-4">
@@ -1686,64 +1822,307 @@ const TechnicianDashboard = () => {
         </Dialog>
 
         {/* Complete Job Dialog */}
-        <Dialog open={completeDialogOpen} onOpenChange={setCompleteDialogOpen}>
-          <DialogContent>
-            <DialogHeader>
+        <Dialog open={completeDialogOpen} onOpenChange={(open) => {
+          if (!open) {
+            setCompleteDialogOpen(false);
+            setSelectedJobForComplete(null);
+            setCompletionNotes('');
+            setCompleteJobStep(1);
+            setBillAmount('');
+            setBillPhotos([]);
+            const today = new Date().toISOString().split('T')[0];
+            setAmcDateGiven(today);
+            setAmcEndDate('');
+            setAmcYears(1);
+            setAmcIncludesPrefilter(false);
+            setHasAMC(false);
+          }
+        }}>
+          <DialogContent className="w-[95vw] sm:w-[500px] max-w-[500px] h-[85vh] sm:h-[600px] max-h-[85vh] flex flex-col p-0">
+            <DialogHeader className="px-6 pt-6 pb-4 flex-shrink-0 border-b">
               <DialogTitle>Complete Job</DialogTitle>
               <DialogDescription>
-                Mark this job as completed. You can add completion notes if needed.
+                {completeJobStep === 1 && 'Enter the bill amount for this job'}
+            {completeJobStep === 2 && 'Upload bill photo (optional)'}
+            {completeJobStep === 3 && 'Add AMC information (optional)'}
+            {completeJobStep === 4 && 'Select payment mode and upload payment photo (optional)'}
               </DialogDescription>
             </DialogHeader>
             
-            <div className="space-y-4">
+            {/* Scrollable Content */}
+            <div className="flex-1 overflow-y-auto px-6 py-4">
               {selectedJobForComplete && (
-                <div className="bg-gray-50 p-4 rounded-lg">
-                  <h4 className="font-medium text-gray-900 mb-2">Job Details</h4>
-                  <p className="text-sm text-gray-600">
-                    <strong>Job Number:</strong> {(selectedJobForComplete as any).job_number}
-                  </p>
-                  <p className="text-sm text-gray-600">
-                    <strong>Customer:</strong> {(selectedJobForComplete.customer as any)?.full_name || 'Unknown'}
-                  </p>
-                  <p className="text-sm text-gray-600">
-                    <strong>Service:</strong> {selectedJobForComplete.serviceType} - {selectedJobForComplete.serviceSubType}
-                  </p>
+                <div className="p-3 bg-gray-50 rounded-lg mb-4">
+                  <div className="text-sm font-medium text-gray-900">
+                    Job: {(selectedJobForComplete as any).job_number || selectedJobForComplete.jobNumber}
+                  </div>
+                  <div className="text-sm text-gray-600">
+                    {(selectedJobForComplete.serviceType || (selectedJobForComplete as any).service_type || 'N/A')} - {(selectedJobForComplete.serviceSubType || (selectedJobForComplete as any).service_sub_type || 'N/A')}
+                  </div>
+                  <div className="text-sm text-gray-600">
+                    Customer: {
+                      selectedJobForComplete.customer?.fullName || 
+                      (selectedJobForComplete.customer as any)?.full_name ||
+                      (selectedJobForComplete.customer as any)?.name ||
+                      'Unknown'
+                    }
+                  </div>
                 </div>
               )}
               
+              {/* Step Indicator */}
+              <div className="flex items-center justify-center mb-6">
+                <div className="flex items-center space-x-1 sm:space-x-2">
+                  <div className={`flex items-center justify-center w-7 h-7 sm:w-8 sm:h-8 rounded-full text-xs sm:text-sm ${completeJobStep >= 1 ? 'bg-black text-white' : 'bg-gray-200 text-gray-600'}`}>
+                    1
+                  </div>
+                  <div className={`w-8 sm:w-12 h-1 ${completeJobStep >= 2 ? 'bg-black' : 'bg-gray-200'}`}></div>
+                  <div className={`flex items-center justify-center w-7 h-7 sm:w-8 sm:h-8 rounded-full text-xs sm:text-sm ${completeJobStep >= 2 ? 'bg-black text-white' : 'bg-gray-200 text-gray-600'}`}>
+                    2
+                  </div>
+                  <div className={`w-8 sm:w-12 h-1 ${completeJobStep >= 3 ? 'bg-black' : 'bg-gray-200'}`}></div>
+                  <div className={`flex items-center justify-center w-7 h-7 sm:w-8 sm:h-8 rounded-full text-xs sm:text-sm ${completeJobStep >= 3 ? 'bg-black text-white' : 'bg-gray-200 text-gray-600'}`}>
+                    3
+                  </div>
+                  <div className={`w-8 sm:w-12 h-1 ${completeJobStep >= 4 ? 'bg-black' : 'bg-gray-200'}`}></div>
+                  <div className={`flex items-center justify-center w-7 h-7 sm:w-8 sm:h-8 rounded-full text-xs sm:text-sm ${completeJobStep >= 4 ? 'bg-black text-white' : 'bg-gray-200 text-gray-600'}`}>
+                    4
+                  </div>
+                </div>
+              </div>
+
+              {/* Step 1: Bill Amount */}
+              {completeJobStep === 1 && (
+                <div className="space-y-4">
               <div>
-                <label htmlFor="completion-notes" className="block text-sm font-medium text-gray-700 mb-2">
-                  Completion Notes (Optional)
-                </label>
+                    <Label htmlFor="bill-amount">Bill Amount *</Label>
+                    <Input
+                      id="bill-amount"
+                      type="number"
+                      placeholder="Enter bill amount"
+                      value={billAmount}
+                      onChange={(e) => setBillAmount(e.target.value)}
+                      className="mt-1"
+                      min="0"
+                      step="0.01"
+                    />
+                  </div>
+                  <div>
+                    <Label htmlFor="completion-notes">Completion Notes (Optional)</Label>
                 <Textarea
                   id="completion-notes"
-                  placeholder="Add any notes about the completion..."
+                      placeholder="Add any notes about the job completion..."
                   value={completionNotes}
                   onChange={(e) => setCompletionNotes(e.target.value)}
                   rows={3}
+                      className="mt-1"
                 />
               </div>
             </div>
+              )}
 
-            <div className="flex justify-end gap-3 pt-4 border-t">
+              {/* Step 2: Bill Photo */}
+              {completeJobStep === 2 && (
+                <div className="space-y-4">
+                  <div>
+                    <Label>Bill Photo (Optional)</Label>
+                    <p className="text-sm text-gray-500 mb-2">Upload a photo of the bill. You can skip this step.</p>
+                    <ImageUpload
+                      onImagesChange={(images) => setBillPhotos(images)}
+                      maxImages={5}
+                      folder="bills"
+                      title="Upload Bill Photo"
+                      description="Upload photo of the bill (automatically optimized for smaller file size)"
+                      maxWidth={1024}
+                      quality={0.5}
+                      aggressiveCompression={true}
+                    />
+                  </div>
+                </div>
+              )}
+
+              {/* Step 3: AMC Info */}
+              {completeJobStep === 3 && (
+                <div className="space-y-4">
+                  <div className="flex items-center space-x-2">
+                    <input
+                      type="checkbox"
+                      id="has-amc"
+                      checked={hasAMC}
+                      onChange={(e) => {
+                        setHasAMC(e.target.checked);
+                        // Reset to default when enabling AMC
+                        if (e.target.checked) {
+                          const today = new Date().toISOString().split('T')[0];
+                          setAmcDateGiven(today);
+                          setAmcYears(1);
+                          calculateAMCEndDate(today, 1);
+                        }
+                      }}
+                      className="w-4 h-4"
+                    />
+                    <Label htmlFor="has-amc" className="cursor-pointer">This job includes AMC</Label>
+                  </div>
+
+                  {hasAMC && (
+                    <div className="space-y-4 pl-6 border-l-2 border-gray-200">
+                      <div>
+                        <Label htmlFor="amc-date-given">AMC Date of Agreement *</Label>
+                        <Input
+                          id="amc-date-given"
+                          type="date"
+                          value={amcDateGiven}
+                          onChange={(e) => {
+                            setAmcDateGiven(e.target.value);
+                            if (e.target.value) {
+                              calculateAMCEndDate(e.target.value, amcYears);
+                            }
+                          }}
+                          className="mt-1"
+                          max={new Date().toISOString().split('T')[0]}
+                        />
+                      </div>
+                      <div>
+                        <Label htmlFor="amc-years">Number of Years *</Label>
+                        <Select value={amcYears.toString()} onValueChange={(value) => {
+                          const years = parseInt(value);
+                          setAmcYears(years);
+                          if (amcDateGiven) {
+                            calculateAMCEndDate(amcDateGiven, years);
+                          }
+                        }}>
+                          <SelectTrigger className="mt-1">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="1">1 Year</SelectItem>
+                            <SelectItem value="2">2 Years</SelectItem>
+                            <SelectItem value="3">3 Years</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      <div>
+                        <Label htmlFor="amc-end-date">AMC End Date *</Label>
+                        <Input
+                          id="amc-end-date"
+                          type="date"
+                          value={amcEndDate}
+                          onChange={(e) => setAmcEndDate(e.target.value)}
+                          className="mt-1"
+                          min={amcDateGiven}
+                          readOnly
+                        />
+                      </div>
+                      <div className="flex items-center space-x-2">
+                        <input
+                          type="checkbox"
+                          id="amc-prefilter"
+                          checked={amcIncludesPrefilter}
+                          onChange={(e) => setAmcIncludesPrefilter(e.target.checked)}
+                          className="w-4 h-4"
+                        />
+                        <Label htmlFor="amc-prefilter" className="cursor-pointer">Includes Prefilter</Label>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Step 4: Payment Mode and Photo */}
+              {completeJobStep === 4 && (
+                <div className="space-y-4">
+                  <div>
+                    <Label htmlFor="payment-mode">Payment Mode *</Label>
+                    <Select 
+                      value={paymentMode} 
+                      onValueChange={(value: 'CASH' | 'ONLINE') => setPaymentMode(value)}
+                    >
+                      <SelectTrigger className="mt-1">
+                        <SelectValue placeholder="Select payment mode" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="CASH">Cash</SelectItem>
+                        <SelectItem value="ONLINE">Online</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  
+                  <div>
+                    <Label>Payment Photo (Optional)</Label>
+                    <p className="text-sm text-gray-500 mb-2">Upload a photo of the payment receipt. You can skip this step.</p>
+                    <ImageUpload
+                      onImagesChange={(images) => setPaymentPhotos(images)}
+                      maxImages={5}
+                      folder="payment-receipts"
+                      title="Upload Payment Photo"
+                      description="Upload photo of payment receipt (highly optimized, stored in secondary account)"
+                      maxWidth={800}
+                      quality={0.3}
+                      aggressiveCompression={true}
+                      useSecondaryAccount={true}
+                    />
+                  </div>
+                </div>
+              )}
+            </div>
+
+            <DialogFooter className="px-6 py-4 flex-shrink-0 border-t">
               <Button
                 variant="outline"
                 onClick={() => {
+                  if (completeJobStep > 1) {
+                    setCompleteJobStep((prev) => (prev - 1) as 1 | 2 | 3 | 4);
+                  } else {
                   setCompleteDialogOpen(false);
                   setSelectedJobForComplete(null);
                   setCompletionNotes('');
+                    setCompleteJobStep(1);
+                    setBillAmount('');
+                    setBillPhotos([]);
+                    setPaymentPhotos([]);
+                    const today = new Date().toISOString().split('T')[0];
+                    setAmcDateGiven(today);
+                    setAmcEndDate('');
+                    setAmcYears(1);
+                    setAmcIncludesPrefilter(false);
+                    setHasAMC(false);
+                    setPaymentMode('');
+                  }
                 }}
               >
-                Cancel
+                {completeJobStep > 1 ? 'Back' : 'Cancel'}
               </Button>
+              {completeJobStep === 2 && (
+                <Button
+                  variant="outline"
+                  onClick={() => {
+                    setCompleteJobStep(3);
+                  }}
+                >
+                  Skip
+                </Button>
+              )}
+              {completeJobStep === 3 && hasAMC && (!amcDateGiven || !amcEndDate) && (
+                <Button
+                  variant="outline"
+                  onClick={() => {
+                    setHasAMC(false);
+                    setAmcDateGiven('');
+                    setAmcEndDate('');
+                    setAmcIncludesPrefilter(false);
+                  }}
+                >
+                  Skip AMC
+                </Button>
+              )}
               <Button
                 onClick={handleCompleteJobSubmit}
-                className="bg-green-600 hover:bg-green-700"
+                className="bg-black hover:bg-gray-800 text-white"
+                disabled={(completeJobStep === 3 && hasAMC && (!amcDateGiven || !amcEndDate)) || (completeJobStep === 4 && !paymentMode)}
               >
-                <CheckCircle className="w-4 h-4 mr-2" />
-                Complete Job
+                {completeJobStep === 4 ? 'Complete Job' : 'Next'}
               </Button>
-            </div>
+            </DialogFooter>
           </DialogContent>
         </Dialog>
 
