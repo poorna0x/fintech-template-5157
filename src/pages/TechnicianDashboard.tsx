@@ -14,6 +14,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
+import Logo from '@/components/Logo';
 import { 
   Wrench, 
   Search, 
@@ -34,7 +35,8 @@ import {
   XCircle,
   Camera,
   MessageCircle,
-  MoreVertical
+  MoreVertical,
+  Settings
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { db } from '@/lib/supabase';
@@ -1051,12 +1053,24 @@ const TechnicianDashboard = () => {
     }
   };
 
+  // 3-dot loading component
+  const ThreeDotLoader = ({ size = 'md' }: { size?: 'sm' | 'md' | 'lg' }) => {
+    const dotSize = size === 'sm' ? 'w-2 h-2' : size === 'lg' ? 'w-4 h-4' : 'w-3 h-3';
+    return (
+      <div className="flex items-center justify-center space-x-1">
+        <div className={`${dotSize} bg-blue-600 rounded-full animate-bounce`} style={{ animationDelay: '0ms' }}></div>
+        <div className={`${dotSize} bg-blue-600 rounded-full animate-bounce`} style={{ animationDelay: '150ms' }}></div>
+        <div className={`${dotSize} bg-blue-600 rounded-full animate-bounce`} style={{ animationDelay: '300ms' }}></div>
+      </div>
+    );
+  };
+
   if (loading) {
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center">
         <div className="text-center">
-          <div className="w-8 h-8 border-4 border-blue-600 border-t-transparent rounded-full animate-spin mx-auto mb-4" />
-          <p className="text-gray-600">Loading...</p>
+          <ThreeDotLoader size="lg" />
+          <p className="text-gray-600 mt-4">Loading...</p>
         </div>
       </div>
     );
@@ -1071,8 +1085,8 @@ const TechnicianDashboard = () => {
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center">
         <div className="text-center">
-          <div className="w-8 h-8 border-4 border-blue-600 border-t-transparent rounded-full animate-spin mx-auto mb-4" />
-          <p className="text-gray-600">Loading your assigned jobs...</p>
+          <ThreeDotLoader size="lg" />
+          <p className="text-gray-600 mt-4">Loading your assigned jobs...</p>
         </div>
       </div>
     );
@@ -1081,55 +1095,38 @@ const TechnicianDashboard = () => {
   return (
     <div className="min-h-screen bg-gray-50">
       {/* Header */}
-      <div className="bg-white border-b border-gray-200">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between py-4 sm:py-0 sm:h-16">
-            <div className="flex items-center mb-4 sm:mb-0">
-              <Wrench className="w-8 h-8 text-blue-600 mr-3" />
-              <div>
-                <h1 className="text-xl font-bold text-gray-900">Technician Dashboard</h1>
-                <div className="flex items-center gap-2">
-                  <p className="text-sm text-gray-600">Welcome, {user?.fullName || user?.email}</p>
-                  <div className="flex items-center gap-1">
-                    <div className={`w-2 h-2 rounded-full ${currentLocation ? 'bg-green-500' : 'bg-yellow-500'}`} />
-                    <span className="text-xs text-gray-500">
-                      {currentLocation ? 'Location enabled' : 'Location needed'}
-                    </span>
-                    {!currentLocation && (
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        onClick={getCurrentLocation}
-                        className="h-6 px-2 text-xs"
-                      >
-                        Enable
-                      </Button>
-                    )}
-                  </div>
-                </div>
-              </div>
-            </div>
-            
-            <div className="flex items-center space-x-2 sm:space-x-4">
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => navigate('/')}
-              >
-                <User className="w-4 h-4 mr-2" />
-                Home
-              </Button>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={logout}
-              >
-                <LogOut className="w-4 h-4 mr-2" />
-                Logout
-              </Button>
+      <div className="sticky top-0 z-50 pt-8 px-4 bg-background/95 backdrop-blur-md border-b border-border/50">
+        <header className="w-full max-w-7xl mx-auto py-3 px-6 md:px-8 flex items-center justify-between relative">
+          {/* Spacer for balance */}
+          <div className="w-16"></div>
+          
+          {/* Centered Logo */}
+          <div className="absolute left-1/2 transform -translate-x-1/2">
+            <div className="p-3">
+              <Logo />
             </div>
           </div>
-        </div>
+          
+          {/* Settings Button on Right */}
+          <div className="flex items-center ml-auto">
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button
+                  variant="outline"
+                  size="sm"
+                >
+                  <Settings className="w-4 h-4" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                <DropdownMenuItem onClick={logout}>
+                  <LogOut className="w-4 h-4 mr-2" />
+                  Logout
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </div>
+        </header>
       </div>
 
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
@@ -1236,7 +1233,9 @@ const TechnicianDashboard = () => {
                 <AlertCircle className="w-5 h-5 mr-2" />
                 Pending Job Assignment Requests
                 {assignmentRequestsLoading && (
-                  <div className="w-4 h-4 border-2 border-orange-600 border-t-transparent rounded-full animate-spin ml-2" />
+                  <div className="ml-2">
+                    <ThreeDotLoader size="sm" />
+                  </div>
                 )}
               </CardTitle>
               <CardDescription className="text-orange-700">
