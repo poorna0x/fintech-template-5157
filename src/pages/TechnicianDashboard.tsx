@@ -265,19 +265,37 @@ const TechnicianDashboard = () => {
     return () => clearInterval(interval);
   }, [user?.technicianId, assignmentRequests.length]);
 
-  // Periodic location update (every 5 minutes)
+  // Periodic location update (every 5 minutes) - ONLY when app is open and visible
   useEffect(() => {
     if (!user?.technicianId) return;
 
-    // Update location immediately on mount
-    getCurrentLocation();
-
-    // Then update every 5 minutes
-    const locationInterval = setInterval(() => {
+    // Update location immediately on mount (only if page is visible)
+    if (!document.hidden) {
       getCurrentLocation();
+    }
+
+    // Then update every 5 minutes - ONLY if page is visible
+    const locationInterval = setInterval(() => {
+      // Only update location if the page is visible (app is open and active)
+      if (!document.hidden) {
+        getCurrentLocation();
+      }
     }, 5 * 60 * 1000); // 5 minutes
 
-    return () => clearInterval(locationInterval);
+    // Also listen for visibility changes to update when app becomes visible again
+    const handleVisibilityChange = () => {
+      if (!document.hidden && user?.technicianId) {
+        // Update location when app becomes visible again
+        getCurrentLocation();
+      }
+    };
+
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+
+    return () => {
+      clearInterval(locationInterval);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
   }, [user?.technicianId]);
 
   // Filter jobs based on search and status
