@@ -494,6 +494,7 @@ const AdminDashboard = () => {
   const [addDialogOpen, setAddDialogOpen] = useState(false);
   const [newJobDialogOpen, setNewJobDialogOpen] = useState(false);
   const [selectedCustomerForJob, setSelectedCustomerForJob] = useState<Customer | null>(null);
+  const [isDragOverNewJob, setIsDragOverNewJob] = useState(false);
   const [newJobFormData, setNewJobFormData] = useState({
     service_type: 'RO' as 'RO' | 'SOFTENER',
     service_sub_type: 'Installation',
@@ -3056,7 +3057,8 @@ const AdminDashboard = () => {
         estimated_cost: newJobFormData.cost_agreed ? (parseFloat(newJobFormData.cost_agreed.toString().split('-')[0].trim()) || 0) : 0,
         payment_status: 'PENDING',
         assigned_technician_id: newJobFormData.assigned_technician_id || null,
-        assigned_date: newJobFormData.assigned_technician_id ? new Date().toISOString() : null
+        assigned_date: newJobFormData.assigned_technician_id ? new Date().toISOString() : null,
+        before_photos: newJobFormData.photos.filter(photo => photo && photo.trim() !== '' && photo.startsWith('http')) // Only include uploaded Cloudinary URLs, not thumbnails
       };
 
       const { data: newJob, error } = await db.jobs.create(jobData);
@@ -3131,6 +3133,16 @@ const AdminDashboard = () => {
       }
 
       toast.success(`Job ${newJob.job_number} created successfully!`);
+      
+      // Reload customer photos to show the newly uploaded photos
+      const customerId = selectedCustomerForJob.customer_id || selectedCustomerForJob.customerId;
+      if (customerId && newJobFormData.photos.length > 0) {
+        // Reload photos after a short delay to ensure job is saved
+        setTimeout(() => {
+          loadCustomerPhotos(customerId);
+        }, 1000);
+      }
+      
       handleCloseNewJobDialog();
     } catch (error) {
       toast.error('Failed to create job');
@@ -3232,28 +3244,53 @@ const AdminDashboard = () => {
 
   // Photo upload functions for new job
   const handleNewJobPhotoUpload = async (files: File[]) => {
+    if (!files || files.length === 0) return;
+    
     try {
+      // Validate files
+      const validFiles: File[] = [];
+      for (const file of files) {
+        if (!file.type.startsWith('image/')) {
+          toast.error(`${file.name} is not an image file`);
+          continue;
+        }
+        if (file.size > 10 * 1024 * 1024) {
+          toast.error(`${file.name} is too large (max 10MB)`);
+          continue;
+        }
+        validFiles.push(file);
+      }
+      
+      if (validFiles.length === 0) {
+        toast.error('No valid image files to upload');
+        return;
+      }
+      
       // Show thumbnails immediately
-      const thumbnailPromises = files.map(file => {
+      const thumbnailPromises = validFiles.map(file => {
         return new Promise<string>((resolve) => {
           const reader = new FileReader();
           reader.onload = (e) => {
             resolve(e.target?.result as string);
+          };
+          reader.onerror = () => {
+            resolve('');
           };
           reader.readAsDataURL(file);
         });
       });
       
       const thumbnails = await Promise.all(thumbnailPromises);
+      const validThumbnails = thumbnails.filter(t => t !== '');
       
       // Add thumbnails immediately to show in UI
       setNewJobFormData(prev => ({
         ...prev,
-        photos: [...prev.photos, ...thumbnails]
+        photos: [...prev.photos, ...validThumbnails]
       }));
       
       // Upload to Cloudinary in background with aggressive compression for low size
-      const uploadPromises = files.map(async (file, index) => {
+      const uploadPromises = validFiles.map(async (file, index) => {
         try {
           // Aggressive compression for low file size (max 800px width, 0.4 quality)
           const compressedFile = await compressImage(file, 800, 0.4);
@@ -3261,26 +3298,39 @@ const AdminDashboard = () => {
           // Upload to Cloudinary using the proper service with size optimization - explicitly use primary (main) account
           const uploadResult = await cloudinaryService.uploadImage(compressedFile, 'ro-service', false);
           
+          if (!uploadResult || !uploadResult.secure_url) {
+            throw new Error('Upload failed - no URL returned');
+          }
+          
           // Replace thumbnail with actual uploaded URL
           setNewJobFormData(prev => ({
             ...prev,
-            photos: prev.photos.map((photo, i) => 
-              i === prev.photos.length - files.length + index ? uploadResult.secure_url : photo
-            )
+            photos: prev.photos.map((photo, i) => {
+              // Find the corresponding thumbnail index
+              const thumbnailIndex = prev.photos.length - validThumbnails.length + index;
+              return i === thumbnailIndex ? uploadResult.secure_url : photo;
+            })
           }));
           
+          console.log(`✅ Photo uploaded to main Cloudinary: ${uploadResult.secure_url}`);
           return uploadResult.secure_url;
         } catch (error) {
+          console.error(`❌ Failed to upload ${file.name}:`, error);
+          toast.error(`Failed to upload ${file.name}: ${error instanceof Error ? error.message : 'Unknown error'}`);
           // Keep thumbnail if upload fails
-          return thumbnails[index];
+          return validThumbnails[index] || '';
         }
       });
       
       // Wait for all uploads to complete
-      await Promise.all(uploadPromises);
+      const uploadedUrls = await Promise.all(uploadPromises);
+      const successfulUploads = uploadedUrls.filter(url => url && url !== '');
       
-      toast.success(`${files.length} photo(s) processed successfully!`);
+      if (successfulUploads.length > 0) {
+        toast.success(`${successfulUploads.length} photo(s) uploaded successfully!`);
+      }
     } catch (error) {
+      console.error('Error processing photos:', error);
       toast.error(`Failed to process photos: ${error instanceof Error ? error.message : 'Unknown error'}`);
     }
   };
@@ -8170,83 +8220,6 @@ const AdminDashboard = () => {
                   )}
                 </div>
 
-                <div className="space-y-2 relative">
-                  <Label htmlFor="job_brand">Brand</Label>
-                  <Input
-                    id="job_brand"
-                    value={newJobFormData.brand === 'Not specified' ? '' : newJobFormData.brand}
-                    onChange={(e) => handleBrandInput(e.target.value)}
-                    placeholder="Enter brand name"
-                    onFocus={() => {
-                      if (newJobFormData.brand === 'Not specified') {
-                        handleNewJobFormChange('brand', '');
-                      }
-                      if (newJobFormData.brand && newJobFormData.brand !== 'Not specified') {
-                        handleBrandInput(newJobFormData.brand);
-                      }
-                    }}
-                    onBlur={() => {
-                      setTimeout(() => {
-                        setShowBrandSuggestions(false);
-                        if (newJobFormData.brand.trim() === '') {
-                          handleNewJobFormChange('brand', 'Not specified');
-                        }
-                      }, 200);
-                    }}
-                  />
-                  {showBrandSuggestions && brandSuggestions.length > 0 && (
-                    <div className="absolute z-10 w-full mt-1 bg-card border border-border rounded-md shadow-lg max-h-40 overflow-y-auto">
-                      {brandSuggestions.map((brand, index) => (
-                        <div
-                          key={index}
-                          className="px-3 py-2 hover:bg-accent hover:text-accent-foreground cursor-pointer text-sm text-foreground"
-                          onClick={() => selectBrand(brand)}
-                        >
-                          {brand}
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-
-                <div className="space-y-2 relative">
-                  <Label htmlFor="job_model">Model</Label>
-                  <Input
-                    id="job_model"
-                    value={newJobFormData.model === 'Not specified' ? '' : newJobFormData.model}
-                    onChange={(e) => handleModelInput(e.target.value)}
-                    placeholder="Enter model name"
-                    onFocus={() => {
-                      if (newJobFormData.model === 'Not specified') {
-                        handleNewJobFormChange('model', '');
-                      }
-                      if (newJobFormData.model && newJobFormData.model !== 'Not specified') {
-                        handleModelInput(newJobFormData.model);
-                      }
-                    }}
-                    onBlur={() => {
-                      setTimeout(() => {
-                        setShowModelSuggestions(false);
-                        if (newJobFormData.model.trim() === '') {
-                          handleNewJobFormChange('model', 'Not specified');
-                        }
-                      }, 200);
-                    }}
-                  />
-                  {showModelSuggestions && modelSuggestions.length > 0 && (
-                    <div className="absolute z-10 w-full mt-1 bg-card border border-border rounded-md shadow-lg max-h-40 overflow-y-auto">
-                      {modelSuggestions.map((model, index) => (
-                        <div
-                          key={index}
-                          className="px-3 py-2 hover:bg-accent hover:text-accent-foreground cursor-pointer text-sm text-foreground"
-                          onClick={() => selectModel(model)}
-                        >
-                          {model}
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
               </div>
             </div>
 
@@ -8294,59 +8267,56 @@ const AdminDashboard = () => {
               </div>
             </div>
 
-            {/* Assignment */}
-            <div className="space-y-4 p-4 border border-gray-200 rounded-lg bg-gray-50">
-              <h3 className="text-lg font-semibold text-gray-900">Assignment</h3>
-              <div className="space-y-2">
-                <Label htmlFor="job_assigned_technician">Assign Technician (Optional)</Label>
-                <select
-                  value={newJobFormData.assigned_technician_id || ''}
-                  onChange={(e) => handleNewJobFormChange('assigned_technician_id', e.target.value)}
-                  className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 appearance-none bg-white"
-                >
-                  <option value="">No assignment</option>
-                  {technicians.length === 0 ? (
-                    <option value="" disabled>No technicians available</option>
-                  ) : (
-                    technicians.map((technician) => (
-                      <option key={technician.id} value={technician.id}>
-                        {technician.fullName || 'Unknown'} ({technician.employeeId || 'No ID'})
-                        {technician.status && technician.status !== 'AVAILABLE' ? ` - ${technician.status}` : ''}
-                      </option>
-                    ))
-                  )}
-                </select>
-              </div>
-            </div>
-
             {/* Photo Upload */}
             <div className="space-y-4 p-4 border border-gray-200 rounded-lg bg-gray-50">
               <h3 className="text-lg font-semibold text-gray-900">Photos</h3>
               <div className="space-y-4">
                 {/* Photo Upload Area */}
                 <div 
-                  className="border-2 border-dashed border-gray-300 rounded-lg p-6 text-center hover:border-gray-400 transition-colors cursor-pointer"
+                  className={`border-2 border-dashed rounded-lg p-6 text-center transition-all duration-200 cursor-pointer ${
+                    isDragOverNewJob 
+                      ? 'border-blue-500 bg-blue-50 scale-105' 
+                      : 'border-gray-300 hover:border-gray-400'
+                  }`}
                   onDragOver={(e) => {
                     e.preventDefault();
-                    e.currentTarget.classList.add('border-blue-400', 'bg-blue-50');
+                    e.stopPropagation();
+                    setIsDragOverNewJob(true);
                   }}
                   onDragLeave={(e) => {
-                    e.currentTarget.classList.remove('border-blue-400', 'bg-blue-50');
+                    e.preventDefault();
+                    e.stopPropagation();
+                    setIsDragOverNewJob(false);
                   }}
                   onDrop={(e) => {
                     e.preventDefault();
-                    e.currentTarget.classList.remove('border-blue-400', 'bg-blue-50');
-                    const files = Array.from(e.dataTransfer.files);
-                    handleNewJobPhotoUpload(files);
+                    e.stopPropagation();
+                    setIsDragOverNewJob(false);
+                    const files = Array.from(e.dataTransfer.files).filter(file => file.type.startsWith('image/'));
+                    if (files.length > 0) {
+                      handleNewJobPhotoUpload(files);
+                    } else {
+                      toast.error('Please drop image files only');
+                    }
                   }}
                   onClick={() => document.getElementById('photo-upload')?.click()}
                 >
                   <div className="flex flex-col items-center space-y-2">
-                    <svg className="w-8 h-8 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
-                    </svg>
+                    {isDragOverNewJob ? (
+                      <Upload className="w-8 h-8 text-blue-500" />
+                    ) : (
+                      <svg className="w-8 h-8 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
+                      </svg>
+                    )}
                     <p className="text-sm text-gray-600">
-                      <span className="font-medium text-blue-600">Click to upload</span> or drag and drop
+                      {isDragOverNewJob ? (
+                        <span className="font-medium text-blue-600">Drop photos here</span>
+                      ) : (
+                        <>
+                          <span className="font-medium text-blue-600">Click to upload</span> or drag and drop
+                        </>
+                      )}
                     </p>
                     <p className="text-xs text-gray-500">PNG, JPG, WEBP up to 10MB each</p>
                   </div>
