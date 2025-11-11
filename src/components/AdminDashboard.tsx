@@ -1421,9 +1421,11 @@ const AdminDashboard = () => {
       const models = customer.model.split(',').map((s: string) => s.trim());
       
       serviceTypes.forEach((serviceType: string, index: number) => {
+        const brandValue = brands[index] || '';
+        const modelValue = models[index] || '';
         equipment[serviceType] = {
-          brand: brands[index] || '',
-          model: models[index] || ''
+          brand: brandValue === 'Not specified' || brandValue.toLowerCase() === 'not specified' ? '' : brandValue,
+          model: modelValue === 'Not specified' || modelValue.toLowerCase() === 'not specified' ? '' : modelValue
         };
       });
     }
@@ -1950,13 +1952,23 @@ const AdminDashboard = () => {
 
   // Select brand from suggestions for edit customer form
   const selectEditBrand = (serviceType: string, brand: string) => {
-    handleEditEquipmentChange(serviceType, 'brand', brand, false);
+    // If "Not specified" is selected, clear the field
+    if (brand === 'Not specified' || brand.toLowerCase() === 'not specified') {
+      handleEditEquipmentChange(serviceType, 'brand', '', false);
+    } else {
+      handleEditEquipmentChange(serviceType, 'brand', brand, false);
+    }
     setShowBrandSuggestions(false);
   };
 
   // Select model from suggestions for edit customer form
   const selectEditModel = (serviceType: string, model: string) => {
-    handleEditEquipmentChange(serviceType, 'model', model, false);
+    // If "Not specified" is selected, clear the field
+    if (model === 'Not specified' || model.toLowerCase() === 'not specified') {
+      handleEditEquipmentChange(serviceType, 'model', '', false);
+    } else {
+      handleEditEquipmentChange(serviceType, 'model', model, false);
+    }
     setShowModelSuggestions(false);
   };
 

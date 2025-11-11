@@ -750,20 +750,84 @@ const TechnicianDashboard = () => {
     return photos.filter(photo => photo && photo.trim() !== '');
   };
 
+  // Helper function to get ordinal suffix (1st, 2nd, 3rd, 4th, etc.)
+  const getOrdinalSuffix = (day: number): string => {
+    if (day > 3 && day < 21) return 'th';
+    switch (day % 10) {
+      case 1: return 'st';
+      case 2: return 'nd';
+      case 3: return 'rd';
+      default: return 'th';
+    }
+  };
+
+  // Helper function to round time to nearest 10 minutes
+  const roundToNearest10 = (hours: number, minutes: number): { hours: number; minutes: number } => {
+    const roundedMinutes = Math.round(minutes / 10) * 10;
+    if (roundedMinutes >= 60) {
+      return { hours: hours + 1, minutes: 0 };
+    }
+    return { hours, minutes: roundedMinutes };
+  };
+
   // Helper function to format scheduled time
   const formatScheduledTime = (job: Job): string => {
     const scheduledDate = (job as any).scheduled_date || job.scheduledDate;
     const scheduledTimeSlot = (job as any).scheduled_time_slot || job.scheduledTimeSlot;
-    const customTime = (job.customer as any)?.customTime || (job.customer as any)?.custom_time;
+    
+    // Try to get custom time from multiple sources
+    let customTime = (job.customer as any)?.customTime || (job.customer as any)?.custom_time;
+    
+    // Also check job requirements for custom_time
+    if (!customTime && job.requirements) {
+      try {
+        const requirements = typeof job.requirements === 'string' 
+          ? JSON.parse(job.requirements) 
+          : job.requirements;
+        
+        if (Array.isArray(requirements)) {
+          const customTimeReq = requirements.find((req: any) => req.custom_time);
+          if (customTimeReq?.custom_time) {
+            customTime = customTimeReq.custom_time;
+          }
+        } else if (requirements && typeof requirements === 'object' && requirements.custom_time) {
+          customTime = requirements.custom_time;
+        }
+      } catch (e) {
+        // Ignore parse errors
+      }
+    }
     
     if (!scheduledDate) return 'Not scheduled';
     
     const date = new Date(scheduledDate);
-    const dateStr = date.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' });
     
-    if (scheduledTimeSlot === 'CUSTOM' && customTime) {
-      return `${dateStr} at ${customTime}`;
+    // Format: "Monday, 7th November"
+    const dayName = date.toLocaleDateString('en-US', { weekday: 'long' });
+    const dayOfMonth = date.getDate();
+    const monthName = date.toLocaleDateString('en-US', { month: 'long' });
+    const ordinalSuffix = getOrdinalSuffix(dayOfMonth);
+    const dateStr = `${dayName}, ${dayOfMonth}${ordinalSuffix} ${monthName}`;
+    
+    // Always show time if custom time exists, regardless of time slot
+    if (customTime) {
+      // Format custom time (HH:MM) to readable format (e.g., "2:44 AM")
+      const [hours, minutes] = customTime.split(':');
+      const hour24 = parseInt(hours);
+      const minute24 = parseInt(minutes || '0');
+      
+      // Round to nearest 10 minutes
+      const rounded = roundToNearest10(hour24, minute24);
+      const roundedHour24 = rounded.hours;
+      const roundedMinute = rounded.minutes;
+      
+      const hour12 = roundedHour24 > 12 ? roundedHour24 - 12 : (roundedHour24 === 0 ? 12 : roundedHour24);
+      const ampm = roundedHour24 >= 12 ? 'PM' : 'AM';
+      const formattedMinutes = String(roundedMinute).padStart(2, '0');
+      
+      return `${dateStr} ${hour12}:${formattedMinutes} ${ampm}`;
     } else if (scheduledTimeSlot) {
+      // For time slots, show date and time slot
       const timeSlotMap: {[key: string]: string} = {
         'MORNING': 'Morning (9 AM - 12 PM)',
         'AFTERNOON': 'Afternoon (12 PM - 5 PM)',
@@ -1270,13 +1334,27 @@ const TechnicianDashboard = () => {
                             </div>
                               )}
 
-                              {/* Equipment */}
-                              {job?.brand && job?.model && (
-                                <div className="text-sm">
-                                  <span className="font-medium text-gray-700">Equipment: </span>
-                                  <span className="text-gray-600">{job.brand} - {job.model}</span>
-                            </div>
-                              )}
+                              {/* Equipment - Fetch from customer info first, then job */}
+                              {(() => {
+                                const customer = job.customer as any;
+                                // Try customer first, then job
+                                const brand = customer?.brand || job?.brand || '';
+                                const model = customer?.model || job?.model || '';
+                                const validBrand = brand && brand !== 'Not specified' && brand.toLowerCase() !== 'not specified' ? brand : '';
+                                const validModel = model && model !== 'Not specified' && model.toLowerCase() !== 'not specified' ? model : '';
+                                
+                                if (validBrand || validModel) {
+                                  return (
+                                    <div className="text-sm">
+                                      <span className="font-medium text-gray-700">Equipment: </span>
+                                      <span className="text-gray-600">
+                                        {validBrand && validModel ? `${validBrand} - ${validModel}` : validBrand || validModel}
+                                      </span>
+                                    </div>
+                                  );
+                                }
+                                return null;
+                              })()}
 
                               {/* Agreed Amount */}
                               {job?.agreed_amount || job?.estimated_cost || customer?.serviceCost ? (
@@ -1579,13 +1657,27 @@ const TechnicianDashboard = () => {
                           <span className="font-medium text-gray-700">{formatScheduledTime(job)}</span>
                             </div>
                             
-                        {/* Equipment */}
-                        {job.brand && job.model && (
-                          <div className="text-sm">
-                            <span className="font-medium text-gray-700">Equipment: </span>
-                            <span className="text-gray-600">{job.brand} - {job.model}</span>
+                        {/* Equipment - Fetch from customer info first, then job */}
+                        {(() => {
+                          const customer = job.customer as any;
+                          // Try customer first, then job
+                          const brand = customer?.brand || job.brand || '';
+                          const model = customer?.model || job.model || '';
+                          const validBrand = brand && brand !== 'Not specified' && brand.toLowerCase() !== 'not specified' ? brand : '';
+                          const validModel = model && model !== 'Not specified' && model.toLowerCase() !== 'not specified' ? model : '';
+                          
+                          if (validBrand || validModel) {
+                            return (
+                              <div className="text-sm">
+                                <span className="font-medium text-gray-700">Equipment: </span>
+                                <span className="text-gray-600">
+                                  {validBrand && validModel ? `${validBrand} - ${validModel}` : validBrand || validModel}
+                                </span>
                             </div>
-                          )}
+                            );
+                          }
+                          return null;
+                        })()}
 
                         {/* Agreed Amount */}
                         {(job as any).agreed_amount || (job as any).estimated_cost || (job.customer as any)?.serviceCost ? (
@@ -1648,7 +1740,21 @@ const TechnicianDashboard = () => {
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
                           <div>
                             <p><strong>Service Type:</strong> {job?.service_type} - {job?.service_sub_type}</p>
-                            <p><strong>Brand/Model:</strong> {job?.brand} {job?.model}</p>
+                            {(() => {
+                              const customer = job?.customer as any;
+                              // Try customer first, then job
+                              const brand = customer?.brand || job?.brand || '';
+                              const model = customer?.model || job?.model || '';
+                              const validBrand = brand && brand !== 'Not specified' && brand.toLowerCase() !== 'not specified' ? brand : '';
+                              const validModel = model && model !== 'Not specified' && model.toLowerCase() !== 'not specified' ? model : '';
+                              
+                              if (validBrand || validModel) {
+                                return (
+                                  <p><strong>Brand/Model:</strong> {validBrand && validModel ? `${validBrand} - ${validModel}` : validBrand || validModel}</p>
+                                );
+                              }
+                              return null;
+                            })()}
                             <p><strong>Priority:</strong> {job?.priority}</p>
                             <p><strong>Estimated Cost:</strong> ₹{job?.estimated_cost}</p>
                           </div>
