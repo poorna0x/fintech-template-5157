@@ -1760,22 +1760,22 @@ const TechnicianDashboard = () => {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="min-h-screen bg-gray-50 touch-pan-y" style={{ touchAction: 'pan-y', WebkitOverflowScrolling: 'touch' }}>
       {/* Header */}
-      <div className="pt-8 px-4 bg-background/95 backdrop-blur-md border-b border-border/50">
+      <div className="pt-8 px-4 bg-background/95 backdrop-blur-md border-b border-border/50 sticky top-0 z-50" style={{ touchAction: 'none' }}>
         <header className="w-full max-w-7xl mx-auto py-3 px-6 md:px-8 flex items-center justify-between relative">
           {/* Spacer for balance */}
           <div className="w-16"></div>
           
           {/* Centered Logo */}
-          <div className="absolute left-1/2 transform -translate-x-1/2">
-            <div className="p-3">
+          <div className="absolute left-1/2 transform -translate-x-1/2 z-50">
+            <div className="p-3 bg-background/95 backdrop-blur-md rounded-lg">
               <Logo />
             </div>
           </div>
           
           {/* Settings Button on Right */}
-          <div className="flex items-center ml-auto">
+          <div className="flex items-center ml-auto z-50">
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <Button
@@ -1796,7 +1796,7 @@ const TechnicianDashboard = () => {
         </header>
       </div>
 
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 pb-24">
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 pb-24" style={{ touchAction: 'pan-y', WebkitOverflowScrolling: 'touch' }}>
 
         {/* Job Assignment Requests Section */}
         {assignmentRequests.length > 0 && (

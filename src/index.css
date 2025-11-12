@@ -73,11 +73,23 @@
   body {
     @apply bg-background font-inter text-foreground antialiased;
     letter-spacing: -0.025em;
+    touch-action: pan-y;
+    -webkit-overflow-scrolling: touch;
+    overscroll-behavior-y: contain;
   }
 
   /* Hide browser's default loading progress bar */
   html {
     overflow-x: hidden;
+    touch-action: pan-y;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  /* Prevent freeze issues in PWA */
+  #root {
+    touch-action: pan-y;
+    -webkit-overflow-scrolling: touch;
+    overscroll-behavior-y: contain;
   }
 
   /* Hide progress bar on page reload/navigation */
@@ -95,6 +107,22 @@
   body::before,
   html::before {
     display: none !important;
+  }
+
+  /* Ensure logo stays above progress bar */
+  header,
+  [class*="header"],
+  [class*="Header"] {
+    position: relative;
+    z-index: 50;
+  }
+
+  /* Prevent progress bar from overlaying header elements */
+  header *,
+  [class*="header"] *,
+  [class*="Header"] * {
+    position: relative;
+    z-index: 51;
   }
   
   ::selection {
