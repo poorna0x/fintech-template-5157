@@ -133,7 +133,7 @@ const TechnicianDashboard = () => {
   const [selectedJobForAddress, setSelectedJobForAddress] = useState<Job | null>(null);
 
   // Define loadAssignedJobs before useEffect hooks that use it
-  const loadAssignedJobs = useCallback(async () => {
+  const loadAssignedJobs = useCallback(async (retryCount = 0) => {
     if (!user?.technicianId) return;
 
     try {
@@ -144,6 +144,12 @@ const TechnicianDashboard = () => {
       
       if (error) {
         console.error('Error loading assigned jobs:', error);
+        // Retry on network errors (up to 2 retries)
+        if (retryCount < 2 && (error.message.includes('fetch') || error.message.includes('network') || error.message.includes('Failed to fetch'))) {
+          console.log(`Retrying loadAssignedJobs (attempt ${retryCount + 1}/2)...`);
+          await new Promise(resolve => setTimeout(resolve, 1000 * (retryCount + 1))); // Exponential backoff
+          return loadAssignedJobs(retryCount + 1);
+        }
         throw new Error(error.message);
       }
 
@@ -176,19 +182,17 @@ const TechnicianDashboard = () => {
           ((j as any).status || j.status) === 'ASSIGNED'
         );
         
-        if (newAssignedJobs.length > 0) {
-          toast.success(`${newAssignedJobs.length} new job${newAssignedJobs.length > 1 ? 's' : ''} assigned!`, {
-            description: 'Click "Start Job" to begin',
-            duration: 5000,
-          });
-        }
+        // Removed toast notification - jobs will show with blue border and NEW tag
       }
       
       // Update last job IDs for next comparison
       lastJobIdsRef.current = new Set(allJobs.map(j => j.id));
     } catch (error) {
       console.error('Error loading assigned jobs:', error);
-      toast.error('Failed to load assigned jobs');
+      // Only show error toast if it's a critical error, not transient network issues
+      if (error instanceof Error && !error.message.includes('fetch') && !error.message.includes('network')) {
+        toast.error('Failed to load assigned jobs');
+      }
     } finally {
       setJobsLoading(false);
     }
@@ -825,7 +829,7 @@ const TechnicianDashboard = () => {
     setFilteredJobs(filtered);
   }, [jobs, statusFilter, seenJobs]);
 
-  const loadAssignmentRequests = async () => {
+  const loadAssignmentRequests = async (retryCount = 0) => {
     if (!user?.technicianId) return;
 
     try {
@@ -833,13 +837,22 @@ const TechnicianDashboard = () => {
       const { data, error } = await db.jobAssignmentRequests.getPendingByTechnicianId(user.technicianId);
       
       if (error) {
+        // Retry on network errors (up to 2 retries)
+        if (retryCount < 2 && (error.message.includes('fetch') || error.message.includes('network') || error.message.includes('Failed to fetch'))) {
+          console.log(`Retrying loadAssignmentRequests (attempt ${retryCount + 1}/2)...`);
+          await new Promise(resolve => setTimeout(resolve, 1000 * (retryCount + 1))); // Exponential backoff
+          return loadAssignmentRequests(retryCount + 1);
+        }
         throw new Error(error.message);
       }
 
       setAssignmentRequests(data || []);
     } catch (error) {
       console.error('Error loading assignment requests:', error);
-      toast.error('Failed to load assignment requests');
+      // Only show error toast if it's a critical error, not transient network issues
+      if (error instanceof Error && !error.message.includes('fetch') && !error.message.includes('network')) {
+        toast.error('Failed to load assignment requests');
+      }
     } finally {
       setAssignmentRequestsLoading(false);
     }
@@ -1584,25 +1597,25 @@ const TechnicianDashboard = () => {
     switch (status) {
       case 'ASSIGNED':
         return (
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 w-full">
             <Button
-              size="sm"
+              size="default"
               onClick={() => {
                 markJobAsSeen(job.id);
                 handleStartJob(job);
               }}
               disabled={isUpdating}
-              className="bg-blue-600 hover:bg-blue-700 text-white"
+              className="bg-blue-600 hover:bg-blue-700 text-white h-10 flex-1"
             >
-              <Play className="w-4 h-4 mr-1" />
+              <Play className="w-4 h-4 mr-2" />
               Start Job
             </Button>
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
             <Button
-              size="sm"
+              size="default"
               variant="outline"
-                  className="h-9 w-9 p-0"
+                  className="h-10 w-12 p-0"
                   onClick={() => markJobAsSeen(job.id)}
             >
                   <MoreVertical className="w-4 h-4" />
@@ -1632,25 +1645,25 @@ const TechnicianDashboard = () => {
         );
       case 'EN_ROUTE':
         return (
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 w-full">
             <Button
-              size="sm"
+              size="default"
               onClick={() => {
                 markJobAsSeen(job.id);
                 handleStartWork(job);
               }}
               disabled={isUpdating}
-              className="bg-orange-600 hover:bg-orange-700 text-white"
+              className="bg-orange-600 hover:bg-orange-700 text-white h-10 flex-1"
             >
-              <Play className="w-4 h-4 mr-1" />
+              <Play className="w-4 h-4 mr-2" />
               Start Work
             </Button>
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
             <Button
-              size="sm"
+              size="default"
               variant="outline"
-                  className="h-9 w-9 p-0"
+                  className="h-10 w-12 p-0"
                   onClick={() => markJobAsSeen(job.id)}
             >
                   <MoreVertical className="w-4 h-4" />
@@ -1670,25 +1683,25 @@ const TechnicianDashboard = () => {
         );
       case 'IN_PROGRESS':
         return (
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 w-full">
             <Button
-              size="sm"
+              size="default"
               onClick={() => {
                 markJobAsSeen(job.id);
                 handleCompleteJob(job);
               }}
               disabled={isUpdating}
-              className="bg-green-600 hover:bg-green-700 text-white"
+              className="bg-green-600 hover:bg-green-700 text-white h-10 flex-1"
             >
-              <CheckCircle className="w-4 h-4 mr-1" />
+              <CheckCircle className="w-4 h-4 mr-2" />
               Complete Job
             </Button>
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
             <Button
-              size="sm"
+              size="default"
               variant="outline"
-                  className="h-9 w-9 p-0"
+                  className="h-10 w-12 p-0"
             >
                   <MoreVertical className="w-4 h-4" />
             </Button>
@@ -2199,26 +2212,32 @@ const TechnicianDashboard = () => {
                 <CardContent className="p-6">
                   <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4">
                     <div className="flex-1 min-w-0">
-                      <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-3 mb-3">
-                        <div className="flex items-center gap-2">
+                      {/* Customer name */}
+                      <div className="flex items-center gap-2 mb-3 flex-wrap">
                           <span className="font-bold text-lg text-gray-900">
                             {(job.customer as any)?.full_name || 'N/A'}
                           </span>
-                          {getStatusBadge((job as any).status || job.status)}
-                          {((job as any).status === 'ASSIGNED' || job.status === 'ASSIGNED') && !seenJobs.has(job.id) && (
-                            <Badge className="bg-blue-100 text-blue-800 border-blue-300 animate-pulse shadow-lg shadow-blue-400/50 ring-2 ring-blue-400 ring-opacity-75">
-                              NEW
-                            </Badge>
-                          )}
+                        {getStatusBadge((job as any).status || job.status)}
+                        {((job as any).status === 'ASSIGNED' || job.status === 'ASSIGNED') && !seenJobs.has(job.id) && (
+                          <Badge className="bg-blue-100 text-blue-800 border-blue-300 animate-pulse shadow-lg shadow-blue-400/50 ring-2 ring-blue-400 ring-opacity-75">
+                            NEW
+                          </Badge>
+                        )}
                           {distances[job.id] && (
                             <div className="text-sm text-blue-600 font-medium">
                               📍 {distances[job.id]} km
                             </div>
                           )}
                         </div>
+                      {/* Service type */}
+                      <div className="mb-3">
                         <span className="text-sm text-gray-600">
                           {(job as any).service_type || job.serviceType} - {(job as any).service_sub_type || job.serviceSubType}
                         </span>
+                      </div>
+                      {/* Buttons below - nicely sized */}
+                      <div className="flex items-center gap-2 mb-3">
+                        {getStatusActions(job)}
                       </div>
 
                       <div className="space-y-3 mb-4">
@@ -2229,13 +2248,14 @@ const TechnicianDashboard = () => {
                             <div className="bg-white rounded-lg p-3 border border-gray-200 hover:border-gray-300 hover:shadow-sm transition-all duration-200">
                               <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-3">
                                 <div className="w-8 h-8 sm:w-10 sm:h-10 bg-gray-100 rounded-lg flex items-center justify-center flex-shrink-0">
-                                  <button
-                                    onClick={() => {
-                                      markJobAsSeen(job.id);
-                                      handlePhoneClick(job.customer);
-                                    }}
-                                    className="cursor-pointer"
-                                  >
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    markJobAsSeen(job.id);
+                                    handlePhoneClick(job.customer);
+                                  }}
+                                  className="cursor-pointer"
+                                >
                                     <Phone className="w-4 h-4 sm:w-5 sm:h-5 text-gray-600" />
                                   </button>
                           </div>
@@ -2252,7 +2272,8 @@ const TechnicianDashboard = () => {
                             <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-3">
                               <div className="w-8 h-8 sm:w-10 sm:h-10 bg-gray-100 rounded-lg flex items-center justify-center flex-shrink-0">
                                 <button
-                                  onClick={() => {
+                                  onClick={(e) => {
+                                    e.stopPropagation();
                                     // Mark job as seen when clicking map button
                                     markJobAsSeen(job.id);
                                     
@@ -2335,7 +2356,8 @@ const TechnicianDashboard = () => {
                                 <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-3">
                                   <div className="w-8 h-8 sm:w-10 sm:h-10 bg-gray-100 rounded-lg flex items-center justify-center flex-shrink-0">
                                     <button
-                                      onClick={async () => {
+                                      onClick={async (e) => {
+                                        e.stopPropagation();
                                         markJobAsSeen(job.id);
                                         if (customerId) {
                                           setLoadingCustomerPhotos(true);
@@ -2381,7 +2403,8 @@ const TechnicianDashboard = () => {
                               <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-3">
                                 <div className="w-8 h-8 sm:w-10 sm:h-10 bg-gray-100 rounded-lg flex items-center justify-center flex-shrink-0">
                                   <button
-                                    onClick={() => {
+                                    onClick={(e) => {
+                                      e.stopPropagation();
                                       markJobAsSeen(job.id);
                                       handleWhatsAppClick(job.customer?.phone || '');
                                     }}
@@ -2447,9 +2470,6 @@ const TechnicianDashboard = () => {
                           </div>
                     </div>
 
-                    <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 sm:ml-4">
-                      {getStatusActions(job)}
-                    </div>
                   </div>
                 </CardContent>
               </Card>
