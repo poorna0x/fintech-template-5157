@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { useNavigate } from 'react-router-dom';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -77,6 +77,8 @@ const TechnicianDashboard = () => {
     return new Set();
   }); // Track jobs that have been interacted with (to remove blue border)
   const [confirmStartJobDialog, setConfirmStartJobDialog] = useState<{open: boolean, job: Job | null}>({open: false, job: null});
+  const [confirmStartWorkDialog, setConfirmStartWorkDialog] = useState<{open: boolean, job: Job | null}>({open: false, job: null});
+  const [confirmCompleteJobDialog, setConfirmCompleteJobDialog] = useState<{open: boolean, job: Job | null}>({open: false, job: null});
   const [statusFilter, setStatusFilter] = useState<'ONGOING' | 'PENDING' | 'ASSIGNED' | 'IN_PROGRESS' | 'COMPLETED' | 'CANCELLED' | 'RESCHEDULED'>('ONGOING');
   const [selectedJob, setSelectedJob] = useState<Job | null>(null);
   const [jobNotes, setJobNotes] = useState('');
@@ -106,6 +108,36 @@ const TechnicianDashboard = () => {
 
   const [selectedJobForDeny, setSelectedJobForDeny] = useState<Job | null>(null);
   const [denyReason, setDenyReason] = useState('');
+  const [showDenySuggestions, setShowDenySuggestions] = useState(false);
+  const denyReasonInputRef = useRef<HTMLTextAreaElement>(null);
+  
+  // Suggested denial reasons
+  const suggestedDenialReasons = [
+    'Customer not available',
+    'Customer cancelled',
+    'Customer not responding',
+    'Wrong address provided',
+    'Location not accessible',
+    'Equipment not available',
+    'Technical issue',
+    'Customer not interested',
+    'Price too high',
+    'Already serviced by another company',
+    'Customer moved',
+    'Equipment damaged beyond repair',
+    'No response from customer',
+    'Customer rescheduled multiple times',
+    'Safety concerns',
+    'Incomplete information'
+  ];
+  
+  const filteredDenialSuggestions = useMemo(() => {
+    if (!denyReason.trim()) return [];
+    const lowerReason = denyReason.toLowerCase();
+    return suggestedDenialReasons.filter(s => 
+      s.toLowerCase().includes(lowerReason)
+    );
+  }, [denyReason]);
   const [completeDialogOpen, setCompleteDialogOpen] = useState(false);
   const [selectedJobForComplete, setSelectedJobForComplete] = useState<Job | null>(null);
   const [completionNotes, setCompletionNotes] = useState('');
@@ -995,13 +1027,8 @@ const TechnicianDashboard = () => {
   const handleStartJob = async (job: Job) => {
     if (!user?.technicianId) return;
 
-    // Check if another job is in progress
-    if (hasJobInProgress() && ((job as any).status || job.status) !== 'EN_ROUTE' && ((job as any).status || job.status) !== 'IN_PROGRESS') {
-      setConfirmStartJobDialog({ open: true, job });
-      return;
-    }
-
-    await performStartJob(job);
+    // Always show confirmation dialog
+    setConfirmStartJobDialog({ open: true, job });
   };
 
   // Actually perform the start job action
@@ -1059,6 +1086,14 @@ const TechnicianDashboard = () => {
   const handleStartWork = async (job: Job) => {
     if (!user?.technicianId) return;
 
+    // Show confirmation dialog
+    setConfirmStartWorkDialog({ open: true, job });
+  };
+
+  // Actually perform the start work action
+  const performStartWork = async (job: Job) => {
+    if (!user?.technicianId) return;
+
     try {
       setIsUpdating(true);
       processingJobsRef.current.add(job.id);
@@ -1109,6 +1144,12 @@ const TechnicianDashboard = () => {
 
   // Handle completing job - opens completion dialog
   const handleCompleteJob = async (job: Job) => {
+    // Show confirmation dialog first
+    setConfirmCompleteJobDialog({ open: true, job });
+  };
+
+  // Actually open the completion dialog
+  const performCompleteJob = async (job: Job) => {
     // Fetch full job data with customer if not already loaded
     let jobWithCustomer = job;
     if (!job.customer || !job.serviceType) {
@@ -1275,10 +1316,13 @@ const TechnicianDashboard = () => {
     }
 
     try {
+      // Get technician name for admin visibility
+      const technicianName = user?.fullName || 'Unknown Technician';
+      
       const { error } = await db.jobs.update(selectedJobForDeny.id, {
         status: 'DENIED',
         denial_reason: denyReason,
-        denied_by: user?.id || 'technician',
+        denied_by: technicianName, // Store technician name instead of ID for admin visibility
         denied_at: new Date().toISOString()
       });
 
@@ -1293,7 +1337,7 @@ const TechnicianDashboard = () => {
               ...job, 
               status: 'DENIED',
               denialReason: denyReason,
-              deniedBy: user?.id || 'technician',
+              deniedBy: technicianName,
               deniedAt: new Date().toISOString()
             }
           : job
@@ -1785,6 +1829,16 @@ const TechnicianDashboard = () => {
                 }}>
                   <CalendarPlus className="w-4 h-4 mr-2" />
                   Follow-up
+                </DropdownMenuItem>
+                <DropdownMenuItem 
+                  onClick={() => {
+                    markJobAsSeen(job.id);
+                    handleDenyJob(job);
+                  }}
+                  className="text-red-600 focus:text-red-600 focus:bg-red-50"
+            >
+                  <XCircle className="w-4 h-4 mr-2" />
+              Deny
                 </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
@@ -2786,7 +2840,7 @@ const TechnicianDashboard = () => {
           </DialogContent>
         </Dialog>
 
-        {/* Confirmation Dialog for Starting Job When Another is In Progress */}
+        {/* Confirmation Dialog for Starting Job */}
         <AlertDialog open={confirmStartJobDialog.open} onOpenChange={(open) => {
           if (!open) {
             setConfirmStartJobDialog({ open: false, job: null });
@@ -2794,12 +2848,19 @@ const TechnicianDashboard = () => {
         }}>
           <AlertDialogContent>
             <AlertDialogHeader>
-              <AlertDialogTitle>Another Job In Progress</AlertDialogTitle>
+              <AlertDialogTitle>Start Job</AlertDialogTitle>
               <AlertDialogDescription>
-                You already have a job in progress. Starting a new job will mark the current job as paused. 
-                Are you sure you want to start this new job?
+                {confirmStartJobDialog.job && hasJobInProgress() && ((confirmStartJobDialog.job as any).status || confirmStartJobDialog.job.status) !== 'EN_ROUTE' && ((confirmStartJobDialog.job as any).status || confirmStartJobDialog.job.status) !== 'IN_PROGRESS' 
+                  ? 'You already have a job in progress. Starting a new job will mark the current job as paused. Are you sure you want to start this new job?'
+                  : 'Are you sure you want to start this job? This will mark you as en route to the job location.'}
               </AlertDialogDescription>
             </AlertDialogHeader>
+            {confirmStartJobDialog.job && (
+              <div className="bg-gray-50 p-3 rounded-lg text-sm">
+                <p><strong>Job:</strong> {(confirmStartJobDialog.job.customer as any)?.full_name || 'Unknown'}</p>
+                <p><strong>Service:</strong> {(confirmStartJobDialog.job as any).service_type || confirmStartJobDialog.job.serviceType || 'N/A'}</p>
+              </div>
+            )}
             <AlertDialogFooter>
               <AlertDialogCancel onClick={() => setConfirmStartJobDialog({ open: false, job: null })}>
                 Cancel
@@ -2813,7 +2874,83 @@ const TechnicianDashboard = () => {
                 }}
                 className="bg-blue-600 hover:bg-blue-700"
               >
-                Start New Job
+                Start Job
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
+
+        {/* Confirmation Dialog for Starting Work */}
+        <AlertDialog open={confirmStartWorkDialog.open} onOpenChange={(open) => {
+          if (!open) {
+            setConfirmStartWorkDialog({ open: false, job: null });
+          }
+        }}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>Start Work</AlertDialogTitle>
+              <AlertDialogDescription>
+                Are you sure you want to start work on this job? This will mark the job as in progress.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            {confirmStartWorkDialog.job && (
+              <div className="bg-gray-50 p-3 rounded-lg text-sm">
+                <p><strong>Job:</strong> {(confirmStartWorkDialog.job.customer as any)?.full_name || 'Unknown'}</p>
+                <p><strong>Service:</strong> {(confirmStartWorkDialog.job as any).service_type || confirmStartWorkDialog.job.serviceType || 'N/A'}</p>
+              </div>
+            )}
+            <AlertDialogFooter>
+              <AlertDialogCancel onClick={() => setConfirmStartWorkDialog({ open: false, job: null })}>
+                Cancel
+              </AlertDialogCancel>
+              <AlertDialogAction
+                onClick={() => {
+                  if (confirmStartWorkDialog.job) {
+                    performStartWork(confirmStartWorkDialog.job);
+                    setConfirmStartWorkDialog({ open: false, job: null });
+                  }
+                }}
+                className="bg-orange-600 hover:bg-orange-700"
+              >
+                Start Work
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
+
+        {/* Confirmation Dialog for Completing Job */}
+        <AlertDialog open={confirmCompleteJobDialog.open} onOpenChange={(open) => {
+          if (!open) {
+            setConfirmCompleteJobDialog({ open: false, job: null });
+          }
+        }}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>Complete Job</AlertDialogTitle>
+              <AlertDialogDescription>
+                Are you sure you want to complete this job? You will need to provide completion details including bill amount and photos.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            {confirmCompleteJobDialog.job && (
+              <div className="bg-gray-50 p-3 rounded-lg text-sm">
+                <p><strong>Job:</strong> {(confirmCompleteJobDialog.job.customer as any)?.full_name || 'Unknown'}</p>
+                <p><strong>Service:</strong> {(confirmCompleteJobDialog.job as any).service_type || confirmCompleteJobDialog.job.serviceType || 'N/A'}</p>
+              </div>
+            )}
+            <AlertDialogFooter>
+              <AlertDialogCancel onClick={() => setConfirmCompleteJobDialog({ open: false, job: null })}>
+                Cancel
+              </AlertDialogCancel>
+              <AlertDialogAction
+                onClick={() => {
+                  if (confirmCompleteJobDialog.job) {
+                    performCompleteJob(confirmCompleteJobDialog.job);
+                    setConfirmCompleteJobDialog({ open: false, job: null });
+                  }
+                }}
+                className="bg-green-600 hover:bg-green-700"
+              >
+                Continue to Complete
               </AlertDialogAction>
             </AlertDialogFooter>
           </AlertDialogContent>
@@ -2889,7 +3026,7 @@ const TechnicianDashboard = () => {
                     <strong>Customer:</strong> {(selectedJobForDeny.customer as any)?.full_name || 'Unknown'}
                   </p>
                   <p className="text-sm text-gray-600">
-                    <strong>Service:</strong> {selectedJobForDeny.serviceType} - {selectedJobForDeny.serviceSubType}
+                    <strong>Service:</strong> {(selectedJobForDeny as any).service_type || selectedJobForDeny.serviceType || 'N/A'} - {(selectedJobForDeny as any).service_sub_type || selectedJobForDeny.serviceSubType || 'N/A'}
                   </p>
                 </div>
               )}
@@ -2898,14 +3035,50 @@ const TechnicianDashboard = () => {
                 <label htmlFor="deny-reason" className="block text-sm font-medium text-gray-700 mb-2">
                   Reason for Denial *
                 </label>
-                <Textarea
-                  id="deny-reason"
-                  placeholder="Please provide a reason for denying this job..."
-                  value={denyReason}
-                  onChange={(e) => setDenyReason(e.target.value)}
-                  rows={3}
-                  required
-                />
+                <div className="relative">
+                  <Textarea
+                    ref={denyReasonInputRef}
+                    id="deny-reason"
+                    placeholder="Type a reason..."
+                    value={denyReason}
+                    onChange={(e) => {
+                      setDenyReason(e.target.value);
+                      setShowDenySuggestions(e.target.value.length > 0);
+                    }}
+                    onFocus={() => setShowDenySuggestions(denyReason.length > 0)}
+                    onBlur={() => {
+                      // Delay to allow clicking on suggestions
+                      setTimeout(() => setShowDenySuggestions(false), 200);
+                    }}
+                    rows={3}
+                    required
+                    className="pr-10"
+                  />
+                  {showDenySuggestions && filteredDenialSuggestions.length > 0 && (
+                    <div className="absolute z-50 w-full mt-1 bg-white border border-gray-300 rounded-md shadow-lg max-h-48 overflow-y-auto">
+                      {filteredDenialSuggestions.map((suggestion, idx) => (
+                        <button
+                          key={idx}
+                          type="button"
+                          onMouseDown={(e) => {
+                            e.preventDefault();
+                            setDenyReason(suggestion);
+                            setShowDenySuggestions(false);
+                            denyReasonInputRef.current?.blur();
+                          }}
+                          className="w-full text-left px-3 py-2 hover:bg-gray-100 text-sm"
+                        >
+                          {suggestion}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+                {!showDenySuggestions && denyReason.length === 0 && (
+                  <p className="text-xs text-gray-500 mt-1">
+                    Start typing to see suggested reasons
+                  </p>
+                )}
               </div>
             </div>
 
