@@ -4,7 +4,7 @@
   "description": "Admin dashboard for managing customers, jobs, and technicians",
   "id": "/admin",
   "scope": "/admin/",
-  "start_url": "/admin",
+  "start_url": "/admin/",
   "display": "standalone",
   "background_color": "#ffffff",
   "theme_color": "#000000",

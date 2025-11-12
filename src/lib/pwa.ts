@@ -92,13 +92,16 @@ export const registerTechnicianPWA = () => {
   
   // Dynamically set manifest link for technician PWA
   if (typeof document !== 'undefined') {
-    let manifestLink = document.querySelector('link[rel="manifest"]') as HTMLLinkElement;
-    if (!manifestLink) {
-      manifestLink = document.createElement('link');
-      manifestLink.rel = 'manifest';
-      document.head.appendChild(manifestLink);
-    }
+    // Remove any existing manifest links first
+    const existingManifests = document.querySelectorAll('link[rel="manifest"]');
+    existingManifests.forEach(link => link.remove());
+    
+    // Create new manifest link for technician
+    const manifestLink = document.createElement('link');
+    manifestLink.rel = 'manifest';
     manifestLink.href = '/technician-manifest.json';
+    document.head.appendChild(manifestLink);
+    console.log('[PWA] Technician manifest link set to /technician-manifest.json');
   }
   
   return registerPWA({
@@ -115,13 +118,16 @@ export const registerAdminPWA = () => {
   
   // Dynamically set manifest link for admin PWA
   if (typeof document !== 'undefined') {
-    let manifestLink = document.querySelector('link[rel="manifest"]') as HTMLLinkElement;
-    if (!manifestLink) {
-      manifestLink = document.createElement('link');
-      manifestLink.rel = 'manifest';
-      document.head.appendChild(manifestLink);
-    }
+    // Remove any existing manifest links first
+    const existingManifests = document.querySelectorAll('link[rel="manifest"]');
+    existingManifests.forEach(link => link.remove());
+    
+    // Create new manifest link for admin
+    const manifestLink = document.createElement('link');
+    manifestLink.rel = 'manifest';
     manifestLink.href = '/admin-manifest.json';
+    document.head.appendChild(manifestLink);
+    console.log('[PWA] Admin manifest link set to /admin-manifest.json');
   }
   
   return registerPWA({
