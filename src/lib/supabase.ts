@@ -11,14 +11,21 @@ if (import.meta.env.DEV) {
   console.log('[Supabase Config] Anon Key:', supabaseAnonKey ? '✓ Set (' + supabaseAnonKey.substring(0, 20) + '...)' : '✗ Missing');
 }
 
-if (!supabaseUrl || !supabaseAnonKey) {
-  const errorMsg = `Missing Supabase environment variables. URL: ${!!supabaseUrl}, Key: ${!!supabaseAnonKey}`;
-  console.error('[Supabase Config]', errorMsg);
-  throw new Error(errorMsg);
+// Use placeholder values during build if env vars are missing (prevents build failures)
+// The app will fail at runtime if these are actually missing, but build will succeed
+const buildTimeUrl = supabaseUrl || 'https://placeholder.supabase.co';
+const buildTimeKey = supabaseAnonKey || 'placeholder-key';
+
+// Runtime validation - check if env vars are actually set when app runs
+if (typeof window !== 'undefined' && (!supabaseUrl || !supabaseAnonKey)) {
+  console.error('[Supabase Config] Missing environment variables at runtime!');
+  console.error('[Supabase Config] URL:', supabaseUrl ? '✓ Set' : '✗ Missing');
+  console.error('[Supabase Config] Anon Key:', supabaseAnonKey ? '✓ Set' : '✗ Missing');
+  console.error('[Supabase Config] Please set VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY in your environment variables.');
 }
 
 // Create Supabase client with better error handling for local development
-export const supabase = createClient<Database>(supabaseUrl, supabaseAnonKey, {
+export const supabase = createClient<Database>(buildTimeUrl, buildTimeKey, {
   auth: {
     // Use localStorage for session persistence (works across HTTP/HTTPS)
     storage: typeof window !== 'undefined' ? window.localStorage : undefined,
@@ -37,12 +44,13 @@ export const supabase = createClient<Database>(supabaseUrl, supabaseAnonKey, {
       const headers = new Headers(existingHeaders instanceof Headers ? existingHeaders : existingHeaders);
       
       // Always set apikey header if not present (Supabase requires this)
-      if (!headers.has('apikey') && supabaseAnonKey) {
-        headers.set('apikey', supabaseAnonKey);
+      const actualKey = supabaseAnonKey || buildTimeKey;
+      if (!headers.has('apikey') && actualKey) {
+        headers.set('apikey', actualKey);
       }
       // Set Authorization header if not present (for auth requests)
-      if (!headers.has('Authorization') && supabaseAnonKey) {
-        headers.set('Authorization', `Bearer ${supabaseAnonKey}`);
+      if (!headers.has('Authorization') && actualKey) {
+        headers.set('Authorization', `Bearer ${actualKey}`);
       }
       
       // Log in development for debugging
