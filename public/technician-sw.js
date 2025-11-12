@@ -11,11 +11,16 @@ self.addEventListener('install', (event) => {
   event.waitUntil(
     caches.open(STATIC_CACHE)
       .then((cache) => cache.addAll(PRECACHE_URLS))
-      .then(() => self.skipWaiting())
+      .then(() => {
+        // Don't automatically skip waiting - wait for user to close all tabs
+        // This prevents automatic page refresh
+        console.log('[Technician PWA] Service worker installed, waiting for activation');
+      })
       .catch((error) => {
         console.error('[Technician PWA] Install failed:', error);
       })
   );
+  // Don't call skipWaiting() to prevent automatic refresh
 });
 
 self.addEventListener('activate', (event) => {
@@ -26,7 +31,11 @@ self.addEventListener('activate', (event) => {
           .filter((key) => key !== STATIC_CACHE && key !== RUNTIME_CACHE)
           .map((key) => caches.delete(key))
       )
-    ).then(() => self.clients.claim())
+    ).then(() => {
+      // Don't automatically claim clients - this prevents automatic refresh
+      // The service worker will activate when all tabs are closed
+      console.log('[Technician PWA] Service worker activated');
+    })
   );
 });
 

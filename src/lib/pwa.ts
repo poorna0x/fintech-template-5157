@@ -55,9 +55,24 @@ const registerPWA = ({ swUrl, scope, label }: RegisterOptions) => {
   }
 
   const registrationPromise = navigator.serviceWorker
-    .register(swUrl, { scope })
+    .register(swUrl, { scope, updateViaCache: 'none' })
     .then((registration) => {
       console.info(`[${label}] Service worker registered:`, registration.scope);
+      
+      // Prevent automatic page refresh on service worker update
+      registration.addEventListener('updatefound', () => {
+        const newWorker = registration.installing;
+        if (newWorker) {
+          newWorker.addEventListener('statechange', () => {
+            // Don't automatically activate new service worker
+            // It will activate when all tabs are closed
+            if (newWorker.state === 'installed' && navigator.serviceWorker.controller) {
+              console.log(`[${label}] New service worker available, but not activating to prevent refresh`);
+            }
+          });
+        }
+      });
+      
       return registration;
     })
     .catch((error) => {

@@ -851,7 +851,7 @@ const TechnicianDashboard = () => {
       console.error('Error loading assignment requests:', error);
       // Only show error toast if it's a critical error, not transient network issues
       if (error instanceof Error && !error.message.includes('fetch') && !error.message.includes('network')) {
-        toast.error('Failed to load assignment requests');
+      toast.error('Failed to load assignment requests');
       }
     } finally {
       setAssignmentRequestsLoading(false);
@@ -2248,14 +2248,14 @@ const TechnicianDashboard = () => {
                             <div className="bg-white rounded-lg p-3 border border-gray-200 hover:border-gray-300 hover:shadow-sm transition-all duration-200">
                               <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-3">
                                 <div className="w-8 h-8 sm:w-10 sm:h-10 bg-gray-100 rounded-lg flex items-center justify-center flex-shrink-0">
-                                <button
+                                  <button
                                   onClick={(e) => {
                                     e.stopPropagation();
                                     markJobAsSeen(job.id);
                                     handlePhoneClick(job.customer);
                                   }}
-                                  className="cursor-pointer"
-                                >
+                                    className="cursor-pointer"
+                                  >
                                     <Phone className="w-4 h-4 sm:w-5 sm:h-5 text-gray-600" />
                                   </button>
                           </div>
