@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { Button } from '@/components/ui/button';
-import { requestNotificationPermission } from '@/lib/notifications';
+// Notification permissions removed - only using toast notifications
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -75,8 +75,6 @@ const TechnicianLogin = () => {
       
       if (success) {
         console.log('Login successful, navigating to technician dashboard...');
-        // Request notification permission for job updates
-        await requestNotificationPermission();
         // Small delay to ensure state is updated
         setTimeout(() => {
           console.log('Navigating to /technician');

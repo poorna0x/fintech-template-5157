@@ -15,56 +15,8 @@ export interface NotificationData {
   timestamp: Date;
 }
 
-// Browser notification permission
-export const requestNotificationPermission = async (): Promise<boolean> => {
-  if (!('Notification' in window)) {
-    console.warn('This browser does not support notifications');
-    return false;
-  }
-
-  if (Notification.permission === 'granted') {
-    return true;
-  }
-
-  if (Notification.permission !== 'denied') {
-    const permission = await Notification.requestPermission();
-    return permission === 'granted';
-  }
-
-  return false;
-};
-
-// Show browser notification
-export const showBrowserNotification = (data: NotificationData): void => {
-  if (Notification.permission === 'granted') {
-    const notification = new Notification(data.title, {
-      body: data.message,
-      icon: '/favicon.ico',
-      badge: '/favicon.ico',
-      tag: data.jobId || 'job-notification',
-      requireInteraction: true,
-      silent: false
-    });
-
-    // Auto close after 10 seconds
-    setTimeout(() => {
-      notification.close();
-    }, 10000);
-
-    // Handle click
-    notification.onclick = () => {
-      window.focus();
-      notification.close();
-      
-      // Navigate to relevant page
-      if ((data.type === 'job_assigned' || data.type === 'job_assignment_request') && data.technicianId) {
-        window.location.href = '/technician';
-      } else if (data.jobId) {
-        window.location.href = '/admin';
-      }
-    };
-  }
-};
+// Browser notifications disabled - only using toast notifications
+// Removed requestNotificationPermission and showBrowserNotification functions
 
 // Show toast notification
 export const showToastNotification = (data: NotificationData): void => {
@@ -136,14 +88,8 @@ export const showToastNotification = (data: NotificationData): void => {
 
 // Main notification function
 export const sendNotification = async (data: NotificationData): Promise<void> => {
-  // Always show toast notification
+  // Only show toast notification (browser notifications disabled)
   showToastNotification(data);
-
-  // Show browser notification if permission is granted
-  const hasPermission = await requestNotificationPermission();
-  if (hasPermission) {
-    showBrowserNotification(data);
-  }
 };
 
 // Specific notification creators

@@ -1,5 +1,6 @@
 [build]
-  command = "cd netlify/functions && npm install && cd ../.. && npm run build"
+  # Clear cache directories and do fresh install to avoid old cached dependencies
+  command = "rm -rf node_modules/.cache .cache dist && cd netlify/functions && npm install && cd ../.. && npm install && npm run build"
   publish = "dist"
 
 [dev]
