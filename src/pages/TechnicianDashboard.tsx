@@ -55,11 +55,12 @@ const TechnicianDashboard = () => {
   
   const [jobs, setJobs] = useState<Job[]>([]);
   const [filteredJobs, setFilteredJobs] = useState<Job[]>([]);
-  const [jobsLoading, setJobsLoading] = useState(true);
+  const [jobsLoading, setJobsLoading] = useState(false); // Start as false to prevent flash
   const [realtimeConnected, setRealtimeConnected] = useState(false);
   const processingJobsRef = useRef<Set<string>>(new Set()); // Track jobs being processed to prevent duplicates (use ref for synchronous access)
   const lastActiveTimeRef = useRef<Date>(new Date()); // Track when app was last active
   const lastJobIdsRef = useRef<Set<string>>(new Set()); // Track job IDs from last active session
+  const hasJobsRef = useRef<boolean>(false); // Track if we have loaded jobs at least once
   // Load seenJobs from localStorage on mount
   const [seenJobs, setSeenJobs] = useState<Set<string>>(() => {
     try {
@@ -137,7 +138,10 @@ const TechnicianDashboard = () => {
     if (!user?.technicianId) return;
 
     try {
-      setJobsLoading(true);
+      // Only show loading if we haven't loaded jobs before (first load)
+      if (!hasJobsRef.current) {
+        setJobsLoading(true);
+      }
       console.time('loadAssignedJobs'); // Performance timing
       const { data, error } = await db.jobs.getByTechnicianId(user.technicianId);
       console.timeEnd('loadAssignedJobs'); // Performance timing
@@ -172,6 +176,7 @@ const TechnicianDashboard = () => {
       }
       
       setJobs(allJobs);
+      hasJobsRef.current = true; // Mark that we've loaded jobs at least once
       
       // Check for new jobs when app becomes active (only if we have previous job IDs to compare)
       if (lastJobIdsRef.current.size > 0) {
@@ -1748,7 +1753,9 @@ const TechnicianDashboard = () => {
   const deniedCount = jobs.filter(job => job.status === 'DENIED').length;
   const completedCount = jobs.filter(job => job.status === 'COMPLETED').length;
 
-  if (jobsLoading) {
+  // Only show loading screen on initial load if we have no jobs and are actually loading
+  // This prevents the flash when app opens with cached data or quick loads
+  if (jobsLoading && jobs.length === 0) {
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center">
         <div className="text-center">

@@ -149,8 +149,24 @@
     <!-- Windows tiles -->
     <link rel="icon" type="image/png" sizes="192x192" href="/android-chrome-192x192.png" />
     <link rel="icon" type="image/png" sizes="512x512" href="/android-chrome-512x512.png" />
-    <!-- PWA Manifest -->
-    <link rel="manifest" href="/site.webmanifest" />
+    <!-- PWA Manifest - Set dynamically based on path for iOS compatibility -->
+    <link rel="manifest" href="/site.webmanifest" id="pwa-manifest" />
+    <script>
+      // Set correct manifest immediately (before iOS reads it)
+      (function() {
+        const path = window.location.pathname;
+        const manifestLink = document.getElementById('pwa-manifest');
+        if (manifestLink) {
+          if (path.startsWith('/technician')) {
+            manifestLink.href = '/technician-manifest.json';
+          } else if (path.startsWith('/admin')) {
+            manifestLink.href = '/admin-manifest.json';
+          } else {
+            manifestLink.href = '/site.webmanifest';
+          }
+        }
+      })();
+    </script>
     
     <!-- Preconnect for performance -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
