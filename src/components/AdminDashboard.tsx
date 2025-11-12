@@ -1404,11 +1404,7 @@ const AdminDashboard = () => {
           // New job detected - play sound
           playNotificationSound();
           
-          // Show a toast notification
-          toast.info('New lead received!', {
-            description: `Job ${String((mostRecentJob as any).job_number || mostRecentJobId || '')} - ${String((mostRecentJob.customer as any)?.full_name || 'New Customer')}`,
-            duration: 5000,
-          });
+          // New lead received silently - no notification
               }
             }
           }

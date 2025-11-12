@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { useNavigate } from 'react-router-dom';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -18,7 +18,6 @@ import {
 import Logo from '@/components/Logo';
 import { 
   Wrench, 
-  Search, 
   Filter, 
   Clock, 
   MapPin, 
@@ -43,7 +42,7 @@ import {
 import { toast } from 'sonner';
 import { db, supabase } from '@/lib/supabase';
 import { Job, JobAssignmentRequest } from '@/types';
-import { sendNotification, createJobCompletedNotification, createJobAssignmentRequestNotification, createJobAssignmentAcceptedNotification, createJobAssignmentRejectedNotification, requestNotificationPermission, showBrowserNotification, createJobAssignedNotification } from '@/lib/notifications';
+import { sendNotification, createJobCompletedNotification, createJobAssignmentRequestNotification, createJobAssignmentAcceptedNotification, createJobAssignmentRejectedNotification, requestNotificationPermission } from '@/lib/notifications';
 import FollowUpModal from '@/components/FollowUpModal';
 import { registerTechnicianPWA, disablePWA } from '@/lib/pwa';
 import { extractCoordinates, formatAddressForDisplay } from '@/lib/maps';
@@ -59,6 +58,8 @@ const TechnicianDashboard = () => {
   const [jobsLoading, setJobsLoading] = useState(true);
   const [realtimeConnected, setRealtimeConnected] = useState(false);
   const processingJobsRef = useRef<Set<string>>(new Set()); // Track jobs being processed to prevent duplicates (use ref for synchronous access)
+  const lastActiveTimeRef = useRef<Date>(new Date()); // Track when app was last active
+  const lastJobIdsRef = useRef<Set<string>>(new Set()); // Track job IDs from last active session
   // Load seenJobs from localStorage on mount
   const [seenJobs, setSeenJobs] = useState<Set<string>>(() => {
     try {
@@ -73,7 +74,6 @@ const TechnicianDashboard = () => {
     return new Set();
   }); // Track jobs that have been interacted with (to remove blue border)
   const [confirmStartJobDialog, setConfirmStartJobDialog] = useState<{open: boolean, job: Job | null}>({open: false, job: null});
-  const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState<'ONGOING' | 'PENDING' | 'ASSIGNED' | 'IN_PROGRESS' | 'COMPLETED' | 'CANCELLED' | 'RESCHEDULED'>('ONGOING');
   const [selectedJob, setSelectedJob] = useState<Job | null>(null);
   const [jobNotes, setJobNotes] = useState('');
@@ -132,6 +132,68 @@ const TechnicianDashboard = () => {
   const [addressDialogOpen, setAddressDialogOpen] = useState<{[jobId: string]: boolean}>({});
   const [selectedJobForAddress, setSelectedJobForAddress] = useState<Job | null>(null);
 
+  // Define loadAssignedJobs before useEffect hooks that use it
+  const loadAssignedJobs = useCallback(async () => {
+    if (!user?.technicianId) return;
+
+    try {
+      setJobsLoading(true);
+      console.time('loadAssignedJobs'); // Performance timing
+      const { data, error } = await db.jobs.getByTechnicianId(user.technicianId);
+      console.timeEnd('loadAssignedJobs'); // Performance timing
+      
+      if (error) {
+        console.error('Error loading assigned jobs:', error);
+        throw new Error(error.message);
+      }
+
+      console.log('Loaded jobs count:', data?.length || 0);
+      
+      // All jobs go to regular jobs list (ASSIGNED jobs will show with blue border in the list)
+      const allJobs: Job[] = [];
+      const newAssignedJobs: Job[] = [];
+      
+      if (data && data.length > 0) {
+        data.forEach((job: Job) => {
+          const status = (job as any).status || job.status;
+          allJobs.push(job);
+          
+          // Track ASSIGNED jobs for notifications
+          if (status === 'ASSIGNED') {
+            newAssignedJobs.push(job);
+          }
+        });
+      }
+      
+      setJobs(allJobs);
+      
+      // Check for new jobs when app becomes active (only if we have previous job IDs to compare)
+      if (lastJobIdsRef.current.size > 0) {
+        const currentJobIds = new Set(allJobs.map(j => j.id));
+        const newJobIds = Array.from(currentJobIds).filter(id => !lastJobIdsRef.current.has(id));
+        const newAssignedJobs = allJobs.filter(j => 
+          newJobIds.includes(j.id) && 
+          ((j as any).status || j.status) === 'ASSIGNED'
+        );
+        
+        if (newAssignedJobs.length > 0) {
+          toast.success(`${newAssignedJobs.length} new job${newAssignedJobs.length > 1 ? 's' : ''} assigned!`, {
+            description: 'Click "Start Job" to begin',
+            duration: 5000,
+          });
+        }
+      }
+      
+      // Update last job IDs for next comparison
+      lastJobIdsRef.current = new Set(allJobs.map(j => j.id));
+    } catch (error) {
+      console.error('Error loading assigned jobs:', error);
+      toast.error('Failed to load assigned jobs');
+    } finally {
+      setJobsLoading(false);
+    }
+  }, [user?.technicianId]);
+
   // Redirect if not technician
   useEffect(() => {
     console.log('TechnicianDashboard: Checking auth status...', { isTechnician, user, loading, userRole: user?.role });
@@ -153,7 +215,46 @@ const TechnicianDashboard = () => {
       loadAssignedJobs();
       loadAssignmentRequests();
     }
-  }, [user?.technicianId]);
+  }, [user?.technicianId, loadAssignedJobs]);
+
+  // Track app visibility to show notifications when app becomes active
+  useEffect(() => {
+    const handleVisibilityChange = () => {
+      if (!document.hidden) {
+        // App became active - update last active time
+        const now = new Date();
+        const timeSinceLastActive = now.getTime() - lastActiveTimeRef.current.getTime();
+        
+        // Only check for new jobs if app was inactive for more than 5 seconds
+        if (timeSinceLastActive > 5000 && user?.technicianId) {
+          // Reload jobs to check for new assignments
+          loadAssignedJobs();
+        }
+        
+        lastActiveTimeRef.current = now;
+      }
+    };
+
+    // Also track focus events (when user switches back to tab/window)
+    const handleFocus = () => {
+      const now = new Date();
+      const timeSinceLastActive = now.getTime() - lastActiveTimeRef.current.getTime();
+      
+      if (timeSinceLastActive > 5000 && user?.technicianId) {
+        loadAssignedJobs();
+      }
+      
+      lastActiveTimeRef.current = now;
+    };
+
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    window.addEventListener('focus', handleFocus);
+
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+      window.removeEventListener('focus', handleFocus);
+    };
+  }, [user?.technicianId, loadAssignedJobs]);
 
   // Set up realtime subscription for new job assignments
   useEffect(() => {
@@ -333,55 +434,7 @@ const TechnicianDashboard = () => {
                     return [fullJob, ...prev]; // Add to top
                   });
                   
-                  // Show toast notification (when app is open)
-                  toast.success('New job assigned!', {
-                    description: `Job #${(fullJob as any).job_number || fullJob.jobNumber} has been assigned to you`,
-                    duration: 5000,
-                  });
-                  
-                  // Show browser notification (works even when app is closed)
-                  console.log('🔔 Attempting to show browser notification for new job');
-                  const jobNumber = (fullJob as any).job_number || fullJob.jobNumber || 'N/A';
-                  const customerName = (fullJob as any).customer?.full_name || 'Customer';
-                  
-                  console.log('📋 Job details:', { jobNumber, customerName, jobId: fullJob.id });
-                  
-                  // Request permission and show notification
-                  try {
-                    const permission = await requestNotificationPermission();
-                    console.log('🔔 Notification permission:', permission);
-                    
-                    if (permission === 'granted') {
-                      const notificationData = createJobAssignedNotification(
-                        jobNumber,
-                        customerName,
-                        user?.fullName || 'You',
-                        fullJob.id,
-                        user?.technicianId || ''
-                      );
-                      
-                      console.log('✅ Showing browser notification:', notificationData);
-                      showBrowserNotification(notificationData, {
-                        icon: '/favicon.ico',
-                        badge: '/favicon.ico',
-                        tag: `job-${fullJob.id}`, // Unique tag to prevent duplicates
-                        requireInteraction: true, // Keep visible until user interacts
-                        vibrate: [200, 100, 200], // Vibrate pattern
-                        urgency: 'high', // High priority
-                        body: `Job #${jobNumber} assigned for ${customerName}. Click to view and accept.`,
-                      });
-                      console.log('✅ Browser notification sent!');
-                    } else {
-                      console.warn('⚠️ Notification permission not granted:', permission);
-                      // Show a more visible toast if notifications are blocked
-                      toast.error('Enable notifications to receive job alerts!', {
-                        description: 'Go to browser settings to allow notifications',
-                        duration: 8000,
-                      });
-                    }
-                  } catch (error) {
-                    console.error('❌ Error showing browser notification:', error);
-                  }
+                  // New job added silently - no notifications
                 } else {
                   console.error('Error fetching job details:', error);
                 }
@@ -447,9 +500,7 @@ const TechnicianDashboard = () => {
                 console.error('   2. Supabase Realtime service might be down');
                 console.error('   3. Check Supabase dashboard for Realtime service status');
                 console.log('📡 Falling back to polling mode - checking for new jobs every 10 seconds');
-                toast.warning('Realtime unavailable. Using polling mode - new jobs will be detected within 10 seconds.', {
-                  duration: 8000,
-                });
+                // Realtime unavailable - using polling silently
               }
           } else {
             console.log('✅ Realtime subscription status:', status);
@@ -474,9 +525,7 @@ const TechnicianDashboard = () => {
                 console.error('   2. Check if Realtime is enabled for your project');
                 console.error('   3. Some projects require explicit Realtime enablement');
                 setRealtimeConnected(false); // Ensure polling mode is active
-                toast.warning('Realtime unavailable. Using polling mode - new jobs detected within 10 seconds.', {
-                  duration: 8000,
-                });
+                // Realtime unavailable - using polling silently
               }
             } else if (status === 'TIMED_OUT') {
               console.error('❌ Realtime subscription timed out');
@@ -486,12 +535,11 @@ const TechnicianDashboard = () => {
                   setupSubscription();
                 }, retryDelay);
               } else {
-                toast.error('Realtime connection timed out. Please refresh the page.', {
-                  duration: 5000,
-                });
+                // Realtime connection timed out - using polling silently
               }
             } else if (status === 'CLOSED') {
-              console.warn('⚠️ Realtime subscription closed');
+              // CLOSED status is normal - happens during cleanup or when connection closes
+              // Don't log as warning, just silently handle it
               // Don't retry on CLOSED - it's usually intentional cleanup
             } else {
               console.log('Realtime status:', status);
@@ -562,7 +610,7 @@ const TechnicianDashboard = () => {
                   location: locationData,
                   updatedData: data
                 });
-                toast.success('Location updated successfully', { duration: 2000 });
+                // Location updated silently
               }
             } catch (error) {
               console.error('Error updating technician location:', error);
@@ -712,31 +760,9 @@ const TechnicianDashboard = () => {
   //   };
   // }, [user?.technicianId]);
 
-  // Filter jobs based on search and status
+  // Filter jobs based on status
   useEffect(() => {
     let filtered = jobs;
-
-    // Filter by search term
-    if (searchTerm) {
-      const searchLower = searchTerm.toLowerCase();
-      filtered = filtered.filter(job => {
-        const jobNumber = (job as any).job_number || '';
-        const customerName = (job.customer as any)?.full_name || '';
-        const customerPhone = job.customer?.phone || '';
-        const brand = job.brand || '';
-        const model = job.model || '';
-        const description = job.description || '';
-        
-        return (
-          jobNumber.toLowerCase().includes(searchLower) ||
-          customerName.toLowerCase().includes(searchLower) ||
-          customerPhone.includes(searchTerm) ||
-          brand.toLowerCase().includes(searchLower) ||
-          model.toLowerCase().includes(searchLower) ||
-          description.toLowerCase().includes(searchLower)
-        );
-      });
-    }
 
     // Filter by status
     if (statusFilter === 'ONGOING') {
@@ -797,63 +823,7 @@ const TechnicianDashboard = () => {
     });
 
     setFilteredJobs(filtered);
-  }, [jobs, searchTerm, statusFilter, seenJobs]);
-
-  const loadAssignedJobs = async () => {
-    if (!user?.technicianId) return;
-
-    try {
-      setJobsLoading(true);
-      console.time('loadAssignedJobs'); // Performance timing
-      const { data, error } = await db.jobs.getByTechnicianId(user.technicianId);
-      console.timeEnd('loadAssignedJobs'); // Performance timing
-      
-      if (error) {
-        console.error('Error loading assigned jobs:', error);
-        throw new Error(error.message);
-      }
-
-      console.log('Loaded jobs count:', data?.length || 0);
-      
-      // All jobs go to regular jobs list (ASSIGNED jobs will show with blue border in the list)
-      const allJobs: Job[] = [];
-      const newAssignedJobs: Job[] = [];
-      
-      if (data && data.length > 0) {
-        data.forEach((job: Job) => {
-          const status = (job as any).status || job.status;
-          allJobs.push(job);
-          
-          // Track ASSIGNED jobs for notifications
-          if (status === 'ASSIGNED') {
-            newAssignedJobs.push(job);
-          }
-        });
-      }
-      
-      setJobs(allJobs);
-      
-      // Show notification and popup if there are new ASSIGNED jobs
-      if (newAssignedJobs.length > 0) {
-        // Show popup for the first new job that hasn't been seen
-        const unseenJob = newAssignedJobs.find(j => !seenJobs.has(j.id));
-        if (unseenJob) {
-          setNewJobInPopup(unseenJob);
-          setNewJobPopupOpen(true);
-        }
-        
-        toast.success(`${newAssignedJobs.length} new job${newAssignedJobs.length > 1 ? 's' : ''} assigned!`, {
-          description: 'Click "Start Job" to begin',
-          duration: 5000,
-        });
-      }
-    } catch (error) {
-      console.error('Error loading assigned jobs:', error);
-      toast.error('Failed to load assigned jobs');
-    } finally {
-      setJobsLoading(false);
-    }
-  };
+  }, [jobs, statusFilter, seenJobs]);
 
   const loadAssignmentRequests = async () => {
     if (!user?.technicianId) return;
@@ -939,7 +909,7 @@ const TechnicianDashboard = () => {
         await sendNotification(notification);
       }
 
-      toast.success(`Job assignment ${status.toLowerCase()} successfully`);
+        // Job assignment response processed silently
       setSelectedRequest(null);
       setResponseNotes('');
     } catch (error) {
@@ -1015,9 +985,7 @@ const TechnicianDashboard = () => {
         return [{ ...job, status: 'EN_ROUTE' as any }, ...prev];
       });
 
-      toast.success('Started going to job!', {
-        description: `Job #${(job as any).job_number || job.jobNumber} - You're now en route`,
-      });
+      // Job started silently
       
       setTimeout(() => {
         processingJobsRef.current.delete(job.id);
@@ -1065,9 +1033,7 @@ const TechnicianDashboard = () => {
           : j
       ));
 
-      toast.success('Started work!', {
-        description: `Job #${(job as any).job_number || job.jobNumber} - You're now working on site`,
-      });
+      // Work started silently
       
       setTimeout(() => {
         processingJobsRef.current.delete(job.id);
@@ -1166,7 +1132,7 @@ const TechnicianDashboard = () => {
           : job
       ));
       
-      toast.success('Follow-up scheduled successfully');
+      // Follow-up scheduled silently
       setFollowUpModalOpen(false);
       setSelectedJobForFollowUp(null);
     } catch (error) {
@@ -1211,7 +1177,7 @@ const TechnicianDashboard = () => {
           : job
       ));
       
-      toast.success('Job denied successfully');
+      // Job denied silently
       setDenyDialogOpen(false);
       setSelectedJobForDeny(null);
       setDenyReason('');
@@ -2221,21 +2187,6 @@ const TechnicianDashboard = () => {
           </Card>
         )}
 
-        {/* Search */}
-        <Card className="mb-6">
-          <CardContent className="p-6">
-            <div className="relative">
-              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
-              <Input
-                placeholder="Search jobs by job number, customer name, or phone..."
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-                className="pl-10"
-              />
-            </div>
-          </CardContent>
-        </Card>
-
         {/* Section Title */}
         <div className="mb-4">
           <h2 className="text-xl font-bold text-gray-900 mb-1">
@@ -2245,18 +2196,16 @@ const TechnicianDashboard = () => {
              statusFilter === 'COMPLETED' ? 'Your Completed Jobs' :
              `Your ${statusFilter} Jobs`}
           </h2>
-          {!searchTerm.trim() && (
-            <p className="text-xs text-gray-500 mb-3">
-              {statusFilter === 'ONGOING' 
-                ? `Showing ${filteredJobs.length} ongoing jobs (pending, assigned, in-progress)`
-                : statusFilter === 'RESCHEDULED'
-                ? `Showing ${filteredJobs.length} follow-up jobs`
-                : statusFilter === 'CANCELLED'
-                ? `Showing ${filteredJobs.length} denied jobs`
-                : `Showing ${filteredJobs.length} ${statusFilter.toLowerCase().replace('_', ' ')} jobs`
-              }
-            </p>
-          )}
+          <p className="text-xs text-gray-500 mb-3">
+            {statusFilter === 'ONGOING' 
+              ? `Showing ${filteredJobs.length} ongoing jobs (pending, assigned, in-progress)`
+              : statusFilter === 'RESCHEDULED'
+              ? `Showing ${filteredJobs.length} follow-up jobs`
+              : statusFilter === 'CANCELLED'
+              ? `Showing ${filteredJobs.length} denied jobs`
+              : `Showing ${filteredJobs.length} ${statusFilter.toLowerCase().replace('_', ' ')} jobs`
+            }
+          </p>
         </div>
 
         {/* Jobs List */}
@@ -2267,9 +2216,7 @@ const TechnicianDashboard = () => {
                 <Wrench className="w-12 h-12 text-gray-400 mx-auto mb-4" />
                 <h3 className="text-lg font-medium text-gray-900 mb-2">No jobs found</h3>
                 <p className="text-gray-600">
-                  {searchTerm 
-                    ? 'No jobs match your search criteria.' 
-                    : statusFilter === 'ONGOING'
+                  {statusFilter === 'ONGOING'
                     ? 'You have no ongoing jobs at the moment.'
                     : statusFilter === 'RESCHEDULED'
                     ? 'You have no follow-up jobs scheduled.'
