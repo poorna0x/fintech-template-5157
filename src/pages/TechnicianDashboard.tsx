@@ -1783,101 +1783,7 @@ const TechnicianDashboard = () => {
         </header>
       </div>
 
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        {/* Status Filters - Mobile First */}
-        <div className="grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-4 mb-6">
-          <button
-            type="button"
-            onClick={() => setStatusFilter('ONGOING')}
-            className={`flex flex-col items-start justify-between rounded-xl border p-4 sm:p-5 h-full text-left transition-all duration-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-blue-500 ${
-              statusFilter === 'ONGOING'
-                ? 'bg-blue-600 text-white border-blue-600 shadow-lg'
-                : 'bg-white text-gray-900 border-gray-200 shadow-sm hover:bg-blue-50 hover:border-blue-400'
-            }`}
-          >
-            <div className="flex items-center justify-between w-full">
-              <div className={`flex items-center justify-center rounded-lg p-2 ${statusFilter === 'ONGOING' ? 'bg-blue-500/40' : 'bg-blue-100 text-blue-700'}`}>
-                <Clock className={`h-6 w-6 ${statusFilter === 'ONGOING' ? 'text-white' : 'text-blue-600'}`} />
-              </div>
-              <span className="text-xs font-medium uppercase tracking-wide opacity-80">Ongoing</span>
-            </div>
-            <div className="mt-4">
-              <p className="text-3xl font-bold">{ongoingCount}</p>
-              <p className={`mt-1 text-sm ${statusFilter === 'ONGOING' ? 'text-blue-100' : 'text-gray-500'}`}>
-                Total Jobs Available
-              </p>
-            </div>
-          </button>
-
-          <button
-            type="button"
-            onClick={() => setStatusFilter('RESCHEDULED')}
-            className={`flex flex-col items-start justify-between rounded-xl border p-4 sm:p-5 h-full text-left transition-all duration-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-purple-500 ${
-              statusFilter === 'RESCHEDULED'
-                ? 'bg-purple-600 text-white border-purple-600 shadow-lg'
-                : 'bg-white text-gray-900 border-gray-200 shadow-sm hover:bg-purple-50 hover:border-purple-400'
-            }`}
-          >
-            <div className="flex items-center justify-between w-full">
-              <div className={`flex items-center justify-center rounded-lg p-2 ${statusFilter === 'RESCHEDULED' ? 'bg-purple-500/40' : 'bg-purple-100 text-purple-700'}`}>
-                <CalendarPlus className={`h-6 w-6 ${statusFilter === 'RESCHEDULED' ? 'text-white' : 'text-purple-600'}`} />
-              </div>
-              <span className="text-xs font-medium uppercase tracking-wide opacity-80">Follow-up</span>
-            </div>
-            <div className="mt-4">
-              <p className="text-3xl font-bold">{followUpCount}</p>
-              <p className={`mt-1 text-sm ${statusFilter === 'RESCHEDULED' ? 'text-purple-100' : 'text-gray-500'}`}>
-                Jobs that need another visit
-              </p>
-            </div>
-          </button>
-
-          <button
-            type="button"
-            onClick={() => setStatusFilter('CANCELLED')}
-            className={`flex flex-col items-start justify-between rounded-xl border p-4 sm:p-5 h-full text-left transition-all duration-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-red-500 ${
-              statusFilter === 'CANCELLED'
-                ? 'bg-red-600 text-white border-red-600 shadow-lg'
-                : 'bg-white text-gray-900 border-gray-200 shadow-sm hover:bg-red-50 hover:border-red-400'
-            }`}
-          >
-            <div className="flex items-center justify-between w-full">
-              <div className={`flex items-center justify-center rounded-lg p-2 ${statusFilter === 'CANCELLED' ? 'bg-red-500/40' : 'bg-red-100 text-red-700'}`}>
-                <XCircle className={`h-6 w-6 ${statusFilter === 'CANCELLED' ? 'text-white' : 'text-red-600'}`} />
-              </div>
-              <span className="text-xs font-medium uppercase tracking-wide opacity-80">Denied</span>
-            </div>
-            <div className="mt-4">
-              <p className="text-3xl font-bold">{deniedCount}</p>
-              <p className={`mt-1 text-sm ${statusFilter === 'CANCELLED' ? 'text-red-100' : 'text-gray-500'}`}>
-                Jobs declined or cancelled
-              </p>
-            </div>
-          </button>
-
-          <button
-            type="button"
-            onClick={() => setStatusFilter('COMPLETED')}
-            className={`flex flex-col items-start justify-between rounded-xl border p-4 sm:p-5 h-full text-left transition-all duration-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-green-500 ${
-              statusFilter === 'COMPLETED'
-                ? 'bg-green-600 text-white border-green-600 shadow-lg'
-                : 'bg-white text-gray-900 border-gray-200 shadow-sm hover:bg-green-50 hover:border-green-400'
-            }`}
-          >
-            <div className="flex items-center justify-between w-full">
-              <div className={`flex items-center justify-center rounded-lg p-2 ${statusFilter === 'COMPLETED' ? 'bg-green-500/40' : 'bg-green-100 text-green-700'}`}>
-                <CheckCircle className={`h-6 w-6 ${statusFilter === 'COMPLETED' ? 'text-white' : 'text-green-600'}`} />
-              </div>
-              <span className="text-xs font-medium uppercase tracking-wide opacity-80">Completed</span>
-            </div>
-            <div className="mt-4">
-              <p className="text-3xl font-bold">{completedCount}</p>
-              <p className={`mt-1 text-sm ${statusFilter === 'COMPLETED' ? 'text-green-100' : 'text-gray-500'}`}>
-                Jobs you have closed
-              </p>
-            </div>
-          </button>
-        </div>
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 pb-24">
 
         {/* Job Assignment Requests Section */}
         {assignmentRequests.length > 0 && (
@@ -2196,16 +2102,16 @@ const TechnicianDashboard = () => {
              statusFilter === 'COMPLETED' ? 'Your Completed Jobs' :
              `Your ${statusFilter} Jobs`}
           </h2>
-          <p className="text-xs text-gray-500 mb-3">
-            {statusFilter === 'ONGOING' 
-              ? `Showing ${filteredJobs.length} ongoing jobs (pending, assigned, in-progress)`
-              : statusFilter === 'RESCHEDULED'
-              ? `Showing ${filteredJobs.length} follow-up jobs`
-              : statusFilter === 'CANCELLED'
-              ? `Showing ${filteredJobs.length} denied jobs`
-              : `Showing ${filteredJobs.length} ${statusFilter.toLowerCase().replace('_', ' ')} jobs`
-            }
-          </p>
+            <p className="text-xs text-gray-500 mb-3">
+              {statusFilter === 'ONGOING' 
+                ? `Showing ${filteredJobs.length} ongoing jobs (pending, assigned, in-progress)`
+                : statusFilter === 'RESCHEDULED'
+                ? `Showing ${filteredJobs.length} follow-up jobs`
+                : statusFilter === 'CANCELLED'
+                ? `Showing ${filteredJobs.length} denied jobs`
+                : `Showing ${filteredJobs.length} ${statusFilter.toLowerCase().replace('_', ' ')} jobs`
+              }
+            </p>
         </div>
 
         {/* Jobs List */}
@@ -3371,6 +3277,81 @@ const TechnicianDashboard = () => {
             </DialogContent>
           </Dialog>
         )}
+
+        {/* Fixed Bottom Navigation - Status Filters */}
+        <div className="fixed bottom-0 left-0 right-0 z-50 bg-white border-t border-gray-200 shadow-lg">
+          <div className="max-w-7xl mx-auto px-2 sm:px-4">
+            <div className="grid grid-cols-4 gap-1 py-2">
+              {/* Ongoing Button */}
+              <button
+                type="button"
+                onClick={() => setStatusFilter('ONGOING')}
+                className={`flex flex-col items-center justify-center gap-1 py-2 px-1 rounded-lg transition-all duration-200 ${
+                  statusFilter === 'ONGOING'
+                    ? 'bg-blue-600 text-white shadow-md'
+                    : 'bg-gray-50 text-gray-400 opacity-60 hover:opacity-80'
+                }`}
+              >
+                <Clock className={`h-5 w-5 ${statusFilter === 'ONGOING' ? 'text-white' : 'text-blue-400'}`} />
+                <span className="text-xs font-medium">Ongoing</span>
+                <span className={`text-xs font-bold ${statusFilter === 'ONGOING' ? 'text-blue-100' : 'text-gray-400'}`}>
+                  {ongoingCount}
+                </span>
+              </button>
+
+              {/* Follow-up Button */}
+              <button
+                type="button"
+                onClick={() => setStatusFilter('RESCHEDULED')}
+                className={`flex flex-col items-center justify-center gap-1 py-2 px-1 rounded-lg transition-all duration-200 ${
+                  statusFilter === 'RESCHEDULED'
+                    ? 'bg-purple-600 text-white shadow-md'
+                    : 'bg-gray-50 text-gray-400 opacity-60 hover:opacity-80'
+                }`}
+              >
+                <CalendarPlus className={`h-5 w-5 ${statusFilter === 'RESCHEDULED' ? 'text-white' : 'text-purple-400'}`} />
+                <span className="text-xs font-medium">Follow-up</span>
+                <span className={`text-xs font-bold ${statusFilter === 'RESCHEDULED' ? 'text-purple-100' : 'text-gray-400'}`}>
+                  {followUpCount}
+                </span>
+              </button>
+
+              {/* Denied Button */}
+              <button
+                type="button"
+                onClick={() => setStatusFilter('CANCELLED')}
+                className={`flex flex-col items-center justify-center gap-1 py-2 px-1 rounded-lg transition-all duration-200 ${
+                  statusFilter === 'CANCELLED'
+                    ? 'bg-red-600 text-white shadow-md'
+                    : 'bg-gray-50 text-gray-400 opacity-60 hover:opacity-80'
+                }`}
+              >
+                <XCircle className={`h-5 w-5 ${statusFilter === 'CANCELLED' ? 'text-white' : 'text-red-400'}`} />
+                <span className="text-xs font-medium">Denied</span>
+                <span className={`text-xs font-bold ${statusFilter === 'CANCELLED' ? 'text-red-100' : 'text-gray-400'}`}>
+                  {deniedCount}
+                </span>
+              </button>
+
+              {/* Completed Button */}
+              <button
+                type="button"
+                onClick={() => setStatusFilter('COMPLETED')}
+                className={`flex flex-col items-center justify-center gap-1 py-2 px-1 rounded-lg transition-all duration-200 ${
+                  statusFilter === 'COMPLETED'
+                    ? 'bg-green-600 text-white shadow-md'
+                    : 'bg-gray-50 text-gray-400 opacity-60 hover:opacity-80'
+                }`}
+              >
+                <CheckCircle className={`h-5 w-5 ${statusFilter === 'COMPLETED' ? 'text-white' : 'text-green-400'}`} />
+                <span className="text-xs font-medium">Completed</span>
+                <span className={`text-xs font-bold ${statusFilter === 'COMPLETED' ? 'text-green-100' : 'text-gray-400'}`}>
+                  {completedCount}
+                </span>
+              </button>
+            </div>
+          </div>
+        </div>
       </div>
     </div>
   );
