@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { useNavigate } from 'react-router-dom';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -37,12 +37,13 @@ import {
   Camera,
   MessageCircle,
   MoreVertical,
-  Settings
+  Settings,
+  Bell
 } from 'lucide-react';
 import { toast } from 'sonner';
-import { db } from '@/lib/supabase';
+import { db, supabase } from '@/lib/supabase';
 import { Job, JobAssignmentRequest } from '@/types';
-import { sendNotification, createJobCompletedNotification, createJobAssignmentRequestNotification, createJobAssignmentAcceptedNotification, createJobAssignmentRejectedNotification } from '@/lib/notifications';
+import { sendNotification, createJobCompletedNotification, createJobAssignmentRequestNotification, createJobAssignmentAcceptedNotification, createJobAssignmentRejectedNotification, requestNotificationPermission, showBrowserNotification, createJobAssignedNotification } from '@/lib/notifications';
 import FollowUpModal from '@/components/FollowUpModal';
 import { registerTechnicianPWA, disablePWA } from '@/lib/pwa';
 import { extractCoordinates, formatAddressForDisplay } from '@/lib/maps';
@@ -56,6 +57,22 @@ const TechnicianDashboard = () => {
   const [jobs, setJobs] = useState<Job[]>([]);
   const [filteredJobs, setFilteredJobs] = useState<Job[]>([]);
   const [jobsLoading, setJobsLoading] = useState(true);
+  const [realtimeConnected, setRealtimeConnected] = useState(false);
+  const processingJobsRef = useRef<Set<string>>(new Set()); // Track jobs being processed to prevent duplicates (use ref for synchronous access)
+  // Load seenJobs from localStorage on mount
+  const [seenJobs, setSeenJobs] = useState<Set<string>>(() => {
+    try {
+      const stored = localStorage.getItem('technician_seen_jobs');
+      if (stored) {
+        const parsed = JSON.parse(stored);
+        return new Set(Array.isArray(parsed) ? parsed : []);
+      }
+    } catch (error) {
+      console.error('Error loading seen jobs from localStorage:', error);
+    }
+    return new Set();
+  }); // Track jobs that have been interacted with (to remove blue border)
+  const [confirmStartJobDialog, setConfirmStartJobDialog] = useState<{open: boolean, job: Job | null}>({open: false, job: null});
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState<'ONGOING' | 'PENDING' | 'ASSIGNED' | 'IN_PROGRESS' | 'COMPLETED' | 'CANCELLED' | 'RESCHEDULED'>('ONGOING');
   const [selectedJob, setSelectedJob] = useState<Job | null>(null);
@@ -135,6 +152,378 @@ const TechnicianDashboard = () => {
     if (user?.technicianId) {
       loadAssignedJobs();
       loadAssignmentRequests();
+    }
+  }, [user?.technicianId]);
+
+  // Set up realtime subscription for new job assignments
+  useEffect(() => {
+    if (!user?.technicianId) return;
+
+    console.log('🔔 Setting up realtime subscription for technician:', user.technicianId);
+
+    let channel: ReturnType<typeof supabase.channel>;
+    let retryCount = 0;
+    const maxRetries = 3;
+    const retryDelay = 2000; // 2 seconds
+
+    // Check if realtime is available by testing a simple subscription
+    const checkRealtimeAvailable = async () => {
+      try {
+        // Try to create a test channel and see if it connects
+        const testChannel = supabase.channel('realtime-test');
+        let connectionTested = false;
+        
+        const testPromise = new Promise<boolean>((resolve) => {
+          const timeout = setTimeout(() => {
+            if (!connectionTested) {
+              connectionTested = true;
+              testChannel.unsubscribe();
+              supabase.removeChannel(testChannel);
+              resolve(false);
+            }
+          }, 3000); // 3 second timeout
+
+          testChannel
+            .subscribe((status) => {
+              if (status === 'SUBSCRIBED' && !connectionTested) {
+                connectionTested = true;
+                clearTimeout(timeout);
+                testChannel.unsubscribe();
+                supabase.removeChannel(testChannel);
+                resolve(true);
+              } else if (status === 'CHANNEL_ERROR' && !connectionTested) {
+                connectionTested = true;
+                clearTimeout(timeout);
+                testChannel.unsubscribe();
+                supabase.removeChannel(testChannel);
+                resolve(false);
+              }
+            });
+        });
+
+        const isAvailable = await testPromise;
+        return isAvailable;
+      } catch (error) {
+        console.error('Error checking realtime availability:', error);
+        return false;
+      }
+    };
+
+    const setupSubscription = async () => {
+      // Check if realtime is available first
+      const realtimeAvailable = await checkRealtimeAvailable();
+      
+      if (!realtimeAvailable) {
+        console.warn('⚠️ Realtime service appears to be unavailable. Using polling mode.');
+        setRealtimeConnected(false);
+        return; // Don't try to subscribe if realtime is not available
+      }
+
+      console.log('✅ Realtime service is available, setting up subscription...');
+      // Remove existing channel if any
+      if (channel) {
+        try {
+          supabase.removeChannel(channel);
+        } catch (e) {
+          console.warn('Error removing channel:', e);
+        }
+      }
+
+      // Create a simpler channel without extra config
+      channel = supabase
+        .channel(`technician-jobs-${user.technicianId}`)
+        .on(
+          'postgres_changes',
+          {
+            event: 'UPDATE',
+            schema: 'public',
+            table: 'jobs',
+            filter: `assigned_technician_id=eq.${user.technicianId}`,
+          },
+        async (payload) => {
+          console.log('📨 Realtime update received:', payload);
+          const updatedJob = payload.new as any;
+          const oldJob = payload.old as any;
+          
+          // Skip if this job is already being processed (use ref for synchronous check)
+          if (processingJobsRef.current.has(updatedJob.id)) {
+            console.log('⚠️ Job already being processed, skipping duplicate realtime update:', updatedJob.id);
+            return;
+          }
+          
+          // Check if this is a NEW assignment (assigned_technician_id changed TO this technician)
+          const wasAssignedToMe = oldJob?.assigned_technician_id === user.technicianId;
+          const isNowAssignedToMe = updatedJob.assigned_technician_id === user.technicianId;
+          const isNewAssignment = !wasAssignedToMe && isNowAssignedToMe;
+          
+          // Don't process if status is COMPLETED (already completed)
+          const isCompleted = updatedJob.status === 'COMPLETED';
+          
+          console.log('🔍 Assignment check:', {
+            wasAssignedToMe,
+            isNowAssignedToMe,
+            isNewAssignment,
+            oldStatus: oldJob?.status,
+            newStatus: updatedJob.status,
+            isCompleted,
+            oldAssignedId: oldJob?.assigned_technician_id,
+            newAssignedId: updatedJob.assigned_technician_id,
+            myTechnicianId: user.technicianId
+          });
+          
+          // Check if this is a new assignment with ASSIGNED status
+          // 1. It's newly assigned to this technician (wasn't before, is now)
+          // 2. Status is ASSIGNED
+          // 3. Not already being processed
+          // 4. Not completed
+          if (isNewAssignment && isNowAssignedToMe && updatedJob.status === 'ASSIGNED' && !isCompleted) {
+            console.log('✅ New job assignment detected via realtime:', updatedJob.id);
+            console.log('📋 Assignment details:', {
+              wasAssignedToMe,
+              isNowAssignedToMe,
+              status: updatedJob.status,
+              assignedDate: updatedJob.assigned_date
+            });
+            
+            // Check assigned_date if it exists, otherwise accept it
+            let shouldProcess = true;
+            if (updatedJob.assigned_date) {
+              const assignedDate = new Date(updatedJob.assigned_date);
+              const now = new Date();
+              const timeDiff = now.getTime() - assignedDate.getTime();
+              
+              // Only treat as new if assigned within last 10 minutes (more lenient)
+              if (timeDiff < 10 * 60 * 1000 && timeDiff >= -60000) { // Allow 1 minute in future for clock skew
+                shouldProcess = true;
+              } else {
+                console.log('⚠️ Job assignment too old or in future, ignoring:', timeDiff);
+                shouldProcess = false;
+              }
+            }
+            
+            if (shouldProcess) {
+              // Check if we're already processing this job (prevent duplicates) - use ref for synchronous check
+              if (processingJobsRef.current.has(updatedJob.id)) {
+                console.log('⚠️ Job already being processed, skipping duplicate:', updatedJob.id);
+                return;
+              }
+              
+              // Mark as processing immediately (synchronous)
+              processingJobsRef.current.add(updatedJob.id);
+              console.log('🔒 Marked job as processing:', updatedJob.id);
+              
+              // Remove from processing set after 30 seconds (in case of errors)
+              setTimeout(() => {
+                processingJobsRef.current.delete(updatedJob.id);
+                console.log('🔓 Removed job from processing set:', updatedJob.id);
+              }, 30000);
+              
+              // Fetch full job details with customer info
+              try {
+                const { data: fullJob, error } = await db.jobs.getById(updatedJob.id);
+                if (!error && fullJob) {
+                  // Add to jobs list (will show with blue border and NEW badge if not seen)
+                  setJobs(prev => {
+                    const exists = prev.some(j => j.id === fullJob.id);
+                    if (exists) {
+                      console.log('⚠️ Job already in list, updating:', fullJob.id);
+                      return prev.map(j => j.id === fullJob.id ? fullJob : j);
+                    }
+                    console.log('✅ Adding new job to list:', fullJob.id);
+                    return [fullJob, ...prev]; // Add to top
+                  });
+                  
+                  // Show toast notification (when app is open)
+                  toast.success('New job assigned!', {
+                    description: `Job #${(fullJob as any).job_number || fullJob.jobNumber} has been assigned to you`,
+                    duration: 5000,
+                  });
+                  
+                  // Show browser notification (works even when app is closed)
+                  console.log('🔔 Attempting to show browser notification for new job');
+                  const jobNumber = (fullJob as any).job_number || fullJob.jobNumber || 'N/A';
+                  const customerName = (fullJob as any).customer?.full_name || 'Customer';
+                  
+                  console.log('📋 Job details:', { jobNumber, customerName, jobId: fullJob.id });
+                  
+                  // Request permission and show notification
+                  try {
+                    const permission = await requestNotificationPermission();
+                    console.log('🔔 Notification permission:', permission);
+                    
+                    if (permission === 'granted') {
+                      const notificationData = createJobAssignedNotification(
+                        jobNumber,
+                        customerName,
+                        user?.fullName || 'You',
+                        fullJob.id,
+                        user?.technicianId || ''
+                      );
+                      
+                      console.log('✅ Showing browser notification:', notificationData);
+                      showBrowserNotification(notificationData, {
+                        icon: '/favicon.ico',
+                        badge: '/favicon.ico',
+                        tag: `job-${fullJob.id}`, // Unique tag to prevent duplicates
+                        requireInteraction: true, // Keep visible until user interacts
+                        vibrate: [200, 100, 200], // Vibrate pattern
+                        urgency: 'high', // High priority
+                        body: `Job #${jobNumber} assigned for ${customerName}. Click to view and accept.`,
+                      });
+                      console.log('✅ Browser notification sent!');
+                    } else {
+                      console.warn('⚠️ Notification permission not granted:', permission);
+                      // Show a more visible toast if notifications are blocked
+                      toast.error('Enable notifications to receive job alerts!', {
+                        description: 'Go to browser settings to allow notifications',
+                        duration: 8000,
+                      });
+                    }
+                  } catch (error) {
+                    console.error('❌ Error showing browser notification:', error);
+                  }
+                } else {
+                  console.error('Error fetching job details:', error);
+                }
+              } catch (error) {
+                console.error('Error fetching new job details:', error);
+              }
+            }
+          } else {
+            console.log('Not a new assignment:', { wasAssignedToMe, isNowAssignedToMe, status: updatedJob.status });
+            
+            // Even if not a new assignment, update the job in the UI if it's assigned to this technician
+            if (isNowAssignedToMe && !processingJobsRef.current.has(updatedJob.id)) {
+              console.log('🔄 Updating existing job in UI:', updatedJob.id);
+              
+              // Fetch full job details
+              try {
+                const { data: fullJob, error } = await db.jobs.getById(updatedJob.id);
+                if (!error && fullJob) {
+                  const jobStatus = (fullJob as any).status || fullJob.status;
+                  
+                  // Update in jobs list
+                  setJobs(prev => {
+                    const index = prev.findIndex(j => j.id === fullJob.id);
+                    if (index >= 0) {
+                      // Update existing job
+                      const updated = [...prev];
+                      updated[index] = fullJob;
+                      return updated;
+                    } else {
+                      // Job not in list yet, add it if it's in an active status
+                      if (['PENDING', 'ASSIGNED', 'EN_ROUTE', 'IN_PROGRESS'].includes(jobStatus)) {
+                        return [fullJob, ...prev];
+                      }
+                      return prev;
+                    }
+                  });
+                  
+                  console.log('✅ Job updated in UI');
+                }
+              } catch (error) {
+                console.error('Error updating job in UI:', error);
+              }
+            }
+          }
+        }
+      )
+        .subscribe((status, err) => {
+          if (err) {
+            console.error('❌ Realtime subscription error:', err);
+            console.error('Error details:', JSON.stringify(err, null, 2));
+            console.error('Error type:', err?.constructor?.name);
+            console.error('Error message:', err?.message);
+            if (retryCount < maxRetries) {
+              retryCount++;
+              console.log(`🔄 Retrying realtime subscription (${retryCount}/${maxRetries})...`);
+              setTimeout(() => {
+                setupSubscription();
+              }, retryDelay);
+              } else {
+                console.error('❌ Realtime failed after all retries. This might be a WebSocket connection issue.');
+                console.error('💡 Possible causes:');
+                console.error('   1. WebSocket connections blocked by firewall/network');
+                console.error('   2. Supabase Realtime service might be down');
+                console.error('   3. Check Supabase dashboard for Realtime service status');
+                console.log('📡 Falling back to polling mode - checking for new jobs every 10 seconds');
+                toast.warning('Realtime unavailable. Using polling mode - new jobs will be detected within 10 seconds.', {
+                  duration: 8000,
+                });
+              }
+          } else {
+            console.log('✅ Realtime subscription status:', status);
+            if (status === 'SUBSCRIBED') {
+              console.log('🎉 Successfully subscribed to realtime updates for jobs');
+                retryCount = 0; // Reset retry count on success
+                setRealtimeConnected(true); // Mark realtime as connected
+            } else if (status === 'CHANNEL_ERROR') {
+              console.error('❌ Channel error - WebSocket connection failed');
+              console.error('This usually means the WebSocket cannot connect to Supabase Realtime server');
+              setRealtimeConnected(false); // Mark as not connected
+              if (retryCount < maxRetries) {
+                retryCount++;
+                console.log(`🔄 Retrying realtime subscription (${retryCount}/${maxRetries})...`);
+                setTimeout(() => {
+                  setupSubscription();
+                }, retryDelay);
+              } else {
+                console.error('💡 Realtime service is not available. Using polling mode instead.');
+                console.error('💡 To enable realtime:');
+                console.error('   1. Go to Supabase Dashboard → Settings → API');
+                console.error('   2. Check if Realtime is enabled for your project');
+                console.error('   3. Some projects require explicit Realtime enablement');
+                setRealtimeConnected(false); // Ensure polling mode is active
+                toast.warning('Realtime unavailable. Using polling mode - new jobs detected within 10 seconds.', {
+                  duration: 8000,
+                });
+              }
+            } else if (status === 'TIMED_OUT') {
+              console.error('❌ Realtime subscription timed out');
+              if (retryCount < maxRetries) {
+                retryCount++;
+                setTimeout(() => {
+                  setupSubscription();
+                }, retryDelay);
+              } else {
+                toast.error('Realtime connection timed out. Please refresh the page.', {
+                  duration: 5000,
+                });
+              }
+            } else if (status === 'CLOSED') {
+              console.warn('⚠️ Realtime subscription closed');
+              // Don't retry on CLOSED - it's usually intentional cleanup
+            } else {
+              console.log('Realtime status:', status);
+            }
+          }
+        });
+    };
+
+    // Initial setup
+    setupSubscription();
+
+    return () => {
+      console.log('🧹 Cleaning up realtime subscription');
+      if (channel) {
+        supabase.removeChannel(channel);
+      }
+    };
+  }, [user?.technicianId]);
+
+  // Request notification permission on component mount
+  useEffect(() => {
+    if (user?.technicianId && 'Notification' in window) {
+      // Request permission when technician logs in
+      requestNotificationPermission().then((permission) => {
+        if (permission === 'granted') {
+          console.log('✅ Notification permission granted');
+        } else if (permission === 'denied') {
+          console.warn('⚠️ Notification permission denied');
+        } else {
+          console.log('ℹ️ Notification permission default (user will be prompted)');
+        }
+      });
     }
   }, [user?.technicianId]);
 
@@ -268,6 +657,27 @@ const TechnicianDashboard = () => {
     return () => clearInterval(interval);
   }, [user?.technicianId, assignmentRequests.length]);
 
+  // Polling fallback for new jobs (when realtime fails)
+  useEffect(() => {
+    if (!user?.technicianId) return;
+    
+    // Only poll if realtime is not connected
+    if (realtimeConnected) {
+      console.log('✅ Realtime is connected, skipping polling');
+      return;
+    }
+
+    console.log('📡 Realtime not connected, starting polling fallback (every 5 seconds)');
+    
+    // Poll every 5 seconds to check for new job assignments (faster when realtime is unavailable)
+    const pollInterval = setInterval(() => {
+      // Check for newly assigned jobs
+      loadAssignedJobs();
+    }, 5000); // Check every 5 seconds for faster detection
+
+    return () => clearInterval(pollInterval);
+  }, [user?.technicianId, realtimeConnected]);
+
   // Periodic location update (every 5 minutes) - ONLY when app is open and visible
   // TEMPORARILY DISABLED - Can be re-enabled later
   // useEffect(() => {
@@ -330,8 +740,11 @@ const TechnicianDashboard = () => {
 
     // Filter by status
     if (statusFilter === 'ONGOING') {
-      // Show ongoing jobs (pending, assigned, in-progress)
-      filtered = filtered.filter(job => ['PENDING', 'ASSIGNED', 'IN_PROGRESS'].includes(job.status));
+      // Show ongoing jobs (pending, assigned, en_route, in-progress)
+      filtered = filtered.filter(job => {
+        const status = (job as any).status || job.status;
+        return ['PENDING', 'ASSIGNED', 'EN_ROUTE', 'IN_PROGRESS'].includes(status);
+      });
     } else if (statusFilter === 'RESCHEDULED') {
       // Filter for follow-up jobs (FOLLOW_UP status)
       filtered = filtered.filter(job => job.status === 'FOLLOW_UP');
@@ -339,11 +752,52 @@ const TechnicianDashboard = () => {
       // Filter for denied jobs (DENIED status)
       filtered = filtered.filter(job => job.status === 'DENIED');
     } else if (statusFilter !== 'ALL') {
-      filtered = filtered.filter(job => job.status === statusFilter);
+      filtered = filtered.filter(job => {
+        const status = (job as any).status || job.status;
+        return status === statusFilter;
+      });
     }
 
+    // Sort jobs: NEW jobs first, then IN_PROGRESS/EN_ROUTE, then others by created_at
+    filtered.sort((a, b) => {
+      const statusA = (a as any).status || a.status;
+      const statusB = (b as any).status || b.status;
+      
+      // Priority 1: New ASSIGNED jobs (those with NEW tag) - at the very top
+      const isNewA = statusA === 'ASSIGNED' && !seenJobs.has(a.id);
+      const isNewB = statusB === 'ASSIGNED' && !seenJobs.has(b.id);
+      
+      if (isNewA && !isNewB) return -1;
+      if (!isNewA && isNewB) return 1;
+      
+      // If both are new, sort by created_at (newest first)
+      if (isNewA && isNewB) {
+        const createdA = new Date((a as any).created_at || a.createdAt || 0).getTime();
+        const createdB = new Date((b as any).created_at || b.createdAt || 0).getTime();
+        return createdB - createdA;
+      }
+      
+      // Priority 2: IN_PROGRESS and EN_ROUTE (active jobs)
+      const isActiveA = statusA === 'IN_PROGRESS' || statusA === 'EN_ROUTE';
+      const isActiveB = statusB === 'IN_PROGRESS' || statusB === 'EN_ROUTE';
+      
+      if (isActiveA && !isActiveB) return -1;
+      if (!isActiveA && isActiveB) return 1;
+      
+      // If both active, IN_PROGRESS comes before EN_ROUTE
+      if (isActiveA && isActiveB) {
+        if (statusA === 'IN_PROGRESS' && statusB === 'EN_ROUTE') return -1;
+        if (statusA === 'EN_ROUTE' && statusB === 'IN_PROGRESS') return 1;
+      }
+      
+      // Priority 3: Sort by created_at (newest first) for all other jobs
+      const createdA = new Date((a as any).created_at || a.createdAt || 0).getTime();
+      const createdB = new Date((b as any).created_at || b.createdAt || 0).getTime();
+      return createdB - createdA;
+    });
+
     setFilteredJobs(filtered);
-  }, [jobs, searchTerm, statusFilter]);
+  }, [jobs, searchTerm, statusFilter, seenJobs]);
 
   const loadAssignedJobs = async () => {
     if (!user?.technicianId) return;
@@ -360,7 +814,39 @@ const TechnicianDashboard = () => {
       }
 
       console.log('Loaded jobs count:', data?.length || 0);
-      setJobs(data || []);
+      
+      // All jobs go to regular jobs list (ASSIGNED jobs will show with blue border in the list)
+      const allJobs: Job[] = [];
+      const newAssignedJobs: Job[] = [];
+      
+      if (data && data.length > 0) {
+        data.forEach((job: Job) => {
+          const status = (job as any).status || job.status;
+          allJobs.push(job);
+          
+          // Track ASSIGNED jobs for notifications
+          if (status === 'ASSIGNED') {
+            newAssignedJobs.push(job);
+          }
+        });
+      }
+      
+      setJobs(allJobs);
+      
+      // Show notification and popup if there are new ASSIGNED jobs
+      if (newAssignedJobs.length > 0) {
+        // Show popup for the first new job that hasn't been seen
+        const unseenJob = newAssignedJobs.find(j => !seenJobs.has(j.id));
+        if (unseenJob) {
+          setNewJobInPopup(unseenJob);
+          setNewJobPopupOpen(true);
+        }
+        
+        toast.success(`${newAssignedJobs.length} new job${newAssignedJobs.length > 1 ? 's' : ''} assigned!`, {
+          description: 'Click "Start Job" to begin',
+          duration: 5000,
+        });
+      }
     } catch (error) {
       console.error('Error loading assigned jobs:', error);
       toast.error('Failed to load assigned jobs');
@@ -464,16 +950,56 @@ const TechnicianDashboard = () => {
     }
   };
 
-  const handleStatusUpdate = async (jobId: string, newStatus: string) => {
+  // Mark job as seen (remove blue border after interaction)
+  const markJobAsSeen = (jobId: string) => {
+    setSeenJobs(prev => {
+      const updated = new Set(prev).add(jobId);
+      // Persist to localStorage
+      try {
+        localStorage.setItem('technician_seen_jobs', JSON.stringify(Array.from(updated)));
+      } catch (error) {
+        console.error('Error saving seen jobs to localStorage:', error);
+      }
+      return updated;
+    });
+  };
+
+  // Check if another job is in progress
+  const hasJobInProgress = (): boolean => {
+    return jobs.some(job => {
+      const status = (job as any).status || job.status;
+      return status === 'IN_PROGRESS' || status === 'EN_ROUTE';
+    });
+  };
+
+  // Handle starting job (going to location) - EN_ROUTE status
+  const handleStartJob = async (job: Job) => {
+    if (!user?.technicianId) return;
+
+    // Check if another job is in progress
+    if (hasJobInProgress() && ((job as any).status || job.status) !== 'EN_ROUTE' && ((job as any).status || job.status) !== 'IN_PROGRESS') {
+      setConfirmStartJobDialog({ open: true, job });
+      return;
+    }
+
+    await performStartJob(job);
+  };
+
+  // Actually perform the start job action
+  const performStartJob = async (job: Job) => {
+    if (!user?.technicianId) return;
+
     try {
       setIsUpdating(true);
+      processingJobsRef.current.add(job.id);
       
-      const { error } = await db.jobs.update(jobId, { 
-        status: newStatus as any,
-        ...(newStatus === 'IN_PROGRESS' && { start_time: new Date().toISOString() }),
-        ...(newStatus === 'COMPLETED' && { 
-          end_time: new Date().toISOString()
-        })
+      // Mark as seen (remove blue border)
+      markJobAsSeen(job.id);
+      
+
+      // Update job status to EN_ROUTE (going to job location)
+      const { error } = await db.jobs.update(job.id, {
+        status: 'EN_ROUTE' as any,
       });
 
       if (error) {
@@ -481,41 +1007,123 @@ const TechnicianDashboard = () => {
       }
 
       // Update local state
-      setJobs(prev => prev.map(job => 
-        job.id === jobId 
-          ? { 
-              ...job, 
-              status: newStatus as any,
-              ...(newStatus === 'IN_PROGRESS' && { start_time: new Date().toISOString() }),
-              ...(newStatus === 'COMPLETED' && { 
-                end_time: new Date().toISOString()
-              })
-            }
-          : job
-      ));
-
-      toast.success(`Job status updated to ${newStatus}`);
-
-      // Send notification for job completion
-      if (newStatus === 'COMPLETED') {
-        const job = jobs.find(j => j.id === jobId);
-        if (job) {
-          const customer = job.customer as any;
-          const notification = createJobCompletedNotification(
-            (job as any).job_number,
-            customer?.full_name || 'Customer',
-            user?.fullName || 'Technician',
-            jobId
-          );
-          await sendNotification(notification);
+      setJobs(prev => {
+        const exists = prev.some(j => j.id === job.id);
+        if (exists) {
+          return prev.map(j => j.id === job.id ? { ...j, status: 'EN_ROUTE' as any } : j);
         }
+        return [{ ...job, status: 'EN_ROUTE' as any }, ...prev];
+      });
+
+      toast.success('Started going to job!', {
+        description: `Job #${(job as any).job_number || job.jobNumber} - You're now en route`,
+      });
+      
+      setTimeout(() => {
+        processingJobsRef.current.delete(job.id);
+      }, 30000);
+    } catch (error: any) {
+      console.error('Error starting job:', error);
+      const errorMessage = error?.message || 'Failed to start job';
+      toast.error(errorMessage);
+      // If it's a constraint error, provide helpful message
+      if (errorMessage.includes('EN_ROUTE') || errorMessage.includes('constraint') || errorMessage.includes('check')) {
+        toast.error('EN_ROUTE status not allowed. Please run the migration: add-en-route-status.sql', {
+          duration: 8000,
+        });
       }
-    } catch (error) {
-      console.error('Error updating job status:', error);
-      toast.error('Failed to update job status');
+      processingJobsRef.current.delete(job.id);
     } finally {
       setIsUpdating(false);
     }
+  };
+
+  // Handle starting work at location - IN_PROGRESS status
+  const handleStartWork = async (job: Job) => {
+    if (!user?.technicianId) return;
+
+    try {
+      setIsUpdating(true);
+      processingJobsRef.current.add(job.id);
+      
+      markJobAsSeen(job.id);
+
+      // Update job status to IN_PROGRESS (at location, working)
+      const { error } = await db.jobs.update(job.id, {
+        status: 'IN_PROGRESS',
+        start_time: new Date().toISOString(),
+      });
+
+      if (error) {
+        throw new Error(error.message);
+      }
+
+      // Update local state
+      setJobs(prev => prev.map(j => 
+        j.id === job.id 
+          ? { ...j, status: 'IN_PROGRESS' as any, start_time: new Date().toISOString() }
+          : j
+      ));
+
+      toast.success('Started work!', {
+        description: `Job #${(job as any).job_number || job.jobNumber} - You're now working on site`,
+      });
+      
+      setTimeout(() => {
+        processingJobsRef.current.delete(job.id);
+      }, 30000);
+    } catch (error) {
+      console.error('Error starting work:', error);
+      toast.error('Failed to start work');
+      processingJobsRef.current.delete(job.id);
+    } finally {
+      setIsUpdating(false);
+    }
+  };
+
+  // Calculate AMC end date helper (must be defined before handleCompleteJob)
+  const calculateAMCEndDate = (agreementDate: string, years: number) => {
+    if (!agreementDate) return;
+    const startDate = new Date(agreementDate);
+    const endDate = new Date(startDate);
+    endDate.setFullYear(endDate.getFullYear() + years);
+    // Subtract 1 day (AMC covers up to that date - 1 day)
+    endDate.setDate(endDate.getDate() - 1);
+    setAmcEndDate(endDate.toISOString().split('T')[0]);
+  };
+
+  // Handle completing job - opens completion dialog
+  const handleCompleteJob = async (job: Job) => {
+    // Fetch full job data with customer if not already loaded
+    let jobWithCustomer = job;
+    if (!job.customer || !job.serviceType) {
+      try {
+        const { data: fullJob, error } = await db.jobs.getById(job.id);
+        if (!error && fullJob) {
+          jobWithCustomer = fullJob as Job;
+        }
+      } catch (error) {
+        console.error('Error fetching job details:', error);
+        // Continue with the job data we have
+      }
+    }
+    
+    setSelectedJobForComplete(jobWithCustomer);
+    setCompletionNotes('');
+    setCompleteJobStep(1);
+    setBillAmount('');
+    setBillPhotos([]);
+    setPaymentPhotos([]);
+    // Set default AMC date to today
+    const today = new Date().toISOString().split('T')[0];
+    setAmcDateGiven(today);
+    setAmcYears(1);
+    // Calculate end date with default 1 year
+    calculateAMCEndDate(today, 1);
+    setAmcIncludesPrefilter(false);
+    setHasAMC(false);
+    setPaymentMode('');
+    setCompleteDialogOpen(true);
   };
 
   // Follow-up functionality handlers
@@ -611,50 +1219,6 @@ const TechnicianDashboard = () => {
       console.error('Error denying job:', error);
       toast.error('Failed to deny job');
     }
-  };
-
-  // Calculate AMC end date helper
-  const calculateAMCEndDate = (agreementDate: string, years: number) => {
-    if (!agreementDate) return;
-    const startDate = new Date(agreementDate);
-    const endDate = new Date(startDate);
-    endDate.setFullYear(endDate.getFullYear() + years);
-    // Subtract 1 day (AMC covers up to that date - 1 day)
-    endDate.setDate(endDate.getDate() - 1);
-    setAmcEndDate(endDate.toISOString().split('T')[0]);
-  };
-
-  const handleCompleteJob = async (job: Job) => {
-    // Fetch full job data with customer if not already loaded
-    let jobWithCustomer = job;
-    if (!job.customer || !job.serviceType) {
-      try {
-        const { data: fullJob, error } = await db.jobs.getById(job.id);
-        if (!error && fullJob) {
-          jobWithCustomer = fullJob as Job;
-        }
-      } catch (error) {
-        console.error('Error fetching job details:', error);
-        // Continue with the job data we have
-      }
-    }
-    
-    setSelectedJobForComplete(jobWithCustomer);
-    setCompletionNotes('');
-    setCompleteJobStep(1);
-    setBillAmount('');
-    setBillPhotos([]);
-    setPaymentPhotos([]);
-    // Set default AMC date to today
-    const today = new Date().toISOString().split('T')[0];
-    setAmcDateGiven(today);
-    setAmcYears(1);
-    // Calculate end date with default 1 year
-    calculateAMCEndDate(today, 1);
-    setAmcIncludesPrefilter(false);
-    setHasAMC(false);
-    setPaymentMode('');
-    setCompleteDialogOpen(true);
   };
 
   const handleCompleteJobSubmit = async () => {
@@ -1021,13 +1585,14 @@ const TechnicianDashboard = () => {
   };
 
   const getStatusBadge = (status: string) => {
-    // Don't show badge for ASSIGNED status
+    // Don't show badge for ASSIGNED status (it has NEW badge instead)
     if (status === 'ASSIGNED') {
       return null;
     }
 
     const statusConfig = {
       PENDING: { color: 'bg-yellow-100 text-yellow-800', icon: Clock },
+      EN_ROUTE: { color: 'bg-yellow-100 text-yellow-800', icon: Play },
       IN_PROGRESS: { color: 'bg-orange-100 text-orange-800', icon: Play },
       COMPLETED: { color: 'bg-green-100 text-green-800', icon: CheckCircle },
       CANCELLED: { color: 'bg-red-100 text-red-800', icon: AlertCircle },
@@ -1048,15 +1613,20 @@ const TechnicianDashboard = () => {
   };
 
   const getStatusActions = (job: Job) => {
-    switch (job.status) {
+    const status = (job as any).status || job.status;
+    
+    switch (status) {
       case 'ASSIGNED':
         return (
           <div className="flex items-center gap-2">
             <Button
               size="sm"
-              onClick={() => handleStatusUpdate(job.id, 'IN_PROGRESS')}
+              onClick={() => {
+                markJobAsSeen(job.id);
+                handleStartJob(job);
+              }}
               disabled={isUpdating}
-              className="bg-orange-600 hover:bg-orange-700"
+              className="bg-blue-600 hover:bg-blue-700 text-white"
             >
               <Play className="w-4 h-4 mr-1" />
               Start Job
@@ -1067,21 +1637,66 @@ const TechnicianDashboard = () => {
               size="sm"
               variant="outline"
                   className="h-9 w-9 p-0"
+                  onClick={() => markJobAsSeen(job.id)}
             >
                   <MoreVertical className="w-4 h-4" />
             </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end">
-                <DropdownMenuItem onClick={() => handleScheduleFollowUp(job)}>
+                <DropdownMenuItem onClick={() => {
+                  markJobAsSeen(job.id);
+                  handleScheduleFollowUp(job);
+                }}>
                   <CalendarPlus className="w-4 h-4 mr-2" />
                   Follow-up
                 </DropdownMenuItem>
                 <DropdownMenuItem 
-              onClick={() => handleDenyJob(job)}
+              onClick={() => {
+                markJobAsSeen(job.id);
+                handleDenyJob(job);
+              }}
                   className="text-red-600 focus:text-red-600 focus:bg-red-50"
             >
                   <XCircle className="w-4 h-4 mr-2" />
               Deny
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </div>
+        );
+      case 'EN_ROUTE':
+        return (
+          <div className="flex items-center gap-2">
+            <Button
+              size="sm"
+              onClick={() => {
+                markJobAsSeen(job.id);
+                handleStartWork(job);
+              }}
+              disabled={isUpdating}
+              className="bg-orange-600 hover:bg-orange-700 text-white"
+            >
+              <Play className="w-4 h-4 mr-1" />
+              Start Work
+            </Button>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+            <Button
+              size="sm"
+              variant="outline"
+                  className="h-9 w-9 p-0"
+                  onClick={() => markJobAsSeen(job.id)}
+            >
+                  <MoreVertical className="w-4 h-4" />
+            </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                <DropdownMenuItem onClick={() => {
+                  markJobAsSeen(job.id);
+                  handleScheduleFollowUp(job);
+                }}>
+                  <CalendarPlus className="w-4 h-4 mr-2" />
+                  Follow-up
                 </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
@@ -1092,9 +1707,12 @@ const TechnicianDashboard = () => {
           <div className="flex items-center gap-2">
             <Button
               size="sm"
-              onClick={() => handleCompleteJob(job)}
+              onClick={() => {
+                markJobAsSeen(job.id);
+                handleCompleteJob(job);
+              }}
               disabled={isUpdating}
-              className="bg-green-600 hover:bg-green-700"
+              className="bg-green-600 hover:bg-green-700 text-white"
             >
               <CheckCircle className="w-4 h-4 mr-1" />
               Complete Job
@@ -1146,7 +1764,7 @@ const TechnicianDashboard = () => {
     );
   }
 
-  const ongoingCount = jobs.filter(job => ['PENDING', 'ASSIGNED', 'IN_PROGRESS'].includes(job.status)).length;
+  const ongoingCount = jobs.length; // Total jobs available
   const followUpCount = jobs.filter(job => job.status === 'FOLLOW_UP').length;
   const deniedCount = jobs.filter(job => job.status === 'DENIED').length;
   const completedCount = jobs.filter(job => job.status === 'COMPLETED').length;
@@ -1220,7 +1838,7 @@ const TechnicianDashboard = () => {
             <div className="mt-4">
               <p className="text-3xl font-bold">{ongoingCount}</p>
               <p className={`mt-1 text-sm ${statusFilter === 'ONGOING' ? 'text-blue-100' : 'text-gray-500'}`}>
-                Pending, assigned, and in-progress jobs
+                Total Jobs Available
               </p>
             </div>
           </button>
@@ -1716,8 +2334,12 @@ const TechnicianDashboard = () => {
                   )}
                   <Card 
                     className={`hover:shadow-md transition-shadow ${
-                      job.status === 'IN_PROGRESS' 
+                      (job as any).status === 'IN_PROGRESS' || job.status === 'IN_PROGRESS'
                         ? 'border-2 border-orange-500' 
+                        : (job as any).status === 'EN_ROUTE' || job.status === 'EN_ROUTE'
+                        ? 'border-2 border-yellow-500'
+                        : ((job as any).status === 'ASSIGNED' || job.status === 'ASSIGNED')
+                        ? 'border-2 border-blue-500 bg-blue-50/30'
                         : 'border border-gray-200'
                     }`}
                   >
@@ -1729,7 +2351,12 @@ const TechnicianDashboard = () => {
                           <span className="font-bold text-lg text-gray-900">
                             {(job.customer as any)?.full_name || 'N/A'}
                           </span>
-                          {getStatusBadge(job.status)}
+                          {getStatusBadge((job as any).status || job.status)}
+                          {((job as any).status === 'ASSIGNED' || job.status === 'ASSIGNED') && !seenJobs.has(job.id) && (
+                            <Badge className="bg-blue-100 text-blue-800 border-blue-300 animate-pulse shadow-lg shadow-blue-400/50 ring-2 ring-blue-400 ring-opacity-75">
+                              NEW
+                            </Badge>
+                          )}
                           {distances[job.id] && (
                             <div className="text-sm text-blue-600 font-medium">
                               📍 {distances[job.id]} km
@@ -1750,7 +2377,10 @@ const TechnicianDashboard = () => {
                               <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-3">
                                 <div className="w-8 h-8 sm:w-10 sm:h-10 bg-gray-100 rounded-lg flex items-center justify-center flex-shrink-0">
                                   <button
-                                    onClick={() => handlePhoneClick(job.customer)}
+                                    onClick={() => {
+                                      markJobAsSeen(job.id);
+                                      handlePhoneClick(job.customer);
+                                    }}
                                     className="cursor-pointer"
                                   >
                                     <Phone className="w-4 h-4 sm:w-5 sm:h-5 text-gray-600" />
@@ -1770,6 +2400,9 @@ const TechnicianDashboard = () => {
                               <div className="w-8 h-8 sm:w-10 sm:h-10 bg-gray-100 rounded-lg flex items-center justify-center flex-shrink-0">
                                 <button
                                   onClick={() => {
+                                    // Mark job as seen when clicking map button
+                                    markJobAsSeen(job.id);
+                                    
                                     // Open Google Maps exactly like in admin dashboard
                                     const customerLocation = (job.customer as any)?.location;
                                     const googleLoc = customerLocation?.googleLocation;
@@ -1806,6 +2439,8 @@ const TechnicianDashboard = () => {
                                         <button
                                           onClick={(e) => {
                                             e.stopPropagation();
+                                            // Mark job as seen when clicking address
+                                            markJobAsSeen(job.id);
                                             setSelectedJobForAddress(job);
                                             setAddressDialogOpen(prev => ({ ...prev, [job.id]: true }));
                                           }}
@@ -1822,6 +2457,8 @@ const TechnicianDashboard = () => {
                                       <button
                                         onClick={(e) => {
                                           e.stopPropagation();
+                                          // Mark job as seen when clicking address
+                                          markJobAsSeen(job.id);
                                           setSelectedJobForAddress(job);
                                           setAddressDialogOpen(prev => ({ ...prev, [job.id]: true }));
                                         }}
@@ -1846,6 +2483,7 @@ const TechnicianDashboard = () => {
                                   <div className="w-8 h-8 sm:w-10 sm:h-10 bg-gray-100 rounded-lg flex items-center justify-center flex-shrink-0">
                                     <button
                                       onClick={async () => {
+                                        markJobAsSeen(job.id);
                                         if (customerId) {
                                           setLoadingCustomerPhotos(true);
                                           const allCustomerPhotos = await getAllCustomerPhotos(customerId);
@@ -1890,7 +2528,10 @@ const TechnicianDashboard = () => {
                               <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-3">
                                 <div className="w-8 h-8 sm:w-10 sm:h-10 bg-gray-100 rounded-lg flex items-center justify-center flex-shrink-0">
                                   <button
-                                    onClick={() => handleWhatsAppClick(job.customer?.phone || '')}
+                                    onClick={() => {
+                                      markJobAsSeen(job.id);
+                                      handleWhatsAppClick(job.customer?.phone || '');
+                                    }}
                                     className="cursor-pointer"
                                   >
                                     <svg className="w-4 h-4 sm:w-5 sm:h-5 text-gray-600" fill="currentColor" viewBox="0 0 24 24">
@@ -2110,6 +2751,39 @@ const TechnicianDashboard = () => {
             )}
           </DialogContent>
         </Dialog>
+
+        {/* Confirmation Dialog for Starting Job When Another is In Progress */}
+        <AlertDialog open={confirmStartJobDialog.open} onOpenChange={(open) => {
+          if (!open) {
+            setConfirmStartJobDialog({ open: false, job: null });
+          }
+        }}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>Another Job In Progress</AlertDialogTitle>
+              <AlertDialogDescription>
+                You already have a job in progress. Starting a new job will mark the current job as paused. 
+                Are you sure you want to start this new job?
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel onClick={() => setConfirmStartJobDialog({ open: false, job: null })}>
+                Cancel
+              </AlertDialogCancel>
+              <AlertDialogAction
+                onClick={() => {
+                  if (confirmStartJobDialog.job) {
+                    performStartJob(confirmStartJobDialog.job);
+                    setConfirmStartJobDialog({ open: false, job: null });
+                  }
+                }}
+                className="bg-blue-600 hover:bg-blue-700"
+              >
+                Start New Job
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
 
         {/* Bill Amount Confirmation Dialog */}
         <AlertDialog open={billAmountConfirmOpen} onOpenChange={setBillAmountConfirmOpen}>

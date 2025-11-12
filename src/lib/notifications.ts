@@ -15,8 +15,90 @@ export interface NotificationData {
   timestamp: Date;
 }
 
-// Browser notifications disabled - only using toast notifications
-// Removed requestNotificationPermission and showBrowserNotification functions
+// Request browser notification permission
+export const requestNotificationPermission = async (): Promise<NotificationPermission> => {
+  if (!('Notification' in window)) {
+    console.warn('This browser does not support notifications');
+    return 'denied';
+  }
+
+  if (Notification.permission === 'granted') {
+    return 'granted';
+  }
+
+  if (Notification.permission !== 'denied') {
+    const permission = await Notification.requestPermission();
+    return permission;
+  }
+
+  return Notification.permission;
+};
+
+// Show browser notification (works even when app is closed)
+export const showBrowserNotification = (data: NotificationData, options?: NotificationOptions): void => {
+  console.log('🔔 showBrowserNotification called with:', data);
+  
+  if (!('Notification' in window)) {
+    console.warn('❌ Browser does not support notifications');
+    return;
+  }
+
+  if (Notification.permission !== 'granted') {
+    console.warn('❌ Notification permission not granted. Current permission:', Notification.permission);
+    return;
+  }
+
+  console.log('✅ Permission granted, creating notification...');
+
+  const notificationOptions: NotificationOptions = {
+    body: options?.body || data.message,
+    icon: options?.icon || '/favicon.ico',
+    badge: options?.badge || '/favicon.ico',
+    tag: options?.tag || data.jobId || 'job-notification', // Prevent duplicate notifications
+    requireInteraction: data.type === 'job_assigned', // Keep notification visible for new jobs
+    silent: false,
+    ...options,
+  };
+
+  // Make it urgent/red for new job assignments
+  if (data.type === 'job_assigned') {
+    notificationOptions.requireInteraction = true; // Keep it visible until user interacts
+    notificationOptions.vibrate = [200, 100, 200]; // Vibrate pattern (if supported)
+    // Note: urgency is not widely supported, but we'll include it
+    if ('urgency' in Notification.prototype) {
+      (notificationOptions as any).urgency = 'high';
+    }
+  }
+
+  console.log('📱 Creating notification with options:', notificationOptions);
+
+  try {
+    const notification = new Notification(data.title, notificationOptions);
+    console.log('✅ Notification created successfully!');
+
+    // Handle notification click - focus the window
+    notification.onclick = () => {
+      console.log('🔔 Notification clicked!');
+      window.focus();
+      notification.close();
+      
+      // If jobId is provided, you could navigate to the job
+      if (data.jobId && window.location.pathname.includes('/technician')) {
+        // Already on technician page, just focus
+        // You could scroll to the job if needed
+      }
+    };
+
+    // Auto-close after 10 seconds for non-critical notifications
+    if (data.type !== 'job_assigned') {
+      setTimeout(() => {
+        notification.close();
+      }, 10000);
+    }
+  } catch (error) {
+    console.error('❌ Error creating notification:', error);
+  }
+};
 
 // Show toast notification
 export const showToastNotification = (data: NotificationData): void => {
@@ -88,8 +170,18 @@ export const showToastNotification = (data: NotificationData): void => {
 
 // Main notification function
 export const sendNotification = async (data: NotificationData): Promise<void> => {
-  // Only show toast notification (browser notifications disabled)
+  // Show toast notification (when app is open)
   showToastNotification(data);
+  
+  // Show browser notification (works even when app is closed)
+  // Especially important for new job assignments
+  if (data.type === 'job_assigned' || data.type === 'job_assignment_request') {
+    // Request permission if not already granted
+    const permission = await requestNotificationPermission();
+    if (permission === 'granted') {
+      showBrowserNotification(data);
+    }
+  }
 };
 
 // Specific notification creators

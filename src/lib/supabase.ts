@@ -35,6 +35,11 @@ export const supabase = createClient<Database>(buildTimeUrl, buildTimeKey, {
     // Don't redirect on auth errors - let the app handle it
     flowType: 'pkce',
   },
+  realtime: {
+    params: {
+      eventsPerSecond: 10,
+    },
+  },
   global: {
     // Better error handling and ensure API key is sent
     fetch: (url, options = {}) => {

@@ -1,0 +1,176 @@
+============================================
+NETLIFY ENVIRONMENT VARIABLES - REQUIRED FOR BUILD
+============================================
+
+⚠️ CRITICAL: Your build is failing because these environment variables 
+   are NOT set in Netlify Dashboard!
+
+The .env.local file is ONLY for local development and is NOT committed to git.
+You MUST add these variables in Netlify Dashboard for the build to succeed.
+
+============================================
+STEP 1: Go to Netlify Dashboard
+============================================
+1. Go to: https://app.netlify.com
+2. Select your site
+3. Go to: Site Settings > Environment Variables
+4. Click "Add a variable" for each variable below
+
+============================================
+STEP 2: REQUIRED VARIABLES (Build will fail without these)
+============================================
+
+VITE_SUPABASE_URL
+https://cgpjfmbyxjetmzehkumo.supabase.co
+
+VITE_SUPABASE_ANON_KEY
+eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNncGpmbWJ5eGpldG16ZWhrdW1vIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTc4Mjk4MjgsImV4cCI6MjA3MzQwNTgyOH0.f30aVh06s_FjEXbXuH-8LEwTx774QmnXQwztacK4NHI
+
+VITE_EMAIL_API_URL
+/.netlify/functions/send-email
+
+VITE_EMAIL_FROM
+mail@hydrogenro.com
+
+============================================
+STEP 3: FIREBASE VARIABLES (For Push Notifications)
+============================================
+
+VITE_FIREBASE_API_KEY
+AIzaSyAwSc2IyagaL_tKC2ik8jAxX2aFv4dp8FE
+
+VITE_FIREBASE_AUTH_DOMAIN
+hydrogenro-525c2.firebaseapp.com
+
+VITE_FIREBASE_PROJECT_ID
+hydrogenro-525c2
+
+VITE_FIREBASE_STORAGE_BUCKET
+hydrogenro-525c2.firebasestorage.app
+
+VITE_FIREBASE_MESSAGING_SENDER_ID
+897734348556
+
+VITE_FIREBASE_APP_ID
+1:897734348556:web:f2c01747f7eb120d76c329
+
+VITE_FIREBASE_MEASUREMENT_ID
+G-KL1Z2GC56W
+
+VITE_FIREBASE_VAPID_KEY
+BIQRmcddbDg-p0-b6X6KJDrqGTOTkKSG8nG1-qHxYjsmQskNQVXP1d96bbLx_UsaReGja7OA9psLbKlYM2mGVNQ
+
+============================================
+STEP 4: CLOUDINARY VARIABLES (For Image Uploads)
+============================================
+
+VITE_CLOUDINARY_CLOUD_NAME
+dnbpshwiz
+
+VITE_CLOUDINARY_UPLOAD_PRESET
+ro-service-uploads
+
+VITE_CLOUDINARY_API_KEY
+3FAZorwPFuImoqrW1DoVHIsPmrY
+
+VITE_CLOUDINARY_SECONDARY_CLOUD_NAME
+dcbxyhruv
+
+VITE_CLOUDINARY_SECONDARY_UPLOAD_PRESET
+bill-uploads
+
+VITE_CLOUDINARY_SECONDARY_API_KEY
+BbKTT-bqmCD_OsbGTZJYr9v_3qQ
+
+============================================
+STEP 5: GOOGLE MAPS API KEY
+============================================
+
+VITE_GOOGLE_MAPS_API_KEY
+AIzaSyDZkhQl5_Y0N_yQAeICWRp0Ec9bV3Y3PTw
+
+============================================
+STEP 6: OTHER VARIABLES
+============================================
+
+VITE_APP_NAME
+RO Service Management
+
+VITE_APP_URL
+https://hydrogenro.com
+
+VITE_ORS_API_KEY
+eyJvcmciOiI1YjNjZTM1OTc4NTExMTAwMDFjZjYyNDgiLCJpZCI6IjI4OWIwYmMzZmRhYzRkMTNiZDA3ZTVjMjY1NTBlZjg3IiwiaCI6Im11cm11cjY0In0=
+
+VITE_VAPID_PUBLIC_KEY
+BCk5UeOzWHLpct61Ge1mGcUhYwSgkcMsLRnnxwvCLXqiminTecqNKdo4cYROuZusEAWxpZCjL9GDzxQLSYd6rK4
+
+============================================
+STEP 7: SERVER-SIDE VARIABLES (For Netlify Functions)
+============================================
+These are used by Netlify Functions (not build-time):
+
+SUPABASE_SERVICE_ROLE_KEY
+eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNncGpmbWJ5eGpldG16ZWhrdW1vIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc1NzgyOTgyOCwiZXhwIjoyMDczNDA1ODI4fQ.crQ1Hutr07PH2nNPSDer5lObtQ4g3HJZEKzUzTtgirk
+
+HOSTINGER_EMAIL_USER
+mail@hydrogenro.com
+
+HOSTINGER_EMAIL_PASS
+Mvh6sbpm@
+
+FIREBASE_CLIENT_EMAIL
+firebase-adminsdk-fbsvc@hydrogenro-525c2.iam.gserviceaccount.com
+
+FIREBASE_PRIVATE_KEY
+-----BEGIN PRIVATE KEY-----\nMIIEvgIBADANBgkqhkiG9w0BAQEFAASCBKgwggSkAgEAAoIBAQDl8omN8x7zRQBa\nRQg/DhERtoqg/PUYqVxWJwa0WTNnBunmhZwqLMxuQzRmxn8IqkTvyHHYFmvhQQUB\njg4eL5A4aR5hxHgKG5uU1V1k8mQTZ5H45dmPfcraev/C0Wp0Hz/9eHTI8N0tBBXT\nCudc6Knawv3yU5NJnAipv5Ci8IYOwFTUyIg9ngNlwURHHaISaQSJOAP53ZMbdwTR\n38VyWlw5oKe2lcKxcdBCjridOtCf613ZMmhnReZ99zXipuufk+JgZtS8pXVSenxW\nZG4w0ml97+dpQIFpaG7n0WgVKhsAhC5ivlM9HugLSLMFB632OgtqcPzKUpPHgUMz\nCM5+R37BAgMBAAECggEAZ1ZT0uMLaa/8tJSJXCzqJtet/SMw0mBqCp2HOc1MeGR3\nAQ3SXHG9fV/eUMGrnS1HxaqC3uVUneomYciBN7eQTImRCcbNW12E0aIBUrhLmRzW\nUNCasQ2K+ByGi/qoqH7StwpHEXaNLwnC9RDVYL9+db1jel9stYvVqNNaIJ+O31ld\nggMCmRRiWuHT2pDXRGXuHCU/mxFiTEFhOeknKTU5mP54mAkSeyI5wTx6r7FOWnP1\nUmOHEPjYp1c+doEjXRnkzQ1+w2QImqPTtZwT7zzrVVFyEh7aAtgcfpRn/TWrfDqx\nR9dRURqGZ8M7rqRCv1MSffsGGxOC+LzgbP9JDnAF8QKBgQD9GOT8G3fGofBj9H3S\nrxMB9z9/QDZNZfIxNzrPWbE6zMTRMHYikTTxVv6uOeawYZUYDm2YQu1bdvphUvrs\nL1nPxmXX13Wu2ummaSvWdQcxlgqmQdDtD7mZJgQqSMmy40/agqNiW7Lwpg2RJgyu\ntGMsSnZPzZHz+IS0dcaIxP+8SwKBgQDolayA7+r2S7B7qipG4FpVlEVkxTAb5zSs\nJefzZg1GJ/tb8YI93lhvNr9Tig+LeLFv+wUfPF8ii+iChvu0ocuze/qOq+73iW7Y\nshTxD0PyYmDB3t25ia4BnIWqZqE1gm5gt7vfvG3z1ERisqa00lI21icTA7ErVQUr\nh1XmD5DxowKBgQCCkh8/+KO4M78isfVfhbaWowl9CpF5KIjj3wxWAH2wSgeXrBqm\nBqd7glftZi2e/Ri/ymG71XtCXoUZRIfy5RK+YCoWSi+KP6Gemk9lWgaWDEP+NaIl\nSqGDYttvPRHhWefOYOsNSSVthR0mrqyITMOFC/0xemo7pRBBUSlVUdxlNQKBgQCG\nHPhRiQZ1awOi62ZhZDDytAKnrsSk8lb/BQSQ50G0OI3KYKJ3RmS8DFeatjtscvXt\n2lMDxe4dn4s86NTvPXSWVGEQL7gl6IuQTG+i6OiHNY8Re49i0y8RIs44ieFfV4yK\nHKgqxR6pwLaGKvnRvo1FrYrufeyFTgsjJHC1rjgn/QKBgAei9U9JVMxrLKTYs++U\nBEiV6YZOVObAH3ZVYZA+4sjhDN2juxgqOy+Dimlqzm3YmHJKqPjKOUvRZjTlDVhc\ndKX+pPSnuI6ONFb9wn0Jwbqljj6fA+nG8iKYpmFh+pUdJGfKqrikCxc4BwiLfGsx\nPUT5Y1RMK77DOC3AnzOz+F8c\n-----END PRIVATE KEY-----\n
+
+FIREBASE_PROJECT_ID
+hydrogenro-525c2
+
+ALTCHA_HMAC_KEY
+dfc392e7fda765b193669a505c29336514340cc960b409419829e88e92882136
+
+ALLOWED_ORIGINS
+https://hydrogenro.com,https://www.hydrogenro.com
+
+VAPID_PUBLIC_KEY
+BCk5UeOzWHLpct61Ge1mGcUhYwSgkcMsLRnnxwvCLXqiminTecqNKdo4cYROuZusEAWxpZCjL9GDzxQLSYd6rK4
+
+VAPID_PRIVATE_KEY
+a3I3ndfw74v0H-1zqNZThVtGymCDiHpCT0IwL-P4Kj8
+
+VAPID_SUBJECT
+mailto:mail@hydrogenro.com
+
+============================================
+STEP 8: After Adding All Variables
+============================================
+1. Go to Deploys tab
+2. Click "Trigger deploy" > "Deploy site"
+3. Build should now succeed!
+
+============================================
+IMPORTANT NOTES:
+============================================
+- VITE_* variables are used at BUILD TIME (embedded in the JavaScript bundle)
+- Non-VITE_* variables are used at RUNTIME (by Netlify Functions)
+- Make sure to set the scope correctly:
+  * "All scopes" for most variables
+  * "Builds only" for VITE_* variables (optional, but recommended)
+  * "Functions only" for server-side variables (optional)
+
+============================================
+QUICK CHECKLIST:
+============================================
+✅ VITE_SUPABASE_URL (REQUIRED - build will fail without this)
+✅ VITE_SUPABASE_ANON_KEY (REQUIRED - build will fail without this)
+✅ VITE_EMAIL_API_URL
+✅ VITE_EMAIL_FROM
+✅ All VITE_FIREBASE_* variables
+✅ All VITE_CLOUDINARY_* variables
+✅ VITE_GOOGLE_MAPS_API_KEY
+✅ Server-side variables (HOSTINGER_EMAIL_*, FIREBASE_*, etc.)
+
+============================================
+
