@@ -173,6 +173,36 @@
         -moz-osx-font-smoothing: grayscale;
       }
       #root { min-height: 100vh; }
+      
+      /* Hide browser's default loading progress bar */
+      html {
+        overflow-x: hidden;
+      }
+      
+      /* Hide progress bar on page reload/navigation */
+      ::-webkit-progress-bar,
+      ::-webkit-progress-value,
+      progress {
+        display: none !important;
+        visibility: hidden !important;
+        opacity: 0 !important;
+        height: 0 !important;
+        width: 0 !important;
+      }
+      
+      /* Hide any top loading indicators */
+      body::before,
+      html::before {
+        display: none !important;
+      }
+      
+      /* Hide browser's default loading indicator (especially on mobile) */
+      @supports (-webkit-appearance: none) {
+        /* Safari/Chrome specific */
+        body {
+          -webkit-overflow-scrolling: touch;
+        }
+      }
     </style>
     
     <!-- DNS Prefetch for external resources -->

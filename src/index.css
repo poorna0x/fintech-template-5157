@@ -74,6 +74,28 @@
     @apply bg-background font-inter text-foreground antialiased;
     letter-spacing: -0.025em;
   }
+
+  /* Hide browser's default loading progress bar */
+  html {
+    overflow-x: hidden;
+  }
+
+  /* Hide progress bar on page reload/navigation */
+  ::-webkit-progress-bar,
+  ::-webkit-progress-value,
+  progress {
+    display: none !important;
+    visibility: hidden !important;
+    opacity: 0 !important;
+    height: 0 !important;
+    width: 0 !important;
+  }
+
+  /* Hide any top loading indicators */
+  body::before,
+  html::before {
+    display: none !important;
+  }
   
   ::selection {
     @apply bg-primary text-primary-foreground;
