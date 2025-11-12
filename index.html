@@ -150,21 +150,19 @@
     <link rel="icon" type="image/png" sizes="192x192" href="/android-chrome-192x192.png" />
     <link rel="icon" type="image/png" sizes="512x512" href="/android-chrome-512x512.png" />
     <!-- PWA Manifest - Set dynamically based on path for iOS compatibility -->
-    <link rel="manifest" href="/site.webmanifest" id="pwa-manifest" />
     <script>
-      // Set correct manifest immediately (before iOS reads it)
+      // Set correct manifest IMMEDIATELY (before iOS reads it)
+      // This must run synchronously before the manifest link is parsed
       (function() {
         const path = window.location.pathname;
-        const manifestLink = document.getElementById('pwa-manifest');
-        if (manifestLink) {
-          if (path.startsWith('/technician')) {
-            manifestLink.href = '/technician-manifest.json';
-          } else if (path.startsWith('/admin')) {
-            manifestLink.href = '/admin-manifest.json';
-          } else {
-            manifestLink.href = '/site.webmanifest';
-          }
+        let manifestHref = '/site.webmanifest';
+        if (path.startsWith('/technician')) {
+          manifestHref = '/technician-manifest.json';
+        } else if (path.startsWith('/admin')) {
+          manifestHref = '/admin-manifest.json';
         }
+        // Create manifest link with correct href immediately
+        document.write('<link rel="manifest" href="' + manifestHref + '" id="pwa-manifest" />');
       })();
     </script>
     
