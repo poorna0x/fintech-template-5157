@@ -3,9 +3,16 @@
 
 import { createClient } from '@supabase/supabase-js';
 
-// Replace with your actual Supabase URL and anon key
-const supabaseUrl = 'https://cgpjfmbyxjetmzehkumo.supabase.co';
-const supabaseKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNncGpmbWJ5eGpldG16ZWhrdW1vIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTc4Mjk4MjgsImV4cCI6MjA3MzQwNTgyOH0.f30aVh06s_FjEXbXuH-8LEwTx774QmnXQwztacK4NHI';
+// Use environment variables for Supabase credentials
+// Set these in your environment or .env.local file:
+// SUPABASE_URL=your_supabase_url
+// SUPABASE_ANON_KEY=your_supabase_anon_key
+const supabaseUrl = process.env.SUPABASE_URL || import.meta.env.VITE_SUPABASE_URL;
+const supabaseKey = process.env.SUPABASE_ANON_KEY || import.meta.env.VITE_SUPABASE_ANON_KEY;
+
+if (!supabaseUrl || !supabaseKey) {
+  throw new Error('Missing Supabase credentials. Please set SUPABASE_URL and SUPABASE_ANON_KEY environment variables.');
+}
 
 const supabase = createClient(supabaseUrl, supabaseKey);
 
