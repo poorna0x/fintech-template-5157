@@ -1,20 +1,11 @@
 
 import React from 'react';
 import { Droplets } from 'lucide-react';
-import { useNavigate, useLocation } from 'react-router-dom';
 
 const Logo = () => {
-  const navigate = useNavigate();
-  const location = useLocation();
-
   const handleLogoClick = () => {
-    if (location.pathname === '/') {
-      // On homepage, scroll to top
-      window.scrollTo({ top: 0, behavior: 'smooth' });
-    } else {
-      // On other pages, navigate to homepage
-      navigate('/');
-    }
+    // Refresh the page when logo is clicked
+    window.location.reload();
   };
 
   return (
