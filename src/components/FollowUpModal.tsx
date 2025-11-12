@@ -76,10 +76,14 @@ export default function FollowUpModal({ isOpen, onClose, job, onScheduleFollowUp
     );
   }, [reason]);
 
-  // Load existing follow-ups when modal opens
+  // Reset form when modal opens/closes
   useEffect(() => {
     if (isOpen && job) {
-      loadFollowUps();
+      // Reset form fields
+      setSelectedDate(new Date());
+      setReason('');
+      setSelectedParentFollowUp(null);
+      setRescheduleFollowUpId(null);
     } else {
       setExistingFollowUps([]);
       setSelectedParentFollowUp(null);
@@ -99,11 +103,77 @@ export default function FollowUpModal({ isOpen, onClose, job, onScheduleFollowUp
       
       if (error) {
         console.error('Error loading follow-ups:', error);
-      } else {
-        setExistingFollowUps(data || []);
+        setExistingFollowUps([]);
+        return;
       }
+      
+      // If no follow-ups found in table but job has follow-up data, create a record
+      if ((!data || data.length === 0) && job.status === 'FOLLOW_UP') {
+        const followUpDate = (job as any).follow_up_date || job.followUpDate;
+        const followUpNotes = (job as any).follow_up_notes || job.followUpNotes;
+        const followUpScheduledAt = (job as any).follow_up_scheduled_at || job.followUpScheduledAt;
+        const followUpScheduledBy = (job as any).follow_up_scheduled_by || job.followUpScheduledBy;
+        
+        if (followUpDate && followUpNotes) {
+          // Create follow-up record from job data
+          const { data: newFollowUp, error: createError } = await supabase
+            .from('follow_ups')
+            .insert({
+              job_id: job.id,
+              scheduled_date: followUpDate,
+              reason: followUpNotes,
+              scheduled_by: followUpScheduledBy || 'technician',
+              completed: false
+            })
+            .select()
+            .single();
+          
+          if (createError) {
+            console.error('Error creating follow-up record from job data:', createError);
+          } else if (newFollowUp) {
+            // Map the created record to match the FollowUp interface
+            const mappedFollowUp: FollowUp = {
+              id: newFollowUp.id,
+              job_id: newFollowUp.job_id,
+              parent_follow_up_id: newFollowUp.parent_follow_up_id,
+              follow_up_date: newFollowUp.scheduled_date || newFollowUp.follow_up_date,
+              follow_up_time: newFollowUp.follow_up_time,
+              reason: newFollowUp.reason,
+              notes: newFollowUp.notes,
+              scheduled_by: newFollowUp.scheduled_by,
+              scheduled_at: newFollowUp.scheduled_at || newFollowUp.created_at,
+              completed: newFollowUp.completed || false,
+              completed_at: newFollowUp.completed_at,
+              created_at: newFollowUp.created_at,
+              updated_at: newFollowUp.updated_at || newFollowUp.created_at
+            };
+            setExistingFollowUps([mappedFollowUp]);
+            return;
+          }
+        }
+      }
+      
+      // Map the data to match the FollowUp interface
+      const mappedFollowUps: FollowUp[] = (data || []).map((fu: any) => ({
+        id: fu.id,
+        job_id: fu.job_id,
+        parent_follow_up_id: fu.parent_follow_up_id,
+        follow_up_date: fu.scheduled_date || fu.follow_up_date,
+        follow_up_time: fu.follow_up_time,
+        reason: fu.reason,
+        notes: fu.notes,
+        scheduled_by: fu.scheduled_by,
+        scheduled_at: fu.scheduled_at || fu.created_at,
+        completed: fu.completed || false,
+        completed_at: fu.completed_at,
+        created_at: fu.created_at,
+        updated_at: fu.updated_at || fu.created_at
+      }));
+      
+      setExistingFollowUps(mappedFollowUps);
     } catch (error) {
       console.error('Error loading follow-ups:', error);
+      setExistingFollowUps([]);
     } finally {
       setLoadingFollowUps(false);
     }
@@ -274,22 +344,6 @@ export default function FollowUpModal({ isOpen, onClose, job, onScheduleFollowUp
             </div>
           )}
 
-          {/* Existing Follow-ups */}
-          {loadingFollowUps ? (
-            <div className="text-center py-4 text-gray-500">Loading follow-ups...</div>
-          ) : followUpTree.length > 0 ? (
-            <div>
-              <h3 className="text-sm font-semibold text-gray-700 mb-3">Existing Follow-ups</h3>
-              <div className="space-y-2 max-h-60 overflow-y-auto">
-                {followUpTree.map(node => renderFollowUpTree(node))}
-              </div>
-            </div>
-          ) : (
-            <div className="text-center py-4 text-gray-500 text-sm">
-              No follow-ups yet. Add one below.
-            </div>
-          )}
-
           {/* Add New Follow-up Form */}
           <Card className="p-4 border-2 border-dashed">
             <div className="flex items-center justify-between mb-4">
@@ -389,6 +443,7 @@ export default function FollowUpModal({ isOpen, onClose, job, onScheduleFollowUp
                       setRescheduleFollowUpId(null);
                       setReason('');
                       setSelectedDate(new Date());
+                      onClose();
                     }}
                     disabled={isSubmitting}
                   >

@@ -37,6 +37,8 @@ import {
   MessageCircle,
   MoreVertical,
   Settings,
+  ArrowRight,
+  RotateCcw,
   Bell
 } from 'lucide-react';
 import { toast } from 'sonner';
@@ -793,12 +795,41 @@ const TechnicianDashboard = () => {
       });
     }
 
-    // Sort jobs: NEW jobs first, then IN_PROGRESS/EN_ROUTE, then others by created_at
+    // Sort jobs: Follow-up jobs scheduled for today first, then NEW jobs, then IN_PROGRESS/EN_ROUTE, then others
     filtered.sort((a, b) => {
       const statusA = (a as any).status || a.status;
       const statusB = (b as any).status || b.status;
       
-      // Priority 1: New ASSIGNED jobs (those with NEW tag) - at the very top
+      // Helper function to check if follow-up is scheduled for today
+      const isFollowUpToday = (job: Job) => {
+        const jobStatus = (job as any).status || job.status;
+        if (jobStatus !== 'FOLLOW_UP') return false;
+        
+        const followUpDate = (job as any).follow_up_date || job.followUpDate;
+        if (!followUpDate) return false;
+        
+        const today = new Date();
+        const todayStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+        
+        let followUpStr = '';
+        if (followUpDate.includes('T')) {
+          const followUp = new Date(followUpDate);
+          followUpStr = `${followUp.getFullYear()}-${String(followUp.getMonth() + 1).padStart(2, '0')}-${String(followUp.getDate()).padStart(2, '0')}`;
+        } else {
+          followUpStr = followUpDate.split('T')[0];
+        }
+        
+        return todayStr === followUpStr;
+      };
+      
+      // Priority 1: Follow-up jobs scheduled for today - at the very top
+      const isFollowUpTodayA = statusA === 'FOLLOW_UP' && isFollowUpToday(a);
+      const isFollowUpTodayB = statusB === 'FOLLOW_UP' && isFollowUpToday(b);
+      
+      if (isFollowUpTodayA && !isFollowUpTodayB) return -1;
+      if (!isFollowUpTodayA && isFollowUpTodayB) return 1;
+      
+      // Priority 2: New ASSIGNED jobs (those with NEW tag)
       const isNewA = statusA === 'ASSIGNED' && !seenJobs.has(a.id);
       const isNewB = statusB === 'ASSIGNED' && !seenJobs.has(b.id);
       
@@ -812,7 +843,7 @@ const TechnicianDashboard = () => {
         return createdB - createdA;
       }
       
-      // Priority 2: IN_PROGRESS and EN_ROUTE (active jobs)
+      // Priority 3: IN_PROGRESS and EN_ROUTE (active jobs)
       const isActiveA = statusA === 'IN_PROGRESS' || statusA === 'EN_ROUTE';
       const isActiveB = statusB === 'IN_PROGRESS' || statusB === 'EN_ROUTE';
       
@@ -825,7 +856,7 @@ const TechnicianDashboard = () => {
         if (statusA === 'EN_ROUTE' && statusB === 'IN_PROGRESS') return 1;
       }
       
-      // Priority 3: Sort by created_at (newest first) for all other jobs
+      // Priority 4: Sort by created_at (newest first) for all other jobs
       const createdA = new Date((a as any).created_at || a.createdAt || 0).getTime();
       const createdB = new Date((b as any).created_at || b.createdAt || 0).getTime();
       return createdB - createdA;
@@ -1118,21 +1149,57 @@ const TechnicianDashboard = () => {
 
   const handleFollowUpSubmit = async (jobId: string, followUpData: {
     followUpDate: string;
-    followUpTime: string;
-    followUpNotes?: string;
+    followUpReason: string;
+    parentFollowUpId?: string;
+    rescheduleFollowUpId?: string;
   }) => {
     try {
-      const { error } = await db.jobs.update(jobId, {
+      // Update job status and follow-up info
+      const { error: jobError } = await db.jobs.update(jobId, {
         status: 'FOLLOW_UP',
         follow_up_date: followUpData.followUpDate,
-        follow_up_time: followUpData.followUpTime,
-        follow_up_notes: followUpData.followUpNotes || '',
+        follow_up_notes: followUpData.followUpReason || '',
         follow_up_scheduled_by: user?.id || 'technician',
         follow_up_scheduled_at: new Date().toISOString()
       });
 
-      if (error) {
-        throw new Error(error.message);
+      if (jobError) {
+        throw new Error(jobError.message);
+      }
+
+      // Create or update follow-up record in follow_ups table
+      if (followUpData.rescheduleFollowUpId) {
+        // Reschedule existing follow-up
+        const { error: rescheduleError } = await supabase
+          .from('follow_ups')
+          .update({
+            scheduled_date: followUpData.followUpDate,
+            reason: followUpData.followUpReason,
+            updated_at: new Date().toISOString()
+          })
+          .eq('id', followUpData.rescheduleFollowUpId);
+
+        if (rescheduleError) {
+          console.error('Error rescheduling follow-up:', rescheduleError);
+          // Continue even if follow_ups update fails
+        }
+      } else {
+        // Create new follow-up record
+        const { error: followUpError } = await supabase
+          .from('follow_ups')
+          .insert({
+            job_id: jobId,
+            scheduled_date: followUpData.followUpDate,
+            reason: followUpData.followUpReason,
+            parent_follow_up_id: followUpData.parentFollowUpId || null,
+            scheduled_by: user?.id || 'technician',
+            completed: false
+          });
+
+        if (followUpError) {
+          console.error('Error creating follow-up record:', followUpError);
+          // Continue even if follow_ups insert fails
+        }
       }
 
       // Update local state
@@ -1142,8 +1209,7 @@ const TechnicianDashboard = () => {
               ...job, 
               status: 'FOLLOW_UP',
               followUpDate: followUpData.followUpDate,
-              followUpTime: followUpData.followUpTime,
-              followUpNotes: followUpData.followUpNotes || '',
+              followUpNotes: followUpData.followUpReason || '',
               followUpScheduledBy: user?.id || 'technician',
               followUpScheduledAt: new Date().toISOString()
             }
@@ -1156,6 +1222,44 @@ const TechnicianDashboard = () => {
     } catch (error) {
       console.error('Error scheduling follow-up:', error);
       toast.error('Failed to schedule follow-up');
+    }
+  };
+
+  const handleMoveToOngoing = async (job: Job) => {
+    try {
+      setIsUpdating(true);
+      const { error } = await db.jobs.update(job.id, {
+        status: 'ASSIGNED'
+      });
+
+      if (error) {
+        throw new Error(error.message);
+      }
+
+      // Remove from seenJobs so it shows as a new job
+      setSeenJobs(prev => {
+        const newSet = new Set(prev);
+        newSet.delete(job.id);
+        // Save to localStorage
+        try {
+          localStorage.setItem('technician_seen_jobs', JSON.stringify(Array.from(newSet)));
+        } catch (error) {
+          console.error('Error saving seen jobs to localStorage:', error);
+        }
+        return newSet;
+      });
+
+      // Update local state
+      setJobs(prev => prev.map(j => 
+        j.id === job.id 
+          ? { ...j, status: 'ASSIGNED' }
+          : j
+      ));
+    } catch (error) {
+      console.error('Error moving job to ongoing:', error);
+      toast.error('Failed to move job to ongoing');
+    } finally {
+      setIsUpdating(false);
     }
   };
 
@@ -1748,7 +1852,10 @@ const TechnicianDashboard = () => {
     );
   }
 
-  const ongoingCount = jobs.length; // Total jobs available
+  const ongoingCount = jobs.filter(job => {
+    const status = (job as any).status || job.status;
+    return !['FOLLOW_UP', 'DENIED', 'COMPLETED'].includes(status);
+  }).length; // Jobs excluding follow-up, denied, and completed
   const followUpCount = jobs.filter(job => job.status === 'FOLLOW_UP').length;
   const deniedCount = jobs.filter(job => job.status === 'DENIED').length;
   const completedCount = jobs.filter(job => job.status === 'COMPLETED').length;
@@ -1859,7 +1966,11 @@ const TechnicianDashboard = () => {
                                     <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-3">
                                       <div className="w-8 h-8 sm:w-10 sm:h-10 bg-gray-100 rounded-lg flex items-center justify-center flex-shrink-0">
                                         <button
-                                          onClick={() => handlePhoneClick(customer)}
+                                          onClick={(e) => {
+                                            e.stopPropagation();
+                                            e.preventDefault();
+                                            handlePhoneClick(customer);
+                                          }}
                                           className="cursor-pointer"
                                         >
                                           <Phone className="w-4 h-4 sm:w-5 sm:h-5 text-gray-600" />
@@ -2004,7 +2115,11 @@ const TechnicianDashboard = () => {
                                     <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-3">
                                       <div className="w-8 h-8 sm:w-10 sm:h-10 bg-gray-100 rounded-lg flex items-center justify-center flex-shrink-0">
                                         <button
-                                          onClick={() => handleWhatsAppClick(customer.phone || '')}
+                                          onClick={(e) => {
+                                            e.stopPropagation();
+                                            e.preventDefault();
+                                            handleWhatsAppClick(customer.phone || '');
+                                          }}
                                           className="cursor-pointer"
                                         >
                                           <svg className="w-4 h-4 sm:w-5 sm:h-5 text-gray-600" fill="currentColor" viewBox="0 0 24 24">
@@ -2021,18 +2136,6 @@ const TechnicianDashboard = () => {
                                 )}
                               </div>
 
-                              {/* Scheduled Time */}
-                              {job?.scheduled_date && (
-                                <div className="flex items-center gap-2 text-sm">
-                                  <Calendar className="w-4 h-4 text-gray-500" />
-                                  <span className="font-medium text-gray-700">
-                                    {(() => {
-                                      const jobForFormat = { ...job, customer } as Job;
-                                      return formatScheduledTime(jobForFormat);
-                                    })()}
-                                  </span>
-                            </div>
-                              )}
 
                               {/* Equipment - Fetch from customer info first, then job */}
                               {(() => {
@@ -2187,24 +2290,27 @@ const TechnicianDashboard = () => {
                 return `${normalizedHour}:${minutes.padEnd(2, '0')} ${suffix}`;
               })() : null;
               
+              // Check if today is the follow-up date (compare only date parts, ignore time)
+              const isFollowUpToday = followUpDate ? (() => {
+                const today = new Date();
+                const todayStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+                
+                // Parse follow-up date (could be YYYY-MM-DD format or ISO string)
+                let followUpStr = '';
+                if (followUpDate.includes('T')) {
+                  // ISO string format
+                  const followUp = new Date(followUpDate);
+                  followUpStr = `${followUp.getFullYear()}-${String(followUp.getMonth() + 1).padStart(2, '0')}-${String(followUp.getDate()).padStart(2, '0')}`;
+                } else {
+                  // Already in YYYY-MM-DD format
+                  followUpStr = followUpDate.split('T')[0]; // Remove time part if present
+                }
+                
+                return todayStr === followUpStr;
+              })() : false;
+              
               return (
                 <div key={job.id}>
-                  {job.status === 'FOLLOW_UP' && (formattedFollowUpDate || formattedFollowUpTime || followUpNotes) && (
-                    <div className="mb-4">
-                      <div className="flex items-start gap-3 rounded-md border border-purple-200 bg-purple-50 px-4 py-3">
-                        <CalendarPlus className="w-5 h-5 text-purple-600 mt-0.5 flex-shrink-0" />
-                        <div className="space-y-1 text-sm text-gray-900 flex-1">
-                          <div className="font-semibold text-purple-900">
-                            Follow-up scheduled for {formattedFollowUpDate || 'Date not set'}
-                            {formattedFollowUpTime ? ` at ${formattedFollowUpTime}` : ''}
-                          </div>
-                          <div className="text-gray-700">
-                            <span className="text-gray-500 font-medium">Reason:</span> {followUpNotes || 'Not specified'}
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                  )}
                   <Card 
                     className={`hover:shadow-md transition-shadow ${
                       (job as any).status === 'IN_PROGRESS' || job.status === 'IN_PROGRESS'
@@ -2213,10 +2319,64 @@ const TechnicianDashboard = () => {
                         ? 'border-2 border-yellow-500'
                         : ((job as any).status === 'ASSIGNED' || job.status === 'ASSIGNED')
                         ? 'border-2 border-blue-500 bg-blue-50/30'
+                        : job.status === 'FOLLOW_UP' && isFollowUpToday
+                        ? 'border-2 border-purple-500 bg-purple-100'
+                        : job.status === 'FOLLOW_UP'
+                        ? 'border border-gray-200 bg-white'
                         : 'border border-gray-200'
                     }`}
                   >
                 <CardContent className="p-6">
+                  {/* Follow-up information inside the card */}
+                  {job.status === 'FOLLOW_UP' && (formattedFollowUpDate || formattedFollowUpTime || followUpNotes) && (
+                    <div className="mb-4 -mt-2 -mx-2">
+                      <div className="rounded-md border border-purple-200 bg-purple-50 px-4 py-3">
+                        <div className="flex items-start gap-3 mb-3">
+                        <CalendarPlus className="w-5 h-5 text-purple-600 mt-0.5 flex-shrink-0" />
+                        <div className="space-y-1 text-sm text-gray-900 flex-1">
+                          <div className="font-semibold text-purple-900">
+                            Follow-up scheduled for {formattedFollowUpDate || 'Date not set'}
+                            {formattedFollowUpTime ? ` at ${formattedFollowUpTime}` : ''}
+                          </div>
+                            {followUpNotes && (
+                          <div className="text-gray-700">
+                                <span className="text-gray-500 font-medium">Reason:</span> {followUpNotes}
+                          </div>
+                            )}
+                          </div>
+                        </div>
+                        {/* Action buttons for follow-up */}
+                        <div className="flex flex-wrap gap-2 mt-3 pt-3 border-t border-purple-200">
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => {
+                              markJobAsSeen(job.id);
+                              handleScheduleFollowUp(job);
+                            }}
+                            disabled={isUpdating}
+                            className="flex-1 min-w-[120px] border-purple-300 text-purple-700 hover:bg-purple-100"
+                          >
+                            <CalendarPlus className="w-4 h-4 mr-2" />
+                            Schedule Again
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => {
+                              markJobAsSeen(job.id);
+                              handleMoveToOngoing(job);
+                            }}
+                            disabled={isUpdating}
+                            className="flex-1 min-w-[120px] border-blue-300 text-blue-700 hover:bg-blue-100"
+                          >
+                            <ArrowRight className="w-4 h-4 mr-2" />
+                            Move to Ongoing
+                          </Button>
+                        </div>
+                      </div>
+                    </div>
+                  )}
                   <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4">
                     <div className="flex-1 min-w-0">
                       {/* Customer name */}
@@ -2429,12 +2589,6 @@ const TechnicianDashboard = () => {
                               </div>
                               </div>
                           )}
-                            </div>
-                            
-                        {/* Scheduled Time and Date */}
-                        <div className="flex items-center gap-2 text-sm">
-                          <Calendar className="w-4 h-4 text-gray-500" />
-                          <span className="font-medium text-gray-700">{formatScheduledTime(job)}</span>
                             </div>
                             
                         {/* Equipment - Fetch from customer info first, then job */}
