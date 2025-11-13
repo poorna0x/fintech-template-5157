@@ -361,18 +361,20 @@ const TechnicianDashboard = () => {
           const qrCodeValue = techData.qr_code || techData.qrCode || null;
           
           if (qrCodeValue && qrCodeValue.trim() !== '') {
-            console.log('✅ Setting technician QR code:', qrCodeValue.substring(0, 50) + '...');
+            console.log('✅ QR CODE STATUS: Technician HAS QR code uploaded', {
+              name: techData.full_name || technicianName || 'Technician',
+              id: technicianId
+            });
             setTechnicianQrCode(qrCodeValue);
             // Update cache
             if (shouldUseCache()) {
               cacheTechnicianQrCode(technicianId, qrCodeValue);
             }
           } else {
-            console.warn('⚠️ No QR code found for technician in database');
-            console.warn('QR code fields checked:', {
-              'qr_code': techData.qr_code,
-              'qrCode': techData.qrCode,
-              'both_null': !techData.qr_code && !techData.qrCode
+            console.warn('❌ QR CODE STATUS: Technician DOES NOT have QR code uploaded', {
+              name: techData.full_name || technicianName || 'Technician',
+              id: technicianId,
+              action: 'Upload QR code in Settings → Technician Management'
             });
             setTechnicianQrCode(''); // Clear if no QR code
           }

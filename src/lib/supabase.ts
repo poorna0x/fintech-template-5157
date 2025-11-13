@@ -58,14 +58,15 @@ export const supabase = createClient<Database>(buildTimeUrl, buildTimeKey, {
         headers.set('Authorization', `Bearer ${actualKey}`);
       }
       
-      // Log in development for debugging
-      if (import.meta.env.DEV) {
-        console.log('[Supabase Request]', url.toString());
-        console.log('[Supabase Headers]', {
-          hasApikey: headers.has('apikey'),
-          hasAuthorization: headers.has('Authorization'),
-        });
-      }
+      // Logging disabled to reduce console noise
+      // Uncomment below for debugging if needed:
+      // if (import.meta.env.DEV) {
+      //   console.log('[Supabase Request]', url.toString());
+      //   console.log('[Supabase Headers]', {
+      //     hasApikey: headers.has('apikey'),
+      //     hasAuthorization: headers.has('Authorization'),
+      //   });
+      // }
       
       return fetch(url, {
         ...options,
