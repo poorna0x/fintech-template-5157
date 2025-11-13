@@ -64,6 +64,7 @@ import { calculateTechnicianDistances, TechnicianDistance } from '@/lib/distance
 import BillModal from './BillModal';
 import AMCModal from './AMCModal';
 import QuotationModal from './QuotationModal';
+import TaxInvoiceModal from './TaxInvoiceModal';
 import ImageUpload from '@/components/ImageUpload';
 
 declare global {
@@ -172,6 +173,8 @@ const AdminDashboard = () => {
   const [selectedCustomerForQuotation, setSelectedCustomerForQuotation] = useState<Customer | null>(null);
   const [amcModalOpen, setAmcModalOpen] = useState(false);
   const [selectedCustomerForAMC, setSelectedCustomerForAMC] = useState<Customer | null>(null);
+  const [taxInvoiceModalOpen, setTaxInvoiceModalOpen] = useState(false);
+  const [selectedCustomerForTaxInvoice, setSelectedCustomerForTaxInvoice] = useState<Customer | null>(null);
   const [moreOptionsDialogOpen, setMoreOptionsDialogOpen] = useState<Record<string, boolean>>({});
   const [editFormData, setEditFormData] = useState({
     full_name: '',
@@ -4252,6 +4255,16 @@ const AdminDashboard = () => {
     setSelectedCustomerForAMC(null);
   };
 
+  const handleGenerateTaxInvoice = (customer: Customer) => {
+    setSelectedCustomerForTaxInvoice(customer);
+    setTaxInvoiceModalOpen(true);
+  };
+
+  const handleTaxInvoiceModalClose = () => {
+    setTaxInvoiceModalOpen(false);
+    setSelectedCustomerForTaxInvoice(null);
+  };
+
 
 
   // Job assignment functions
@@ -5967,6 +5980,20 @@ const AdminDashboard = () => {
                               className="w-full justify-start h-auto py-3 px-4"
                               onClick={() => {
                                 setMoreOptionsDialogOpen(prev => ({ ...prev, [customer.id]: false }));
+                                handleGenerateTaxInvoice(customer);
+                              }}
+                            >
+                              <Receipt className="mr-3 h-5 w-5" />
+                              <div className="text-left">
+                                <div className="font-medium">Generate Tax Invoice</div>
+                                <div className="text-xs text-muted-foreground">Create a tax invoice with GST for this customer</div>
+                              </div>
+                            </Button>
+                            <Button 
+                              variant="outline"
+                              className="w-full justify-start h-auto py-3 px-4"
+                              onClick={() => {
+                                setMoreOptionsDialogOpen(prev => ({ ...prev, [customer.id]: false }));
                                 toast.info('Reports coming soon');
                               }}
                             >
@@ -6073,6 +6100,10 @@ const AdminDashboard = () => {
                           <DropdownMenuItem onClick={() => handleGenerateAMC(customer)}>
                             <Star className="mr-2 h-4 w-4" />
                             Generate AMC
+                          </DropdownMenuItem>
+                          <DropdownMenuItem onClick={() => handleGenerateTaxInvoice(customer)}>
+                            <Receipt className="mr-2 h-4 w-4" />
+                            Generate Tax Invoice
                           </DropdownMenuItem>
                           <DropdownMenuItem onClick={() => toast.info('Reports coming soon')}>
                             <FileText className="mr-2 h-4 w-4" />
@@ -9504,6 +9535,13 @@ const AdminDashboard = () => {
         isOpen={amcModalOpen}
         onClose={handleAMCModalClose}
         customer={selectedCustomerForAMC}
+      />
+
+      {/* Tax Invoice Generation Modal */}
+      <TaxInvoiceModal
+        isOpen={taxInvoiceModalOpen}
+        onClose={handleTaxInvoiceModalClose}
+        customer={selectedCustomerForTaxInvoice}
       />
 
       {/* Follow-up Modal */}
