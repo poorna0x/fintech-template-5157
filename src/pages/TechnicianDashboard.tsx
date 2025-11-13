@@ -273,20 +273,33 @@ const TechnicianDashboard = () => {
 
   // Load QR codes with localStorage caching
   useEffect(() => {
+    console.log('🔍 QR Code useEffect triggered', { 
+      hasUser: !!user, 
+      userRole: user?.role,
+      userId: user?.id,
+      technicianId: user?.technicianId 
+    });
+
     const loadQrCodes = async () => {
       // Only load if user is a technician
-      if (!user || user.role !== 'technician') {
-        console.log('Not a technician, skipping QR code load');
+      if (!user) {
+        console.log('⚠️ No user found, skipping QR code load');
+        return;
+      }
+
+      if (user.role !== 'technician') {
+        console.log('⚠️ User is not a technician, skipping QR code load. Role:', user.role);
         return;
       }
 
       // Get technician ID - use technicianId if available, otherwise use user.id
       const technicianId = user.technicianId || user.id;
-      console.log('Loading QR codes for technician:', { 
+      console.log('✅ Loading QR codes for technician:', { 
         userId: user.id, 
         technicianId: user.technicianId, 
         usingId: technicianId,
-        email: user.email 
+        email: user.email,
+        fullName: user.fullName
       });
 
       try {
@@ -378,8 +391,12 @@ const TechnicianDashboard = () => {
       }
     };
 
-    if (user && user.role === 'technician') {
+    // Always try to load if user exists (will check role inside)
+    if (user) {
+      console.log('🚀 Calling loadQrCodes, user:', { id: user.id, role: user.role });
       loadQrCodes();
+    } else {
+      console.log('⚠️ No user, not loading QR codes');
     }
   }, [user]);
 
