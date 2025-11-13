@@ -3353,7 +3353,7 @@ const TechnicianDashboard = () => {
                   {paymentMode === 'ONLINE' && (
                     <div className="space-y-4 pl-4 border-l-2 border-gray-200">
                       <div>
-                        <Label htmlFor="qr-code-type">Select QR Code Type *</Label>
+                        <Label htmlFor="qr-code-type">Select QR Code *</Label>
                         <Select 
                           value={selectedQrCodeId} 
                           onValueChange={(value) => {
@@ -3367,26 +3367,26 @@ const TechnicianDashboard = () => {
                           }}
                         >
                           <SelectTrigger className="mt-1">
-                            <SelectValue placeholder="Select QR code type" />
+                            <SelectValue placeholder="Select QR code" />
                           </SelectTrigger>
                           <SelectContent>
-                            {/* Common QR Codes */}
+                            {/* Common QR Codes - show by name */}
                             {commonQrCodes.map((qr) => (
                               <SelectItem key={`common_${qr.id}`} value={`common_${qr.id}`}>
                                 {qr.name}
                               </SelectItem>
                             ))}
-                            {/* Technician QR Code */}
+                            {/* Technician QR Code - show by name */}
                             {technicianQrCode && (
                               <SelectItem value="technician">
-                                {(technicianName || user?.fullName || 'My')}'s QR Code
+                                {(technicianName || user?.fullName || 'Technician')}'s QR Code
                               </SelectItem>
                             )}
                           </SelectContent>
                         </Select>
                       </div>
 
-                      {/* Show selected QR code image */}
+                      {/* Display selected QR code image immediately */}
                       {selectedQrCodeId && (
                         <div className="mt-4 p-4 bg-primary/10 border border-primary rounded-lg">
                           <p className="text-sm font-semibold text-primary mb-3 text-center">
@@ -3397,7 +3397,6 @@ const TechnicianDashboard = () => {
                               const qrId = selectedQrCodeId.replace('common_', '');
                               const selectedQr = commonQrCodes.find(qr => qr.id === qrId);
                               if (!selectedQr) {
-                                console.error('Common QR code not found:', qrId, 'Available:', commonQrCodes);
                                 return (
                                   <div className="text-center p-4">
                                     <p className="text-sm text-red-500">QR code not found</p>
@@ -3412,8 +3411,7 @@ const TechnicianDashboard = () => {
                                     alt={selectedQr.name}
                                     className="w-64 h-64 object-contain mx-auto border-2 border-primary rounded-lg shadow-lg bg-white p-3"
                                     onError={(e) => {
-                                      console.error('Failed to load common QR code image:', selectedQr.qrCodeUrl);
-                                      (e.target as HTMLImageElement).style.display = 'none';
+                                      console.error('Failed to load QR code:', selectedQr.qrCodeUrl);
                                     }}
                                   />
                                 </div>
@@ -3429,15 +3427,14 @@ const TechnicianDashboard = () => {
                                     alt="Technician QR Code"
                                     className="w-64 h-64 object-contain mx-auto border-2 border-primary rounded-lg shadow-lg bg-white p-3"
                                     onError={(e) => {
-                                      console.error('Failed to load technician QR code image:', technicianQrCode);
-                                      (e.target as HTMLImageElement).style.display = 'none';
+                                      console.error('Failed to load technician QR code:', technicianQrCode);
                                     }}
                                   />
                                 </div>
                               ) : (
                                 <div className="text-center p-4">
-                                  <p className="text-sm text-red-500">Technician QR code not uploaded</p>
-                                  <p className="text-xs text-gray-500 mt-1">Please upload in Settings → Technician Management</p>
+                                  <p className="text-sm text-red-500">QR code not uploaded</p>
+                                  <p className="text-xs text-gray-500 mt-1">Upload in Settings → Technician Management</p>
                                 </div>
                               )
                             ) : null}
