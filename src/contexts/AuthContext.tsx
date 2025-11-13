@@ -109,9 +109,17 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         return;
       }
 
-      if (event === 'SIGNED_OUT' || event === 'INITIAL_SESSION' || event === 'TOKEN_REFRESHED') {
-        setUser(null);
+      // Only clear user if it's a SIGNED_OUT event AND no custom session exists
+      // Don't clear on TOKEN_REFRESHED for technicians (they use localStorage, not Supabase tokens)
+      if (event === 'SIGNED_OUT') {
+        // Double-check for technician session before clearing
+        const techSession = getAuthSession();
+        if (!techSession) {
+          setUser(null);
+        }
       }
+      // Don't clear user on TOKEN_REFRESHED - technicians don't use Supabase tokens
+      // Don't clear on INITIAL_SESSION - let the session check handle it
 
       setLoading(false);
     });
@@ -120,18 +128,28 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   }, []);
 
   // Keep technician session in sync from localStorage
+  // This is especially important for iOS PWA where localStorage can be cleared
   useEffect(() => {
     const restoreSessionFromStorage = () => {
-      const storedSession = getAuthSession();
-      if (storedSession) {
-        setUser(prev => {
-          // Avoid unnecessary state updates if session is unchanged
-          if (prev && prev.id === storedSession.id && prev.role === storedSession.role) {
-            return prev;
-          }
-          return storedSession;
-        });
-        technicianSessionRef.current = storedSession.role === 'technician';
+      try {
+        const storedSession = getAuthSession();
+        if (storedSession) {
+          setUser(prev => {
+            // Avoid unnecessary state updates if session is unchanged
+            if (prev && prev.id === storedSession.id && prev.role === storedSession.role) {
+              return prev;
+            }
+            return storedSession;
+          });
+          technicianSessionRef.current = storedSession.role === 'technician';
+        } else if (user && user.role === 'technician') {
+          // If we had a technician session but it's now missing from localStorage,
+          // try to restore it (iOS PWA might have cleared it temporarily)
+          // This shouldn't happen, but if it does, we'll detect it
+          console.warn('Technician session missing from localStorage, but user state exists');
+        }
+      } catch (error) {
+        console.error('Error restoring session from storage:', error);
       }
     };
 
@@ -140,9 +158,59 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       restoreSessionFromStorage();
     }
 
+    // Listen for storage events (cross-tab sync)
     window.addEventListener('storage', restoreSessionFromStorage);
+    
+    // iOS PWA specific: Restore session when app comes back to foreground
+    // iOS PWAs can clear localStorage when app goes to background
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        // App came back to foreground - restore session
+        restoreSessionFromStorage();
+      }
+    };
+    
+    const handleFocus = () => {
+      // Window regained focus - restore session
+      restoreSessionFromStorage();
+    };
+    
+    // Listen for visibility changes (iOS PWA)
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    window.addEventListener('focus', handleFocus);
+    
+    // Periodic check for iOS PWA (every 30 seconds)
+    // iOS can clear localStorage without firing events
+    const intervalId = setInterval(() => {
+      if (user && user.role === 'technician') {
+        const storedSession = getAuthSession();
+        if (!storedSession) {
+          // Session was cleared - try to restore from current user state
+          // This is a fallback for iOS PWA localStorage clearing
+          console.warn('Technician session cleared from localStorage, attempting to restore');
+          if (user) {
+            try {
+              setAuthSession(user);
+            } catch (error) {
+              console.error('Failed to restore session to localStorage:', error);
+            }
+        }
+        } else if (storedSession.id !== user.id) {
+          // Session changed - update user state
+          setUser(storedSession);
+          technicianSessionRef.current = storedSession.role === 'technician';
+        }
+      } else if (!user) {
+        // No user - try to restore
+        restoreSessionFromStorage();
+      }
+    }, 30000); // Check every 30 seconds
+    
     return () => {
       window.removeEventListener('storage', restoreSessionFromStorage);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+      window.removeEventListener('focus', handleFocus);
+      clearInterval(intervalId);
     };
   }, [initialized, user]);
 
