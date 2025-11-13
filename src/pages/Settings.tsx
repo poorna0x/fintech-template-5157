@@ -19,6 +19,9 @@ import {
 import { toast } from 'sonner';
 import { db } from '@/lib/supabase';
 import { Technician } from '@/types';
+import ImageUpload from '@/components/ImageUpload';
+import { QrCode } from 'lucide-react';
+import { CommonQrCode } from '@/lib/qrCodeManager';
 
 const Settings = () => {
   const { user, isAdmin } = useAuth();
@@ -31,18 +34,30 @@ const Settings = () => {
   const [addTechnicianDialogOpen, setAddTechnicianDialogOpen] = useState(false);
   const [editTechnicianDialogOpen, setEditTechnicianDialogOpen] = useState(false);
   const [selectedTechnician, setSelectedTechnician] = useState<Technician | null>(null);
+  
+  // Common QR Code management states
+  const [commonQrCodes, setCommonQrCodes] = useState<CommonQrCode[]>([]);
+  const [addQrCodeDialogOpen, setAddQrCodeDialogOpen] = useState(false);
+  const [editQrCodeDialogOpen, setEditQrCodeDialogOpen] = useState(false);
+  const [selectedQrCode, setSelectedQrCode] = useState<CommonQrCode | null>(null);
+  const [qrCodeFormData, setQrCodeFormData] = useState({
+    name: '',
+    qrCodeUrl: ''
+  });
   const [technicianFormData, setTechnicianFormData] = useState({
     fullName: '',
     phone: '',
     email: '',
     employeeId: '',
-    password: ''
+    password: '',
+    qrCode: '' // QR code image URL
   });
 
 
   // Load data on component mount
   useEffect(() => {
     loadTechnicians();
+    loadCommonQrCodes();
   }, []);
 
   // Transform technician data from database format to frontend format
@@ -61,6 +76,7 @@ const Settings = () => {
     performance: tech.performance,
     vehicle: tech.vehicle,
     salary: tech.salary,
+    qrCode: tech.qr_code || tech.qrCode || '',
     createdAt: tech.created_at,
     updatedAt: tech.updated_at
   });
@@ -95,7 +111,8 @@ const Settings = () => {
       phone: '',
       email: '',
       employeeId: generateEmployeeId(),
-      password: ''
+      password: '',
+      qrCode: ''
     });
     setAddTechnicianDialogOpen(true);
   };
@@ -107,7 +124,8 @@ const Settings = () => {
       phone: technician.phone,
       email: technician.email,
       employeeId: technician.employeeId,
-      password: '' // Don't show existing password for security
+      password: '', // Don't show existing password for security
+      qrCode: (technician as any).qrCode || ''
     });
     setEditTechnicianDialogOpen(true);
   };
@@ -154,6 +172,7 @@ const Settings = () => {
         phone: technicianFormData.phone,
         email: technicianFormData.email,
         employee_id: technicianFormData.employeeId,
+        qr_code: technicianFormData.qrCode || null,
         account_status: 'ACTIVE',
         skills: {
           serviceTypes: ['RO', 'SOFTENER', 'AC', 'APPLIANCE'],
@@ -286,6 +305,89 @@ const Settings = () => {
     }
   };
 
+  // Common QR Code management functions
+  const loadCommonQrCodes = async () => {
+    try {
+      const { data, error } = await db.commonQrCodes.getAll();
+      if (error) throw error;
+      
+      if (data) {
+        const transformed = data.map((qr: any) => ({
+          id: qr.id,
+          name: qr.name,
+          qrCodeUrl: qr.qr_code_url,
+          createdAt: qr.created_at,
+          updatedAt: qr.updated_at
+        }));
+        setCommonQrCodes(transformed);
+      }
+    } catch (error) {
+      console.error('Error loading common QR codes:', error);
+      toast.error('Failed to load QR codes');
+    }
+  };
+
+  const handleAddQrCode = () => {
+    setQrCodeFormData({ name: '', qrCodeUrl: '' });
+    setAddQrCodeDialogOpen(true);
+  };
+
+  const handleEditQrCode = (qrCode: CommonQrCode) => {
+    setSelectedQrCode(qrCode);
+    setQrCodeFormData({
+      name: qrCode.name,
+      qrCodeUrl: qrCode.qrCodeUrl
+    });
+    setEditQrCodeDialogOpen(true);
+  };
+
+  const handleSaveQrCode = async () => {
+    try {
+      if (!qrCodeFormData.name || !qrCodeFormData.qrCodeUrl) {
+        toast.error('Please provide both name and QR code');
+        return;
+      }
+
+      if (editQrCodeDialogOpen && selectedQrCode) {
+        const { error } = await db.commonQrCodes.update(selectedQrCode.id, {
+          name: qrCodeFormData.name,
+          qr_code_url: qrCodeFormData.qrCodeUrl
+        });
+        if (error) throw error;
+        toast.success('QR code updated successfully');
+      } else {
+        const { error } = await db.commonQrCodes.create({
+          name: qrCodeFormData.name,
+          qr_code_url: qrCodeFormData.qrCodeUrl
+        });
+        if (error) throw error;
+        toast.success('QR code created successfully');
+      }
+
+      await loadCommonQrCodes();
+      setAddQrCodeDialogOpen(false);
+      setEditQrCodeDialogOpen(false);
+      setSelectedQrCode(null);
+      setQrCodeFormData({ name: '', qrCodeUrl: '' });
+    } catch (error) {
+      console.error('Error saving QR code:', error);
+      toast.error('Failed to save QR code');
+    }
+  };
+
+  const handleDeleteQrCode = async (qrCodeId: string) => {
+    try {
+      const { error } = await db.commonQrCodes.delete(qrCodeId);
+      if (error) throw error;
+      
+      await loadCommonQrCodes();
+      toast.success('QR code deleted successfully');
+    } catch (error) {
+      console.error('Error deleting QR code:', error);
+      toast.error('Failed to delete QR code');
+    }
+  };
+
 
   // No authentication check - allow access to all
 
@@ -320,6 +422,102 @@ const Settings = () => {
 
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4 sm:py-6 lg:py-8">
         <div className="space-y-4 sm:space-y-6">
+          {/* Common QR Codes Management */}
+          <Card>
+            <CardHeader>
+              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+                <div>
+                  <CardTitle className="flex items-center gap-2 text-lg sm:text-xl">
+                    <QrCode className="w-5 h-5" />
+                    Common Payment QR Codes
+                  </CardTitle>
+                  <CardDescription className="text-sm mt-1">
+                    Manage QR codes available to all technicians for payment scanning
+                  </CardDescription>
+                </div>
+                <Button 
+                  onClick={handleAddQrCode} 
+                  className="bg-blue-600 hover:bg-blue-700 w-full sm:w-auto"
+                  size="sm"
+                >
+                  <Plus className="w-4 h-4 mr-2" />
+                  Add QR Code
+                </Button>
+              </div>
+            </CardHeader>
+            <CardContent className="p-4 sm:p-6">
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                {commonQrCodes.map((qrCode) => (
+                  <Card key={qrCode.id} className="hover:shadow-md transition-shadow">
+                    <CardContent className="p-4">
+                      <div className="flex items-start justify-between mb-3 gap-2">
+                        <div className="flex-1 min-w-0">
+                          <h3 className="font-semibold text-gray-900 text-sm sm:text-base truncate">{qrCode.name}</h3>
+                        </div>
+                      </div>
+                      
+                      {qrCode.qrCodeUrl && (
+                        <div className="mb-4 flex justify-center">
+                          <img 
+                            src={qrCode.qrCodeUrl} 
+                            alt={qrCode.name} 
+                            className="w-32 h-32 object-contain border border-gray-200 rounded"
+                          />
+                        </div>
+                      )}
+
+                      <div className="flex items-center gap-2">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => handleEditQrCode(qrCode)}
+                          className="flex-1 text-xs sm:text-sm"
+                        >
+                          <Edit className="w-3 h-3 sm:w-4 sm:h-4 mr-1" />
+                          Edit
+                        </Button>
+                        <AlertDialog>
+                          <AlertDialogTrigger asChild>
+                            <Button 
+                              variant="outline" 
+                              size="sm" 
+                              className="text-red-600 hover:text-red-700 px-2 sm:px-3"
+                            >
+                              <Trash2 className="w-3 h-3 sm:w-4 sm:h-4" />
+                            </Button>
+                          </AlertDialogTrigger>
+                          <AlertDialogContent className="mx-4 sm:mx-0">
+                            <AlertDialogHeader>
+                              <AlertDialogTitle>Delete QR Code</AlertDialogTitle>
+                              <AlertDialogDescription>
+                                Are you sure you want to delete "{qrCode.name}"? This action cannot be undone.
+                              </AlertDialogDescription>
+                            </AlertDialogHeader>
+                            <AlertDialogFooter className="flex-col sm:flex-row gap-2">
+                              <AlertDialogCancel className="w-full sm:w-auto">Cancel</AlertDialogCancel>
+                              <AlertDialogAction
+                                onClick={() => handleDeleteQrCode(qrCode.id)}
+                                className="bg-red-600 hover:bg-red-700 w-full sm:w-auto"
+                              >
+                                Delete
+                              </AlertDialogAction>
+                            </AlertDialogFooter>
+                          </AlertDialogContent>
+                        </AlertDialog>
+                      </div>
+                    </CardContent>
+                  </Card>
+                ))}
+                {commonQrCodes.length === 0 && (
+                  <div className="col-span-full text-center py-8 text-gray-500">
+                    No QR codes added yet. Click "Add QR Code" to create one.
+                  </div>
+                )}
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Technician Management */}
             <Card>
               <CardHeader>
               <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
@@ -508,6 +706,34 @@ const Settings = () => {
                 </div>
               </div>
             </div>
+            
+            <div className="space-y-4">
+              <h3 className="text-lg font-semibold text-gray-900">Payment QR Code</h3>
+              <div>
+                <Label>Upload Payment QR Code (Optional)</Label>
+                <p className="text-sm text-gray-500 mb-2">Upload QR code for payment scanning</p>
+                <ImageUpload
+                  onImagesChange={(images) => setTechnicianFormData(prev => ({ ...prev, qrCode: images[0] || '' }))}
+                  maxImages={1}
+                  folder="technician-qr-codes"
+                  title=""
+                  description=""
+                  maxWidth={800}
+                  quality={0.8}
+                  aggressiveCompression={false}
+                  useSecondaryAccount={false}
+                />
+                {technicianFormData.qrCode && (
+                  <div className="mt-2">
+                    <img 
+                      src={technicianFormData.qrCode} 
+                      alt="QR Code" 
+                      className="w-32 h-32 object-contain border border-gray-200 rounded"
+                    />
+                  </div>
+                )}
+              </div>
+            </div>
           </div>
 
           <DialogFooter className="flex flex-col sm:flex-row gap-2 sm:gap-3">
@@ -528,6 +754,91 @@ const Settings = () => {
               className="bg-blue-600 hover:bg-blue-700 w-full sm:w-auto"
             >
               {editTechnicianDialogOpen ? 'Update Technician' : 'Create Technician'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Add/Edit Common QR Code Dialog */}
+      <Dialog open={addQrCodeDialogOpen || editQrCodeDialogOpen} onOpenChange={(open) => {
+        if (!open) {
+          setAddQrCodeDialogOpen(false);
+          setEditQrCodeDialogOpen(false);
+          setSelectedQrCode(null);
+          setQrCodeFormData({ name: '', qrCodeUrl: '' });
+        }
+      }}>
+        <DialogContent className="sm:max-w-md mx-4 max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>
+              {editQrCodeDialogOpen ? 'Edit QR Code' : 'Add New QR Code'}
+            </DialogTitle>
+            <DialogDescription>
+              {editQrCodeDialogOpen 
+                ? 'Update QR code information'
+                : 'Create a new common QR code for payment scanning'
+              }
+            </DialogDescription>
+          </DialogHeader>
+          
+          <div className="space-y-6">
+            <div className="space-y-4">
+              <div>
+                <Label htmlFor="qrCodeName">QR Code Name *</Label>
+                <Input
+                  id="qrCodeName"
+                  value={qrCodeFormData.name}
+                  onChange={(e) => setQrCodeFormData(prev => ({ ...prev, name: e.target.value }))}
+                  placeholder="e.g., Company UPI QR, Main Account QR"
+                />
+              </div>
+              
+              <div>
+                <Label>Upload QR Code Image *</Label>
+                <p className="text-sm text-gray-500 mb-2">Upload QR code image for payment scanning</p>
+                <ImageUpload
+                  onImagesChange={(images) => setQrCodeFormData(prev => ({ ...prev, qrCodeUrl: images[0] || '' }))}
+                  maxImages={1}
+                  folder="common-qr-codes"
+                  title=""
+                  description=""
+                  maxWidth={800}
+                  quality={0.8}
+                  aggressiveCompression={false}
+                  useSecondaryAccount={false}
+                />
+                {qrCodeFormData.qrCodeUrl && (
+                  <div className="mt-2">
+                    <img 
+                      src={qrCodeFormData.qrCodeUrl} 
+                      alt="QR Code" 
+                      className="w-32 h-32 object-contain border border-gray-200 rounded"
+                    />
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+
+          <DialogFooter className="flex flex-col sm:flex-row gap-2 sm:gap-3">
+            <Button
+              variant="outline"
+              onClick={() => {
+                setAddQrCodeDialogOpen(false);
+                setEditQrCodeDialogOpen(false);
+                setSelectedQrCode(null);
+                setQrCodeFormData({ name: '', qrCodeUrl: '' });
+              }}
+              className="w-full sm:w-auto"
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={handleSaveQrCode}
+              disabled={!qrCodeFormData.name || !qrCodeFormData.qrCodeUrl}
+              className="bg-blue-600 hover:bg-blue-700 w-full sm:w-auto"
+            >
+              {editQrCodeDialogOpen ? 'Update QR Code' : 'Create QR Code'}
             </Button>
           </DialogFooter>
         </DialogContent>

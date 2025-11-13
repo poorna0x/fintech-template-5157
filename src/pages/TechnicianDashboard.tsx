@@ -48,6 +48,7 @@ import { Job, JobAssignmentRequest } from '@/types';
 import { sendNotification, createJobCompletedNotification, createJobAssignmentRequestNotification, createJobAssignmentAcceptedNotification, createJobAssignmentRejectedNotification, requestNotificationPermission } from '@/lib/notifications';
 import FollowUpModal from '@/components/FollowUpModal';
 import { registerTechnicianPWA, disablePWA } from '@/lib/pwa';
+import { getCachedQrCodes, cacheQrCodes, shouldUseCache, getCachedTechnicianQrCode, cacheTechnicianQrCode, CommonQrCode } from '@/lib/qrCodeManager';
 import { extractCoordinates, formatAddressForDisplay } from '@/lib/maps';
 import ImageUpload from '@/components/ImageUpload';
 import { Label } from '@/components/ui/label';
@@ -158,6 +159,9 @@ const TechnicianDashboard = () => {
   const [billAmountConfirmOpen, setBillAmountConfirmOpen] = useState(false);
   const [customerHasPrefilter, setCustomerHasPrefilter] = useState<boolean | null>(null);
   const [qrCodeType, setQrCodeType] = useState<string>('');
+  const [selectedQrCodeId, setSelectedQrCodeId] = useState<string>('');
+  const [commonQrCodes, setCommonQrCodes] = useState<CommonQrCode[]>([]);
+  const [technicianQrCode, setTechnicianQrCode] = useState<string>('');
   const [customerQrPhotos, setCustomerQrPhotos] = useState<string[]>([]);
   const [technicianQrPhoto, setTechnicianQrPhoto] = useState<string>('');
   const [paymentScreenshot, setPaymentScreenshot] = useState<string>('');
@@ -267,6 +271,63 @@ const TechnicianDashboard = () => {
       loadAssignmentRequests();
     }
   }, [user?.technicianId, loadAssignedJobs]);
+
+  // Load QR codes with localStorage caching
+  useEffect(() => {
+    const loadQrCodes = async () => {
+      try {
+        // Check cache first (for mobile)
+        if (shouldUseCache()) {
+          const cachedCommon = getCachedQrCodes();
+          if (cachedCommon) {
+            setCommonQrCodes(cachedCommon);
+          }
+          
+          // Load technician QR code from cache
+          if (user?.technicianId) {
+            const cachedTech = getCachedTechnicianQrCode(user.technicianId);
+            if (cachedTech) {
+              setTechnicianQrCode(cachedTech);
+            }
+          }
+        }
+
+        // Always fetch from database (cache will be updated)
+        const [commonResult, techResult] = await Promise.all([
+          db.commonQrCodes.getAll(),
+          user?.technicianId ? db.technicians.getById(user.technicianId) : Promise.resolve({ data: null, error: null })
+        ]);
+
+        if (commonResult.data) {
+          const transformed = commonResult.data.map((qr: any) => ({
+            id: qr.id,
+            name: qr.name,
+            qrCodeUrl: qr.qr_code_url,
+            createdAt: qr.created_at,
+            updatedAt: qr.updated_at
+          }));
+          setCommonQrCodes(transformed);
+          // Update cache
+          if (shouldUseCache()) {
+            cacheQrCodes(transformed);
+          }
+        }
+
+        if (techResult.data && (techResult.data as any).qr_code) {
+          const techQr = (techResult.data as any).qr_code;
+          setTechnicianQrCode(techQr);
+          // Update cache
+          if (shouldUseCache() && user?.technicianId) {
+            cacheTechnicianQrCode(user.technicianId, techQr);
+          }
+        }
+      } catch (error) {
+        console.error('Error loading QR codes:', error);
+      }
+    };
+
+    loadQrCodes();
+  }, [user?.technicianId]);
 
   // Track app visibility to show notifications when app becomes active
   useEffect(() => {
@@ -1394,8 +1455,8 @@ const TechnicianDashboard = () => {
       }
       // If Online, need to check QR code selection
       if (paymentMode === 'ONLINE') {
-        if (!qrCodeType) {
-          toast.error('Please select a QR code type');
+        if (!selectedQrCodeId) {
+          toast.error('Please select a QR code');
           return;
         }
         setCompleteJobStep(4);
@@ -1452,8 +1513,22 @@ const TechnicianDashboard = () => {
       if (paymentMode === 'ONLINE') {
         const qrPhotos: any = {
           qr_code_type: qrCodeType,
+          selected_qr_code_id: selectedQrCodeId,
           payment_screenshot: paymentScreenshot || null
         };
+        
+        // Add selected QR code URL
+        if (selectedQrCodeId.startsWith('common_')) {
+          const qrId = selectedQrCodeId.replace('common_', '');
+          const selectedQr = commonQrCodes.find(qr => qr.id === qrId);
+          if (selectedQr) {
+            qrPhotos.selected_qr_code_url = selectedQr.qrCodeUrl;
+            qrPhotos.selected_qr_code_name = selectedQr.name;
+          }
+        } else if (selectedQrCodeId === 'technician' && technicianQrCode) {
+          qrPhotos.selected_qr_code_url = technicianQrCode;
+        }
+        
         if (customerQrPhotos.length > 0) {
           qrPhotos.customer_qr_photos = customerQrPhotos;
         }
@@ -1525,6 +1600,7 @@ const TechnicianDashboard = () => {
       setPaymentMode('');
       setCustomerHasPrefilter(null);
       setQrCodeType('');
+      setSelectedQrCodeId('');
       setCustomerQrPhotos([]);
       setTechnicianQrPhoto('');
       setPaymentScreenshot('');
@@ -3255,6 +3331,7 @@ const TechnicianDashboard = () => {
                         // Reset QR code fields when changing payment mode
                         if (value === 'CASH') {
                           setQrCodeType('');
+                          setSelectedQrCodeId('');
                           setCustomerQrPhotos([]);
                           setTechnicianQrPhoto('');
                           setPaymentScreenshot('');
@@ -3274,21 +3351,82 @@ const TechnicianDashboard = () => {
                   {paymentMode === 'ONLINE' && (
                     <div className="space-y-4 pl-4 border-l-2 border-gray-200">
                       <div>
-                        <Label htmlFor="qr-code-type">Select QR Code Type *</Label>
+                        <Label htmlFor="qr-code-select">Select QR Code *</Label>
                         <Select 
-                          value={qrCodeType} 
-                          onValueChange={setQrCodeType}
+                          value={selectedQrCodeId} 
+                          onValueChange={(value) => {
+                            setSelectedQrCodeId(value);
+                            // Reset QR code type based on selection
+                            if (value.startsWith('common_')) {
+                              setQrCodeType('common');
+                            } else if (value === 'technician') {
+                              setQrCodeType('technician');
+                            } else if (value === 'customer') {
+                              setQrCodeType('customer');
+                            } else if (value === 'both') {
+                              setQrCodeType('both');
+                            }
+                          }}
                         >
                           <SelectTrigger className="mt-1">
-                            <SelectValue placeholder="Select QR code type" />
+                            <SelectValue placeholder="Select QR code" />
                           </SelectTrigger>
                           <SelectContent>
-                            <SelectItem value="customer">Customer QR Code</SelectItem>
-                            <SelectItem value="technician">Technician QR Code</SelectItem>
-                            <SelectItem value="both">Both</SelectItem>
+                            {/* Common QR Codes */}
+                            {commonQrCodes.map((qr) => (
+                              <SelectItem key={`common_${qr.id}`} value={`common_${qr.id}`}>
+                                {qr.name} (Common)
+                              </SelectItem>
+                            ))}
+                            {/* Technician QR Code */}
+                            {technicianQrCode && (
+                              <SelectItem value="technician">
+                                My QR Code (Technician)
+                              </SelectItem>
+                            )}
+                            {/* Customer QR Code */}
+                            <SelectItem value="customer">
+                              Customer QR Code
+                            </SelectItem>
+                            {/* Both (if technician QR exists) */}
+                            {technicianQrCode && (
+                              <SelectItem value="both">
+                                Both (Technician + Customer)
+                              </SelectItem>
+                            )}
                           </SelectContent>
                         </Select>
                       </div>
+
+                      {/* Display selected QR code */}
+                      {selectedQrCodeId && (
+                        <div className="space-y-2">
+                          {selectedQrCodeId.startsWith('common_') && (() => {
+                            const qrId = selectedQrCodeId.replace('common_', '');
+                            const selectedQr = commonQrCodes.find(qr => qr.id === qrId);
+                            return selectedQr ? (
+                              <div className="p-4 border rounded-lg bg-gray-50">
+                                <p className="text-sm font-medium mb-2">{selectedQr.name}</p>
+                                <img 
+                                  src={selectedQr.qrCodeUrl} 
+                                  alt={selectedQr.name}
+                                  className="w-48 h-48 object-contain mx-auto border border-gray-200 rounded"
+                                />
+                              </div>
+                            ) : null;
+                          })()}
+                          {selectedQrCodeId === 'technician' && technicianQrCode && (
+                            <div className="p-4 border rounded-lg bg-gray-50">
+                              <p className="text-sm font-medium mb-2">Technician QR Code</p>
+                              <img 
+                                src={technicianQrCode} 
+                                alt="Technician QR Code"
+                                className="w-48 h-48 object-contain mx-auto border border-gray-200 rounded"
+                              />
+                            </div>
+                          )}
+                        </div>
+                      )}
 
                       {(qrCodeType === 'customer' || qrCodeType === 'both') && (
                         <div>
@@ -3307,15 +3445,15 @@ const TechnicianDashboard = () => {
                         </div>
                       )}
 
-                      {(qrCodeType === 'technician' || qrCodeType === 'both') && (
+                      {(qrCodeType === 'technician' || qrCodeType === 'both') && !selectedQrCodeId.startsWith('common_') && (
                         <div>
-                          <Label>Technician QR Code Photo</Label>
+                          <Label>Technician QR Code Photo (if different)</Label>
                           <ImageUpload
                             onImagesChange={(images) => setTechnicianQrPhoto(images[0] || '')}
                             maxImages={1}
                             folder="payment-receipts"
                             title=""
-                            description="Upload technician QR code photo"
+                            description="Upload technician QR code photo (optional if already selected above)"
                             maxWidth={800}
                             quality={0.3}
                             aggressiveCompression={true}
@@ -3508,6 +3646,7 @@ const TechnicianDashboard = () => {
       setPaymentMode('');
       setCustomerHasPrefilter(null);
       setQrCodeType('');
+      setSelectedQrCodeId('');
       setCustomerQrPhotos([]);
       setTechnicianQrPhoto('');
       setPaymentScreenshot('');
@@ -3542,7 +3681,7 @@ const TechnicianDashboard = () => {
               <Button
                 onClick={handleCompleteJobSubmit}
                 className="bg-black hover:bg-gray-800 !text-white font-semibold"
-                disabled={(completeJobStep === 3 && !paymentMode) || (completeJobStep === 3 && paymentMode === 'ONLINE' && !qrCodeType) || (completeJobStep === 4 && hasAMC && (!amcDateGiven || !amcEndDate))}
+                disabled={(completeJobStep === 3 && !paymentMode) || (completeJobStep === 3 && paymentMode === 'ONLINE' && !selectedQrCodeId) || (completeJobStep === 4 && hasAMC && (!amcDateGiven || !amcEndDate))}
               >
                 {completeJobStep === 5 ? 'Complete Job' : 'Next'}
               </Button>

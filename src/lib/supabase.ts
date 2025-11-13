@@ -757,6 +757,56 @@ export const db = {
       
       return { data: null, error };
     }
+  },
+
+  // Common QR Codes operations (for payment QR codes shared by all technicians)
+  commonQrCodes: {
+    async create(qrCode: { name: string; qr_code_url: string }) {
+      const { data, error } = await supabase
+        .from('common_qr_codes')
+        .insert({
+          name: qrCode.name,
+          qr_code_url: qrCode.qr_code_url,
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString()
+        })
+        .select()
+        .single();
+      
+      return { data, error };
+    },
+    
+    async getAll() {
+      const { data, error } = await supabase
+        .from('common_qr_codes')
+        .select('*')
+        .order('created_at', { ascending: false });
+      
+      return { data, error };
+    },
+    
+    async update(id: string, updates: { name?: string; qr_code_url?: string }) {
+      const { data, error } = await supabase
+        .from('common_qr_codes')
+        .update({
+          ...updates,
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', id)
+        .select()
+        .single();
+      
+      return { data, error };
+    },
+    
+    async delete(id: string) {
+      const { error } = await supabase
+        .from('common_qr_codes')
+        .delete()
+        .eq('id', id);
+      
+      return { data: null, error };
+    }
   }
 };
 
