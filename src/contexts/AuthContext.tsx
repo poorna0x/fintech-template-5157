@@ -188,13 +188,11 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
           // Session was cleared - try to restore from current user state
           // This is a fallback for iOS PWA localStorage clearing
           console.warn('Technician session cleared from localStorage, attempting to restore');
-          if (user) {
-            try {
-              setAuthSession(user);
-            } catch (error) {
-              console.error('Failed to restore session to localStorage:', error);
-            }
-        }
+          try {
+            setAuthSession(user);
+          } catch (error) {
+            console.error('Failed to restore session to localStorage:', error);
+          }
         } else if (storedSession.id !== user.id) {
           // Session changed - update user state
           setUser(storedSession);
