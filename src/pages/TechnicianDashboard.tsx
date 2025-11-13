@@ -274,6 +274,21 @@ const TechnicianDashboard = () => {
   // Load QR codes with localStorage caching
   useEffect(() => {
     const loadQrCodes = async () => {
+      // Only load if user is a technician
+      if (!user || user.role !== 'technician') {
+        console.log('Not a technician, skipping QR code load');
+        return;
+      }
+
+      // Get technician ID - use technicianId if available, otherwise use user.id
+      const technicianId = user.technicianId || user.id;
+      console.log('Loading QR codes for technician:', { 
+        userId: user.id, 
+        technicianId: user.technicianId, 
+        usingId: technicianId,
+        email: user.email 
+      });
+
       try {
         // Check cache first (for mobile)
         if (shouldUseCache()) {
@@ -283,18 +298,17 @@ const TechnicianDashboard = () => {
           }
           
           // Load technician QR code from cache
-          if (user?.technicianId) {
-            const cachedTech = getCachedTechnicianQrCode(user.technicianId);
-            if (cachedTech) {
-              setTechnicianQrCode(cachedTech);
-            }
+          const cachedTech = getCachedTechnicianQrCode(technicianId);
+          if (cachedTech) {
+            console.log('Found technician QR code in cache');
+            setTechnicianQrCode(cachedTech);
           }
         }
 
         // Always fetch from database (cache will be updated)
         const [commonResult, techResult] = await Promise.all([
           db.commonQrCodes.getAll(),
-          user?.technicianId ? db.technicians.getById(user.technicianId) : Promise.resolve({ data: null, error: null })
+          db.technicians.getById(technicianId)
         ]);
 
         if (commonResult.data) {
@@ -306,21 +320,37 @@ const TechnicianDashboard = () => {
             updatedAt: qr.updated_at
           }));
           setCommonQrCodes(transformed);
+          console.log('Loaded common QR codes:', transformed.length);
           // Update cache
           if (shouldUseCache()) {
             cacheQrCodes(transformed);
           }
         }
 
+        if (techResult.error) {
+          console.error('Error fetching technician data:', techResult.error);
+        }
+
         if (techResult.data) {
           const techData = techResult.data as any;
+          console.log('Technician data loaded:', { 
+            id: techData.id, 
+            hasQrCode: !!techData.qr_code,
+            qrCodeLength: techData.qr_code ? techData.qr_code.length : 0,
+            fullName: techData.full_name 
+          });
+          
           if (techData.qr_code) {
             const techQr = techData.qr_code;
+            console.log('Setting technician QR code:', techQr.substring(0, 50) + '...');
             setTechnicianQrCode(techQr);
             // Update cache
-            if (shouldUseCache() && user?.technicianId) {
-              cacheTechnicianQrCode(user.technicianId, techQr);
+            if (shouldUseCache()) {
+              cacheTechnicianQrCode(technicianId, techQr);
             }
+          } else {
+            console.log('No QR code found for technician in database');
+            setTechnicianQrCode(''); // Clear if no QR code
           }
           // Store technician name for display
           if (techData.full_name) {
@@ -328,14 +358,18 @@ const TechnicianDashboard = () => {
           } else if (techData.employee_id) {
             setTechnicianName(`Technician ${techData.employee_id}`);
           }
+        } else {
+          console.log('No technician data returned from database');
         }
       } catch (error) {
         console.error('Error loading QR codes:', error);
       }
     };
 
-    loadQrCodes();
-  }, [user?.technicianId]);
+    if (user && user.role === 'technician') {
+      loadQrCodes();
+    }
+  }, [user]);
 
   // Track app visibility to show notifications when app becomes active
   useEffect(() => {
