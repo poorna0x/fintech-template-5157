@@ -39,7 +39,8 @@ import {
   Settings,
   ArrowRight,
   RotateCcw,
-  Bell
+  Bell,
+  RefreshCw
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { db, supabase } from '@/lib/supabase';
