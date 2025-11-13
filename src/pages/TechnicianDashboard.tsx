@@ -3376,10 +3376,14 @@ const TechnicianDashboard = () => {
                                 {qr.name}
                               </SelectItem>
                             ))}
-                            {/* Technician QR Code - show by name */}
-                            {technicianQrCode && (
+                            {/* Technician QR Code - show by name (always show if technician has QR code) */}
+                            {technicianQrCode ? (
                               <SelectItem value="technician">
                                 {(technicianName || user?.fullName || 'Technician')}'s QR Code
+                              </SelectItem>
+                            ) : (
+                              <SelectItem value="technician" disabled>
+                                {(technicianName || user?.fullName || 'Technician')}'s QR Code (Not uploaded)
                               </SelectItem>
                             )}
                           </SelectContent>
@@ -3413,8 +3417,8 @@ const TechnicianDashboard = () => {
                                     onError={(e) => {
                                       console.error('Failed to load QR code:', selectedQr.qrCodeUrl);
                                     }}
-                                  />
-                                </div>
+                    />
+                  </div>
                               );
                             })() : selectedQrCodeId === 'technician' ? (
                               technicianQrCode ? (
@@ -3437,14 +3441,33 @@ const TechnicianDashboard = () => {
                                   <p className="text-xs text-gray-500 mt-1">Upload in Settings → Technician Management</p>
                                 </div>
                               )
-                            ) : null}
-                          </div>
+                          ) : null}
                         </div>
-                      )}
-                    </div>
-                  )}
+                      </div>
+                    )}
 
-                  {paymentMode === 'CASH' && (
+                    {/* Payment Photo Upload (Optional) */}
+                    {selectedQrCodeId && (
+                      <div className="mt-4">
+                        <Label>Payment Screenshot (Optional)</Label>
+                        <p className="text-sm text-gray-500 mb-2">Upload payment confirmation screenshot</p>
+                    <ImageUpload
+                          onImagesChange={(images) => setPaymentScreenshot(images[0] || '')}
+                          maxImages={1}
+                          folder="payment-receipts"
+                      title=""
+                      description=""
+                          maxWidth={800}
+                          quality={0.3}
+                      aggressiveCompression={true}
+                          useSecondaryAccount={true}
+                    />
+                  </div>
+                    )}
+                </div>
+              )}
+
+                {paymentMode === 'CASH' && (
                     <div className="p-4 bg-gray-50 border border-gray-200 rounded-lg">
                       <p className="text-sm text-gray-700">Payment mode: Cash</p>
                     </div>
