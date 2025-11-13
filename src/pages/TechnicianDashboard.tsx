@@ -1455,12 +1455,12 @@ const TechnicianDashboard = () => {
     if (completeJobStep === 3) {
       if (!paymentMode) {
         toast.error('Please select a payment mode');
-        return;
-      }
+      return;
+    }
       // If Cash, skip to step 4 (AMC)
       if (paymentMode === 'CASH') {
-        setCompleteJobStep(4);
-        return;
+      setCompleteJobStep(4);
+      return;
       }
       // If Online, need to check QR code selection
       if (paymentMode === 'ONLINE') {
@@ -1883,7 +1883,7 @@ const TechnicianDashboard = () => {
             <Button
               size="default"
               variant="outline"
-              className="h-10 w-12 p-0"
+                  className="h-10 w-12 p-0"
               onClick={() => {
                 markJobAsSeen(job.id);
                 setSelectedJobForOptions(job);
@@ -1912,9 +1912,9 @@ const TechnicianDashboard = () => {
             <Button
               size="default"
               variant="outline"
-              className="h-10 w-12 p-0"
-              onClick={() => {
-                markJobAsSeen(job.id);
+                  className="h-10 w-12 p-0"
+                  onClick={() => {
+                    markJobAsSeen(job.id);
                 setSelectedJobForOptions(job);
                 setOptionsDialogOpen(prev => ({ ...prev, [job.id]: true }));
               }}
@@ -1941,14 +1941,14 @@ const TechnicianDashboard = () => {
             <Button
               size="default"
               variant="outline"
-              className="h-10 w-12 p-0"
+                  className="h-10 w-12 p-0"
               onClick={() => {
                 markJobAsSeen(job.id);
                 setSelectedJobForOptions(job);
                 setOptionsDialogOpen(prev => ({ ...prev, [job.id]: true }));
               }}
             >
-              <MoreVertical className="w-4 h-4" />
+                  <MoreVertical className="w-4 h-4" />
             </Button>
           </div>
         );
@@ -3206,8 +3206,8 @@ const TechnicianDashboard = () => {
             setPaymentMode('');
             setCustomerHasPrefilter(null);
             setQrCodeType('');
+            setSelectedQrCodeId('');
             setCustomerQrPhotos([]);
-            setTechnicianQrPhoto('');
             setPaymentScreenshot('');
           }
         }}>
@@ -3219,7 +3219,7 @@ const TechnicianDashboard = () => {
                 {completeJobStep === 2 && 'Enter the bill amount for this job'}
                 {completeJobStep === 3 && 'Select payment mode and upload payment details'}
                 {completeJobStep === 4 && 'Add AMC information (optional)'}
-                {completeJobStep === 5 && 'Does the customer have a prefilter?'}
+            {completeJobStep === 5 && 'Does the customer have a prefilter?'}
               </DialogDescription>
             </DialogHeader>
             
@@ -3291,7 +3291,7 @@ const TechnicianDashboard = () => {
               {/* Step 2: Bill Amount */}
               {completeJobStep === 2 && (
                 <div className="space-y-4">
-                  <div>
+              <div>
                     <Label htmlFor="bill-amount">Bill Amount *</Label>
                     <Input
                       id="bill-amount"
@@ -3311,23 +3311,23 @@ const TechnicianDashboard = () => {
                   </div>
                   <div>
                     <Label htmlFor="completion-notes">Completion Notes (Optional)</Label>
-                    <Textarea
-                      id="completion-notes"
+                <Textarea
+                  id="completion-notes"
                       placeholder="Add any notes about the job completion..."
-                      value={completionNotes}
-                      onChange={(e) => setCompletionNotes(e.target.value)}
-                      rows={3}
+                  value={completionNotes}
+                  onChange={(e) => setCompletionNotes(e.target.value)}
+                  rows={3}
                       className="mt-1"
-                    />
-                  </div>
-                </div>
+                />
+              </div>
+            </div>
               )}
 
               {/* Step 3: Payment Mode */}
               {completeJobStep === 3 && (
                 <div className="space-y-4">
                   {!paymentMode && (
-                    <div>
+                  <div>
                       <Label htmlFor="payment-mode">Payment Mode *</Label>
                       <Select 
                         value={paymentMode} 
@@ -3407,8 +3407,8 @@ const TechnicianDashboard = () => {
                                     src={selectedQr.qrCodeUrl} 
                                     alt={selectedQr.name}
                                     className="w-64 h-64 object-contain mx-auto border-2 border-primary rounded-lg shadow-lg bg-white p-3"
-                                  />
-                                </div>
+                    />
+                  </div>
                               ) : null;
                             })()}
                             {selectedQrCodeId === 'technician' && technicianQrCode && (
@@ -3430,8 +3430,8 @@ const TechnicianDashboard = () => {
                           </div>
                         </div>
                       )}
-                    </div>
-                  )}
+                </div>
+              )}
 
                   {paymentMode === 'CASH' && (
                     <div className="p-4 bg-gray-50 border border-gray-200 rounded-lg">
@@ -3594,17 +3594,17 @@ const TechnicianDashboard = () => {
                   setCompleteDialogOpen(false);
                   setSelectedJobForComplete(null);
                   setCompletionNotes('');
-      setCompleteJobStep(1);
-      setBillAmount('');
-      setBillPhotos([]);
-      const today = new Date().toISOString().split('T')[0];
-      setAmcDateGiven(today);
-      setAmcEndDate('');
-      setAmcYears(1);
-      setAmcIncludesPrefilter(false);
-      setHasAMC(false);
-      setPaymentMode('');
-      setCustomerHasPrefilter(null);
+                    setCompleteJobStep(1);
+                    setBillAmount('');
+                    setBillPhotos([]);
+                    const today = new Date().toISOString().split('T')[0];
+                    setAmcDateGiven(today);
+                    setAmcEndDate('');
+                    setAmcYears(1);
+                    setAmcIncludesPrefilter(false);
+                    setHasAMC(false);
+                    setPaymentMode('');
+                    setCustomerHasPrefilter(null);
       setQrCodeType('');
       setSelectedQrCodeId('');
       setCustomerQrPhotos([]);
