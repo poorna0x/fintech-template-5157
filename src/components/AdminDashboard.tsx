@@ -9908,8 +9908,8 @@ const AdminDashboard = () => {
             )}
             <Button
               onClick={handleCompleteJobSubmit}
-              className="bg-black hover:bg-gray-800 text-white"
-              disabled={(completeJobStep === 3 && hasAMC && (!amcDateGiven || !amcEndDate)) || (completeJobStep === 4 && !paymentMode)}
+              className="bg-black hover:bg-gray-800 !text-white font-semibold"
+              disabled={(completeJobStep === 3 && !paymentMode) || (completeJobStep === 3 && paymentMode === 'ONLINE' && !qrCodeType) || (completeJobStep === 4 && hasAMC && (!amcDateGiven || !amcEndDate))}
             >
               {completeJobStep === 5 ? 'Complete Job' : 'Next'}
             </Button>
