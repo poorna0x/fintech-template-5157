@@ -277,8 +277,15 @@ const TechnicianDashboard = () => {
       hasUser: !!user, 
       userRole: user?.role,
       userId: user?.id,
-      technicianId: user?.technicianId 
+      technicianId: user?.technicianId,
+      loading: loading
     });
+
+    // Wait for auth to finish loading
+    if (loading) {
+      console.log('⏳ Auth still loading, waiting...');
+      return;
+    }
 
     const loadQrCodes = async () => {
       // Only load if user is a technician
@@ -393,14 +400,16 @@ const TechnicianDashboard = () => {
       }
     };
 
-    // Always try to load if user exists (will check role inside)
-    if (user) {
+    // Always try to load if user exists and auth is done loading (will check role inside)
+    if (!loading && user) {
       console.log('🚀 Calling loadQrCodes, user:', { id: user.id, role: user.role });
       loadQrCodes();
+    } else if (loading) {
+      console.log('⏳ Waiting for auth to finish loading...');
     } else {
       console.log('⚠️ No user, not loading QR codes');
     }
-  }, [user]);
+  }, [user, loading]);
 
   // Track app visibility to show notifications when app becomes active
   useEffect(() => {
