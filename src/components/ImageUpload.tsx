@@ -243,7 +243,7 @@ const ImageUpload: React.FC<ImageUploadProps> = ({
         onDragLeave={handleDragLeave}
         onDrop={handleDrop}
         className={`
-          relative border-2 border-dashed rounded-lg p-8 text-center transition-all duration-200
+          relative border-2 border-dashed rounded-lg p-4 sm:p-8 text-center transition-all duration-200
           ${isDragOver 
             ? 'border-primary bg-primary/5 scale-105' 
             : 'border-muted-foreground/25 hover:border-primary/50 hover:bg-muted/50'
@@ -252,23 +252,23 @@ const ImageUpload: React.FC<ImageUploadProps> = ({
         `}
         onClick={!isUploading && uploadedImages.length < maxImages ? openFileDialog : undefined}
       >
-        <div className="space-y-4">
-          <div className="mx-auto w-16 h-16 bg-muted rounded-full flex items-center justify-center">
+        <div className="space-y-2 sm:space-y-4">
+          <div className="mx-auto w-12 h-12 sm:w-16 sm:h-16 bg-muted rounded-full flex items-center justify-center">
             {isDragOver ? (
-              <FileImage className="w-8 h-8 text-primary" />
+              <FileImage className="w-6 h-6 sm:w-8 sm:h-8 text-primary" />
             ) : (
-              <Upload className="w-8 h-8 text-muted-foreground" />
+              <Upload className="w-6 h-6 sm:w-8 sm:h-8 text-muted-foreground" />
             )}
           </div>
           
           <div>
-            <h3 className="text-lg font-medium text-foreground">
+            <h3 className="text-sm sm:text-lg font-medium text-foreground">
               {isDragOver ? 'Drop images here' : 'Drag & drop images here'}
             </h3>
-            <p className="text-sm text-muted-foreground mt-1">
+            <p className="text-xs sm:text-sm text-muted-foreground mt-1">
               or click to browse files
             </p>
-            <p className="text-xs text-muted-foreground mt-2">
+            <p className="text-xs text-muted-foreground mt-1 sm:mt-2 hidden sm:block">
               Supports JPEG, PNG, WebP • Max 5MB per image • Up to {maxImages} images
             </p>
           </div>
@@ -283,7 +283,7 @@ const ImageUpload: React.FC<ImageUploadProps> = ({
                 openFileDialog();
               }}
               disabled={isUploading || uploadedImages.length >= maxImages}
-              className="flex items-center gap-2"
+              className="flex items-center gap-2 text-sm sm:text-base py-2 sm:py-2"
             >
               {isUploading ? (
                 <div className="flex space-x-1">
@@ -305,7 +305,7 @@ const ImageUpload: React.FC<ImageUploadProps> = ({
                 openCameraDialog();
               }}
               disabled={isUploading || uploadedImages.length >= maxImages}
-              className="flex items-center gap-2"
+              className="flex items-center gap-2 text-sm sm:text-base py-2 sm:py-2"
             >
               <Camera className="w-4 h-4" />
               Take Photo
