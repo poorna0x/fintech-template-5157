@@ -1469,6 +1469,7 @@ const TechnicianDashboard = () => {
           toast.error('Please select a QR code');
           return;
         }
+        // QR code selected, proceed to AMC step
         setCompleteJobStep(4);
         return;
       }
@@ -1537,14 +1538,9 @@ const TechnicianDashboard = () => {
           }
         } else if (selectedQrCodeId === 'technician' && technicianQrCode) {
           qrPhotos.selected_qr_code_url = technicianQrCode;
+          qrPhotos.selected_qr_code_name = technicianName || user?.fullName || 'Technician';
         }
         
-        if (customerQrPhotos.length > 0) {
-          qrPhotos.customer_qr_photos = customerQrPhotos;
-        }
-        if (technicianQrPhoto) {
-          qrPhotos.technician_qr_photo = technicianQrPhoto;
-        }
         requirements.push({ qr_photos: qrPhotos });
       }
 
@@ -3332,31 +3328,33 @@ const TechnicianDashboard = () => {
               {/* Step 3: Payment Mode */}
               {completeJobStep === 3 && (
                 <div className="space-y-4">
-                  <div>
-                    <Label htmlFor="payment-mode">Payment Mode *</Label>
-                    <Select 
-                      value={paymentMode} 
-                      onValueChange={(value: 'CASH' | 'ONLINE') => {
-                        setPaymentMode(value);
-                        // Reset QR code fields when changing payment mode
-                        if (value === 'CASH') {
-                          setQrCodeType('');
-                          setSelectedQrCodeId('');
-                          setCustomerQrPhotos([]);
-                          setTechnicianQrPhoto('');
-                          setPaymentScreenshot('');
-                        }
-                      }}
-                    >
-                      <SelectTrigger className="mt-1">
-                        <SelectValue placeholder="Select payment mode" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="CASH">Cash</SelectItem>
-                        <SelectItem value="ONLINE">Online</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
+                  {!paymentMode && (
+                    <div>
+                      <Label htmlFor="payment-mode">Payment Mode *</Label>
+                      <Select 
+                        value={paymentMode} 
+                        onValueChange={(value: 'CASH' | 'ONLINE') => {
+                          setPaymentMode(value);
+                          // Reset QR code fields when changing payment mode
+                          if (value === 'CASH') {
+                            setQrCodeType('');
+                            setSelectedQrCodeId('');
+                            setCustomerQrPhotos([]);
+                            setTechnicianQrPhoto('');
+                            setPaymentScreenshot('');
+                          }
+                        }}
+                      >
+                        <SelectTrigger className="mt-1">
+                          <SelectValue placeholder="Select payment mode" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="CASH">Cash</SelectItem>
+                          <SelectItem value="ONLINE">Online</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  )}
                   
                   {paymentMode === 'ONLINE' && (
                     <div className="space-y-4 pl-4 border-l-2 border-gray-200">
@@ -3483,38 +3481,12 @@ const TechnicianDashboard = () => {
                           </div>
                         )}
                       </div>
+                    </div>
+                  )}
 
-                      {/* Option to upload customer QR code photos if needed */}
-                      <div>
-                        <Label>Customer QR Code Photos (Optional)</Label>
-                        <p className="text-xs text-gray-500 mb-2">Upload customer's QR code photos if they want to pay using their own QR code</p>
-                        <ImageUpload
-                          onImagesChange={(images) => setCustomerQrPhotos(images)}
-                          maxImages={5}
-                          folder="payment-receipts"
-                          title=""
-                          description="Upload customer QR code photos"
-                          maxWidth={800}
-                          quality={0.3}
-                          aggressiveCompression={true}
-                          useSecondaryAccount={true}
-                        />
-                      </div>
-
-                      <div>
-                        <Label>Payment Screenshot (Optional)</Label>
-                        <ImageUpload
-                          onImagesChange={(images) => setPaymentScreenshot(images[0] || '')}
-                          maxImages={1}
-                          folder="payment-receipts"
-                          title=""
-                          description="Upload payment screenshot"
-                          maxWidth={800}
-                          quality={0.3}
-                          aggressiveCompression={true}
-                          useSecondaryAccount={true}
-                        />
-                      </div>
+                  {paymentMode === 'CASH' && (
+                    <div className="p-4 bg-gray-50 border border-gray-200 rounded-lg">
+                      <p className="text-sm text-gray-700">Payment mode: Cash</p>
                     </div>
                   )}
                 </div>
