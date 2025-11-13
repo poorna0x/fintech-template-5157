@@ -3214,8 +3214,8 @@ const TechnicianDashboard = () => {
               <DialogDescription>
                 {completeJobStep === 1 && 'Upload bill photo (optional)'}
                 {completeJobStep === 2 && 'Enter the bill amount for this job'}
-                {completeJobStep === 3 && 'Select payment mode and upload payment details'}
-                {completeJobStep === 4 && 'Add AMC information (optional)'}
+                {completeJobStep === 3 && 'Select payment mode and QR code'}
+                {completeJobStep === 4 && 'Upload payment screenshot and add AMC information (optional)'}
             {completeJobStep === 5 && 'Does the customer have a prefilter?'}
               </DialogDescription>
             </DialogHeader>
@@ -3442,30 +3442,12 @@ const TechnicianDashboard = () => {
                                 </div>
                               )
                           ) : null}
-                        </div>
-                      </div>
-                    )}
-
-                    {/* Payment Photo Upload (Optional) */}
-                    {selectedQrCodeId && (
-                      <div className="mt-4">
-                        <Label>Payment Screenshot (Optional)</Label>
-                        <p className="text-sm text-gray-500 mb-2">Upload payment confirmation screenshot</p>
-                    <ImageUpload
-                          onImagesChange={(images) => setPaymentScreenshot(images[0] || '')}
-                          maxImages={1}
-                          folder="payment-receipts"
-                      title=""
-                      description=""
-                          maxWidth={800}
-                          quality={0.3}
-                      aggressiveCompression={true}
-                          useSecondaryAccount={true}
-                    />
                   </div>
-                    )}
                 </div>
               )}
+
+                  </div>
+                )}
 
                 {paymentMode === 'CASH' && (
                     <div className="p-4 bg-gray-50 border border-gray-200 rounded-lg">
