@@ -49,15 +49,15 @@ const Services = () => {
               "@type": "Offer",
               "name": "RO Installation",
               "description": "Professional RO water purifier installation service",
-              "price": "500",
+              "price": "499",
               "priceCurrency": "INR",
               "availability": "https://schema.org/InStock"
             },
             {
               "@type": "Offer",
-              "name": "RO Repair",
+              "name": "RO Service",
               "description": "Expert RO water purifier repair and troubleshooting",
-              "price": "300",
+              "price": "399",
               "priceCurrency": "INR",
               "availability": "https://schema.org/InStock"
             },
@@ -65,7 +65,15 @@ const Services = () => {
               "@type": "Offer",
               "name": "Filter Replacement",
               "description": "RO filter replacement and maintenance service",
-              "price": "200",
+              "price": "1799",
+              "priceCurrency": "INR",
+              "availability": "https://schema.org/InStock"
+            },
+            {
+              "@type": "Offer",
+              "name": "Water Softener",
+              "description": "Water softener installation and service",
+              "price": "499",
               "priceCurrency": "INR",
               "availability": "https://schema.org/InStock"
             }
@@ -172,12 +180,16 @@ const Services = () => {
                   <div className="w-16 h-16 bg-primary/10 rounded-xl flex items-center justify-center mb-6">
                     <Filter className="w-8 h-8 text-primary" />
                   </div>
-                  <h3 className="text-2xl font-semibold mb-4 text-foreground">RO Installation</h3>
+                  <h3 className="text-2xl font-semibold mb-3 text-foreground">RO Installation</h3>
+                  <div className="mb-4">
+                    <p className="text-primary font-bold text-lg">
+                      Installation: ₹499 | Service: ₹399
+                    </p>
+                  </div>
                   <ul className="space-y-2 text-muted-foreground">
                     <li>• Complete RO system setup</li>
                     <li>• Water quality testing</li>
                     <li>• All brands service supported</li>
-                    <li>• Starting from ₹500</li>
                   </ul>
                 </CardContent>
               </Card>
@@ -202,7 +214,12 @@ const Services = () => {
                   <div className="w-16 h-16 bg-primary/10 rounded-xl flex items-center justify-center mb-6">
                     <RefreshCw className="w-8 h-8 text-primary" />
                   </div>
-                  <h3 className="text-2xl font-semibold mb-4 text-foreground">Filter Replacement</h3>
+                  <h3 className="text-2xl font-semibold mb-3 text-foreground">Filter Replacement</h3>
+                  <div className="mb-4">
+                    <p className="text-primary font-bold text-lg">
+                      Starting from ₹1799
+                    </p>
+                  </div>
                   <ul className="space-y-2 text-muted-foreground">
                     <li>• All filter types</li>
                     <li>• Pre & post filters</li>
@@ -217,7 +234,12 @@ const Services = () => {
                   <div className="w-16 h-16 bg-primary/10 rounded-xl flex items-center justify-center mb-6">
                     <Settings className="w-8 h-8 text-primary" />
                   </div>
-                  <h3 className="text-2xl font-semibold mb-4 text-foreground">Water Softener</h3>
+                  <h3 className="text-2xl font-semibold mb-3 text-foreground">Water Softener</h3>
+                  <div className="mb-4">
+                    <p className="text-primary font-bold text-lg">
+                      Starting from ₹499
+                    </p>
+                  </div>
                   <ul className="space-y-2 text-muted-foreground">
                     <li>• Softener installation</li>
                     <li>• Resin level management</li>

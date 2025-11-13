@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
-import { Wrench, Filter, RefreshCw, Settings, CheckCircle, Clock, Shield, Phone } from 'lucide-react';
+import { Wrench, Filter, RefreshCw, Settings, CheckCircle, Clock, Shield, Phone, AlertCircle } from 'lucide-react';
 
 const ServicesSection = () => {
   const navigate = useNavigate();
@@ -18,6 +18,7 @@ const ServicesSection = () => {
       title: "RO Installation & Repair",
       description: "Complete RO water purifier installation, re-installation, and expert repair services across Bangalore, Karnataka.",
       features: ["New RO installation", "RO re-installation", "Complete system repair", "Performance optimization"],
+      pricing: "Installation: ₹499 | Service: ₹399",
       details: {
         includes: [
           "Complete RO system installation & setup",
@@ -37,6 +38,10 @@ const ServicesSection = () => {
           "24/7 emergency repair support",
           "All brands service supported",
           "Professional installation guarantee"
+        ],
+        terms: [
+          "Installation (₹499) does not include plumbing items or any extra RO things, and assembly",
+          "Service charge (₹399) is service charge only, not including filters cost"
         ]
       }
     },
@@ -45,6 +50,7 @@ const ServicesSection = () => {
       title: "Water Softener Service",
       description: "Complete water softener installation, re-installation, resin level management, and maintenance services in Bengaluru.",
       features: ["Softener installation", "Re-installation", "Resin level management", "Salt level monitoring"],
+      pricing: "Starting from ₹499",
       details: {
         includes: [
           "Water softener installation & setup",
@@ -64,6 +70,9 @@ const ServicesSection = () => {
           "Energy savings on heating",
           "Extended appliance lifespan",
           "Professional resin management"
+        ],
+        terms: [
+          "Starting from ₹499 is visiting charge, not including resin"
         ]
       }
     },
@@ -72,6 +81,7 @@ const ServicesSection = () => {
       title: "RO Filter Replacement",
       description: "Complete filter replacement service for all RO water purifier filters - pre-filters, membranes, carbon filters, and more.",
       features: ["All filter types", "Pre-filter replacement", "RO membrane changing", "Carbon & post-filters"],
+      pricing: "Starting from ₹1799",
       details: {
         includes: [
           "Pre-filter (PP, sediment) replacement",
@@ -91,6 +101,9 @@ const ServicesSection = () => {
           "Cost-effective filter maintenance",
           "Genuine filter parts guarantee",
           "Professional filter installation"
+        ],
+        terms: [
+          "Price starting from ₹1799 does not include RO membrane"
         ]
       }
     },
@@ -144,10 +157,19 @@ const ServicesSection = () => {
                     <service.icon className="w-6 h-6 text-primary" />
                   </div>
                   <div className="flex-1">
-                    <div className="flex items-center justify-between mb-3">
-                      <h3 className="text-xl font-semibold text-foreground">
-                        {service.title}
-                      </h3>
+                    <div className="mb-3">
+                      <div className="flex items-center justify-between mb-2">
+                        <h3 className="text-xl font-semibold text-foreground">
+                          {service.title}
+                        </h3>
+                      </div>
+                      {service.pricing && (
+                        <div className="mb-3">
+                          <p className="text-primary font-bold text-lg">
+                            {service.pricing}
+                          </p>
+                        </div>
+                      )}
                     </div>
                     <p className="text-muted-foreground mb-4">
                       {service.description}
@@ -182,6 +204,15 @@ const ServicesSection = () => {
                             {service.description}
                           </p>
                           
+                          {/* Pricing */}
+                          {service.pricing && (
+                            <div className="bg-primary/10 rounded-lg p-4 text-center">
+                              <p className="text-primary font-bold text-lg">
+                                {service.pricing}
+                              </p>
+                            </div>
+                          )}
+                          
                           {/* What's Included */}
                           <div>
                             <h4 className="text-lg font-semibold text-foreground mb-3 flex items-center gap-2">
@@ -213,6 +244,24 @@ const ServicesSection = () => {
                               ))}
                             </ul>
                           </div>
+                          
+                          {/* Terms & Conditions */}
+                          {service.details.terms && service.details.terms.length > 0 && (
+                            <div>
+                              <h4 className="text-lg font-semibold text-foreground mb-3 flex items-center gap-2">
+                                <AlertCircle className="w-5 h-5 text-orange-500" />
+                                Terms & Conditions
+                              </h4>
+                              <ul className="space-y-2">
+                                {service.details.terms.map((term, termIndex) => (
+                                  <li key={termIndex} className="flex items-start gap-2 text-muted-foreground text-sm">
+                                    <div className="w-1.5 h-1.5 bg-orange-500 rounded-full mt-1.5 flex-shrink-0"></div>
+                                    <span>{term}</span>
+                                  </li>
+                                ))}
+                              </ul>
+                            </div>
+                          )}
                           
                           {/* Call to Action */}
                           <div className="bg-primary/5 rounded-lg p-6 text-center">
