@@ -2,7 +2,7 @@
 import React, { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import Logo from './Logo';
-import { Menu, X, CircleDot, LayoutDashboard, DollarSign, Sun, Moon, Phone, Wrench } from 'lucide-react';
+import { Menu, X, CircleDot, LayoutDashboard, DollarSign, Sun, Moon, Phone, Wrench, Droplets } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
 import { Switch } from '@/components/ui/switch';
@@ -105,17 +105,19 @@ const Header = () => {
   return (
     <div className="sticky top-0 z-50 pt-8 px-4 bg-background/95 backdrop-blur-md border-b border-border/50">
       <header className="w-full max-w-7xl mx-auto py-3 px-6 md:px-8 flex items-center justify-between">
-        <div className="p-3">
+        <div className={`p-3 ${mobileMenuOpen ? 'hidden md:block' : 'block'}`}>
           <Logo />
         </div>
         
         {/* Mobile menu button */}
-        <button 
-          className="md:hidden p-3 rounded-2xl text-muted-foreground hover:text-foreground bg-background/80 backdrop-blur-sm border border-border/50"
-          onClick={toggleMobileMenu}
-        >
-          {mobileMenuOpen ? <X size={24} /> : <Menu size={24} />}
-        </button>
+        {!mobileMenuOpen && (
+          <button 
+            className="md:hidden p-3 rounded-2xl text-muted-foreground hover:text-foreground bg-background/80 backdrop-blur-sm border border-border/50"
+            onClick={toggleMobileMenu}
+          >
+            <Menu size={24} />
+          </button>
+        )}
         
         {/* Desktop navigation */}
         <nav className="hidden md:flex items-center absolute left-1/2 transform -translate-x-1/2">
@@ -197,7 +199,27 @@ const Header = () => {
           >
             {/* Header with logo and close button */}
             <div className="flex items-center justify-between p-6 border-b border-border bg-background relative">
-              <Logo />
+              <div 
+                className="flex items-center gap-2 cursor-pointer hover:opacity-80 transition-opacity"
+                onClick={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  handleNavClick('home')(e);
+                }}
+                role="button"
+                tabIndex={0}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault();
+                    handleNavClick('home')(e as any);
+                  }
+                }}
+              >
+                <div className="w-8 h-8 bg-primary rounded-lg flex items-center justify-center flex-shrink-0">
+                  <Droplets className="w-5 h-5 text-primary-foreground" />
+                </div>
+                <div className="text-xl font-bold text-foreground whitespace-nowrap">Hydrogen RO</div>
+              </div>
               <div 
                 className="relative w-10 h-10 flex items-center justify-center"
                 style={{ 

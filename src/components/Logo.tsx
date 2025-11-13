@@ -1,26 +1,50 @@
 
 import React from 'react';
 import { Droplets } from 'lucide-react';
+import { useNavigate, useLocation } from 'react-router-dom';
 
 const Logo = () => {
+  const navigate = useNavigate();
+  const location = useLocation();
+
+  // Disable navigation on technician pages
+  const isTechnicianPage = location.pathname.startsWith('/technician');
+
   const handleLogoClick = (e: React.MouseEvent) => {
     e.preventDefault();
     e.stopPropagation();
-    // Refresh the page when logo is clicked
-    window.location.reload();
+    
+    // Don't navigate on technician pages
+    if (isTechnicianPage) {
+      return;
+    }
+    
+    // Navigate to home instead of refreshing
+    if (location.pathname === '/') {
+      // Already on homepage, just scroll to top
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    } else {
+      // Navigate to homepage
+      navigate('/');
+    }
   };
 
   return (
     <div 
-      className="flex items-center gap-2 cursor-pointer hover:opacity-80 transition-opacity relative z-50 whitespace-nowrap"
+      className={`flex items-center gap-2 ${isTechnicianPage ? 'cursor-default' : 'cursor-pointer hover:opacity-80'} transition-opacity relative z-50 whitespace-nowrap`}
       onClick={handleLogoClick}
       style={{ position: 'relative', zIndex: 9999 }}
-      role="button"
-      tabIndex={0}
+      role={isTechnicianPage ? undefined : "button"}
+      tabIndex={isTechnicianPage ? -1 : 0}
       onKeyDown={(e) => {
+        if (isTechnicianPage) return;
         if (e.key === 'Enter' || e.key === ' ') {
           e.preventDefault();
-          window.location.reload();
+          if (location.pathname === '/') {
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+          } else {
+            navigate('/');
+          }
         }
       }}
     >
