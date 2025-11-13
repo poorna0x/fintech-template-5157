@@ -3396,41 +3396,59 @@ const TechnicianDashboard = () => {
                             QR Code - Show to Customer
                           </p>
                           <div className="flex justify-center">
-                            {selectedQrCodeId.startsWith('common_') && (() => {
+                            {selectedQrCodeId.startsWith('common_') ? (() => {
                               const qrId = selectedQrCodeId.replace('common_', '');
                               const selectedQr = commonQrCodes.find(qr => qr.id === qrId);
-                              return selectedQr ? (
+                              if (!selectedQr) {
+                                console.error('Common QR code not found:', qrId, 'Available:', commonQrCodes);
+                                return (
+                                  <div className="text-center p-4">
+                                    <p className="text-sm text-red-500">QR code not found</p>
+                                  </div>
+                                );
+                              }
+                              return (
                                 <div className="text-center">
                                   <p className="text-sm font-medium mb-3 text-gray-700">{selectedQr.name}</p>
                                   <img 
                                     src={selectedQr.qrCodeUrl} 
                                     alt={selectedQr.name}
                                     className="w-64 h-64 object-contain mx-auto border-2 border-primary rounded-lg shadow-lg bg-white p-3"
-                    />
-                  </div>
-                              ) : null;
-                            })()}
-                            {selectedQrCodeId === 'technician' && technicianQrCode && (
-                              <div className="text-center">
-                                <p className="text-sm font-medium mb-3 text-gray-700">
-                                  {(technicianName || user?.fullName || 'Technician')}'s QR Code
-                                </p>
-                                <img 
-                                  src={technicianQrCode} 
-                                  alt="Technician QR Code"
-                                  className="w-64 h-64 object-contain mx-auto border-2 border-primary rounded-lg shadow-lg bg-white p-3"
-                                  onError={(e) => {
-                                    console.error('Failed to load technician QR code image:', technicianQrCode);
-                                    (e.target as HTMLImageElement).style.display = 'none';
-                                  }}
-                                />
-                              </div>
-                            )}
+                                    onError={(e) => {
+                                      console.error('Failed to load common QR code image:', selectedQr.qrCodeUrl);
+                                      (e.target as HTMLImageElement).style.display = 'none';
+                                    }}
+                                  />
+                                </div>
+                              );
+                            })() : selectedQrCodeId === 'technician' ? (
+                              technicianQrCode ? (
+                                <div className="text-center">
+                                  <p className="text-sm font-medium mb-3 text-gray-700">
+                                    {(technicianName || user?.fullName || 'Technician')}'s QR Code
+                                  </p>
+                                  <img 
+                                    src={technicianQrCode} 
+                                    alt="Technician QR Code"
+                                    className="w-64 h-64 object-contain mx-auto border-2 border-primary rounded-lg shadow-lg bg-white p-3"
+                                    onError={(e) => {
+                                      console.error('Failed to load technician QR code image:', technicianQrCode);
+                                      (e.target as HTMLImageElement).style.display = 'none';
+                                    }}
+                                  />
+                                </div>
+                              ) : (
+                                <div className="text-center p-4">
+                                  <p className="text-sm text-red-500">Technician QR code not uploaded</p>
+                                  <p className="text-xs text-gray-500 mt-1">Please upload in Settings → Technician Management</p>
+                                </div>
+                              )
+                            ) : null}
                           </div>
                         </div>
                       )}
-                </div>
-              )}
+                    </div>
+                  )}
 
                   {paymentMode === 'CASH' && (
                     <div className="p-4 bg-gray-50 border border-gray-200 rounded-lg">
