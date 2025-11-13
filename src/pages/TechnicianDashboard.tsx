@@ -3436,34 +3436,10 @@ const TechnicianDashboard = () => {
                             );
                           })()}
                           
-                          {/* Customer QR Code Option */}
-                          <div
-                            onClick={() => {
-                              setSelectedQrCodeId('customer');
-                              setQrCodeType('customer');
-                            }}
-                            className={`p-4 border-2 rounded-lg cursor-pointer transition-all ${
-                              selectedQrCodeId === 'customer'
-                                ? 'border-primary bg-primary/5 shadow-md' 
-                                : 'border-gray-200 bg-gray-50 hover:border-primary/50 hover:bg-gray-100'
-                            }`}
-                          >
-                            <p className={`text-sm font-medium mb-2 text-center ${selectedQrCodeId === 'customer' ? 'text-primary' : 'text-gray-700'}`}>
-                              Customer QR Code
-                            </p>
-                            <div className="flex justify-center items-center h-40 border border-dashed border-gray-300 rounded">
-                              <p className="text-xs text-gray-500 text-center px-4">
-                                Upload customer's QR code below
-                              </p>
-                            </div>
-                            {selectedQrCodeId === 'customer' && (
-                              <p className="text-xs text-primary text-center mt-2 font-medium">✓ Selected</p>
-                            )}
-                          </div>
                         </div>
                         
                         {/* Show selected QR code prominently if one is selected */}
-                        {selectedQrCodeId && selectedQrCodeId !== 'customer' && (
+                        {selectedQrCodeId && (
                           <div className="mt-4 p-4 bg-primary/10 border border-primary rounded-lg">
                             <p className="text-sm font-semibold text-primary mb-2 text-center">
                               Selected QR Code - Show to Customer
@@ -3500,39 +3476,22 @@ const TechnicianDashboard = () => {
                         )}
                       </div>
 
-                      {(qrCodeType === 'customer' || qrCodeType === 'both') && (
-                        <div>
-                          <Label>Customer QR Code Photos</Label>
-                          <ImageUpload
-                            onImagesChange={(images) => setCustomerQrPhotos(images)}
-                            maxImages={5}
-                            folder="payment-receipts"
-                            title=""
-                            description="Upload customer QR code photos"
-                            maxWidth={800}
-                            quality={0.3}
-                            aggressiveCompression={true}
-                            useSecondaryAccount={true}
-                          />
-                        </div>
-                      )}
-
-                      {(qrCodeType === 'technician' || qrCodeType === 'both') && !selectedQrCodeId.startsWith('common_') && (
-                        <div>
-                          <Label>Technician QR Code Photo (if different)</Label>
-                          <ImageUpload
-                            onImagesChange={(images) => setTechnicianQrPhoto(images[0] || '')}
-                            maxImages={1}
-                            folder="payment-receipts"
-                            title=""
-                            description="Upload technician QR code photo (optional if already selected above)"
-                            maxWidth={800}
-                            quality={0.3}
-                            aggressiveCompression={true}
-                            useSecondaryAccount={true}
-                          />
-                        </div>
-                      )}
+                      {/* Option to upload customer QR code photos if needed */}
+                      <div>
+                        <Label>Customer QR Code Photos (Optional)</Label>
+                        <p className="text-xs text-gray-500 mb-2">Upload customer's QR code photos if they want to pay using their own QR code</p>
+                        <ImageUpload
+                          onImagesChange={(images) => setCustomerQrPhotos(images)}
+                          maxImages={5}
+                          folder="payment-receipts"
+                          title=""
+                          description="Upload customer QR code photos"
+                          maxWidth={800}
+                          quality={0.3}
+                          aggressiveCompression={true}
+                          useSecondaryAccount={true}
+                        />
+                      </div>
 
                       <div>
                         <Label>Payment Screenshot (Optional)</Label>
