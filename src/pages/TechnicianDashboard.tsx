@@ -1888,7 +1888,7 @@ const TechnicianDashboard = () => {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50 touch-pan-y" style={{ touchAction: 'pan-y', WebkitOverflowScrolling: 'touch' }}>
+    <div className="min-h-screen bg-gray-50" style={{ touchAction: 'auto', WebkitOverflowScrolling: 'touch', overscrollBehaviorY: 'auto' }}>
       {/* Header */}
       <div className="pt-8 px-4 bg-background/95 backdrop-blur-md border-b border-border/50 sticky top-0 z-50" style={{ touchAction: 'none' }}>
         <header className="w-full max-w-7xl mx-auto py-3 px-6 md:px-8 flex items-center justify-between relative">
@@ -1924,7 +1924,7 @@ const TechnicianDashboard = () => {
         </header>
       </div>
 
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 pb-24" style={{ touchAction: 'pan-y', WebkitOverflowScrolling: 'touch' }}>
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 pb-24" style={{ touchAction: 'auto', WebkitOverflowScrolling: 'touch', overscrollBehaviorY: 'auto' }}>
 
         {/* Job Assignment Requests Section */}
         {assignmentRequests.length > 0 && (
