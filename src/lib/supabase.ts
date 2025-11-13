@@ -808,6 +808,91 @@ export const db = {
       
       return { data: null, error };
     }
+  },
+  
+  // Tax Invoices operations
+  taxInvoices: {
+    async create(invoice: any) {
+      const { data, error } = await supabase
+        .from('tax_invoices')
+        .insert({
+          invoice_number: invoice.invoice_number,
+          invoice_date: invoice.invoice_date,
+          invoice_type: invoice.invoice_type,
+          customer_id: invoice.customer_id || null,
+          customer_name: invoice.customer_name,
+          customer_address: invoice.customer_address,
+          customer_phone: invoice.customer_phone,
+          customer_email: invoice.customer_email,
+          customer_gstin: invoice.customer_gstin,
+          company_info: invoice.company_info,
+          items: invoice.items,
+          place_of_supply: invoice.place_of_supply,
+          place_of_supply_code: invoice.place_of_supply_code,
+          is_intra_state: invoice.is_intra_state,
+          reverse_charge: invoice.reverse_charge || false,
+          e_way_bill_no: invoice.e_way_bill_no,
+          transport_mode: invoice.transport_mode,
+          vehicle_no: invoice.vehicle_no,
+          subtotal: invoice.subtotal,
+          total_discount: invoice.total_discount || 0,
+          service_charge: invoice.service_charge || 0,
+          total_tax: invoice.total_tax,
+          cgst: invoice.cgst || 0,
+          sgst: invoice.sgst || 0,
+          igst: invoice.igst || 0,
+          round_off: invoice.round_off || 0,
+          total_amount: invoice.total_amount,
+          gst_breakup: invoice.gst_breakup,
+          invoice_details: invoice.invoice_details,
+          bank_details: invoice.bank_details,
+          notes: invoice.notes || [],
+          terms: invoice.terms,
+          validity_note: invoice.validity_note,
+          job_id: invoice.job_id || null,
+          service_type: invoice.service_type
+        })
+        .select()
+        .single();
+      
+      return { data, error };
+    },
+    
+    async getAll(limit: number = 100, offset: number = 0) {
+      const { data, error, count } = await supabase
+        .from('tax_invoices')
+        .select('*', { count: 'exact' })
+        .order('created_at', { ascending: false })
+        .range(offset, offset + limit - 1);
+      
+      return { data, error, count };
+    },
+    
+    async getByInvoiceNumber(invoiceNumber: string) {
+      const { data, error } = await supabase
+        .from('tax_invoices')
+        .select('*')
+        .eq('invoice_number', invoiceNumber)
+        .single();
+      
+      return { data, error };
+    },
+    
+    async getByCustomerId(customerId: string) {
+      const { data, error } = await supabase
+        .from('tax_invoices')
+        .select('*')
+        .eq('customer_id', customerId)
+        .order('created_at', { ascending: false });
+      
+      return { data, error };
+    },
+    
+    async getNextInvoiceNumber() {
+      // Call the database function to get next invoice number
+      const { data, error } = await supabase.rpc('get_next_invoice_number');
+      return { data, error };
+    }
   }
 };
 

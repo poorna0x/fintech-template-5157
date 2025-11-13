@@ -65,6 +65,7 @@ import BillModal from './BillModal';
 import AMCModal from './AMCModal';
 import QuotationModal from './QuotationModal';
 import TaxInvoiceModal from './TaxInvoiceModal';
+import GSTInvoicesPage from './GSTInvoicesPage';
 import ImageUpload from '@/components/ImageUpload';
 
 declare global {
@@ -175,6 +176,7 @@ const AdminDashboard = () => {
   const [selectedCustomerForAMC, setSelectedCustomerForAMC] = useState<Customer | null>(null);
   const [taxInvoiceModalOpen, setTaxInvoiceModalOpen] = useState(false);
   const [selectedCustomerForTaxInvoice, setSelectedCustomerForTaxInvoice] = useState<Customer | null>(null);
+  const [showGSTInvoicesPage, setShowGSTInvoicesPage] = useState(false);
   const [moreOptionsDialogOpen, setMoreOptionsDialogOpen] = useState<Record<string, boolean>>({});
   const [editFormData, setEditFormData] = useState({
     full_name: '',
@@ -4265,6 +4267,14 @@ const AdminDashboard = () => {
     setSelectedCustomerForTaxInvoice(null);
   };
 
+  const handleShowGSTInvoices = () => {
+    setShowGSTInvoicesPage(true);
+  };
+
+  const handleHideGSTInvoices = () => {
+    setShowGSTInvoicesPage(false);
+  };
+
 
 
   // Job assignment functions
@@ -5627,6 +5637,27 @@ const AdminDashboard = () => {
     );
   }
 
+  // Show GST Invoices page if requested
+  if (showGSTInvoicesPage) {
+    return (
+      <div className="min-h-screen bg-gray-50">
+        <AdminHeader />
+        <div className="container mx-auto px-4 py-4 sm:py-8">
+          <div className="mb-4">
+            <Button
+              variant="outline"
+              onClick={handleHideGSTInvoices}
+              className="flex items-center gap-2"
+            >
+              ← Back to Dashboard
+            </Button>
+          </div>
+          <GSTInvoicesPage />
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen bg-gray-50">
       <AdminHeader />
@@ -5639,7 +5670,15 @@ const AdminDashboard = () => {
               <h1 className="text-2xl sm:text-3xl font-bold text-gray-900 mb-2">Admin Dashboard</h1>
               <p className="text-sm sm:text-base text-gray-600">Manage customers, jobs, and system operations</p>
             </div>
-            <div className="flex gap-3">
+            <div className="flex gap-3 flex-wrap">
+              <Button 
+                variant="outline"
+                onClick={handleShowGSTInvoices}
+                className="flex items-center gap-2"
+              >
+                <Receipt className="w-4 h-4" />
+                GST Invoices
+              </Button>
               <Button 
                 variant="outline"
                 onClick={() => navigate('/settings')}

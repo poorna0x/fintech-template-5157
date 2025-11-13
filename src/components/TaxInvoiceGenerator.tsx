@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
+import { db } from '@/lib/supabase';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
@@ -99,6 +100,33 @@ export default function TaxInvoiceGenerator({ customer, onPrint }: TaxInvoiceGen
   const customerGst = customer?.gstNumber || '';
   const customerServiceType = customer?.serviceType || 'RO';
 
+  // Get next invoice number from database (with localStorage fallback)
+  const getNextInvoiceNumber = async (): Promise<string> => {
+    try {
+      // Try to get from database first
+      const { data, error } = await db.taxInvoices.getNextInvoiceNumber();
+      if (!error && data) {
+        return data;
+      }
+    } catch (error) {
+      console.warn('Failed to get invoice number from database, using localStorage fallback:', error);
+    }
+    
+    // Fallback to localStorage
+    const storageKey = 'lastTaxInvoiceNumber';
+    const lastNumber = localStorage.getItem(storageKey);
+    let nextNumber = 1;
+    
+    if (lastNumber) {
+      const match = lastNumber.match(/INV-(\d+)/);
+      if (match) {
+        nextNumber = parseInt(match[1], 10) + 1;
+      }
+    }
+    
+    return `INV-${String(nextNumber).padStart(3, '0')}`;
+  };
+
   // State management
   const [billNumber, setBillNumber] = useState('');
   const [billDate, setBillDate] = useState(new Date().toISOString().split('T')[0]);
@@ -153,6 +181,16 @@ export default function TaxInvoiceGenerator({ customer, onPrint }: TaxInvoiceGen
       setEditableCustomer(prev => ({ ...prev, gst: prev.gst || '' }));
     }
   }, [invoiceType]);
+
+  // Update invoice number when component mounts (only if empty)
+  useEffect(() => {
+    // Only auto-generate if billNumber is empty
+    if (!billNumber) {
+      getNextInvoiceNumber().then((invoiceNumber) => {
+        setBillNumber(invoiceNumber);
+      });
+    }
+  }, []);
 
   // Editable customer information state
   const [isEditingCustomer, setIsEditingCustomer] = useState(false);
@@ -340,7 +378,7 @@ export default function TaxInvoiceGenerator({ customer, onPrint }: TaxInvoiceGen
   const termsList = terms.split('\n').filter(line => line.trim());
   const notesList = notes;
 
-  const handlePrint = (action: 'print' | 'pdf' = 'print') => {
+  const handlePrint = async (action: 'print' | 'pdf' = 'print') => {
     if (!customer) {
       toast.error('Please select a customer first');
       return;
@@ -409,6 +447,56 @@ export default function TaxInvoiceGenerator({ customer, onPrint }: TaxInvoiceGen
       totalDiscount
     };
 
+    // Save invoice to database
+    try {
+      await db.taxInvoices.create({
+        invoice_number: billNumber,
+        invoice_date: billDate,
+        invoice_type: invoiceType,
+        customer_id: customer.id || null,
+        customer_name: editableCustomer.name,
+        customer_address: editableCustomer.address,
+        customer_phone: editableCustomer.phone,
+        customer_email: editableCustomer.email,
+        customer_gstin: editableCustomer.gst || null,
+        company_info: company,
+        items: items,
+        place_of_supply: placeOfSupply,
+        place_of_supply_code: placeOfSupplyCode,
+        is_intra_state: isIntraState,
+        reverse_charge: reverseCharge,
+        e_way_bill_no: eWayBillNo || null,
+        transport_mode: transportMode || null,
+        vehicle_no: vehicleNo || null,
+        subtotal: subtotal,
+        total_discount: totalDiscount,
+        service_charge: serviceCharge,
+        total_tax: totalTax,
+        cgst: taxSplit.cgst,
+        sgst: taxSplit.sgst,
+        igst: taxSplit.igst,
+        round_off: finalRoundOff,
+        total_amount: totalAmount,
+        gst_breakup: gstBreakup,
+        invoice_details: (bill as any).invoiceDetails,
+        bank_details: bankDetails,
+        notes: notes,
+        terms: terms,
+        validity_note: validityNote,
+        service_type: customerServiceType
+      });
+      
+      // Also save to localStorage as backup
+      localStorage.setItem('lastTaxInvoiceNumber', billNumber);
+      toast.success('Invoice saved to database');
+    } catch (error) {
+      console.error('Failed to save invoice to database:', error);
+      // Still allow printing even if database save fails
+      // Save to localStorage as fallback
+      localStorage.setItem('lastTaxInvoiceNumber', billNumber);
+      toast.warning('Invoice saved locally (database save failed)');
+    }
+
     onPrint?.(bill, action);
   };
 
@@ -456,8 +544,10 @@ export default function TaxInvoiceGenerator({ customer, onPrint }: TaxInvoiceGen
                   id="billNumber"
                   value={billNumber}
                   onChange={(e) => setBillNumber(e.target.value)}
-                  placeholder="INV-2024-001"
+                  placeholder="INV-001"
+                  className="font-mono font-semibold"
                 />
+                <p className="text-xs text-gray-500 mt-1">Auto-generated sequential number</p>
               </div>
               <div>
                 <Label htmlFor="billDate">Invoice Date</Label>
