@@ -56,6 +56,7 @@ import { registerAdminPWA, disablePWA } from '@/lib/pwa';
 import { Customer, Job, Technician } from '@/types';
 import { cloudinaryService, compressImage } from '@/lib/cloudinary';
 import { toast } from 'sonner';
+import { getCachedQrCodes, cacheQrCodes, shouldUseCache, CommonQrCode } from '@/lib/qrCodeManager';
 import { openInGoogleMaps, extractCoordinates, formatAddressForDisplay } from '@/lib/maps';
 import FollowUpModal from '@/components/FollowUpModal';
 import { sendNotification, createJobAssignedNotification, createJobCompletedNotification, createJobCancelledNotification, createJobAssignmentRequestNotification } from '@/lib/notifications';
@@ -733,8 +734,10 @@ const AdminDashboard = () => {
   const [paymentMode, setPaymentMode] = useState<'CASH' | 'ONLINE' | ''>('');
   const [customerHasPrefilter, setCustomerHasPrefilter] = useState<boolean | null>(null);
   const [qrCodeType, setQrCodeType] = useState<string>('');
-  const [customerQrPhotos, setCustomerQrPhotos] = useState<string[]>([]);
-  const [technicianQrPhoto, setTechnicianQrPhoto] = useState<string>('');
+  const [selectedQrCodeId, setSelectedQrCodeId] = useState<string>('');
+  const [commonQrCodes, setCommonQrCodes] = useState<CommonQrCode[]>([]);
+  const [technicianQrCode, setTechnicianQrCode] = useState<string>('');
+  const [technicianName, setTechnicianName] = useState<string>('');
   const [paymentScreenshot, setPaymentScreenshot] = useState<string>('');
   const [billAmountConfirmOpen, setBillAmountConfirmOpen] = useState(false);
   const [statusFilter, setStatusFilter] = useState<'ALL' | 'ONGOING' | 'PENDING' | 'ASSIGNED' | 'IN_PROGRESS' | 'COMPLETED' | 'CANCELLED' | 'RESCHEDULED'>('ONGOING');
@@ -915,6 +918,43 @@ const AdminDashboard = () => {
 
     return () => clearInterval(interval);
   }, [reloadTechnicians]);
+
+  // Load QR codes with localStorage caching
+  useEffect(() => {
+    const loadQrCodes = async () => {
+      try {
+        // Check cache first (for mobile)
+        if (shouldUseCache()) {
+          const cachedCommon = getCachedQrCodes();
+          if (cachedCommon) {
+            setCommonQrCodes(cachedCommon);
+          }
+        }
+
+        // Always fetch from database (cache will be updated)
+        const commonResult = await db.commonQrCodes.getAll();
+
+        if (commonResult.data) {
+          const transformed = commonResult.data.map((qr: any) => ({
+            id: qr.id,
+            name: qr.name,
+            qrCodeUrl: qr.qr_code_url,
+            createdAt: qr.created_at,
+            updatedAt: qr.updated_at
+          }));
+          setCommonQrCodes(transformed);
+          // Update cache
+          if (shouldUseCache()) {
+            cacheQrCodes(transformed);
+          }
+        }
+      } catch (error) {
+        console.error('Error loading QR codes:', error);
+      }
+    };
+
+    loadQrCodes();
+  }, []);
 
   // Load unique brands and models from database
   const loadBrandsAndModels = useCallback(async () => {
@@ -4851,6 +4891,34 @@ const AdminDashboard = () => {
     calculateAMCEndDate(today, 1);
     setAmcIncludesPrefilter(false);
     setHasAMC(false);
+    setPaymentMode('');
+    setCustomerHasPrefilter(null);
+    setQrCodeType('');
+    setSelectedQrCodeId('');
+    setTechnicianQrCode('');
+    setTechnicianName('');
+    setPaymentScreenshot('');
+
+    // Load technician QR code if job has assigned technician
+    if (jobWithCustomer.assignedTechnicianId) {
+      try {
+        const tech = technicians.find(t => t.id === jobWithCustomer.assignedTechnicianId);
+        if (tech && (tech as any).qrCode) {
+          setTechnicianQrCode((tech as any).qrCode);
+          setTechnicianName(tech.fullName);
+        } else {
+          // Fetch from database
+          const { data: techData, error: techError } = await db.technicians.getById(jobWithCustomer.assignedTechnicianId);
+          if (!techError && techData && techData.qr_code) {
+            setTechnicianQrCode(techData.qr_code);
+            setTechnicianName(techData.full_name);
+          }
+        }
+      } catch (error) {
+        console.error('Error loading technician QR code:', error);
+      }
+    }
+
     setCompleteDialogOpen(true);
   };
 
@@ -4883,13 +4951,13 @@ const AdminDashboard = () => {
       }
       // If Cash, skip to step 4 (AMC)
       if (paymentMode === 'CASH') {
-        setCompleteJobStep(4);
-        return;
+      setCompleteJobStep(4);
+      return;
       }
       // If Online, need to check QR code selection
       if (paymentMode === 'ONLINE') {
-        if (!qrCodeType) {
-          toast.error('Please select a QR code type');
+        if (!selectedQrCodeId) {
+          toast.error('Please select a QR code');
           return;
         }
         setCompleteJobStep(4);
@@ -4935,14 +5003,37 @@ const AdminDashboard = () => {
         }
       }
 
-      // Remove existing bill_photos, payment_photos and amc_info entries
-      requirements = requirements.filter((req: any) => !req.bill_photos && !req.payment_photos && !req.amc_info);
+      // Remove existing bill_photos, payment_photos, qr_photos and amc_info entries
+      requirements = requirements.filter((req: any) => !req.bill_photos && !req.payment_photos && !req.qr_photos && !req.amc_info);
 
       // Add bill photos if any
       if (billPhotos.length > 0) {
         requirements.push({ bill_photos: billPhotos });
       }
 
+      // Add QR code data if payment mode is ONLINE
+      if (paymentMode === 'ONLINE' && selectedQrCodeId) {
+        const qrPhotos: any = {
+          qr_code_type: qrCodeType,
+          selected_qr_code_id: selectedQrCodeId,
+          payment_screenshot: paymentScreenshot || null
+        };
+        
+        // Add selected QR code URL
+        if (selectedQrCodeId.startsWith('common_')) {
+          const qrId = selectedQrCodeId.replace('common_', '');
+          const selectedQr = commonQrCodes.find(qr => qr.id === qrId);
+          if (selectedQr) {
+            qrPhotos.selected_qr_code_url = selectedQr.qrCodeUrl;
+            qrPhotos.selected_qr_code_name = selectedQr.name;
+          }
+        } else if (selectedQrCodeId === 'technician' && technicianQrCode) {
+          qrPhotos.selected_qr_code_url = technicianQrCode;
+          qrPhotos.selected_qr_code_name = technicianName || 'Technician';
+        }
+        
+        requirements.push({ qr_photos: qrPhotos });
+      }
 
       // Add AMC info if provided
       if (hasAMC && amcDateGiven && amcEndDate) {
@@ -4957,7 +5048,7 @@ const AdminDashboard = () => {
       }
 
       // Update requirements if we have any changes
-      if (billPhotos.length > 0 || (paymentMode === 'ONLINE' && qrCodeType) || (hasAMC && amcDateGiven && amcEndDate)) {
+      if (billPhotos.length > 0 || (paymentMode === 'ONLINE' && selectedQrCodeId) || (hasAMC && amcDateGiven && amcEndDate)) {
         updateData.requirements = JSON.stringify(requirements);
       }
 
@@ -5012,6 +5103,13 @@ const AdminDashboard = () => {
       setAmcYears(1);
       setAmcIncludesPrefilter(false);
       setHasAMC(false);
+      setPaymentMode('');
+      setCustomerHasPrefilter(null);
+      setQrCodeType('');
+      setSelectedQrCodeId('');
+      setTechnicianQrCode('');
+      setTechnicianName('');
+      setPaymentScreenshot('');
       setPaymentMode('');
       setCustomerHasPrefilter(null);
       setQrCodeType('');
@@ -9578,7 +9676,7 @@ const AdminDashboard = () => {
 
             {/* Step 2: Bill Amount */}
             {completeJobStep === 2 && (
-              <div className="space-y-4">
+          <div className="space-y-4">
                 <div>
                   <Label htmlFor="bill-amount">Bill Amount *</Label>
                   <Input
@@ -9597,18 +9695,18 @@ const AdminDashboard = () => {
                     </p>
                   )}
                 </div>
-                <div>
-                  <Label htmlFor="completion-notes">Completion Notes (Optional)</Label>
-                  <Textarea
-                    id="completion-notes"
-                    placeholder="Add any notes about the job completion..."
-                    value={completionNotes}
-                    onChange={(e) => setCompletionNotes(e.target.value)}
-                    rows={3}
-                    className="mt-1"
-                  />
-                </div>
-              </div>
+            <div>
+              <Label htmlFor="completion-notes">Completion Notes (Optional)</Label>
+              <Textarea
+                id="completion-notes"
+                placeholder="Add any notes about the job completion..."
+                value={completionNotes}
+                onChange={(e) => setCompletionNotes(e.target.value)}
+                rows={3}
+                className="mt-1"
+              />
+            </div>
+          </div>
             )}
 
             {/* Step 3: Payment Mode */}
@@ -9642,70 +9740,94 @@ const AdminDashboard = () => {
                 {paymentMode === 'ONLINE' && (
                   <div className="space-y-4 pl-4 border-l-2 border-gray-200">
                     <div>
-                      <Label htmlFor="qr-code-type">Select QR Code Type *</Label>
+                      <Label htmlFor="qr-code-type">Select QR Code *</Label>
                       <Select 
-                        value={qrCodeType} 
-                        onValueChange={setQrCodeType}
+                        value={selectedQrCodeId} 
+                        onValueChange={(value) => {
+                          setSelectedQrCodeId(value);
+                          // Set QR code type based on selection
+                          if (value.startsWith('common_')) {
+                            setQrCodeType('common');
+                          } else if (value === 'technician') {
+                            setQrCodeType('technician');
+                          }
+                        }}
                       >
                         <SelectTrigger className="mt-1">
-                          <SelectValue placeholder="Select QR code type" />
+                          <SelectValue placeholder="Select QR code" />
                         </SelectTrigger>
                         <SelectContent>
-                          <SelectItem value="customer">Customer QR Code</SelectItem>
-                          <SelectItem value="technician">Technician QR Code</SelectItem>
-                          <SelectItem value="both">Both</SelectItem>
+                          {/* Common QR Codes - show by name */}
+                          {commonQrCodes.map((qr) => (
+                            <SelectItem key={`common_${qr.id}`} value={`common_${qr.id}`}>
+                              {qr.name}
+                            </SelectItem>
+                          ))}
+                          {/* Technician QR Code - show by name */}
+                          {technicianQrCode && (
+                            <SelectItem value="technician">
+                              {(technicianName || 'Technician')}'s QR Code
+                            </SelectItem>
+                          )}
                         </SelectContent>
                       </Select>
                     </div>
 
-                    {(qrCodeType === 'customer' || qrCodeType === 'both') && (
-                      <div>
-                        <Label>Customer QR Code Photos</Label>
-                        <ImageUpload
-                          onImagesChange={(images) => setCustomerQrPhotos(images)}
-                          maxImages={5}
-                          folder="payment-receipts"
-                          title=""
-                          description="Upload customer QR code photos"
-                          maxWidth={800}
-                          quality={0.3}
-                          aggressiveCompression={true}
-                          useSecondaryAccount={true}
-                        />
+                    {/* Display selected QR code image immediately */}
+                    {selectedQrCodeId && (
+                      <div className="mt-4 p-4 bg-primary/10 border border-primary rounded-lg">
+                        <p className="text-sm font-semibold text-primary mb-3 text-center">
+                          QR Code - Show to Customer
+                        </p>
+                        <div className="flex justify-center">
+                          {selectedQrCodeId.startsWith('common_') ? (() => {
+                            const qrId = selectedQrCodeId.replace('common_', '');
+                            const selectedQr = commonQrCodes.find(qr => qr.id === qrId);
+                            if (!selectedQr) {
+                              return (
+                                <div className="text-center p-4">
+                                  <p className="text-sm text-red-500">QR code not found</p>
+                                </div>
+                              );
+                            }
+                            return (
+                              <div className="text-center">
+                                <p className="text-sm font-medium mb-3 text-gray-700">{selectedQr.name}</p>
+                                <img 
+                                  src={selectedQr.qrCodeUrl} 
+                                  alt={selectedQr.name}
+                                  className="w-64 h-64 object-contain mx-auto border-2 border-primary rounded-lg shadow-lg bg-white p-3"
+                                  onError={(e) => {
+                                    console.error('Failed to load QR code:', selectedQr.qrCodeUrl);
+                                  }}
+                  />
+                </div>
+                            );
+                          })() : selectedQrCodeId === 'technician' ? (
+                            technicianQrCode ? (
+                              <div className="text-center">
+                                <p className="text-sm font-medium mb-3 text-gray-700">
+                                  {(technicianName || 'Technician')}'s QR Code
+                                </p>
+                                <img 
+                                  src={technicianQrCode} 
+                                  alt="Technician QR Code"
+                                  className="w-64 h-64 object-contain mx-auto border-2 border-primary rounded-lg shadow-lg bg-white p-3"
+                                  onError={(e) => {
+                                    console.error('Failed to load technician QR code:', technicianQrCode);
+                                  }}
+                                />
+                              </div>
+                            ) : (
+                              <div className="text-center p-4">
+                                <p className="text-sm text-red-500">QR code not uploaded</p>
+                                <p className="text-xs text-gray-500 mt-1">Upload in Settings → Technician Management</p>
+                              </div>
+                            )
+                          ) : null}
+                        </div>
                       </div>
                     )}
-
-                    {(qrCodeType === 'technician' || qrCodeType === 'both') && (
-                      <div>
-                        <Label>Technician QR Code Photo</Label>
-                        <ImageUpload
-                          onImagesChange={(images) => setTechnicianQrPhoto(images[0] || '')}
-                          maxImages={1}
-                          folder="payment-receipts"
-                          title=""
-                          description="Upload technician QR code photo"
-                          maxWidth={800}
-                          quality={0.3}
-                          aggressiveCompression={true}
-                          useSecondaryAccount={true}
-                        />
-                      </div>
-                    )}
-
-                    <div>
-                      <Label>Payment Screenshot (Optional)</Label>
-                      <ImageUpload
-                        onImagesChange={(images) => setPaymentScreenshot(images[0] || '')}
-                        maxImages={1}
-                        folder="payment-receipts"
-                        title=""
-                        description="Upload payment screenshot"
-                        maxWidth={800}
-                        quality={0.3}
-                        aggressiveCompression={true}
-                        useSecondaryAccount={true}
-                      />
-                    </div>
                   </div>
                 )}
               </div>
@@ -9822,7 +9944,7 @@ const AdminDashboard = () => {
                           {customerHasPrefilter === true && (
                             <div className="w-2.5 h-2.5 rounded-full bg-black"></div>
                           )}
-                        </div>
+                </div>
                         <span className="font-medium text-sm">Yes</span>
                       </div>
                     </button>
