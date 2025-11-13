@@ -721,7 +721,7 @@ const AdminDashboard = () => {
   const [selectedJobForComplete, setSelectedJobForComplete] = useState<Job | null>(null);
   const [completionNotes, setCompletionNotes] = useState('');
   // Complete job multi-step form state
-  const [completeJobStep, setCompleteJobStep] = useState<1 | 2 | 3 | 4>(1);
+  const [completeJobStep, setCompleteJobStep] = useState<1 | 2 | 3 | 4 | 5>(1);
   const [billAmount, setBillAmount] = useState<string>('');
   const [billPhotos, setBillPhotos] = useState<string[]>([]);
   const [paymentPhotos, setPaymentPhotos] = useState<string[]>([]);
@@ -730,6 +730,8 @@ const AdminDashboard = () => {
   const [amcYears, setAmcYears] = useState<number>(1);
   const [amcIncludesPrefilter, setAmcIncludesPrefilter] = useState<boolean>(false);
   const [hasAMC, setHasAMC] = useState<boolean>(false);
+  const [paymentMode, setPaymentMode] = useState<'CASH' | 'ONLINE' | ''>('');
+  const [customerHasPrefilter, setCustomerHasPrefilter] = useState<boolean | null>(null);
   const [statusFilter, setStatusFilter] = useState<'ALL' | 'ONGOING' | 'PENDING' | 'ASSIGNED' | 'IN_PROGRESS' | 'COMPLETED' | 'CANCELLED' | 'RESCHEDULED'>('ONGOING');
   const [loadingCustomerJobs, setLoadingCustomerJobs] = useState<{[customerId: string]: boolean}>({});
   // Pagination state
@@ -4875,7 +4877,13 @@ const AdminDashboard = () => {
       return;
     }
 
-    // On step 4, submit the form
+    // On step 4, move to step 5
+    if (completeJobStep === 4) {
+      setCompleteJobStep(5);
+      return;
+    }
+
+    // On step 5, submit the form
     try {
       // Prepare update data
       const updateData: any = {
@@ -4886,6 +4894,8 @@ const AdminDashboard = () => {
         completed_at: new Date().toISOString(),
         actual_cost: parseFloat(billAmount) || 0,
         payment_amount: parseFloat(billAmount) || 0,
+        payment_mode: paymentMode || null,
+        customer_has_prefilter: customerHasPrefilter,
       };
 
       // Handle requirements - merge bill photos and AMC info
@@ -4987,6 +4997,8 @@ const AdminDashboard = () => {
       setAmcYears(1);
       setAmcIncludesPrefilter(false);
       setHasAMC(false);
+      setPaymentMode('');
+      setCustomerHasPrefilter(null);
     } catch (error) {
       toast.error('Failed to complete job');
     }
@@ -9460,6 +9472,8 @@ const AdminDashboard = () => {
           setAmcYears(1);
           setAmcIncludesPrefilter(false);
           setHasAMC(false);
+          setPaymentMode('');
+          setCustomerHasPrefilter(null);
         }
       }}>
         <DialogContent className="w-[95vw] sm:w-[500px] max-w-[500px] h-[85vh] sm:h-[600px] max-h-[85vh] flex flex-col p-0">
@@ -9469,7 +9483,8 @@ const AdminDashboard = () => {
               {completeJobStep === 1 && 'Enter the bill amount for this job'}
               {completeJobStep === 2 && 'Upload bill photo (optional)'}
               {completeJobStep === 3 && 'Add AMC information (optional)'}
-              {completeJobStep === 4 && 'Upload payment photo (optional)'}
+              {completeJobStep === 4 && 'Select payment mode and upload payment photo (optional)'}
+              {completeJobStep === 5 && 'Does the customer have a prefilter?'}
             </DialogDescription>
           </DialogHeader>
           
@@ -9497,20 +9512,24 @@ const AdminDashboard = () => {
             {/* Step Indicator */}
             <div className="flex items-center justify-center mb-6">
               <div className="flex items-center space-x-1 sm:space-x-2">
-                <div className={`flex items-center justify-center w-7 h-7 sm:w-8 sm:h-8 rounded-full text-xs sm:text-sm ${completeJobStep >= 1 ? 'bg-green-600 text-white' : 'bg-gray-200 text-gray-600'}`}>
+                <div className={`flex items-center justify-center w-7 h-7 sm:w-8 sm:h-8 rounded-full text-xs sm:text-sm ${completeJobStep >= 1 ? 'bg-black text-white' : 'bg-gray-200 text-gray-600'}`}>
                   1
                 </div>
-                <div className={`w-8 sm:w-12 h-1 ${completeJobStep >= 2 ? 'bg-green-600' : 'bg-gray-200'}`}></div>
-                <div className={`flex items-center justify-center w-7 h-7 sm:w-8 sm:h-8 rounded-full text-xs sm:text-sm ${completeJobStep >= 2 ? 'bg-green-600 text-white' : 'bg-gray-200 text-gray-600'}`}>
+                <div className={`w-8 sm:w-12 h-1 ${completeJobStep >= 2 ? 'bg-black' : 'bg-gray-200'}`}></div>
+                <div className={`flex items-center justify-center w-7 h-7 sm:w-8 sm:h-8 rounded-full text-xs sm:text-sm ${completeJobStep >= 2 ? 'bg-black text-white' : 'bg-gray-200 text-gray-600'}`}>
                   2
                 </div>
-                <div className={`w-8 sm:w-12 h-1 ${completeJobStep >= 3 ? 'bg-green-600' : 'bg-gray-200'}`}></div>
-                <div className={`flex items-center justify-center w-7 h-7 sm:w-8 sm:h-8 rounded-full text-xs sm:text-sm ${completeJobStep >= 3 ? 'bg-green-600 text-white' : 'bg-gray-200 text-gray-600'}`}>
+                <div className={`w-8 sm:w-12 h-1 ${completeJobStep >= 3 ? 'bg-black' : 'bg-gray-200'}`}></div>
+                <div className={`flex items-center justify-center w-7 h-7 sm:w-8 sm:h-8 rounded-full text-xs sm:text-sm ${completeJobStep >= 3 ? 'bg-black text-white' : 'bg-gray-200 text-gray-600'}`}>
                   3
                 </div>
-                <div className={`w-8 sm:w-12 h-1 ${completeJobStep >= 4 ? 'bg-green-600' : 'bg-gray-200'}`}></div>
-                <div className={`flex items-center justify-center w-7 h-7 sm:w-8 sm:h-8 rounded-full text-xs sm:text-sm ${completeJobStep >= 4 ? 'bg-green-600 text-white' : 'bg-gray-200 text-gray-600'}`}>
+                <div className={`w-8 sm:w-12 h-1 ${completeJobStep >= 4 ? 'bg-black' : 'bg-gray-200'}`}></div>
+                <div className={`flex items-center justify-center w-7 h-7 sm:w-8 sm:h-8 rounded-full text-xs sm:text-sm ${completeJobStep >= 4 ? 'bg-black text-white' : 'bg-gray-200 text-gray-600'}`}>
                   4
+                </div>
+                <div className={`w-8 sm:w-12 h-1 ${completeJobStep >= 5 ? 'bg-black' : 'bg-gray-200'}`}></div>
+                <div className={`flex items-center justify-center w-7 h-7 sm:w-8 sm:h-8 rounded-full text-xs sm:text-sm ${completeJobStep >= 5 ? 'bg-black text-white' : 'bg-gray-200 text-gray-600'}`}>
+                  5
                 </div>
               </div>
             </div>
@@ -9530,6 +9549,11 @@ const AdminDashboard = () => {
                     min="0"
                     step="0.01"
                   />
+                  {billAmount && parseFloat(billAmount) > 0 && (
+                    <p className="text-sm text-gray-600 mt-2">
+                      Bill Amount: ₹{parseFloat(billAmount).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                    </p>
+                  )}
                 </div>
             <div>
               <Label htmlFor="completion-notes">Completion Notes (Optional)</Label>
@@ -9652,23 +9676,93 @@ const AdminDashboard = () => {
               </div>
             )}
 
-            {/* Step 4: Payment Photo */}
+            {/* Step 4: Payment Mode and Photo */}
             {completeJobStep === 4 && (
               <div className="space-y-4">
                 <div>
-                  <Label>Payment Photo (Optional)</Label>
-                  <p className="text-sm text-gray-500 mb-2">Upload a photo of the payment receipt. You can skip this step.</p>
+                  <Label htmlFor="payment-mode">Payment Mode *</Label>
+                  <Select 
+                    value={paymentMode} 
+                    onValueChange={(value: 'CASH' | 'ONLINE') => setPaymentMode(value)}
+                  >
+                    <SelectTrigger className="mt-1">
+                      <SelectValue placeholder="Select payment mode" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="CASH">Cash</SelectItem>
+                      <SelectItem value="ONLINE">Online</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                
+                <div>
+                  <Label>Payment Photo</Label>
                   <ImageUpload
                     onImagesChange={(images) => setPaymentPhotos(images)}
                     maxImages={5}
                     folder="payment-receipts"
-                    title="Upload Payment Photo"
-                    description="Upload photo of payment receipt (highly optimized, stored in secondary account)"
+                    title=""
+                    description=""
                     maxWidth={800}
                     quality={0.3}
                     aggressiveCompression={true}
                     useSecondaryAccount={true}
                   />
+                </div>
+              </div>
+            )}
+
+            {/* Step 5: Prefilter Question */}
+            {completeJobStep === 5 && (
+              <div className="space-y-4">
+                <div className="space-y-3">
+                  <Label className="text-base font-semibold">Does the customer have a prefilter?</Label>
+                  <div className="grid grid-cols-2 gap-4">
+                    <button
+                      type="button"
+                      onClick={() => setCustomerHasPrefilter(true)}
+                      className={`p-4 rounded-lg border-2 transition-all duration-200 ${
+                        customerHasPrefilter === true
+                          ? 'border-black bg-black text-white shadow-md'
+                          : 'border-gray-300 bg-white text-gray-700 hover:border-gray-400 hover:bg-gray-50'
+                      }`}
+                    >
+                      <div className="flex flex-col items-center gap-2">
+                        <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center ${
+                          customerHasPrefilter === true
+                            ? 'border-white bg-white'
+                            : 'border-gray-400'
+                        }`}>
+                          {customerHasPrefilter === true && (
+                            <div className="w-2.5 h-2.5 rounded-full bg-black"></div>
+                          )}
+                        </div>
+                        <span className="font-medium text-sm">Yes</span>
+                      </div>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setCustomerHasPrefilter(false)}
+                      className={`p-4 rounded-lg border-2 transition-all duration-200 ${
+                        customerHasPrefilter === false
+                          ? 'border-black bg-black text-white shadow-md'
+                          : 'border-gray-300 bg-white text-gray-700 hover:border-gray-400 hover:bg-gray-50'
+                      }`}
+                    >
+                      <div className="flex flex-col items-center gap-2">
+                        <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center ${
+                          customerHasPrefilter === false
+                            ? 'border-white bg-white'
+                            : 'border-gray-400'
+                        }`}>
+                          {customerHasPrefilter === false && (
+                            <div className="w-2.5 h-2.5 rounded-full bg-black"></div>
+                          )}
+                        </div>
+                        <span className="font-medium text-sm">No</span>
+                      </div>
+                    </button>
+                  </div>
                 </div>
               </div>
             )}
@@ -9679,7 +9773,7 @@ const AdminDashboard = () => {
               variant="outline"
               onClick={() => {
                 if (completeJobStep > 1) {
-                  setCompleteJobStep((prev) => (prev - 1) as 1 | 2 | 3 | 4);
+                  setCompleteJobStep((prev) => (prev - 1) as 1 | 2 | 3 | 4 | 5);
                 } else {
                 setCompleteDialogOpen(false);
                 setSelectedJobForComplete(null);
@@ -9694,6 +9788,8 @@ const AdminDashboard = () => {
                   setAmcYears(1);
                   setAmcIncludesPrefilter(false);
                   setHasAMC(false);
+                  setPaymentMode('');
+                  setCustomerHasPrefilter(null);
                 }
               }}
             >
@@ -9722,23 +9818,12 @@ const AdminDashboard = () => {
                 Skip AMC
               </Button>
             )}
-            {completeJobStep === 4 && (
-              <Button
-                variant="outline"
-                onClick={() => {
-                  // Skip payment photo and submit
-                  handleCompleteJobSubmit();
-                }}
-              >
-                Skip
-              </Button>
-            )}
             <Button
               onClick={handleCompleteJobSubmit}
-              className="bg-green-600 hover:bg-green-700"
-              disabled={completeJobStep === 3 && hasAMC && (!amcDateGiven || !amcEndDate)}
+              className="bg-black hover:bg-gray-800 text-white"
+              disabled={(completeJobStep === 3 && hasAMC && (!amcDateGiven || !amcEndDate)) || (completeJobStep === 4 && !paymentMode)}
             >
-              {completeJobStep === 4 ? 'Complete Job' : 'Next'}
+              {completeJobStep === 5 ? 'Complete Job' : 'Next'}
             </Button>
           </DialogFooter>
         </DialogContent>
