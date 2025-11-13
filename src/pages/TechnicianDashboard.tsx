@@ -3439,14 +3439,16 @@ const TechnicianDashboard = () => {
                                 {qr.name}
                               </SelectItem>
                             ))}
-                            {/* Technician QR Code - always show option */}
-                            <SelectItem 
-                              value="technician" 
-                              disabled={!technicianQrCode || technicianQrCode.trim() === ''}
-                            >
-                              {(technicianName || user?.fullName || 'Technician')}'s QR Code
-                              {(!technicianQrCode || technicianQrCode.trim() === '') && ' (Not uploaded)'}
-                            </SelectItem>
+                            {/* Technician QR Code - always show option (for technicians) */}
+                            {user && user.role === 'technician' && (
+                              <SelectItem 
+                                value="technician" 
+                                disabled={!technicianQrCode || technicianQrCode.trim() === ''}
+                              >
+                                {(technicianName || user?.fullName || 'Technician')}'s QR Code
+                                {(!technicianQrCode || technicianQrCode.trim() === '') && ' (Not uploaded)'}
+                              </SelectItem>
+                            )}
                           </SelectContent>
                         </Select>
                       </div>
