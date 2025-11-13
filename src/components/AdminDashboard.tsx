@@ -732,6 +732,10 @@ const AdminDashboard = () => {
   const [hasAMC, setHasAMC] = useState<boolean>(false);
   const [paymentMode, setPaymentMode] = useState<'CASH' | 'ONLINE' | ''>('');
   const [customerHasPrefilter, setCustomerHasPrefilter] = useState<boolean | null>(null);
+  const [qrCodeType, setQrCodeType] = useState<string>('');
+  const [customerQrPhotos, setCustomerQrPhotos] = useState<string[]>([]);
+  const [technicianQrPhoto, setTechnicianQrPhoto] = useState<string>('');
+  const [paymentScreenshot, setPaymentScreenshot] = useState<string>('');
   const [statusFilter, setStatusFilter] = useState<'ALL' | 'ONGOING' | 'PENDING' | 'ASSIGNED' | 'IN_PROGRESS' | 'COMPLETED' | 'CANCELLED' | 'RESCHEDULED'>('ONGOING');
   const [loadingCustomerJobs, setLoadingCustomerJobs] = useState<{[customerId: string]: boolean}>({});
   // Pagination state
@@ -4854,30 +4858,46 @@ const AdminDashboard = () => {
   const handleCompleteJobSubmit = async () => {
     if (!selectedJobForComplete) return;
 
-    // Validate bill amount on step 1
+    // Step 1: Bill Photo (optional) - move to step 2
     if (completeJobStep === 1) {
-      if (!billAmount || parseFloat(billAmount) <= 0) {
-        toast.error('Please enter a valid bill amount');
-        return;
-      }
-      // Move to step 2
       setCompleteJobStep(2);
       return;
     }
 
-    // On step 2, move to step 3 if not skipping
+    // Step 2: Bill Amount - validate and show confirmation
     if (completeJobStep === 2) {
+      if (!billAmount || parseFloat(billAmount) <= 0) {
+        toast.error('Please enter a valid bill amount');
+        return;
+      }
+      // Move to step 3
       setCompleteJobStep(3);
       return;
     }
 
-    // On step 3, move to step 4
+    // Step 3: Payment Mode - validate and move to step 4
     if (completeJobStep === 3) {
-      setCompleteJobStep(4);
-      return;
+      if (!paymentMode) {
+        toast.error('Please select a payment mode');
+        return;
+      }
+      // If Cash, skip to step 4 (AMC)
+      if (paymentMode === 'CASH') {
+        setCompleteJobStep(4);
+        return;
+      }
+      // If Online, need to check QR code selection
+      if (paymentMode === 'ONLINE') {
+        if (!qrCodeType) {
+          toast.error('Please select a QR code type');
+          return;
+        }
+        setCompleteJobStep(4);
+        return;
+      }
     }
 
-    // On step 4, move to step 5
+    // Step 4: AMC - move to step 5
     if (completeJobStep === 4) {
       setCompleteJobStep(5);
       return;
@@ -4923,10 +4943,6 @@ const AdminDashboard = () => {
         requirements.push({ bill_photos: billPhotos });
       }
 
-      // Add payment photos if any (stored in secondary account)
-      if (paymentPhotos.length > 0) {
-        requirements.push({ payment_photos: paymentPhotos });
-      }
 
       // Add AMC info if provided
       if (hasAMC && amcDateGiven && amcEndDate) {
@@ -4941,7 +4957,7 @@ const AdminDashboard = () => {
       }
 
       // Update requirements if we have any changes
-      if (billPhotos.length > 0 || paymentPhotos.length > 0 || (hasAMC && amcDateGiven && amcEndDate)) {
+      if (billPhotos.length > 0 || (paymentMode === 'ONLINE' && qrCodeType) || (hasAMC && amcDateGiven && amcEndDate)) {
         updateData.requirements = JSON.stringify(requirements);
       }
 
@@ -4999,6 +5015,10 @@ const AdminDashboard = () => {
       setHasAMC(false);
       setPaymentMode('');
       setCustomerHasPrefilter(null);
+      setQrCodeType('');
+      setCustomerQrPhotos([]);
+      setTechnicianQrPhoto('');
+      setPaymentScreenshot('');
     } catch (error) {
       toast.error('Failed to complete job');
     }
@@ -9474,6 +9494,10 @@ const AdminDashboard = () => {
           setHasAMC(false);
           setPaymentMode('');
           setCustomerHasPrefilter(null);
+          setQrCodeType('');
+          setCustomerQrPhotos([]);
+          setTechnicianQrPhoto('');
+          setPaymentScreenshot('');
         }
       }}>
         <DialogContent className="w-[95vw] sm:w-[500px] max-w-[500px] h-[85vh] sm:h-[600px] max-h-[85vh] flex flex-col p-0">
@@ -9534,9 +9558,28 @@ const AdminDashboard = () => {
               </div>
             </div>
 
-            {/* Step 1: Bill Amount */}
+            {/* Step 1: Bill Photo */}
             {completeJobStep === 1 && (
-          <div className="space-y-4">
+              <div className="space-y-4">
+                <div>
+                  <Label>Upload Bill Photo (Optional)</Label>
+                  <ImageUpload
+                    onImagesChange={(images) => setBillPhotos(images)}
+                    maxImages={5}
+                    folder="bills"
+                    title=""
+                    description=""
+                    maxWidth={1024}
+                    quality={0.5}
+                    aggressiveCompression={true}
+                  />
+                </div>
+              </div>
+            )}
+
+            {/* Step 2: Bill Amount */}
+            {completeJobStep === 2 && (
+              <div className="space-y-4">
                 <div>
                   <Label htmlFor="bill-amount">Bill Amount *</Label>
                   <Input
@@ -9555,42 +9598,122 @@ const AdminDashboard = () => {
                     </p>
                   )}
                 </div>
-            <div>
-              <Label htmlFor="completion-notes">Completion Notes (Optional)</Label>
-              <Textarea
-                id="completion-notes"
-                placeholder="Add any notes about the job completion..."
-                value={completionNotes}
-                onChange={(e) => setCompletionNotes(e.target.value)}
-                rows={3}
-                className="mt-1"
-              />
-            </div>
-          </div>
-            )}
-
-            {/* Step 2: Bill Photo */}
-            {completeJobStep === 2 && (
-              <div className="space-y-4">
                 <div>
-                  <Label>Bill Photo (Optional)</Label>
-                  <p className="text-sm text-gray-500 mb-2">Upload a photo of the bill. You can skip this step.</p>
-                  <ImageUpload
-                    onImagesChange={(images) => setBillPhotos(images)}
-                    maxImages={5}
-                    folder="bills"
-                    title="Upload Bill Photo"
-                    description="Upload photo of the bill (automatically optimized for smaller file size)"
-                    maxWidth={1024}
-                    quality={0.5}
-                    aggressiveCompression={true}
+                  <Label htmlFor="completion-notes">Completion Notes (Optional)</Label>
+                  <Textarea
+                    id="completion-notes"
+                    placeholder="Add any notes about the job completion..."
+                    value={completionNotes}
+                    onChange={(e) => setCompletionNotes(e.target.value)}
+                    rows={3}
+                    className="mt-1"
                   />
                 </div>
               </div>
             )}
 
-            {/* Step 3: AMC Info */}
+            {/* Step 3: Payment Mode */}
             {completeJobStep === 3 && (
+              <div className="space-y-4">
+                <div>
+                  <Label htmlFor="payment-mode">Payment Mode *</Label>
+                  <Select 
+                    value={paymentMode} 
+                    onValueChange={(value: 'CASH' | 'ONLINE') => {
+                      setPaymentMode(value);
+                      // Reset QR code fields when changing payment mode
+                      if (value === 'CASH') {
+                        setQrCodeType('');
+                        setCustomerQrPhotos([]);
+                        setTechnicianQrPhoto('');
+                        setPaymentScreenshot('');
+                      }
+                    }}
+                  >
+                    <SelectTrigger className="mt-1">
+                      <SelectValue placeholder="Select payment mode" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="CASH">Cash</SelectItem>
+                      <SelectItem value="ONLINE">Online</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                
+                {paymentMode === 'ONLINE' && (
+                  <div className="space-y-4 pl-4 border-l-2 border-gray-200">
+                    <div>
+                      <Label htmlFor="qr-code-type">Select QR Code Type *</Label>
+                      <Select 
+                        value={qrCodeType} 
+                        onValueChange={setQrCodeType}
+                      >
+                        <SelectTrigger className="mt-1">
+                          <SelectValue placeholder="Select QR code type" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="customer">Customer QR Code</SelectItem>
+                          <SelectItem value="technician">Technician QR Code</SelectItem>
+                          <SelectItem value="both">Both</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+
+                    {(qrCodeType === 'customer' || qrCodeType === 'both') && (
+                      <div>
+                        <Label>Customer QR Code Photos</Label>
+                        <ImageUpload
+                          onImagesChange={(images) => setCustomerQrPhotos(images)}
+                          maxImages={5}
+                          folder="payment-receipts"
+                          title=""
+                          description="Upload customer QR code photos"
+                          maxWidth={800}
+                          quality={0.3}
+                          aggressiveCompression={true}
+                          useSecondaryAccount={true}
+                        />
+                      </div>
+                    )}
+
+                    {(qrCodeType === 'technician' || qrCodeType === 'both') && (
+                      <div>
+                        <Label>Technician QR Code Photo</Label>
+                        <ImageUpload
+                          onImagesChange={(images) => setTechnicianQrPhoto(images[0] || '')}
+                          maxImages={1}
+                          folder="payment-receipts"
+                          title=""
+                          description="Upload technician QR code photo"
+                          maxWidth={800}
+                          quality={0.3}
+                          aggressiveCompression={true}
+                          useSecondaryAccount={true}
+                        />
+                      </div>
+                    )}
+
+                    <div>
+                      <Label>Payment Screenshot (Optional)</Label>
+                      <ImageUpload
+                        onImagesChange={(images) => setPaymentScreenshot(images[0] || '')}
+                        maxImages={1}
+                        folder="payment-receipts"
+                        title=""
+                        description="Upload payment screenshot"
+                        maxWidth={800}
+                        quality={0.3}
+                        aggressiveCompression={true}
+                        useSecondaryAccount={true}
+                      />
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Step 4: AMC Info */}
+            {completeJobStep === 4 && (
               <div className="space-y-4">
                 <div className="flex items-center space-x-2">
                   <input
@@ -9676,42 +9799,6 @@ const AdminDashboard = () => {
               </div>
             )}
 
-            {/* Step 4: Payment Mode and Photo */}
-            {completeJobStep === 4 && (
-              <div className="space-y-4">
-                <div>
-                  <Label htmlFor="payment-mode">Payment Mode *</Label>
-                  <Select 
-                    value={paymentMode} 
-                    onValueChange={(value: 'CASH' | 'ONLINE') => setPaymentMode(value)}
-                  >
-                    <SelectTrigger className="mt-1">
-                      <SelectValue placeholder="Select payment mode" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="CASH">Cash</SelectItem>
-                      <SelectItem value="ONLINE">Online</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-                
-                <div>
-                  <Label>Payment Photo</Label>
-                  <ImageUpload
-                    onImagesChange={(images) => setPaymentPhotos(images)}
-                    maxImages={5}
-                    folder="payment-receipts"
-                    title=""
-                    description=""
-                    maxWidth={800}
-                    quality={0.3}
-                    aggressiveCompression={true}
-                    useSecondaryAccount={true}
-                  />
-                </div>
-              </div>
-            )}
-
             {/* Step 5: Prefilter Question */}
             {completeJobStep === 5 && (
               <div className="space-y-4">
@@ -9781,7 +9868,6 @@ const AdminDashboard = () => {
                   setCompleteJobStep(1);
                   setBillAmount('');
                   setBillPhotos([]);
-                  setPaymentPhotos([]);
                   const today = new Date().toISOString().split('T')[0];
                   setAmcDateGiven(today);
                   setAmcEndDate('');
@@ -9790,6 +9876,10 @@ const AdminDashboard = () => {
                   setHasAMC(false);
                   setPaymentMode('');
                   setCustomerHasPrefilter(null);
+                  setQrCodeType('');
+                  setCustomerQrPhotos([]);
+                  setTechnicianQrPhoto('');
+                  setPaymentScreenshot('');
                 }
               }}
             >
