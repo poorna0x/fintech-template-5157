@@ -164,7 +164,6 @@ const TechnicianDashboard = () => {
   const [technicianQrCode, setTechnicianQrCode] = useState<string>('');
   const [technicianName, setTechnicianName] = useState<string>('');
   const [customerQrPhotos, setCustomerQrPhotos] = useState<string[]>([]);
-  const [technicianQrPhoto, setTechnicianQrPhoto] = useState<string>('');
   const [paymentScreenshot, setPaymentScreenshot] = useState<string>('');
 
   // Phone popup state
@@ -1608,7 +1607,6 @@ const TechnicianDashboard = () => {
       setQrCodeType('');
       setSelectedQrCodeId('');
       setCustomerQrPhotos([]);
-      setTechnicianQrPhoto('');
       setPaymentScreenshot('');
     } catch (error) {
       console.error('Error completing job:', error);
@@ -3610,7 +3608,6 @@ const TechnicianDashboard = () => {
       setQrCodeType('');
       setSelectedQrCodeId('');
       setCustomerQrPhotos([]);
-      setTechnicianQrPhoto('');
       setPaymentScreenshot('');
                   }
                 }}
