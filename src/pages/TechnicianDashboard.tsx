@@ -3205,7 +3205,6 @@ const TechnicianDashboard = () => {
             setCustomerHasPrefilter(null);
             setQrCodeType('');
             setSelectedQrCodeId('');
-            setCustomerQrPhotos([]);
             setPaymentScreenshot('');
           }
         }}>
