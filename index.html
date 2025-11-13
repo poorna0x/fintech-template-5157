@@ -137,18 +137,19 @@
     <meta name="service:area" content="Bengaluru, Karnataka" />
     
     <!-- Favicon - Responsive for all devices, themes, and PWA -->
+    <!-- IMPORTANT: favicon.ico must be first for Google Search results -->
+    <link rel="icon" type="image/x-icon" href="/favicon.ico?v=2" />
+    <link rel="shortcut icon" type="image/x-icon" href="/favicon.ico?v=2" />
     <!-- SVG favicon (supports light/dark theme via prefers-color-scheme) -->
-    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
-    <!-- Fallback ICO for older browsers -->
-    <link rel="icon" type="image/x-icon" href="/favicon.ico" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg?v=2" />
     <!-- Apple Touch Icon for iOS devices -->
-    <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png" />
+    <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png?v=2" />
     <!-- Android Chrome icons -->
-    <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32x32.png" />
-    <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16x16.png" />
+    <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32x32.png?v=2" />
+    <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16x16.png?v=2" />
     <!-- Windows tiles -->
-    <link rel="icon" type="image/png" sizes="192x192" href="/android-chrome-192x192.png" />
-    <link rel="icon" type="image/png" sizes="512x512" href="/android-chrome-512x512.png" />
+    <link rel="icon" type="image/png" sizes="192x192" href="/android-chrome-192x192.png?v=2" />
+    <link rel="icon" type="image/png" sizes="512x512" href="/android-chrome-512x512.png?v=2" />
     <!-- PWA Manifest - Set dynamically based on path for iOS compatibility -->
     <script>
       // Set correct manifest IMMEDIATELY (before iOS reads it)
@@ -450,7 +451,45 @@
         "https://www.instagram.com/hydrogenro",
         "https://www.linkedin.com/company/hydrogenro"
       ],
-      "image": "https://hydrogenro.com/logo.jpg"
+      "image": "https://hydrogenro.com/logo.jpg",
+      "hasOfferCatalog": {
+        "@type": "OfferCatalog",
+        "name": "Main Navigation Links",
+        "itemListElement": [
+          {
+            "@type": "Offer",
+            "itemOffered": {
+              "@type": "Service",
+              "name": "Book Now",
+              "url": "https://hydrogenro.com/book"
+            }
+          },
+          {
+            "@type": "Offer",
+            "itemOffered": {
+              "@type": "Service",
+              "name": "Contact",
+              "url": "https://hydrogenro.com/contact"
+            }
+          },
+          {
+            "@type": "Offer",
+            "itemOffered": {
+              "@type": "Service",
+              "name": "Services",
+              "url": "https://hydrogenro.com/services"
+            }
+          },
+          {
+            "@type": "Offer",
+            "itemOffered": {
+              "@type": "Service",
+              "name": "About",
+              "url": "https://hydrogenro.com/about"
+            }
+          }
+        ]
+      }
     }
     </script>
     
@@ -619,7 +658,7 @@
     }
     </script>
     
-    <!-- WebSite Structured Data -->
+    <!-- WebSite Structured Data with Navigation for Sitelinks -->
     <script type="application/ld+json">
     {
       "@context": "https://schema.org",
@@ -639,7 +678,84 @@
         "@type": "SearchAction",
         "target": "https://hydrogenro.com/search?q={search_term_string}",
         "query-input": "required name=search_term_string"
+      },
+      "mainEntity": {
+        "@type": "ItemList",
+        "itemListElement": [
+          {
+            "@type": "ListItem",
+            "position": 1,
+            "name": "Book Now",
+            "url": "https://hydrogenro.com/book"
+          },
+          {
+            "@type": "ListItem",
+            "position": 2,
+            "name": "Contact",
+            "url": "https://hydrogenro.com/contact"
+          },
+          {
+            "@type": "ListItem",
+            "position": 3,
+            "name": "Services",
+            "url": "https://hydrogenro.com/services"
+          },
+          {
+            "@type": "ListItem",
+            "position": 4,
+            "name": "About",
+            "url": "https://hydrogenro.com/about"
+          },
+          {
+            "@type": "ListItem",
+            "position": 5,
+            "name": "Service Areas",
+            "url": "https://hydrogenro.com/service-areas"
+          }
+        ]
       }
+    }
+    </script>
+    
+    <!-- SiteNavigationElement Structured Data for Sitelinks -->
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "SiteNavigationElement",
+      "name": "Main Navigation",
+      "url": "https://hydrogenro.com",
+      "hasPart": [
+        {
+          "@type": "SiteNavigationElement",
+          "name": "Book Now",
+          "url": "https://hydrogenro.com/book",
+          "description": "Book RO water purifier installation, repair or maintenance service"
+        },
+        {
+          "@type": "SiteNavigationElement",
+          "name": "Contact",
+          "url": "https://hydrogenro.com/contact",
+          "description": "Contact Hydrogen RO for RO services in Bengaluru"
+        },
+        {
+          "@type": "SiteNavigationElement",
+          "name": "Services",
+          "url": "https://hydrogenro.com/services",
+          "description": "RO installation, repair, filter replacement and water softener services"
+        },
+        {
+          "@type": "SiteNavigationElement",
+          "name": "About",
+          "url": "https://hydrogenro.com/about",
+          "description": "About Hydrogen RO - Leading RO service provider in Bengaluru"
+        },
+        {
+          "@type": "SiteNavigationElement",
+          "name": "Service Areas",
+          "url": "https://hydrogenro.com/service-areas",
+          "description": "RO service areas in Bengaluru - All pincodes covered"
+        }
+      ]
     }
     </script>
     

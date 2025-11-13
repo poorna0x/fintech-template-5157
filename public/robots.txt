@@ -1,6 +1,12 @@
 User-agent: *
 Allow: /
 
+# Allow favicon files for Google
+Allow: /favicon.ico
+Allow: /favicon.svg
+Allow: /*.png
+Allow: /*.ico
+
 # Disallow admin and technical pages
 Disallow: /admin
 Disallow: /technician
