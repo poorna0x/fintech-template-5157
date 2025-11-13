@@ -9504,10 +9504,10 @@ const AdminDashboard = () => {
           <DialogHeader className="px-6 pt-6 pb-4 flex-shrink-0 border-b">
             <DialogTitle>Complete Job</DialogTitle>
             <DialogDescription>
-              {completeJobStep === 1 && 'Enter the bill amount for this job'}
-              {completeJobStep === 2 && 'Upload bill photo (optional)'}
-              {completeJobStep === 3 && 'Add AMC information (optional)'}
-              {completeJobStep === 4 && 'Select payment mode and upload payment photo (optional)'}
+              {completeJobStep === 1 && 'Upload bill photo (optional)'}
+              {completeJobStep === 2 && 'Enter the bill amount for this job'}
+              {completeJobStep === 3 && 'Select payment mode and upload payment details'}
+              {completeJobStep === 4 && 'Add AMC information (optional)'}
               {completeJobStep === 5 && 'Does the customer have a prefilter?'}
             </DialogDescription>
           </DialogHeader>
