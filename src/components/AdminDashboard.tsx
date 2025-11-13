@@ -5113,7 +5113,10 @@ const AdminDashboard = () => {
       setPaymentMode('');
       setCustomerHasPrefilter(null);
       setQrCodeType('');
-      setCustomerQrPhotos([]);
+      setSelectedQrCodeId('');
+      setTechnicianQrCode('');
+      setTechnicianName('');
+      setPaymentScreenshot('');
       setTechnicianQrPhoto('');
       setPaymentScreenshot('');
     } catch (error) {
