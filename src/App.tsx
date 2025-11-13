@@ -10,6 +10,7 @@ import { Suspense, lazy, useEffect } from "react";
 import Index from "./pages/Index";
 import NotFound from "./pages/NotFound";
 import PerformanceMonitor from "./components/PerformanceMonitor";
+import CanonicalTag from "./components/CanonicalTag";
 import { disablePWA } from "@/lib/pwa";
 
 // Lazy load heavy components for better performance
@@ -88,6 +89,7 @@ const App = () => (
             <Toaster />
             <Sonner />
             <BrowserRouter>
+              <CanonicalTag />
               <PWARouteHandler />
               <Suspense fallback={<LoadingSpinner />}>
                 <Routes>
