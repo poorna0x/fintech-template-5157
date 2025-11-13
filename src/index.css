@@ -73,7 +73,8 @@
   body {
     @apply bg-background font-inter text-foreground antialiased;
     letter-spacing: -0.025em;
-    touch-action: pan-y;
+    /* Allow pull-to-refresh on mobile - use auto to allow all touch gestures */
+    touch-action: auto;
     -webkit-overflow-scrolling: touch;
     /* Allow pull-to-refresh on mobile */
     overscroll-behavior-y: auto;
@@ -82,13 +83,16 @@
   /* Hide browser's default loading progress bar */
   html {
     overflow-x: hidden;
-    touch-action: pan-y;
+    /* Allow pull-to-refresh on mobile - use auto to allow all touch gestures */
+    touch-action: auto;
     -webkit-overflow-scrolling: touch;
+    overscroll-behavior-y: auto;
   }
 
   /* Prevent freeze issues in PWA */
   #root {
-    touch-action: pan-y;
+    /* Allow pull-to-refresh on mobile - use auto to allow all touch gestures */
+    touch-action: auto;
     -webkit-overflow-scrolling: touch;
     /* Allow pull-to-refresh on mobile */
     overscroll-behavior-y: auto;
