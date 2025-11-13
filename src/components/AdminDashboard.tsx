@@ -4842,7 +4842,6 @@ const AdminDashboard = () => {
     setCompleteJobStep(1);
     setBillAmount('');
     setBillPhotos([]);
-    setPaymentPhotos([]);
     // Set default AMC date to today
     const today = new Date().toISOString().split('T')[0];
     setAmcDateGiven(today);
@@ -5007,7 +5006,6 @@ const AdminDashboard = () => {
       setCompleteJobStep(1);
       setBillAmount('');
       setBillPhotos([]);
-      setPaymentPhotos([]);
       setAmcDateGiven(new Date().toISOString().split('T')[0]);
       setAmcEndDate('');
       setAmcYears(1);
