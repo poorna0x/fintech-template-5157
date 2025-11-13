@@ -3376,16 +3376,14 @@ const TechnicianDashboard = () => {
                                 {qr.name}
                               </SelectItem>
                             ))}
-                            {/* Technician QR Code - show by name (always show if technician has QR code) */}
-                            {technicianQrCode ? (
-                              <SelectItem value="technician">
-                                {(technicianName || user?.fullName || 'Technician')}'s QR Code
-                              </SelectItem>
-                            ) : (
-                              <SelectItem value="technician" disabled>
-                                {(technicianName || user?.fullName || 'Technician')}'s QR Code (Not uploaded)
-                              </SelectItem>
-                            )}
+                            {/* Technician QR Code - always show option */}
+                            <SelectItem 
+                              value="technician" 
+                              disabled={!technicianQrCode}
+                            >
+                              {(technicianName || user?.fullName || 'Technician')}'s QR Code
+                              {!technicianQrCode && ' (Not uploaded)'}
+                            </SelectItem>
                           </SelectContent>
                         </Select>
                       </div>
