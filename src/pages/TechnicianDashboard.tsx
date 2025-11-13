@@ -97,6 +97,9 @@ const TechnicianDashboard = () => {
   const [followUpModalOpen, setFollowUpModalOpen] = useState(false);
   const [selectedJobForFollowUp, setSelectedJobForFollowUp] = useState<Job | null>(null);
   const [denyDialogOpen, setDenyDialogOpen] = useState(false);
+  // Options dialog state for 3-dot menu
+  const [optionsDialogOpen, setOptionsDialogOpen] = useState<{[jobId: string]: boolean}>({});
+  const [selectedJobForOptions, setSelectedJobForOptions] = useState<Job | null>(null);
   useEffect(() => {
     registerTechnicianPWA();
     
@@ -1763,37 +1766,18 @@ const TechnicianDashboard = () => {
               <Play className="w-4 h-4 mr-2" />
               Start Job
             </Button>
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
             <Button
               size="default"
               variant="outline"
-                  className="h-10 w-12 p-0"
-                  onClick={() => markJobAsSeen(job.id)}
-            >
-                  <MoreVertical className="w-4 h-4" />
-            </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end">
-                <DropdownMenuItem onClick={() => {
-                  markJobAsSeen(job.id);
-                  handleScheduleFollowUp(job);
-                }}>
-                  <CalendarPlus className="w-4 h-4 mr-2" />
-                  Follow-up
-                </DropdownMenuItem>
-                <DropdownMenuItem 
+              className="h-10 w-12 p-0"
               onClick={() => {
                 markJobAsSeen(job.id);
-                handleDenyJob(job);
+                setSelectedJobForOptions(job);
+                setOptionsDialogOpen(prev => ({ ...prev, [job.id]: true }));
               }}
-                  className="text-red-600 focus:text-red-600 focus:bg-red-50"
             >
-                  <XCircle className="w-4 h-4 mr-2" />
-              Deny
-                </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
+              <MoreVertical className="w-4 h-4" />
+            </Button>
           </div>
         );
       case 'EN_ROUTE':
@@ -1811,37 +1795,18 @@ const TechnicianDashboard = () => {
               <Play className="w-4 h-4 mr-2" />
               Start Work
             </Button>
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
             <Button
               size="default"
               variant="outline"
-                  className="h-10 w-12 p-0"
-                  onClick={() => markJobAsSeen(job.id)}
+              className="h-10 w-12 p-0"
+              onClick={() => {
+                markJobAsSeen(job.id);
+                setSelectedJobForOptions(job);
+                setOptionsDialogOpen(prev => ({ ...prev, [job.id]: true }));
+              }}
             >
-                  <MoreVertical className="w-4 h-4" />
+              <MoreVertical className="w-4 h-4" />
             </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end">
-                <DropdownMenuItem onClick={() => {
-                  markJobAsSeen(job.id);
-                  handleScheduleFollowUp(job);
-                }}>
-                  <CalendarPlus className="w-4 h-4 mr-2" />
-                  Follow-up
-                </DropdownMenuItem>
-                <DropdownMenuItem 
-                  onClick={() => {
-                    markJobAsSeen(job.id);
-                    handleDenyJob(job);
-                  }}
-                  className="text-red-600 focus:text-red-600 focus:bg-red-50"
-            >
-                  <XCircle className="w-4 h-4 mr-2" />
-              Deny
-                </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
           </div>
         );
       case 'IN_PROGRESS':
@@ -1859,23 +1824,18 @@ const TechnicianDashboard = () => {
               <CheckCircle className="w-4 h-4 mr-2" />
               Complete Job
             </Button>
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
             <Button
               size="default"
               variant="outline"
-                  className="h-10 w-12 p-0"
+              className="h-10 w-12 p-0"
+              onClick={() => {
+                markJobAsSeen(job.id);
+                setSelectedJobForOptions(job);
+                setOptionsDialogOpen(prev => ({ ...prev, [job.id]: true }));
+              }}
             >
-                  <MoreVertical className="w-4 h-4" />
+              <MoreVertical className="w-4 h-4" />
             </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end">
-                <DropdownMenuItem onClick={() => handleScheduleFollowUp(job)}>
-                  <CalendarPlus className="w-4 h-4 mr-2" />
-                  Follow-up
-                </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
           </div>
         );
       default:
@@ -3707,6 +3667,69 @@ const TechnicianDashboard = () => {
           </div>
         </div>
       </div>
+
+      {/* Options Dialog for 3-dot menu */}
+      {selectedJobForOptions && (
+        <Dialog 
+          open={optionsDialogOpen[selectedJobForOptions.id] || false} 
+          onOpenChange={(open) => {
+            setOptionsDialogOpen(prev => ({ ...prev, [selectedJobForOptions.id]: open }));
+            if (!open) {
+              setSelectedJobForOptions(null);
+            }
+          }}
+        >
+          <DialogContent className="sm:max-w-md">
+            <DialogHeader>
+              <DialogTitle>Job Options</DialogTitle>
+              <DialogDescription>
+                Choose an action for this job
+              </DialogDescription>
+            </DialogHeader>
+            <div className="flex flex-col gap-3 py-4">
+              {(selectedJobForOptions.status === 'ASSIGNED' || selectedJobForOptions.status === 'EN_ROUTE' || selectedJobForOptions.status === 'IN_PROGRESS') && (
+                <Button
+                  variant="outline"
+                  className="w-full justify-start"
+                  onClick={() => {
+                    setOptionsDialogOpen(prev => ({ ...prev, [selectedJobForOptions.id]: false }));
+                    handleScheduleFollowUp(selectedJobForOptions);
+                    setSelectedJobForOptions(null);
+                  }}
+                >
+                  <CalendarPlus className="w-4 h-4 mr-2" />
+                  Schedule Follow-up
+                </Button>
+              )}
+              {(selectedJobForOptions.status === 'ASSIGNED' || selectedJobForOptions.status === 'EN_ROUTE') && (
+                <Button
+                  variant="outline"
+                  className="w-full justify-start text-red-600 hover:text-red-700 hover:bg-red-50"
+                  onClick={() => {
+                    setOptionsDialogOpen(prev => ({ ...prev, [selectedJobForOptions.id]: false }));
+                    handleDenyJob(selectedJobForOptions);
+                    setSelectedJobForOptions(null);
+                  }}
+                >
+                  <XCircle className="w-4 h-4 mr-2" />
+                  Deny Job
+                </Button>
+              )}
+            </div>
+            <DialogFooter>
+              <Button
+                variant="ghost"
+                onClick={() => {
+                  setOptionsDialogOpen(prev => ({ ...prev, [selectedJobForOptions.id]: false }));
+                  setSelectedJobForOptions(null);
+                }}
+              >
+                Cancel
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+      )}
     </div>
   );
 };
