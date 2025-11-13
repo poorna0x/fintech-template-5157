@@ -46,7 +46,19 @@ export default function QuotationModal({ isOpen, onClose, customer }: QuotationM
       paymentMethod: quotation.paymentMethod,
       notes: quotation.notes,
       terms: quotation.terms
-    };
+    } as any;
+
+    // Pass GST option and GST data if available
+    if ((quotation as any).gstOption !== undefined) {
+      (pdfData as any).gstOption = (quotation as any).gstOption;
+    }
+    // Backward compatibility
+    if ((quotation as any).includeGST !== undefined) {
+      (pdfData as any).includeGST = (quotation as any).includeGST;
+    }
+    if ((quotation as any).gstData) {
+      (pdfData as any).gstData = (quotation as any).gstData;
+    }
     
     try {
       generateQuotationPDF(pdfData, action);

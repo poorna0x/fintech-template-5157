@@ -756,6 +756,7 @@ function createQuotationContent(data: PDFQuotationData): string {
             <div><strong>Quotation Number:</strong> ${data.billNumber}</div>
             <div><strong>Quotation Date:</strong> ${new Date(data.billDate).toLocaleDateString()}</div>
             <div><strong>Valid Until:</strong> ${validityDate.toLocaleDateString()}</div>
+            ${(data as any).gstOption !== 'normal' && (data as any).gstData?.placeOfSupply ? `<div><strong>Place of Supply:</strong> ${(data as any).gstData.placeOfSupply} (State Code: ${(data as any).gstData.placeOfSupplyCode || '29'})</div>` : ''}
           </div>
         </div>
       </div>
@@ -763,6 +764,14 @@ function createQuotationContent(data: PDFQuotationData): string {
       <!-- Validity Note -->
       <div class="validity-note">
         <strong>Note:</strong> This quotation is valid for 30 days from the date of issue. Prices are subject to change without prior notice.
+        ${(data as any).gstOption === 'normal' ? '' : ''}
+        ${(data as any).gstOption === 'exclude' && data.totalTax > 0 ? '<br><strong>* Prices exclude GST. Applicable GST will be charged separately.</strong>' : ''}
+        ${(data as any).gstOption === 'include' && data.totalTax > 0 ? `
+          <br><strong>* Prices include GST.</strong>
+          ${(data as any).gstData?.placeOfSupply ? `<br><span style="font-size: 12px;">Place of Supply: ${(data as any).gstData.placeOfSupply} (State Code: ${(data as any).gstData.placeOfSupplyCode || '29'})</span>` : ''}
+          ${(data as any).gstData?.isIntraState ? '<br><span style="font-size: 12px;">GST Type: Intra-state (CGST + SGST)</span>' : ''}
+          ${!(data as any).gstData?.isIntraState && (data as any).gstData ? '<br><span style="font-size: 12px;">GST Type: Inter-state (IGST)</span>' : ''}
+        ` : ''}
       </div>
       
       <!-- Items Table -->
@@ -799,10 +808,42 @@ function createQuotationContent(data: PDFQuotationData): string {
             <span>₹${data.serviceCharge.toLocaleString()}</span>
           </div>
         ` : ''}
+        ${(data as any).gstOption !== 'normal' && data.totalTax > 0 && (data as any).gstOption === 'include' && (data as any).gstData ? `
+          ${(data as any).gstData.isIntraState ? `
+            <div class="summary-row">
+              <span>CGST (9%):</span>
+              <span>₹${((data as any).gstData.taxSplit?.cgst || 0).toLocaleString(undefined, { maximumFractionDigits: 2 })}</span>
+            </div>
+            <div class="summary-row">
+              <span>SGST (9%):</span>
+              <span>₹${((data as any).gstData.taxSplit?.sgst || 0).toLocaleString(undefined, { maximumFractionDigits: 2 })}</span>
+            </div>
+          ` : `
+            <div class="summary-row">
+              <span>IGST (18%):</span>
+              <span>₹${((data as any).gstData.taxSplit?.igst || 0).toLocaleString(undefined, { maximumFractionDigits: 2 })}</span>
+            </div>
+          `}
+          <div class="summary-row" style="font-weight: 600; border-top: 1px solid #e5e7eb; padding-top: 5px;">
+            <span>Total GST:</span>
+            <span>₹${data.totalTax.toLocaleString(undefined, { maximumFractionDigits: 2 })}</span>
+          </div>
+        ` : ''}
+        ${(data as any).gstOption === 'exclude' && data.totalTax > 0 ? `
+          <div class="summary-row" style="color: #6b7280; font-style: italic; font-size: 13px;">
+            <span>Tax (GST) - Excluded:</span>
+            <span>₹${data.totalTax.toLocaleString()}</span>
+          </div>
+        ` : ''}
         <div class="summary-row total">
-          <span>Total Amount:</span>
+          <span>Total Amount ${(data as any).gstOption === 'normal' ? '' : (data as any).gstOption === 'exclude' && data.totalTax > 0 ? '(Excl. GST)' : (data as any).gstOption === 'include' && data.totalTax > 0 ? '(Incl. GST)' : ''}:</span>
           <span>₹${data.totalAmount.toLocaleString()}</span>
         </div>
+        ${(data as any).gstOption === 'exclude' && data.totalTax > 0 ? `
+          <div style="margin-top: 10px; padding-top: 10px; border-top: 1px solid #e5e7eb; font-size: 12px; font-style: italic;">
+            * Note: Prices exclude GST. Applicable GST will be charged separately.
+          </div>
+        ` : ''}
       </div>
       
       <!-- Additional Info -->

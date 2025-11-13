@@ -4,6 +4,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Plus, Trash2, Download, Edit, X, FileText } from 'lucide-react';
 import { toast } from 'sonner';
 import { Bill, BillItem, CompanyInfo, Customer } from '@/types';
@@ -33,8 +34,8 @@ const defaultQuotationItems: BillItem[] = [
     quantity: 1,
     unitPrice: 15000,
     total: 15000,
-    taxRate: 0,
-    taxAmount: 0
+    taxRate: 18, // Default 18% GST for RO services
+    taxAmount: 2700 // 18% of 15000
   }
 ];
 
@@ -57,6 +58,16 @@ export default function QuotationGenerator({ customer, onPrint }: QuotationGener
   const [editingNoteIndex, setEditingNoteIndex] = useState<number | null>(null);
   const [validityNote, setValidityNote] = useState('This quotation is valid for 30 days from the date of issue. Prices are subject to change without prior notice.');
   const [showValidityNote, setShowValidityNote] = useState(true);
+  const [gstOption, setGstOption] = useState<'normal' | 'exclude' | 'include'>('include'); // Default to including GST
+  const [addGSTNoteToNotes, setAddGSTNoteToNotes] = useState(false); // Option to add GST note to Additional Info
+  
+  // Computed values for backward compatibility
+  const includeGST = gstOption === 'include';
+  const showGST = gstOption !== 'normal';
+  
+  // GST-specific state
+  const [placeOfSupply, setPlaceOfSupply] = useState(customerAddress.state || 'Karnataka');
+  const [placeOfSupplyCode, setPlaceOfSupplyCode] = useState('29'); // Karnataka state code
   
   // Customer editing state
   const [isEditingCustomer, setIsEditingCustomer] = useState(false);
@@ -124,6 +135,10 @@ export default function QuotationGenerator({ customer, onPrint }: QuotationGener
         // Recalculate totals when quantity or unitPrice changes
         if (field === 'quantity' || field === 'unitPrice') {
           updatedItem.total = updatedItem.quantity * updatedItem.unitPrice;
+          // Recalculate tax if taxRate is set
+          if (updatedItem.taxRate > 0) {
+            updatedItem.taxAmount = updatedItem.total * (updatedItem.taxRate / 100);
+          }
         }
         
         // Recalculate tax when taxRate changes
@@ -174,7 +189,42 @@ export default function QuotationGenerator({ customer, onPrint }: QuotationGener
 
   const subtotal = items.reduce((sum, item) => sum + item.total, 0);
   const totalTax = items.reduce((sum, item) => sum + item.taxAmount, 0);
-  const totalAmount = subtotal + totalTax + serviceCharge;
+  
+  // Determine if intra-state (same state) or inter-state (different state)
+  const isIntraState = placeOfSupply === defaultCompanyInfo.state;
+  
+  // Calculate CGST, SGST (for intra-state) or IGST (for inter-state)
+  const calculateTaxSplit = () => {
+    if (gstOption === 'normal' || gstOption === 'exclude' || totalTax === 0) {
+      return { cgst: 0, sgst: 0, igst: 0 };
+    }
+    
+    if (isIntraState) {
+      // Intra-state: CGST + SGST (each half of GST)
+      return {
+        cgst: totalTax / 2,
+        sgst: totalTax / 2,
+        igst: 0
+      };
+    } else {
+      // Inter-state: IGST (full GST)
+      return {
+        cgst: 0,
+        sgst: 0,
+        igst: totalTax
+      };
+    }
+  };
+  
+  const taxSplit = calculateTaxSplit();
+  
+  // Calculate total based on GST option
+  // Normal: no GST shown at all
+  // Exclude: GST shown but not added to total
+  // Include: GST shown and added to total
+  const totalAmount = gstOption === 'include' 
+    ? subtotal + totalTax + serviceCharge 
+    : subtotal + serviceCharge;
 
   const handlePrint = (action: 'print' | 'pdf' = 'print') => {
     const quotation: Bill = {
@@ -211,7 +261,19 @@ export default function QuotationGenerator({ customer, onPrint }: QuotationGener
       terms: showValidityNote ? validityNote : '', // Include validity note as terms for quotations
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString()
-    };
+    } as any;
+
+    // Add GST option and GST data
+    (quotation as any).gstOption = gstOption;
+    (quotation as any).includeGST = gstOption === 'include'; // For backward compatibility
+    if (gstOption !== 'normal') {
+      (quotation as any).gstData = {
+        placeOfSupply,
+        placeOfSupplyCode,
+        isIntraState,
+        taxSplit
+      };
+    }
 
     onPrint?.(quotation, action);
   };
@@ -254,6 +316,97 @@ export default function QuotationGenerator({ customer, onPrint }: QuotationGener
                   onChange={(e) => setQuotationDate(e.target.value)}
                 />
               </div>
+              <div className="sm:col-span-2">
+                <Label htmlFor="gstOption">GST Option</Label>
+                <Select
+                  value={gstOption}
+                  onValueChange={(value: 'normal' | 'exclude' | 'include') => {
+                    setGstOption(value);
+                    // If switching to normal, remove GST note from Additional Info
+                    if (value === 'normal' && addGSTNoteToNotes) {
+                      setAddGSTNoteToNotes(false);
+                      setNotes(notes.filter(note => 
+                        !note.includes('Prices include GST') && !note.includes('Prices exclude GST')
+                      ));
+                    }
+                  }}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select GST option" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="normal">Normal (No GST Mention)</SelectItem>
+                    <SelectItem value="exclude">Exclude GST (Show but don't add to total)</SelectItem>
+                    <SelectItem value="include">Include GST (Add to total)</SelectItem>
+                  </SelectContent>
+                </Select>
+                <p className="text-xs text-gray-500 mt-1">
+                  {gstOption === 'normal' && 'No GST will be calculated or shown'}
+                  {gstOption === 'exclude' && 'GST will be calculated and shown separately, but not added to total'}
+                  {gstOption === 'include' && 'GST will be calculated and added to the total amount'}
+                </p>
+                {gstOption !== 'normal' && totalTax > 0 && (
+                  <div className="flex items-center space-x-2 mt-2">
+                    <input
+                      type="checkbox"
+                      id="addGSTNoteToNotes"
+                      checked={addGSTNoteToNotes}
+                      onChange={(e) => {
+                        setAddGSTNoteToNotes(e.target.checked);
+                        
+                        if (e.target.checked) {
+                          // Add GST note to notes
+                          const gstNoteText = gstOption === 'include'
+                            ? '* Prices include GST.'
+                            : '* Prices exclude GST. Applicable GST will be charged separately.';
+                          
+                          // Remove any existing GST notes first
+                          const filteredNotes = notes.filter(note => 
+                            !note.includes('Prices include GST') && !note.includes('Prices exclude GST')
+                          );
+                          
+                          // Add new GST note
+                          setNotes([...filteredNotes, gstNoteText]);
+                        } else {
+                          // Remove GST note from notes
+                          setNotes(notes.filter(note => 
+                            !note.includes('Prices include GST') && !note.includes('Prices exclude GST')
+                          ));
+                        }
+                      }}
+                      className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                    />
+                    <Label htmlFor="addGSTNoteToNotes" className="text-xs cursor-pointer">
+                      Add GST note to Additional Info
+                    </Label>
+                  </div>
+                )}
+              </div>
+              {gstOption !== 'normal' && (
+                <>
+                  <div>
+                    <Label htmlFor="placeOfSupply">Place of Supply (State)</Label>
+                    <Input
+                      id="placeOfSupply"
+                      value={placeOfSupply}
+                      onChange={(e) => setPlaceOfSupply(e.target.value)}
+                      placeholder="Karnataka"
+                    />
+                    <p className="text-xs text-gray-500 mt-1">
+                      {isIntraState ? 'Intra-state (CGST + SGST)' : 'Inter-state (IGST)'}
+                    </p>
+                  </div>
+                  <div>
+                    <Label htmlFor="placeOfSupplyCode">State Code</Label>
+                    <Input
+                      id="placeOfSupplyCode"
+                      value={placeOfSupplyCode}
+                      onChange={(e) => setPlaceOfSupplyCode(e.target.value)}
+                      placeholder="29"
+                    />
+                  </div>
+                </>
+              )}
             </div>
           </CardContent>
         </Card>
@@ -483,18 +636,20 @@ export default function QuotationGenerator({ customer, onPrint }: QuotationGener
                         placeholder="0.00"
                       />
                     </div>
-                    <div className="flex-1">
-                      <Label>Tax %</Label>
-                      <Input
-                        type="number"
-                        value={item.taxRate}
-                        onChange={(e) => updateItem(item.id, 'taxRate', parseFloat(e.target.value) || 0)}
-                        min="0"
-                        max="100"
-                        step="0.01"
-                        placeholder="0"
-                      />
-                    </div>
+                    {gstOption !== 'normal' && (
+                      <div className="flex-1">
+                        <Label>Tax %</Label>
+                        <Input
+                          type="number"
+                          value={item.taxRate}
+                          onChange={(e) => updateItem(item.id, 'taxRate', parseFloat(e.target.value) || 0)}
+                          min="0"
+                          max="100"
+                          step="0.01"
+                          placeholder="0"
+                        />
+                      </div>
+                    )}
                   </div>
                 </div>
                 
@@ -502,7 +657,7 @@ export default function QuotationGenerator({ customer, onPrint }: QuotationGener
                 <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2">
                   <div className="text-sm text-gray-600">
                     <strong>Total: ₹{item.total.toLocaleString()}</strong>
-                    {item.taxAmount > 0 && (
+                    {gstOption !== 'normal' && item.taxAmount > 0 && (
                       <span className="ml-2">(Tax: ₹{item.taxAmount.toLocaleString()})</span>
                     )}
                   </div>
@@ -539,16 +694,46 @@ export default function QuotationGenerator({ customer, onPrint }: QuotationGener
                 <span>₹{serviceCharge.toLocaleString()}</span>
               </div>
             )}
-            {totalTax > 0 && (
-              <div className="flex justify-between">
-                <span>Tax:</span>
+            {gstOption !== 'normal' && totalTax > 0 && gstOption === 'include' && (
+              <>
+                {isIntraState ? (
+                  <>
+                    <div className="flex justify-between">
+                      <span>CGST (9%):</span>
+                      <span>₹{taxSplit.cgst.toLocaleString(undefined, { maximumFractionDigits: 2 })}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span>SGST (9%):</span>
+                      <span>₹{taxSplit.sgst.toLocaleString(undefined, { maximumFractionDigits: 2 })}</span>
+                    </div>
+                  </>
+                ) : (
+                  <div className="flex justify-between">
+                    <span>IGST (18%):</span>
+                    <span>₹{taxSplit.igst.toLocaleString(undefined, { maximumFractionDigits: 2 })}</span>
+                  </div>
+                )}
+                <div className="flex justify-between font-medium border-t pt-1 mt-1">
+                  <span>Total GST:</span>
+                  <span>₹{totalTax.toLocaleString(undefined, { maximumFractionDigits: 2 })}</span>
+                </div>
+              </>
+            )}
+            {gstOption === 'exclude' && totalTax > 0 && (
+              <div className="flex justify-between text-sm text-gray-600 italic">
+                <span>Tax (GST) - Excluded:</span>
                 <span>₹{totalTax.toLocaleString()}</span>
               </div>
             )}
             <div className="flex justify-between font-bold text-lg border-t pt-2">
-              <span>Total Amount:</span>
+              <span>Total Amount {gstOption === 'normal' ? '' : gstOption === 'exclude' ? '(Excl. GST)' : '(Incl. GST)'}:</span>
               <span>₹{totalAmount.toLocaleString()}</span>
             </div>
+            {gstOption === 'exclude' && totalTax > 0 && (
+              <div className="text-xs text-gray-500 italic mt-2">
+                * Note: Prices exclude GST. Applicable GST will be charged separately.
+              </div>
+            )}
           </div>
         </CardContent>
       </Card>
