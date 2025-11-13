@@ -1890,7 +1890,7 @@ const TechnicianDashboard = () => {
   return (
     <div className="min-h-screen bg-gray-50" style={{ touchAction: 'auto', WebkitOverflowScrolling: 'touch', overscrollBehaviorY: 'auto' }}>
       {/* Header */}
-      <div className="pt-8 px-4 bg-background/95 backdrop-blur-md border-b border-border/50 sticky top-0 z-50" style={{ touchAction: 'none' }}>
+      <div className="pt-8 px-4 bg-background/95 backdrop-blur-md border-b border-border/50 sticky top-0 z-50" style={{ touchAction: 'pan-y' }}>
         <header className="w-full max-w-7xl mx-auto py-3 px-6 md:px-8 flex items-center justify-between relative">
           {/* Spacer for balance */}
           <div className="w-16"></div>
@@ -1914,6 +1914,16 @@ const TechnicianDashboard = () => {
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end">
+                <DropdownMenuItem 
+                  onClick={() => {
+                    loadAssignedJobs();
+                    loadAssignmentRequests();
+                    toast.success('Refreshing jobs...');
+                  }}
+                >
+                  <RefreshCw className="w-4 h-4 mr-2" />
+                  Refresh
+                </DropdownMenuItem>
                 <DropdownMenuItem onClick={logout}>
                   <LogOut className="w-4 h-4 mr-2" />
                   Logout
