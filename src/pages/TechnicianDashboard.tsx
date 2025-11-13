@@ -3457,90 +3457,112 @@ const TechnicianDashboard = () => {
                 </div>
               )}
 
-              {/* Step 4: AMC Info */}
+              {/* Step 4: Payment Photo and AMC Info */}
               {completeJobStep === 4 && (
-                <div className="space-y-4">
-                  <div className="flex items-center space-x-2">
-                    <input
-                      type="checkbox"
-                      id="has-amc"
-                      checked={hasAMC}
-                      onChange={(e) => {
-                        setHasAMC(e.target.checked);
-                        // Reset to default when enabling AMC
-                        if (e.target.checked) {
-                          const today = new Date().toISOString().split('T')[0];
-                          setAmcDateGiven(today);
-                          setAmcYears(1);
-                          calculateAMCEndDate(today, 1);
-                        }
-                      }}
-                      className="w-4 h-4"
-                    />
-                    <Label htmlFor="has-amc" className="cursor-pointer">This job includes AMC</Label>
-                  </div>
-
-                  {hasAMC && (
-                    <div className="space-y-4 pl-6 border-l-2 border-gray-200">
-                      <div>
-                        <Label htmlFor="amc-date-given">AMC Date of Agreement *</Label>
-                        <Input
-                          id="amc-date-given"
-                          type="date"
-                          value={amcDateGiven}
-                          onChange={(e) => {
-                            setAmcDateGiven(e.target.value);
-                            if (e.target.value) {
-                              calculateAMCEndDate(e.target.value, amcYears);
-                            }
-                          }}
-                          className="mt-1"
-                          max={new Date().toISOString().split('T')[0]}
-                        />
-                      </div>
-                      <div>
-                        <Label htmlFor="amc-years">Number of Years *</Label>
-                        <Select value={amcYears.toString()} onValueChange={(value) => {
-                          const years = parseInt(value);
-                          setAmcYears(years);
-                          if (amcDateGiven) {
-                            calculateAMCEndDate(amcDateGiven, years);
-                          }
-                        }}>
-                          <SelectTrigger className="mt-1">
-                            <SelectValue />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="1">1 Year</SelectItem>
-                            <SelectItem value="2">2 Years</SelectItem>
-                            <SelectItem value="3">3 Years</SelectItem>
-                          </SelectContent>
-                        </Select>
-                      </div>
-                      <div>
-                        <Label htmlFor="amc-end-date">AMC End Date *</Label>
-                        <Input
-                          id="amc-end-date"
-                          type="date"
-                          value={amcEndDate}
-                          onChange={(e) => setAmcEndDate(e.target.value)}
-                          className="mt-1"
-                          min={amcDateGiven}
-                          readOnly
-                        />
-                      </div>
-                      <div className="flex items-center space-x-2">
-                        <input
-                          type="checkbox"
-                          id="amc-prefilter"
-                          checked={amcIncludesPrefilter}
-                          onChange={(e) => setAmcIncludesPrefilter(e.target.checked)}
-                          className="w-4 h-4"
-                        />
-                        <Label htmlFor="amc-prefilter" className="cursor-pointer">Includes Prefilter</Label>
-                      </div>
+                <div className="space-y-6">
+                  {/* Payment Photo Upload (if Online payment) */}
+                  {paymentMode === 'ONLINE' && selectedQrCodeId && (
+                    <div>
+                      <Label>Payment Screenshot (Optional)</Label>
+                      <p className="text-sm text-gray-500 mb-2">Upload payment confirmation screenshot</p>
+                      <ImageUpload
+                        onImagesChange={(images) => setPaymentScreenshot(images[0] || '')}
+                        maxImages={1}
+                        folder="payment-receipts"
+                        title=""
+                        description=""
+                        maxWidth={800}
+                        quality={0.3}
+                        aggressiveCompression={true}
+                        useSecondaryAccount={true}
+                      />
                     </div>
                   )}
+
+                  {/* AMC Info */}
+                  <div className="space-y-4">
+                    <div className="flex items-center space-x-2">
+                      <input
+                        type="checkbox"
+                        id="has-amc"
+                        checked={hasAMC}
+                        onChange={(e) => {
+                          setHasAMC(e.target.checked);
+                          // Reset to default when enabling AMC
+                          if (e.target.checked) {
+                            const today = new Date().toISOString().split('T')[0];
+                            setAmcDateGiven(today);
+                            setAmcYears(1);
+                            calculateAMCEndDate(today, 1);
+                          }
+                        }}
+                        className="w-4 h-4"
+                      />
+                      <Label htmlFor="has-amc" className="cursor-pointer">This job includes AMC</Label>
+                    </div>
+
+                    {hasAMC && (
+                      <div className="space-y-4 pl-6 border-l-2 border-gray-200">
+                        <div>
+                          <Label htmlFor="amc-date-given">AMC Date of Agreement *</Label>
+                          <Input
+                            id="amc-date-given"
+                            type="date"
+                            value={amcDateGiven}
+                            onChange={(e) => {
+                              setAmcDateGiven(e.target.value);
+                              if (e.target.value) {
+                                calculateAMCEndDate(e.target.value, amcYears);
+                              }
+                            }}
+                            className="mt-1"
+                            max={new Date().toISOString().split('T')[0]}
+                          />
+                        </div>
+                        <div>
+                          <Label htmlFor="amc-years">Number of Years *</Label>
+                          <Select value={amcYears.toString()} onValueChange={(value) => {
+                            const years = parseInt(value);
+                            setAmcYears(years);
+                            if (amcDateGiven) {
+                              calculateAMCEndDate(amcDateGiven, years);
+                            }
+                          }}>
+                            <SelectTrigger className="mt-1">
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="1">1 Year</SelectItem>
+                              <SelectItem value="2">2 Years</SelectItem>
+                              <SelectItem value="3">3 Years</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        </div>
+                        <div>
+                          <Label htmlFor="amc-end-date">AMC End Date *</Label>
+                          <Input
+                            id="amc-end-date"
+                            type="date"
+                            value={amcEndDate}
+                            onChange={(e) => setAmcEndDate(e.target.value)}
+                            className="mt-1"
+                            min={amcDateGiven}
+                            readOnly
+                          />
+                        </div>
+                        <div className="flex items-center space-x-2">
+                          <input
+                            type="checkbox"
+                            id="amc-prefilter"
+                            checked={amcIncludesPrefilter}
+                            onChange={(e) => setAmcIncludesPrefilter(e.target.checked)}
+                            className="w-4 h-4"
+                          />
+                          <Label htmlFor="amc-prefilter" className="cursor-pointer">Includes Prefilter</Label>
+                        </div>
+                      </div>
+                    )}
+                  </div>
                 </div>
               )}
 
