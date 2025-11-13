@@ -161,6 +161,8 @@ export default function TaxInvoiceGenerator({ customer, onPrint }: TaxInvoiceGen
   const [invoiceType, setInvoiceType] = useState<'B2B' | 'B2C'>('B2C'); // B2B = Business to Business, B2C = Business to Consumer
   const [bankDetails, setBankDetails] = useState(defaultBankDetails);
   const [poNumber, setPONumber] = useState('');
+  const [showPONumber, setShowPONumber] = useState(false);
+  const [poNumberRequired, setPONumberRequired] = useState(false); // For government entities
   const [paymentDueDate, setPaymentDueDate] = useState('');
   const [deliveryAddress, setDeliveryAddress] = useState({
     street: '',
@@ -389,6 +391,12 @@ export default function TaxInvoiceGenerator({ customer, onPrint }: TaxInvoiceGen
       toast.error('Customer GSTIN is mandatory for B2B invoices. Please enter customer GST number.');
       return;
     }
+    
+    // Validate PO Number if required (for government entities)
+    if (showPONumber && poNumberRequired && !poNumber.trim()) {
+      toast.error('PO Number / Work Order Number is required for government entities');
+      return;
+    }
 
     const bill: Bill = {
       id: Date.now().toString(),
@@ -441,7 +449,8 @@ export default function TaxInvoiceGenerator({ customer, onPrint }: TaxInvoiceGen
     // Add additional invoice details
     (bill as any).invoiceDetails = {
       invoiceType,
-      poNumber,
+      poNumber: showPONumber ? poNumber : null,
+      poNumberRequired,
       paymentDueDate,
       deliveryAddress: showDeliveryAddress ? deliveryAddress : null,
       totalDiscount
@@ -614,6 +623,71 @@ export default function TaxInvoiceGenerator({ customer, onPrint }: TaxInvoiceGen
               <Label htmlFor="roundOff" className="text-sm font-medium cursor-pointer">
                 Round Off Total Amount
               </Label>
+            </div>
+            
+            {/* PO Number Section */}
+            <div className="border-t pt-4 mt-4">
+              <div className="flex items-center space-x-2 mb-3 flex-wrap">
+                <input
+                  type="checkbox"
+                  id="showPONumber"
+                  checked={showPONumber}
+                  onChange={(e) => {
+                    setShowPONumber(e.target.checked);
+                    if (!e.target.checked) {
+                      setPONumber('');
+                      setPONumberRequired(false);
+                    }
+                  }}
+                  className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                />
+                <Label htmlFor="showPONumber" className="text-sm font-medium cursor-pointer">
+                  Add PO Number / Work Order Number
+                </Label>
+                {showPONumber && (
+                  <>
+                    <input
+                      type="checkbox"
+                      id="poNumberRequired"
+                      checked={poNumberRequired}
+                      onChange={(e) => setPONumberRequired(e.target.checked)}
+                      className="w-4 h-4 text-red-600 border-gray-300 rounded focus:ring-red-500 ml-4"
+                    />
+                    <Label htmlFor="poNumberRequired" className="text-xs text-red-600 cursor-pointer">
+                      Required (for government entities)
+                    </Label>
+                  </>
+                )}
+              </div>
+              {showPONumber && (
+                <div>
+                  <Label htmlFor="poNumber">
+                    PO Number / Work Order Number {poNumberRequired && <span className="text-red-500">*</span>}
+                  </Label>
+                  <Input
+                    id="poNumber"
+                    value={poNumber}
+                    onChange={(e) => setPONumber(e.target.value)}
+                    placeholder="Enter PO Number or Work Order Number"
+                    required={poNumberRequired}
+                    className={poNumberRequired && !poNumber ? 'border-red-500' : ''}
+                  />
+                  <p className="text-xs text-gray-500 mt-1">
+                    {poNumberRequired ? 'Mandatory for government entities' : 'Optional - for reference'}
+                  </p>
+                </div>
+              )}
+            </div>
+            
+            {/* Payment Due Date */}
+            <div className="border-t pt-4 mt-4">
+              <Label htmlFor="paymentDueDate">Payment Due Date (Optional)</Label>
+              <Input
+                id="paymentDueDate"
+                type="date"
+                value={paymentDueDate}
+                onChange={(e) => setPaymentDueDate(e.target.value)}
+              />
             </div>
           </CardContent>
         </Card>

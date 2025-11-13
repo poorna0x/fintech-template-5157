@@ -624,7 +624,7 @@ function createTaxInvoiceContent(data: PDFTaxInvoiceData): string {
             <div><strong>Invoice Type:</strong> ${(data as any).invoiceDetails?.invoiceType || 'B2C'} ${(data as any).invoiceDetails?.invoiceType === 'B2B' ? '(Business to Business)' : '(Business to Consumer)'}</div>
             <div><strong>Invoice Number:</strong> ${data.billNumber}</div>
             <div><strong>Invoice Date:</strong> ${new Date(data.billDate).toLocaleDateString('en-IN', { day: '2-digit', month: '2-digit', year: 'numeric' })}</div>
-            ${(data as any).invoiceDetails?.poNumber ? `<div><strong>PO Number:</strong> ${(data as any).invoiceDetails.poNumber}</div>` : ''}
+            ${(data as any).invoiceDetails?.poNumber ? `<div><strong>PO Number / Work Order Number:</strong> ${(data as any).invoiceDetails.poNumber} ${(data as any).invoiceDetails?.poNumberRequired ? '<span style="color: #dc2626; font-size: 11px;">(Required for Government)</span>' : ''}</div>` : ''}
             ${data.gstData?.placeOfSupply ? `<div><strong>Place of Supply:</strong> ${data.gstData.placeOfSupply} (State Code: ${data.gstData.placeOfSupplyCode || '29'})</div>` : ''}
             ${(data as any).invoiceDetails?.paymentDueDate ? `<div><strong>Payment Due Date:</strong> ${new Date((data as any).invoiceDetails.paymentDueDate).toLocaleDateString('en-IN', { day: '2-digit', month: '2-digit', year: 'numeric' })}</div>` : ''}
             ${data.gstData?.reverseCharge ? `<div><strong>Reverse Charge:</strong> Yes</div>` : ''}
@@ -824,10 +824,8 @@ function createTaxInvoiceContent(data: PDFTaxInvoiceData): string {
       ` : ''}
       
       <!-- Computer Generated Disclaimer -->
-      <div style="margin-top: 30px; padding: 15px 10px; text-align: center; font-size: 11px; color: #4b5563; border-top: 2px solid #e5e7eb; background-color: #f9fafb;">
-        <p style="margin: 8px 0; font-weight: 600; letter-spacing: normal; word-spacing: normal;">This is a Computer Generated Invoice</p>
-        <p style="margin: 5px 0; letter-spacing: normal; word-spacing: normal;">No signature is required</p>
-        <p style="margin: 5px 0; letter-spacing: normal; word-spacing: normal;">This invoice is valid and legally binding</p>
+      <div style="margin-top: 30px; padding: 15px 10px; text-align: justify; font-size: 11px; color: #4b5563; border-top: 2px solid #e5e7eb; background-color: #f9fafb;">
+        <p style="margin: 8px 0; font-weight: 600; letter-spacing: normal; word-spacing: normal; text-align: justify; line-height: 1.6;">This is a Computer Generated Invoice. No signature is required. This invoice is valid and legally binding.</p>
       </div>
       
       <!-- Footer -->
