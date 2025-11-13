@@ -3427,6 +3427,10 @@ const TechnicianDashboard = () => {
                                     className={`w-40 h-40 object-contain border rounded transition-transform ${
                                       isSelected ? 'border-primary scale-105' : 'border-gray-300'
                                     }`}
+                                    onError={(e) => {
+                                      console.error('Failed to load technician QR code image:', technicianQrCode);
+                                      (e.target as HTMLImageElement).style.display = 'none';
+                                    }}
                                   />
                                 </div>
                                 {isSelected && (
@@ -3468,6 +3472,10 @@ const TechnicianDashboard = () => {
                                     src={technicianQrCode} 
                                     alt="Technician QR Code"
                                     className="w-56 h-56 object-contain mx-auto border-2 border-primary rounded-lg shadow-lg bg-white p-2"
+                                    onError={(e) => {
+                                      console.error('Failed to load technician QR code image:', technicianQrCode);
+                                      (e.target as HTMLImageElement).style.display = 'none';
+                                    }}
                                   />
                                 </div>
                               )}
