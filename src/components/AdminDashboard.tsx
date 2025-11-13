@@ -9595,8 +9595,9 @@ const AdminDashboard = () => {
           setPaymentMode('');
           setCustomerHasPrefilter(null);
           setQrCodeType('');
-          setCustomerQrPhotos([]);
-          setTechnicianQrPhoto('');
+          setSelectedQrCodeId('');
+          setTechnicianQrCode('');
+          setTechnicianName('');
           setPaymentScreenshot('');
         }
       }}>
