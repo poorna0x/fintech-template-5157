@@ -5671,22 +5671,27 @@ const AdminDashboard = () => {
               <p className="text-sm sm:text-base text-gray-600">Manage customers, jobs, and system operations</p>
             </div>
             <div className="flex gap-3 flex-wrap">
-              <Button 
-                variant="outline"
-                onClick={handleShowGSTInvoices}
-                className="flex items-center gap-2"
-              >
-                <Receipt className="w-4 h-4" />
-                GST Invoices
-              </Button>
-              <Button 
-                variant="outline"
-                onClick={() => navigate('/settings')}
-                className="flex items-center gap-2"
-              >
-                <Settings className="w-4 h-4" />
-                Settings
-              </Button>
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button 
+                    variant="outline"
+                    className="flex items-center gap-2"
+                  >
+                    <Settings className="w-4 h-4" />
+                    Settings
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end" className="w-56">
+                  <DropdownMenuItem onClick={() => navigate('/settings')}>
+                    <Settings className="w-4 h-4 mr-2" />
+                    Settings
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={handleShowGSTInvoices}>
+                    <Receipt className="w-4 h-4 mr-2" />
+                    GST Invoices
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
               <Button 
                 onClick={handleAddCustomer}
                 className="bg-blue-600 hover:bg-blue-700 text-white w-full sm:w-auto px-4 py-2 text-sm sm:text-base"

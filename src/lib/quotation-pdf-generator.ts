@@ -765,7 +765,7 @@ function createQuotationContent(data: PDFQuotationData): string {
       <div class="validity-note">
         <strong>Note:</strong> This quotation is valid for 30 days from the date of issue. Prices are subject to change without prior notice.
         ${(data as any).gstOption === 'normal' ? '' : ''}
-        ${(data as any).gstOption === 'exclude' && data.totalTax > 0 ? '<br><strong>* Prices exclude GST. Applicable GST will be charged separately.</strong>' : ''}
+        ${(data as any).gstOption === 'exclude' ? '<br><strong>* GST not included. Applicable GST will be charged separately if applicable.</strong>' : ''}
         ${(data as any).gstOption === 'include' && data.totalTax > 0 ? `
           <br><strong>* Prices include GST.</strong>
           ${(data as any).gstData?.placeOfSupply ? `<br><span style="font-size: 12px;">Place of Supply: ${(data as any).gstData.placeOfSupply} (State Code: ${(data as any).gstData.placeOfSupplyCode || '29'})</span>` : ''}
@@ -829,19 +829,13 @@ function createQuotationContent(data: PDFQuotationData): string {
             <span>₹${data.totalTax.toLocaleString(undefined, { maximumFractionDigits: 2 })}</span>
           </div>
         ` : ''}
-        ${(data as any).gstOption === 'exclude' && data.totalTax > 0 ? `
-          <div class="summary-row" style="color: #6b7280; font-style: italic; font-size: 13px;">
-            <span>Tax (GST) - Excluded:</span>
-            <span>₹${data.totalTax.toLocaleString()}</span>
-          </div>
-        ` : ''}
         <div class="summary-row total">
-          <span>Total Amount ${(data as any).gstOption === 'normal' ? '' : (data as any).gstOption === 'exclude' && data.totalTax > 0 ? '(Excl. GST)' : (data as any).gstOption === 'include' && data.totalTax > 0 ? '(Incl. GST)' : ''}:</span>
+          <span>Total Amount ${(data as any).gstOption === 'normal' ? '' : (data as any).gstOption === 'exclude' ? '(Excl. GST)' : (data as any).gstOption === 'include' && data.totalTax > 0 ? '(Incl. GST)' : ''}:</span>
           <span>₹${data.totalAmount.toLocaleString()}</span>
         </div>
-        ${(data as any).gstOption === 'exclude' && data.totalTax > 0 ? `
+        ${(data as any).gstOption === 'exclude' ? `
           <div style="margin-top: 10px; padding-top: 10px; border-top: 1px solid #e5e7eb; font-size: 12px; font-style: italic;">
-            * Note: Prices exclude GST. Applicable GST will be charged separately.
+            * Note: GST not included. Applicable GST will be charged separately if applicable.
           </div>
         ` : ''}
       </div>

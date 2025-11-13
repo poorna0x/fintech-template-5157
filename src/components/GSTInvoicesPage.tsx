@@ -13,8 +13,12 @@ import {
   Calendar,
   User,
   Receipt,
-  Filter
+  Filter,
+  X
 } from 'lucide-react';
+import { Label } from '@/components/ui/label';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Pagination, PaginationContent, PaginationItem, PaginationLink, PaginationNext, PaginationPrevious } from '@/components/ui/pagination';
 import { db } from '@/lib/supabase';
 import { toast } from 'sonner';
 import { generateTaxInvoicePDF } from '@/lib/tax-invoice-pdf-generator';
@@ -55,6 +59,7 @@ interface TaxInvoice {
 
 export default function GSTInvoicesPage() {
   const [invoices, setInvoices] = useState<TaxInvoice[]>([]);
+  const [allInvoices, setAllInvoices] = useState<TaxInvoice[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
   const [filterType, setFilterType] = useState<'ALL' | 'B2B' | 'B2C'>('ALL');
@@ -64,15 +69,30 @@ export default function GSTInvoicesPage() {
   const [totalCount, setTotalCount] = useState(0);
   const pageSize = 20;
 
+  // Date filters
+  const [dateFilter, setDateFilter] = useState<'all' | 'custom' | 'month' | 'year'>('all');
+  const [startDate, setStartDate] = useState('');
+  const [endDate, setEndDate] = useState('');
+  const [selectedMonth, setSelectedMonth] = useState(new Date().getMonth() + 1);
+  const [selectedYear, setSelectedYear] = useState(new Date().getFullYear());
+
   useEffect(() => {
     loadInvoices();
-  }, [currentPage, filterType]);
+  }, []); // Only load once on mount
+
+  useEffect(() => {
+    setCurrentPage(1); // Reset to first page when filters change
+  }, [filterType, dateFilter, startDate, endDate, selectedMonth, selectedYear, searchQuery]);
+
+  useEffect(() => {
+    applyFilters();
+  }, [allInvoices, filterType, dateFilter, startDate, endDate, selectedMonth, selectedYear, searchQuery, currentPage]);
 
   const loadInvoices = async () => {
     try {
       setLoading(true);
-      const offset = (currentPage - 1) * pageSize;
-      const { data, error, count } = await db.taxInvoices.getAll(pageSize, offset);
+      // Load all invoices for filtering
+      const { data, error, count } = await db.taxInvoices.getAll(1000, 0);
       
       if (error) {
         toast.error('Failed to load invoices');
@@ -80,13 +100,7 @@ export default function GSTInvoicesPage() {
         return;
       }
       
-      // Filter by type if needed
-      let filteredData = data || [];
-      if (filterType !== 'ALL') {
-        filteredData = filteredData.filter(inv => inv.invoice_type === filterType);
-      }
-      
-      setInvoices(filteredData);
+      setAllInvoices(data || []);
       setTotalCount(count || 0);
     } catch (error) {
       console.error('Error loading invoices:', error);
@@ -96,16 +110,55 @@ export default function GSTInvoicesPage() {
     }
   };
 
-  const filteredInvoices = invoices.filter(invoice => {
-    const query = searchQuery.toLowerCase();
-    return (
-      invoice.invoice_number.toLowerCase().includes(query) ||
-      invoice.customer_name.toLowerCase().includes(query) ||
-      invoice.customer_phone?.toLowerCase().includes(query) ||
-      invoice.customer_email?.toLowerCase().includes(query) ||
-      invoice.customer_gstin?.toLowerCase().includes(query)
-    );
-  });
+  const applyFilters = () => {
+    let filtered = [...allInvoices];
+
+    // Filter by type
+    if (filterType !== 'ALL') {
+      filtered = filtered.filter(inv => inv.invoice_type === filterType);
+    }
+
+    // Filter by date
+    if (dateFilter === 'custom' && startDate && endDate) {
+      const start = new Date(startDate);
+      const end = new Date(endDate);
+      end.setHours(23, 59, 59, 999); // Include full end date
+      filtered = filtered.filter(inv => {
+        const invDate = new Date(inv.invoice_date);
+        return invDate >= start && invDate <= end;
+      });
+    } else if (dateFilter === 'month') {
+      filtered = filtered.filter(inv => {
+        const invDate = new Date(inv.invoice_date);
+        return invDate.getMonth() + 1 === selectedMonth && invDate.getFullYear() === selectedYear;
+      });
+    } else if (dateFilter === 'year') {
+      filtered = filtered.filter(inv => {
+        const invDate = new Date(inv.invoice_date);
+        return invDate.getFullYear() === selectedYear;
+      });
+    }
+
+    // Filter by search query
+    if (searchQuery.trim()) {
+      const query = searchQuery.toLowerCase();
+      filtered = filtered.filter(invoice =>
+        invoice.invoice_number.toLowerCase().includes(query) ||
+        invoice.customer_name.toLowerCase().includes(query) ||
+        invoice.customer_phone?.toLowerCase().includes(query) ||
+        invoice.customer_email?.toLowerCase().includes(query) ||
+        invoice.customer_gstin?.toLowerCase().includes(query)
+      );
+    }
+
+    // Pagination
+    const startIndex = (currentPage - 1) * pageSize;
+    const endIndex = startIndex + pageSize;
+    setInvoices(filtered.slice(startIndex, endIndex));
+    setTotalCount(filtered.length);
+  };
+
+  const filteredInvoices = invoices;
 
   const handleViewInvoice = (invoice: TaxInvoice) => {
     setSelectedInvoice(invoice);
@@ -215,37 +268,183 @@ export default function GSTInvoicesPage() {
 
       {/* Filters and Search */}
       <Card>
-        <CardContent className="pt-6">
-          <div className="flex flex-col sm:flex-row gap-4">
-            <div className="flex-1 relative">
-              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" size={18} />
-              <Input
-                placeholder="Search by invoice number, customer name, phone, email, or GSTIN..."
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                className="pl-10"
-              />
-            </div>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Filter className="h-5 w-5" />
+            Filters & Search
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          {/* Search */}
+          <div className="relative">
+            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" size={18} />
+            <Input
+              placeholder="Search by invoice number, customer name, phone, email, or GSTIN..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="pl-10"
+            />
+          </div>
+
+          {/* Invoice Type Filter */}
+          <div>
+            <Label className="mb-2 block">Invoice Type</Label>
             <div className="flex gap-2">
               <Button
                 variant={filterType === 'ALL' ? 'default' : 'outline'}
                 onClick={() => setFilterType('ALL')}
+                size="sm"
               >
                 All
               </Button>
               <Button
                 variant={filterType === 'B2B' ? 'default' : 'outline'}
                 onClick={() => setFilterType('B2B')}
+                size="sm"
               >
                 B2B
               </Button>
               <Button
                 variant={filterType === 'B2C' ? 'default' : 'outline'}
                 onClick={() => setFilterType('B2C')}
+                size="sm"
               >
                 B2C
               </Button>
             </div>
+          </div>
+
+          {/* Date Filter */}
+          <div>
+            <Label className="mb-2 block">Date Filter</Label>
+            <Select value={dateFilter} onValueChange={(value: 'all' | 'custom' | 'month' | 'year') => {
+              setDateFilter(value);
+              setCurrentPage(1);
+            }}>
+              <SelectTrigger className="w-full sm:w-[200px]">
+                <SelectValue placeholder="Select date filter" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Dates</SelectItem>
+                <SelectItem value="month">This Month</SelectItem>
+                <SelectItem value="year">This Year</SelectItem>
+                <SelectItem value="custom">Custom Range</SelectItem>
+              </SelectContent>
+            </Select>
+
+            {dateFilter === 'month' && (
+              <div className="flex gap-2 mt-2">
+                <Select value={selectedMonth.toString()} onValueChange={(value) => {
+                  setSelectedMonth(parseInt(value));
+                  setCurrentPage(1);
+                }}>
+                  <SelectTrigger className="w-[150px]">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {Array.from({ length: 12 }, (_, i) => i + 1).map(month => (
+                      <SelectItem key={month} value={month.toString()}>
+                        {new Date(2000, month - 1).toLocaleString('default', { month: 'long' })}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <Select value={selectedYear.toString()} onValueChange={(value) => {
+                  setSelectedYear(parseInt(value));
+                  setCurrentPage(1);
+                }}>
+                  <SelectTrigger className="w-[150px]">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {Array.from({ length: 10 }, (_, i) => new Date().getFullYear() - i).map(year => (
+                      <SelectItem key={year} value={year.toString()}>
+                        {year}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
+
+            {dateFilter === 'year' && (
+              <div className="mt-2">
+                <Select value={selectedYear.toString()} onValueChange={(value) => {
+                  setSelectedYear(parseInt(value));
+                  setCurrentPage(1);
+                }}>
+                  <SelectTrigger className="w-[200px]">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {Array.from({ length: 10 }, (_, i) => new Date().getFullYear() - i).map(year => (
+                      <SelectItem key={year} value={year.toString()}>
+                        {year}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
+
+            {dateFilter === 'custom' && (
+              <div className="flex flex-col sm:flex-row gap-2 mt-2">
+                <div className="flex-1">
+                  <Label className="mb-1 block text-xs">Start Date</Label>
+                  <Input
+                    type="date"
+                    value={startDate}
+                    onChange={(e) => {
+                      setStartDate(e.target.value);
+                      setCurrentPage(1);
+                    }}
+                  />
+                </div>
+                <div className="flex-1">
+                  <Label className="mb-1 block text-xs">End Date</Label>
+                  <Input
+                    type="date"
+                    value={endDate}
+                    onChange={(e) => {
+                      setEndDate(e.target.value);
+                      setCurrentPage(1);
+                    }}
+                  />
+                </div>
+                {(startDate || endDate) && (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => {
+                      setStartDate('');
+                      setEndDate('');
+                      setCurrentPage(1);
+                    }}
+                    className="mt-6"
+                  >
+                    <X className="h-4 w-4" />
+                  </Button>
+                )}
+              </div>
+            )}
+
+            {dateFilter !== 'all' && (
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => {
+                  setDateFilter('all');
+                  setStartDate('');
+                  setEndDate('');
+                  setSelectedMonth(new Date().getMonth() + 1);
+                  setSelectedYear(new Date().getFullYear());
+                  setCurrentPage(1);
+                }}
+                className="mt-2"
+              >
+                Clear Date Filter
+              </Button>
+            )}
           </div>
         </CardContent>
       </Card>
@@ -344,6 +543,52 @@ export default function GSTInvoicesPage() {
                   ))}
                 </TableBody>
               </Table>
+            </div>
+          )}
+
+          {/* Pagination */}
+          {!loading && totalCount > pageSize && (
+            <div className="mt-4 flex justify-center">
+              <Pagination>
+                <PaginationContent>
+                  <PaginationItem>
+                    <PaginationPrevious
+                      onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
+                      className={currentPage === 1 ? 'pointer-events-none opacity-50' : 'cursor-pointer'}
+                    />
+                  </PaginationItem>
+                  {Array.from({ length: Math.min(10, Math.ceil(totalCount / pageSize)) }, (_, i) => {
+                    const totalPages = Math.ceil(totalCount / pageSize);
+                    let page: number;
+                    if (totalPages <= 10) {
+                      page = i + 1;
+                    } else {
+                      // Show pages around current page
+                      const startPage = Math.max(1, currentPage - 4);
+                      const endPage = Math.min(totalPages, startPage + 9);
+                      page = startPage + i;
+                      if (page > endPage) return null;
+                    }
+                    return (
+                      <PaginationItem key={page}>
+                        <PaginationLink
+                          onClick={() => setCurrentPage(page)}
+                          isActive={currentPage === page}
+                          className="cursor-pointer"
+                        >
+                          {page}
+                        </PaginationLink>
+                      </PaginationItem>
+                    );
+                  }).filter(Boolean)}
+                  <PaginationItem>
+                    <PaginationNext
+                      onClick={() => setCurrentPage(prev => Math.min(Math.ceil(totalCount / pageSize), prev + 1))}
+                      className={currentPage >= Math.ceil(totalCount / pageSize) ? 'pointer-events-none opacity-50' : 'cursor-pointer'}
+                    />
+                  </PaginationItem>
+                </PaginationContent>
+              </Pagination>
             </div>
           )}
         </CardContent>
