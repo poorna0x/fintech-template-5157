@@ -3335,11 +3335,10 @@ const TechnicianDashboard = () => {
                           setPaymentMode(value);
                           // Reset QR code fields when changing payment mode
                           if (value === 'CASH') {
-                            setQrCodeType('');
-                            setSelectedQrCodeId('');
-                            setCustomerQrPhotos([]);
-                            setTechnicianQrPhoto('');
-                            setPaymentScreenshot('');
+                          setQrCodeType('');
+                          setSelectedQrCodeId('');
+                          setCustomerQrPhotos([]);
+                          setPaymentScreenshot('');
                           }
                         }}
                       >
