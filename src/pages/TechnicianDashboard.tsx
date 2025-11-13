@@ -162,6 +162,7 @@ const TechnicianDashboard = () => {
   const [selectedQrCodeId, setSelectedQrCodeId] = useState<string>('');
   const [commonQrCodes, setCommonQrCodes] = useState<CommonQrCode[]>([]);
   const [technicianQrCode, setTechnicianQrCode] = useState<string>('');
+  const [technicianName, setTechnicianName] = useState<string>('');
   const [customerQrPhotos, setCustomerQrPhotos] = useState<string[]>([]);
   const [technicianQrPhoto, setTechnicianQrPhoto] = useState<string>('');
   const [paymentScreenshot, setPaymentScreenshot] = useState<string>('');
@@ -313,12 +314,21 @@ const TechnicianDashboard = () => {
           }
         }
 
-        if (techResult.data && (techResult.data as any).qr_code) {
-          const techQr = (techResult.data as any).qr_code;
-          setTechnicianQrCode(techQr);
-          // Update cache
-          if (shouldUseCache() && user?.technicianId) {
-            cacheTechnicianQrCode(user.technicianId, techQr);
+        if (techResult.data) {
+          const techData = techResult.data as any;
+          if (techData.qr_code) {
+            const techQr = techData.qr_code;
+            setTechnicianQrCode(techQr);
+            // Update cache
+            if (shouldUseCache() && user?.technicianId) {
+              cacheTechnicianQrCode(user.technicianId, techQr);
+            }
+          }
+          // Store technician name for display
+          if (techData.full_name) {
+            setTechnicianName(techData.full_name);
+          } else if (techData.employee_id) {
+            setTechnicianName(`Technician ${techData.employee_id}`);
           }
         }
       } catch (error) {
@@ -3394,6 +3404,7 @@ const TechnicianDashboard = () => {
                           {/* Technician QR Code */}
                           {technicianQrCode && (() => {
                             const isSelected = selectedQrCodeId === 'technician';
+                            const displayName = technicianName || user?.fullName || 'My QR Code';
                             return (
                               <div
                                 onClick={() => {
@@ -3407,7 +3418,7 @@ const TechnicianDashboard = () => {
                                 }`}
                               >
                                 <p className={`text-sm font-medium mb-2 text-center ${isSelected ? 'text-primary' : 'text-gray-700'}`}>
-                                  My QR Code
+                                  {displayName}'s QR Code
                                 </p>
                                 <div className="flex justify-center">
                                   <img 
@@ -3474,7 +3485,9 @@ const TechnicianDashboard = () => {
                               })()}
                               {selectedQrCodeId === 'technician' && technicianQrCode && (
                                 <div className="text-center">
-                                  <p className="text-sm font-medium mb-2">Technician QR Code</p>
+                                  <p className="text-sm font-medium mb-2">
+                                    {(technicianName || user?.fullName || 'Technician')}'s QR Code
+                                  </p>
                                   <img 
                                     src={technicianQrCode} 
                                     alt="Technician QR Code"
