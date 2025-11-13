@@ -3359,128 +3359,79 @@ const TechnicianDashboard = () => {
                   {paymentMode === 'ONLINE' && (
                     <div className="space-y-4 pl-4 border-l-2 border-gray-200">
                       <div>
-                        <Label>Select QR Code for Payment *</Label>
-                        <p className="text-sm text-gray-500 mb-3">Tap on a QR code to select it. Show it to the customer for scanning.</p>
-                        
-                        {/* Display all available QR codes in a grid */}
-                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-4">
-                          {/* Common QR Codes */}
-                          {commonQrCodes.map((qr) => {
-                            const isSelected = selectedQrCodeId === `common_${qr.id}`;
-                            return (
-                              <div
-                                key={`common_${qr.id}`}
-                                onClick={() => {
-                                  setSelectedQrCodeId(`common_${qr.id}`);
-                                  setQrCodeType('common');
-                                }}
-                                className={`p-4 border-2 rounded-lg cursor-pointer transition-all ${
-                                  isSelected 
-                                    ? 'border-primary bg-primary/5 shadow-md' 
-                                    : 'border-gray-200 bg-gray-50 hover:border-primary/50 hover:bg-gray-100'
-                                }`}
-                              >
-                                <p className={`text-sm font-medium mb-2 text-center ${isSelected ? 'text-primary' : 'text-gray-700'}`}>
-                                  {qr.name}
-                                </p>
-                                <div className="flex justify-center">
-                                  <img 
-                                    src={qr.qrCodeUrl} 
-                                    alt={qr.name}
-                                    className={`w-40 h-40 object-contain border rounded transition-transform ${
-                                      isSelected ? 'border-primary scale-105' : 'border-gray-300'
-                                    }`}
-                                  />
-                                </div>
-                                {isSelected && (
-                                  <p className="text-xs text-primary text-center mt-2 font-medium">✓ Selected</p>
-                                )}
-                              </div>
-                            );
-                          })}
-                          
-                          {/* Technician QR Code */}
-                          {technicianQrCode && (() => {
-                            const isSelected = selectedQrCodeId === 'technician';
-                            const displayName = technicianName || user?.fullName || 'My QR Code';
-                            return (
-                              <div
-                                onClick={() => {
-                                  setSelectedQrCodeId('technician');
-                                  setQrCodeType('technician');
-                                }}
-                                className={`p-4 border-2 rounded-lg cursor-pointer transition-all ${
-                                  isSelected 
-                                    ? 'border-primary bg-primary/5 shadow-md' 
-                                    : 'border-gray-200 bg-gray-50 hover:border-primary/50 hover:bg-gray-100'
-                                }`}
-                              >
-                                <p className={`text-sm font-medium mb-2 text-center ${isSelected ? 'text-primary' : 'text-gray-700'}`}>
-                                  {displayName}'s QR Code
-                                </p>
-                                <div className="flex justify-center">
-                                  <img 
-                                    src={technicianQrCode} 
-                                    alt="Technician QR Code"
-                                    className={`w-40 h-40 object-contain border rounded transition-transform ${
-                                      isSelected ? 'border-primary scale-105' : 'border-gray-300'
-                                    }`}
-                                    onError={(e) => {
-                                      console.error('Failed to load technician QR code image:', technicianQrCode);
-                                      (e.target as HTMLImageElement).style.display = 'none';
-                                    }}
-                                  />
-                                </div>
-                                {isSelected && (
-                                  <p className="text-xs text-primary text-center mt-2 font-medium">✓ Selected</p>
-                                )}
-                              </div>
-                            );
-                          })()}
-                          
-                        </div>
-                        
-                        {/* Show selected QR code prominently if one is selected */}
-                        {selectedQrCodeId && (
-                          <div className="mt-4 p-4 bg-primary/10 border border-primary rounded-lg">
-                            <p className="text-sm font-semibold text-primary mb-2 text-center">
-                              Selected QR Code - Show to Customer
-                            </p>
-                            <div className="flex justify-center">
-                              {selectedQrCodeId.startsWith('common_') && (() => {
-                                const qrId = selectedQrCodeId.replace('common_', '');
-                                const selectedQr = commonQrCodes.find(qr => qr.id === qrId);
-                                return selectedQr ? (
-                                  <div className="text-center">
-                                    <p className="text-sm font-medium mb-2">{selectedQr.name}</p>
-                                    <img 
-                                      src={selectedQr.qrCodeUrl} 
-                                      alt={selectedQr.name}
-                                      className="w-56 h-56 object-contain mx-auto border-2 border-primary rounded-lg shadow-lg bg-white p-2"
-                                    />
-                                  </div>
-                                ) : null;
-                              })()}
-                              {selectedQrCodeId === 'technician' && technicianQrCode && (
-                                <div className="text-center">
-                                  <p className="text-sm font-medium mb-2">
-                                    {(technicianName || user?.fullName || 'Technician')}'s QR Code
-                                  </p>
-                                  <img 
-                                    src={technicianQrCode} 
-                                    alt="Technician QR Code"
-                                    className="w-56 h-56 object-contain mx-auto border-2 border-primary rounded-lg shadow-lg bg-white p-2"
-                                    onError={(e) => {
-                                      console.error('Failed to load technician QR code image:', technicianQrCode);
-                                      (e.target as HTMLImageElement).style.display = 'none';
-                                    }}
-                                  />
-                                </div>
-                              )}
-                            </div>
-                          </div>
-                        )}
+                        <Label htmlFor="qr-code-type">Select QR Code Type *</Label>
+                        <Select 
+                          value={selectedQrCodeId} 
+                          onValueChange={(value) => {
+                            setSelectedQrCodeId(value);
+                            // Set QR code type based on selection
+                            if (value.startsWith('common_')) {
+                              setQrCodeType('common');
+                            } else if (value === 'technician') {
+                              setQrCodeType('technician');
+                            }
+                          }}
+                        >
+                          <SelectTrigger className="mt-1">
+                            <SelectValue placeholder="Select QR code type" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {/* Common QR Codes */}
+                            {commonQrCodes.map((qr) => (
+                              <SelectItem key={`common_${qr.id}`} value={`common_${qr.id}`}>
+                                {qr.name}
+                              </SelectItem>
+                            ))}
+                            {/* Technician QR Code */}
+                            {technicianQrCode && (
+                              <SelectItem value="technician">
+                                {(technicianName || user?.fullName || 'My')}'s QR Code
+                              </SelectItem>
+                            )}
+                          </SelectContent>
+                        </Select>
                       </div>
+
+                      {/* Show selected QR code image */}
+                      {selectedQrCodeId && (
+                        <div className="mt-4 p-4 bg-primary/10 border border-primary rounded-lg">
+                          <p className="text-sm font-semibold text-primary mb-3 text-center">
+                            QR Code - Show to Customer
+                          </p>
+                          <div className="flex justify-center">
+                            {selectedQrCodeId.startsWith('common_') && (() => {
+                              const qrId = selectedQrCodeId.replace('common_', '');
+                              const selectedQr = commonQrCodes.find(qr => qr.id === qrId);
+                              return selectedQr ? (
+                                <div className="text-center">
+                                  <p className="text-sm font-medium mb-3 text-gray-700">{selectedQr.name}</p>
+                                  <img 
+                                    src={selectedQr.qrCodeUrl} 
+                                    alt={selectedQr.name}
+                                    className="w-64 h-64 object-contain mx-auto border-2 border-primary rounded-lg shadow-lg bg-white p-3"
+                                  />
+                                </div>
+                              ) : null;
+                            })()}
+                            {selectedQrCodeId === 'technician' && technicianQrCode && (
+                              <div className="text-center">
+                                <p className="text-sm font-medium mb-3 text-gray-700">
+                                  {(technicianName || user?.fullName || 'Technician')}'s QR Code
+                                </p>
+                                <img 
+                                  src={technicianQrCode} 
+                                  alt="Technician QR Code"
+                                  className="w-64 h-64 object-contain mx-auto border-2 border-primary rounded-lg shadow-lg bg-white p-3"
+                                  onError={(e) => {
+                                    console.error('Failed to load technician QR code image:', technicianQrCode);
+                                    (e.target as HTMLImageElement).style.display = 'none';
+                                  }}
+                                />
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      )}
                     </div>
                   )}
 
