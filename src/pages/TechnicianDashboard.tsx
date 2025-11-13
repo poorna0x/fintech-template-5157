@@ -320,7 +320,7 @@ const TechnicianDashboard = () => {
             updatedAt: qr.updated_at
           }));
           setCommonQrCodes(transformed);
-          console.log('Loaded common QR codes:', transformed.length);
+          console.log('✅ Loaded common QR codes:', transformed.length);
           // Update cache
           if (shouldUseCache()) {
             cacheQrCodes(transformed);
@@ -328,28 +328,39 @@ const TechnicianDashboard = () => {
         }
 
         if (techResult.error) {
-          console.error('Error fetching technician data:', techResult.error);
+          console.error('❌ Error fetching technician data:', techResult.error);
+          console.error('Error details:', JSON.stringify(techResult.error, null, 2));
         }
 
         if (techResult.data) {
           const techData = techResult.data as any;
-          console.log('Technician data loaded:', { 
+          console.log('📋 Technician data loaded:', { 
             id: techData.id, 
+            email: techData.email,
+            fullName: techData.full_name,
             hasQrCode: !!techData.qr_code,
+            qrCodeValue: techData.qr_code ? (techData.qr_code.substring(0, 50) + '...') : 'null/undefined',
             qrCodeLength: techData.qr_code ? techData.qr_code.length : 0,
-            fullName: techData.full_name 
+            allKeys: Object.keys(techData)
           });
           
-          if (techData.qr_code) {
-            const techQr = techData.qr_code;
-            console.log('Setting technician QR code:', techQr.substring(0, 50) + '...');
-            setTechnicianQrCode(techQr);
+          // Check for QR code in multiple possible field names
+          const qrCodeValue = techData.qr_code || techData.qrCode || null;
+          
+          if (qrCodeValue && qrCodeValue.trim() !== '') {
+            console.log('✅ Setting technician QR code:', qrCodeValue.substring(0, 50) + '...');
+            setTechnicianQrCode(qrCodeValue);
             // Update cache
             if (shouldUseCache()) {
-              cacheTechnicianQrCode(technicianId, techQr);
+              cacheTechnicianQrCode(technicianId, qrCodeValue);
             }
           } else {
-            console.log('No QR code found for technician in database');
+            console.warn('⚠️ No QR code found for technician in database');
+            console.warn('QR code fields checked:', {
+              'qr_code': techData.qr_code,
+              'qrCode': techData.qrCode,
+              'both_null': !techData.qr_code && !techData.qrCode
+            });
             setTechnicianQrCode(''); // Clear if no QR code
           }
           // Store technician name for display
@@ -359,7 +370,8 @@ const TechnicianDashboard = () => {
             setTechnicianName(`Technician ${techData.employee_id}`);
           }
         } else {
-          console.log('No technician data returned from database');
+          console.error('❌ No technician data returned from database');
+          console.error('Query result:', { data: techResult.data, error: techResult.error });
         }
       } catch (error) {
         console.error('Error loading QR codes:', error);
@@ -3413,10 +3425,10 @@ const TechnicianDashboard = () => {
                             {/* Technician QR Code - always show option */}
                             <SelectItem 
                               value="technician" 
-                              disabled={!technicianQrCode}
+                              disabled={!technicianQrCode || technicianQrCode.trim() === ''}
                             >
                               {(technicianName || user?.fullName || 'Technician')}'s QR Code
-                              {!technicianQrCode && ' (Not uploaded)'}
+                              {(!technicianQrCode || technicianQrCode.trim() === '') && ' (Not uploaded)'}
                             </SelectItem>
                           </SelectContent>
                         </Select>
