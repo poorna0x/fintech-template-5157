@@ -736,6 +736,7 @@ const AdminDashboard = () => {
   const [customerQrPhotos, setCustomerQrPhotos] = useState<string[]>([]);
   const [technicianQrPhoto, setTechnicianQrPhoto] = useState<string>('');
   const [paymentScreenshot, setPaymentScreenshot] = useState<string>('');
+  const [billAmountConfirmOpen, setBillAmountConfirmOpen] = useState(false);
   const [statusFilter, setStatusFilter] = useState<'ALL' | 'ONGOING' | 'PENDING' | 'ASSIGNED' | 'IN_PROGRESS' | 'COMPLETED' | 'CANCELLED' | 'RESCHEDULED'>('ONGOING');
   const [loadingCustomerJobs, setLoadingCustomerJobs] = useState<{[customerId: string]: boolean}>({});
   // Pagination state
@@ -4869,8 +4870,8 @@ const AdminDashboard = () => {
         toast.error('Please enter a valid bill amount');
         return;
       }
-      // Move to step 3
-      setCompleteJobStep(3);
+      // Show confirmation dialog
+      setBillAmountConfirmOpen(true);
       return;
     }
 
