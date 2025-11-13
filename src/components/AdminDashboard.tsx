@@ -9918,6 +9918,44 @@ const AdminDashboard = () => {
         </DialogContent>
       </Dialog>
 
+      {/* Bill Amount Confirmation Dialog */}
+      <AlertDialog open={billAmountConfirmOpen} onOpenChange={setBillAmountConfirmOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Confirm Bill Amount</AlertDialogTitle>
+            <AlertDialogDescription>
+              Please confirm the bill amount before proceeding:
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <div className="py-4">
+            <div className="text-center">
+              <div className="text-3xl font-bold text-gray-900 mb-2">
+                ₹{parseFloat(billAmount || '0').toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+              </div>
+              <div className="text-sm text-gray-500">
+                {selectedJobForComplete && (
+                  <>
+                    Job: {(selectedJobForComplete as any).job_number || selectedJobForComplete.jobNumber}
+                  </>
+                )}
+              </div>
+            </div>
+          </div>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => {
+                setBillAmountConfirmOpen(false);
+                setCompleteJobStep(3);
+              }}
+              className="bg-black hover:bg-gray-800 !text-white font-semibold"
+            >
+              Confirm & Continue
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
       {/* Address Dialog */}
       {customers.map((customer) => (
         <Dialog
