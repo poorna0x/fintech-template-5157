@@ -191,7 +191,7 @@ ${notCoveredWithPreFilter}`;
     }
   };
 
-  const handlePrint = () => {
+  const handlePrint = (options?: { termsOnly?: boolean }) => {
     if (!billNumber.trim()) {
       toast.error('Please enter a bill number');
       return;
@@ -276,7 +276,7 @@ ${notCoveredWithPreFilter}`;
     };
 
     try {
-      generateAMCPDF(bill);
+      generateAMCPDF(bill, 'print', { includeDetails: options?.termsOnly ? false : true });
       onPrint?.(bill);
     } catch (error) {
       console.error('Error generating PDF:', error);
@@ -798,7 +798,7 @@ ${notCoveredWithPreFilter}`;
         <div className="space-y-6">
           <Card className="sticky top-4 sm:top-6">
             <CardHeader>
-              <CardTitle>AMC Agreement Summary</CardTitle>
+              <CardTitle>AMC Agreement Details</CardTitle>
             </CardHeader>
             <CardContent className="space-y-4">
               <div className="space-y-2">
@@ -819,13 +819,25 @@ ${notCoveredWithPreFilter}`;
               </div>
 
               <Button 
-                onClick={handlePrint} 
+                onClick={() => handlePrint()} 
                 className="w-full text-sm sm:text-base"
                 disabled={!billNumber.trim()}
               >
                 <Download className="w-4 h-4 mr-2" />
                 Generate AMC Agreement
               </Button>
+              <Button
+                variant="outline"
+                onClick={() => handlePrint({ termsOnly: true })}
+                className="w-full text-sm sm:text-base"
+                disabled={!billNumber.trim()}
+              >
+                <FileText className="w-4 h-4 mr-2" />
+                Share Terms Only
+              </Button>
+              <p className="text-xs text-gray-500 text-center">
+                Terms-only mode removes customer and agreement details, leaving just clauses.
+              </p>
             </CardContent>
           </Card>
         </div>

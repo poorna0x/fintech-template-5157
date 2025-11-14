@@ -45,7 +45,15 @@ interface AMCPDFData {
   agreementIntro?: string;
 }
 
-function generateAMCHTML(data: AMCPDFData): string {
+interface AMCPDFOptions {
+  includeDetails?: boolean;
+}
+
+function generateAMCHTML(data: AMCPDFData, options?: AMCPDFOptions): string {
+  const includeDetails = options?.includeDetails !== false;
+  const isTermsOnly = !includeDetails;
+  const documentTitleText = isTermsOnly ? 'AMC AGREEMENT DETAILS' : 'AMC AGREEMENT';
+
   return `
     <!DOCTYPE html>
     <html lang="en">
@@ -150,6 +158,12 @@ function generateAMCHTML(data: AMCPDFData): string {
             margin-bottom: 8mm !important;
             page-break-inside: avoid;
             break-inside: avoid;
+          }
+          
+          body.terms-only .terms-section {
+            margin-top: 4mm !important;
+            page-break-inside: auto !important;
+            break-inside: auto !important;
           }
           
           /* Ensure header has proper spacing */
@@ -269,6 +283,16 @@ function generateAMCHTML(data: AMCPDFData): string {
           border-radius: 8px;
           margin-bottom: 20px;
           border-left: 4px solid #6b7280;
+        }
+        
+        body.terms-only .terms-section {
+          margin-top: 12px;
+          page-break-inside: auto;
+          break-inside: auto;
+        }
+        
+        body.terms-only .services-section + .terms-section {
+          margin-top: 12px;
         }
         
         .terms-title {
@@ -458,7 +482,7 @@ function generateAMCHTML(data: AMCPDFData): string {
         }
       </style>
     </head>
-    <body>
+    <body class="${isTermsOnly ? 'terms-only' : ''}">
       <div class="bill-container">
         <!-- Header -->
         <div class="header">
@@ -470,7 +494,7 @@ function generateAMCHTML(data: AMCPDFData): string {
             <div>Phone: ${data.company.phone} | Email: ${data.company.email}</div>
             <div>GST: ${data.company.gstNumber}</div>
           </div>
-          <h2 class="document-title">AMC AGREEMENT</h2>
+          <h2 class="document-title">${documentTitleText}</h2>
         </div>
 
       <!-- Agreement Introduction -->
@@ -484,6 +508,7 @@ function generateAMCHTML(data: AMCPDFData): string {
         </div>
       `}
 
+      ${includeDetails ? `
       <!-- Agreement Details -->
       <div class="agreement-details">
         <h3 class="agreement-details-title">AGREEMENT DETAILS</h3>
@@ -591,6 +616,7 @@ function generateAMCHTML(data: AMCPDFData): string {
           </div>
         </div>
       </div>
+      ` : ''}
 
       <!-- Services Covered and Terms and Conditions -->
       ${data.terms ? (() => {
@@ -779,7 +805,11 @@ function generateAMCHTML(data: AMCPDFData): string {
 // Global flag to prevent multiple print operations
 let isPrinting = false;
 
-export function generateAMCPDF(bill: Bill, action: 'print' | 'pdf' = 'print'): void {
+export function generateAMCPDF(
+  bill: Bill, 
+  action: 'print' | 'pdf' = 'print',
+  options?: AMCPDFOptions
+): void {
   // Prevent multiple print operations
   if (isPrinting) {
     console.warn('Print operation already in progress');
@@ -794,7 +824,7 @@ export function generateAMCPDF(bill: Bill, action: 'print' | 'pdf' = 'print'): v
     
     if (isMobile) {
       // For mobile devices, use a different approach
-      handleMobilePrint(bill, action);
+      handleMobilePrint(bill, action, options);
       return;
     }
     
@@ -830,7 +860,7 @@ export function generateAMCPDF(bill: Bill, action: 'print' | 'pdf' = 'print'): v
         }
       }, 3000);
       
-      handleMobilePrint(bill, action);
+      handleMobilePrint(bill, action, options);
       return;
     }
     
@@ -855,7 +885,7 @@ export function generateAMCPDF(bill: Bill, action: 'print' | 'pdf' = 'print'): v
     };
     
     // Write content to new window
-    printWindow.document.write(generateAMCHTML(data));
+    printWindow.document.write(generateAMCHTML(data, options));
     printWindow.document.close();
     
     // Wait for content to load, then print
@@ -886,7 +916,11 @@ export function generateAMCPDF(bill: Bill, action: 'print' | 'pdf' = 'print'): v
   }
 }
 
-function handleMobilePrint(bill: Bill, action: 'print' | 'pdf'): void {
+function handleMobilePrint(
+  bill: Bill, 
+  action: 'print' | 'pdf',
+  options?: AMCPDFOptions
+): void {
   // Store original content for restoration
   const originalBodyHTML = document.body.innerHTML;
   const originalTitle = document.title;
@@ -960,7 +994,7 @@ function handleMobilePrint(bill: Bill, action: 'print' | 'pdf'): void {
     };
     
         // Generate AMC HTML - this is a complete HTML document
-    const amcHTML = generateAMCHTML(data);
+    const amcHTML = generateAMCHTML(data, options);
     
     // Parse the HTML to extract body content and styles
     const tempDiv = document.createElement('div');
