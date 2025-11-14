@@ -6016,21 +6016,7 @@ const AdminDashboard = () => {
                               <Star className="mr-3 h-5 w-5" />
                               <div className="text-left">
                                 <div className="font-medium">Generate AMC</div>
-                                <div className="text-xs text-muted-foreground">Create an AMC document for this customer</div>
-                              </div>
-                            </Button>
-                            <Button 
-                              variant="outline"
-                              className="w-full justify-start h-auto py-3 px-4"
-                              onClick={() => {
-                                setMoreOptionsDialogOpen(prev => ({ ...prev, [customer.id]: false }));
-                                handleGenerateAMC(customer);
-                              }}
-                            >
-                              <Star className="mr-3 h-5 w-5" />
-                              <div className="text-left">
-                                <div className="font-medium">AMC Service</div>
-                                <div className="text-xs text-muted-foreground">Create an AMC document for this customer</div>
+                                <div className="text-xs text-muted-foreground">Create full AMC or share terms only</div>
                               </div>
                             </Button>
                             <Button 
@@ -6157,11 +6143,7 @@ const AdminDashboard = () => {
                           </DropdownMenuItem>
                           <DropdownMenuItem onClick={() => handleGenerateAMC(customer)}>
                             <Star className="mr-2 h-4 w-4" />
-                            Generate AMC
-                          </DropdownMenuItem>
-                          <DropdownMenuItem onClick={() => handleGenerateAMC(customer)}>
-                            <Star className="mr-2 h-4 w-4" />
-                            AMC Service
+                            Generate AMC / Share Terms
                           </DropdownMenuItem>
                           <DropdownMenuItem onClick={() => handleGenerateTaxInvoice(customer)}>
                             <Receipt className="mr-2 h-4 w-4" />
