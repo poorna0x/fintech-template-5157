@@ -102,14 +102,15 @@ export function generateQuotationPDF(quotationData: PDFQuotationData, action: 'p
             font-size: 11px;
         }
       
-      .quotation-container {
+          .quotation-container {
             width: 100%;
             max-width: 100%;
             margin: 0;
             background: white;
             padding: 0;
-            border: 2px solid #000;
             box-sizing: border-box;
+            box-decoration-break: clone;
+            -webkit-box-decoration-break: clone;
           }
           
           .header {
@@ -212,6 +213,8 @@ export function generateQuotationPDF(quotationData: PDFQuotationData, action: 'p
             text-align: right;
             width: calc(100% - 30px);
             box-sizing: border-box;
+            page-break-inside: avoid;
+            break-inside: avoid;
           }
           
           .summary-row {
@@ -310,6 +313,16 @@ export function generateQuotationPDF(quotationData: PDFQuotationData, action: 'p
             font-weight: 700;
           }
           
+          .gst-note {
+            margin: 0 15px 15px 15px;
+            background: #ecfdf5;
+            border-left: 4px solid #047857;
+            padding: 10px 12px;
+            font-size: 12px;
+            color: #065f46;
+            line-height: 1.5;
+          }
+          
           .footer {
             margin: 15px 15px 0 15px;
             padding: 10px 0;
@@ -337,7 +350,6 @@ export function generateQuotationPDF(quotationData: PDFQuotationData, action: 'p
           max-width: 100% !important;
           margin: 0 !important;
           padding: 0 !important;
-              border: 2px solid #000 !important;
               box-shadow: none !important;
               background: white !important;
               box-sizing: border-box !important;
@@ -345,7 +357,9 @@ export function generateQuotationPDF(quotationData: PDFQuotationData, action: 'p
             
             @page {
               size: A4 !important;
-              margin: 0 !important;
+              margin: 15mm !important;
+              border: 2px solid #000000 !important;
+              border-radius: 10px !important;
             }
           }
         </style>
@@ -474,7 +488,6 @@ function handleMobilePrint(quotationData: PDFQuotationData, action: 'print' | 'p
         margin: 0;
         background: white;
         padding: 0;
-        border: 2px solid #000;
         box-sizing: border-box;
       }
       
@@ -578,6 +591,8 @@ function handleMobilePrint(quotationData: PDFQuotationData, action: 'print' | 'p
         text-align: right;
         width: calc(100% - 20px);
         box-sizing: border-box;
+        page-break-inside: avoid;
+        break-inside: avoid;
       }
       
       .summary-row {
@@ -676,6 +691,16 @@ function handleMobilePrint(quotationData: PDFQuotationData, action: 'print' | 'p
         font-weight: 700;
       }
       
+      .gst-note {
+        margin: 0 10px 12px 10px;
+        background: #ecfdf5;
+        border-left: 3px solid #047857;
+        padding: 8px 10px;
+        font-size: 11px;
+        color: #065f46;
+        line-height: 1.4;
+      }
+      
       .footer {
         margin: 10px 10px 0 10px;
         padding: 8px 0;
@@ -703,7 +728,6 @@ function handleMobilePrint(quotationData: PDFQuotationData, action: 'print' | 'p
           max-width: 100% !important;
           margin: 0 !important;
           padding: 0 !important;
-          border: 2px solid #000 !important;
           box-shadow: none !important;
           background: white !important;
           box-sizing: border-box !important;
@@ -711,7 +735,9 @@ function handleMobilePrint(quotationData: PDFQuotationData, action: 'print' | 'p
         
         @page {
           size: A4 !important;
-          margin: 0 !important;
+          margin: 15mm !important;
+          border: 2px solid #000000 !important;
+          border-radius: 10px !important;
         }
       }
     `;
@@ -858,18 +884,25 @@ function createQuotationContent(data: PDFQuotationData): string {
         </div>
       </div>
       
-      <!-- Validity Note -->
+      ${data.terms ? `
       <div class="validity-note">
-        <strong>Note:</strong> This quotation is valid for 30 days from the date of issue. Prices are subject to change without prior notice.
-        ${(data as any).gstOption === 'normal' ? '' : ''}
-        ${(data as any).gstOption === 'exclude' ? '<br><strong>* GST not included. Applicable GST will be charged separately if applicable.</strong>' : ''}
-        ${(data as any).gstOption === 'include' && data.totalTax > 0 ? `
-          <br><strong>* Prices include GST.</strong>
-          ${(data as any).gstData?.placeOfSupply ? `<br><span style="font-size: 12px;">Place of Supply: ${(data as any).gstData.placeOfSupply} (State Code: ${(data as any).gstData.placeOfSupplyCode || '29'})</span>` : ''}
-          ${(data as any).gstData?.isIntraState ? '<br><span style="font-size: 12px;">GST Type: Intra-state (CGST + SGST)</span>' : ''}
-          ${!(data as any).gstData?.isIntraState && (data as any).gstData ? '<br><span style="font-size: 12px;">GST Type: Inter-state (IGST)</span>' : ''}
-        ` : ''}
+        ${sanitizeForTemplate(data.terms).replace(/\n/g, '<br />')}
       </div>
+      ` : ''}
+      
+      ${(data as any).gstOption === 'exclude' ? `
+        <div class="gst-note">
+          <strong>GST Note:</strong> GST not included in the above prices. Applicable GST will be charged separately if required.
+        </div>
+      ` : ''}
+      
+      ${((data as any).gstOption === 'include' && data.totalTax > 0) ? `
+        <div class="gst-note">
+          <strong>GST Note:</strong> Prices include GST.
+          ${(data as any).gstData?.placeOfSupply ? `<br />Place of Supply: ${(data as any).gstData.placeOfSupply} (State Code: ${(data as any).gstData.placeOfSupplyCode || '29'})` : ''}
+          ${(data as any).gstData?.isIntraState ? '<br />GST Type: Intra-state (CGST + SGST)' : ((data as any).gstData ? '<br />GST Type: Inter-state (IGST)' : '')}
+        </div>
+      ` : ''}
       
       <!-- Items Table -->
       <table class="items-table">
@@ -1040,9 +1073,10 @@ function generateQuotationHTML(data: PDFQuotationData): string {
           background: white;
           padding: 0;
           overflow: hidden;
-          border: 2px solid #000;
           min-height: calc(297mm - 30mm); /* A4 height minus margins */
           box-sizing: border-box;
+          box-decoration-break: clone;
+          -webkit-box-decoration-break: clone;
         }
         
         .header {
@@ -1227,7 +1261,6 @@ function generateQuotationHTML(data: PDFQuotationData): string {
             max-width: 100% !important;
             margin: 0 !important;
             padding: 0 !important;
-            border: 2px solid #000 !important;
             box-shadow: none !important;
             page-break-inside: avoid !important;
           }
@@ -1235,6 +1268,8 @@ function generateQuotationHTML(data: PDFQuotationData): string {
           @page {
             size: A4 !important;
             margin: 15mm !important;
+            border: 2px solid #000000 !important;
+            border-radius: 10px !important;
           }
           
           .header {
@@ -1290,10 +1325,25 @@ function generateQuotationHTML(data: PDFQuotationData): string {
           </div>
         </div>
         
-        <!-- Validity Note -->
+        ${data.terms ? `
         <div class="validity-note">
-          <strong>Note:</strong> This quotation is valid for 30 days from the date of issue. Prices are subject to change without prior notice.
+          ${sanitizeForTemplate(data.terms).replace(/\n/g, '<br />')}
         </div>
+        ` : ''}
+        
+        ${(data as any).gstOption === 'exclude' ? `
+          <div class="gst-note">
+            <strong>GST Note:</strong> GST not included in the above prices. Applicable GST will be charged separately if required.
+          </div>
+        ` : ''}
+        
+        ${((data as any).gstOption === 'include' && data.totalTax > 0) ? `
+          <div class="gst-note">
+            <strong>GST Note:</strong> Prices include GST.
+            ${(data as any).gstData?.placeOfSupply ? `<br />Place of Supply: ${(data as any).gstData.placeOfSupply} (State Code: ${(data as any).gstData.placeOfSupplyCode || '29'})` : ''}
+            ${(data as any).gstData?.isIntraState ? '<br />GST Type: Intra-state (CGST + SGST)' : ((data as any).gstData ? '<br />GST Type: Inter-state (IGST)' : '')}
+          </div>
+        ` : ''}
         
         <!-- Items Table -->
         <table class="items-table">
