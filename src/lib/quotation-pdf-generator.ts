@@ -98,7 +98,7 @@ export function generateQuotationPDF(quotationData: PDFQuotationData, action: 'p
             color: #333;
             background: white;
             margin: 0;
-            padding: 15mm;
+            padding: 12mm 8mm;
             font-size: 11px;
         }
       
@@ -340,7 +340,7 @@ export function generateQuotationPDF(quotationData: PDFQuotationData, action: 'p
             
         body {
           margin: 0 !important;
-              padding: 15mm !important;
+              padding: 12mm 8mm !important;
               font-size: 12pt !important;
               line-height: 1.4 !important;
         }
@@ -357,7 +357,7 @@ export function generateQuotationPDF(quotationData: PDFQuotationData, action: 'p
             
             @page {
               size: A4 !important;
-              margin: 15mm !important;
+              margin: 12mm 8mm !important;
               border: 2px solid #000000 !important;
               border-radius: 10px !important;
             }
@@ -477,7 +477,7 @@ function handleMobilePrint(quotationData: PDFQuotationData, action: 'print' | 'p
         color: #333;
         background: white;
         margin: 0;
-        padding: 10mm;
+        padding: 8mm;
         font-size: 10px;
         -webkit-text-size-adjust: 100%;
       }
@@ -718,7 +718,7 @@ function handleMobilePrint(quotationData: PDFQuotationData, action: 'print' | 'p
         
         body {
           margin: 0 !important;
-          padding: 10mm !important;
+          padding: 8mm !important;
           font-size: 11pt !important;
           line-height: 1.4 !important;
         }
@@ -735,7 +735,7 @@ function handleMobilePrint(quotationData: PDFQuotationData, action: 'print' | 'p
         
         @page {
           size: A4 !important;
-          margin: 15mm !important;
+          margin: 12mm 8mm !important;
           border: 2px solid #000000 !important;
           border-radius: 10px !important;
         }
@@ -1060,7 +1060,7 @@ function generateQuotationHTML(data: PDFQuotationData): string {
           width: 210mm; /* A4 width */
           min-height: 297mm; /* A4 height */
           max-width: 210mm; /* Fixed A4 width */
-          padding: 15mm 12mm 15mm 12mm; /* Reduced margins for more content space */
+        padding: 12mm 8mm 12mm 8mm; /* Reduced margins for more content space */
           box-sizing: border-box;
           overflow: visible;
           font-size: 11px; /* Smaller font for better fit */
@@ -1267,7 +1267,7 @@ function generateQuotationHTML(data: PDFQuotationData): string {
           
           @page {
             size: A4 !important;
-            margin: 15mm !important;
+            margin: 12mm 8mm !important;
             border: 2px solid #000000 !important;
             border-radius: 10px !important;
           }
