@@ -45,6 +45,17 @@ const defaultQuotationItems: BillItem[] = [
   }
 ];
 
+const defaultBankDetails = {
+  accountHolderName: 'HYDROGEN RO',
+  bankName: 'HDFC Bank',
+  branchName: 'BOMMANAHALLY',
+  accountNumber: '50200095252857',
+  ifscCode: 'HDFC0001048',
+  accountType: 'Current Account',
+  upiId: '',
+  note: 'Account Type: Current Account. Please share the payment confirmation once the transfer is complete.'
+};
+
 export default function QuotationGenerator({ customer, onPrint }: QuotationGeneratorProps) {
   // Safe customer data extraction
   const customerName = customer?.fullName || (customer as any)?.full_name || 'Customer Name';
@@ -66,6 +77,8 @@ export default function QuotationGenerator({ customer, onPrint }: QuotationGener
   const [showValidityNote, setShowValidityNote] = useState(true);
   const [gstOption, setGstOption] = useState<'normal' | 'exclude' | 'include'>('include'); // Default to including GST
   const [addGSTNoteToNotes, setAddGSTNoteToNotes] = useState(false); // Option to add GST note to Additional Info
+  const [showBankDetails, setShowBankDetails] = useState(false);
+  const [bankDetails, setBankDetails] = useState(defaultBankDetails);
   
   // Computed values for backward compatibility
   const includeGST = gstOption === 'include';
@@ -199,6 +212,13 @@ export default function QuotationGenerator({ customer, onPrint }: QuotationGener
     setNewNote('');
   };
 
+  const handleBankDetailChange = (field: keyof typeof bankDetails, value: string) => {
+    setBankDetails(prev => ({
+      ...prev,
+      [field]: value
+    }));
+  };
+
   const subtotal = items.reduce((sum, item) => sum + item.total, 0);
   // Only calculate tax if GST option is 'include'
   const totalTax = gstOption === 'include' ? items.reduce((sum, item) => sum + item.taxAmount, 0) : 0;
@@ -286,6 +306,10 @@ export default function QuotationGenerator({ customer, onPrint }: QuotationGener
         isIntraState,
         taxSplit
       };
+    }
+
+    if (showBankDetails) {
+      (quotation as any).bankDetails = bankDetails;
     }
 
     onPrint?.(quotation, action);
@@ -878,6 +902,130 @@ export default function QuotationGenerator({ customer, onPrint }: QuotationGener
             </div>
           )}
         </CardContent>
+      </Card>
+
+      {/* Bank Details Section */}
+      <Card className="border-green-200 bg-green-50/30">
+        <CardHeader>
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+            <CardTitle className="text-lg sm:text-xl text-green-800">Bank Details</CardTitle>
+            <div className="flex gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setShowBankDetails(!showBankDetails)}
+                className={`w-full sm:w-auto ${showBankDetails ? 'border-red-300 text-red-700 hover:bg-red-50' : 'border-green-300 text-green-700 hover:bg-green-50'}`}
+              >
+                {showBankDetails ? (
+                  <>
+                    <X className="w-4 h-4 mr-1" />
+                    Remove
+                  </>
+                ) : (
+                  <>
+                    <Plus className="w-4 h-4 mr-1" />
+                    Add
+                  </>
+                )}
+              </Button>
+              {showBankDetails && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setBankDetails(defaultBankDetails)}
+                  className="w-full sm:w-auto"
+                >
+                  Reset
+                </Button>
+              )}
+            </div>
+          </div>
+          <p className="text-xs text-gray-600 mt-2">
+            Enable this section to display bank / UPI details at the bottom of the generated quotation for quick payments.
+          </p>
+        </CardHeader>
+        {showBankDetails && (
+          <CardContent className="space-y-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div>
+                <Label htmlFor="accountHolderName">Account Holder Name</Label>
+                <Input
+                  id="accountHolderName"
+                  value={bankDetails.accountHolderName}
+                  onChange={(e) => handleBankDetailChange('accountHolderName', e.target.value)}
+                  placeholder="Hydrogen RO"
+                />
+              </div>
+              <div>
+                <Label htmlFor="bankName">Bank Name</Label>
+                <Input
+                  id="bankName"
+                  value={bankDetails.bankName}
+                  onChange={(e) => handleBankDetailChange('bankName', e.target.value)}
+                  placeholder="State Bank of India"
+                />
+              </div>
+              <div>
+                <Label htmlFor="branchName">Branch</Label>
+                <Input
+                  id="branchName"
+                  value={bankDetails.branchName}
+                  onChange={(e) => handleBankDetailChange('branchName', e.target.value)}
+                  placeholder="BOMMANAHALLY"
+                />
+              </div>
+              <div>
+                <Label htmlFor="accountType">Account Type</Label>
+                <Input
+                  id="accountType"
+                  value={bankDetails.accountType || ''}
+                  onChange={(e) => handleBankDetailChange('accountType', e.target.value)}
+                  placeholder="Current Account"
+                />
+              </div>
+              <div>
+                <Label htmlFor="accountNumber">Account Number</Label>
+                <Input
+                  id="accountNumber"
+                  value={bankDetails.accountNumber}
+                  onChange={(e) => handleBankDetailChange('accountNumber', e.target.value)}
+                  placeholder="123456789012"
+                />
+              </div>
+              <div>
+                <Label htmlFor="ifscCode">IFSC Code</Label>
+                <Input
+                  id="ifscCode"
+                  value={bankDetails.ifscCode}
+                  onChange={(e) => handleBankDetailChange('ifscCode', e.target.value)}
+                  placeholder="SBIN0001234"
+                />
+              </div>
+              <div>
+                <Label htmlFor="upiId">UPI ID (Optional)</Label>
+                <Input
+                  id="upiId"
+                  value={bankDetails.upiId}
+                  onChange={(e) => handleBankDetailChange('upiId', e.target.value)}
+                  placeholder="hydrogenro@oksbi"
+                />
+              </div>
+            </div>
+            <div>
+              <Label htmlFor="bankNote">Payment Note (Optional)</Label>
+              <Textarea
+                id="bankNote"
+                value={bankDetails.note}
+                onChange={(e) => handleBankDetailChange('note', e.target.value)}
+                placeholder="Share the payment confirmation once transferred..."
+                rows={3}
+              />
+              <p className="text-xs text-gray-500 mt-1">
+                This note appears below the bank details in the quotation PDF.
+              </p>
+            </div>
+          </CardContent>
+        )}
       </Card>
     </div>
   );

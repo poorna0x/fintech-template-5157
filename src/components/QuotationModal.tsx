@@ -59,6 +59,9 @@ export default function QuotationModal({ isOpen, onClose, customer }: QuotationM
     if ((quotation as any).gstData) {
       (pdfData as any).gstData = (quotation as any).gstData;
     }
+    if ((quotation as any).bankDetails) {
+      (pdfData as any).bankDetails = (quotation as any).bankDetails;
+    }
     
     try {
       generateQuotationPDF(pdfData, action);

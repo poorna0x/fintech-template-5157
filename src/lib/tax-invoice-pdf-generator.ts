@@ -819,6 +819,9 @@ function createTaxInvoiceContent(data: PDFTaxInvoiceData): string {
             <div><strong>IFSC Code:</strong> ${data.bankDetails.ifscCode || ''}</div>
             <div><strong>Branch:</strong> ${data.bankDetails.branchName || ''}</div>
             <div><strong>Account Holder:</strong> ${data.bankDetails.accountHolderName || ''}</div>
+            ${data.bankDetails.accountType ? `<div><strong>Account Type:</strong> ${data.bankDetails.accountType}</div>` : ''}
+            ${data.bankDetails.upiId ? `<div><strong>UPI ID:</strong> ${data.bankDetails.upiId}</div>` : ''}
+            ${data.bankDetails.note ? `<div><strong>Note:</strong> ${sanitizeForTemplate(data.bankDetails.note)}</div>` : ''}
           </div>
         </div>
       ` : ''}

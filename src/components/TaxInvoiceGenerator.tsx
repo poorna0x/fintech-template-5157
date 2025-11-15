@@ -71,12 +71,16 @@ const defaultCompanyInfo: CompanyInfo = {
 };
 
 const defaultBankDetails = {
-  bankName: "State Bank of India",
-  accountNumber: "123456789012",
-  ifscCode: "SBIN0001234",
-  branchName: "Seshadripuram Branch, Bengaluru",
-  accountHolderName: "Hydrogen RO Services"
+  bankName: "HDFC Bank",
+  accountNumber: "50200095252857",
+  ifscCode: "HDFC0001048",
+  branchName: "BOMMANAHALLY",
+  accountHolderName: "HYDROGEN RO",
+  accountType: "Current Account",
+  upiId: "",
+  note: "Account Type: Current Account. Please share the payment confirmation once the transfer is complete."
 };
+const PRESET_GST_INVOICE_NUMBER = 'INV-2025-11-001';
 
 const defaultTaxInvoiceItems: BillItem[] = [
   {
@@ -128,7 +132,7 @@ export default function TaxInvoiceGenerator({ customer, onPrint }: TaxInvoiceGen
   };
 
   // State management
-  const [billNumber, setBillNumber] = useState('');
+  const [billNumber, setBillNumber] = useState(PRESET_GST_INVOICE_NUMBER);
   const [billDate, setBillDate] = useState(new Date().toISOString().split('T')[0]);
   const [company, setCompany] = useState<CompanyInfo>(defaultCompanyInfo);
   const [items, setItems] = useState<BillItem[]>(defaultTaxInvoiceItems);
@@ -186,13 +190,17 @@ export default function TaxInvoiceGenerator({ customer, onPrint }: TaxInvoiceGen
 
   // Update invoice number when component mounts (only if empty)
   useEffect(() => {
-    // Only auto-generate if billNumber is empty
-    if (!billNumber) {
-      getNextInvoiceNumber().then((invoiceNumber) => {
+    if (billNumber) return;
+    let isMounted = true;
+    getNextInvoiceNumber().then((invoiceNumber) => {
+      if (isMounted && !billNumber) {
         setBillNumber(invoiceNumber);
-      });
-    }
-  }, []);
+      }
+    });
+    return () => {
+      isMounted = false;
+    };
+  }, [billNumber]);
 
   // Editable customer information state
   const [isEditingCustomer, setIsEditingCustomer] = useState(false);
@@ -278,11 +286,12 @@ export default function TaxInvoiceGenerator({ customer, onPrint }: TaxInvoiceGen
 
   // Generate invoice number
   useEffect(() => {
+    if (billNumber) return;
     const year = new Date().getFullYear();
     const month = String(new Date().getMonth() + 1).padStart(2, '0');
     const randomNum = Math.floor(Math.random() * 1000).toString().padStart(3, '0');
     setBillNumber(`INV-${year}-${month}-${randomNum}`);
-  }, []);
+  }, [billNumber]);
 
   const addItem = () => {
     const newItem: BillItem = {
@@ -886,6 +895,15 @@ export default function TaxInvoiceGenerator({ customer, onPrint }: TaxInvoiceGen
                 placeholder="Branch Name"
               />
             </div>
+            <div>
+              <Label htmlFor="accountType">Account Type</Label>
+              <Input
+                id="accountType"
+                value={bankDetails.accountType || ''}
+                onChange={(e) => setBankDetails(prev => ({ ...prev, accountType: e.target.value }))}
+                placeholder="Current Account"
+              />
+            </div>
             <div className="sm:col-span-2">
               <Label htmlFor="accountHolderName">Account Holder Name</Label>
               <Input
@@ -895,6 +913,25 @@ export default function TaxInvoiceGenerator({ customer, onPrint }: TaxInvoiceGen
                 placeholder="Account Holder Name"
               />
             </div>
+            <div className="sm:col-span-2">
+              <Label htmlFor="upiId">UPI ID (Optional)</Label>
+              <Input
+                id="upiId"
+                value={bankDetails.upiId || ''}
+                onChange={(e) => setBankDetails(prev => ({ ...prev, upiId: e.target.value }))}
+                placeholder="example@okhdfcbank"
+              />
+            </div>
+          </div>
+          <div>
+            <Label htmlFor="bankNote">Payment Note (Optional)</Label>
+            <Textarea
+              id="bankNote"
+              value={bankDetails.note || ''}
+              onChange={(e) => setBankDetails(prev => ({ ...prev, note: e.target.value }))}
+              placeholder="Share payment confirmation once the transfer is complete..."
+              rows={3}
+            />
           </div>
         </CardContent>
       </Card>

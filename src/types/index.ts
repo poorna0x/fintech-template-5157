@@ -324,6 +324,17 @@ export interface CompanyInfo {
   website?: string;
 }
 
+export interface BankDetails {
+  bankName?: string;
+  accountNumber?: string;
+  ifscCode?: string;
+  branchName?: string;
+  accountHolderName?: string;
+  accountType?: string;
+  upiId?: string;
+  note?: string;
+}
+
 export interface Bill {
   id: string;
   billNumber: string; // Format: BILL-2024-001
@@ -365,6 +376,7 @@ export interface Bill {
   terms?: string;
   validity?: string; // AMC validity period
   agreementIntro?: string; // AMC agreement introduction text
+  bankDetails?: BankDetails;
   
   // Related Job/Service
   jobId?: string;

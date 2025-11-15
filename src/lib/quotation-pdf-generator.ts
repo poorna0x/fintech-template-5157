@@ -44,6 +44,15 @@ export interface PDFQuotationData {
   paymentMethod?: string;
   notes?: string;
   terms?: string;
+  bankDetails?: {
+    accountHolderName?: string;
+    bankName?: string;
+    branchName?: string;
+    accountNumber?: string;
+    ifscCode?: string;
+    upiId?: string;
+    note?: string;
+  };
 }
 
 export function generateQuotationPDF(quotationData: PDFQuotationData, action: 'print' | 'pdf' = 'print'): void {
@@ -239,6 +248,50 @@ export function generateQuotationPDF(quotationData: PDFQuotationData, action: 'p
             font-size: 14px;
             line-height: 1.5;
             color: #6b7280;
+          }
+          
+          .bank-section {
+            margin: 15px 15px 0 15px;
+            padding: 12px 15px;
+            border: 1px dashed #047857;
+            border-radius: 8px;
+            background: #ecfdf5;
+          }
+          
+          .bank-title {
+            font-size: 16px;
+            font-weight: 600;
+            color: #065f46;
+            margin-bottom: 8px;
+          }
+          
+          .bank-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 12px;
+          }
+          
+          .bank-item {
+            font-size: 13px;
+            line-height: 1.4;
+          }
+          
+          .bank-label {
+            font-weight: 600;
+            color: #064e3b;
+            display: block;
+          }
+          
+          .bank-value {
+            color: #065f46;
+            word-break: break-word;
+          }
+          
+          .bank-note {
+            margin-top: 10px;
+            font-size: 12px;
+            color: #064e3b;
+            font-style: italic;
           }
           
           .validity-note {
@@ -563,6 +616,50 @@ function handleMobilePrint(quotationData: PDFQuotationData, action: 'print' | 'p
         color: #6b7280;
       }
       
+      .bank-section {
+        margin: 10px 10px 0 10px;
+        padding: 10px 12px;
+        border: 1px dashed #047857;
+        border-radius: 8px;
+        background: #ecfdf5;
+      }
+      
+      .bank-title {
+        font-size: 14px;
+        font-weight: 600;
+        color: #065f46;
+        margin-bottom: 6px;
+      }
+      
+      .bank-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+        gap: 10px;
+      }
+      
+      .bank-item {
+        font-size: 12px;
+        line-height: 1.4;
+      }
+      
+      .bank-label {
+        font-weight: 600;
+        color: #064e3b;
+        display: block;
+      }
+      
+      .bank-value {
+        color: #065f46;
+        word-break: break-word;
+      }
+      
+      .bank-note {
+        margin-top: 8px;
+        font-size: 11px;
+        color: #064e3b;
+        font-style: italic;
+      }
+      
       .validity-note {
         background-color: #f8fafc;
         border: 1px solid #e2e8f0;
@@ -845,6 +942,50 @@ function createQuotationContent(data: PDFQuotationData): string {
         <div class="notes-section">
           <div class="notes-title">Additional Info:</div>
           <div class="notes-content">${data.notes}</div>
+        </div>
+      ` : ''}
+      
+      ${data.bankDetails ? `
+        <div class="bank-section">
+          <div class="bank-title">Bank Details for Payment</div>
+          <div class="bank-grid">
+            ${data.bankDetails.accountHolderName ? `
+              <div class="bank-item">
+                <span class="bank-label">Account Holder</span>
+                <span class="bank-value">${sanitizeForTemplate(data.bankDetails.accountHolderName)}</span>
+              </div>` : ''}
+            ${data.bankDetails.bankName ? `
+              <div class="bank-item">
+                <span class="bank-label">Bank Name</span>
+                <span class="bank-value">${sanitizeForTemplate(data.bankDetails.bankName)}</span>
+              </div>` : ''}
+            ${data.bankDetails.branchName ? `
+              <div class="bank-item">
+                <span class="bank-label">Branch</span>
+                <span class="bank-value">${sanitizeForTemplate(data.bankDetails.branchName)}</span>
+              </div>` : ''}
+            ${data.bankDetails.accountType ? `
+              <div class="bank-item">
+                <span class="bank-label">Account Type</span>
+                <span class="bank-value">${sanitizeForTemplate(data.bankDetails.accountType)}</span>
+              </div>` : ''}
+            ${data.bankDetails.accountNumber ? `
+              <div class="bank-item">
+                <span class="bank-label">Account Number</span>
+                <span class="bank-value">${sanitizeForTemplate(data.bankDetails.accountNumber)}</span>
+              </div>` : ''}
+            ${data.bankDetails.ifscCode ? `
+              <div class="bank-item">
+                <span class="bank-label">IFSC Code</span>
+                <span class="bank-value">${sanitizeForTemplate(data.bankDetails.ifscCode)}</span>
+              </div>` : ''}
+            ${data.bankDetails.upiId ? `
+              <div class="bank-item">
+                <span class="bank-label">UPI ID</span>
+                <span class="bank-value">${sanitizeForTemplate(data.bankDetails.upiId)}</span>
+              </div>` : ''}
+          </div>
+          ${data.bankDetails.note ? `<div class="bank-note">${sanitizeForTemplate(data.bankDetails.note)}</div>` : ''}
         </div>
       ` : ''}
       
@@ -1199,6 +1340,50 @@ function generateQuotationHTML(data: PDFQuotationData): string {
           <div class="notes-section">
             <div class="notes-title">Additional Info:</div>
             <div class="notes-content">${sanitizeForTemplate(data.notes)}</div>
+          </div>
+        ` : ''}
+        
+        ${data.bankDetails ? `
+          <div class="bank-section">
+            <div class="bank-title">Bank Details for Payment</div>
+            <div class="bank-grid">
+              ${data.bankDetails.accountHolderName ? `
+                <div class="bank-item">
+                  <span class="bank-label">Account Holder</span>
+                  <span class="bank-value">${sanitizeForTemplate(data.bankDetails.accountHolderName)}</span>
+                </div>` : ''}
+              ${data.bankDetails.bankName ? `
+                <div class="bank-item">
+                  <span class="bank-label">Bank Name</span>
+                  <span class="bank-value">${sanitizeForTemplate(data.bankDetails.bankName)}</span>
+                </div>` : ''}
+              ${data.bankDetails.branchName ? `
+                <div class="bank-item">
+                  <span class="bank-label">Branch</span>
+                  <span class="bank-value">${sanitizeForTemplate(data.bankDetails.branchName)}</span>
+                </div>` : ''}
+            ${data.bankDetails.accountType ? `
+              <div class="bank-item">
+                <span class="bank-label">Account Type</span>
+                <span class="bank-value">${sanitizeForTemplate(data.bankDetails.accountType)}</span>
+              </div>` : ''}
+              ${data.bankDetails.accountNumber ? `
+                <div class="bank-item">
+                  <span class="bank-label">Account Number</span>
+                  <span class="bank-value">${sanitizeForTemplate(data.bankDetails.accountNumber)}</span>
+                </div>` : ''}
+              ${data.bankDetails.ifscCode ? `
+                <div class="bank-item">
+                  <span class="bank-label">IFSC Code</span>
+                  <span class="bank-value">${sanitizeForTemplate(data.bankDetails.ifscCode)}</span>
+                </div>` : ''}
+              ${data.bankDetails.upiId ? `
+                <div class="bank-item">
+                  <span class="bank-label">UPI ID</span>
+                  <span class="bank-value">${sanitizeForTemplate(data.bankDetails.upiId)}</span>
+                </div>` : ''}
+            </div>
+            ${data.bankDetails.note ? `<div class="bank-note">${sanitizeForTemplate(data.bankDetails.note)}</div>` : ''}
           </div>
         ` : ''}
         
