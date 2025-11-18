@@ -917,32 +917,36 @@ const AdminDashboard = () => {
     }
   }, [assignJobDialogOpen]);
 
-  // Auto-refresh technicians periodically (every 30 seconds) to get latest locations
-  useEffect(() => {
-    const interval = setInterval(() => {
-      reloadTechnicians();
-    }, 30000); // Refresh every 30 seconds
-
-    return () => clearInterval(interval);
-  }, [reloadTechnicians]);
+  // Load technicians only when assign job dialog opens (not on every visibility change)
+  // Technicians will be loaded when handleAssignJob is called (which opens the dialog)
+  // and when user clicks refresh button in the dialog
 
   // Load QR codes with localStorage caching
   const loadQrCodes = useCallback(async () => {
     try {
       console.log('Loading QR codes in AdminDashboard...');
-      // Check cache first (for mobile)
-      if (shouldUseCache()) {
-        const cachedCommon = getCachedQrCodes();
-        if (cachedCommon) {
-          setCommonQrCodes(cachedCommon);
-        }
+      
+      // Check cache first - use it if available and not expired
+      const cachedCommon = getCachedQrCodes();
+      if (cachedCommon && cachedCommon.length > 0) {
+        console.log('Using cached QR codes:', cachedCommon.length, 'items');
+        setCommonQrCodes(cachedCommon);
+        // Don't fetch from DB if we have valid cache
+        return;
       }
 
-      // Always fetch from database (cache will be updated)
+      // Only fetch from database if cache is missing or expired
+      console.log('Cache miss or expired, fetching from database...');
       const commonResult = await db.commonQrCodes.getAll();
 
       if (commonResult.error) {
         console.error('Error fetching QR codes:', commonResult.error);
+        // If we have cached data, keep using it even if fetch fails
+        if (cachedCommon && cachedCommon.length > 0) {
+          setCommonQrCodes(cachedCommon);
+        } else {
+          setCommonQrCodes([]);
+        }
         return;
       }
 
@@ -954,18 +958,23 @@ const AdminDashboard = () => {
           createdAt: qr.created_at,
           updatedAt: qr.updated_at
         }));
-        console.log('QR codes loaded:', transformed.length, 'items');
+        console.log('QR codes loaded from DB:', transformed.length, 'items');
         setCommonQrCodes(transformed);
-        // Update cache
-        if (shouldUseCache()) {
-          cacheQrCodes(transformed);
-        }
+        // Always update cache with fresh data
+        cacheQrCodes(transformed);
       } else {
         console.log('No QR codes found');
         setCommonQrCodes([]);
       }
     } catch (error) {
       console.error('Error loading QR codes:', error);
+      // Fallback to cache if available
+      const cachedCommon = getCachedQrCodes();
+      if (cachedCommon && cachedCommon.length > 0) {
+        setCommonQrCodes(cachedCommon);
+      } else {
+        setCommonQrCodes([]);
+      }
     }
   }, []);
 
@@ -973,12 +982,18 @@ const AdminDashboard = () => {
     loadQrCodes();
   }, [loadQrCodes]);
 
-  // Reload QR codes when page becomes visible (e.g., when returning from Settings)
+  // Reload QR codes when page becomes visible only if cache is expired (e.g., when returning from Settings)
   useEffect(() => {
     const handleVisibilityChange = () => {
       if (document.visibilityState === 'visible') {
-        console.log('Page became visible, reloading QR codes...');
-        loadQrCodes();
+        // Check if cache is expired before reloading
+        const cachedCommon = getCachedQrCodes();
+        if (!cachedCommon || cachedCommon.length === 0) {
+          console.log('Page became visible, cache expired, reloading QR codes...');
+          loadQrCodes();
+        } else {
+          console.log('Page became visible, using cached QR codes');
+        }
       }
     };
 
@@ -1398,6 +1413,8 @@ const AdminDashboard = () => {
                     full_name: editFormData.full_name,
                     alternatePhone: editFormData.alternate_phone,
                     service_type: mapServiceTypesToDbValue(editFormData.service_types),
+                    brand: Object.values(editFormData.equipment).map(eq => eq.brand).join(', '),
+                    model: Object.values(editFormData.equipment).map(eq => eq.model).join(', '),
                     behavior: editFormData.behavior,
                     preferredLanguage: (editFormData.native_language || 'ENGLISH') as 'ENGLISH' | 'HINDI' | 'KANNADA' | 'TAMIL' | 'TELUGU',
                     status: editFormData.status as 'ACTIVE' | 'INACTIVE' | 'BLOCKED',
@@ -1564,9 +1581,20 @@ const AdminDashboard = () => {
     
     // Parse equipment from brands and models
     const equipment: {[serviceType: string]: {brand: string, model: string}} = {};
-    if (serviceTypes.length > 0 && customer.brand && customer.model) {
-      const brands = customer.brand.split(',').map((s: string) => s.trim());
-      const models = customer.model.split(',').map((s: string) => s.trim());
+    
+    // Always initialize equipment for all service types, even if brand/model is empty
+    if (serviceTypes.length > 0) {
+      // Parse brands and models (handle empty strings)
+      const brands = (customer.brand || '').split(',').map((s: string) => s.trim());
+      const models = (customer.model || '').split(',').map((s: string) => s.trim());
+      
+      console.log('🔧 Initializing equipment from customer:', {
+        serviceTypes,
+        brand: customer.brand,
+        model: customer.model,
+        brandsArray: brands,
+        modelsArray: models
+      });
       
       serviceTypes.forEach((serviceType: string, index: number) => {
         const brandValue = brands[index] || '';
@@ -1575,7 +1603,11 @@ const AdminDashboard = () => {
           brand: brandValue === 'Not specified' || brandValue.toLowerCase() === 'not specified' ? '' : brandValue,
           model: modelValue === 'Not specified' || modelValue.toLowerCase() === 'not specified' ? '' : modelValue
         };
+        console.log(`  ${serviceType}: brand="${equipment[serviceType].brand}", model="${equipment[serviceType].model}"`);
       });
+    } else {
+      // If no service types, still initialize empty equipment
+      console.log('⚠️ No service types found, initializing empty equipment');
     }
     
     setEditFormData({
@@ -1848,14 +1880,54 @@ const AdminDashboard = () => {
         updatedLocation.googleLocation = (editFormData.location as any).googleLocation;
       }
 
-      const { data: updatedCustomerFromDb, error } = await db.customers.update(editingCustomer.id, {
+      // Prepare brand and model values - ensure we have equipment data
+      console.log('🔍 Equipment data before processing:', {
+        equipment: editFormData.equipment,
+        equipmentKeys: Object.keys(editFormData.equipment || {}),
+        equipmentValues: Object.values(editFormData.equipment || {}),
+        serviceTypes: editFormData.service_types
+      });
+
+      // Build brand and model arrays based on service types order
+      const brands: string[] = [];
+      const models: string[] = [];
+      
+      editFormData.service_types.forEach((serviceType: string) => {
+        const equipment = editFormData.equipment[serviceType];
+        if (equipment) {
+          const brand = equipment.brand?.trim() || '';
+          const model = equipment.model?.trim() || '';
+          brands.push(brand);
+          models.push(model);
+          console.log(`  ${serviceType}: brand="${brand}", model="${model}"`);
+        } else {
+          brands.push('');
+          models.push('');
+          console.log(`  ${serviceType}: no equipment data`);
+        }
+      });
+
+      const brandValue = brands.join(', ');
+      const modelValue = models.join(', ');
+      
+      console.log('📦 Final brand/model values:', {
+        customerId: editingCustomer.id,
+        brandValue,
+        modelValue,
+        brandLength: brandValue.length,
+        modelLength: modelValue.length,
+        brandsArray: brands,
+        modelsArray: models
+      });
+
+      const updateData = {
         full_name: editFormData.full_name,
         phone: editFormData.phone,
         alternate_phone: editFormData.alternate_phone,
         email: editFormData.email,
         service_type: mapServiceTypesToDbValue(editFormData.service_types),
-        brand: Object.values(editFormData.equipment).map(eq => eq.brand).join(', '),
-        model: Object.values(editFormData.equipment).map(eq => eq.model).join(', '),
+        brand: brandValue,
+        model: modelValue,
         preferred_language: (editFormData.native_language || 'ENGLISH') as 'ENGLISH' | 'HINDI' | 'KANNADA' | 'TAMIL' | 'TELUGU',
         preferred_time_slot: (editingCustomer as any).preferred_time_slot || editingCustomer.preferredTimeSlot || 'MORNING',
         status: editFormData.status as 'ACTIVE' | 'INACTIVE' | 'BLOCKED',
@@ -1864,15 +1936,32 @@ const AdminDashboard = () => {
         custom_time: editFormData.custom_time || null,
         address: updatedAddress,
         location: updatedLocation
-      });
+      };
 
+      console.log('Update payload:', updateData);
+
+      const { data: updatedCustomerFromDb, error } = await db.customers.update(editingCustomer.id, updateData);
+      
       if (error) {
+        console.error('Database update error:', error);
         throw new Error(error.message);
       }
+      
+      console.log('✅ Updated customer from DB:', updatedCustomerFromDb);
+      console.log('📋 Brand/Model in DB response:', {
+        brand: updatedCustomerFromDb?.brand,
+        model: updatedCustomerFromDb?.model,
+        brandType: typeof updatedCustomerFromDb?.brand,
+        modelType: typeof updatedCustomerFromDb?.model
+      });
 
       // Update local state using the data returned from DB update (ensures location.googleLocation is included)
       if (updatedCustomerFromDb) {
         const transformedCustomer = transformCustomerData(updatedCustomerFromDb);
+        console.log('🔄 Transformed customer:', {
+          brand: transformedCustomer.brand,
+          model: transformedCustomer.model
+        });
         setCustomers(prevCustomers => 
           prevCustomers.map(c => c.id === editingCustomer.id ? transformedCustomer : c)
         );
@@ -1896,6 +1985,8 @@ const AdminDashboard = () => {
                 full_name: editFormData.full_name,
                 alternatePhone: editFormData.alternate_phone,
                 service_type: mapServiceTypesToDbValue(editFormData.service_types),
+                brand: Object.values(editFormData.equipment).map(eq => eq.brand).join(', '),
+                model: Object.values(editFormData.equipment).map(eq => eq.model).join(', '),
                 behavior: editFormData.behavior,
                 preferredLanguage: (editFormData.native_language || 'ENGLISH') as 'ENGLISH' | 'HINDI' | 'KANNADA' | 'TAMIL' | 'TELUGU',
                 status: editFormData.status as 'ACTIVE' | 'INACTIVE' | 'BLOCKED',
@@ -2017,16 +2108,21 @@ const AdminDashboard = () => {
   };
 
   const handleEditEquipmentChange = (serviceType: string, field: 'brand' | 'model', value: string, showSuggestions: boolean = true) => {
-    setEditFormData(prev => ({
-      ...prev,
-      equipment: {
+    console.log(`🔄 Equipment change: ${serviceType}.${field} = "${value}"`);
+    setEditFormData(prev => {
+      const updatedEquipment = {
         ...prev.equipment,
         [serviceType]: {
-          ...prev.equipment[serviceType],
+          ...(prev.equipment[serviceType] || { brand: '', model: '' }),
           [field]: value
         }
-      }
-    }));
+      };
+      console.log(`  Updated equipment for ${serviceType}:`, updatedEquipment[serviceType]);
+      return {
+        ...prev,
+        equipment: updatedEquipment
+      };
+    });
     
     // Show suggestions if field is brand or model and showSuggestions is true
     if (showSuggestions) {
@@ -6373,8 +6469,6 @@ const AdminDashboard = () => {
                   </div>
                 </div>
 
-
-
                                 {/* Services Section - Always show, even if no jobs */}
                 <div className="p-4 bg-gray-50">
                   <div className="mb-4">
@@ -6577,19 +6671,40 @@ const AdminDashboard = () => {
                                         </div>
                                       </div>
                                     </div>
-                                    {(job.brand && job.model && 
-                                      !job.brand.toLowerCase().includes('not specified') && 
-                                      !job.brand.toLowerCase().includes('n/a') &&
-                                      !job.model.toLowerCase().includes('not specified') && 
-                                      !job.model.toLowerCase().includes('n/a')) && (
-                                      <div className="flex items-start gap-2 sm:items-center">
-                                        <Wrench className="w-4 h-4 text-gray-400 flex-shrink-0 mt-0.5 sm:mt-0" />
-                                        <div className="min-w-0 flex-1">
-                                          <div className="text-xs text-gray-500">Equipment</div>
-                                          <div className="font-medium text-gray-900 break-words">{job.brand} - {job.model}</div>
+                                    {(() => {
+                                      // Get brand and model from job, fallback to customer
+                                      const jobBrand = (job as any).brand || job.brand;
+                                      const jobModel = (job as any).model || job.model;
+                                      const customerBrand = customer.brand;
+                                      const customerModel = customer.model;
+                                      
+                                      // Use job brand/model if available, otherwise use customer's
+                                      const brand = jobBrand || customerBrand || '';
+                                      const model = jobModel || customerModel || '';
+                                      
+                                      // Only show if brand exists and is not "not specified" or "n/a"
+                                      if (!brand || 
+                                          brand.toLowerCase().includes('not specified') || 
+                                          brand.toLowerCase().includes('n/a')) {
+                                        return null;
+                                      }
+                                      
+                                      // Always show model if brand exists - show "Brand - Model" format
+                                      // If model is empty or "Not specified", still show it
+                                      const displayModel = model && model.trim() !== '' ? model : 'Not specified';
+                                      
+                                      return (
+                                        <div className="flex items-start gap-2 sm:items-center">
+                                          <Wrench className="w-4 h-4 text-gray-400 flex-shrink-0 mt-0.5 sm:mt-0" />
+                                          <div className="min-w-0 flex-1">
+                                            <div className="text-xs text-gray-500">Equipment</div>
+                                            <div className="font-medium text-gray-900 break-words">
+                                              {brand} - {displayModel}
+                                            </div>
+                                          </div>
                                         </div>
-                                      </div>
-                                    )}
+                                      );
+                                    })()}
                                     
                                     {/* Agreed Price - Only show if it exists and is greater than 0 */}
                                     {(() => {
@@ -6646,44 +6761,98 @@ const AdminDashboard = () => {
                                       );
                                     })()}
                                     
-                                    {((job as any).assigned_technician_id || job.assignedTechnician) && (
-                                      <div className="flex items-start gap-2 sm:items-center">
-                                        <User className="w-4 h-4 text-gray-400 flex-shrink-0 mt-0.5 sm:mt-0" />
-                                        <div className="min-w-0 flex-1">
-                                          <div className="text-xs text-gray-500">Assigned To</div>
-                                          <div className="font-medium text-gray-900 break-words">
-                                            {(() => {
-                                              const technicianId = (job as any).assigned_technician_id || job.assignedTechnician?.id;
-                                              
-                                              // Lookup technician by ID
-                                              
-                                              // Try to find technician by ID (exact match)
-                                              let technician = technicians.find(t => t.id === technicianId);
-                                              
-                                              // If not found, try case-insensitive match
-                                              if (!technician && technicianId && typeof technicianId === 'string') {
-                                                technician = technicians.find(t => t.id && typeof t.id === 'string' && t.id.toLowerCase() === technicianId.toLowerCase());
-                                              }
-                                              
-                                              // If still not found, try partial match
-                                              if (!technician && technicianId && typeof technicianId === 'string' && technicianId.length > 0) {
-                                                const partialId = technicianId.substring(0, 8);
-                                                technician = technicians.find(t => t.id && typeof t.id === 'string' && t.id.includes(partialId));
-                                              }
-                                              
-                                              if (technician) {
-                                                return technician.fullName;
-                                              } else if (job.assignedTechnician?.fullName) {
-                                                return job.assignedTechnician.fullName;
-                                              } else {
-                                                // If no technician found, show loading or unknown
-                                                return 'Loading...';
-                                              }
-                                            })()}
+                                    {(() => {
+                                      // Get assigned technician info
+                                      const assignedTechnicianId = (job as any).assigned_technician_id || (job as any).assignedTechnicianId;
+                                      const assignedTechnician = job.assignedTechnician || 
+                                        (assignedTechnicianId ? technicians.find(t => t.id === assignedTechnicianId) : null);
+                                      
+                                      // Get technician name from various possible fields
+                                      const technicianName = assignedTechnician?.fullName || 
+                                        (job as any).technician_name ||
+                                        (assignedTechnicianId ? technicians.find(t => t.id === assignedTechnicianId)?.fullName : null);
+                                      
+                                      // Get brand/model for display
+                                      const jobBrand = (job as any).brand || job.brand;
+                                      const jobModel = (job as any).model || job.model;
+                                      const customerBrand = customer.brand || '';
+                                      const customerModel = customer.model || '';
+                                      
+                                      const isValidValue = (val: string) => {
+                                        return val && 
+                                          val !== 'Not specified' && 
+                                          val.toLowerCase() !== 'not specified' && 
+                                          val.trim() !== '';
+                                      };
+                                      
+                                      const hasValidJobBrand = isValidValue(jobBrand);
+                                      const hasValidJobModel = isValidValue(jobModel);
+                                      
+                                      let brand = hasValidJobBrand ? jobBrand : '';
+                                      let model = hasValidJobModel ? jobModel : '';
+                                      
+                                      // Fallback to customer if job doesn't have valid values
+                                      if (!brand || !model) {
+                                        if (customerBrand && customerBrand.includes(',')) {
+                                          const brands = customerBrand.split(',').map((b: string) => b.trim());
+                                          const models = customerModel ? customerModel.split(',').map((m: string) => m.trim()) : [];
+                                          const jobServiceType = ((job.service_type || job.serviceType || '') as string).toUpperCase();
+                                          
+                                          if (jobServiceType === 'RO' || jobServiceType === '') {
+                                            if (!brand) brand = brands[0] || '';
+                                            if (!model) model = models[0] || '';
+                                          } else if (jobServiceType === 'SOFTENER' && brands.length > 1) {
+                                            if (!brand) brand = brands[1] || brands[0] || '';
+                                            if (!model) model = models[1] || models[0] || '';
+                                          } else {
+                                            if (!brand) brand = brands[0] || '';
+                                            if (!model) model = models[0] || '';
+                                          }
+                                        } else {
+                                          if (!brand && isValidValue(customerBrand)) brand = customerBrand;
+                                          if (!model && isValidValue(customerModel)) model = customerModel;
+                                        }
+                                      }
+                                      
+                                      const validBrand = isValidValue(brand) ? brand : '';
+                                      const validModel = isValidValue(model) ? model : '';
+                                      
+                                      if (!technicianName && !assignedTechnicianId && !validBrand && !validModel) {
+                                        return null;
+                                      }
+                                      
+                                      // Show Equipment section with brand only (no model)
+                                      if (validBrand || validModel) {
+                                        return (
+                                          <div className="flex items-start gap-2 sm:items-center">
+                                            <Wrench className="w-4 h-4 text-gray-400 flex-shrink-0 mt-0.5 sm:mt-0" />
+                                            <div className="min-w-0 flex-1">
+                                              <div className="text-xs text-gray-500">Equipment</div>
+                                              <div className="font-medium text-gray-900 break-words">
+                                                {validBrand || 'Not specified'}
+                                              </div>
+                                            </div>
                                           </div>
-                                        </div>
-                                      </div>
-                                    )}
+                                        );
+                                      }
+                                      
+                                      // Show Assigned To section if technician is assigned
+                                      if (technicianName || assignedTechnicianId) {
+                                        return (
+                                          <div className="flex items-start gap-2 sm:items-center">
+                                            <User className="w-4 h-4 text-gray-400 flex-shrink-0 mt-0.5 sm:mt-0" />
+                                            <div className="min-w-0 flex-1">
+                                              <div className="text-xs text-gray-500">Assigned To</div>
+                                              <div className="font-medium text-gray-900 break-words">
+                                                {technicianName || 'Unassigned'}
+                                              </div>
+                                            </div>
+                                          </div>
+                                        );
+                                      }
+                                      
+                                      return null;
+                                    })()}
                                     
                                     {job.description && job.description.trim() && job.description !== 'No description provided' && (() => {
                                       const descriptionLength = job.description.length;
@@ -7347,7 +7516,7 @@ const AdminDashboard = () => {
                   <Label htmlFor="edit_full_name">Full Name</Label>
                   <Input
                     id="edit_full_name"
-                    value={editFormData?.full_name || ''}
+                    value={editFormData?.full_name ?? ''}
                     onChange={(e) => handleEditFormChange('full_name', e.target.value)}
                     placeholder="Enter full name"
                   />
@@ -7357,7 +7526,7 @@ const AdminDashboard = () => {
                   <Label htmlFor="edit_phone">Primary Phone</Label>
                   <Input
                     id="edit_phone"
-                    value={editFormData?.phone || ''}
+                    value={editFormData?.phone ?? ''}
                     onChange={(e) => handleEditFormChange('phone', e.target.value)}
                     placeholder="Enter primary phone number"
                   />
@@ -7367,7 +7536,7 @@ const AdminDashboard = () => {
                   <Label htmlFor="edit_alternate_phone">Alternate Phone</Label>
                   <Input
                     id="edit_alternate_phone"
-                    value={editFormData?.alternate_phone || ''}
+                    value={editFormData?.alternate_phone ?? ''}
                     onChange={(e) => handleEditFormChange('alternate_phone', e.target.value)}
                     placeholder="Enter alternate phone number (optional)"
                   />
@@ -7378,7 +7547,7 @@ const AdminDashboard = () => {
                   <Input
                     id="edit_email"
                     type="email"
-                    value={editFormData?.email || ''}
+                    value={editFormData?.email ?? ''}
                     onChange={(e) => handleEditFormChange('email', e.target.value)}
                     placeholder="Enter email address"
                   />
@@ -7395,7 +7564,7 @@ const AdminDashboard = () => {
                   <div className="relative">
                     <Input
                       id="edit_visible_address"
-                      value={editFormData?.visible_address || ''}
+                      value={editFormData?.visible_address ?? ''}
                       onChange={(e) => {
                         locationManuallyEditedRef.current = true; // Mark as manually edited
                         handleEditFormChange('visible_address', e.target.value);
@@ -7436,7 +7605,7 @@ const AdminDashboard = () => {
                   <Label htmlFor="edit_full_address">Complete Address</Label>
                   <Textarea
                     id="edit_full_address"
-                    value={editFormData?.address?.street || ''}
+                    value={editFormData?.address?.street ?? ''}
                     onChange={(e) => handleAddressFieldChange('street', e.target.value)}
                     placeholder="Enter complete address (e.g., 123 MG Road, Koramangala, Bangalore, Karnataka, 560034)"
                     rows={3}
@@ -7454,7 +7623,7 @@ const AdminDashboard = () => {
                 <div className="flex gap-2">
                   <Input
                     id="edit_google_location"
-                    value={editFormData?.google_location || ''}
+                    value={editFormData?.google_location ?? ''}
                     onChange={(e) => handleGoogleMapsLinkChange(e.target.value)}
                     placeholder="Paste Google Maps share link here..."
                     className="text-sm flex-1"

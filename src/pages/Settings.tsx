@@ -21,7 +21,7 @@ import { db, supabase } from '@/lib/supabase';
 import { Technician } from '@/types';
 import ImageUpload from '@/components/ImageUpload';
 import { QrCode } from 'lucide-react';
-import { CommonQrCode } from '@/lib/qrCodeManager';
+import { CommonQrCode, invalidateQrCodesCache } from '@/lib/qrCodeManager';
 
 const Settings = () => {
   const { user, isAdmin } = useAuth();
@@ -396,6 +396,8 @@ const Settings = () => {
         }
         console.log('QR code updated successfully:', data);
         toast.success('QR code updated successfully');
+        // Invalidate cache so AdminDashboard will reload
+        invalidateQrCodesCache();
       } else {
         console.log('Creating new QR code...');
         const { data, error } = await db.commonQrCodes.create({
@@ -410,6 +412,8 @@ const Settings = () => {
         }
         console.log('QR code created successfully:', data);
         toast.success('QR code created successfully');
+        // Invalidate cache so AdminDashboard will reload
+        invalidateQrCodesCache();
       }
 
       // Reload QR codes after successful save
@@ -436,6 +440,8 @@ const Settings = () => {
       
       await loadCommonQrCodes();
       toast.success('QR code deleted successfully');
+      // Invalidate cache so AdminDashboard will reload
+      invalidateQrCodesCache();
     } catch (error) {
       console.error('Error deleting QR code:', error);
       toast.error('Failed to delete QR code');

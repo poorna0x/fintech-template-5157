@@ -101,3 +101,16 @@ export const cacheTechnicianQrCode = (technicianId: string, qrCodeUrl: string): 
   }
 };
 
+// Invalidate QR codes cache (call this when QR codes are updated)
+export const invalidateQrCodesCache = (): void => {
+  if (typeof window === 'undefined') return;
+  
+  try {
+    localStorage.removeItem(QR_CODES_STORAGE_KEY);
+    // Dispatch custom event to notify other components
+    window.dispatchEvent(new CustomEvent('qrCodesUpdated'));
+  } catch (error) {
+    console.error('Error invalidating QR codes cache:', error);
+  }
+};
+

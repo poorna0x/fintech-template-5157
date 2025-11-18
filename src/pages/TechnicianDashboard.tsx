@@ -99,6 +99,11 @@ const TechnicianDashboard = () => {
   const [followUpModalOpen, setFollowUpModalOpen] = useState(false);
   const [selectedJobForFollowUp, setSelectedJobForFollowUp] = useState<Job | null>(null);
   const [denyDialogOpen, setDenyDialogOpen] = useState(false);
+  // Move to ongoing dialog state
+  const [moveToOngoingDialogOpen, setMoveToOngoingDialogOpen] = useState(false);
+  const [selectedJobForMoveToOngoing, setSelectedJobForMoveToOngoing] = useState<Job | null>(null);
+  const [moveToOngoingDate, setMoveToOngoingDate] = useState<string>('');
+  const [moveToOngoingTime, setMoveToOngoingTime] = useState<string>('');
   // Options dialog state for 3-dot menu
   const [optionsDialogOpen, setOptionsDialogOpen] = useState<{[jobId: string]: boolean}>({});
   const [selectedJobForOptions, setSelectedJobForOptions] = useState<Job | null>(null);
@@ -1380,11 +1385,37 @@ const TechnicianDashboard = () => {
     }
   };
 
-  const handleMoveToOngoing = async (job: Job) => {
+  const handleMoveToOngoing = (job: Job) => {
+    // Set default values to current date and time
+    const now = new Date();
+    const today = now.toISOString().split('T')[0];
+    const currentTime = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+    
+    setMoveToOngoingDate(today);
+    setMoveToOngoingTime(currentTime);
+    setSelectedJobForMoveToOngoing(job);
+    setMoveToOngoingDialogOpen(true);
+  };
+
+  // Actually perform the move to ongoing action with date and time
+  const performMoveToOngoing = async () => {
+    if (!selectedJobForMoveToOngoing) return;
+
+    if (!moveToOngoingDate || !moveToOngoingTime) {
+      toast.error('Please select both date and time');
+      return;
+    }
+
     try {
       setIsUpdating(true);
-      const { error } = await db.jobs.update(job.id, {
-        status: 'ASSIGNED'
+      
+      // Combine date and time into ISO string
+      const dateTimeString = `${moveToOngoingDate}T${moveToOngoingTime}:00`;
+      const assignedDateTime = new Date(dateTimeString).toISOString();
+
+      const { error } = await db.jobs.update(selectedJobForMoveToOngoing.id, {
+        status: 'ASSIGNED',
+        assigned_date: assignedDateTime
       });
 
       if (error) {
@@ -1394,7 +1425,7 @@ const TechnicianDashboard = () => {
       // Remove from seenJobs so it shows as a new job
       setSeenJobs(prev => {
         const newSet = new Set(prev);
-        newSet.delete(job.id);
+        newSet.delete(selectedJobForMoveToOngoing.id);
         // Save to localStorage
         try {
           localStorage.setItem('technician_seen_jobs', JSON.stringify(Array.from(newSet)));
@@ -1406,10 +1437,16 @@ const TechnicianDashboard = () => {
 
       // Update local state
       setJobs(prev => prev.map(j => 
-        j.id === job.id 
-          ? { ...j, status: 'ASSIGNED' }
+        j.id === selectedJobForMoveToOngoing.id 
+          ? { ...j, status: 'ASSIGNED', assignedDate: assignedDateTime }
           : j
       ));
+
+      // Close dialog and reset state
+      setMoveToOngoingDialogOpen(false);
+      setSelectedJobForMoveToOngoing(null);
+      setMoveToOngoingDate('');
+      setMoveToOngoingTime('');
     } catch (error) {
       console.error('Error moving job to ongoing:', error);
       toast.error('Failed to move job to ongoing');
@@ -2578,11 +2615,139 @@ const TechnicianDashboard = () => {
                             </div>
                           )}
                         </div>
-                      {/* Service type */}
-                      <div className="mb-3">
-                        <span className="text-sm text-gray-600">
-                          {(job as any).service_type || job.serviceType} - {(job as any).service_sub_type || job.serviceSubType}
-                        </span>
+                      {/* Service type with Brand/Model */}
+                      <div className="mb-3 space-y-1">
+                        <div className="text-sm text-gray-600">
+                          <span className="font-medium">{(job as any).service_type || job.serviceType} - {(job as any).service_sub_type || job.serviceSubType}</span>
+                        </div>
+                        {(() => {
+                          const customer = job.customer as any;
+                          const jobData = job as any;
+                          
+                          // Try all possible field name variations - prioritize job-specific brand/model
+                          let brand = jobData.brand || job.brand || '';
+                          let model = jobData.model || job.model || '';
+                          
+                          // If job doesn't have brand/model, try to get from customer
+                          // Customer might have comma-separated values for multiple service types
+                          if (!brand || !model) {
+                            const customerBrand = customer?.brand || '';
+                            const customerModel = customer?.model || '';
+                            const jobServiceType = (jobData.service_type || job.serviceType || '').toUpperCase();
+                            
+                            // If customer has comma-separated values, parse them based on service type
+                            if (customerBrand && customerBrand.includes(',')) {
+                              const brands = customerBrand.split(',').map((b: string) => b.trim());
+                              const models = customerModel ? customerModel.split(',').map((m: string) => m.trim()) : [];
+                              
+                              // Try to match service type to get the right brand/model
+                              // For RO jobs, use first brand/model; for SOFTENER, use second if available
+                              if (jobServiceType === 'RO' || jobServiceType === '') {
+                                brand = brand || brands[0] || '';
+                                model = model || (models[0] || '');
+                              } else if (jobServiceType === 'SOFTENER' && brands.length > 1) {
+                                brand = brand || brands[1] || brands[0] || '';
+                                model = model || (models[1] || models[0] || '');
+                              } else {
+                                // Fallback: use first available
+                                brand = brand || brands[0] || '';
+                                model = model || (models[0] || '');
+                              }
+                            } else {
+                              // Customer has single brand/model values
+                              brand = brand || customerBrand || '';
+                              model = model || customerModel || '';
+                            }
+                          }
+                          
+                          // Filter out "Not specified" values - only show if we have actual values
+                          const validBrand = brand && 
+                            brand !== 'Not specified' && 
+                            brand.toLowerCase() !== 'not specified' && 
+                            brand.trim() !== '' ? brand : '';
+                          const validModel = model && 
+                            model !== 'Not specified' && 
+                            model.toLowerCase() !== 'not specified' && 
+                            model.trim() !== '' ? model : '';
+                          
+                          // Only show if we have at least a brand
+                          if (validBrand || validModel) {
+                            return (
+                              <div className="text-sm text-gray-700">
+                                <span className="font-medium">Brand/Model:</span>{' '}
+                                <span className="text-gray-600">
+                                  {validBrand && validModel ? `${validBrand} - ${validModel}` : validBrand || validModel}
+                                </span>
+                              </div>
+                            );
+                          }
+                          return null;
+                        })()}
+                        {/* Scheduled Date and Time */}
+                        {(() => {
+                          const scheduledDate = (job as any).scheduled_date || job.scheduledDate;
+                          const scheduledTimeSlot = (job as any).scheduled_time_slot || job.scheduledTimeSlot;
+                          
+                          if (scheduledDate) {
+                            // Try to get custom time from requirements
+                            let customTime = '';
+                            if ((job as any).requirements) {
+                              try {
+                                const requirements = typeof (job as any).requirements === 'string' 
+                                  ? JSON.parse((job as any).requirements) 
+                                  : (job as any).requirements;
+                                
+                                if (Array.isArray(requirements)) {
+                                  const customTimeReq = requirements.find((r: any) => r.custom_time);
+                                  if (customTimeReq?.custom_time) {
+                                    customTime = customTimeReq.custom_time;
+                                  }
+                                }
+                              } catch (e) {
+                                // Ignore parse errors
+                              }
+                            }
+                            
+                            const date = new Date(scheduledDate);
+                            const dateStr = date.toLocaleDateString('en-IN', { 
+                              weekday: 'short', 
+                              day: 'numeric', 
+                              month: 'short', 
+                              year: 'numeric' 
+                            });
+                            
+                            // Format custom time if available
+                            let timeDisplay = '';
+                            if (customTime) {
+                              const [hours, minutes] = customTime.split(':');
+                              const hour24 = parseInt(hours);
+                              const minute24 = parseInt(minutes || '0');
+                              const hour12 = hour24 > 12 ? hour24 - 12 : (hour24 === 0 ? 12 : hour24);
+                              const ampm = hour24 >= 12 ? 'PM' : 'AM';
+                              const formattedMinutes = String(minute24).padStart(2, '0');
+                              timeDisplay = `${hour12}:${formattedMinutes} ${ampm}`;
+                            } else if (scheduledTimeSlot) {
+                              const timeSlotMap: { [key: string]: string } = {
+                                'MORNING': 'Morning (9 AM - 12 PM)',
+                                'AFTERNOON': 'Afternoon (12 PM - 5 PM)',
+                                'EVENING': 'Evening (5 PM - 8 PM)',
+                                'CUSTOM': 'Custom Time'
+                              };
+                              timeDisplay = timeSlotMap[scheduledTimeSlot] || scheduledTimeSlot;
+                            }
+                            
+                            return (
+                              <div className="text-sm text-gray-700">
+                                <span className="font-medium">Scheduled:</span>{' '}
+                                <span className="text-gray-600">
+                                  {dateStr}
+                                  {timeDisplay && ` - ${timeDisplay}`}
+                                </span>
+                              </div>
+                            );
+                          }
+                          return null;
+                        })()}
                       </div>
                       {/* Buttons below - nicely sized */}
                       <div className="flex items-center gap-2 mb-3">
@@ -3121,6 +3286,63 @@ const TechnicianDashboard = () => {
             </AlertDialogFooter>
           </AlertDialogContent>
         </AlertDialog>
+
+        {/* Move to Ongoing Dialog */}
+        <Dialog open={moveToOngoingDialogOpen} onOpenChange={setMoveToOngoingDialogOpen}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Move to Ongoing</DialogTitle>
+              <DialogDescription>
+                Please select the date and time when this job should be moved to ongoing status.
+              </DialogDescription>
+            </DialogHeader>
+            <div className="space-y-4 py-4">
+              <div>
+                <Label htmlFor="ongoing-date">Date *</Label>
+                <Input
+                  id="ongoing-date"
+                  type="date"
+                  value={moveToOngoingDate}
+                  onChange={(e) => setMoveToOngoingDate(e.target.value)}
+                  className="mt-1"
+                  required
+                />
+              </div>
+              <div>
+                <Label htmlFor="ongoing-time">Time *</Label>
+                <Input
+                  id="ongoing-time"
+                  type="time"
+                  value={moveToOngoingTime}
+                  onChange={(e) => setMoveToOngoingTime(e.target.value)}
+                  className="mt-1"
+                  required
+                />
+              </div>
+            </div>
+            <DialogFooter>
+              <Button
+                variant="outline"
+                onClick={() => {
+                  setMoveToOngoingDialogOpen(false);
+                  setSelectedJobForMoveToOngoing(null);
+                  setMoveToOngoingDate('');
+                  setMoveToOngoingTime('');
+                }}
+                disabled={isUpdating}
+              >
+                Cancel
+              </Button>
+              <Button
+                onClick={performMoveToOngoing}
+                disabled={isUpdating || !moveToOngoingDate || !moveToOngoingTime}
+                className="bg-black hover:bg-gray-800 text-white"
+              >
+                {isUpdating ? 'Moving...' : 'Move to Ongoing'}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
 
         {/* Follow-up Modal */}
         <FollowUpModal
