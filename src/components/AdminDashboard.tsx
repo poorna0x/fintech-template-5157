@@ -826,6 +826,7 @@ const AdminDashboard = () => {
     performance: tech.performance,
     vehicle: tech.vehicle,
     salary: tech.salary,
+    qrCode: tech.qr_code || tech.qrCode || '',
     createdAt: tech.created_at,
     updatedAt: tech.updated_at
   });
@@ -4944,29 +4945,7 @@ const AdminDashboard = () => {
     setCustomerHasPrefilter(null);
     setQrCodeType('');
     setSelectedQrCodeId('');
-    setTechnicianQrCode('');
-    setTechnicianName('');
     setPaymentScreenshot('');
-
-    // Load technician QR code if job has assigned technician
-    if (jobWithCustomer.assignedTechnicianId) {
-      try {
-        const tech = technicians.find(t => t.id === jobWithCustomer.assignedTechnicianId);
-        if (tech && (tech as any).qrCode) {
-          setTechnicianQrCode((tech as any).qrCode);
-          setTechnicianName(tech.fullName);
-        } else {
-          // Fetch from database
-          const { data: techData, error: techError } = await db.technicians.getById(jobWithCustomer.assignedTechnicianId);
-          if (!techError && techData && techData.qr_code) {
-            setTechnicianQrCode(techData.qr_code);
-            setTechnicianName(techData.full_name);
-          }
-        }
-      } catch (error) {
-        console.error('Error loading technician QR code:', error);
-      }
-    }
 
     setCompleteDialogOpen(true);
   };
@@ -5076,9 +5055,13 @@ const AdminDashboard = () => {
             qrPhotos.selected_qr_code_url = selectedQr.qrCodeUrl;
             qrPhotos.selected_qr_code_name = selectedQr.name;
           }
-        } else if (selectedQrCodeId === 'technician' && technicianQrCode) {
-          qrPhotos.selected_qr_code_url = technicianQrCode;
-          qrPhotos.selected_qr_code_name = technicianName || 'Technician';
+        } else if (selectedQrCodeId.startsWith('technician_')) {
+          const techId = selectedQrCodeId.replace('technician_', '');
+          const selectedTech = technicians.find(t => t.id === techId);
+          if (selectedTech && (selectedTech as any).qrCode) {
+            qrPhotos.selected_qr_code_url = (selectedTech as any).qrCode;
+            qrPhotos.selected_qr_code_name = selectedTech.fullName || 'Technician';
+          }
         }
         
         requirements.push({ qr_photos: qrPhotos });
@@ -9859,7 +9842,7 @@ const AdminDashboard = () => {
                           // Set QR code type based on selection
                           if (value.startsWith('common_')) {
                             setQrCodeType('common');
-                          } else if (value === 'technician') {
+                          } else if (value.startsWith('technician_')) {
                             setQrCodeType('technician');
                           }
                         }}
@@ -9869,23 +9852,31 @@ const AdminDashboard = () => {
                         </SelectTrigger>
                         <SelectContent className="!z-[100]">
                           {/* Common QR Codes - show by name */}
-                          {commonQrCodes.length === 0 && !technicianQrCode ? (
+                          {commonQrCodes.length === 0 && technicians.filter(t => (t as any).qrCode).length === 0 ? (
                             <SelectItem value="no-qr" disabled>
                               No QR codes available
                             </SelectItem>
                           ) : (
                             <>
-                              {commonQrCodes.map((qr) => (
-                                <SelectItem key={`common_${qr.id}`} value={`common_${qr.id}`}>
-                                  {qr.name}
-                                </SelectItem>
-                              ))}
-                              {/* Technician QR Code - show by name */}
-                              {technicianQrCode && (
-                                <SelectItem value="technician">
-                                  {(technicianName || 'Technician')}'s QR Code
-                                </SelectItem>
+                              {/* Common QR Codes Section */}
+                              {commonQrCodes.length > 0 && (
+                                <>
+                                  {commonQrCodes.map((qr) => (
+                                    <SelectItem key={`common_${qr.id}`} value={`common_${qr.id}`}>
+                                      {qr.name}
+                                    </SelectItem>
+                                  ))}
+                                </>
                               )}
+                              
+                              {/* Technician QR Codes Section */}
+                              {technicians
+                                .filter(t => (t as any).qrCode && (t as any).qrCode.trim() !== '')
+                                .map((tech) => (
+                                  <SelectItem key={`technician_${tech.id}`} value={`technician_${tech.id}`}>
+                                    {tech.fullName}'s QR Code
+                                  </SelectItem>
+                                ))}
                             </>
                           )}
                         </SelectContent>
@@ -9922,28 +9913,33 @@ const AdminDashboard = () => {
                   />
                 </div>
                             );
-                          })() : selectedQrCodeId === 'technician' ? (
-                            technicianQrCode ? (
+                          })() : selectedQrCodeId.startsWith('technician_') ? (() => {
+                            const techId = selectedQrCodeId.replace('technician_', '');
+                            const selectedTech = technicians.find(t => t.id === techId);
+                            if (!selectedTech || !(selectedTech as any).qrCode) {
+                              return (
+                                <div className="text-center p-4">
+                                  <p className="text-sm text-red-500">QR code not found</p>
+                                  <p className="text-xs text-gray-500 mt-1">Technician QR code not available</p>
+                                </div>
+                              );
+                            }
+                            return (
                               <div className="text-center">
                                 <p className="text-sm font-medium mb-3 text-gray-700">
-                                  {(technicianName || 'Technician')}'s QR Code
+                                  {selectedTech.fullName}'s QR Code
                                 </p>
                                 <img 
-                                  src={technicianQrCode} 
-                                  alt="Technician QR Code"
+                                  src={(selectedTech as any).qrCode} 
+                                  alt={`${selectedTech.fullName}'s QR Code`}
                                   className="w-64 h-64 object-contain mx-auto border-2 border-primary rounded-lg shadow-lg bg-white p-3"
                                   onError={(e) => {
-                                    console.error('Failed to load technician QR code:', technicianQrCode);
+                                    console.error('Failed to load technician QR code:', (selectedTech as any).qrCode);
                                   }}
                                 />
                               </div>
-                            ) : (
-                              <div className="text-center p-4">
-                                <p className="text-sm text-red-500">QR code not uploaded</p>
-                                <p className="text-xs text-gray-500 mt-1">Upload in Settings → Technician Management</p>
-                              </div>
-                            )
-                          ) : null}
+                            );
+                          })() : null}
                         </div>
                       </div>
                     )}
