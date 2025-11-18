@@ -1191,6 +1191,61 @@ export const db = {
     }
   },
 
+  // Technician holidays operations
+  technicianHolidays: {
+    async getAll(technicianId?: string, startDate?: string, endDate?: string) {
+      let query = supabase
+        .from('technician_holidays')
+        .select('*')
+        .order('holiday_date', { ascending: false });
+      
+      if (technicianId) {
+        query = query.eq('technician_id', technicianId);
+      }
+      
+      if (startDate) {
+        query = query.gte('holiday_date', startDate);
+      }
+      
+      if (endDate) {
+        query = query.lte('holiday_date', endDate);
+      }
+      
+      const { data, error } = await query;
+      return { data, error };
+    },
+
+    async create(holiday: any) {
+      const { data, error } = await supabase
+        .from('technician_holidays')
+        .insert(holiday)
+        .select()
+        .single();
+      
+      return { data, error };
+    },
+
+    async update(id: string, updates: any) {
+      const { data, error } = await supabase
+        .from('technician_holidays')
+        .update(updates)
+        .eq('id', id)
+        .select()
+        .single();
+      
+      return { data, error };
+    },
+
+    async delete(id: string) {
+      const { error } = await supabase
+        .from('technician_holidays')
+        .delete()
+        .eq('id', id);
+      
+      return { error };
+    }
+  },
+
   // Stats operations
   stats: {
     async getBillingByCustomer() {

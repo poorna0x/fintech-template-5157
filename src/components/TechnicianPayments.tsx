@@ -65,20 +65,35 @@ interface TechnicianExtraCommission {
   notes?: string;
 }
 
+interface TechnicianHoliday {
+  id: string;
+  technician_id: string;
+  holiday_date: string;
+  is_manual: boolean;
+  reason?: string;
+  notes?: string;
+}
+
 interface TechnicianSalaryBreakdown {
   technicianId: string;
   technicianName: string;
   employeeId: string;
   baseSalary: number;
+  adjustedBaseSalary: number; // After holiday deductions
   totalCommission: number;
   totalExtraCommission: number;
   totalExpenses: number;
   totalAdvances: number;
-  totalSalary: number; // baseSalary + commission + extraCommission - advances
+  totalHolidays: number;
+  allowedHolidays: number;
+  extraHolidays: number;
+  holidayDeduction: number;
+  totalSalary: number; // adjustedBaseSalary + commission + extraCommission - advances
   payments: TechnicianPayment[];
   expenses: TechnicianExpense[];
   advances: TechnicianAdvance[];
   extraCommissions: TechnicianExtraCommission[];
+  holidays: TechnicianHoliday[];
 }
 
 const TechnicianPayments = () => {
@@ -87,6 +102,11 @@ const TechnicianPayments = () => {
   const [loading, setLoading] = useState(true);
   const [selectedTechnician, setSelectedTechnician] = useState<string | null>(null);
   const [commissionPeriod, setCommissionPeriod] = useState<{ start: Date; end: Date } | null>(null);
+  const [selectedPeriod, setSelectedPeriod] = useState<'current' | 'lastMonth' | 'custom' | 'year' | 'quarter'>('current');
+  const [selectedMonth, setSelectedMonth] = useState<string>(() => {
+    const now = new Date();
+    return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+  });
   
   // Expense dialog
   const [expenseDialogOpen, setExpenseDialogOpen] = useState(false);
@@ -126,19 +146,52 @@ const TechnicianPayments = () => {
     notes: ''
   });
 
+  // Holiday dialog
+  const [holidayDialogOpen, setHolidayDialogOpen] = useState(false);
+  const [editingHoliday, setEditingHoliday] = useState<TechnicianHoliday | null>(null);
+  const [holidayFormData, setHolidayFormData] = useState({
+    technician_id: '',
+    holiday_date: new Date().toISOString().split('T')[0],
+    reason: '',
+    notes: ''
+  });
+
   useEffect(() => {
     loadData();
-  }, []);
+  }, [selectedPeriod, selectedMonth]);
 
   const getMonthlyDateRange = () => {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
     
-    // End date: Next month's 10th
-    const endDate = new Date(today.getFullYear(), today.getMonth() + 1, 10, 23, 59, 59, 999);
+    let startDate: Date;
+    let endDate: Date;
     
-    // Start date: Today (will be adjusted to first record date if earlier)
-    const startDate = new Date(today);
+    if (selectedPeriod === 'lastMonth') {
+      // Last month: 1st to last day of previous month
+      const lastMonth = new Date(today.getFullYear(), today.getMonth() - 1, 1);
+      startDate = new Date(lastMonth.getFullYear(), lastMonth.getMonth(), 1);
+      endDate = new Date(lastMonth.getFullYear(), lastMonth.getMonth() + 1, 0, 23, 59, 59, 999);
+    } else if (selectedPeriod === 'custom') {
+      // Custom month: Selected month
+      const [year, month] = selectedMonth.split('-').map(Number);
+      startDate = new Date(year, month - 1, 1);
+      endDate = new Date(year, month, 0, 23, 59, 59, 999);
+    } else if (selectedPeriod === 'year') {
+      // Entire year: January 1st to December 31st of current year
+      startDate = new Date(today.getFullYear(), 0, 1);
+      endDate = new Date(today.getFullYear(), 11, 31, 23, 59, 59, 999);
+    } else if (selectedPeriod === 'quarter') {
+      // Current quarter
+      const currentQuarter = Math.floor(today.getMonth() / 3);
+      const quarterStartMonth = currentQuarter * 3;
+      startDate = new Date(today.getFullYear(), quarterStartMonth, 1);
+      endDate = new Date(today.getFullYear(), quarterStartMonth + 3, 0, 23, 59, 59, 999);
+    } else {
+      // Current period: Today to next month's 10th
+      endDate = new Date(today.getFullYear(), today.getMonth() + 1, 10, 23, 59, 59, 999);
+      startDate = new Date(today);
+    }
     
     return { startDate, endDate };
   };
@@ -152,32 +205,33 @@ const TechnicianPayments = () => {
       if (techsError) throw techsError;
       setTechnicians(techsData || []);
 
-      // Get monthly date range (today to next month's 10th)
+      // Get monthly date range based on selected period
       const { startDate, endDate } = getMonthlyDateRange();
 
-      // Load all payments to find the first record date
-      const { data: allPaymentsData, error: allPaymentsError } = await supabase
-        .from('technician_payments')
-        .select('created_at')
-        .order('created_at', { ascending: true })
-        .limit(1);
-      
-      if (allPaymentsError) throw allPaymentsError;
-
-      // Use first record date if it's earlier than today
+      // For current period only, adjust start date to first record if earlier
       let actualStartDate = startDate;
-      if (allPaymentsData && allPaymentsData.length > 0) {
-        const firstRecordDate = new Date(allPaymentsData[0].created_at);
-        firstRecordDate.setHours(0, 0, 0, 0);
-        if (firstRecordDate < startDate) {
-          actualStartDate = firstRecordDate;
+      if (selectedPeriod === 'current') {
+        const { data: allPaymentsData, error: allPaymentsError } = await supabase
+          .from('technician_payments')
+          .select('created_at')
+          .order('created_at', { ascending: true })
+          .limit(1);
+        
+        if (allPaymentsError) throw allPaymentsError;
+
+        if (allPaymentsData && allPaymentsData.length > 0) {
+          const firstRecordDate = new Date(allPaymentsData[0].created_at);
+          firstRecordDate.setHours(0, 0, 0, 0);
+          if (firstRecordDate < startDate) {
+            actualStartDate = firstRecordDate;
+          }
         }
       }
       
       // Store commission period for display
       setCommissionPeriod({ start: actualStartDate, end: endDate });
 
-      // Load payments for current period (from start date to next month's 10th)
+      // Load payments for selected period
       const { data: paymentsData, error: paymentsError } = await supabase
         .from('technician_payments')
         .select(`
@@ -207,11 +261,40 @@ const TechnicianPayments = () => {
       const { data: extraCommissionsData, error: extraCommissionsError } = await db.technicianExtraCommissions.getAll();
       if (extraCommissionsError) throw extraCommissionsError;
 
+      // Load holidays for all technicians in the period
+      const { data: holidaysData, error: holidaysError } = await db.technicianHolidays.getAll(
+        undefined,
+        actualStartDate.toISOString().split('T')[0],
+        endDate.toISOString().split('T')[0]
+      );
+      if (holidaysError) throw holidaysError;
+
+      // Load completed jobs to detect holidays (days with no jobs)
+      const { data: completedJobsData, error: completedJobsError } = await supabase
+        .from('jobs')
+        .select('id, assigned_technician_id, end_time, completed_at')
+        .eq('status', 'COMPLETED')
+        .not('end_time', 'is', null)
+        .gte('end_time', actualStartDate.toISOString())
+        .lte('end_time', endDate.toISOString());
+      
+      if (completedJobsError) throw completedJobsError;
+
+      // Calculate number of months in the selected period
+      const monthsInPeriod = selectedPeriod === 'year' ? 12 : 
+                            selectedPeriod === 'quarter' ? 3 : 
+                            selectedPeriod === 'lastMonth' || selectedPeriod === 'custom' ? 1 : 
+                            (endDate.getTime() - actualStartDate.getTime()) / (1000 * 60 * 60 * 24 * 30); // Approximate for current period
+
       // Calculate breakdown for each technician
       const breakdowns: TechnicianSalaryBreakdown[] = (techsData || []).map((tech: any) => {
         const techId = tech.id;
-        const baseSalary = tech.salary?.baseSalary || 0;
-        
+        const monthlyBaseSalary = tech.salary?.baseSalary || 8000; // Default 8000
+        const periodBaseSalary = monthlyBaseSalary * Math.ceil(monthsInPeriod); // Total base salary for the period
+        const dailyBaseSalary = monthlyBaseSalary / 30; // 266.67 per day
+        const expectedWorkingDays = 26;
+        const allowedHolidays = 4;
+
         // Get payments for this technician (only from current month cycle)
         const techPayments = (paymentsData || []).filter((p: TechnicianPayment) => p.technician_id === techId);
         const totalCommission = techPayments.reduce((sum, p) => sum + (p.commission_amount || 0), 0);
@@ -227,24 +310,126 @@ const TechnicianPayments = () => {
         // Get extra commissions for this technician
         const techExtraCommissions = (extraCommissionsData || []).filter((ec: TechnicianExtraCommission) => ec.technician_id === techId);
         const totalExtraCommission = techExtraCommissions.reduce((sum, ec) => sum + (ec.amount || 0), 0);
+
+        // Get holidays for this technician
+        const techHolidays = (holidaysData || []).filter((h: TechnicianHoliday) => h.technician_id === techId);
         
-        // Calculate total salary: base + commission + extraCommission - advances (expenses don't reduce salary, they're for analytics only)
-        const totalSalary = baseSalary + totalCommission + totalExtraCommission - totalAdvances;
+        // Detect holidays: days with no completed jobs
+        const techCompletedJobs = (completedJobsData || []).filter((j: any) => j.assigned_technician_id === techId);
+        const workingDays = new Set<string>();
+        techCompletedJobs.forEach((job: any) => {
+          // Use end_time if available, otherwise completed_at
+          const completionDate = job.end_time || job.completed_at;
+          if (completionDate) {
+            const jobDate = new Date(completionDate).toISOString().split('T')[0];
+            workingDays.add(jobDate);
+          }
+        });
+
+        // Generate all dates in the period
+        const allDates: string[] = [];
+        const currentDate = new Date(actualStartDate);
+        while (currentDate <= endDate) {
+          allDates.push(currentDate.toISOString().split('T')[0]);
+          currentDate.setDate(currentDate.getDate() + 1);
+        }
+
+        // Find holidays: dates with no jobs completed
+        const autoDetectedHolidays: string[] = [];
+        allDates.forEach(date => {
+          if (!workingDays.has(date)) {
+            // Check if holiday already exists in database
+            const existingHoliday = techHolidays.find(h => h.holiday_date.split('T')[0] === date);
+            if (!existingHoliday) {
+              autoDetectedHolidays.push(date);
+            }
+          }
+        });
+
+        // Combine manual and auto-detected holidays
+        const allHolidayDates = new Set<string>();
+        techHolidays.forEach(h => allHolidayDates.add(h.holiday_date.split('T')[0]));
+        autoDetectedHolidays.forEach(date => allHolidayDates.add(date));
+        
+        // Group holidays by month and calculate deductions per month
+        const holidaysByMonth = new Map<string, string[]>(); // month key -> array of holiday dates
+        Array.from(allHolidayDates).forEach(date => {
+          const dateObj = new Date(date);
+          const monthKey = `${dateObj.getFullYear()}-${String(dateObj.getMonth() + 1).padStart(2, '0')}`;
+          if (!holidaysByMonth.has(monthKey)) {
+            holidaysByMonth.set(monthKey, []);
+          }
+          holidaysByMonth.get(monthKey)!.push(date);
+        });
+
+        // Calculate total deduction across all months
+        let totalHolidayDeduction = 0;
+        let totalExtraHolidays = 0;
+        holidaysByMonth.forEach((holidays, monthKey) => {
+          const monthHolidays = holidays.length;
+          const extraMonthHolidays = Math.max(0, monthHolidays - allowedHolidays);
+          totalExtraHolidays += extraMonthHolidays;
+          totalHolidayDeduction += extraMonthHolidays * dailyBaseSalary;
+        });
+
+        const totalHolidays = allHolidayDates.size;
+        const extraHolidays = totalExtraHolidays;
+        const holidayDeduction = totalHolidayDeduction;
+        const adjustedBaseSalary = periodBaseSalary - holidayDeduction;
+
+        // Create holiday records for display (include auto-detected ones)
+        const displayHolidays: TechnicianHoliday[] = [...techHolidays];
+        autoDetectedHolidays.forEach(date => {
+          displayHolidays.push({
+            id: `auto-${date}`,
+            technician_id: techId,
+            holiday_date: date,
+            is_manual: false,
+            reason: 'No jobs completed'
+          });
+        });
+        displayHolidays.sort((a, b) => new Date(b.holiday_date).getTime() - new Date(a.holiday_date).getTime());
+
+        // Get only absent days (extra holidays beyond 4 per month) for display
+        const absentDays: TechnicianHoliday[] = [];
+        holidaysByMonth.forEach((holidays, monthKey) => {
+          const monthHolidays = holidays.length;
+          const extraMonthHolidays = Math.max(0, monthHolidays - allowedHolidays);
+          if (extraMonthHolidays > 0) {
+            // Sort holidays in this month by date descending and take the extra ones
+            const sortedMonthHolidays = holidays
+              .map(date => displayHolidays.find(h => h.holiday_date.split('T')[0] === date))
+              .filter((h): h is TechnicianHoliday => h !== undefined)
+              .sort((a, b) => new Date(b.holiday_date).getTime() - new Date(a.holiday_date).getTime())
+              .slice(0, extraMonthHolidays);
+            absentDays.push(...sortedMonthHolidays);
+          }
+        });
+        absentDays.sort((a, b) => new Date(b.holiday_date).getTime() - new Date(a.holiday_date).getTime());
+        
+        // Calculate total salary: adjustedBaseSalary + commission + extraCommission - advances
+        const totalSalary = adjustedBaseSalary + totalCommission + totalExtraCommission - totalAdvances;
         
         return {
           technicianId: techId,
           technicianName: tech.full_name || 'Unknown',
           employeeId: tech.employee_id || '',
-          baseSalary,
+          baseSalary: periodBaseSalary,
+          adjustedBaseSalary,
           totalCommission,
           totalExtraCommission,
           totalExpenses,
           totalAdvances,
+          totalHolidays,
+          allowedHolidays,
+          extraHolidays,
+          holidayDeduction,
           totalSalary,
           payments: techPayments,
           expenses: techExpenses,
           advances: techAdvances,
-          extraCommissions: techExtraCommissions
+          extraCommissions: techExtraCommissions,
+          holidays: absentDays // Show only absent days (extra holidays beyond 4 per month)
         };
       });
 
@@ -491,6 +676,88 @@ const TechnicianPayments = () => {
     }
   };
 
+  const handleAddHoliday = () => {
+    if (!selectedTechnician) {
+      toast.error('Please select a technician');
+      return;
+    }
+    setHolidayFormData({
+      technician_id: selectedTechnician,
+      holiday_date: new Date().toISOString().split('T')[0],
+      reason: '',
+      notes: ''
+    });
+    setEditingHoliday(null);
+    setHolidayDialogOpen(true);
+  };
+
+  const handleEditHoliday = (holiday: TechnicianHoliday) => {
+    // Can only edit manual leaves
+    if (!holiday.is_manual) {
+      toast.error('Auto-detected leaves cannot be edited. They are based on job completion.');
+      return;
+    }
+    setEditingHoliday(holiday);
+    setHolidayFormData({
+      technician_id: holiday.technician_id,
+      holiday_date: holiday.holiday_date.split('T')[0],
+      reason: holiday.reason || '',
+      notes: holiday.notes || ''
+    });
+    setHolidayDialogOpen(true);
+  };
+
+  const handleSaveHoliday = async () => {
+    try {
+      if (!holidayFormData.technician_id || !holidayFormData.holiday_date) {
+        toast.error('Please fill in all required fields');
+        return;
+      }
+
+      const holidayData = {
+        technician_id: holidayFormData.technician_id,
+        holiday_date: holidayFormData.holiday_date,
+        is_manual: true,
+        reason: holidayFormData.reason || null,
+        notes: holidayFormData.notes || null
+      };
+
+      if (editingHoliday) {
+        const { error } = await db.technicianHolidays.update(editingHoliday.id, holidayData);
+        if (error) throw error;
+        toast.success('Leave updated');
+      } else {
+        const { error } = await db.technicianHolidays.create(holidayData);
+        if (error) throw error;
+        toast.success('Leave added');
+      }
+
+      setHolidayDialogOpen(false);
+      await loadData();
+    } catch (error: any) {
+      toast.error('Failed to save holiday: ' + error.message);
+    }
+  };
+
+  const handleDeleteHoliday = async (holiday: TechnicianHoliday) => {
+    // Can only delete manual leaves
+    if (!holiday.is_manual) {
+      toast.error('Auto-detected leaves cannot be deleted. They are based on job completion.');
+      return;
+    }
+    
+    if (!confirm('Are you sure you want to delete this leave?')) return;
+    
+    try {
+      const { error } = await db.technicianHolidays.delete(holiday.id);
+      if (error) throw error;
+      toast.success('Leave deleted');
+      await loadData();
+    } catch (error: any) {
+      toast.error('Failed to delete leave: ' + error.message);
+    }
+  };
+
   if (loading) {
     return (
       <div className="flex items-center justify-center py-12">
@@ -508,12 +775,44 @@ const TechnicianPayments = () => {
         <h2 className="text-2xl font-bold text-gray-900 mb-2">Technician Payments</h2>
         <p className="text-gray-600">
           Manage technician salaries, commissions (10% per job), expenses, and advances
-          {commissionPeriod && (
-            <span className="text-sm text-gray-500 block mt-1">
-              Commission period: {commissionPeriod.start.toLocaleDateString()} to {commissionPeriod.end.toLocaleDateString()}
-            </span>
-          )}
         </p>
+        
+        {/* Period Selector */}
+        <div className="mt-4 flex flex-wrap gap-4 items-end">
+          <div className="flex-1 min-w-[200px]">
+            <Label htmlFor="period-select">View Period</Label>
+            <Select value={selectedPeriod} onValueChange={(value: any) => setSelectedPeriod(value)}>
+              <SelectTrigger id="period-select">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="current">Current Period (Today to Next Month 10th)</SelectItem>
+                <SelectItem value="lastMonth">Last Month</SelectItem>
+                <SelectItem value="custom">Custom Month</SelectItem>
+                <SelectItem value="quarter">Current Quarter</SelectItem>
+                <SelectItem value="year">Current Year</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+          
+          {selectedPeriod === 'custom' && (
+            <div className="flex-1 min-w-[200px]">
+              <Label htmlFor="month-select">Select Month</Label>
+              <Input
+                id="month-select"
+                type="month"
+                value={selectedMonth}
+                onChange={(e) => setSelectedMonth(e.target.value)}
+              />
+            </div>
+          )}
+          
+          {commissionPeriod && (
+            <div className="text-sm text-gray-500 flex items-center">
+              Period: {commissionPeriod.start.toLocaleDateString()} to {commissionPeriod.end.toLocaleDateString()}
+            </div>
+          )}
+        </div>
       </div>
 
       {/* Technician Salary Breakdowns */}
@@ -538,8 +837,13 @@ const TechnicianPayments = () => {
               {/* Salary Breakdown */}
               <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mb-6">
                 <div className="bg-blue-50 p-4 rounded-lg">
-                  <p className="text-sm text-gray-600 mb-1">Basic Salary</p>
+                  <p className="text-sm text-gray-600 mb-1">Base Salary</p>
                   <p className="text-xl font-semibold text-blue-600">INR {breakdown.baseSalary.toFixed(2)}</p>
+                  {breakdown.holidayDeduction > 0 && (
+                    <p className="text-xs text-red-600 mt-1">
+                      Adjusted: INR {breakdown.adjustedBaseSalary.toFixed(2)}
+                    </p>
+                  )}
                 </div>
                 <div className="bg-green-50 p-4 rounded-lg">
                   <p className="text-sm text-gray-600 mb-1">Commission (10%)</p>
@@ -564,9 +868,21 @@ const TechnicianPayments = () => {
                 <p className="text-sm font-medium text-gray-700 mb-2">Salary Calculation:</p>
                 <div className="space-y-1 text-sm">
                   <div className="flex justify-between">
-                    <span>Basic Salary:</span>
+                    <span>Base Salary:</span>
                     <span className="font-medium">INR {breakdown.baseSalary.toFixed(2)}</span>
                   </div>
+                  {breakdown.holidayDeduction > 0 && (
+                    <>
+                      <div className="flex justify-between text-red-600">
+                        <span>Leave Deduction ({breakdown.extraHolidays} absent days):</span>
+                        <span className="font-medium">- INR {breakdown.holidayDeduction.toFixed(2)}</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span>Adjusted Base Salary:</span>
+                        <span className="font-medium">INR {breakdown.adjustedBaseSalary.toFixed(2)}</span>
+                      </div>
+                    </>
+                  )}
                   <div className="flex justify-between text-green-600">
                     <span>+ Commission (10%):</span>
                     <span className="font-medium">+ INR {breakdown.totalCommission.toFixed(2)}</span>
@@ -587,11 +903,15 @@ const TechnicianPayments = () => {
                     <span>Total Expenses (for analytics only):</span>
                     <span>INR {breakdown.totalExpenses.toFixed(2)}</span>
                   </div>
+                  <div className="flex justify-between text-gray-500 text-xs pt-1">
+                    <span>Leaves: {breakdown.totalHolidays} total ({breakdown.allowedHolidays} allowed, {breakdown.extraHolidays} absent)</span>
+                    <span></span>
+                  </div>
                 </div>
               </div>
 
               {/* Actions */}
-              <div className="flex gap-2 mb-6">
+              <div className="flex gap-2 mb-6 flex-wrap">
                 <Button
                   size="sm"
                   onClick={() => {
@@ -624,6 +944,17 @@ const TechnicianPayments = () => {
                 >
                   <TrendingUp className="w-4 h-4 mr-2" />
                   Add Advance
+                </Button>
+                <Button
+                  size="sm"
+                  onClick={() => {
+                    setSelectedTechnician(breakdown.technicianId);
+                    handleAddHoliday();
+                  }}
+                  className="bg-gray-600 hover:bg-gray-700 text-white"
+                >
+                  <Plus className="w-4 h-4 mr-2" />
+                  Add Leave
                 </Button>
               </div>
 
@@ -810,10 +1141,144 @@ const TechnicianPayments = () => {
                 )}
               </div>
 
+              {/* Absent Days Table - Show only extra leaves beyond allowed per month */}
+              {breakdown.extraHolidays > 0 && (
+                <div className="mb-6">
+                  <h3 className="text-sm font-semibold text-gray-700 mb-3">
+                    Absent Days ({breakdown.extraHolidays} days - beyond {breakdown.allowedHolidays} allowed leaves per month)
+                  </h3>
+                  <div className="overflow-x-auto">
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead>Date</TableHead>
+                          <TableHead>Type</TableHead>
+                          <TableHead>Reason</TableHead>
+                          <TableHead className="text-right">Actions</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {breakdown.holidays.map((holiday) => (
+                            <TableRow key={holiday.id}>
+                              <TableCell>{new Date(holiday.holiday_date).toLocaleDateString()}</TableCell>
+                              <TableCell>
+                                <Badge variant={holiday.is_manual ? "default" : "secondary"}>
+                                  {holiday.is_manual ? 'Manual' : 'Auto-detected'}
+                                </Badge>
+                              </TableCell>
+                              <TableCell>{holiday.reason || (holiday.is_manual ? '-' : 'No jobs completed')}</TableCell>
+                              <TableCell className="text-right">
+                                {holiday.is_manual ? (
+                                  <div className="flex gap-2 justify-end">
+                                    <Button
+                                      size="sm"
+                                      variant="outline"
+                                      onClick={() => {
+                                        setSelectedTechnician(holiday.technician_id);
+                                        handleEditHoliday(holiday);
+                                      }}
+                                      className="hover:bg-blue-50"
+                                      title="Edit leave"
+                                    >
+                                      <Edit className="w-4 h-4 mr-1" />
+                                      Edit
+                                    </Button>
+                                    <Button
+                                      size="sm"
+                                      variant="outline"
+                                      onClick={() => handleDeleteHoliday(holiday)}
+                                      className="text-red-600 hover:text-red-700 hover:bg-red-50"
+                                      title="Delete leave"
+                                    >
+                                      <Trash2 className="w-4 h-4 mr-1" />
+                                      Delete
+                                    </Button>
+                                  </div>
+                                ) : (
+                                  <span className="text-xs text-gray-500">Auto-detected</span>
+                                )}
+                              </TableCell>
+                            </TableRow>
+                          ))}
+                      </TableBody>
+                    </Table>
+                  </div>
+                </div>
+              )}
+
             </CardContent>
           </Card>
         ))}
       </div>
+
+      {/* Add/Edit Leave Dialog */}
+      <Dialog open={holidayDialogOpen} onOpenChange={setHolidayDialogOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>{editingHoliday ? 'Edit Leave' : 'Add Leave'}</DialogTitle>
+            <DialogDescription>
+              Add a manual leave for technician
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <div>
+              <Label htmlFor="holiday-technician">Technician</Label>
+              <Select
+                value={holidayFormData.technician_id}
+                onValueChange={(value) => setHolidayFormData({ ...holidayFormData, technician_id: value })}
+                disabled={!!editingHoliday}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Select technician" />
+                </SelectTrigger>
+                <SelectContent>
+                  {technicians.map((tech) => (
+                    <SelectItem key={tech.id} value={tech.id}>
+                      {tech.full_name} ({tech.employee_id})
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <Label htmlFor="holiday-date">Leave Date *</Label>
+              <Input
+                id="holiday-date"
+                type="date"
+                value={holidayFormData.holiday_date}
+                onChange={(e) => setHolidayFormData({ ...holidayFormData, holiday_date: e.target.value })}
+              />
+            </div>
+            <div>
+              <Label htmlFor="holiday-reason">Reason</Label>
+              <Input
+                id="holiday-reason"
+                value={holidayFormData.reason}
+                onChange={(e) => setHolidayFormData({ ...holidayFormData, reason: e.target.value })}
+                placeholder="e.g., Sick leave, Personal leave"
+              />
+            </div>
+            <div>
+              <Label htmlFor="holiday-notes">Notes</Label>
+              <Textarea
+                id="holiday-notes"
+                value={holidayFormData.notes}
+                onChange={(e) => setHolidayFormData({ ...holidayFormData, notes: e.target.value })}
+                placeholder="Additional notes (optional)"
+                rows={3}
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setHolidayDialogOpen(false)}>
+              Cancel
+            </Button>
+            <Button onClick={handleSaveHoliday}>
+              {editingHoliday ? 'Update' : 'Add'} Leave
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* Add/Edit Extra Commission Dialog */}
       <Dialog open={extraCommissionDialogOpen} onOpenChange={setExtraCommissionDialogOpen}>
