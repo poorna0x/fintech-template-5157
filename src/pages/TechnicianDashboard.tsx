@@ -1993,7 +1993,7 @@ const TechnicianDashboard = () => {
     switch (status) {
       case 'ASSIGNED':
         return (
-          <div className="flex items-center gap-2 w-full">
+          <>
             <Button
               size="default"
               onClick={() => {
@@ -2009,7 +2009,7 @@ const TechnicianDashboard = () => {
             <Button
               size="default"
               variant="outline"
-                  className="h-10 w-12 p-0"
+              className="h-10 w-12 p-0 flex-shrink-0"
               onClick={() => {
                 markJobAsSeen(job.id);
                 setSelectedJobForOptions(job);
@@ -2018,11 +2018,11 @@ const TechnicianDashboard = () => {
             >
               <MoreVertical className="w-4 h-4" />
             </Button>
-          </div>
+          </>
         );
       case 'EN_ROUTE':
         return (
-          <div className="flex items-center gap-2 w-full">
+          <>
             <Button
               size="default"
               onClick={() => {
@@ -2038,20 +2038,20 @@ const TechnicianDashboard = () => {
             <Button
               size="default"
               variant="outline"
-                  className="h-10 w-12 p-0"
-                  onClick={() => {
-                    markJobAsSeen(job.id);
+              className="h-10 w-12 p-0 flex-shrink-0"
+              onClick={() => {
+                markJobAsSeen(job.id);
                 setSelectedJobForOptions(job);
                 setOptionsDialogOpen(prev => ({ ...prev, [job.id]: true }));
               }}
             >
               <MoreVertical className="w-4 h-4" />
             </Button>
-          </div>
+          </>
         );
       case 'IN_PROGRESS':
         return (
-          <div className="flex items-center gap-2 w-full">
+          <>
             <Button
               size="default"
               onClick={() => {
@@ -2067,16 +2067,16 @@ const TechnicianDashboard = () => {
             <Button
               size="default"
               variant="outline"
-                  className="h-10 w-12 p-0"
+              className="h-10 w-12 p-0 flex-shrink-0"
               onClick={() => {
                 markJobAsSeen(job.id);
                 setSelectedJobForOptions(job);
                 setOptionsDialogOpen(prev => ({ ...prev, [job.id]: true }));
               }}
             >
-                  <MoreVertical className="w-4 h-4" />
+              <MoreVertical className="w-4 h-4" />
             </Button>
-          </div>
+          </>
         );
       default:
         return null;
@@ -2698,8 +2698,9 @@ const TechnicianDashboard = () => {
                         </div>
                       {/* Service type with Brand/Model */}
                       <div className="mb-3 space-y-1">
-                        <div className="text-sm text-gray-600">
-                          <span className="font-medium">{(job as any).service_type || job.serviceType} - {(job as any).service_sub_type || job.serviceSubType}</span>
+                        <div className="text-sm">
+                          <span className="font-medium text-gray-700 inline-block w-28">Service Type:</span>
+                          <span className="text-gray-600">{(job as any).service_type || job.serviceType} - {(job as any).service_sub_type || job.serviceSubType}</span>
                         </div>
                         {(() => {
                           const customer = job.customer as any;
@@ -2769,12 +2770,10 @@ const TechnicianDashboard = () => {
                               : validBrand || validModel;
                             
                             return (
-                              <div className="text-sm text-gray-700">
-                                <span className="font-medium">Equipment:</span>{' '}
-                                <span className="text-gray-600">
-                                  {displayText}
-                        </span>
-                      </div>
+                              <div className="text-sm">
+                                <span className="font-medium text-gray-700 inline-block w-28">Equipment:</span>
+                                <span className="text-gray-600">{displayText}</span>
+                              </div>
                             );
                           }
                           
@@ -2794,11 +2793,9 @@ const TechnicianDashboard = () => {
                                 : displayBrand;
                               
                               return (
-                                <div className="text-sm text-gray-700">
-                                  <span className="font-medium">Equipment:</span>{' '}
-                                  <span className="text-gray-600">
-                                    {displayText}
-                                  </span>
+                                <div className="text-sm">
+                                  <span className="font-medium text-gray-700 inline-block w-28">Equipment:</span>
+                                  <span className="text-gray-600">{displayText}</span>
                                 </div>
                               );
                             }
@@ -2860,8 +2857,8 @@ const TechnicianDashboard = () => {
                             }
                             
                             return (
-                              <div className="text-sm text-gray-700">
-                                <span className="font-medium">Scheduled:</span>{' '}
+                              <div className="text-sm">
+                                <span className="font-medium text-gray-700 inline-block w-28">Scheduled:</span>
                                 <span className="text-gray-600">
                                   {dateStr}
                                   {timeDisplay && ` - ${timeDisplay}`}
@@ -2872,6 +2869,52 @@ const TechnicianDashboard = () => {
                           return null;
                         })()}
                       </div>
+
+                      {/* Lead Source */}
+                      {(() => {
+                        let leadSource = '';
+                        try {
+                          const requirements = (job as any).requirements;
+                          if (requirements) {
+                            let reqs = requirements;
+                            if (typeof reqs === 'string') {
+                              reqs = JSON.parse(reqs);
+                            }
+                            if (Array.isArray(reqs)) {
+                              const req = reqs.find((r: any) => r?.lead_source);
+                              if (req?.lead_source) {
+                                leadSource = req.lead_source === 'Other' ? (req.lead_source_custom || 'Other') : req.lead_source;
+                              }
+                            } else if (reqs && typeof reqs === 'object' && reqs.lead_source) {
+                              leadSource = reqs.lead_source === 'Other' ? (reqs.lead_source_custom || 'Other') : reqs.lead_source;
+                            }
+                          }
+                        } catch (e) {
+                          // Ignore parse errors
+                        }
+                        return leadSource ? (
+                          <div className="text-sm mb-3">
+                            <span className="font-medium text-gray-700 inline-block w-28">Lead Source:</span>
+                            <span className="text-gray-600">{leadSource}</span>
+                          </div>
+                        ) : null;
+                      })()}
+
+                      {/* Estimated Cost */}
+                      {(job as any).estimated_cost ? (
+                        <div className="text-sm mb-3">
+                          <span className="font-medium text-gray-700 inline-block w-28">Estimated Cost:</span>
+                          <span className="text-gray-600">INR {((job as any).estimated_cost || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                        </div>
+                      ) : null}
+
+                      {/* Description */}
+                      {job.description && (
+                        <div className="text-sm mb-4">
+                          <span className="font-medium text-gray-700 inline-block w-28">Description:</span>
+                          <span className="text-gray-600">{job.description}</span>
+                        </div>
+                      )}
 
                       <div className="space-y-3 mb-4">
                         {/* Contact Information - Admin Style: 4 items - Desktop 1 row, Mobile 2x2 */}
@@ -3056,34 +3099,27 @@ const TechnicianDashboard = () => {
                               </div>
                           )}
                             </div>
-                            
-                        {/* Job Action Buttons - Below contact info */}
-                        <div className="flex items-center gap-2 mt-3">
-                          {getStatusActions(job)}
-                            </div>
+                          </div>
 
                         {/* Agreed Amount */}
-                        {(job as any).agreed_amount || (job as any).estimated_cost || (job.customer as any)?.serviceCost ? (
-                          <div className="text-sm">
-                            <span className="font-medium text-gray-700">Amount: </span>
-                            <span className="text-gray-600">₹{((job as any).agreed_amount || (job as any).estimated_cost || (job.customer as any)?.serviceCost || 0).toLocaleString('en-IN')}</span>
+                        {(job as any).agreed_amount || (job.customer as any)?.serviceCost ? (
+                          <div className="text-sm mb-4">
+                            <span className="font-medium text-gray-700">Agreed Amount: </span>
+                            <span className="text-gray-600">INR {((job as any).agreed_amount || (job.customer as any)?.serviceCost || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
                           </div>
                         ) : null}
-                        
-                        {/* Description */}
-                        {job.description && (
-                          <div className="text-sm">
-                            <span className="font-medium text-gray-700">Description: </span>
-                            <span className="text-gray-600">{job.description}</span>
-                            </div>
-                        )}
-                          </div>
+                      </div>
                     </div>
 
-                  </div>
+                    {/* Job Action Buttons - At the bottom */}
+                    <div className="mt-4 pt-4 border-t border-gray-200">
+                      <div className="flex flex-row items-center gap-2">
+                        {getStatusActions(job)}
+                      </div>
+                    </div>
                 </CardContent>
               </Card>
-                </div>
+              </div>
               );
             })
           )}

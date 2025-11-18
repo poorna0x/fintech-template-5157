@@ -882,7 +882,8 @@ const AdminDashboard = () => {
     scheduledTimeSlot: 'MORNING' as 'MORNING' | 'AFTERNOON' | 'EVENING' | 'CUSTOM' | 'FLEXIBLE',
     scheduledTimeCustom: '',
     lead_source: 'Direct call',
-    lead_source_custom: ''
+    lead_source_custom: '',
+    cost_agreed: ''
   });
   const [photoToDelete, setPhotoToDelete] = useState<{jobId: string, photoIndex: number, photoUrl: string} | null>(null);
   const [deletePhotoDialogOpen, setDeletePhotoDialogOpen] = useState(false);
@@ -4801,9 +4802,10 @@ const AdminDashboard = () => {
       }
     }
     
-    // Extract lead_source from requirements
+    // Extract lead_source and cost_range from requirements
     let leadSource = 'Direct call';
     let leadSourceCustom = '';
+    let costAgreed = '';
     try {
       const requirements = (job as any).requirements;
       if (requirements) {
@@ -4812,17 +4814,33 @@ const AdminDashboard = () => {
           reqs = JSON.parse(reqs);
         }
         if (Array.isArray(reqs)) {
-          const req = reqs.find((r: any) => r?.lead_source);
-          if (req?.lead_source) {
-            leadSource = req.lead_source === 'Other' ? 'Other' : req.lead_source;
-            leadSourceCustom = req.lead_source === 'Other' ? (req.lead_source_custom || '') : '';
+          const req = reqs.find((r: any) => r && typeof r === 'object');
+          if (req) {
+            if (req.lead_source) {
+              leadSource = req.lead_source === 'Other' ? 'Other' : req.lead_source;
+              leadSourceCustom = req.lead_source === 'Other' ? (req.lead_source_custom || '') : '';
+            }
+            if (req.cost_range) {
+              costAgreed = req.cost_range;
+            }
           }
-        } else if (reqs && typeof reqs === 'object' && reqs.lead_source) {
-          leadSource = reqs.lead_source === 'Other' ? 'Other' : reqs.lead_source;
-          leadSourceCustom = reqs.lead_source === 'Other' ? (reqs.lead_source_custom || '') : '';
+        } else if (reqs && typeof reqs === 'object') {
+          if (reqs.lead_source) {
+            leadSource = reqs.lead_source === 'Other' ? 'Other' : reqs.lead_source;
+            leadSourceCustom = reqs.lead_source === 'Other' ? (reqs.lead_source_custom || '') : '';
+          }
+          if (reqs.cost_range) {
+            costAgreed = reqs.cost_range;
+          }
         }
       }
     } catch (e) {
+    }
+    
+    // If cost_range not found in requirements, try to get from estimated_cost
+    if (!costAgreed && ((job as any).estimated_cost || job.estimatedCost)) {
+      const estimatedCost = (job as any).estimated_cost || job.estimatedCost || 0;
+      costAgreed = estimatedCost.toString();
     }
 
     setEditJobFormData({
@@ -4834,7 +4852,8 @@ const AdminDashboard = () => {
       scheduledTimeSlot: isCustomTimeSlot ? 'CUSTOM' : (timeSlot as 'MORNING' | 'AFTERNOON' | 'EVENING'),
       scheduledTimeCustom: customTimeValue,
       lead_source: leadSource,
-      lead_source_custom: leadSourceCustom
+      lead_source_custom: leadSourceCustom,
+      cost_agreed: costAgreed
     });
     setEditJobDialogOpen(true);
   };
@@ -4894,9 +4913,18 @@ const AdminDashboard = () => {
       if (editJobFormData.scheduledTimeSlot === 'FLEXIBLE') {
         reqObj.flexible_time = true;
       }
+      // Add cost_range if cost_agreed is provided
+      if (editJobFormData.cost_agreed && editJobFormData.cost_agreed.trim()) {
+        reqObj.cost_range = editJobFormData.cost_agreed.trim();
+      }
       
       // Replace requirements array with updated object
       requirements = [reqObj];
+
+      // Calculate estimated_cost from cost_agreed (take first number if range)
+      const estimatedCost = editJobFormData.cost_agreed 
+        ? (parseFloat(editJobFormData.cost_agreed.toString().split('-')[0].trim()) || 0)
+        : 0;
 
       const { error } = await db.jobs.update(jobToEdit.id, {
         service_type: editJobFormData.serviceType,
@@ -4904,6 +4932,7 @@ const AdminDashboard = () => {
         description: editJobFormData.description,
         scheduled_date: editJobFormData.scheduledDate,
         scheduled_time_slot: timeSlotValue,
+        estimated_cost: estimatedCost,
         requirements: requirements
       });
 
@@ -4922,6 +4951,8 @@ const AdminDashboard = () => {
               description: editJobFormData.description,
               scheduledDate: editJobFormData.scheduledDate,
               scheduledTimeSlot: timeSlotValue,
+              estimatedCost: estimatedCost,
+              estimated_cost: estimatedCost,
               requirements: requirements
             }
           : job
@@ -10382,6 +10413,24 @@ const AdminDashboard = () => {
                   />
                 </div>
               )}
+            </div>
+
+            <div>
+              <Label htmlFor="edit-cost-agreed">Cost Already Agreed (INR)</Label>
+              <Input
+                id="edit-cost-agreed"
+                type="text"
+                value={editJobFormData.cost_agreed}
+                onChange={(e) => {
+                  const value = e.target.value;
+                  // Allow numbers, dashes, and spaces for ranges like "400-500"
+                  if (value === '' || /^[\d\s-]+$/.test(value)) {
+                    setEditJobFormData(prev => ({ ...prev, cost_agreed: value }));
+                  }
+                }}
+                placeholder="e.g., 400 or 400-500"
+              />
+              <p className="text-xs text-gray-500 mt-1">Enter a single amount or a range (e.g., 400-500)</p>
             </div>
           </div>
 
