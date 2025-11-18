@@ -234,6 +234,7 @@ const AdminDashboard = () => {
   const lastSavedFormDataRef = useRef<string>('');
   const hasUnsavedChangesRef = useRef(false);
   const locationManuallyEditedRef = useRef(false); // Track if user manually edited location field
+  const previousAddressRef = useRef<string>(''); // Track previous address to detect changes
   
   // Ref to store calculateDistanceAndTime function to avoid circular dependency
   const calculateDistanceAndTimeRef = useRef<((origin: { lat: number; lng: number }, destination: { lat: number; lng: number }, customerId: string) => Promise<void>) | null>(null);
@@ -1533,7 +1534,7 @@ const AdminDashboard = () => {
             preferred_time_slot: (editingCustomer as any).preferred_time_slot || editingCustomer.preferredTimeSlot || 'MORNING',
             status: editFormData.status as 'ACTIVE' | 'INACTIVE' | 'BLOCKED',
             notes: editFormData.notes,
-            visible_address: editFormData.visible_address ? editFormData.visible_address.substring(0, 20) : '',
+            visible_address: editFormData.visible_address ? editFormData.visible_address.trim() : '',
             custom_time: editFormData.custom_time || null,
             has_prefilter: editFormData.has_prefilter,
             address: updatedAddress,
@@ -1807,57 +1808,8 @@ const AdminDashboard = () => {
         // Get existing location from database
         const existingLocation = (customer as any).visible_address || (customer.address as any)?.visible_address || '';
         
-        // If location already has a value, use it (don't overwrite)
-        if (existingLocation && existingLocation.trim().length > 0) {
-          return existingLocation;
-        }
-        
-        // If location is empty, extract from complete address using our matching logic
-        // Build full address from all available address fields
-        let addressParts = [
-          customer.address?.street,
-          customer.address?.area,
-          customer.address?.city,
-          customer.address?.state,
-          customer.address?.pincode
-        ].filter(Boolean);
-        
-        // Also check if there's a formatted address in location (but avoid duplicates)
-        if (customer.location?.formattedAddress && 
-            !customer.location.formattedAddress.includes('google.com/maps') &&
-            !customer.location.formattedAddress.includes('localhost')) {
-          const formattedAddr = customer.location.formattedAddress.trim();
-          // Check if formattedAddress is already included in any of the address parts
-          const isDuplicate = addressParts.some(part => {
-            if (!part) return false;
-            const partStr = String(part).toLowerCase();
-            const formattedStr = formattedAddr.toLowerCase();
-            // Check if one contains the other (to avoid duplicates)
-            return partStr.includes(formattedStr) || formattedStr.includes(partStr);
-          });
-          if (!isDuplicate && formattedAddr.length > 0) {
-            addressParts.push(formattedAddr);
-          }
-        }
-        
-        // Remove exact duplicates and join
-        const uniqueAddressParts = Array.from(new Set(addressParts.map(String).filter(Boolean)));
-        const completeAddress = uniqueAddressParts.join(', ') || '';
-        
-        // Extract location from the full address using our matching logic with Bangalore areas
-        const extractedLocation = extractLocationFromAddressString(completeAddress);
-        
-        // Debug logging
-        if (completeAddress) {
-          if (extractedLocation) {
-            console.log('✅ Extracted location from complete address (location was empty):', extractedLocation, 'from:', completeAddress);
-          } else {
-            console.log('⚠️ Could not extract location from complete address:', completeAddress);
-          }
-        }
-        
-        // Return extracted location if found, otherwise empty string
-        return extractedLocation || '';
+        // Just return existing location - don't auto-extract
+        return existingLocation;
       })(),
       custom_time: customer.customTime || (customer as any).custom_time || '',
       address: {
@@ -1917,85 +1869,14 @@ const AdminDashboard = () => {
         return '';
       })(),
       visible_address: (() => {
-        // Get existing location from database
+        // Get existing location from database - don't auto-extract, just use what's saved
         const existingLocation = (customer as any).visible_address || (customer.address as any)?.visible_address || '';
-        
-        // If location already has a value, use it (don't overwrite)
-        if (existingLocation && existingLocation.trim().length > 0) {
-          return existingLocation;
-        }
-        
-        // If location is empty, extract from complete address using our matching logic
-        // Build full address from all available address fields
-        let addressParts = [
-          customer.address?.street,
-          customer.address?.area,
-          customer.address?.city,
-          customer.address?.state,
-          customer.address?.pincode
-        ].filter(Boolean);
-        
-        // Also check if there's a formatted address in location (but avoid duplicates)
-        if (customer.location?.formattedAddress && 
-            !customer.location.formattedAddress.includes('google.com/maps') &&
-            !customer.location.formattedAddress.includes('localhost')) {
-          const formattedAddr = customer.location.formattedAddress.trim();
-          // Check if formattedAddress is already included in any of the address parts
-          const isDuplicate = addressParts.some(part => {
-            if (!part) return false;
-            const partStr = String(part).toLowerCase();
-            const formattedStr = formattedAddr.toLowerCase();
-            // Check if one contains the other (to avoid duplicates)
-            return partStr.includes(formattedStr) || formattedStr.includes(partStr);
-          });
-          if (!isDuplicate && formattedAddr.length > 0) {
-            addressParts.push(formattedAddr);
-          }
-        }
-        
-        // Remove exact duplicates and join
-        const uniqueAddressParts = Array.from(new Set(addressParts.map(String).filter(Boolean)));
-        const completeAddress = uniqueAddressParts.join(', ') || '';
-        
-        // Extract location from the full address using our matching logic with Bangalore areas
-        const extractedLocation = extractLocationFromAddressString(completeAddress);
-        
-        // Debug logging
-        if (completeAddress) {
-          if (extractedLocation) {
-            console.log('✅ Extracted location from complete address (location was empty):', extractedLocation, 'from:', completeAddress);
-          } else {
-            console.log('⚠️ Could not extract location from complete address:', completeAddress);
-          }
-        }
-        
-        // Return extracted location if found, otherwise empty string
-        return extractedLocation || '';
+        return existingLocation;
       })(),
-      custom_time: customer.customTime || (customer as any).custom_time || '',
-      address: {
-        street: [
-          customer.address?.street,
-          customer.address?.area,
-          customer.address?.city,
-          customer.address?.state,
-          customer.address?.pincode
-        ].filter(Boolean).join(', ') || '',
-        area: customer.address?.area || '',
-        city: customer.address?.city || '',
-        state: customer.address?.state || '',
-        pincode: customer.address?.pincode || ''
-      },
-      location: {
-        latitude: customer.location?.latitude || 0,
-        longitude: customer.location?.longitude || 0,
-        formattedAddress: customer.location?.formattedAddress || ''
-      },
-      service_cost: customer.serviceCost || 0,
-      cost_agreed: customer.costAgreed || false
+      custom_time: customer.customTime || (customer as any).custom_time || ''
     });
     hasUnsavedChangesRef.current = false;
-    locationManuallyEditedRef.current = false; // Reset flag when opening edit dialog
+    // Don't reset locationManuallyEditedRef - preserve manual edits
     // Clear any existing auto-save timer
     if (autoSaveTimerRef.current) {
       clearTimeout(autoSaveTimerRef.current);
@@ -2086,13 +1967,18 @@ const AdminDashboard = () => {
         preferred_time_slot: (editingCustomer as any).preferred_time_slot || editingCustomer.preferredTimeSlot || 'MORNING',
         status: editFormData.status as 'ACTIVE' | 'INACTIVE' | 'BLOCKED',
         notes: editFormData.notes,
-        visible_address: editFormData.visible_address ? editFormData.visible_address.substring(0, 20) : '',
+        visible_address: editFormData.visible_address ? editFormData.visible_address.trim() : '',
         custom_time: editFormData.custom_time || null,
         address: updatedAddress,
         location: updatedLocation
       };
 
       console.log('Update payload:', updateData);
+      console.log('📍 visible_address being saved:', {
+        fromFormData: editFormData.visible_address,
+        inUpdatePayload: updateData.visible_address,
+        manuallyEdited: locationManuallyEditedRef.current
+      });
 
       const { data: updatedCustomerFromDb, error } = await db.customers.update(editingCustomer.id, updateData);
 
@@ -2102,6 +1988,7 @@ const AdminDashboard = () => {
       }
       
       console.log('✅ Updated customer from DB:', updatedCustomerFromDb);
+      console.log('📍 visible_address after save:', updatedCustomerFromDb?.visible_address);
       console.log('📋 Brand/Model in DB response:', {
         brand: updatedCustomerFromDb?.brand,
         model: updatedCustomerFromDb?.model,
@@ -2184,59 +2071,34 @@ const AdminDashboard = () => {
     }));
   };
 
-  // Auto-extract location when edit dialog opens or address changes
-  // Always try to extract when address changes, but only update if user hasn't manually edited
-  useEffect(() => {
-    // Only run when edit dialog is open
-    if (!editDialogOpen) return;
-    
+  // Manual function to extract location from address (only called when user clicks "Fetch Location")
+  const handleFetchLocationFromAddress = () => {
     const address = editFormData?.address?.street || '';
+    const currentAddress = address.trim();
     const currentLocation = editFormData?.visible_address || '';
     
-    // Always try to extract when address changes (if user hasn't manually edited)
-    if (address && address.trim().length > 0 && !locationManuallyEditedRef.current) {
-      const extracted = extractLocationFromAddressString(address);
-      if (extracted) {
-        // Always update location if we found a match (even if location already has a value)
-        // This ensures location stays in sync with address changes
-        if (currentLocation !== extracted) {
-          handleEditFormChange('visible_address', extracted);
-          console.log('✅ Auto-extracted location from address:', extracted, 'from:', address);
-        }
-      } else {
-        // If we couldn't extract and there's an old location, clear it
-        // This ensures location doesn't stay when address changes to something that doesn't match
-        if (currentLocation && currentLocation.trim().length > 0) {
-          handleEditFormChange('visible_address', '');
-          console.log('⚠️ Could not extract location from new address, cleared old location:', address);
-        } else if (address) {
-          // Only log if we couldn't extract and location is already empty
-          console.log('⚠️ Could not extract location from complete address:', address);
-        }
-      }
+    if (!currentAddress || currentAddress.length === 0) {
+      toast.error('Please enter a complete address first');
+      return;
     }
-  }, [editDialogOpen, editFormData?.address?.street]);
-
-  // Force extraction when dialog first opens
-  useEffect(() => {
-    if (editDialogOpen && editingCustomer && !locationManuallyEditedRef.current) {
-      // Small delay to ensure form data is set
-      const timer = setTimeout(() => {
-        const address = editFormData?.address?.street || '';
-        const currentLocation = editFormData?.visible_address || '';
-        
-        if (address && address.trim().length > 0) {
-          const extracted = extractLocationFromAddressString(address);
-          if (extracted && (!currentLocation || currentLocation !== extracted)) {
-            handleEditFormChange('visible_address', extracted);
-            console.log('✅ Force-extracted location on dialog open:', extracted, 'from:', address);
-          }
-        }
-      }, 200);
-      
-      return () => clearTimeout(timer);
+    
+    // Only extract if location is empty - don't overwrite manual changes
+    if (currentLocation && currentLocation.trim().length > 0) {
+      toast.info('Location already set. Clear it first if you want to fetch a new one.');
+      return;
     }
-  }, [editDialogOpen, editingCustomer?.id]);
+    
+    const extracted = extractLocationFromAddressString(currentAddress);
+    if (extracted) {
+      handleEditFormChange('visible_address', extracted);
+      locationManuallyEditedRef.current = false; // Reset flag since we're extracting
+      toast.success(`Location extracted: ${extracted}`);
+      console.log('✅ Extracted location from address:', extracted, 'from:', currentAddress);
+    } else {
+      toast.warning('Could not extract location from address. Please enter manually.');
+      console.log('⚠️ Could not extract location from address:', currentAddress);
+    }
+  };
 
   const handleEditServiceTypeToggle = (serviceType: string) => {
     setEditFormData(prev => {
@@ -2430,31 +2292,8 @@ const AdminDashboard = () => {
     }));
     
     // If Complete Address (street) changed, try to extract location immediately
-    if (field === 'street' && value && !locationManuallyEditedRef.current) {
-      // Small delay to ensure state is updated
-      setTimeout(() => {
-        const extracted = extractLocationFromAddressString(value);
-        if (extracted) {
-          setEditFormData(prev => ({
-            ...prev,
-            visible_address: extracted
-          }));
-          console.log('✅ Auto-extracted location from changed address:', extracted, 'from:', value);
-        } else {
-          // If extraction fails, clear old location if it exists
-          setEditFormData(prev => {
-            if (prev.visible_address && prev.visible_address.trim().length > 0) {
-              console.log('⚠️ Could not extract location from new address, clearing old location');
-              return {
-                ...prev,
-                visible_address: ''
-              };
-            }
-            return prev;
-          });
-        }
-      }, 100);
-    }
+    // Note: Location extraction is now handled in the useEffect that watches address.street
+    // This ensures it only extracts when address actually changes, not on every keystroke
   };
 
   // Function to extract coordinates from Google Maps link
@@ -8264,7 +8103,23 @@ const AdminDashboard = () => {
                 </div>
 
                 <div className="space-y-2">
-                  <Label htmlFor="edit_full_address">Complete Address</Label>
+                  <div className="flex items-center justify-between">
+                    <Label htmlFor="edit_full_address">Complete Address</Label>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={handleFetchLocationFromAddress}
+                      className="whitespace-nowrap"
+                      title={editFormData?.visible_address && editFormData.visible_address.trim().length > 0 
+                        ? "Location already set. Clear it first to fetch a new one."
+                        : "Extract location from complete address"}
+                      disabled={!editFormData?.address?.street || editFormData.address.street.trim().length === 0 || (editFormData?.visible_address && editFormData.visible_address.trim().length > 0)}
+                    >
+                      <MapPin className="w-3 h-3 mr-1" />
+                      Fetch Location
+                    </Button>
+                  </div>
                   <Textarea
                     id="edit_full_address"
                     value={editFormData?.address?.street ?? ''}

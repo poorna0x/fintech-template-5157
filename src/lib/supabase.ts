@@ -305,6 +305,7 @@ export const db = {
             phone,
             email,
             alternate_phone,
+            visible_address,
             address,
             location,
             service_type,

@@ -53,6 +53,200 @@ import { extractCoordinates, formatAddressForDisplay } from '@/lib/maps';
 import ImageUpload from '@/components/ImageUpload';
 import { Label } from '@/components/ui/label';
 
+// Bangalore areas list for location extraction
+const bangaloreAreas = [
+  'Bansawadi', 'Koramangala', 'Whitefield', 'Indiranagar', 'HSR', 'BTM', 'JP Nagar',
+  'Malleshwaram', 'Rajajinagar', 'Vijayanagar', 'Basavanagudi', 'Banashankari', 'Jayanagar',
+  'Yelahanka', 'Hebbal', 'RT Nagar', 'Vasanthnagar', 'Cunningham', 'Frazer Town', 'Marathahalli',
+  'Bellandur', 'Electronic City', 'Bommanahalli', 'Bommasandra', 'Kadubeesanahalli', 'Mahadevapura',
+  'KR Puram', 'HAL', 'Domlur', 'Ulsoor', 'Richmond', 'Shivajinagar', 'Cox Town', 'Cooke Town',
+  'Austin Town', 'Richards Town', 'Murphy Town', 'Benson Town', 'HBR Layout', 'Kalyan Nagar',
+  'Sahakara Nagar', 'Mathikere', 'Yeshwanthpur', 'Peenya', 'Chamrajpet', 'Chickpet', 'Gandhinagar',
+  'Majestic', 'City Market', 'KR Market', 'Lalbagh', 'BTM Layout', 'Hosur Road', 'Bannerghatta',
+  'Jigani', 'Anekal', 'Varthur', 'Sarjapur', 'Hoodi', 'Kundalahalli', 'Brookefield', 'Kaggadasapura',
+  'Nagavara', 'Thanisandra', 'Hennur', 'Horamavu', 'Kothanur', 'Ramamurthy Nagar', 'Banaswadi',
+  'CV Raman Nagar', 'Murugeshpalya', 'Adugodi', 'Wilson Garden', 'Richmond Town', 'Shanti Nagar',
+  'Ashok Nagar', 'MG Road', 'Brigade Road', 'Commercial Street', 'Residency Road', 'Cubbon Park',
+  'Vidhana Soudha', 'Cantonment', 'Bowring', 'Richmond Circle', 'Lavelle Road', 'St Marks Road',
+  'Kasturba Road', 'Nrupathunga Road', 'Hudson Circle', 'Kempegowda', 'Majestic Bus Stand',
+  'Sanjay Nagar', 'Gokula', 'Attiguppe', 'Vijaya Nagar', 'Nagarbhavi', 'Kengeri', 'Rajajinagar Extension',
+  'Basaveshwara Nagar', 'Vijayanagar Extension', 'Yeshwanthpur Industrial', 'Nelamangala', 'Doddaballapur',
+  'Devanahalli', 'Yelahanka New Town', 'Jakkur', 'Bagalur', 'Vidyaranyapura', 'MS Palya', 'Byatarayanapura',
+  'BTM 2nd Stage', 'BTM 1st Stage', 'Uttarahalli', 'Girinagar',
+  'JP Nagar 1st Phase', 'JP Nagar 2nd Phase', 'JP Nagar 3rd Phase', 'JP Nagar 4th Phase', 'JP Nagar 5th Phase',
+  'JP Nagar 6th Phase', 'JP Nagar 7th Phase', 'JP Nagar 8th Phase', 'JP Nagar 9th Phase', 'Bannerghatta Road',
+  'Arekere', 'Hulimavu', 'Begur', 'HSR Sector 1', 'HSR Sector 2', 'HSR Sector 3', 'HSR Sector 4',
+  'HSR Sector 5', 'HSR Sector 6', 'HSR Sector 7', 'Arakere Mico Layout', 'Bommanahalli', 'Singasandra',
+  'Hosa Road', 'Konanakunte', 'Doddakallasandra', 'Vijaya Bank Layout', 'Padmanabhanagar', 'Hosur',
+  'Whitefield Main Road', 'ITPL', 'Kadugodi', 'Varthur Kodi', 'Panathur', 'Kundalahalli Gate',
+  'AECS Layout', 'Doddanekundi', 'Marathahalli Bridge', 'Varthur Road', 'Whitefield Road', 'Hope Farm',
+  'Budigere', 'Avalahalli', 'Bidrahalli', 'Kannamangala', 'Vaddarahalli', 'Chikkajala', 'Bagalur',
+  'KR Puram Railway Station', 'Baiyappanahalli', 'Hennur Main Road', 'Kalyan Nagar Main Road',
+  'Rajajinagar Industrial', 'Peenya Industrial', 'Jalahalli', 'Dasarahalli', 'Nagasandra', 'Tumkur Road',
+  'Nelamangala Road', 'Magadi Road', 'Mysore Road', 'Kengeri Satellite Town', 'Rajarajeshwari Nagar',
+  'Kumbalgodu', 'Anjanapura', 'Nayandahalli', 'Kengeri', 'Uttarahalli Hobli', 'Bidadi', 'Ramanagara',
+  'MG Road', 'Brigade Road', 'Commercial Street', 'Residency Road', 'Cubbon Park', 'Vidhana Soudha',
+  'Cantonment', 'Bowring', 'Richmond Circle', 'Lavelle Road', 'St Marks Road', 'Kasturba Road',
+  'Nrupathunga Road', 'Hudson Circle', 'Kempegowda Bus Stand', 'Shivajinagar Bus Stand', 'Russell Market',
+  'Church Street', 'Rest House Road', 'Cunningham Road', 'Miller Road', 'Palace Road',
+  'Kempegowda', 'Majestic Bus Stand', 'City Railway Station',
+  'Nelamangala', 'Doddaballapur', 'Devanahalli', 'Hoskote', 'Anekal', 'Jigani', 'Bidadi', 'Ramanagara', 'Ramanagaram',
+  'Magadi', 'Tumkur', 'Tumkuru', 'Kolar', 'Kolar City', 'Chikkaballapur',
+  'Adda', 'Kaknpura', 'Kakanpura', 'Kaknepura', 'Kaknepura Side', 'Kaknpura Side',
+  'Ttible', 'Ttibble', 'Tibble', 'Tibble Side',
+  'HBR Layout', 'HRBR Layout', 'KHB Layout', 'ARE Layout', 'BEML Layout', 'BEL Layout', 'ISRO Layout',
+  'BDA Layout', 'BDA Complex', 'NRI Layout', 'Prestige Layout', 'Prestige Shantiniketan',
+  'Agara', 'Akshayanagar', 'Amruthahalli', 'Anandnagar', 'Ananthapura', 'Anjanapura', 'Arakere',
+  'Arekere', 'Avalahalli', 'Bagalur', 'Baiyappanahalli', 'Banaswadi', 'Bannerghatta', 'Basapura',
+  'G.B palya', 'GB palya', 'GB Palya', 'Hongasandra', 'Mico Layout', 'Arakere Mico Layout',
+  'HSR Layout', 'Somasandrapalya', 'ITI Layout',
+  'Basavanagudi', 'Basaveshwara Nagar', 'Begur', 'Bellandur', 'BEML Layout', 'Benson Town',
+  'Bhairava Nagar', 'Bidadi', 'Bidrahalli', 'Bommanahalli', 'Bommasandra', 'Brigade Road',
+  'Brookefield', 'BTM', 'BTM Layout', 'Budigere', 'Byatarayanapura', 'Chamrajpet', 'Chickpet',
+  'Chikkaballapur', 'Chikkajala', 'Church Street', 'City Market', 'Commercial Street', 'Cooke Town',
+  'Cox Town', 'Cubbon Park', 'Cunningham', 'CV Raman Nagar', 'Dasarahalli', 'Devanahalli',
+  'Doddaballapur', 'Doddakallasandra', 'Doddanekundi', 'Domlur', 'Electronic City', 'Frazer Town',
+  'Gandhinagar', 'Girinagar', 'Gokula', 'HAL', 'Hebbal', 'Hennur', 'Hennur Main Road', 'Hoodi',
+  'Hope Farm', 'Horamavu', 'Hosa Road', 'Hoskote', 'Hosur', 'Hosur Road', 'HSR', 'HSR Sector 1',
+  'HSR Sector 2', 'HSR Sector 3', 'HSR Sector 4', 'HSR Sector 5', 'HSR Sector 6', 'HSR Sector 7',
+  'Hudson Circle', 'Hulimavu', 'Indiranagar', 'ITPL', 'Jakkur', 'Jalahalli', 'Jayanagar', 'Jigani',
+  'JP Nagar', 'JP Nagar 1st Phase', 'JP Nagar 2nd Phase', 'JP Nagar 3rd Phase', 'JP Nagar 4th Phase',
+  'JP Nagar 5th Phase', 'JP Nagar 6th Phase', 'JP Nagar 7th Phase', 'JP Nagar 8th Phase', 'JP Nagar 9th Phase',
+  'Kadubeesanahalli', 'Kadugodi', 'Kaggadasapura', 'Kalyan Nagar', 'Kalyan Nagar Main Road',
+  'Kannamangala', 'Kasturba Road', 'Kempegowda', 'Kempegowda Bus Stand', 'Kengeri', 'Kengeri Satellite Town',
+  'Konanakunte', 'Koramangala', 'Kothanur', 'KR Market', 'KR Puram', 'KR Puram Railway Station',
+  'Kumbalgodu', 'Kundalahalli', 'Kundalahalli Gate', 'Lalbagh', 'Lavelle Road', 'Magadi', 'Magadi Road',
+  'Mahadevapura', 'Majestic', 'Majestic Bus Stand', 'Marathahalli', 'Marathahalli Bridge', 'Mathikere',
+  'MG Road', 'Miller Road', 'MS Palya', 'Murphy Town', 'Murugeshpalya', 'Mysore Road', 'Nagarbhavi',
+  'Nagasandra', 'Nagavara', 'Nayandahalli', 'Nelamangala', 'Nelamangala Road', 'NRI Layout',
+  'Nrupathunga Road', 'Padmanabhanagar', 'Palace Road', 'Panathur', 'Peenya', 'Peenya Industrial',
+  'Prestige Layout', 'Prestige Shantiniketan', 'Rajarajeshwari Nagar', 'Rajajinagar', 'Rajajinagar Extension',
+  'Rajajinagar Industrial', 'Ramamurthy Nagar', 'Ramanagara', 'Ramanagaram', 'Residency Road', 'Rest House Road',
+  'Richmond', 'Richmond Circle', 'Richmond Town', 'RT Nagar', 'Russell Market', 'Sahakara Nagar',
+  'Sanjay Nagar', 'Sarjapur', 'Shanti Nagar', 'Shivajinagar', 'Shivajinagar Bus Stand', 'Singasandra', 'Seshadripuram',
+  'St Marks Road', 'Thanisandra', 'Tumkur', 'Tumkuru', 'Tumkur Road', 'Ulsoor', 'Uttarahalli', 'Uttarahalli Hobli',
+  'Vaddarahalli', 'Varthur', 'Varthur Kodi', 'Varthur Road', 'Vasanthnagar', 'Vidhana Soudha',
+  'Vidyaranyapura', 'Vijaya Bank Layout', 'Vijaya Nagar', 'Vijayanagar', 'Vijayanagar Extension',
+  'Whitefield', 'Whitefield Main Road', 'Whitefield Road', 'Wilson Garden', 'Yelahanka', 'Yelahanka New Town',
+  'Yeshwanthpur', 'Yeshwanthpur Industrial'
+];
+
+// Calculate Levenshtein distance for fuzzy matching
+const levenshteinDistance = (str1: string, str2: string): number => {
+  const s1 = str1.toLowerCase();
+  const s2 = str2.toLowerCase();
+  const matrix: number[][] = [];
+
+  for (let i = 0; i <= s2.length; i++) {
+    matrix[i] = [i];
+  }
+
+  for (let j = 0; j <= s1.length; j++) {
+    matrix[0][j] = j;
+  }
+
+  for (let i = 1; i <= s2.length; i++) {
+    for (let j = 1; j <= s1.length; j++) {
+      if (s2.charAt(i - 1) === s1.charAt(j - 1)) {
+        matrix[i][j] = matrix[i - 1][j - 1];
+      } else {
+        matrix[i][j] = Math.min(
+          matrix[i - 1][j - 1] + 1,
+          matrix[i][j - 1] + 1,
+          matrix[i - 1][j] + 1
+        );
+      }
+    }
+  }
+
+  return matrix[s2.length][s1.length];
+};
+
+// Calculate similarity score (0-1, where 1 is perfect match)
+const calculateSimilarity = (str1: string, str2: string): number => {
+  const maxLen = Math.max(str1.length, str2.length);
+  if (maxLen === 0) return 1;
+  const distance = levenshteinDistance(str1, str2);
+  return 1 - distance / maxLen;
+};
+
+// Extract location from address string (same as admin dashboard)
+const extractLocationFromAddressString = (completeAddress: string): string | null => {
+  if (!completeAddress || completeAddress.trim().length === 0) {
+    return null;
+  }
+
+  const uniqueAreas = [...new Set(bangaloreAreas)];
+  
+  const addressParts = completeAddress
+    .split(/[,\s]+/)
+    .map(part => part.trim())
+    .filter(part => part.length > 2);
+
+  // First, try exact matches
+  for (const part of addressParts) {
+    const partLower = part.toLowerCase();
+    const exactMatch = uniqueAreas.find(area => 
+      area.toLowerCase() === partLower
+    );
+    if (exactMatch) {
+      return exactMatch;
+    }
+  }
+
+  // Second, try multi-word exact matches
+  for (let i = 0; i < addressParts.length - 1; i++) {
+    const twoWordPart = `${addressParts[i]} ${addressParts[i + 1]}`.toLowerCase();
+    const multiWordMatch = uniqueAreas.find(area => 
+      area.toLowerCase() === twoWordPart
+    );
+    if (multiWordMatch) {
+      return multiWordMatch;
+    }
+  }
+
+  // Third, try strict partial matches
+  for (const part of addressParts) {
+    if (part.length < 5) continue;
+    const partLower = part.toLowerCase();
+    const partialMatch = uniqueAreas.find(area => {
+      const areaLower = area.toLowerCase();
+      if (areaLower.includes(partLower)) {
+        return partLower.length >= areaLower.length * 0.7;
+      }
+      if (partLower.includes(areaLower)) {
+        return areaLower.length >= partLower.length * 0.7;
+      }
+      return false;
+    });
+    if (partialMatch) {
+      return partialMatch;
+    }
+  }
+
+  // Last resort: fuzzy matching
+  let bestMatch: string | null = null;
+  let bestScore = 0.85;
+
+  for (const part of addressParts) {
+    if (part.length < 6) continue;
+
+    for (const area of uniqueAreas) {
+      const lengthDiff = Math.abs(area.length - part.length) / Math.max(area.length, part.length);
+      if (lengthDiff > 0.3) continue;
+
+      const similarity = calculateSimilarity(part, area);
+      
+      if (similarity > bestScore) {
+        bestScore = similarity;
+        bestMatch = area;
+      }
+    }
+  }
+
+  return bestMatch;
+};
+
 const TechnicianDashboard = () => {
   const { user, logout, isTechnician, loading } = useAuth();
   const navigate = useNavigate();
@@ -1793,23 +1987,68 @@ const TechnicianDashboard = () => {
   const getAllCustomerPhotos = async (customerId: string): Promise<string[]> => {
     try {
       setLoadingCustomerPhotos(true);
-      const { data: customerJobs, error } = await db.jobs.getByCustomerId(customerId);
+      
+      // First, check if customerId is customer_id (string) or UUID
+      // If it's customer_id, we need to get the customer's UUID first
+      let customerUuid = customerId;
+      
+      // Check if it looks like a customer_id (starts with 'C' and has numbers) or is a UUID
+      if (customerId && customerId.startsWith('C') && customerId.length < 36) {
+        // It's a customer_id, need to get UUID
+        const { data: customer, error: customerError } = await db.customers.getByCustomerId(customerId);
+        if (customerError || !customer) {
+          console.error('Error fetching customer:', customerError);
+          return [];
+        }
+        customerUuid = customer.id;
+      }
+      
+      const { data: customerJobs, error } = await db.jobs.getByCustomerId(customerUuid);
       
       if (error) {
         console.error('Error fetching customer jobs:', error);
         return [];
       }
       
-      const allPhotos: string[] = [];
+      // Extract URLs from Cloudinary objects or use as-is if already strings
+      const extractPhotoUrls = (photos: any[]): string[] => {
+        if (!Array.isArray(photos)) return [];
+        return photos.map(photo => {
+          if (typeof photo === 'string' && photo.trim() !== '') {
+            return photo.trim();
+          } else if (photo && typeof photo === 'object' && photo.secure_url) {
+            return photo.secure_url;
+          } else if (photo && typeof photo === 'object' && photo.url) {
+            return photo.url;
+          }
+          return null;
+        }).filter((url): url is string => {
+          return url !== null && url !== '';
+        });
+      };
+      
+      const photoSet = new Set<string>(); // Use Set to avoid duplicates
       
       if (customerJobs && Array.isArray(customerJobs)) {
         customerJobs.forEach((job: any) => {
-          // Get photos from each job
-          if (job.beforePhotos && Array.isArray(job.beforePhotos)) allPhotos.push(...job.beforePhotos);
-          if (job.before_photos && Array.isArray(job.before_photos)) allPhotos.push(...job.before_photos);
-          if (job.afterPhotos && Array.isArray(job.afterPhotos)) allPhotos.push(...job.afterPhotos);
-          if (job.after_photos && Array.isArray(job.after_photos)) allPhotos.push(...job.after_photos);
-          if (job.images && Array.isArray(job.images)) allPhotos.push(...job.images);
+          // Get photos from before_photos field
+          const jobBeforePhotos = Array.isArray(job.before_photos || job.beforePhotos) 
+            ? (job.before_photos || job.beforePhotos) 
+            : [];
+          const extractedBeforePhotos = extractPhotoUrls(jobBeforePhotos);
+          extractedBeforePhotos.forEach(url => photoSet.add(url));
+          
+          // Get photos from after_photos field
+          const jobAfterPhotos = Array.isArray(job.after_photos || job.afterPhotos) 
+            ? (job.after_photos || job.afterPhotos) 
+            : [];
+          const extractedAfterPhotos = extractPhotoUrls(jobAfterPhotos);
+          extractedAfterPhotos.forEach(url => photoSet.add(url));
+          
+          // Also check if there are photos in the images field
+          const jobImages = Array.isArray(job.images) ? job.images : [];
+          const extractedImages = extractPhotoUrls(jobImages);
+          extractedImages.forEach(url => photoSet.add(url));
           
           // Get photos from job requirements (bill photos, payment photos)
           if (job.requirements) {
@@ -1821,45 +2060,44 @@ const TechnicianDashboard = () => {
               if (Array.isArray(requirements)) {
                 requirements.forEach((req: any) => {
                   if (req.bill_photos && Array.isArray(req.bill_photos)) {
-                    req.bill_photos.forEach((photo: string) => {
-                      if (photo && typeof photo === 'string' && photo.trim() !== '') {
-                        allPhotos.push(photo.trim());
-                      }
+                    req.bill_photos.forEach((photo: any) => {
+                      const photoUrls = extractPhotoUrls([photo]);
+                      photoUrls.forEach(url => photoSet.add(url));
                     });
                   }
                   if (req.payment_photos && Array.isArray(req.payment_photos)) {
-                    req.payment_photos.forEach((photo: string) => {
-                      if (photo && typeof photo === 'string' && photo.trim() !== '') {
-                        allPhotos.push(photo.trim());
-                      }
+                    req.payment_photos.forEach((photo: any) => {
+                      const photoUrls = extractPhotoUrls([photo]);
+                      photoUrls.forEach(url => photoSet.add(url));
                     });
                   }
                 });
               } else if (typeof requirements === 'object' && requirements !== null) {
                 if (requirements.bill_photos && Array.isArray(requirements.bill_photos)) {
-                  requirements.bill_photos.forEach((photo: string) => {
-                    if (photo && typeof photo === 'string' && photo.trim() !== '') {
-                      allPhotos.push(photo.trim());
-                    }
+                  requirements.bill_photos.forEach((photo: any) => {
+                    const photoUrls = extractPhotoUrls([photo]);
+                    photoUrls.forEach(url => photoSet.add(url));
                   });
                 }
                 if (requirements.payment_photos && Array.isArray(requirements.payment_photos)) {
-                  requirements.payment_photos.forEach((photo: string) => {
-                    if (photo && typeof photo === 'string' && photo.trim() !== '') {
-                      allPhotos.push(photo.trim());
-                    }
+                  requirements.payment_photos.forEach((photo: any) => {
+                    const photoUrls = extractPhotoUrls([photo]);
+                    photoUrls.forEach(url => photoSet.add(url));
                   });
                 }
               }
             } catch (e) {
               // Ignore parse errors
+              console.error('Error parsing requirements:', e);
             }
           }
         });
       }
       
-      // Remove duplicates and filter out empty values
-      const uniquePhotos = Array.from(new Set(allPhotos.filter(photo => photo && photo.trim() !== '')));
+      // Convert Set to Array
+      const uniquePhotos = Array.from(photoSet);
+      console.log(`Total unique photos found for customer: ${uniquePhotos.length}`);
+      
       return uniquePhotos;
     } catch (error) {
       console.error('Error in getAllCustomerPhotos:', error);
@@ -2980,16 +3218,16 @@ const TechnicianDashboard = () => {
                                 <div className="text-sm font-semibold text-gray-900">Location</div>
                                 <div className="text-xs text-gray-500">
                                   {(() => {
-                                    // Exactly like admin dashboard - check both customer.visible_address and customer.address.visible_address
                                     const customer = job.customer as any;
-                                    const visibleAddress = customer?.visible_address || (customer?.address as any)?.visible_address;
                                     
+                                    // First priority: Use visible_address from database (saved by admin)
+                                    const visibleAddress = customer?.visible_address;
                                     if (visibleAddress && String(visibleAddress).trim()) {
+                                      const visibleAddr = String(visibleAddress).trim();
                                       return (
                                         <button
                                           onClick={(e) => {
                                             e.stopPropagation();
-                                            // Mark job as seen when clicking address
                                             markJobAsSeen(job.id);
                                             setSelectedJobForAddress(job);
                                             setAddressDialogOpen(prev => ({ ...prev, [job.id]: true }));
@@ -2997,17 +3235,57 @@ const TechnicianDashboard = () => {
                                           className="text-left text-black hover:text-gray-700 hover:underline transition-colors cursor-pointer font-medium w-full text-left"
                                           title="Click to view full address"
                                         >
-                                          {String(visibleAddress).trim()}
+                                          {visibleAddr}
                                         </button>
                                       );
                                     }
                                     
-                                    // If no visible_address, check if there's any address
+                                    // Fallback: Extract location from address.street if visible_address is missing
+                                    const addressStreet = customer?.address?.street || '';
+                                    if (addressStreet && String(addressStreet).trim()) {
+                                      const extractedLocation = extractLocationFromAddressString(String(addressStreet).trim());
+                                      if (extractedLocation) {
+                                        return (
+                                          <button
+                                            onClick={(e) => {
+                                              e.stopPropagation();
+                                              markJobAsSeen(job.id);
+                                              setSelectedJobForAddress(job);
+                                              setAddressDialogOpen(prev => ({ ...prev, [job.id]: true }));
+                                            }}
+                                            className="text-left text-black hover:text-gray-700 hover:underline transition-colors cursor-pointer font-medium w-full text-left"
+                                            title="Click to view full address"
+                                          >
+                                            {extractedLocation}
+                                          </button>
+                                        );
+                                      }
+                                    }
+                                    
+                                    // Fallback: try address.area
+                                    const area = customer?.address?.area;
+                                    if (area && String(area).trim()) {
+                                      return (
+                                        <button
+                                          onClick={(e) => {
+                                            e.stopPropagation();
+                                            markJobAsSeen(job.id);
+                                            setSelectedJobForAddress(job);
+                                            setAddressDialogOpen(prev => ({ ...prev, [job.id]: true }));
+                                          }}
+                                          className="text-left text-black hover:text-gray-700 hover:underline transition-colors cursor-pointer font-medium w-full text-left"
+                                          title="Click to view full address"
+                                        >
+                                          {String(area).trim()}
+                                        </button>
+                                      );
+                                    }
+                                    
+                                    // If no location found, check if there's any address
                                     return customer?.address ? (
                                       <button
                                         onClick={(e) => {
                                           e.stopPropagation();
-                                          // Mark job as seen when clicking address
                                           markJobAsSeen(job.id);
                                           setSelectedJobForAddress(job);
                                           setAddressDialogOpen(prev => ({ ...prev, [job.id]: true }));
