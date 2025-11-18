@@ -1517,6 +1517,11 @@ const TechnicianDashboard = () => {
     setAmcIncludesPrefilter(false);
     setHasAMC(false);
     setPaymentMode('');
+    // Initialize customerHasPrefilter from customer's existing value if available
+    const customerPrefilter = jobWithCustomer.customer 
+      ? ((jobWithCustomer.customer as any).has_prefilter ?? (jobWithCustomer.customer as any).hasPrefilter ?? null)
+      : null;
+    setCustomerHasPrefilter(customerPrefilter);
     setCompleteDialogOpen(true);
   };
 

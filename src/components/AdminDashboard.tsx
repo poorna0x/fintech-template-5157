@@ -1574,6 +1574,7 @@ const AdminDashboard = () => {
                     preferredLanguage: (editFormData.native_language || 'ENGLISH') as 'ENGLISH' | 'HINDI' | 'KANNADA' | 'TAMIL' | 'TELUGU',
                     status: editFormData.status as 'ACTIVE' | 'INACTIVE' | 'BLOCKED',
                     notes: editFormData.notes,
+                    has_prefilter: editFormData.has_prefilter,
                     address: updatedAddress,
                     location: newLocation as any
                   };
@@ -1813,13 +1814,24 @@ const AdminDashboard = () => {
       })(),
       custom_time: customer.customTime || (customer as any).custom_time || '',
       address: {
-        street: [
-          customer.address?.street,
-          customer.address?.area,
-          customer.address?.city,
-          customer.address?.state,
-          customer.address?.pincode
-        ].filter(Boolean).join(', ') || '',
+        // If street already contains a full address (has commas or is long), use it as-is
+        // Otherwise, join all address components
+        street: (() => {
+          const existingStreet = customer.address?.street || '';
+          // If street already looks like a full address (contains commas or is substantial), use it
+          if (existingStreet.includes(',') || existingStreet.length > 30) {
+            return existingStreet;
+          }
+          // Otherwise, join all components
+          const joined = [
+            customer.address?.street,
+            customer.address?.area,
+            customer.address?.city,
+            customer.address?.state,
+            customer.address?.pincode
+          ].filter(Boolean).join(', ');
+          return joined || existingStreet || '';
+        })(),
         area: customer.address?.area || '',
         city: customer.address?.city || '',
         state: customer.address?.state || '',
@@ -2064,7 +2076,7 @@ const AdminDashboard = () => {
     }
   };
 
-  const handleEditFormChange = (field: string, value: string | string[]) => {
+  const handleEditFormChange = (field: string, value: string | string[] | boolean | null) => {
     setEditFormData(prev => ({
       ...prev,
       [field]: value
@@ -2713,17 +2725,22 @@ const AdminDashboard = () => {
       // Extract location keyword from address
       const extractedLocation = address ? extractLocationFromAddressString(address) : null;
       
+      // When fetching a new address, replace the entire address object to avoid duplication
+      // Don't merge with previous address components
       setEditFormData(prev => ({
         ...prev,
         location: {
           ...prev.location,
           latitude: coords.latitude,
           longitude: coords.longitude,
-          formattedAddress: address || prev.address.street || ''
+          formattedAddress: address || prev.location.formattedAddress || ''
         },
         address: {
-          ...prev.address,
-          street: address || prev.address.street || ''
+          street: address || prev.address.street || '',
+          area: '', // Clear individual components when fetching full address
+          city: '',
+          state: '',
+          pincode: ''
         },
         visible_address: (!locationManuallyEditedRef.current && extractedLocation) 
           ? extractedLocation.substring(0, 20) 
@@ -2770,17 +2787,22 @@ const AdminDashboard = () => {
         // Extract location keyword from address
         const extractedLocation = address ? extractLocationFromAddressString(address) : null;
         
+        // When fetching a new address, replace the entire address object to avoid duplication
+        // Don't merge with previous address components
         setEditFormData(prev => ({
           ...prev,
           location: {
             ...prev.location,
             latitude: coords.latitude,
             longitude: coords.longitude,
-            formattedAddress: address || prev.address.street || ''
+            formattedAddress: address || prev.location.formattedAddress || ''
           },
           address: {
-            ...prev.address,
-            street: address || prev.address.street || ''
+            street: address || prev.address.street || '',
+            area: '', // Clear individual components when fetching full address
+            city: '',
+            state: '',
+            pincode: ''
           },
           visible_address: (!locationManuallyEditedRef.current && extractedLocation) 
             ? extractedLocation.substring(0, 20) 
@@ -5162,7 +5184,11 @@ const AdminDashboard = () => {
     setAmcIncludesPrefilter(false);
     setHasAMC(false);
     setPaymentMode('');
-    setCustomerHasPrefilter(null);
+    // Initialize customerHasPrefilter from customer's existing value if available
+    const customerPrefilter = jobWithCustomer.customer 
+      ? ((jobWithCustomer.customer as any).has_prefilter ?? (jobWithCustomer.customer as any).hasPrefilter ?? null)
+      : null;
+    setCustomerHasPrefilter(customerPrefilter);
     setQrCodeType('');
     setSelectedQrCodeId('');
     setPaymentScreenshot('');

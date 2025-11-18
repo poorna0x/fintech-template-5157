@@ -414,6 +414,7 @@ export interface Database {
           preferred_language?: string;
           service_cost?: number;
           cost_agreed?: boolean;
+          has_prefilter?: boolean | null;
           created_at: string;
           updated_at: string;
         };
