@@ -1528,8 +1528,8 @@ const TechnicianDashboard = () => {
     if (completeJobStep === 3) {
       if (!paymentMode) {
         toast.error('Please select a payment mode');
-        return;
-      }
+      return;
+    }
       // If Cash, skip to step 5 (AMC)
       if (paymentMode === 'CASH') {
       setCompleteJobStep(5);
@@ -2356,27 +2356,6 @@ const TechnicianDashboard = () => {
                               </div>
 
 
-                              {/* Equipment - Fetch from customer info first, then job */}
-                              {(() => {
-                                const customer = job.customer as any;
-                                // Try customer first, then job
-                                const brand = customer?.brand || job?.brand || '';
-                                const model = customer?.model || job?.model || '';
-                                const validBrand = brand && brand !== 'Not specified' && brand.toLowerCase() !== 'not specified' ? brand : '';
-                                const validModel = model && model !== 'Not specified' && model.toLowerCase() !== 'not specified' ? model : '';
-                                
-                                if (validBrand || validModel) {
-                                  return (
-                                    <div className="text-sm">
-                                      <span className="font-medium text-gray-700">Equipment: </span>
-                                      <span className="text-gray-600">
-                                        {validBrand && validModel ? `${validBrand} - ${validModel}` : validBrand || validModel}
-                                      </span>
-                                    </div>
-                                  );
-                                }
-                                return null;
-                              })()}
 
                               {/* Agreed Amount */}
                               {job?.agreed_amount || job?.estimated_cost || customer?.serviceCost ? (
@@ -2624,12 +2603,26 @@ const TechnicianDashboard = () => {
                           const customer = job.customer as any;
                           const jobData = job as any;
                           
-                          // Try all possible field name variations - prioritize job-specific brand/model
-                          let brand = jobData.brand || job.brand || '';
-                          let model = jobData.model || job.model || '';
+                          // Helper function to check if value is valid (not empty, not "Not specified")
+                          const isValidValue = (val: string) => {
+                            return val && 
+                              val !== 'Not specified' && 
+                              val.toLowerCase() !== 'not specified' && 
+                              val.trim() !== '';
+                          };
                           
-                          // If job doesn't have brand/model, try to get from customer
-                          // Customer might have comma-separated values for multiple service types
+                          // Get job brand/model
+                          const jobBrand = jobData.brand || job.brand || '';
+                          const jobModel = jobData.model || job.model || '';
+                          
+                          // Check if job has valid brand/model (treat "Not specified" as empty)
+                          const hasValidJobBrand = isValidValue(jobBrand);
+                          const hasValidJobModel = isValidValue(jobModel);
+                          
+                          let brand = hasValidJobBrand ? jobBrand : '';
+                          let model = hasValidJobModel ? jobModel : '';
+                          
+                          // If job doesn't have valid brand/model, try to get from customer
                           if (!brand || !model) {
                             const customerBrand = customer?.brand || '';
                             const customerModel = customer?.model || '';
@@ -2643,44 +2636,83 @@ const TechnicianDashboard = () => {
                               // Try to match service type to get the right brand/model
                               // For RO jobs, use first brand/model; for SOFTENER, use second if available
                               if (jobServiceType === 'RO' || jobServiceType === '') {
-                                brand = brand || brands[0] || '';
-                                model = model || (models[0] || '');
+                                if (!brand) brand = brands[0] || '';
+                                if (!model) model = models[0] || '';
                               } else if (jobServiceType === 'SOFTENER' && brands.length > 1) {
-                                brand = brand || brands[1] || brands[0] || '';
-                                model = model || (models[1] || models[0] || '');
+                                if (!brand) brand = brands[1] || brands[0] || '';
+                                if (!model) model = models[1] || models[0] || '';
                               } else {
                                 // Fallback: use first available
-                                brand = brand || brands[0] || '';
-                                model = model || (models[0] || '');
+                                if (!brand) brand = brands[0] || '';
+                                if (!model) model = models[0] || '';
                               }
                             } else {
-                              // Customer has single brand/model values
-                              brand = brand || customerBrand || '';
-                              model = model || customerModel || '';
+                              // Customer has single brand/model values - only use if valid
+                              if (!brand && isValidValue(customerBrand)) brand = customerBrand;
+                              if (!model && isValidValue(customerModel)) model = customerModel;
                             }
                           }
                           
                           // Filter out "Not specified" values - only show if we have actual values
-                          const validBrand = brand && 
-                            brand !== 'Not specified' && 
-                            brand.toLowerCase() !== 'not specified' && 
-                            brand.trim() !== '' ? brand : '';
-                          const validModel = model && 
-                            model !== 'Not specified' && 
-                            model.toLowerCase() !== 'not specified' && 
-                            model.trim() !== '' ? model : '';
+                          const validBrand = isValidValue(brand) ? brand.trim() : '';
+                          const validModel = isValidValue(model) ? model.trim() : '';
                           
-                          // Only show if we have at least a brand
+                          // Debug logging
+                          if (import.meta.env.DEV) {
+                            console.log('🔧 Technician Equipment:', {
+                              jobId: job.id,
+                              jobBrand,
+                              jobModel,
+                              customerBrand: customer?.brand,
+                              customerModel: customer?.model,
+                              finalBrand: brand,
+                              finalModel: model,
+                              validBrand,
+                              validModel
+                            });
+                          }
+                          
+                          // Show equipment if we have a valid brand or model
                           if (validBrand || validModel) {
+                            const displayText = validBrand && validModel 
+                              ? `${validBrand} - ${validModel}` 
+                              : validBrand || validModel;
+                            
                             return (
                               <div className="text-sm text-gray-700">
-                                <span className="font-medium">Brand/Model:</span>{' '}
+                                <span className="font-medium">Equipment:</span>{' '}
                                 <span className="text-gray-600">
-                                  {validBrand && validModel ? `${validBrand} - ${validModel}` : validBrand || validModel}
-                                </span>
-                              </div>
+                                  {displayText}
+                        </span>
+                      </div>
                             );
                           }
+                          
+                          // If no valid brand/model but we have customer data, show it anyway
+                          if (customer?.brand && customer.brand.trim() !== '') {
+                            const displayBrand = customer.brand.includes(',') 
+                              ? customer.brand.split(',')[0].trim() 
+                              : customer.brand.trim();
+                            const displayModel = customer?.model && customer.model.includes(',')
+                              ? customer.model.split(',')[0].trim()
+                              : customer?.model ? customer.model.trim() : '';
+                            
+                            if (displayBrand && displayBrand !== 'Not specified') {
+                              const displayText = displayModel && displayModel !== 'Not specified'
+                                ? `${displayBrand} - ${displayModel}`
+                                : displayBrand;
+                              
+                              return (
+                                <div className="text-sm text-gray-700">
+                                  <span className="font-medium">Equipment:</span>{' '}
+                                  <span className="text-gray-600">
+                                    {displayText}
+                                  </span>
+                                </div>
+                              );
+                            }
+                          }
+                          
                           return null;
                         })()}
                         {/* Scheduled Date and Time */}
@@ -2748,10 +2780,6 @@ const TechnicianDashboard = () => {
                           }
                           return null;
                         })()}
-                      </div>
-                      {/* Buttons below - nicely sized */}
-                      <div className="flex items-center gap-2 mb-3">
-                        {getStatusActions(job)}
                       </div>
 
                       <div className="space-y-3 mb-4">
@@ -2938,27 +2966,10 @@ const TechnicianDashboard = () => {
                           )}
                             </div>
                             
-                        {/* Equipment - Fetch from customer info first, then job */}
-                        {(() => {
-                          const customer = job.customer as any;
-                          // Try customer first, then job
-                          const brand = customer?.brand || job.brand || '';
-                          const model = customer?.model || job.model || '';
-                          const validBrand = brand && brand !== 'Not specified' && brand.toLowerCase() !== 'not specified' ? brand : '';
-                          const validModel = model && model !== 'Not specified' && model.toLowerCase() !== 'not specified' ? model : '';
-                          
-                          if (validBrand || validModel) {
-                            return (
-                              <div className="text-sm">
-                                <span className="font-medium text-gray-700">Equipment: </span>
-                                <span className="text-gray-600">
-                                  {validBrand && validModel ? `${validBrand} - ${validModel}` : validBrand || validModel}
-                                </span>
+                        {/* Job Action Buttons - Below contact info */}
+                        <div className="flex items-center gap-2 mt-3">
+                          {getStatusActions(job)}
                             </div>
-                            );
-                          }
-                          return null;
-                        })()}
 
                         {/* Agreed Amount */}
                         {(job as any).agreed_amount || (job as any).estimated_cost || (job.customer as any)?.serviceCost ? (
@@ -3022,15 +3033,87 @@ const TechnicianDashboard = () => {
                             <p><strong>Service Type:</strong> {job?.service_type} - {job?.service_sub_type}</p>
                             {(() => {
                               const customer = job?.customer as any;
-                              // Try customer first, then job
-                              const brand = customer?.brand || job?.brand || '';
-                              const model = customer?.model || job?.model || '';
-                              const validBrand = brand && brand !== 'Not specified' && brand.toLowerCase() !== 'not specified' ? brand : '';
-                              const validModel = model && model !== 'Not specified' && model.toLowerCase() !== 'not specified' ? model : '';
+                              const jobData = job as any;
+                              
+                              // Helper function to check if value is valid (not empty, not "Not specified")
+                              const isValidValue = (val: string) => {
+                                return val && 
+                                  val !== 'Not specified' && 
+                                  val.toLowerCase() !== 'not specified' && 
+                                  val.trim() !== '';
+                              };
+                              
+                              // Get job brand/model
+                              const jobBrand = jobData.brand || job?.brand || '';
+                              const customerBrand = customer?.brand || '';
+                              
+                              // Check if job has valid brand (treat "Not specified" as empty)
+                              const hasValidJobBrand = isValidValue(jobBrand);
+                              
+                              let brand = hasValidJobBrand ? jobBrand : '';
+                              
+                              // If job doesn't have valid brand, try to get from customer
+                              if (!brand && customerBrand) {
+                                const jobServiceType = (jobData.service_type || job?.service_type || '').toUpperCase();
+                                
+                                // If customer has comma-separated values, parse them based on service type
+                                if (customerBrand.includes(',')) {
+                                  const brands = customerBrand.split(',').map((b: string) => b.trim());
+                                  
+                                  // For RO jobs, use first brand; for SOFTENER, use second if available
+                                  if (jobServiceType === 'RO' || jobServiceType === '') {
+                                    brand = brands[0] || '';
+                                  } else if (jobServiceType === 'SOFTENER' && brands.length > 1) {
+                                    brand = brands[1] || brands[0] || '';
+                                  } else {
+                                    brand = brands[0] || '';
+                                  }
+                                } else {
+                                  // Customer has single brand value - only use if valid
+                                  if (isValidValue(customerBrand)) brand = customerBrand;
+                                }
+                              }
+                              
+                              // Get model if available
+                              const jobModel = jobData.model || job?.model || '';
+                              const customerModel = customer?.model || '';
+                              
+                              const hasValidJobModel = isValidValue(jobModel);
+                              let model = hasValidJobModel ? jobModel : '';
+                              
+                              // If job doesn't have valid model, try to get from customer
+                              if (!model && customerModel) {
+                                const jobServiceType = (jobData.service_type || job?.service_type || '').toUpperCase();
+                                
+                                // If customer has comma-separated values, parse them based on service type
+                                if (customerModel.includes(',')) {
+                                  const models = customerModel.split(',').map((m: string) => m.trim());
+                                  
+                                  // For RO jobs, use first model; for SOFTENER, use second if available
+                                  if (jobServiceType === 'RO' || jobServiceType === '') {
+                                    model = models[0] || '';
+                                  } else if (jobServiceType === 'SOFTENER' && models.length > 1) {
+                                    model = models[1] || models[0] || '';
+                                  } else {
+                                    model = models[0] || '';
+                                  }
+                                } else {
+                                  // Customer has single model value - only use if valid
+                                  if (isValidValue(customerModel)) model = customerModel;
+                                }
+                              }
+                              
+                              // Filter out "Not specified" values - only show if we have actual values
+                              const validBrand = isValidValue(brand) ? brand.trim() : '';
+                              const validModel = isValidValue(model) ? model.trim() : '';
                               
                               if (validBrand || validModel) {
+                                const displayText = validBrand && validModel 
+                                  ? `${validBrand} - ${validModel}` 
+                                  : validBrand || validModel;
+                                
                                 return (
-                                  <p><strong>Brand/Model:</strong> {validBrand && validModel ? `${validBrand} - ${validModel}` : validBrand || validModel}</p>
+                                  <p><strong>Equipment:</strong> {displayText}</p>
                                 );
                               }
                               return null;
@@ -3593,28 +3676,28 @@ const TechnicianDashboard = () => {
               {completeJobStep === 3 && (
                 <div className="space-y-4">
                   <div>
-                    <Label htmlFor="payment-mode">Payment Mode *</Label>
-                    <Select 
-                      value={paymentMode} 
-                      onValueChange={(value: 'CASH' | 'ONLINE') => {
-                        setPaymentMode(value);
-                        // Reset QR code fields when changing payment mode
-                        if (value === 'CASH') {
+                      <Label htmlFor="payment-mode">Payment Mode *</Label>
+                      <Select 
+                        value={paymentMode} 
+                        onValueChange={(value: 'CASH' | 'ONLINE') => {
+                          setPaymentMode(value);
+                          // Reset QR code fields when changing payment mode
+                          if (value === 'CASH') {
                           setQrCodeType('');
                           setSelectedQrCodeId('');
                           setPaymentScreenshot('');
-                        }
-                      }}
-                    >
-                      <SelectTrigger className="mt-1">
-                        <SelectValue placeholder="Select payment mode" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="CASH">Cash</SelectItem>
-                        <SelectItem value="ONLINE">Online</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
+                          }
+                        }}
+                      >
+                        <SelectTrigger className="mt-1">
+                          <SelectValue placeholder="Select payment mode" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="CASH">Cash</SelectItem>
+                          <SelectItem value="ONLINE">Online</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
                   
                   {paymentMode === 'ONLINE' && (
                     <div className="space-y-4 pl-4 border-l-2 border-gray-200">
@@ -3646,11 +3729,11 @@ const TechnicianDashboard = () => {
                                 {/* Common QR Codes Section */}
                                 {commonQrCodes.length > 0 && (
                                   <>
-                                    {commonQrCodes.map((qr) => (
-                                      <SelectItem key={`common_${qr.id}`} value={`common_${qr.id}`}>
-                                        {qr.name}
-                                      </SelectItem>
-                                    ))}
+                            {commonQrCodes.map((qr) => (
+                              <SelectItem key={`common_${qr.id}`} value={`common_${qr.id}`}>
+                                {qr.name}
+                              </SelectItem>
+                            ))}
                                   </>
                                 )}
                                 
@@ -3660,7 +3743,7 @@ const TechnicianDashboard = () => {
                                   .map((tech) => (
                                     <SelectItem key={`technician_${tech.id}`} value={`technician_${tech.id}`}>
                                       {tech.fullName}'s QR Code
-                                    </SelectItem>
+                            </SelectItem>
                                   ))}
                               </>
                             )}
@@ -3725,34 +3808,34 @@ const TechnicianDashboard = () => {
                                 </div>
                               );
                             })() : null}
+                                </div>
                         </div>
-                      </div>
                     )}
                   </div>
                 )}
-              </div>
-              )}
+                      </div>
+                    )}
 
               {/* Step 4: Payment Screenshot (only for ONLINE payment) */}
               {completeJobStep === 4 && paymentMode === 'ONLINE' && (
                 <div className="space-y-4">
                   <div>
-                    <Label>Payment Screenshot (Optional)</Label>
-                    <p className="text-sm text-gray-500 mb-2">Upload payment confirmation screenshot</p>
-                    <ImageUpload
-                      onImagesChange={(images) => setPaymentScreenshot(images[0] || '')}
-                      maxImages={1}
-                      folder="payment-receipts"
-                      title=""
-                      description=""
-                      maxWidth={800}
-                      quality={0.3}
-                      aggressiveCompression={true}
-                      useSecondaryAccount={true}
-                    />
+                        <Label>Payment Screenshot (Optional)</Label>
+                        <p className="text-sm text-gray-500 mb-2">Upload payment confirmation screenshot</p>
+                        <ImageUpload
+                          onImagesChange={(images) => setPaymentScreenshot(images[0] || '')}
+                          maxImages={1}
+                          folder="payment-receipts"
+                          title=""
+                          description=""
+                          maxWidth={800}
+                          quality={0.3}
+                          aggressiveCompression={true}
+                          useSecondaryAccount={true}
+                        />
+                      </div>
                   </div>
-                </div>
-              )}
+                )}
 
               {/* Step 5: AMC Info */}
               {completeJobStep === 5 && (

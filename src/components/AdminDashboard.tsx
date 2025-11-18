@@ -6821,15 +6821,19 @@ const AdminDashboard = () => {
                                         return null;
                                       }
                                       
-                                      // Show Equipment section with brand only (no model)
+                                      // Show Equipment section with brand and/or model
                                       if (validBrand || validModel) {
+                                        const displayText = validBrand && validModel 
+                                          ? `${validBrand} - ${validModel}` 
+                                          : validBrand || validModel;
+                                        
                                         return (
                                           <div className="flex items-start gap-2 sm:items-center">
                                             <Wrench className="w-4 h-4 text-gray-400 flex-shrink-0 mt-0.5 sm:mt-0" />
                                             <div className="min-w-0 flex-1">
                                               <div className="text-xs text-gray-500">Equipment</div>
                                               <div className="font-medium text-gray-900 break-words">
-                                                {validBrand || 'Not specified'}
+                                                {displayText}
                                               </div>
                                             </div>
                                           </div>
