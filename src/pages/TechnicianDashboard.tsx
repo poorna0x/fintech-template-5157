@@ -937,8 +937,14 @@ const TechnicianDashboard = () => {
       // Filter for follow-up jobs (FOLLOW_UP status)
       filtered = filtered.filter(job => job.status === 'FOLLOW_UP');
     } else if (statusFilter === 'CANCELLED') {
-      // Filter for denied jobs (DENIED status)
-      filtered = filtered.filter(job => job.status === 'DENIED');
+      // Filter for denied jobs (DENIED status) - only show jobs denied by this technician
+      const technicianName = user?.fullName || '';
+      filtered = filtered.filter(job => {
+        if (job.status !== 'DENIED') return false;
+        const deniedBy = (job as any).denied_by || job.deniedBy || '';
+        // Only show if denied by this technician (not by admin)
+        return deniedBy && deniedBy !== 'Admin' && deniedBy === technicianName;
+      });
     } else if (statusFilter !== 'ALL') {
       filtered = filtered.filter(job => {
         const status = (job as any).status || job.status;
@@ -1498,9 +1504,18 @@ const TechnicianDashboard = () => {
       setDenyDialogOpen(false);
       setSelectedJobForDeny(null);
       setDenyReason('');
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error denying job:', error);
-      toast.error('Failed to deny job');
+      const errorMessage = error?.message || 'Failed to deny job';
+      
+      // Check if it's a column missing error
+      if (errorMessage.includes('denial_reason') || errorMessage.includes('denied_by') || errorMessage.includes('denied_at') || errorMessage.includes('400')) {
+        toast.error('Database columns missing. Please run the migration: add-denial-fields-to-jobs.sql', {
+          duration: 8000,
+        });
+      } else {
+        toast.error(errorMessage);
+      }
     }
   };
 
@@ -2066,7 +2081,13 @@ const TechnicianDashboard = () => {
     return !['FOLLOW_UP', 'DENIED', 'COMPLETED'].includes(status);
   }).length; // Jobs excluding follow-up, denied, and completed
   const followUpCount = jobs.filter(job => job.status === 'FOLLOW_UP').length;
-  const deniedCount = jobs.filter(job => job.status === 'DENIED').length;
+  const deniedCount = jobs.filter(job => {
+    if (job.status !== 'DENIED') return false;
+    const technicianName = user?.fullName || '';
+    const deniedBy = (job as any).denied_by || job.deniedBy || '';
+    // Only count jobs denied by this technician (not by admin)
+    return deniedBy && deniedBy !== 'Admin' && deniedBy === technicianName;
+  }).length;
   const completedCount = jobs.filter(job => job.status === 'COMPLETED').length;
 
   // Only show loading screen on initial load if we have no jobs and are actually loading
@@ -2525,6 +2546,45 @@ const TechnicianDashboard = () => {
                     }`}
                   >
                 <CardContent className="p-6">
+                  {/* Denial information inside the card */}
+                  {job.status === 'DENIED' && (() => {
+                    const denialReason = (job as any).denial_reason || job.denialReason || '';
+                    const deniedBy = (job as any).denied_by || job.deniedBy || '';
+                    const deniedAt = (job as any).denied_at || job.deniedAt || null;
+                    const formattedDeniedAt = deniedAt ? new Date(deniedAt).toLocaleString() : null;
+                    
+                    if (!denialReason && !deniedBy && !deniedAt) return null;
+                    
+                    return (
+                      <div className="mb-4 -mt-2 -mx-2">
+                        <div className="rounded-md border border-red-200 bg-red-50 px-4 py-3">
+                          <div className="flex items-start gap-3 mb-3">
+                            <XCircle className="w-5 h-5 text-red-600 mt-0.5 flex-shrink-0" />
+                            <div className="space-y-1 text-sm text-gray-900 flex-1">
+                              <div className="font-semibold text-red-900">
+                                Job Denied
+                              </div>
+                              {deniedBy && (
+                                <div className="text-gray-700">
+                                  <span className="text-gray-500 font-medium">Denied by:</span> {deniedBy}
+                                </div>
+                              )}
+                              {denialReason && (
+                                <div className="text-gray-700">
+                                  <span className="text-gray-500 font-medium">Reason:</span> {denialReason}
+                                </div>
+                              )}
+                              {formattedDeniedAt && (
+                                <div className="text-xs text-gray-500">
+                                  Denied on {formattedDeniedAt}
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })()}
                   {/* Follow-up information inside the card */}
                   {job.status === 'FOLLOW_UP' && (formattedFollowUpDate || formattedFollowUpTime || followUpNotes) && (
                     <div className="mb-4 -mt-2 -mx-2">
@@ -2672,7 +2732,7 @@ const TechnicianDashboard = () => {
                             });
                           }
                           
-                          // Show equipment if we have a valid brand or model
+                          // Show equipment if we have a valid brand or model (only once)
                           if (validBrand || validModel) {
                             const displayText = validBrand && validModel 
                               ? `${validBrand} - ${validModel}` 
@@ -2683,12 +2743,12 @@ const TechnicianDashboard = () => {
                                 <span className="font-medium">Equipment:</span>{' '}
                                 <span className="text-gray-600">
                                   {displayText}
-                        </span>
-                      </div>
+                                </span>
+                              </div>
                             );
                           }
                           
-                          // If no valid brand/model but we have customer data, show it anyway
+                          // Fallback: If no valid brand/model but we have customer data, show it anyway (only if first check didn't return)
                           if (customer?.brand && customer.brand.trim() !== '') {
                             const displayBrand = customer.brand.includes(',') 
                               ? customer.brand.split(',')[0].trim() 
@@ -2697,7 +2757,8 @@ const TechnicianDashboard = () => {
                               ? customer.model.split(',')[0].trim()
                               : customer?.model ? customer.model.trim() : '';
                             
-                            if (displayBrand && displayBrand !== 'Not specified') {
+                            // Only show if brand is valid and we didn't already show equipment above
+                            if (displayBrand && displayBrand !== 'Not specified' && !validBrand && !validModel) {
                               const displayText = displayModel && displayModel !== 'Not specified'
                                 ? `${displayBrand} - ${displayModel}`
                                 : displayBrand;
@@ -2774,6 +2835,31 @@ const TechnicianDashboard = () => {
                                 <span className="text-gray-600">
                                   {dateStr}
                                   {timeDisplay && ` - ${timeDisplay}`}
+                                </span>
+                              </div>
+                            );
+                          }
+                          return null;
+                        })()}
+                        {/* Assigned Technician */}
+                        {(() => {
+                          const assignedTechnicianId = (job as any).assigned_technician_id || job.assignedTechnicianId;
+                          
+                          if (assignedTechnicianId) {
+                            // Try to get technician name from various sources
+                            const assignedTechnician = (job as any).assigned_technician || (job as any).assignedTechnician;
+                            let technicianName = user?.fullName || 'Assigned';
+                            
+                            // Prefer technician data from query, fallback to current user name
+                            if (assignedTechnician) {
+                              technicianName = assignedTechnician.full_name || assignedTechnician.fullName || technicianName;
+                            }
+                            
+                            return (
+                              <div className="text-sm text-gray-700">
+                                <span className="font-medium">Assigned To:</span>{' '}
+                                <span className="text-gray-600">
+                                  {technicianName}
                                 </span>
                               </div>
                             );

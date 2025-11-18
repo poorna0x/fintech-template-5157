@@ -723,6 +723,36 @@ const AdminDashboard = () => {
   const [denyDialogOpen, setDenyDialogOpen] = useState(false);
   const [selectedJobForDeny, setSelectedJobForDeny] = useState<Job | null>(null);
   const [denyReason, setDenyReason] = useState('');
+  const [showDenySuggestions, setShowDenySuggestions] = useState(false);
+  const denyReasonInputRef = useRef<HTMLTextAreaElement>(null);
+  
+  // Suggested denial reasons
+  const suggestedDenialReasons = [
+    'Customer not available',
+    'Customer cancelled',
+    'Customer not responding',
+    'Wrong address provided',
+    'Location not accessible',
+    'Equipment not available',
+    'Technical issue',
+    'Customer not interested',
+    'Price too high',
+    'Already serviced by another company',
+    'Customer moved',
+    'Equipment damaged beyond repair',
+    'No response from customer',
+    'Customer rescheduled multiple times',
+    'Safety concerns',
+    'Incomplete information'
+  ];
+  
+  const filteredDenialSuggestions = useMemo(() => {
+    if (!denyReason.trim()) return [];
+    const lowerReason = denyReason.toLowerCase();
+    return suggestedDenialReasons.filter(s => 
+      s.toLowerCase().includes(lowerReason)
+    );
+  }, [denyReason]);
   const [completeDialogOpen, setCompleteDialogOpen] = useState(false);
   const [selectedJobForComplete, setSelectedJobForComplete] = useState<Job | null>(null);
   const [completionNotes, setCompletionNotes] = useState('');
@@ -923,21 +953,21 @@ const AdminDashboard = () => {
 
   // Load QR codes with localStorage caching
   const loadQrCodes = useCallback(async () => {
-    try {
+      try {
       console.log('Loading QR codes in AdminDashboard...');
       
       // Check cache first - use it if available and not expired
-      const cachedCommon = getCachedQrCodes();
+          const cachedCommon = getCachedQrCodes();
       if (cachedCommon && cachedCommon.length > 0) {
         console.log('Using cached QR codes:', cachedCommon.length, 'items');
-        setCommonQrCodes(cachedCommon);
+            setCommonQrCodes(cachedCommon);
         // Don't fetch from DB if we have valid cache
         return;
-      }
+        }
 
       // Only fetch from database if cache is missing or expired
       console.log('Cache miss or expired, fetching from database...');
-      const commonResult = await db.commonQrCodes.getAll();
+        const commonResult = await db.commonQrCodes.getAll();
 
       if (commonResult.error) {
         console.error('Error fetching QR codes:', commonResult.error);
@@ -950,24 +980,24 @@ const AdminDashboard = () => {
         return;
       }
 
-      if (commonResult.data) {
-        const transformed = commonResult.data.map((qr: any) => ({
-          id: qr.id,
-          name: qr.name,
-          qrCodeUrl: qr.qr_code_url,
-          createdAt: qr.created_at,
-          updatedAt: qr.updated_at
-        }));
+        if (commonResult.data) {
+          const transformed = commonResult.data.map((qr: any) => ({
+            id: qr.id,
+            name: qr.name,
+            qrCodeUrl: qr.qr_code_url,
+            createdAt: qr.created_at,
+            updatedAt: qr.updated_at
+          }));
         console.log('QR codes loaded from DB:', transformed.length, 'items');
-        setCommonQrCodes(transformed);
+          setCommonQrCodes(transformed);
         // Always update cache with fresh data
-        cacheQrCodes(transformed);
+            cacheQrCodes(transformed);
       } else {
         console.log('No QR codes found');
         setCommonQrCodes([]);
-      }
-    } catch (error) {
-      console.error('Error loading QR codes:', error);
+        }
+      } catch (error) {
+        console.error('Error loading QR codes:', error);
       // Fallback to cache if available
       const cachedCommon = getCachedQrCodes();
       if (cachedCommon && cachedCommon.length > 0) {
@@ -1941,7 +1971,7 @@ const AdminDashboard = () => {
       console.log('Update payload:', updateData);
 
       const { data: updatedCustomerFromDb, error } = await db.customers.update(editingCustomer.id, updateData);
-      
+
       if (error) {
         console.error('Database update error:', error);
         throw new Error(error.message);
@@ -4583,9 +4613,11 @@ const AdminDashboard = () => {
   };
 
   // Handle job status update
-  const handleReassignJob = (job: Job) => {
+  const handleReassignJob = async (job: Job) => {
     setJobToReassign(job);
     setSelectedTechnicianForReassign(job.assigned_technician_id || job.assignedTechnicianId || '');
+    // Load technicians when dialog opens
+    await reloadTechnicians();
     setReassignDialogOpen(true);
   };
 
@@ -4936,8 +4968,22 @@ const AdminDashboard = () => {
   };
 
   // Handle job denial
-  const handleDenyJob = (job: Job) => {
-    setSelectedJobForDeny(job);
+  const handleDenyJob = async (job: Job) => {
+    // Fetch full job data with customer if not already loaded
+    let jobWithCustomer = job;
+    if (!job.customer || !(job.customer as any)?.full_name && !job.customer?.fullName) {
+      try {
+        const { data: fullJob, error } = await db.jobs.getById(job.id);
+        if (!error && fullJob) {
+          jobWithCustomer = fullJob as Job;
+        }
+      } catch (error) {
+        console.error('Error fetching job details:', error);
+        // Continue with the job data we have
+      }
+    }
+    
+    setSelectedJobForDeny(jobWithCustomer);
     setDenyReason('');
     setDenyDialogOpen(true);
   };
@@ -4950,10 +4996,13 @@ const AdminDashboard = () => {
     }
 
     try {
+      // Store "Admin" instead of admin name for admin denials
+      const deniedByValue = 'Admin';
+      
       const { error } = await db.jobs.update(selectedJobForDeny.id, {
         status: 'DENIED',
         denial_reason: denyReason.trim(),
-        denied_by: user?.id || 'admin',
+        denied_by: deniedByValue,
         denied_at: new Date().toISOString()
       });
 
@@ -4967,7 +5016,7 @@ const AdminDashboard = () => {
           ...job, 
           status: 'DENIED',
           denialReason: denyReason.trim(),
-          deniedBy: user?.id || 'admin',
+          deniedBy: 'Admin',
           deniedAt: new Date().toISOString()
         } : job
       ));
@@ -4980,7 +5029,7 @@ const AdminDashboard = () => {
               ...job, 
               status: 'DENIED',
               denialReason: denyReason.trim(),
-              deniedBy: user?.id || 'admin',
+              deniedBy: 'Admin',
               deniedAt: new Date().toISOString()
             } : job
           );
@@ -4992,8 +5041,18 @@ const AdminDashboard = () => {
       setDenyDialogOpen(false);
       setSelectedJobForDeny(null);
       setDenyReason('');
-    } catch (error) {
-      toast.error('Failed to deny job');
+    } catch (error: any) {
+      console.error('Error denying job:', error);
+      const errorMessage = error?.message || 'Failed to deny job';
+      
+      // Check if it's a column missing error
+      if (errorMessage.includes('denial_reason') || errorMessage.includes('denied_by') || errorMessage.includes('denied_at') || errorMessage.includes('400')) {
+        toast.error('Database columns missing. Please run the migration: add-denial-fields-to-jobs.sql', {
+          duration: 8000,
+        });
+      } else {
+        toast.error(errorMessage);
+      }
     }
   };
 
@@ -6564,8 +6623,40 @@ const AdminDashboard = () => {
                           (followUpScheduledBy === 'technician' ? 'Technician' : undefined) ||
                           'Admin';
                         
+                        const denialReason = (job as any).denial_reason || job.denialReason || '';
+                        const deniedBy = (job as any).denied_by || job.deniedBy || '';
+                        const deniedAt = (job as any).denied_at || job.deniedAt || null;
+                        const formattedDeniedAt = deniedAt ? new Date(deniedAt).toLocaleString() : null;
+                        
                         return (
                           <div key={job.id}>
+                            {job.status === 'DENIED' && (denialReason || deniedBy || deniedAt) && (
+                              <div className="mt-4 mb-2">
+                                <div className="flex items-start gap-3 rounded-md border border-red-200 bg-red-50 px-3 py-2">
+                                  <XCircle className="w-4 h-4 text-red-600 mt-0.5" />
+                                  <div className="space-y-1 text-sm text-gray-900">
+                                    <div className="font-semibold text-red-900">
+                                      Job Denied
+                                    </div>
+                                    {deniedBy && (
+                                      <div className="text-gray-700">
+                                        <span className="text-gray-500">Denied by:</span> {deniedBy}
+                                      </div>
+                                    )}
+                                    {denialReason && (
+                                      <div className="text-gray-700">
+                                        <span className="text-gray-500">Reason:</span> {denialReason}
+                                      </div>
+                                    )}
+                                    {formattedDeniedAt && (
+                                      <div className="text-xs text-gray-500">
+                                        Denied on {formattedDeniedAt}
+                                      </div>
+                                    )}
+                                  </div>
+                                </div>
+                              </div>
+                            )}
                             {job.status === 'FOLLOW_UP' && (formattedFollowUpDate || formattedFollowUpTime || followUpNotes || formattedFollowUpScheduledAt) && (
                               <div className="mt-4 mb-2">
                                 <div className="flex items-start gap-3 rounded-md border border-gray-200 px-3 py-2">
@@ -6671,40 +6762,6 @@ const AdminDashboard = () => {
                                         </div>
                                       </div>
                                     </div>
-                                    {(() => {
-                                      // Get brand and model from job, fallback to customer
-                                      const jobBrand = (job as any).brand || job.brand;
-                                      const jobModel = (job as any).model || job.model;
-                                      const customerBrand = customer.brand;
-                                      const customerModel = customer.model;
-                                      
-                                      // Use job brand/model if available, otherwise use customer's
-                                      const brand = jobBrand || customerBrand || '';
-                                      const model = jobModel || customerModel || '';
-                                      
-                                      // Only show if brand exists and is not "not specified" or "n/a"
-                                      if (!brand || 
-                                          brand.toLowerCase().includes('not specified') || 
-                                          brand.toLowerCase().includes('n/a')) {
-                                        return null;
-                                      }
-                                      
-                                      // Always show model if brand exists - show "Brand - Model" format
-                                      // If model is empty or "Not specified", still show it
-                                      const displayModel = model && model.trim() !== '' ? model : 'Not specified';
-                                      
-                                      return (
-                                        <div className="flex items-start gap-2 sm:items-center">
-                                          <Wrench className="w-4 h-4 text-gray-400 flex-shrink-0 mt-0.5 sm:mt-0" />
-                                          <div className="min-w-0 flex-1">
-                                            <div className="text-xs text-gray-500">Equipment</div>
-                                            <div className="font-medium text-gray-900 break-words">
-                                              {brand} - {displayModel}
-                                            </div>
-                                          </div>
-                                        </div>
-                                      );
-                                    })()}
                                     
                                     {/* Agreed Price - Only show if it exists and is greater than 0 */}
                                     {(() => {
@@ -6761,7 +6818,7 @@ const AdminDashboard = () => {
                                       );
                                     })()}
                                     
-                                    {(() => {
+                                            {(() => {
                                       // Get assigned technician info
                                       const assignedTechnicianId = (job as any).assigned_technician_id || (job as any).assignedTechnicianId;
                                       const assignedTechnician = job.assignedTechnician || 
@@ -6817,45 +6874,45 @@ const AdminDashboard = () => {
                                       const validBrand = isValidValue(brand) ? brand : '';
                                       const validModel = isValidValue(model) ? model : '';
                                       
-                                      if (!technicianName && !assignedTechnicianId && !validBrand && !validModel) {
+                                      // Show both Equipment and Assigned To if they exist
+                                      const hasEquipment = validBrand || validModel;
+                                      const hasTechnician = technicianName || assignedTechnicianId;
+                                      
+                                      if (!hasEquipment && !hasTechnician) {
                                         return null;
                                       }
                                       
-                                      // Show Equipment section with brand and/or model
-                                      if (validBrand || validModel) {
-                                        const displayText = validBrand && validModel 
-                                          ? `${validBrand} - ${validModel}` 
-                                          : validBrand || validModel;
-                                        
-                                        return (
-                                          <div className="flex items-start gap-2 sm:items-center">
-                                            <Wrench className="w-4 h-4 text-gray-400 flex-shrink-0 mt-0.5 sm:mt-0" />
-                                            <div className="min-w-0 flex-1">
-                                              <div className="text-xs text-gray-500">Equipment</div>
-                                              <div className="font-medium text-gray-900 break-words">
-                                                {displayText}
+                                      return (
+                                        <>
+                                          {/* Show Equipment section with brand and/or model */}
+                                          {hasEquipment && (
+                                            <div className="flex items-start gap-2 sm:items-center">
+                                              <Wrench className="w-4 h-4 text-gray-400 flex-shrink-0 mt-0.5 sm:mt-0" />
+                                              <div className="min-w-0 flex-1">
+                                                <div className="text-xs text-gray-500">Equipment</div>
+                                                <div className="font-medium text-gray-900 break-words">
+                                                  {validBrand && validModel 
+                                                    ? `${validBrand} - ${validModel}` 
+                                                    : validBrand || validModel}
+                                                </div>
                                               </div>
                                             </div>
-                                          </div>
-                                        );
-                                      }
-                                      
-                                      // Show Assigned To section if technician is assigned
-                                      if (technicianName || assignedTechnicianId) {
-                                        return (
-                                          <div className="flex items-start gap-2 sm:items-center">
-                                            <User className="w-4 h-4 text-gray-400 flex-shrink-0 mt-0.5 sm:mt-0" />
-                                            <div className="min-w-0 flex-1">
-                                              <div className="text-xs text-gray-500">Assigned To</div>
-                                              <div className="font-medium text-gray-900 break-words">
-                                                {technicianName || 'Unassigned'}
+                                          )}
+                                          
+                                          {/* Show Assigned To section if technician is assigned */}
+                                          {hasTechnician && (
+                                            <div className="flex items-start gap-2 sm:items-center">
+                                              <User className="w-4 h-4 text-gray-400 flex-shrink-0 mt-0.5 sm:mt-0" />
+                                              <div className="min-w-0 flex-1">
+                                                <div className="text-xs text-gray-500">Assigned To</div>
+                                                <div className="font-medium text-gray-900 break-words">
+                                                  {technicianName || 'Unassigned'}
+                                                </div>
                                               </div>
                                             </div>
-                                          </div>
-                                        );
-                                      }
-                                      
-                                      return null;
+                                          )}
+                                        </>
+                                      );
                                     })()}
                                     
                                     {job.description && job.description.trim() && job.description !== 'No description provided' && (() => {
@@ -9573,13 +9630,19 @@ const AdminDashboard = () => {
                   <SelectValue placeholder="Choose a technician" />
                 </SelectTrigger>
                 <SelectContent>
-                  {technicians
-                    .filter(tech => tech.status === 'AVAILABLE')
+                  {technicians.length === 0 ? (
+                    <SelectItem value="no-technicians" disabled>
+                      Loading technicians...
+                    </SelectItem>
+                  ) : (
+                    technicians
+                      .filter(tech => !tech.account_status || tech.account_status === 'ACTIVE')
                     .map(tech => (
                       <SelectItem key={tech.id || 'unknown'} value={tech.id || 'unknown'}>
-                        {tech.fullName || 'Unknown'} - {tech.skills?.serviceTypes?.join(', ') || 'No specialization'}
+                          {tech.fullName || 'Unknown'} {tech.employeeId ? `(${tech.employeeId})` : ''}
                       </SelectItem>
-                    ))}
+                      ))
+                  )}
                 </SelectContent>
               </Select>
             </div>
@@ -9802,10 +9865,10 @@ const AdminDashboard = () => {
                 Job: {(selectedJobForDeny as any).job_number || selectedJobForDeny.jobNumber}
               </div>
               <div className="text-sm text-gray-600">
-                {selectedJobForDeny.serviceType} - {selectedJobForDeny.serviceSubType}
+                {((selectedJobForDeny as any).service_type || selectedJobForDeny.serviceType || 'N/A')} - {((selectedJobForDeny as any).service_sub_type || selectedJobForDeny.serviceSubType || 'N/A')}
               </div>
               <div className="text-sm text-gray-600">
-                Customer: {selectedJobForDeny.customer?.fullName || 'Unknown'}
+                Customer: {(selectedJobForDeny.customer as any)?.full_name || selectedJobForDeny.customer?.fullName || 'Unknown'}
               </div>
             </div>
           )}
@@ -9813,14 +9876,50 @@ const AdminDashboard = () => {
           <div className="space-y-4">
             <div>
               <Label htmlFor="deny-reason">Reason for Denial *</Label>
+              <div className="relative">
               <Textarea
+                  ref={denyReasonInputRef}
                 id="deny-reason"
-                placeholder="Enter the reason for denying this job..."
+                  placeholder="Type a reason..."
                 value={denyReason}
-                onChange={(e) => setDenyReason(e.target.value)}
+                  onChange={(e) => {
+                    setDenyReason(e.target.value);
+                    setShowDenySuggestions(e.target.value.length > 0);
+                  }}
+                  onFocus={() => setShowDenySuggestions(denyReason.length > 0)}
+                  onBlur={() => {
+                    // Delay to allow clicking on suggestions
+                    setTimeout(() => setShowDenySuggestions(false), 200);
+                  }}
                 rows={3}
-                className="mt-1"
-              />
+                  className="mt-1 pr-10"
+                  required
+                />
+                {showDenySuggestions && filteredDenialSuggestions.length > 0 && (
+                  <div className="absolute z-50 w-full mt-1 bg-white border border-gray-300 rounded-md shadow-lg max-h-48 overflow-y-auto">
+                    {filteredDenialSuggestions.map((suggestion, idx) => (
+                      <button
+                        key={idx}
+                        type="button"
+                        onMouseDown={(e) => {
+                          e.preventDefault();
+                          setDenyReason(suggestion);
+                          setShowDenySuggestions(false);
+                          denyReasonInputRef.current?.blur();
+                        }}
+                        className="w-full text-left px-3 py-2 hover:bg-gray-100 text-sm"
+                      >
+                        {suggestion}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+              {!showDenySuggestions && denyReason.length === 0 && (
+                <p className="text-xs text-gray-500 mt-1">
+                  Start typing to see suggested reasons
+                </p>
+              )}
             </div>
           </div>
 
@@ -10041,11 +10140,11 @@ const AdminDashboard = () => {
                               {/* Common QR Codes Section */}
                               {commonQrCodes.length > 0 && (
                                 <>
-                                  {commonQrCodes.map((qr) => (
-                                    <SelectItem key={`common_${qr.id}`} value={`common_${qr.id}`}>
-                                      {qr.name}
-                                    </SelectItem>
-                                  ))}
+                          {commonQrCodes.map((qr) => (
+                            <SelectItem key={`common_${qr.id}`} value={`common_${qr.id}`}>
+                              {qr.name}
+                            </SelectItem>
+                          ))}
                                 </>
                               )}
                               
@@ -10055,7 +10154,7 @@ const AdminDashboard = () => {
                                 .map((tech) => (
                                   <SelectItem key={`technician_${tech.id}`} value={`technician_${tech.id}`}>
                                     {tech.fullName}'s QR Code
-                                  </SelectItem>
+                            </SelectItem>
                                 ))}
                             </>
                           )}
@@ -10120,13 +10219,13 @@ const AdminDashboard = () => {
                               </div>
                             );
                           })() : null}
+                              </div>
                         </div>
+                    )}
                       </div>
                     )}
                   </div>
                 )}
-              </div>
-            )}
 
             {/* Step 4: Payment Screenshot (only for ONLINE payment) */}
             {completeJobStep === 4 && paymentMode === 'ONLINE' && (

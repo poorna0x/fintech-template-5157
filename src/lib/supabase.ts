@@ -320,6 +320,13 @@ export const db = {
             preferred_language,
             created_at,
             updated_at
+          ),
+          assigned_technician:technicians!assigned_technician_id(
+            id,
+            full_name,
+            phone,
+            email,
+            employee_id
           )
         `)
         .eq('assigned_technician_id', technicianId)
