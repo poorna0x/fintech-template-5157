@@ -11655,6 +11655,8 @@ For any queries or support, please contact us:
 📧 Email: info@hydrogenro.com
 🌐 Website: https://hydrogenro.com
 
+📱 For future bookings, you can book directly on https://hydrogenro.com/book for ease and convenience.
+
 Thank you for your trust in Hydrogen RO! 🙏`;
 
             return (
