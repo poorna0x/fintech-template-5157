@@ -1010,6 +1010,7 @@ const AdminDashboard = () => {
     preferredLanguage: customer.preferred_language,
     serviceCost: customer.service_cost,
     costAgreed: customer.cost_agreed,
+    has_prefilter: customer.has_prefilter ?? null,
     createdAt: customer.created_at,
     updatedAt: customer.updated_at
   });
@@ -1542,6 +1543,11 @@ const AdminDashboard = () => {
           });
 
           if (error) {
+            console.error('❌ Database update error:', error);
+            console.error('Update payload:', {
+              has_prefilter: editFormData.has_prefilter,
+              type: typeof editFormData.has_prefilter
+            });
             throw new Error(error.message);
           }
 
@@ -1777,7 +1783,16 @@ const AdminDashboard = () => {
       native_language: customer.preferredLanguage || '',
       status: customer.status || '',
       notes: customer.notes || '',
-      has_prefilter: (customer as any).has_prefilter ?? null,
+      has_prefilter: (() => {
+        const prefilterValue = (customer as any).has_prefilter ?? null;
+        console.log('🔍 Loading prefilter for edit:', {
+          customerId: customer.id,
+          customerName: customer.full_name || customer.fullName,
+          has_prefilter: prefilterValue,
+          type: typeof prefilterValue
+        });
+        return prefilterValue;
+      })(),
       google_location: (() => {
         // First check for googleLocation field (actual Google Maps URL - including short URLs)
         if ((customer.location as any)?.googleLocation) {
@@ -1981,11 +1996,17 @@ const AdminDashboard = () => {
         notes: editFormData.notes,
         visible_address: editFormData.visible_address ? editFormData.visible_address.trim() : '',
         custom_time: editFormData.custom_time || null,
+        has_prefilter: editFormData.has_prefilter,
         address: updatedAddress,
         location: updatedLocation
       };
 
       console.log('Update payload:', updateData);
+      console.log('🔍 Prefilter being saved:', {
+        fromFormData: editFormData.has_prefilter,
+        inUpdatePayload: updateData.has_prefilter,
+        type: typeof editFormData.has_prefilter
+      });
       console.log('📍 visible_address being saved:', {
         fromFormData: editFormData.visible_address,
         inUpdatePayload: updateData.visible_address,
@@ -2000,6 +2021,10 @@ const AdminDashboard = () => {
       }
       
       console.log('✅ Updated customer from DB:', updatedCustomerFromDb);
+      console.log('🔍 Prefilter in DB response:', {
+        has_prefilter: updatedCustomerFromDb?.has_prefilter,
+        type: typeof updatedCustomerFromDb?.has_prefilter
+      });
       console.log('📍 visible_address after save:', updatedCustomerFromDb?.visible_address);
       console.log('📋 Brand/Model in DB response:', {
         brand: updatedCustomerFromDb?.brand,
