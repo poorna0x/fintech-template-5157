@@ -10,7 +10,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Textarea } from '@/components/ui/textarea';
 import { db } from '@/lib/supabase';
 import { toast } from 'sonner';
-import { DollarSign, User, Calendar, CheckCircle, Clock, Search, RefreshCw, Plus, Trash2 } from 'lucide-react';
+import { DollarSign, User, Plus, Trash2, Edit, TrendingDown, TrendingUp, RefreshCw } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 
 interface TechnicianPayment {
@@ -22,325 +22,474 @@ interface TechnicianPayment {
   commission_amount: number;
   payment_status: 'PENDING' | 'PAID' | 'CANCELLED';
   payment_date?: string;
-  payment_method?: string;
-  payment_reference?: string;
-  notes?: string;
   technician?: {
     id: string;
     full_name: string;
-    phone: string;
-    email: string;
     employee_id: string;
   };
   job?: {
     id: string;
     job_number: string;
-    service_type: string;
-    service_sub_type: string;
-    payment_amount?: number;
-    actual_cost?: number;
   };
 }
 
-interface TechnicianSummary {
+interface TechnicianExpense {
+  id: string;
+  technician_id: string;
+  amount: number;
+  description: string;
+  expense_date: string;
+  category?: string;
+  notes?: string;
+}
+
+interface TechnicianAdvance {
+  id: string;
+  technician_id: string;
+  amount: number;
+  description?: string;
+  advance_date: string;
+  payment_method?: string;
+  payment_reference?: string;
+  notes?: string;
+}
+
+interface TechnicianExtraCommission {
+  id: string;
+  technician_id: string;
+  amount: number;
+  description: string;
+  commission_date: string;
+  payment_method?: string;
+  payment_reference?: string;
+  notes?: string;
+}
+
+interface TechnicianSalaryBreakdown {
   technicianId: string;
   technicianName: string;
   employeeId: string;
   baseSalary: number;
-  totalJobs: number;
-  totalBillAmount: number;
   totalCommission: number;
-  paidCommission: number;
-  pendingCommission: number;
-  totalEarnings: number; // baseSalary + paidCommission
-  pendingEarnings: number; // pendingCommission
+  totalExtraCommission: number;
+  totalExpenses: number;
+  totalAdvances: number;
+  totalSalary: number; // baseSalary + commission + extraCommission - advances
+  payments: TechnicianPayment[];
+  expenses: TechnicianExpense[];
+  advances: TechnicianAdvance[];
+  extraCommissions: TechnicianExtraCommission[];
 }
 
 const TechnicianPayments = () => {
-  const [payments, setPayments] = useState<TechnicianPayment[]>([]);
-  const [technicianSummaries, setTechnicianSummaries] = useState<TechnicianSummary[]>([]);
+  const [technicians, setTechnicians] = useState<any[]>([]);
+  const [salaryBreakdowns, setSalaryBreakdowns] = useState<TechnicianSalaryBreakdown[]>([]);
   const [loading, setLoading] = useState(true);
-  const [selectedPayment, setSelectedPayment] = useState<TechnicianPayment | null>(null);
-  const [paymentDialogOpen, setPaymentDialogOpen] = useState(false);
-  const [searchTerm, setSearchTerm] = useState('');
-  const [statusFilter, setStatusFilter] = useState<'ALL' | 'PENDING' | 'PAID'>('ALL');
+  const [selectedTechnician, setSelectedTechnician] = useState<string | null>(null);
+  const [commissionPeriod, setCommissionPeriod] = useState<{ start: Date; end: Date } | null>(null);
   
-  const [paymentFormData, setPaymentFormData] = useState({
-    payment_method: 'BANK_TRANSFER',
+  // Expense dialog
+  const [expenseDialogOpen, setExpenseDialogOpen] = useState(false);
+  const [editingExpense, setEditingExpense] = useState<TechnicianExpense | null>(null);
+  const [expenseFormData, setExpenseFormData] = useState({
+    technician_id: '',
+    amount: '',
+    description: '',
+    expense_date: new Date().toISOString().split('T')[0],
+    category: 'OTHER',
+    notes: ''
+  });
+
+  // Advance dialog
+  const [advanceDialogOpen, setAdvanceDialogOpen] = useState(false);
+  const [editingAdvance, setEditingAdvance] = useState<TechnicianAdvance | null>(null);
+  const [advanceFormData, setAdvanceFormData] = useState({
+    technician_id: '',
+    amount: '',
+    description: '',
+    advance_date: new Date().toISOString().split('T')[0],
+    payment_method: 'CASH',
     payment_reference: '',
     notes: ''
   });
-  const [isCreatingPayments, setIsCreatingPayments] = useState(false);
-  const [technicians, setTechnicians] = useState<any[]>([]);
-  const [jobs, setJobs] = useState<any[]>([]);
-  const [addPaymentDialogOpen, setAddPaymentDialogOpen] = useState(false);
-  const [newPaymentFormData, setNewPaymentFormData] = useState({
+
+  // Extra commission dialog
+  const [extraCommissionDialogOpen, setExtraCommissionDialogOpen] = useState(false);
+  const [editingExtraCommission, setEditingExtraCommission] = useState<TechnicianExtraCommission | null>(null);
+  const [extraCommissionFormData, setExtraCommissionFormData] = useState({
     technician_id: '',
-    job_id: '',
-    bill_amount: '',
-    commission_amount: '',
-    payment_status: 'PENDING' as 'PENDING' | 'PAID'
+    amount: '',
+    description: '',
+    commission_date: new Date().toISOString().split('T')[0],
+    payment_method: 'CASH',
+    payment_reference: '',
+    notes: ''
   });
 
   useEffect(() => {
-    loadTechnicians();
-    loadJobs();
-    loadPayments();
+    loadData();
   }, []);
 
-  const loadJobs = async () => {
-    try {
-      const { data, error } = await db.jobs.getAll();
-      if (error) {
-        console.error('Error loading jobs:', error);
-        return;
-      }
-      // Filter to only completed jobs
-      setJobs((data || []).filter((job: any) => job.status === 'COMPLETED'));
-    } catch (error: any) {
-      console.error('Error loading jobs:', error);
-    }
+  const getMonthlyDateRange = () => {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    
+    // End date: Next month's 10th
+    const endDate = new Date(today.getFullYear(), today.getMonth() + 1, 10, 23, 59, 59, 999);
+    
+    // Start date: Today (will be adjusted to first record date if earlier)
+    const startDate = new Date(today);
+    
+    return { startDate, endDate };
   };
 
-  const loadTechnicians = async () => {
-    try {
-      const { data, error } = await db.technicians.getAll();
-      if (error) {
-        console.error('Error loading technicians:', error);
-        return;
-      }
-      setTechnicians(data || []);
-    } catch (error: any) {
-      console.error('Error loading technicians:', error);
-    }
-  };
-
-  const loadPayments = async () => {
+  const loadData = async () => {
     try {
       setLoading(true);
-      // Ensure technicians are loaded first
-      let techs = technicians;
-      if (techs.length === 0) {
-        const { data: techData } = await db.technicians.getAll();
-        techs = techData || [];
-        setTechnicians(techs);
+      
+      // Load technicians
+      const { data: techsData, error: techsError } = await db.technicians.getAll();
+      if (techsError) throw techsError;
+      setTechnicians(techsData || []);
+
+      // Get monthly date range (today to next month's 10th)
+      const { startDate, endDate } = getMonthlyDateRange();
+
+      // Load all payments to find the first record date
+      const { data: allPaymentsData, error: allPaymentsError } = await supabase
+        .from('technician_payments')
+        .select('created_at')
+        .order('created_at', { ascending: true })
+        .limit(1);
+      
+      if (allPaymentsError) throw allPaymentsError;
+
+      // Use first record date if it's earlier than today
+      let actualStartDate = startDate;
+      if (allPaymentsData && allPaymentsData.length > 0) {
+        const firstRecordDate = new Date(allPaymentsData[0].created_at);
+        firstRecordDate.setHours(0, 0, 0, 0);
+        if (firstRecordDate < startDate) {
+          actualStartDate = firstRecordDate;
+        }
       }
-      const { data, error } = await db.technicianPayments.getAll();
       
-      if (error) {
-        console.error('Error loading payments:', error);
-        toast.error('Failed to load payments: ' + (error.message || 'Unknown error'));
-        setPayments([]);
-        setTechnicianSummaries([]);
-        return;
-      }
+      // Store commission period for display
+      setCommissionPeriod({ start: actualStartDate, end: endDate });
+
+      // Load payments for current period (from start date to next month's 10th)
+      const { data: paymentsData, error: paymentsError } = await supabase
+        .from('technician_payments')
+        .select(`
+          *,
+          technician:technicians(
+            id,
+            full_name,
+            employee_id
+          ),
+          job:jobs(
+            id,
+            job_number
+          )
+        `)
+        .gte('created_at', actualStartDate.toISOString())
+        .lte('created_at', endDate.toISOString());
       
-      console.log('Loaded payments:', data?.length || 0, 'records');
-      setPayments(data || []);
-      
-      // Calculate technician summaries
-      const summaries: Record<string, TechnicianSummary> = {};
-      
-      // First, initialize all technicians (including those without payments)
-      techs.forEach((tech: any) => {
+      if (paymentsError) throw paymentsError;
+
+      // Load expenses, advances, and extra commissions for all technicians
+      const { data: expensesData, error: expensesError } = await db.technicianExpenses.getAll();
+      if (expensesError) throw expensesError;
+
+      const { data: advancesData, error: advancesError } = await db.technicianAdvances.getAll();
+      if (advancesError) throw advancesError;
+
+      const { data: extraCommissionsData, error: extraCommissionsError } = await db.technicianExtraCommissions.getAll();
+      if (extraCommissionsError) throw extraCommissionsError;
+
+      // Calculate breakdown for each technician
+      const breakdowns: TechnicianSalaryBreakdown[] = (techsData || []).map((tech: any) => {
         const techId = tech.id;
-        if (!summaries[techId]) {
-          summaries[techId] = {
-            technicianId: techId,
-            technicianName: tech.full_name || 'Unknown',
-            employeeId: tech.employee_id || '',
-            baseSalary: tech.salary?.baseSalary || 0,
-            totalJobs: 0,
-            totalBillAmount: 0,
-            totalCommission: 0,
-            paidCommission: 0,
-            pendingCommission: 0,
-            totalEarnings: tech.salary?.baseSalary || 0,
-            pendingEarnings: 0
-          };
-        }
-      });
-      
-      // Then, add payment data
-      (data || []).forEach((payment: TechnicianPayment) => {
-        const techId = payment.technician_id;
-        const techName = payment.technician?.full_name || 'Unknown';
-        const employeeId = payment.technician?.employee_id || '';
-        const tech = techs.find((t: any) => t.id === techId);
-        const baseSalary = tech?.salary?.baseSalary || 0;
+        const baseSalary = tech.salary?.baseSalary || 0;
         
-        if (!summaries[techId]) {
-          summaries[techId] = {
-            technicianId: techId,
-            technicianName: techName,
-            employeeId,
-            baseSalary,
-            totalJobs: 0,
-            totalBillAmount: 0,
-            totalCommission: 0,
-            paidCommission: 0,
-            pendingCommission: 0,
-            totalEarnings: baseSalary,
-            pendingEarnings: 0
-          };
-        }
+        // Get payments for this technician (only from current month cycle)
+        const techPayments = (paymentsData || []).filter((p: TechnicianPayment) => p.technician_id === techId);
+        const totalCommission = techPayments.reduce((sum, p) => sum + (p.commission_amount || 0), 0);
         
-        summaries[techId].totalJobs += 1;
-        summaries[techId].totalBillAmount += payment.bill_amount;
-        summaries[techId].totalCommission += payment.commission_amount;
+        // Get expenses for this technician
+        const techExpenses = (expensesData || []).filter((e: TechnicianExpense) => e.technician_id === techId);
+        const totalExpenses = techExpenses.reduce((sum, e) => sum + (e.amount || 0), 0);
         
-        if (payment.payment_status === 'PAID') {
-          summaries[techId].paidCommission += payment.commission_amount;
-        } else if (payment.payment_status === 'PENDING') {
-          summaries[techId].pendingCommission += payment.commission_amount;
-        }
+        // Get advances for this technician
+        const techAdvances = (advancesData || []).filter((a: TechnicianAdvance) => a.technician_id === techId);
+        const totalAdvances = techAdvances.reduce((sum, a) => sum + (a.amount || 0), 0);
+        
+        // Get extra commissions for this technician
+        const techExtraCommissions = (extraCommissionsData || []).filter((ec: TechnicianExtraCommission) => ec.technician_id === techId);
+        const totalExtraCommission = techExtraCommissions.reduce((sum, ec) => sum + (ec.amount || 0), 0);
+        
+        // Calculate total salary: base + commission + extraCommission - advances (expenses don't reduce salary, they're for analytics only)
+        const totalSalary = baseSalary + totalCommission + totalExtraCommission - totalAdvances;
+        
+        return {
+          technicianId: techId,
+          technicianName: tech.full_name || 'Unknown',
+          employeeId: tech.employee_id || '',
+          baseSalary,
+          totalCommission,
+          totalExtraCommission,
+          totalExpenses,
+          totalAdvances,
+          totalSalary,
+          payments: techPayments,
+          expenses: techExpenses,
+          advances: techAdvances,
+          extraCommissions: techExtraCommissions
+        };
       });
-      
-      // Calculate total earnings (base salary + paid commission)
-      Object.values(summaries).forEach(summary => {
-        summary.totalEarnings = summary.baseSalary + summary.paidCommission;
-        summary.pendingEarnings = summary.pendingCommission;
-      });
-      
-      setTechnicianSummaries(Object.values(summaries));
+
+      setSalaryBreakdowns(breakdowns);
     } catch (error: any) {
-      console.error('Error loading payments:', error);
-      toast.error('Failed to load payments: ' + error.message);
+      console.error('Error loading data:', error);
+      toast.error('Failed to load data: ' + error.message);
     } finally {
       setLoading(false);
     }
   };
 
-  const handleMarkAsPaid = async (payment: TechnicianPayment) => {
-    setSelectedPayment(payment);
-    setPaymentFormData({
-      payment_method: 'BANK_TRANSFER',
+  const handleAddExpense = () => {
+    if (!selectedTechnician) {
+      toast.error('Please select a technician');
+      return;
+    }
+    setExpenseFormData({
+      technician_id: selectedTechnician,
+      amount: '',
+      description: '',
+      expense_date: new Date().toISOString().split('T')[0],
+      category: 'OTHER',
+      notes: ''
+    });
+    setEditingExpense(null);
+    setExpenseDialogOpen(true);
+  };
+
+  const handleEditExpense = (expense: TechnicianExpense) => {
+    setEditingExpense(expense);
+    setExpenseFormData({
+      technician_id: expense.technician_id,
+      amount: expense.amount.toString(),
+      description: expense.description,
+      expense_date: expense.expense_date.split('T')[0],
+      category: expense.category || 'OTHER',
+      notes: expense.notes || ''
+    });
+    setExpenseDialogOpen(true);
+  };
+
+  const handleSaveExpense = async () => {
+    try {
+      if (!expenseFormData.technician_id || !expenseFormData.amount || !expenseFormData.description) {
+        toast.error('Please fill in all required fields');
+        return;
+      }
+
+      const expenseData = {
+        technician_id: expenseFormData.technician_id,
+        amount: parseFloat(expenseFormData.amount),
+        description: expenseFormData.description,
+        expense_date: expenseFormData.expense_date,
+        category: expenseFormData.category,
+        notes: expenseFormData.notes || null
+      };
+
+      if (editingExpense) {
+        const { error } = await db.technicianExpenses.update(editingExpense.id, expenseData);
+        if (error) throw error;
+        toast.success('Expense updated');
+      } else {
+        const { error } = await db.technicianExpenses.create(expenseData);
+        if (error) throw error;
+        toast.success('Expense added');
+      }
+
+      setExpenseDialogOpen(false);
+      await loadData();
+    } catch (error: any) {
+      toast.error('Failed to save expense: ' + error.message);
+    }
+  };
+
+  const handleDeleteExpense = async (id: string) => {
+    if (!confirm('Are you sure you want to delete this expense?')) return;
+    
+    try {
+      const { error } = await db.technicianExpenses.delete(id);
+      if (error) throw error;
+      toast.success('Expense deleted');
+      await loadData();
+    } catch (error: any) {
+      toast.error('Failed to delete expense: ' + error.message);
+    }
+  };
+
+  const handleAddAdvance = () => {
+    if (!selectedTechnician) {
+      toast.error('Please select a technician');
+      return;
+    }
+    setAdvanceFormData({
+      technician_id: selectedTechnician,
+      amount: '',
+      description: '',
+      advance_date: new Date().toISOString().split('T')[0],
+      payment_method: 'CASH',
       payment_reference: '',
       notes: ''
     });
-    setPaymentDialogOpen(true);
+    setEditingAdvance(null);
+    setAdvanceDialogOpen(true);
   };
 
-  const handleSubmitPayment = async () => {
-    if (!selectedPayment) return;
-    
-    try {
-      const { error } = await db.technicianPayments.update(selectedPayment.id, {
-        payment_status: 'PAID',
-        payment_date: new Date().toISOString(),
-        payment_method: paymentFormData.payment_method,
-        payment_reference: paymentFormData.payment_reference || null,
-        notes: paymentFormData.notes || null
-      });
-      
-      if (error) {
-        toast.error('Failed to update payment: ' + error.message);
-        return;
-      }
-      
-      toast.success('Payment marked as paid');
-      setPaymentDialogOpen(false);
-      setSelectedPayment(null);
-      await loadPayments();
-    } catch (error: any) {
-      toast.error('Error updating payment: ' + error.message);
-    }
+  const handleEditAdvance = (advance: TechnicianAdvance) => {
+    setEditingAdvance(advance);
+    setAdvanceFormData({
+      technician_id: advance.technician_id,
+      amount: advance.amount.toString(),
+      description: advance.description || '',
+      advance_date: advance.advance_date.split('T')[0],
+      payment_method: advance.payment_method || 'CASH',
+      payment_reference: advance.payment_reference || '',
+      notes: advance.notes || ''
+    });
+    setAdvanceDialogOpen(true);
   };
 
-  const handleAddPayment = async () => {
+  const handleSaveAdvance = async () => {
     try {
-      if (!newPaymentFormData.technician_id || !newPaymentFormData.bill_amount) {
-        toast.error('Please select technician and enter bill amount');
+      if (!advanceFormData.technician_id || !advanceFormData.amount) {
+        toast.error('Please fill in all required fields');
         return;
       }
 
-      const billAmount = parseFloat(newPaymentFormData.bill_amount);
-      const commissionAmount = newPaymentFormData.commission_amount 
-        ? parseFloat(newPaymentFormData.commission_amount)
-        : billAmount * 0.10; // Default to 10%
+      const advanceData = {
+        technician_id: advanceFormData.technician_id,
+        amount: parseFloat(advanceFormData.amount),
+        description: advanceFormData.description || null,
+        advance_date: advanceFormData.advance_date,
+        payment_method: advanceFormData.payment_method,
+        payment_reference: advanceFormData.payment_reference || null,
+        notes: advanceFormData.notes || null
+      };
 
-      const { error } = await supabase
-        .from('technician_payments')
-        .insert({
-          technician_id: newPaymentFormData.technician_id,
-          job_id: newPaymentFormData.job_id || null,
-          bill_amount: billAmount,
-          commission_percentage: 10.00,
-          commission_amount: commissionAmount,
-          payment_status: newPaymentFormData.payment_status
-        });
-
-      if (error) {
-        toast.error('Failed to create payment: ' + error.message);
-        return;
-      }
-
-      toast.success('Payment record created');
-      setAddPaymentDialogOpen(false);
-      setNewPaymentFormData({
-        technician_id: '',
-        job_id: '',
-        bill_amount: '',
-        commission_amount: '',
-        payment_status: 'PENDING'
-      });
-      await loadPayments();
-    } catch (error: any) {
-      toast.error('Error creating payment: ' + error.message);
-    }
-  };
-
-  const handleCreatePaymentsForCompletedJobs = async () => {
-    try {
-      setIsCreatingPayments(true);
-      const { data, error } = await db.technicianPayments.createPaymentsForCompletedJobs();
-      
-      if (error) {
-        console.error('Error creating payments:', error);
-        toast.error('Failed to create payment records: ' + (error.message || 'Unknown error'));
-        return;
-      }
-      
-      const result = data?.[0] || data;
-      const created = result?.created_count || 0;
-      const skipped = result?.skipped_count || 0;
-      const errors = result?.error_count || 0;
-      
-      if (created > 0) {
-        toast.success(`Created ${created} payment record(s). ${skipped} already existed.`);
-        await loadPayments();
-      } else if (skipped > 0) {
-        toast.info(`All payment records already exist (${skipped} skipped)`);
+      if (editingAdvance) {
+        const { error } = await db.technicianAdvances.update(editingAdvance.id, advanceData);
+        if (error) throw error;
+        toast.success('Advance updated');
       } else {
-        toast.info('No completed jobs found with payment amounts');
+        const { error } = await db.technicianAdvances.create(advanceData);
+        if (error) throw error;
+        toast.success('Advance added');
       }
-      
-      if (errors > 0) {
-        toast.warning(`${errors} error(s) occurred while creating payment records`);
-      }
+
+      setAdvanceDialogOpen(false);
+      await loadData();
     } catch (error: any) {
-      console.error('Error creating payments:', error);
-      toast.error('Failed to create payment records: ' + error.message);
-    } finally {
-      setIsCreatingPayments(false);
+      toast.error('Failed to save advance: ' + error.message);
     }
   };
 
-  const filteredPayments = payments.filter(payment => {
-    const matchesSearch = !searchTerm || 
-      payment.technician?.full_name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      payment.technician?.employee_id?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      payment.job?.job_number?.toLowerCase().includes(searchTerm.toLowerCase());
+  const handleDeleteAdvance = async (id: string) => {
+    if (!confirm('Are you sure you want to delete this advance?')) return;
     
-    const matchesStatus = statusFilter === 'ALL' || payment.payment_status === statusFilter;
-    
-    return matchesSearch && matchesStatus;
-  });
+    try {
+      const { error } = await db.technicianAdvances.delete(id);
+      if (error) throw error;
+      toast.success('Advance deleted');
+      await loadData();
+    } catch (error: any) {
+      toast.error('Failed to delete advance: ' + error.message);
+    }
+  };
 
-  const totalPending = technicianSummaries.reduce((sum, t) => sum + t.pendingEarnings, 0);
-  const totalPaid = technicianSummaries.reduce((sum, t) => sum + t.totalEarnings, 0);
-  const totalCommission = technicianSummaries.reduce((sum, t) => sum + t.totalCommission, 0);
-  const totalBaseSalary = technicianSummaries.reduce((sum, t) => sum + t.baseSalary, 0);
+  const handleAddExtraCommission = () => {
+    if (!selectedTechnician) {
+      toast.error('Please select a technician');
+      return;
+    }
+    setExtraCommissionFormData({
+      technician_id: selectedTechnician,
+      amount: '',
+      description: '',
+      commission_date: new Date().toISOString().split('T')[0],
+      payment_method: 'CASH',
+      payment_reference: '',
+      notes: ''
+    });
+    setEditingExtraCommission(null);
+    setExtraCommissionDialogOpen(true);
+  };
+
+  const handleEditExtraCommission = (commission: TechnicianExtraCommission) => {
+    setEditingExtraCommission(commission);
+    setExtraCommissionFormData({
+      technician_id: commission.technician_id,
+      amount: commission.amount.toString(),
+      description: commission.description,
+      commission_date: commission.commission_date.split('T')[0],
+      payment_method: commission.payment_method || 'CASH',
+      payment_reference: commission.payment_reference || '',
+      notes: commission.notes || ''
+    });
+    setExtraCommissionDialogOpen(true);
+  };
+
+  const handleSaveExtraCommission = async () => {
+    try {
+      if (!extraCommissionFormData.technician_id || !extraCommissionFormData.amount || !extraCommissionFormData.description) {
+        toast.error('Please fill in all required fields');
+        return;
+      }
+
+      const commissionData = {
+        technician_id: extraCommissionFormData.technician_id,
+        amount: parseFloat(extraCommissionFormData.amount),
+        description: extraCommissionFormData.description,
+        commission_date: extraCommissionFormData.commission_date,
+        payment_method: extraCommissionFormData.payment_method,
+        payment_reference: extraCommissionFormData.payment_reference || null,
+        notes: extraCommissionFormData.notes || null
+      };
+
+      if (editingExtraCommission) {
+        const { error } = await db.technicianExtraCommissions.update(editingExtraCommission.id, commissionData);
+        if (error) throw error;
+        toast.success('Extra commission updated');
+      } else {
+        const { error } = await db.technicianExtraCommissions.create(commissionData);
+        if (error) throw error;
+        toast.success('Extra commission added');
+      }
+
+      setExtraCommissionDialogOpen(false);
+      await loadData();
+    } catch (error: any) {
+      toast.error('Failed to save extra commission: ' + error.message);
+    }
+  };
+
+  const handleDeleteExtraCommission = async (id: string) => {
+    if (!confirm('Are you sure you want to delete this extra commission?')) return;
+    
+    try {
+      const { error } = await db.technicianExtraCommissions.delete(id);
+      if (error) throw error;
+      toast.success('Extra commission deleted');
+      await loadData();
+    } catch (error: any) {
+      toast.error('Failed to delete extra commission: ' + error.message);
+    }
+  };
 
   if (loading) {
     return (
@@ -355,411 +504,333 @@ const TechnicianPayments = () => {
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-        <div>
-          <h2 className="text-2xl font-bold text-gray-900 mb-2">Technician Payments</h2>
-          <p className="text-gray-600">Manage technician commissions (10% of bill amount per job)</p>
-        </div>
-        {payments.length === 0 && (
-          <Button
-            onClick={handleCreatePaymentsForCompletedJobs}
-            disabled={isCreatingPayments}
-            className="bg-blue-600 hover:bg-blue-700 text-white"
-          >
-            {isCreatingPayments ? (
-              <>
-                <RefreshCw className="w-4 h-4 mr-2 animate-spin" />
-                Creating...
-              </>
-            ) : (
-              <>
-                <Plus className="w-4 h-4 mr-2" />
-                Create Payments for Completed Jobs
-              </>
-            )}
-          </Button>
-        )}
+      <div>
+        <h2 className="text-2xl font-bold text-gray-900 mb-2">Technician Payments</h2>
+        <p className="text-gray-600">
+          Manage technician salaries, commissions (10% per job), expenses, and advances
+          {commissionPeriod && (
+            <span className="text-sm text-gray-500 block mt-1">
+              Commission period: {commissionPeriod.start.toLocaleDateString()} to {commissionPeriod.end.toLocaleDateString()}
+            </span>
+          )}
+        </p>
       </div>
 
-      {/* Summary Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-        <Card>
-          <CardHeader className="pb-3">
-            <CardTitle className="text-sm font-medium text-gray-600">Total Base Salary</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold text-gray-900">INR {totalBaseSalary.toFixed(2)}</div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader className="pb-3">
-            <CardTitle className="text-sm font-medium text-gray-600">Total Commission (10%)</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold text-gray-900">INR {totalCommission.toFixed(2)}</div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader className="pb-3">
-            <CardTitle className="text-sm font-medium text-gray-600">Pending Payments</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold text-orange-600">INR {totalPending.toFixed(2)}</div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader className="pb-3">
-            <CardTitle className="text-sm font-medium text-gray-600">Total Paid</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold text-green-600">INR {totalPaid.toFixed(2)}</div>
-            <div className="text-xs text-gray-500 mt-1">Base + Commission</div>
-          </CardContent>
-        </Card>
-      </div>
-
-      {/* Filters and Actions */}
-      <div className="flex gap-4 items-center flex-wrap">
-        <div className="relative flex-1 max-w-md">
-          <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
-          <Input
-            placeholder="Search by technician name, employee ID, or job number..."
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-            className="pl-10"
-          />
-        </div>
-        <Select value={statusFilter} onValueChange={(value: any) => setStatusFilter(value)}>
-          <SelectTrigger className="w-40">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="ALL">All Status</SelectItem>
-            <SelectItem value="PENDING">Pending</SelectItem>
-            <SelectItem value="PAID">Paid</SelectItem>
-          </SelectContent>
-        </Select>
-        <Button
-          onClick={() => {
-            setNewPaymentFormData({
-              technician_id: '',
-              job_id: '',
-              bill_amount: '',
-              commission_amount: '',
-              payment_status: 'PENDING'
-            });
-            setAddPaymentDialogOpen(true);
-          }}
-          className="bg-green-600 hover:bg-green-700 text-white"
-        >
-          <Plus className="w-4 h-4 mr-2" />
-          Add Payment
-        </Button>
-      </div>
-
-      {/* Technician Summaries */}
-      <Card>
-        <CardHeader>
-          <CardTitle>Technician Summary</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="overflow-x-auto">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Technician</TableHead>
-                  <TableHead>Employee ID</TableHead>
-                  <TableHead>Base Salary</TableHead>
-                  <TableHead>Total Jobs</TableHead>
-                  <TableHead>Total Commission (10%)</TableHead>
-                  <TableHead>Total Earnings</TableHead>
-                  <TableHead>Pending</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {technicianSummaries.length === 0 ? (
-                  <TableRow>
-                    <TableCell colSpan={8} className="text-center py-12">
-                      <div className="flex flex-col items-center gap-4">
-                        <DollarSign className="w-12 h-12 text-gray-400" />
-                        <div>
-                          <p className="text-gray-600 font-medium">No payment records found</p>
-                          <p className="text-sm text-gray-500 mt-1">
-                            Payment records are automatically created when jobs are completed with payment amounts.
-                          </p>
-                          <p className="text-sm text-gray-500 mt-1">
-                            Click the button above to create payment records for existing completed jobs (10% commission).
-                          </p>
-                        </div>
-                        <Button
-                          onClick={handleCreatePaymentsForCompletedJobs}
-                          disabled={isCreatingPayments}
-                          className="bg-blue-600 hover:bg-blue-700 text-white mt-2"
-                        >
-                          {isCreatingPayments ? (
-                            <>
-                              <RefreshCw className="w-4 h-4 mr-2 animate-spin" />
-                              Creating Payments...
-                            </>
-                          ) : (
-                            <>
-                              <Plus className="w-4 h-4 mr-2" />
-                              Create Payments for Completed Jobs
-                            </>
-                          )}
-                        </Button>
-                      </div>
-                    </TableCell>
-                  </TableRow>
-                ) : (
-                  technicianSummaries.map((summary) => (
-                    <TableRow key={summary.technicianId}>
-                      <TableCell className="font-medium">{summary.technicianName}</TableCell>
-                      <TableCell>{summary.employeeId}</TableCell>
-                      <TableCell className="font-semibold">INR {summary.baseSalary.toFixed(2)}</TableCell>
-                      <TableCell>{summary.totalJobs}</TableCell>
-                      <TableCell className="font-semibold">INR {summary.totalCommission.toFixed(2)}</TableCell>
-                      <TableCell className="text-green-600 font-semibold">
-                        INR {summary.totalEarnings.toFixed(2)}
-                        <div className="text-xs text-gray-500 font-normal">
-                          (Base: INR {summary.baseSalary.toFixed(2)} + Commission: INR {summary.paidCommission.toFixed(2)})
-                        </div>
-                      </TableCell>
-                      <TableCell className="text-orange-600">INR {summary.pendingEarnings.toFixed(2)}</TableCell>
-                    </TableRow>
-                  ))
-                )}
-              </TableBody>
-            </Table>
-          </div>
-        </CardContent>
-      </Card>
-
-      {/* Payment Details */}
-      <Card>
-        <CardHeader>
-          <CardTitle>Payment Details</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="overflow-x-auto">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Technician</TableHead>
-                  <TableHead>Job Number</TableHead>
-                  <TableHead>Bill Amount</TableHead>
-                  <TableHead>Commission (10%)</TableHead>
-                  <TableHead>Status</TableHead>
-                  <TableHead>Payment Date</TableHead>
-                  <TableHead>Actions</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {filteredPayments.length === 0 && payments.length === 0 ? (
-                  <TableRow>
-                    <TableCell colSpan={7} className="text-center py-12">
-                      <div className="flex flex-col items-center gap-4">
-                        <DollarSign className="w-12 h-12 text-gray-400" />
-                        <div>
-                          <p className="text-gray-600 font-medium">No payment records found</p>
-                          <p className="text-sm text-gray-500 mt-1">
-                            Payment records are automatically created when jobs are completed with payment amounts.
-                          </p>
-                          <p className="text-sm text-gray-500 mt-1">
-                            Click the button above to create payment records for existing completed jobs (10% commission).
-                          </p>
-                        </div>
-                        <Button
-                          onClick={handleCreatePaymentsForCompletedJobs}
-                          disabled={isCreatingPayments}
-                          className="bg-blue-600 hover:bg-blue-700 text-white mt-2"
-                        >
-                          {isCreatingPayments ? (
-                            <>
-                              <RefreshCw className="w-4 h-4 mr-2 animate-spin" />
-                              Creating Payments...
-                            </>
-                          ) : (
-                            <>
-                              <Plus className="w-4 h-4 mr-2" />
-                              Create Payments for Completed Jobs
-                            </>
-                          )}
-                        </Button>
-                      </div>
-                    </TableCell>
-                  </TableRow>
-                ) : filteredPayments.length === 0 && payments.length > 0 ? (
-                  <TableRow>
-                    <TableCell colSpan={7} className="text-center text-gray-500 py-8">
-                      No payments match your search criteria
-                    </TableCell>
-                  </TableRow>
-                ) : (
-                  filteredPayments.map((payment) => (
-                    <TableRow key={payment.id}>
-                      <TableCell className="font-medium">
-                        {payment.technician?.full_name || 'Unknown'}
-                      </TableCell>
-                      <TableCell>{payment.job?.job_number || 'N/A'}</TableCell>
-                      <TableCell>INR {payment.bill_amount.toFixed(2)}</TableCell>
-                      <TableCell className="font-semibold">
-                        INR {payment.commission_amount.toFixed(2)}
-                      </TableCell>
-                      <TableCell>
-                        <Badge
-                          className={
-                            payment.payment_status === 'PAID'
-                              ? 'bg-green-100 text-green-800'
-                              : payment.payment_status === 'PENDING'
-                              ? 'bg-orange-100 text-orange-800'
-                              : 'bg-gray-100 text-gray-800'
-                          }
-                        >
-                          {payment.payment_status}
-                        </Badge>
-                      </TableCell>
-                      <TableCell>
-                        {payment.payment_date
-                          ? new Date(payment.payment_date).toLocaleDateString()
-                          : '-'}
-                      </TableCell>
-                      <TableCell>
-                        <div className="flex gap-2">
-                          {payment.payment_status === 'PENDING' && (
-                            <Button
-                              size="sm"
-                              onClick={() => handleMarkAsPaid(payment)}
-                              className="bg-green-600 hover:bg-green-700"
-                            >
-                              Mark as Paid
-                            </Button>
-                          )}
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            onClick={async () => {
-                              if (confirm('Are you sure you want to delete this payment record?')) {
-                                try {
-                                  const { error } = await supabase
-                                    .from('technician_payments')
-                                    .delete()
-                                    .eq('id', payment.id);
-                                  
-                                  if (error) {
-                                    toast.error('Failed to delete payment: ' + error.message);
-                                  } else {
-                                    toast.success('Payment deleted');
-                                    await loadPayments();
-                                  }
-                                } catch (error: any) {
-                                  toast.error('Error deleting payment: ' + error.message);
-                                }
-                              }
-                            }}
-                            className="text-red-600 hover:text-red-700 hover:bg-red-50"
-                          >
-                            <Trash2 className="w-4 h-4" />
-                          </Button>
-                        </div>
-                      </TableCell>
-                    </TableRow>
-                  ))
-                )}
-              </TableBody>
-            </Table>
-          </div>
-        </CardContent>
-      </Card>
-
-      {/* Payment Dialog */}
-      <Dialog open={paymentDialogOpen} onOpenChange={setPaymentDialogOpen}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Mark Payment as Paid</DialogTitle>
-            <DialogDescription>
-              Record payment details for {selectedPayment?.technician?.full_name}
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-4 py-4">
-            <div className="bg-gray-50 p-4 rounded-lg">
-              <div className="grid grid-cols-2 gap-4 text-sm">
+      {/* Technician Salary Breakdowns */}
+      <div className="space-y-6">
+        {salaryBreakdowns.map((breakdown) => (
+          <Card key={breakdown.technicianId} className="overflow-hidden">
+            <CardHeader className="bg-gray-50 border-b">
+              <div className="flex items-center justify-between">
                 <div>
-                  <span className="text-gray-600">Job Number:</span>
-                  <div className="font-medium">{selectedPayment?.job?.job_number}</div>
+                  <CardTitle className="text-lg">{breakdown.technicianName}</CardTitle>
+                  <p className="text-sm text-gray-600 mt-1">Employee ID: {breakdown.employeeId}</p>
                 </div>
-                <div>
-                  <span className="text-gray-600">Commission Amount:</span>
-                  <div className="font-medium">INR {selectedPayment?.commission_amount.toFixed(2)}</div>
+                <div className="text-right">
+                  <div className="text-2xl font-bold text-green-600">
+                    INR {breakdown.totalSalary.toFixed(2)}
+                  </div>
+                  <p className="text-xs text-gray-500">Total Salary</p>
                 </div>
               </div>
-            </div>
-            
-            <div>
-              <Label htmlFor="payment_method">Payment Method</Label>
-              <Select
-                value={paymentFormData.payment_method}
-                onValueChange={(value) => setPaymentFormData({ ...paymentFormData, payment_method: value })}
-              >
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="BANK_TRANSFER">Bank Transfer</SelectItem>
-                  <SelectItem value="UPI">UPI</SelectItem>
-                  <SelectItem value="CASH">Cash</SelectItem>
-                  <SelectItem value="CHEQUE">Cheque</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-            
-            <div>
-              <Label htmlFor="payment_reference">Payment Reference</Label>
-              <Input
-                id="payment_reference"
-                value={paymentFormData.payment_reference}
-                onChange={(e) => setPaymentFormData({ ...paymentFormData, payment_reference: e.target.value })}
-                placeholder="Transaction ID, UPI reference, etc."
-              />
-            </div>
-            
-            <div>
-              <Label htmlFor="notes">Notes</Label>
-              <Textarea
-                id="notes"
-                value={paymentFormData.notes}
-                onChange={(e) => setPaymentFormData({ ...paymentFormData, notes: e.target.value })}
-                placeholder="Additional notes (optional)"
-                rows={3}
-              />
-            </div>
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setPaymentDialogOpen(false)}>
-              Cancel
-            </Button>
-            <Button onClick={handleSubmitPayment} className="bg-green-600 hover:bg-green-700">
-              Mark as Paid
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+            </CardHeader>
+            <CardContent className="p-6">
+              {/* Salary Breakdown */}
+              <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mb-6">
+                <div className="bg-blue-50 p-4 rounded-lg">
+                  <p className="text-sm text-gray-600 mb-1">Basic Salary</p>
+                  <p className="text-xl font-semibold text-blue-600">INR {breakdown.baseSalary.toFixed(2)}</p>
+                </div>
+                <div className="bg-green-50 p-4 rounded-lg">
+                  <p className="text-sm text-gray-600 mb-1">Commission (10%)</p>
+                  <p className="text-xl font-semibold text-green-600">INR {breakdown.totalCommission.toFixed(2)}</p>
+                </div>
+                <div className="bg-purple-50 p-4 rounded-lg">
+                  <p className="text-sm text-gray-600 mb-1">Extra Commission</p>
+                  <p className="text-xl font-semibold text-purple-600">INR {breakdown.totalExtraCommission.toFixed(2)}</p>
+                </div>
+                <div className="bg-red-50 p-4 rounded-lg">
+                  <p className="text-sm text-gray-600 mb-1">Expenses</p>
+                  <p className="text-xl font-semibold text-red-600">INR {breakdown.totalExpenses.toFixed(2)}</p>
+                </div>
+                <div className="bg-orange-50 p-4 rounded-lg">
+                  <p className="text-sm text-gray-600 mb-1">Advances</p>
+                  <p className="text-xl font-semibold text-orange-600">INR {breakdown.totalAdvances.toFixed(2)}</p>
+                </div>
+              </div>
 
-      {/* Add Payment Dialog */}
-      <Dialog open={addPaymentDialogOpen} onOpenChange={setAddPaymentDialogOpen}>
+              {/* Calculation */}
+              <div className="mb-6 p-4 bg-gray-50 rounded-lg">
+                <p className="text-sm font-medium text-gray-700 mb-2">Salary Calculation:</p>
+                <div className="space-y-1 text-sm">
+                  <div className="flex justify-between">
+                    <span>Basic Salary:</span>
+                    <span className="font-medium">INR {breakdown.baseSalary.toFixed(2)}</span>
+                  </div>
+                  <div className="flex justify-between text-green-600">
+                    <span>+ Commission (10%):</span>
+                    <span className="font-medium">+ INR {breakdown.totalCommission.toFixed(2)}</span>
+                  </div>
+                  <div className="flex justify-between text-purple-600">
+                    <span>+ Extra Commission:</span>
+                    <span className="font-medium">+ INR {breakdown.totalExtraCommission.toFixed(2)}</span>
+                  </div>
+                  <div className="flex justify-between text-orange-600">
+                    <span>- Advances:</span>
+                    <span className="font-medium">- INR {breakdown.totalAdvances.toFixed(2)}</span>
+                  </div>
+                  <div className="flex justify-between pt-2 border-t border-gray-300 font-bold text-lg">
+                    <span>Total Salary:</span>
+                    <span className="text-green-600">INR {breakdown.totalSalary.toFixed(2)}</span>
+                  </div>
+                  <div className="flex justify-between text-gray-500 text-xs mt-2 pt-2 border-t border-gray-200">
+                    <span>Total Expenses (for analytics only):</span>
+                    <span>INR {breakdown.totalExpenses.toFixed(2)}</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Actions */}
+              <div className="flex gap-2 mb-6">
+                <Button
+                  size="sm"
+                  onClick={() => {
+                    setSelectedTechnician(breakdown.technicianId);
+                    handleAddExpense();
+                  }}
+                  className="bg-red-600 hover:bg-red-700 text-white"
+                >
+                  <TrendingDown className="w-4 h-4 mr-2" />
+                  Add Expense
+                </Button>
+                <Button
+                  size="sm"
+                  onClick={() => {
+                    setSelectedTechnician(breakdown.technicianId);
+                    handleAddExtraCommission();
+                  }}
+                  className="bg-purple-600 hover:bg-purple-700 text-white"
+                >
+                  <DollarSign className="w-4 h-4 mr-2" />
+                  Add Extra Commission
+                </Button>
+                <Button
+                  size="sm"
+                  onClick={() => {
+                    setSelectedTechnician(breakdown.technicianId);
+                    handleAddAdvance();
+                  }}
+                  className="bg-orange-600 hover:bg-orange-700 text-white"
+                >
+                  <TrendingUp className="w-4 h-4 mr-2" />
+                  Add Advance
+                </Button>
+              </div>
+
+              {/* Expenses Table */}
+              <div className="mb-6">
+                <h3 className="text-sm font-semibold text-gray-700 mb-3">Expenses</h3>
+                {breakdown.expenses.length === 0 ? (
+                  <p className="text-sm text-gray-500 py-4 text-center bg-gray-50 rounded">No expenses recorded</p>
+                ) : (
+                  <div className="overflow-x-auto">
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead>Date</TableHead>
+                          <TableHead>Description</TableHead>
+                          <TableHead>Category</TableHead>
+                          <TableHead className="text-right">Amount</TableHead>
+                          <TableHead className="text-right">Actions</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {breakdown.expenses.map((expense) => (
+                          <TableRow key={expense.id}>
+                            <TableCell>{new Date(expense.expense_date).toLocaleDateString()}</TableCell>
+                            <TableCell>{expense.description}</TableCell>
+                            <TableCell>{expense.category || 'OTHER'}</TableCell>
+                            <TableCell className="text-right font-semibold text-red-600">
+                              INR {expense.amount.toFixed(2)}
+                            </TableCell>
+                            <TableCell className="text-right">
+                              <div className="flex gap-2 justify-end">
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  onClick={() => {
+                                    setSelectedTechnician(expense.technician_id);
+                                    handleEditExpense(expense);
+                                  }}
+                                  className="hover:bg-blue-50"
+                                  title="Edit expense"
+                                >
+                                  <Edit className="w-4 h-4 mr-1" />
+                                  Edit
+                                </Button>
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  onClick={() => handleDeleteExpense(expense.id)}
+                                  className="text-red-600 hover:text-red-700 hover:bg-red-50"
+                                  title="Delete expense"
+                                >
+                                  <Trash2 className="w-4 h-4 mr-1" />
+                                  Delete
+                                </Button>
+                              </div>
+                            </TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </div>
+                )}
+              </div>
+
+              {/* Advances Table */}
+              <div className="mb-6">
+                <h3 className="text-sm font-semibold text-gray-700 mb-3">Advances</h3>
+                {breakdown.advances.length === 0 ? (
+                  <p className="text-sm text-gray-500 py-4 text-center bg-gray-50 rounded">No advances recorded</p>
+                ) : (
+                  <div className="overflow-x-auto">
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead>Date</TableHead>
+                          <TableHead>Description</TableHead>
+                          <TableHead>Payment Method</TableHead>
+                          <TableHead className="text-right">Amount</TableHead>
+                          <TableHead className="text-right">Actions</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {breakdown.advances.map((advance) => (
+                          <TableRow key={advance.id}>
+                            <TableCell>{new Date(advance.advance_date).toLocaleDateString()}</TableCell>
+                            <TableCell>{advance.description || '-'}</TableCell>
+                            <TableCell>{advance.payment_method || 'CASH'}</TableCell>
+                            <TableCell className="text-right font-semibold text-orange-600">
+                              INR {advance.amount.toFixed(2)}
+                            </TableCell>
+                            <TableCell className="text-right">
+                              <div className="flex gap-2 justify-end">
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  onClick={() => {
+                                    setSelectedTechnician(advance.technician_id);
+                                    handleEditAdvance(advance);
+                                  }}
+                                  className="hover:bg-blue-50"
+                                  title="Edit advance"
+                                >
+                                  <Edit className="w-4 h-4 mr-1" />
+                                  Edit
+                                </Button>
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  onClick={() => handleDeleteAdvance(advance.id)}
+                                  className="text-red-600 hover:text-red-700 hover:bg-red-50"
+                                  title="Delete advance"
+                                >
+                                  <Trash2 className="w-4 h-4 mr-1" />
+                                  Delete
+                                </Button>
+                              </div>
+                            </TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </div>
+                )}
+              </div>
+
+              {/* Extra Commissions Table */}
+              <div className="mb-6">
+                <h3 className="text-sm font-semibold text-gray-700 mb-3">Extra Commissions</h3>
+                {breakdown.extraCommissions.length === 0 ? (
+                  <p className="text-sm text-gray-500 py-4 text-center bg-gray-50 rounded">No extra commissions recorded</p>
+                ) : (
+                  <div className="overflow-x-auto">
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead>Date</TableHead>
+                          <TableHead>Description</TableHead>
+                          <TableHead>Payment Method</TableHead>
+                          <TableHead className="text-right">Amount</TableHead>
+                          <TableHead className="text-right">Actions</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {breakdown.extraCommissions.map((commission) => (
+                          <TableRow key={commission.id}>
+                            <TableCell>{new Date(commission.commission_date).toLocaleDateString()}</TableCell>
+                            <TableCell>{commission.description}</TableCell>
+                            <TableCell>{commission.payment_method || 'CASH'}</TableCell>
+                            <TableCell className="text-right font-semibold text-purple-600">
+                              INR {commission.amount.toFixed(2)}
+                            </TableCell>
+                            <TableCell className="text-right">
+                              <div className="flex gap-2 justify-end">
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  onClick={() => {
+                                    setSelectedTechnician(commission.technician_id);
+                                    handleEditExtraCommission(commission);
+                                  }}
+                                  className="hover:bg-blue-50"
+                                  title="Edit extra commission"
+                                >
+                                  <Edit className="w-4 h-4 mr-1" />
+                                  Edit
+                                </Button>
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  onClick={() => handleDeleteExtraCommission(commission.id)}
+                                  className="text-red-600 hover:text-red-700 hover:bg-red-50"
+                                  title="Delete extra commission"
+                                >
+                                  <Trash2 className="w-4 h-4 mr-1" />
+                                  Delete
+                                </Button>
+                              </div>
+                            </TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </div>
+                )}
+              </div>
+
+            </CardContent>
+          </Card>
+        ))}
+      </div>
+
+      {/* Add/Edit Extra Commission Dialog */}
+      <Dialog open={extraCommissionDialogOpen} onOpenChange={setExtraCommissionDialogOpen}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
-            <DialogTitle>Add Payment Record</DialogTitle>
+            <DialogTitle>{editingExtraCommission ? 'Edit Extra Commission' : 'Add Extra Commission'}</DialogTitle>
             <DialogDescription>
-              Manually create a payment record for a technician
+              Add bonus or extra commission for technician
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4 py-4">
             <div>
-              <Label htmlFor="add-technician">Technician *</Label>
+              <Label htmlFor="extra-commission-technician">Technician</Label>
               <Select
-                value={newPaymentFormData.technician_id}
-                onValueChange={(value) => setNewPaymentFormData({ ...newPaymentFormData, technician_id: value })}
+                value={extraCommissionFormData.technician_id}
+                onValueChange={(value) => setExtraCommissionFormData({ ...extraCommissionFormData, technician_id: value })}
+                disabled={!!editingExtraCommission}
               >
                 <SelectTrigger>
                   <SelectValue placeholder="Select technician" />
@@ -773,95 +844,292 @@ const TechnicianPayments = () => {
                 </SelectContent>
               </Select>
             </div>
-
             <div>
-              <Label htmlFor="add-job">Job (Optional)</Label>
-              <Select
-                value={newPaymentFormData.job_id}
-                onValueChange={(value) => {
-                  const selectedJob = jobs.find(j => j.id === value);
-                  setNewPaymentFormData({ 
-                    ...newPaymentFormData, 
-                    job_id: value,
-                    bill_amount: selectedJob ? (selectedJob.payment_amount || selectedJob.actual_cost || '').toString() : newPaymentFormData.bill_amount
-                  });
-                }}
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="Select job (optional)" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="">None</SelectItem>
-                  {jobs.map((job) => (
-                    <SelectItem key={job.id} value={job.id}>
-                      {job.job_number || job.jobNumber} - INR {job.payment_amount || job.actual_cost || 0}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-
-            <div>
-              <Label htmlFor="add-bill-amount">Bill Amount (INR) *</Label>
+              <Label htmlFor="extra-commission-amount">Amount *</Label>
               <Input
-                id="add-bill-amount"
+                id="extra-commission-amount"
                 type="number"
-                min="0"
                 step="0.01"
-                value={newPaymentFormData.bill_amount}
-                onChange={(e) => {
-                  const billAmount = e.target.value;
-                  const commissionAmount = billAmount ? (parseFloat(billAmount) * 0.10).toFixed(2) : '';
-                  setNewPaymentFormData({ 
-                    ...newPaymentFormData, 
-                    bill_amount: billAmount,
-                    commission_amount: commissionAmount
-                  });
-                }}
-                placeholder="Enter bill amount"
+                min="0"
+                value={extraCommissionFormData.amount}
+                onChange={(e) => setExtraCommissionFormData({ ...extraCommissionFormData, amount: e.target.value })}
+                placeholder="0.00"
               />
             </div>
-
             <div>
-              <Label htmlFor="add-commission-amount">Commission Amount (INR) *</Label>
+              <Label htmlFor="extra-commission-description">Description *</Label>
               <Input
-                id="add-commission-amount"
-                type="number"
-                min="0"
-                step="0.01"
-                value={newPaymentFormData.commission_amount}
-                onChange={(e) => setNewPaymentFormData({ ...newPaymentFormData, commission_amount: e.target.value })}
-                placeholder="Auto-calculated (10%)"
+                id="extra-commission-description"
+                value={extraCommissionFormData.description}
+                onChange={(e) => setExtraCommissionFormData({ ...extraCommissionFormData, description: e.target.value })}
+                placeholder="e.g., Performance bonus, Special project"
               />
-              <p className="text-xs text-gray-500 mt-1">10% of bill amount (can be edited)</p>
             </div>
-
             <div>
-              <Label htmlFor="add-payment-status">Payment Status</Label>
+              <Label htmlFor="extra-commission-date">Commission Date</Label>
+              <Input
+                id="extra-commission-date"
+                type="date"
+                value={extraCommissionFormData.commission_date}
+                onChange={(e) => setExtraCommissionFormData({ ...extraCommissionFormData, commission_date: e.target.value })}
+              />
+            </div>
+            <div>
+              <Label htmlFor="extra-commission-payment-method">Payment Method</Label>
               <Select
-                value={newPaymentFormData.payment_status}
-                onValueChange={(value: any) => setNewPaymentFormData({ ...newPaymentFormData, payment_status: value })}
+                value={extraCommissionFormData.payment_method}
+                onValueChange={(value) => setExtraCommissionFormData({ ...extraCommissionFormData, payment_method: value })}
               >
                 <SelectTrigger>
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="PENDING">Pending</SelectItem>
-                  <SelectItem value="PAID">Paid</SelectItem>
+                  <SelectItem value="CASH">Cash</SelectItem>
+                  <SelectItem value="BANK_TRANSFER">Bank Transfer</SelectItem>
+                  <SelectItem value="UPI">UPI</SelectItem>
+                  <SelectItem value="CHEQUE">Cheque</SelectItem>
                 </SelectContent>
               </Select>
             </div>
+            <div>
+              <Label htmlFor="extra-commission-reference">Payment Reference</Label>
+              <Input
+                id="extra-commission-reference"
+                value={extraCommissionFormData.payment_reference}
+                onChange={(e) => setExtraCommissionFormData({ ...extraCommissionFormData, payment_reference: e.target.value })}
+                placeholder="Transaction reference (optional)"
+              />
+            </div>
+            <div>
+              <Label htmlFor="extra-commission-notes">Notes</Label>
+              <Textarea
+                id="extra-commission-notes"
+                value={extraCommissionFormData.notes}
+                onChange={(e) => setExtraCommissionFormData({ ...extraCommissionFormData, notes: e.target.value })}
+                placeholder="Additional notes (optional)"
+                rows={3}
+              />
+            </div>
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setAddPaymentDialogOpen(false)}>
+            <Button variant="outline" onClick={() => setExtraCommissionDialogOpen(false)}>
               Cancel
             </Button>
-            <Button 
-              onClick={handleAddPayment}
-              disabled={!newPaymentFormData.technician_id || !newPaymentFormData.bill_amount}
-              className="bg-green-600 hover:bg-green-700"
+            <Button onClick={handleSaveExtraCommission}>
+              {editingExtraCommission ? 'Update' : 'Add'} Extra Commission
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Add/Edit Expense Dialog */}
+      <Dialog open={expenseDialogOpen} onOpenChange={setExpenseDialogOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>{editingExpense ? 'Edit Expense' : 'Add Expense'}</DialogTitle>
+            <DialogDescription>
+              Record company expense for technician
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <div>
+              <Label htmlFor="expense-technician">Technician</Label>
+              <Select
+                value={expenseFormData.technician_id}
+                onValueChange={(value) => setExpenseFormData({ ...expenseFormData, technician_id: value })}
+                disabled={!!editingExpense}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Select technician" />
+                </SelectTrigger>
+                <SelectContent>
+                  {technicians.map((tech) => (
+                    <SelectItem key={tech.id} value={tech.id}>
+                      {tech.full_name} ({tech.employee_id})
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <Label htmlFor="expense-amount">Amount (INR) *</Label>
+              <Input
+                id="expense-amount"
+                type="number"
+                min="0"
+                step="0.01"
+                value={expenseFormData.amount}
+                onChange={(e) => setExpenseFormData({ ...expenseFormData, amount: e.target.value })}
+                placeholder="Enter amount"
+              />
+            </div>
+            <div>
+              <Label htmlFor="expense-description">Description *</Label>
+              <Input
+                id="expense-description"
+                value={expenseFormData.description}
+                onChange={(e) => setExpenseFormData({ ...expenseFormData, description: e.target.value })}
+                placeholder="e.g., Fuel, Tools, Parts"
+              />
+            </div>
+            <div>
+              <Label htmlFor="expense-date">Date</Label>
+              <Input
+                id="expense-date"
+                type="date"
+                value={expenseFormData.expense_date}
+                onChange={(e) => setExpenseFormData({ ...expenseFormData, expense_date: e.target.value })}
+              />
+            </div>
+            <div>
+              <Label htmlFor="expense-category">Category</Label>
+              <Select
+                value={expenseFormData.category}
+                onValueChange={(value) => setExpenseFormData({ ...expenseFormData, category: value })}
+              >
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="FUEL">Fuel</SelectItem>
+                  <SelectItem value="TOOLS">Tools</SelectItem>
+                  <SelectItem value="PARTS">Parts</SelectItem>
+                  <SelectItem value="OTHER">Other</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <Label htmlFor="expense-notes">Notes</Label>
+              <Textarea
+                id="expense-notes"
+                value={expenseFormData.notes}
+                onChange={(e) => setExpenseFormData({ ...expenseFormData, notes: e.target.value })}
+                placeholder="Additional notes (optional)"
+                rows={3}
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setExpenseDialogOpen(false)}>
+              Cancel
+            </Button>
+            <Button
+              onClick={handleSaveExpense}
+              disabled={!expenseFormData.technician_id || !expenseFormData.amount || !expenseFormData.description}
+              className="bg-red-600 hover:bg-red-700"
             >
-              Add Payment
+              {editingExpense ? 'Update' : 'Add'} Expense
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Add/Edit Advance Dialog */}
+      <Dialog open={advanceDialogOpen} onOpenChange={setAdvanceDialogOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>{editingAdvance ? 'Edit Advance' : 'Add Advance'}</DialogTitle>
+            <DialogDescription>
+              Record advance payment to technician
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <div>
+              <Label htmlFor="advance-technician">Technician</Label>
+              <Select
+                value={advanceFormData.technician_id}
+                onValueChange={(value) => setAdvanceFormData({ ...advanceFormData, technician_id: value })}
+                disabled={!!editingAdvance}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Select technician" />
+                </SelectTrigger>
+                <SelectContent>
+                  {technicians.map((tech) => (
+                    <SelectItem key={tech.id} value={tech.id}>
+                      {tech.full_name} ({tech.employee_id})
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <Label htmlFor="advance-amount">Amount (INR) *</Label>
+              <Input
+                id="advance-amount"
+                type="number"
+                min="0"
+                step="0.01"
+                value={advanceFormData.amount}
+                onChange={(e) => setAdvanceFormData({ ...advanceFormData, amount: e.target.value })}
+                placeholder="Enter amount"
+              />
+            </div>
+            <div>
+              <Label htmlFor="advance-description">Description</Label>
+              <Input
+                id="advance-description"
+                value={advanceFormData.description}
+                onChange={(e) => setAdvanceFormData({ ...advanceFormData, description: e.target.value })}
+                placeholder="Optional description"
+              />
+            </div>
+            <div>
+              <Label htmlFor="advance-date">Date</Label>
+              <Input
+                id="advance-date"
+                type="date"
+                value={advanceFormData.advance_date}
+                onChange={(e) => setAdvanceFormData({ ...advanceFormData, advance_date: e.target.value })}
+              />
+            </div>
+            <div>
+              <Label htmlFor="advance-payment-method">Payment Method</Label>
+              <Select
+                value={advanceFormData.payment_method}
+                onValueChange={(value) => setAdvanceFormData({ ...advanceFormData, payment_method: value })}
+              >
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="CASH">Cash</SelectItem>
+                  <SelectItem value="BANK_TRANSFER">Bank Transfer</SelectItem>
+                  <SelectItem value="UPI">UPI</SelectItem>
+                  <SelectItem value="CHEQUE">Cheque</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <Label htmlFor="advance-reference">Payment Reference</Label>
+              <Input
+                id="advance-reference"
+                value={advanceFormData.payment_reference}
+                onChange={(e) => setAdvanceFormData({ ...advanceFormData, payment_reference: e.target.value })}
+                placeholder="Transaction ID, UPI reference, etc."
+              />
+            </div>
+            <div>
+              <Label htmlFor="advance-notes">Notes</Label>
+              <Textarea
+                id="advance-notes"
+                value={advanceFormData.notes}
+                onChange={(e) => setAdvanceFormData({ ...advanceFormData, notes: e.target.value })}
+                placeholder="Additional notes (optional)"
+                rows={3}
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setAdvanceDialogOpen(false)}>
+              Cancel
+            </Button>
+            <Button
+              onClick={handleSaveAdvance}
+              disabled={!advanceFormData.technician_id || !advanceFormData.amount}
+              className="bg-orange-600 hover:bg-orange-700"
+            >
+              {editingAdvance ? 'Update' : 'Add'} Advance
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -871,4 +1139,3 @@ const TechnicianPayments = () => {
 };
 
 export default TechnicianPayments;
-

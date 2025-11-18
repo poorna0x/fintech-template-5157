@@ -1050,6 +1050,147 @@ export const db = {
     }
   },
 
+  // Technician expenses operations
+  technicianExpenses: {
+    async getAll(technicianId?: string) {
+      let query = supabase
+        .from('technician_expenses')
+        .select('*')
+        .order('expense_date', { ascending: false });
+      
+      if (technicianId) {
+        query = query.eq('technician_id', technicianId);
+      }
+      
+      const { data, error } = await query;
+      return { data, error };
+    },
+
+    async create(expense: any) {
+      const { data, error } = await supabase
+        .from('technician_expenses')
+        .insert(expense)
+        .select()
+        .single();
+      
+      return { data, error };
+    },
+
+    async update(id: string, updates: any) {
+      const { data, error } = await supabase
+        .from('technician_expenses')
+        .update(updates)
+        .eq('id', id)
+        .select()
+        .single();
+      
+      return { data, error };
+    },
+
+    async delete(id: string) {
+      const { error } = await supabase
+        .from('technician_expenses')
+        .delete()
+        .eq('id', id);
+      
+      return { error };
+    }
+  },
+
+  // Technician advances operations
+  technicianAdvances: {
+    async getAll(technicianId?: string) {
+      let query = supabase
+        .from('technician_advances')
+        .select('*')
+        .order('advance_date', { ascending: false });
+      
+      if (technicianId) {
+        query = query.eq('technician_id', technicianId);
+      }
+      
+      const { data, error } = await query;
+      return { data, error };
+    },
+
+    async create(advance: any) {
+      const { data, error } = await supabase
+        .from('technician_advances')
+        .insert(advance)
+        .select()
+        .single();
+      
+      return { data, error };
+    },
+
+    async update(id: string, updates: any) {
+      const { data, error } = await supabase
+        .from('technician_advances')
+        .update(updates)
+        .eq('id', id)
+        .select()
+        .single();
+      
+      return { data, error };
+    },
+
+    async delete(id: string) {
+      const { error } = await supabase
+        .from('technician_advances')
+        .delete()
+        .eq('id', id);
+      
+      return { error };
+    }
+  },
+
+  // Technician extra commissions operations
+  technicianExtraCommissions: {
+    async getAll(technicianId?: string) {
+      let query = supabase
+        .from('technician_extra_commissions')
+        .select('*')
+        .order('commission_date', { ascending: false });
+      
+      if (technicianId) {
+        query = query.eq('technician_id', technicianId);
+      }
+      
+      const { data, error } = await query;
+      return { data, error };
+    },
+
+    async create(commission: any) {
+      const { data, error } = await supabase
+        .from('technician_extra_commissions')
+        .insert(commission)
+        .select()
+        .single();
+      
+      return { data, error };
+    },
+
+    async update(id: string, updates: any) {
+      const { data, error } = await supabase
+        .from('technician_extra_commissions')
+        .update(updates)
+        .eq('id', id)
+        .select()
+        .single();
+      
+      return { data, error };
+    },
+
+    async delete(id: string) {
+      const { error } = await supabase
+        .from('technician_extra_commissions')
+        .delete()
+        .eq('id', id);
+      
+      return { error };
+    }
+  },
+
   // Stats operations
   stats: {
     async getBillingByCustomer() {
