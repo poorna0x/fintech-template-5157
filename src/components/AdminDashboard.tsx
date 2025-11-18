@@ -49,7 +49,8 @@ import {
   XCircle,
   CheckCircle2,
   Filter,
-  Tag
+  Tag,
+  MessageSquare
 } from 'lucide-react';
 import { db, supabase } from '@/lib/supabase';
 import { registerAdminPWA, disablePWA } from '@/lib/pwa';
@@ -776,6 +777,16 @@ const AdminDashboard = () => {
   const [customerQrPhotos, setCustomerQrPhotos] = useState<string[]>([]);
   const [paymentScreenshot, setPaymentScreenshot] = useState<string>('');
   const [billAmountConfirmOpen, setBillAmountConfirmOpen] = useState(false);
+  const [customerReportDialogOpen, setCustomerReportDialogOpen] = useState(false);
+  const [selectedCustomerForReport, setSelectedCustomerForReport] = useState<Customer | null>(null);
+  const [customerReportJobs, setCustomerReportJobs] = useState<any[]>([]);
+  const [loadingCustomerReportJobs, setLoadingCustomerReportJobs] = useState(false);
+  const [editCompletedJobDialogOpen, setEditCompletedJobDialogOpen] = useState(false);
+  const [selectedCompletedJob, setSelectedCompletedJob] = useState<any | null>(null);
+  const [completedJobEditData, setCompletedJobEditData] = useState<any>({});
+  const [sendMessageDialogOpen, setSendMessageDialogOpen] = useState(false);
+  const [selectedJobForMessage, setSelectedJobForMessage] = useState<any | null>(null);
+  const [messageSentFilter, setMessageSentFilter] = useState<'all' | 'sent' | 'not_sent'>('not_sent');
   const [statusFilter, setStatusFilter] = useState<'ALL' | 'ONGOING' | 'PENDING' | 'ASSIGNED' | 'IN_PROGRESS' | 'COMPLETED' | 'CANCELLED' | 'RESCHEDULED'>('ONGOING');
   const [loadingCustomerJobs, setLoadingCustomerJobs] = useState<{[customerId: string]: boolean}>({});
   // Pagination state
@@ -785,6 +796,11 @@ const AdminDashboard = () => {
   const [totalCount, setTotalCount] = useState<number>(0);
   // Date filter for denied jobs (default to today)
   const [deniedDateFilter, setDeniedDateFilter] = useState<string>(() => {
+    const today = new Date();
+    return today.toISOString().split('T')[0]; // Format: YYYY-MM-DD
+  });
+  // Date filter for completed jobs (default to today)
+  const [completedDateFilter, setCompletedDateFilter] = useState<string>(() => {
     const today = new Date();
     return today.toISOString().split('T')[0]; // Format: YYYY-MM-DD
   });
@@ -1145,8 +1161,8 @@ const AdminDashboard = () => {
       } else if (filter === 'COMPLETED' || filter === 'CANCELLED') {
         // Use pagination for completed and denied jobs
         const statuses = filter === 'COMPLETED' ? ['COMPLETED'] : ['DENIED', 'CANCELLED'];
-        // Pass date filter for denied jobs
-        const dateFilter = filter === 'CANCELLED' ? deniedDateFilter : undefined;
+        // Pass date filter for completed or denied jobs
+        const dateFilter = filter === 'COMPLETED' ? completedDateFilter : (filter === 'CANCELLED' ? deniedDateFilter : undefined);
         const { data, error, count, totalPages: pages } = await db.jobs.getByStatusPaginated(statuses, page, pageSize, dateFilter);
         if (error) {
           setJobs([]);
@@ -1171,7 +1187,35 @@ const AdminDashboard = () => {
     } finally {
       setLoading(false);
     }
-  }, [pageSize, deniedDateFilter]);
+  }, [pageSize, deniedDateFilter, completedDateFilter]);
+
+  // Fetch all jobs for customer when report dialog opens
+  useEffect(() => {
+    const fetchCustomerReportJobs = async () => {
+      if (!customerReportDialogOpen || !selectedCustomerForReport) {
+        setCustomerReportJobs([]);
+        return;
+      }
+
+      setLoadingCustomerReportJobs(true);
+      try {
+        const { data, error } = await db.jobs.getByCustomerId(selectedCustomerForReport.id);
+        if (error) {
+          console.error('Error fetching customer jobs for report:', error);
+          setCustomerReportJobs([]);
+        } else {
+          setCustomerReportJobs(data || []);
+        }
+      } catch (error) {
+        console.error('Error fetching customer jobs for report:', error);
+        setCustomerReportJobs([]);
+      } finally {
+        setLoadingCustomerReportJobs(false);
+      }
+    };
+
+    fetchCustomerReportJobs();
+  }, [customerReportDialogOpen, selectedCustomerForReport]);
 
   const loadDashboardData = async () => {
     try {
@@ -1282,6 +1326,15 @@ const AdminDashboard = () => {
       loadFilteredJobs(statusFilter, 1);
     }
   }, [deniedDateFilter, statusFilter, loadFilteredJobs, isInitialLoad]);
+
+  // Reload jobs when completed date filter changes
+  useEffect(() => {
+    if (isInitialLoad) return;
+    if (statusFilter === 'COMPLETED') {
+      setCurrentPage(1); // Reset to first page when date filter changes
+      loadFilteredJobs(statusFilter, 1);
+    }
+  }, [completedDateFilter, statusFilter, loadFilteredJobs, isInitialLoad]);
 
   // Reload jobs when page changes (for paginated views)
   useEffect(() => {
@@ -5072,6 +5125,78 @@ const AdminDashboard = () => {
     }
   };
 
+  // Handle message sent
+  const handleMessageSent = async (jobId: string) => {
+    try {
+      // Get current job
+      const job = jobs.find(j => j.id === jobId);
+      if (!job) return;
+
+      // Update requirements to mark message as sent
+      let requirements: any[] = [];
+      try {
+        const reqData = (job as any).requirements || job.requirements;
+        if (typeof reqData === 'string') {
+          requirements = JSON.parse(reqData);
+        } else if (Array.isArray(reqData)) {
+          requirements = reqData;
+        } else if (reqData && typeof reqData === 'object') {
+          requirements = [reqData];
+        }
+      } catch (e) {
+        requirements = [];
+      }
+
+      // Add or update message_sent flag
+      // Check if message_sent already exists in any requirement object
+      let messageIndex = requirements.findIndex((r: any) => r?.message_sent !== undefined);
+      if (messageIndex >= 0) {
+        // Update existing message_sent entry
+        requirements[messageIndex].message_sent = true;
+        requirements[messageIndex].message_sent_at = new Date().toISOString();
+      } else {
+        // Find the first object that can hold message_sent, or create new one
+        // Prefer adding to an existing object rather than creating a new array entry
+        let added = false;
+        for (let i = 0; i < requirements.length; i++) {
+          if (requirements[i] && typeof requirements[i] === 'object' && !Array.isArray(requirements[i])) {
+            requirements[i].message_sent = true;
+            requirements[i].message_sent_at = new Date().toISOString();
+            added = true;
+            break;
+          }
+        }
+        if (!added) {
+          // Create a new entry for message_sent
+          requirements.push({
+            message_sent: true,
+            message_sent_at: new Date().toISOString()
+          });
+        }
+      }
+      
+      console.log('Updated requirements with message_sent:', JSON.stringify(requirements, null, 2));
+
+      // Update job in database
+      const { error } = await db.jobs.update(jobId, {
+        requirements: JSON.stringify(requirements)
+      });
+
+      if (error) {
+        console.error('Error marking message as sent:', error);
+        toast.error('Failed to save message status: ' + error.message);
+      } else {
+        toast.success('Message sent confirmation saved');
+        // Close the dialog
+        setSendMessageDialogOpen(false);
+        // Reload jobs to reflect the change - pass current filter and page
+        await loadFilteredJobs(statusFilter, currentPage);
+      }
+    } catch (error: any) {
+      console.error('Error marking message as sent:', error);
+    }
+  };
+
   // Calculate AMC end date: agreement date + years - 1 day
   const calculateAMCEndDate = (agreementDate: string, years: number) => {
     if (!agreementDate) return;
@@ -5179,6 +5304,17 @@ const AdminDashboard = () => {
     // On step 6, submit the form
     try {
       // Prepare update data
+      // Map payment mode to database allowed values
+      // Database allows: 'CASH', 'CARD', 'UPI', 'BANK_TRANSFER'
+      // Frontend uses: 'CASH', 'ONLINE'
+      let dbPaymentMethod: 'CASH' | 'CARD' | 'UPI' | 'BANK_TRANSFER' | null = null;
+      if (paymentMode === 'CASH') {
+        dbPaymentMethod = 'CASH';
+      } else if (paymentMode === 'ONLINE') {
+        // Map ONLINE to UPI (most common online payment method)
+        dbPaymentMethod = 'UPI';
+      }
+      
       const updateData: any = {
         status: 'COMPLETED',
         end_time: new Date().toISOString(),
@@ -5187,7 +5323,7 @@ const AdminDashboard = () => {
         completed_at: new Date().toISOString(),
         actual_cost: parseFloat(billAmount) || 0,
         payment_amount: parseFloat(billAmount) || 0,
-        payment_mode: paymentMode || null,
+        payment_method: dbPaymentMethod || null,
         customer_has_prefilter: customerHasPrefilter,
       };
 
@@ -6059,6 +6195,34 @@ const AdminDashboard = () => {
           </div>
         )}
 
+        {/* Date Filter for Completed Jobs */}
+        {statusFilter === 'COMPLETED' && (
+          <div className="mb-4 space-y-3">
+            <div className="flex items-center gap-3 flex-wrap">
+              <Label htmlFor="completed-date-filter" className="text-sm font-medium text-gray-700">
+                Show completed jobs for:
+              </Label>
+              <Input
+                id="completed-date-filter"
+                type="date"
+                value={completedDateFilter}
+                onChange={(e) => setCompletedDateFilter(e.target.value)}
+                className="max-w-[200px]"
+              />
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => {
+                  const today = new Date();
+                  setCompletedDateFilter(today.toISOString().split('T')[0]);
+                }}
+              >
+                Today
+              </Button>
+            </div>
+          </div>
+        )}
+
         {/* Customers with Jobs */}
         <div className="mb-6">
                     <h2 className="text-xl font-bold text-gray-900 mb-1">
@@ -6079,6 +6243,8 @@ const AdminDashboard = () => {
                 ? `Showing ${displayedCustomers.length} customers with follow-up jobs`                                                                          
                 : statusFilter === 'CANCELLED'
                 ? `Showing ${displayedCustomers.length} customers with denied jobs for ${new Date(deniedDateFilter).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}`                                                                             
+                : statusFilter === 'COMPLETED'
+                ? `Showing ${displayedCustomers.length} customers with completed jobs for ${new Date(completedDateFilter).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}`                                                                             
                 : `Showing ${displayedCustomers.length} customers with ${statusFilter.toLowerCase().replace('_', ' ')} jobs`                                    
               }
             </p>
@@ -6249,7 +6415,8 @@ const AdminDashboard = () => {
                               className="w-full justify-start h-auto py-3 px-4"
                               onClick={() => {
                                 setMoreOptionsDialogOpen(prev => ({ ...prev, [customer.id]: false }));
-                                toast.info('Reports coming soon');
+                                setSelectedCustomerForReport(customer);
+                                setCustomerReportDialogOpen(true);
                               }}
                             >
                               <FileText className="mr-3 h-5 w-5" />
@@ -6360,7 +6527,10 @@ const AdminDashboard = () => {
                             <Receipt className="mr-2 h-4 w-4" />
                             Generate Tax Invoice
                           </DropdownMenuItem>
-                          <DropdownMenuItem onClick={() => toast.info('Reports coming soon')}>
+                          <DropdownMenuItem onClick={() => {
+                            setSelectedCustomerForReport(customer);
+                            setCustomerReportDialogOpen(true);
+                          }}>
                             <FileText className="mr-2 h-4 w-4" />
                             Reports
                           </DropdownMenuItem>
@@ -6606,6 +6776,7 @@ const AdminDashboard = () => {
                           // Show denied jobs (DENIED status)
                           jobsToShow = allJobs.filter(job => job.status === 'DENIED');
                         } else if (statusFilter === 'COMPLETED') {
+                          // Show all completed jobs - no filtering by message sent status
                           jobsToShow = completedJobs;
                         } else {
                           jobsToShow = allJobs.filter(job => job.status === statusFilter);                                                                      
@@ -6670,8 +6841,225 @@ const AdminDashboard = () => {
                         const deniedAt = (job as any).denied_at || job.deniedAt || null;
                         const formattedDeniedAt = deniedAt ? new Date(deniedAt).toLocaleString() : null;
                         
+                        // Extract completion details
+                        const completionNotes = (job as any).completion_notes || job.completionNotes || '';
+                        const completedAt = (job as any).completed_at || job.completedAt || null;
+                        const formattedCompletedAt = completedAt ? new Date(completedAt).toLocaleString() : null;
+                        const completedBy = (job as any).completed_by || job.completedBy || null;
+                        const actualCost = (job as any).actual_cost || job.actual_cost || null;
+                        const paymentAmount = (job as any).payment_amount || job.payment_amount || null;
+                        const paymentMethod = (job as any).payment_method || job.payment_method || null;
+                        
+                        // Get technician name who completed the job
+                        let completedByName = 'Unknown';
+                        if (completedBy) {
+                          if (completedBy === 'admin' || completedBy === 'Admin') {
+                            completedByName = 'Admin';
+                          } else {
+                            const completedByTechnician = technicians.find(tech => tech.id === completedBy);
+                            completedByName = completedByTechnician?.fullName || 'Technician';
+                          }
+                        }
+                        
+                        // Parse requirements to get AMC info, bill photos, payment screenshot
+                        let requirements: any[] = [];
+                        try {
+                          const reqData = (job as any).requirements || job.requirements;
+                          if (typeof reqData === 'string') {
+                            requirements = JSON.parse(reqData);
+                          } else if (Array.isArray(reqData)) {
+                            requirements = reqData;
+                          } else if (reqData && typeof reqData === 'object') {
+                            requirements = [reqData];
+                          }
+                        } catch (e) {
+                          requirements = [];
+                        }
+                        
+                        const amcInfo = requirements.find((r: any) => r?.amc_info)?.amc_info || null;
+                        const qrPhotos = requirements.find((r: any) => r?.qr_photos)?.qr_photos || null;
+                        const billPhotos = requirements.find((r: any) => r?.bill_photos)?.bill_photos || [];
+                        const paymentScreenshot = qrPhotos?.payment_screenshot || null;
+                        
                         return (
                           <div key={job.id}>
+                            {job.status === 'COMPLETED' && (
+                              <div className="mt-4 mb-2">
+                                <div className="flex flex-col sm:flex-row items-start gap-3 rounded-md border border-green-200 bg-green-50 px-3 py-2">
+                                  <CheckCircle className="w-4 h-4 text-green-600 mt-0.5 flex-shrink-0" />
+                                  <div className="space-y-2 text-sm text-gray-900 flex-1 min-w-0">
+                                    <div className="font-semibold text-green-900">
+                                      Job Completed
+                                    </div>
+                                    
+                                    {/* Bill Amount */}
+                                    {(actualCost || paymentAmount) && (
+                                      <div className="text-gray-700 break-words">
+                                        <span className="text-gray-500 font-medium">Amount:</span> ₹{actualCost || paymentAmount}
+                                      </div>
+                                    )}
+                                    
+                                    {/* Payment Mode */}
+                                    {paymentMethod && (
+                                      <div className="text-gray-700 break-words">
+                                        <span className="text-gray-500 font-medium">Payment Mode:</span> {
+                                          paymentMethod === 'CASH' ? 'Cash' : 
+                                          paymentMethod === 'ONLINE' || paymentMethod === 'UPI' || paymentMethod === 'CARD' || paymentMethod === 'BANK_TRANSFER' ? 'Online' : 
+                                          paymentMethod
+                                        }
+                                      </div>
+                                    )}
+                                    
+                                    {/* Payment Screenshot (if online) */}
+                                    {(paymentMethod === 'ONLINE' || paymentMethod === 'UPI' || paymentMethod === 'CARD' || paymentMethod === 'BANK_TRANSFER') && paymentScreenshot && (
+                                      <div className="text-gray-700 break-words">
+                                        <span className="text-gray-500 font-medium">Payment Screenshot:</span>
+                                        <a href={paymentScreenshot} target="_blank" rel="noopener noreferrer" className="ml-2 text-blue-600 hover:underline break-all">
+                                          View Screenshot
+                                        </a>
+                                      </div>
+                                    )}
+                                    
+                                    {/* QR Code Info (if online) */}
+                                    {(paymentMethod === 'ONLINE' || paymentMethod === 'UPI' || paymentMethod === 'CARD' || paymentMethod === 'BANK_TRANSFER') && qrPhotos?.selected_qr_code_name && (
+                                      <div className="text-gray-700 break-words">
+                                        <span className="text-gray-500 font-medium">QR Code:</span> {qrPhotos.selected_qr_code_name}
+                                      </div>
+                                    )}
+                                    
+                                    {/* AMC Details */}
+                                    {amcInfo && (
+                                      <div className="mt-2 pt-2 border-t border-green-200">
+                                        <div className="font-medium text-green-900 mb-1">AMC Details:</div>
+                                        <div className="text-gray-700 space-y-1">
+                                          <div>
+                                            <span className="text-gray-500">Start Date:</span> {amcInfo.date_given ? new Date(amcInfo.date_given).toLocaleDateString('en-IN') : 'N/A'}
+                                          </div>
+                                          <div>
+                                            <span className="text-gray-500">End Date:</span> {amcInfo.end_date ? new Date(amcInfo.end_date).toLocaleDateString('en-IN') : 'N/A'}
+                                          </div>
+                                          <div>
+                                            <span className="text-gray-500">Duration:</span> {amcInfo.years || 1} {amcInfo.years === 1 ? 'year' : 'years'}
+                                          </div>
+                                          {amcInfo.includes_prefilter !== undefined && (
+                                            <div>
+                                              <span className="text-gray-500">Includes Prefilter:</span> {amcInfo.includes_prefilter ? 'Yes' : 'No'}
+                                            </div>
+                                          )}
+                                        </div>
+                                      </div>
+                                    )}
+                                    
+                                    {/* Completion Notes */}
+                                    {completionNotes && (
+                                      <div className="text-gray-700 mt-2 pt-2 border-t border-green-200 break-words">
+                                        <span className="text-gray-500 font-medium">Notes:</span> {completionNotes}
+                                      </div>
+                                    )}
+                                    
+                                    {/* Bill Photos */}
+                                    {billPhotos && Array.isArray(billPhotos) && billPhotos.length > 0 && (
+                                      <div className="text-gray-700 mt-2 pt-2 border-t border-green-200">
+                                        <span className="text-gray-500 font-medium">Bill Photos:</span> {billPhotos.length} photo{billPhotos.length !== 1 ? 's' : ''}
+                                      </div>
+                                    )}
+                                    
+                                    {/* Completed By */}
+                                    {completedByName && (
+                                      <div className="text-gray-700 mt-2 pt-2 border-t border-green-200 break-words">
+                                        <span className="text-gray-500 font-medium">Completed By:</span> {completedByName}
+                                      </div>
+                                    )}
+                                    
+                                    {/* Completed At */}
+                                    {formattedCompletedAt && (
+                                      <div className="text-xs text-gray-500 mt-1 break-words">
+                                        Completed on {formattedCompletedAt}
+                                      </div>
+                                    )}
+                                    
+                                    {/* Message Sent Status - Always show */}
+                                    {(() => {
+                                      const messageSent = requirements.some((r: any) => {
+                                        if (r && typeof r === 'object') {
+                                          return r.message_sent === true || r.message_sent === 'true';
+                                        }
+                                        return false;
+                                      });
+                                      const messageSentAt = requirements.find((r: any) => r?.message_sent_at)?.message_sent_at;
+                                      
+                                      if (messageSent) {
+                                        return (
+                                          <div className="text-xs text-green-600 mt-2 pt-2 border-t border-green-200 break-words font-medium">
+                                            ✓ Message Sent{messageSentAt ? ` on ${new Date(messageSentAt).toLocaleString()}` : ''}
+                                          </div>
+                                        );
+                                      } else {
+                                        return (
+                                          <div className="text-xs text-orange-600 mt-2 pt-2 border-t border-green-200 break-words font-medium">
+                                            ⚠ Message Not Sent
+                                          </div>
+                                        );
+                                      }
+                                    })()}
+                                  </div>
+                                  <div className="flex flex-row sm:flex-col gap-2 mt-2 sm:mt-0 w-full sm:w-auto">
+                                    <Button
+                                      size="sm"
+                                      variant="outline"
+                                      onClick={() => {
+                                        setSelectedCompletedJob(job);
+                                        // Initialize edit data
+                                        const editData: any = {
+                                          amount: actualCost || paymentAmount || '',
+                                          paymentMethod: paymentMethod || 'CASH',
+                                          qrCodeName: qrPhotos?.selected_qr_code_name || '',
+                                          amcInfo: amcInfo || null,
+                                          completionNotes: completionNotes || '',
+                                          completedBy: completedBy || '',
+                                        };
+                                        setCompletedJobEditData(editData);
+                                        setEditCompletedJobDialogOpen(true);
+                                      }}
+                                      className="text-xs flex-1 sm:flex-none"
+                                    >
+                                      <Edit className="w-3 h-3 mr-1" />
+                                      Edit
+                                    </Button>
+                                    {(() => {
+                                      const messageSent = requirements.some((r: any) => r?.message_sent === true);
+                                      if (!messageSent) {
+                                        return (
+                                          <Button
+                                            size="sm"
+                                            variant="outline"
+                                            onClick={() => {
+                                              setSelectedJobForMessage(job);
+                                              setSendMessageDialogOpen(true);
+                                            }}
+                                            className="text-xs flex-1 sm:flex-none"
+                                          >
+                                            <WhatsAppIcon className="w-3 h-3 mr-1" />
+                                            Send Message
+                                          </Button>
+                                        );
+                                      }
+                                      return (
+                                        <Button
+                                          size="sm"
+                                          variant="outline"
+                                          disabled
+                                          className="text-xs opacity-50 flex-1 sm:flex-none"
+                                        >
+                                          <WhatsAppIcon className="w-3 h-3 mr-1" />
+                                          Message Sent
+                                        </Button>
+                                      );
+                                    })()}
+                                  </div>
+                                </div>
+                              </div>
+                            )}
                             {job.status === 'DENIED' && (denialReason || deniedBy || deniedAt) && (
                               <div className="mt-4 mb-2">
                                 <div className="flex items-start gap-3 rounded-md border border-red-200 bg-red-50 px-3 py-2">
@@ -10761,6 +11149,554 @@ const AdminDashboard = () => {
           </Dialog>
         );
       })}
+
+      {/* Customer Report Dialog */}
+      <Dialog open={customerReportDialogOpen} onOpenChange={setCustomerReportDialogOpen}>
+        <DialogContent className="sm:max-w-4xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Customer Report - {selectedCustomerForReport?.fullName || 'Unknown'}</DialogTitle>
+            <DialogDescription>
+              Complete service history and job details
+            </DialogDescription>
+          </DialogHeader>
+          
+          {selectedCustomerForReport && (() => {
+            // Use fetched customer report jobs (filtered to completed)
+            const completedJobs = customerReportJobs.filter(job => {
+              const jobStatus = (job as any).status || job.status;
+              return jobStatus === 'COMPLETED';
+            });
+            
+            return (
+              <div className="space-y-6 py-4">
+                {/* Customer Info */}
+                <div className="bg-gray-50 p-4 rounded-lg">
+                  <h3 className="font-semibold text-lg mb-3">Customer Information</h3>
+                  <div className="grid grid-cols-2 gap-3 text-sm">
+                    <div>
+                      <span className="text-gray-500">Name:</span> {selectedCustomerForReport.fullName}
+                    </div>
+                    <div>
+                      <span className="text-gray-500">Customer ID:</span> {selectedCustomerForReport.customerId}
+                    </div>
+                    <div>
+                      <span className="text-gray-500">Phone:</span> {selectedCustomerForReport.phone}
+                    </div>
+                    {selectedCustomerForReport.email && (
+                      <div>
+                        <span className="text-gray-500">Email:</span> {selectedCustomerForReport.email}
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {/* Completed Jobs */}
+                <div>
+                  <h3 className="font-semibold text-lg mb-3">Completed Jobs ({completedJobs.length})</h3>
+                  {loadingCustomerReportJobs ? (
+                    <div className="text-center py-8 text-gray-500">
+                      <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-gray-900 mx-auto mb-3"></div>
+                      <p className="text-sm">Loading completed jobs...</p>
+                    </div>
+                  ) : completedJobs.length === 0 ? (
+                    <div className="text-center py-8 text-gray-500">
+                      <CheckCircle className="w-12 h-12 mx-auto mb-3 text-gray-400" />
+                      <p className="text-sm">No completed jobs found</p>
+                    </div>
+                  ) : (
+                    <div className="space-y-4">
+                      {completedJobs.map((job) => {
+                        // Extract completion details (same logic as in job card)
+                        const completionNotes = (job as any).completion_notes || job.completionNotes || '';
+                        const completedAt = (job as any).completed_at || job.completedAt || null;
+                        const formattedCompletedAt = completedAt ? new Date(completedAt).toLocaleString() : null;
+                        const completedBy = (job as any).completed_by || job.completedBy || null;
+                        const actualCost = (job as any).actual_cost || job.actual_cost || null;
+                        const paymentAmount = (job as any).payment_amount || job.payment_amount || null;
+                        const paymentMethod = (job as any).payment_method || job.payment_method || null;
+                        
+                        // Get technician name who completed the job
+                        let completedByName = 'Unknown';
+                        if (completedBy) {
+                          if (completedBy === 'admin' || completedBy === 'Admin') {
+                            completedByName = 'Admin';
+                          } else {
+                            const completedByTechnician = technicians.find(tech => tech.id === completedBy);
+                            completedByName = completedByTechnician?.fullName || 'Technician';
+                          }
+                        }
+                        
+                        let requirements: any[] = [];
+                        try {
+                          const reqData = (job as any).requirements || job.requirements;
+                          if (typeof reqData === 'string') {
+                            requirements = JSON.parse(reqData);
+                          } else if (Array.isArray(reqData)) {
+                            requirements = reqData;
+                          } else if (reqData && typeof reqData === 'object') {
+                            requirements = [reqData];
+                          }
+                        } catch (e) {
+                          requirements = [];
+                        }
+                        
+                        const amcInfo = requirements.find((r: any) => r?.amc_info)?.amc_info || null;
+                        const qrPhotos = requirements.find((r: any) => r?.qr_photos)?.qr_photos || null;
+                        const billPhotos = requirements.find((r: any) => r?.bill_photos)?.bill_photos || [];
+                        const paymentScreenshot = qrPhotos?.payment_screenshot || null;
+                        
+                        return (
+                          <div key={job.id} className="border border-gray-200 rounded-lg p-4 bg-white">
+                            <div className="flex items-start justify-between mb-3">
+                              <div>
+                                <div className="font-semibold text-lg">
+                                  {(job as any).job_number || job.jobNumber}
+                                </div>
+                                <div className="text-sm text-gray-600">
+                                  {(job as any).service_type || job.serviceType} - {(job as any).service_sub_type || job.serviceSubType}
+                                </div>
+                                {formattedCompletedAt && (
+                                  <div className="text-xs text-gray-500 mt-1">
+                                    Completed on {formattedCompletedAt}
+                                  </div>
+                                )}
+                              </div>
+                              <Badge className="bg-green-100 text-green-800">Completed</Badge>
+                            </div>
+                            
+                            <div className="space-y-3 mt-4 pt-4 border-t border-gray-200">
+                              {/* Bill Amount */}
+                              {(actualCost || paymentAmount) && (
+                                <div className="flex items-center gap-2">
+                                  <span className="text-sm font-medium text-gray-700 w-32">Amount:</span>
+                                  <span className="text-sm text-gray-900">₹{actualCost || paymentAmount}</span>
+                                </div>
+                              )}
+                              
+                              {/* Payment Mode */}
+                              {paymentMethod && (
+                                <div className="flex items-center gap-2">
+                                  <span className="text-sm font-medium text-gray-700 w-32">Payment Mode:</span>
+                                  <span className="text-sm text-gray-900">{
+                                    paymentMethod === 'CASH' ? 'Cash' : 
+                                    paymentMethod === 'ONLINE' || paymentMethod === 'UPI' || paymentMethod === 'CARD' || paymentMethod === 'BANK_TRANSFER' ? 'Online' : 
+                                    paymentMethod
+                                  }</span>
+                                </div>
+                              )}
+                              
+                              {/* Payment Screenshot */}
+                              {(paymentMethod === 'ONLINE' || paymentMethod === 'UPI' || paymentMethod === 'CARD' || paymentMethod === 'BANK_TRANSFER') && paymentScreenshot && (
+                                <div className="flex items-center gap-2">
+                                  <span className="text-sm font-medium text-gray-700 w-32">Payment Screenshot:</span>
+                                  <a href={paymentScreenshot} target="_blank" rel="noopener noreferrer" className="text-sm text-blue-600 hover:underline">
+                                    View Screenshot
+                                  </a>
+                                </div>
+                              )}
+                              
+                              {/* QR Code */}
+                              {(paymentMethod === 'ONLINE' || paymentMethod === 'UPI' || paymentMethod === 'CARD' || paymentMethod === 'BANK_TRANSFER') && qrPhotos?.selected_qr_code_name && (
+                                <div className="flex items-center gap-2">
+                                  <span className="text-sm font-medium text-gray-700 w-32">QR Code:</span>
+                                  <span className="text-sm text-gray-900">{qrPhotos.selected_qr_code_name}</span>
+                                </div>
+                              )}
+                              
+                              {/* AMC Details */}
+                              {amcInfo && (
+                                <div className="mt-3 pt-3 border-t border-gray-200">
+                                  <div className="font-medium text-gray-900 mb-2">AMC Details:</div>
+                                  <div className="space-y-1 text-sm">
+                                    <div className="flex items-center gap-2">
+                                      <span className="text-gray-500 w-32">Start Date:</span>
+                                      <span className="text-gray-900">{amcInfo.date_given ? new Date(amcInfo.date_given).toLocaleDateString('en-IN') : 'N/A'}</span>
+                                    </div>
+                                    <div className="flex items-center gap-2">
+                                      <span className="text-gray-500 w-32">End Date:</span>
+                                      <span className="text-gray-900">{amcInfo.end_date ? new Date(amcInfo.end_date).toLocaleDateString('en-IN') : 'N/A'}</span>
+                                    </div>
+                                    <div className="flex items-center gap-2">
+                                      <span className="text-gray-500 w-32">Duration:</span>
+                                      <span className="text-gray-900">{amcInfo.years || 1} {amcInfo.years === 1 ? 'year' : 'years'}</span>
+                                    </div>
+                                    {amcInfo.includes_prefilter !== undefined && (
+                                      <div className="flex items-center gap-2">
+                                        <span className="text-gray-500 w-32">Includes Prefilter:</span>
+                                        <span className="text-gray-900">{amcInfo.includes_prefilter ? 'Yes' : 'No'}</span>
+                                      </div>
+                                    )}
+                                  </div>
+                                </div>
+                              )}
+                              
+                              {/* Completion Notes */}
+                              {completionNotes && (
+                                <div className="mt-3 pt-3 border-t border-gray-200">
+                                  <div className="font-medium text-gray-900 mb-1">Notes:</div>
+                                  <div className="text-sm text-gray-700 whitespace-pre-wrap">{completionNotes}</div>
+                                </div>
+                              )}
+                              
+                              {/* Bill Photos */}
+                              {billPhotos && Array.isArray(billPhotos) && billPhotos.length > 0 && (
+                                <div className="mt-3 pt-3 border-t border-gray-200">
+                                  <div className="font-medium text-gray-900 mb-2">Bill Photos ({billPhotos.length}):</div>
+                                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                                    {billPhotos.map((photo, idx) => (
+                                      <a key={idx} href={photo} target="_blank" rel="noopener noreferrer" className="block">
+                                        <img src={photo} alt={`Bill photo ${idx + 1}`} className="w-full h-24 object-cover rounded border border-gray-200 hover:border-gray-400" />
+                                      </a>
+                                    ))}
+                                  </div>
+                                </div>
+                              )}
+                              
+                              {/* Completed By */}
+                              {completedByName && (
+                                <div className="mt-3 pt-3 border-t border-gray-200">
+                                  <div className="flex items-center gap-2">
+                                    <span className="text-sm font-medium text-gray-700 w-32">Completed By:</span>
+                                    <span className="text-sm text-gray-900">{completedByName}</span>
+                                  </div>
+                                </div>
+                              )}
+                              
+                              {/* Job Description */}
+                              {job.description && (
+                                <div className="mt-3 pt-3 border-t border-gray-200">
+                                  <div className="font-medium text-gray-900 mb-1">Description:</div>
+                                  <div className="text-sm text-gray-700 whitespace-pre-wrap">{job.description}</div>
+                                </div>
+                              )}
+                            </div>
+    </div>
+  );
+                      })}
+                    </div>
+                  )}
+                </div>
+              </div>
+            );
+          })()}
+          
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setCustomerReportDialogOpen(false)}>
+              Close
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Edit Completed Job Dialog */}
+      <Dialog open={editCompletedJobDialogOpen} onOpenChange={setEditCompletedJobDialogOpen}>
+        <DialogContent className="sm:max-w-2xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Edit Completed Job Details</DialogTitle>
+            <DialogDescription>
+              Update completion information for {(selectedCompletedJob as any)?.job_number || selectedCompletedJob?.jobNumber}
+            </DialogDescription>
+          </DialogHeader>
+          
+          <div className="space-y-4 py-4">
+            {/* Amount */}
+            <div>
+              <Label htmlFor="edit-amount">Amount (₹)</Label>
+              <Input
+                id="edit-amount"
+                type="number"
+                value={completedJobEditData.amount || ''}
+                onChange={(e) => setCompletedJobEditData({ ...completedJobEditData, amount: e.target.value })}
+                placeholder="Enter amount"
+              />
+            </div>
+
+            {/* Payment Method */}
+            <div>
+              <Label htmlFor="edit-payment-method">Payment Method</Label>
+              <Select
+                value={completedJobEditData.paymentMethod || 'CASH'}
+                onValueChange={(value) => setCompletedJobEditData({ ...completedJobEditData, paymentMethod: value })}
+              >
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="CASH">Cash</SelectItem>
+                  <SelectItem value="UPI">UPI</SelectItem>
+                  <SelectItem value="CARD">Card</SelectItem>
+                  <SelectItem value="BANK_TRANSFER">Bank Transfer</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            {/* QR Code Name (if online payment) */}
+            {(completedJobEditData.paymentMethod === 'UPI' || completedJobEditData.paymentMethod === 'CARD' || completedJobEditData.paymentMethod === 'BANK_TRANSFER') && (
+              <div>
+                <Label htmlFor="edit-qr-code">QR Code Name</Label>
+                <Input
+                  id="edit-qr-code"
+                  value={completedJobEditData.qrCodeName || ''}
+                  onChange={(e) => setCompletedJobEditData({ ...completedJobEditData, qrCodeName: e.target.value })}
+                  placeholder="Enter QR code name"
+                />
+              </div>
+            )}
+
+            {/* AMC Details */}
+            <div className="border-t pt-4">
+              <Label className="text-base font-semibold">AMC Details</Label>
+              <div className="space-y-3 mt-2">
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <Label htmlFor="amc-start-date">Start Date</Label>
+                    <Input
+                      id="amc-start-date"
+                      type="date"
+                      value={completedJobEditData.amcInfo?.date_given ? new Date(completedJobEditData.amcInfo.date_given).toISOString().split('T')[0] : ''}
+                      onChange={(e) => {
+                        const amcInfo = { ...completedJobEditData.amcInfo, date_given: e.target.value };
+                        setCompletedJobEditData({ ...completedJobEditData, amcInfo });
+                      }}
+                    />
+                  </div>
+                  <div>
+                    <Label htmlFor="amc-end-date">End Date</Label>
+                    <Input
+                      id="amc-end-date"
+                      type="date"
+                      value={completedJobEditData.amcInfo?.end_date ? new Date(completedJobEditData.amcInfo.end_date).toISOString().split('T')[0] : ''}
+                      onChange={(e) => {
+                        const amcInfo = { ...completedJobEditData.amcInfo, end_date: e.target.value };
+                        setCompletedJobEditData({ ...completedJobEditData, amcInfo });
+                      }}
+                    />
+                  </div>
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <Label htmlFor="amc-years">Duration (Years)</Label>
+                    <Input
+                      id="amc-years"
+                      type="number"
+                      value={completedJobEditData.amcInfo?.years || 1}
+                      onChange={(e) => {
+                        const amcInfo = { ...completedJobEditData.amcInfo, years: parseInt(e.target.value) || 1 };
+                        setCompletedJobEditData({ ...completedJobEditData, amcInfo });
+                      }}
+                    />
+                  </div>
+                  <div>
+                    <Label htmlFor="amc-prefilter">Includes Prefilter</Label>
+                    <Select
+                      value={completedJobEditData.amcInfo?.includes_prefilter !== undefined ? String(completedJobEditData.amcInfo.includes_prefilter) : 'false'}
+                      onValueChange={(value) => {
+                        const amcInfo = { ...completedJobEditData.amcInfo, includes_prefilter: value === 'true' };
+                        setCompletedJobEditData({ ...completedJobEditData, amcInfo });
+                      }}
+                    >
+                      <SelectTrigger>
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="true">Yes</SelectItem>
+                        <SelectItem value="false">No</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Completion Notes */}
+            <div>
+              <Label htmlFor="edit-notes">Completion Notes</Label>
+              <Textarea
+                id="edit-notes"
+                value={completedJobEditData.completionNotes || ''}
+                onChange={(e) => setCompletedJobEditData({ ...completedJobEditData, completionNotes: e.target.value })}
+                placeholder="Enter completion notes"
+                rows={4}
+              />
+            </div>
+
+            {/* Completed By */}
+            <div>
+              <Label htmlFor="edit-completed-by">Completed By</Label>
+              <Select
+                value={completedJobEditData.completedBy || ''}
+                onValueChange={(value) => setCompletedJobEditData({ ...completedJobEditData, completedBy: value })}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Select who completed" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="admin">Admin</SelectItem>
+                  {technicians.map((tech) => (
+                    <SelectItem key={tech.id} value={tech.id}>
+                      {tech.fullName}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setEditCompletedJobDialogOpen(false)}>
+              Cancel
+            </Button>
+            <Button
+              onClick={async () => {
+                try {
+                  if (!selectedCompletedJob) return;
+
+                  // Update requirements with edited data
+                  let requirements: any[] = [];
+                  try {
+                    const reqData = (selectedCompletedJob as any).requirements || selectedCompletedJob.requirements;
+                    if (typeof reqData === 'string') {
+                      requirements = JSON.parse(reqData);
+                    } else if (Array.isArray(reqData)) {
+                      requirements = reqData;
+                    } else if (reqData && typeof reqData === 'object') {
+                      requirements = [reqData];
+                    }
+                  } catch (e) {
+                    requirements = [];
+                  }
+
+                  // Update or add AMC info
+                  let amcIndex = requirements.findIndex((r: any) => r?.amc_info);
+                  if (completedJobEditData.amcInfo) {
+                    if (amcIndex >= 0) {
+                      requirements[amcIndex].amc_info = completedJobEditData.amcInfo;
+                    } else {
+                      requirements.push({ amc_info: completedJobEditData.amcInfo });
+                    }
+                  }
+
+                  // Update QR photos if QR code name changed
+                  if (completedJobEditData.qrCodeName) {
+                    let qrIndex = requirements.findIndex((r: any) => r?.qr_photos);
+                    if (qrIndex >= 0) {
+                      requirements[qrIndex].qr_photos = {
+                        ...requirements[qrIndex].qr_photos,
+                        selected_qr_code_name: completedJobEditData.qrCodeName
+                      };
+                    } else {
+                      requirements.push({
+                        qr_photos: { selected_qr_code_name: completedJobEditData.qrCodeName }
+                      });
+                    }
+                  }
+
+                  // Prepare update data
+                  const updateData: any = {
+                    actual_cost: parseFloat(completedJobEditData.amount) || 0,
+                    payment_amount: parseFloat(completedJobEditData.amount) || 0,
+                    payment_method: completedJobEditData.paymentMethod || 'CASH',
+                    completion_notes: completedJobEditData.completionNotes || '',
+                    completed_by: completedJobEditData.completedBy || 'admin',
+                    requirements: JSON.stringify(requirements)
+                  };
+
+                  const { error } = await db.jobs.update(selectedCompletedJob.id, updateData);
+                  
+                  if (error) {
+                    toast.error('Failed to update job: ' + error.message);
+                  } else {
+                    toast.success('Job updated successfully');
+                    setEditCompletedJobDialogOpen(false);
+                    // Reload jobs
+                    await loadFilteredJobs();
+                  }
+                } catch (error: any) {
+                  toast.error('Error updating job: ' + error.message);
+                }
+              }}
+            >
+              Save Changes
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Send Message Dialog */}
+      <Dialog open={sendMessageDialogOpen} onOpenChange={setSendMessageDialogOpen}>
+        <DialogContent className="sm:max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>Send Completion Confirmation Message</DialogTitle>
+            <DialogDescription>
+              Send confirmation message to customer for completed job
+            </DialogDescription>
+          </DialogHeader>
+          
+          {selectedJobForMessage && (() => {
+            const customer = (selectedJobForMessage as any).customer || selectedJobForMessage.customer;
+            const customerName = customer?.full_name || customer?.fullName || 'Customer';
+            const customerPhone = customer?.phone || '';
+            
+            // Extract completion details
+            const actualCost = (selectedJobForMessage as any).actual_cost || selectedJobForMessage.actual_cost || null;
+            const paymentAmount = (selectedJobForMessage as any).payment_amount || selectedJobForMessage.payment_amount || null;
+            const amount = actualCost || paymentAmount || 0;
+            
+            // Generate WhatsApp message template
+            const whatsappMessage = `Dear ${customerName},
+
+Thank you for choosing Hydrogen RO! 💧
+
+✅ Your service has been completed successfully.
+💰 Amount of ₹${amount} has been collected.
+
+For any queries or support, please contact us:
+📞 Phone: +91-8884944288, +91-9886944288
+📧 Email: info@hydrogenro.com
+🌐 Website: https://hydrogenro.com
+
+Thank you for your trust in Hydrogen RO! 🙏`;
+
+            return (
+              <div className="space-y-4 py-4">
+                <div className="bg-gray-50 p-4 rounded-lg">
+                  <div className="text-sm text-gray-600 mb-2">Customer: <span className="font-medium">{customerName}</span></div>
+                  <div className="text-sm text-gray-600">Phone: <span className="font-medium">{customerPhone}</span></div>
+                </div>
+
+                <div className="space-y-3">
+                  <div>
+                    <Label>Message Preview</Label>
+                    <div className="mt-2 p-3 bg-gray-50 rounded-md text-sm text-gray-700 whitespace-pre-wrap max-h-40 overflow-y-auto">
+                      {whatsappMessage}
+                    </div>
+                  </div>
+
+                  <Button
+                    variant="default"
+                    className="w-full bg-green-600 hover:bg-green-700 text-white"
+                    onClick={async () => {
+                      const whatsappUrl = `https://wa.me/${customerPhone.replace(/\D/g, '')}?text=${encodeURIComponent(whatsappMessage)}`;
+                      window.open(whatsappUrl, '_blank', 'noopener,noreferrer');
+                      // Mark message as sent
+                      await handleMessageSent(selectedJobForMessage.id);
+                    }}
+                  >
+                    <WhatsAppIcon className="w-4 h-4 mr-2" />
+                    Send WhatsApp Message
+                  </Button>
+                </div>
+              </div>
+            );
+          })()}
+
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setSendMessageDialogOpen(false)}>
+              Close
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 };

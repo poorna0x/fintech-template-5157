@@ -444,23 +444,34 @@ export const db = {
           )
         `, { count: 'exact' });
       
-      // If date filter is provided and statuses include DENIED, filter by denied_at date
-      // Only filter DENIED jobs by date, CANCELLED jobs don't have denied_at
-      if (dateFilter && statuses.includes('DENIED')) {
+      // If date filter is provided, filter by date based on status
+      if (dateFilter) {
         const startOfDay = new Date(dateFilter);
         startOfDay.setHours(0, 0, 0, 0);
         const endOfDay = new Date(dateFilter);
         endOfDay.setHours(23, 59, 59, 999);
         
-        // Filter: DENIED jobs with denied_at in date range, OR CANCELLED jobs (show all cancelled regardless of date)
-        if (statuses.includes('CANCELLED')) {
-          query = query.or(`and(status.eq.DENIED,denied_at.gte.${startOfDay.toISOString()},denied_at.lte.${endOfDay.toISOString()}),status.eq.CANCELLED`);
-        } else {
-          // Only DENIED jobs, filter by date
+        if (statuses.includes('DENIED')) {
+          // Filter DENIED jobs by denied_at date
+          // Filter: DENIED jobs with denied_at in date range, OR CANCELLED jobs (show all cancelled regardless of date)
+          if (statuses.includes('CANCELLED')) {
+            query = query.or(`and(status.eq.DENIED,denied_at.gte.${startOfDay.toISOString()},denied_at.lte.${endOfDay.toISOString()}),status.eq.CANCELLED`);
+          } else {
+            // Only DENIED jobs, filter by date
+            query = query
+              .eq('status', 'DENIED')
+              .gte('denied_at', startOfDay.toISOString())
+              .lte('denied_at', endOfDay.toISOString());
+          }
+        } else if (statuses.includes('COMPLETED')) {
+          // Filter COMPLETED jobs by completed_at date
           query = query
-            .eq('status', 'DENIED')
-            .gte('denied_at', startOfDay.toISOString())
-            .lte('denied_at', endOfDay.toISOString());
+            .eq('status', 'COMPLETED')
+            .gte('completed_at', startOfDay.toISOString())
+            .lte('completed_at', endOfDay.toISOString());
+        } else {
+          // No date filter for this status, use normal status filter
+          query = query.in('status', statuses);
         }
       } else {
         // No date filter, use normal status filter

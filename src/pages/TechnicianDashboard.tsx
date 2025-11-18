@@ -945,6 +945,25 @@ const TechnicianDashboard = () => {
         // Only show if denied by this technician (not by admin)
         return deniedBy && deniedBy !== 'Admin' && deniedBy === technicianName;
       });
+    } else if (statusFilter === 'COMPLETED') {
+      // Filter completed jobs - only show today's completed jobs by this technician
+      const today = new Date();
+      const todayStart = new Date(today);
+      todayStart.setHours(0, 0, 0, 0);
+      const todayEnd = new Date(today);
+      todayEnd.setHours(23, 59, 59, 999);
+      
+      filtered = filtered.filter(job => {
+        const status = (job as any).status || job.status;
+        if (status !== 'COMPLETED') return false;
+        
+        // Check if completed today
+        const completedAt = (job as any).completed_at || job.completedAt;
+        if (!completedAt) return false;
+        
+        const completedDate = new Date(completedAt);
+        return completedDate >= todayStart && completedDate <= todayEnd;
+      });
     } else if (statusFilter !== 'ALL') {
       filtered = filtered.filter(job => {
         const status = (job as any).status || job.status;
@@ -1576,6 +1595,17 @@ const TechnicianDashboard = () => {
     // On step 6, submit the form
     try {
       // Prepare update data
+      // Map payment mode to database allowed values
+      // Database allows: 'CASH', 'CARD', 'UPI', 'BANK_TRANSFER'
+      // Frontend uses: 'CASH', 'ONLINE'
+      let dbPaymentMethod: 'CASH' | 'CARD' | 'UPI' | 'BANK_TRANSFER' | null = null;
+      if (paymentMode === 'CASH') {
+        dbPaymentMethod = 'CASH';
+      } else if (paymentMode === 'ONLINE') {
+        // Map ONLINE to UPI (most common online payment method)
+        dbPaymentMethod = 'UPI';
+      }
+      
       const updateData: any = {
         status: 'COMPLETED',
         end_time: new Date().toISOString(),
@@ -1584,7 +1614,7 @@ const TechnicianDashboard = () => {
         completed_at: new Date().toISOString(),
         actual_cost: parseFloat(billAmount) || 0,
         payment_amount: parseFloat(billAmount) || 0,
-        payment_method: paymentMode || 'CASH',
+        payment_method: dbPaymentMethod || 'CASH',
       };
 
       // Handle requirements - merge bill photos and AMC info
@@ -2088,7 +2118,19 @@ const TechnicianDashboard = () => {
     // Only count jobs denied by this technician (not by admin)
     return deniedBy && deniedBy !== 'Admin' && deniedBy === technicianName;
   }).length;
-  const completedCount = jobs.filter(job => job.status === 'COMPLETED').length;
+  // Count only today's completed jobs
+  const today = new Date();
+  const todayStart = new Date(today);
+  todayStart.setHours(0, 0, 0, 0);
+  const todayEnd = new Date(today);
+  todayEnd.setHours(23, 59, 59, 999);
+  const completedCount = jobs.filter(job => {
+    if (job.status !== 'COMPLETED') return false;
+    const completedAt = (job as any).completed_at || job.completedAt;
+    if (!completedAt) return false;
+    const completedDate = new Date(completedAt);
+    return completedDate >= todayStart && completedDate <= todayEnd;
+  }).length;
 
   // Only show loading screen on initial load if we have no jobs and are actually loading
   // This prevents the flash when app opens with cached data or quick loads
@@ -2717,20 +2759,8 @@ const TechnicianDashboard = () => {
                           const validBrand = isValidValue(brand) ? brand.trim() : '';
                           const validModel = isValidValue(model) ? model.trim() : '';
                           
-                          // Debug logging
-                          if (import.meta.env.DEV) {
-                            console.log('🔧 Technician Equipment:', {
-                              jobId: job.id,
-                              jobBrand,
-                              jobModel,
-                              customerBrand: customer?.brand,
-                              customerModel: customer?.model,
-                              finalBrand: brand,
-                              finalModel: model,
-                              validBrand,
-                              validModel
-                            });
-                          }
+                          // Debug logging (removed to prevent duplicate logs in React Strict Mode)
+                          // Equipment data is processed correctly, logging was causing duplicate console entries
                           
                           // Show equipment if we have a valid brand or model (only once)
                           if (validBrand || validModel) {
@@ -2743,8 +2773,8 @@ const TechnicianDashboard = () => {
                                 <span className="font-medium">Equipment:</span>{' '}
                                 <span className="text-gray-600">
                                   {displayText}
-                                </span>
-                              </div>
+                        </span>
+                      </div>
                             );
                           }
                           
@@ -2835,31 +2865,6 @@ const TechnicianDashboard = () => {
                                 <span className="text-gray-600">
                                   {dateStr}
                                   {timeDisplay && ` - ${timeDisplay}`}
-                                </span>
-                              </div>
-                            );
-                          }
-                          return null;
-                        })()}
-                        {/* Assigned Technician */}
-                        {(() => {
-                          const assignedTechnicianId = (job as any).assigned_technician_id || job.assignedTechnicianId;
-                          
-                          if (assignedTechnicianId) {
-                            // Try to get technician name from various sources
-                            const assignedTechnician = (job as any).assigned_technician || (job as any).assignedTechnician;
-                            let technicianName = user?.fullName || 'Assigned';
-                            
-                            // Prefer technician data from query, fallback to current user name
-                            if (assignedTechnician) {
-                              technicianName = assignedTechnician.full_name || assignedTechnician.fullName || technicianName;
-                            }
-                            
-                            return (
-                              <div className="text-sm text-gray-700">
-                                <span className="font-medium">Assigned To:</span>{' '}
-                                <span className="text-gray-600">
-                                  {technicianName}
                                 </span>
                               </div>
                             );
