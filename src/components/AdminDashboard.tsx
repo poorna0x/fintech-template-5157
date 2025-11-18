@@ -6500,10 +6500,13 @@ const AdminDashboard = () => {
                       variant="outline" 
                       size="sm" 
                       className="flex items-center justify-center gap-2 h-10 bg-white hover:bg-gray-50 border-gray-300 hover:border-gray-400 text-gray-700 hover:text-gray-900 transition-all duration-200 rounded-md text-sm"
-                      onClick={() => handleViewHistory(customer)}
+                      onClick={() => {
+                        setSelectedCustomerForReport(customer);
+                        setCustomerReportDialogOpen(true);
+                      }}
                     >
-                      <History className="w-4 h-4" />
-                      History
+                      <FileText className="w-4 h-4" />
+                      Reports
                     </Button>
                     
                     {/* Mobile More Options Button - Opens Dialog */}
@@ -6597,21 +6600,6 @@ const AdminDashboard = () => {
                                 <div className="text-xs text-muted-foreground">Create a tax invoice with GST for this customer</div>
                               </div>
                             </Button>
-                            <Button 
-                              variant="outline"
-                              className="w-full justify-start h-auto py-3 px-4"
-                              onClick={() => {
-                                setMoreOptionsDialogOpen(prev => ({ ...prev, [customer.id]: false }));
-                                setSelectedCustomerForReport(customer);
-                                setCustomerReportDialogOpen(true);
-                              }}
-                            >
-                              <FileText className="mr-3 h-5 w-5" />
-                              <div className="text-left">
-                                <div className="font-medium">Reports</div>
-                                <div className="text-xs text-muted-foreground">View customer reports</div>
-                              </div>
-                            </Button>
                           </div>
                         </DialogContent>
                       </Dialog>
@@ -6679,10 +6667,13 @@ const AdminDashboard = () => {
                         variant="outline" 
                         size="sm" 
                         className="flex items-center gap-2 h-8 px-3 bg-white hover:bg-gray-50 border-gray-300 hover:border-gray-400 text-gray-700 hover:text-gray-900 transition-all duration-200 rounded-md text-xs"
-                        onClick={() => handleViewHistory(customer)}
+                        onClick={() => {
+                          setSelectedCustomerForReport(customer);
+                          setCustomerReportDialogOpen(true);
+                        }}
                       >
-                        <History className="w-3 h-3" />
-                        History
+                        <FileText className="w-3 h-3" />
+                        Reports
                       </Button>
                       
                       {/* Desktop 3 Dots Menu */}
@@ -6713,13 +6704,6 @@ const AdminDashboard = () => {
                           <DropdownMenuItem onClick={() => handleGenerateTaxInvoice(customer)}>
                             <Receipt className="mr-2 h-4 w-4" />
                             Generate Tax Invoice
-                          </DropdownMenuItem>
-                          <DropdownMenuItem onClick={() => {
-                            setSelectedCustomerForReport(customer);
-                            setCustomerReportDialogOpen(true);
-                          }}>
-                            <FileText className="mr-2 h-4 w-4" />
-                            Reports
                           </DropdownMenuItem>
                         </DropdownMenuContent>
                       </DropdownMenu>
