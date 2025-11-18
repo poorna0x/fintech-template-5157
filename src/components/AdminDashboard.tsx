@@ -727,7 +727,7 @@ const AdminDashboard = () => {
   const [selectedJobForComplete, setSelectedJobForComplete] = useState<Job | null>(null);
   const [completionNotes, setCompletionNotes] = useState('');
   // Complete job multi-step form state
-  const [completeJobStep, setCompleteJobStep] = useState<1 | 2 | 3 | 4 | 5>(1);
+  const [completeJobStep, setCompleteJobStep] = useState<1 | 2 | 3 | 4 | 5 | 6>(1);
   const [billAmount, setBillAmount] = useState<string>('');
   const [billPhotos, setBillPhotos] = useState<string[]>([]);
   const [paymentPhotos, setPaymentPhotos] = useState<string[]>([]);
@@ -4971,18 +4971,18 @@ const AdminDashboard = () => {
       return;
     }
 
-    // Step 3: Payment Mode - validate and move to step 4
+    // Step 3: Payment Mode - validate and move to step 4 (payment screenshot) or step 5 (AMC)
     if (completeJobStep === 3) {
       if (!paymentMode) {
         toast.error('Please select a payment mode');
         return;
       }
-      // If Cash, skip to step 4 (AMC)
+      // If Cash, skip to step 5 (AMC)
       if (paymentMode === 'CASH') {
-      setCompleteJobStep(4);
+      setCompleteJobStep(5);
       return;
       }
-      // If Online, need to check QR code selection
+      // If Online, need to check QR code selection, then go to payment screenshot step
       if (paymentMode === 'ONLINE') {
         if (!selectedQrCodeId) {
           toast.error('Please select a QR code');
@@ -4993,13 +4993,19 @@ const AdminDashboard = () => {
       }
     }
 
-    // Step 4: AMC - move to step 5
+    // Step 4: Payment Screenshot (optional) - move to step 5 (AMC)
     if (completeJobStep === 4) {
       setCompleteJobStep(5);
       return;
     }
 
-    // On step 5, submit the form
+    // Step 5: AMC - move to step 6 (Prefilter)
+    if (completeJobStep === 5) {
+      setCompleteJobStep(6);
+      return;
+    }
+
+    // On step 6, submit the form
     try {
       // Prepare update data
       const updateData: any = {
@@ -9697,9 +9703,10 @@ const AdminDashboard = () => {
             <DialogDescription>
               {completeJobStep === 1 && 'Upload bill photo (optional)'}
               {completeJobStep === 2 && 'Enter the bill amount for this job'}
-              {completeJobStep === 3 && 'Select payment mode and upload payment details'}
-              {completeJobStep === 4 && 'Add AMC information (optional)'}
-              {completeJobStep === 5 && 'Does the customer have a prefilter?'}
+              {completeJobStep === 3 && 'Select payment mode and QR code'}
+              {completeJobStep === 4 && 'Upload payment screenshot (optional)'}
+              {completeJobStep === 5 && 'Add AMC information (optional)'}
+              {completeJobStep === 6 && 'Does the customer have a prefilter?'}
             </DialogDescription>
           </DialogHeader>
           
@@ -9948,8 +9955,29 @@ const AdminDashboard = () => {
               </div>
             )}
 
-            {/* Step 4: AMC Info */}
-            {completeJobStep === 4 && (
+            {/* Step 4: Payment Screenshot (only for ONLINE payment) */}
+            {completeJobStep === 4 && paymentMode === 'ONLINE' && (
+              <div className="space-y-4">
+                <div>
+                  <Label>Payment Screenshot (Optional)</Label>
+                  <p className="text-sm text-gray-500 mb-2">Upload payment confirmation screenshot</p>
+                  <ImageUpload
+                    onImagesChange={(images) => setPaymentScreenshot(images[0] || '')}
+                    maxImages={1}
+                    folder="payment-receipts"
+                    title=""
+                    description=""
+                    maxWidth={800}
+                    quality={0.3}
+                    aggressiveCompression={true}
+                    useSecondaryAccount={true}
+                  />
+                </div>
+              </div>
+            )}
+
+            {/* Step 5: AMC Info */}
+            {completeJobStep === 5 && (
               <div className="space-y-4">
                 <div className="flex items-center space-x-2">
                   <input
@@ -10035,8 +10063,8 @@ const AdminDashboard = () => {
               </div>
             )}
 
-            {/* Step 5: Prefilter Question */}
-            {completeJobStep === 5 && (
+            {/* Step 6: Prefilter Question */}
+            {completeJobStep === 6 && (
               <div className="space-y-4">
                 <div className="space-y-3">
                   <Label className="text-base font-semibold">Does the customer have a prefilter?</Label>
@@ -10096,7 +10124,7 @@ const AdminDashboard = () => {
               variant="outline"
               onClick={() => {
                 if (completeJobStep > 1) {
-                  setCompleteJobStep((prev) => (prev - 1) as 1 | 2 | 3 | 4 | 5);
+                  setCompleteJobStep((prev) => (prev - 1) as 1 | 2 | 3 | 4 | 5 | 6);
                 } else {
                 setCompleteDialogOpen(false);
                 setSelectedJobForComplete(null);
@@ -10131,7 +10159,7 @@ const AdminDashboard = () => {
                 Skip
               </Button>
             )}
-            {completeJobStep === 3 && hasAMC && (!amcDateGiven || !amcEndDate) && (
+            {completeJobStep === 5 && hasAMC && (!amcDateGiven || !amcEndDate) && (
               <Button
                 variant="outline"
                 onClick={() => {
@@ -10147,9 +10175,9 @@ const AdminDashboard = () => {
             <Button
               onClick={handleCompleteJobSubmit}
               className="bg-black hover:bg-gray-800 !text-white font-semibold"
-              disabled={(completeJobStep === 3 && !paymentMode) || (completeJobStep === 3 && paymentMode === 'ONLINE' && !qrCodeType) || (completeJobStep === 4 && hasAMC && (!amcDateGiven || !amcEndDate))}
+              disabled={(completeJobStep === 3 && !paymentMode) || (completeJobStep === 3 && paymentMode === 'ONLINE' && !qrCodeType) || (completeJobStep === 5 && hasAMC && (!amcDateGiven || !amcEndDate))}
             >
-              {completeJobStep === 5 ? 'Complete Job' : 'Next'}
+              {completeJobStep === 6 ? 'Complete Job' : 'Next'}
             </Button>
           </DialogFooter>
         </DialogContent>

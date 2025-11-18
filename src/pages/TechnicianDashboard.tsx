@@ -146,7 +146,7 @@ const TechnicianDashboard = () => {
   const [completeDialogOpen, setCompleteDialogOpen] = useState(false);
   const [selectedJobForComplete, setSelectedJobForComplete] = useState<Job | null>(null);
   const [completionNotes, setCompletionNotes] = useState('');
-  const [completeJobStep, setCompleteJobStep] = useState<1 | 2 | 3 | 4 | 5>(1);
+  const [completeJobStep, setCompleteJobStep] = useState<1 | 2 | 3 | 4 | 5 | 6>(1);
   const [billAmount, setBillAmount] = useState<string>('');
   const [billPhotos, setBillPhotos] = useState<string[]>([]);
   const [paymentPhotos, setPaymentPhotos] = useState<string[]>([]);
@@ -1487,36 +1487,41 @@ const TechnicianDashboard = () => {
       return;
     }
 
-    // Step 3: Payment Mode - validate and move to step 4
+    // Step 3: Payment Mode - validate and move to step 4 (payment screenshot) or step 5 (AMC)
     if (completeJobStep === 3) {
       if (!paymentMode) {
         toast.error('Please select a payment mode');
-      return;
-    }
-      // If Cash, skip to step 4 (AMC)
+        return;
+      }
+      // If Cash, skip to step 5 (AMC)
       if (paymentMode === 'CASH') {
-      setCompleteJobStep(4);
+      setCompleteJobStep(5);
       return;
       }
-      // If Online, need to check QR code selection
+      // If Online, need to check QR code selection, then go to payment screenshot step
       if (paymentMode === 'ONLINE') {
         if (!selectedQrCodeId) {
           toast.error('Please select a QR code');
           return;
         }
-        // QR code selected, proceed to AMC step
         setCompleteJobStep(4);
         return;
       }
     }
 
-    // Step 4: AMC - move to step 5
+    // Step 4: Payment Screenshot (optional) - move to step 5 (AMC)
     if (completeJobStep === 4) {
       setCompleteJobStep(5);
       return;
     }
 
-    // On step 5, submit the form
+    // Step 5: AMC - move to step 6 (Prefilter)
+    if (completeJobStep === 5) {
+      setCompleteJobStep(6);
+      return;
+    }
+
+    // On step 6, submit the form
     try {
       // Prepare update data
       const updateData: any = {
@@ -3107,9 +3112,9 @@ const TechnicianDashboard = () => {
               <AlertDialogAction
                 onClick={() => {
                   setBillAmountConfirmOpen(false);
-                  setCompleteJobStep(2);
+                  setCompleteJobStep(3);
                 }}
-                className="bg-black hover:bg-gray-800 text-white"
+                className="bg-black hover:bg-gray-800 !text-white font-semibold"
               >
                 Confirm & Continue
               </AlertDialogAction>
@@ -3255,9 +3260,10 @@ const TechnicianDashboard = () => {
               <DialogDescription>
                 {completeJobStep === 1 && 'Upload bill photo (optional)'}
                 {completeJobStep === 2 && 'Enter the bill amount for this job'}
-                {completeJobStep === 3 && 'Select payment mode, QR code, and upload payment screenshot'}
-                {completeJobStep === 4 && 'Add AMC information (optional)'}
-            {completeJobStep === 5 && 'Does the customer have a prefilter?'}
+                {completeJobStep === 3 && 'Select payment mode and QR code'}
+                {completeJobStep === 4 && 'Upload payment screenshot (optional)'}
+                {completeJobStep === 5 && 'Add AMC information (optional)'}
+                {completeJobStep === 6 && 'Does the customer have a prefilter?'}
               </DialogDescription>
             </DialogHeader>
             
@@ -3364,31 +3370,29 @@ const TechnicianDashboard = () => {
               {/* Step 3: Payment Mode */}
               {completeJobStep === 3 && (
                 <div className="space-y-4">
-                  {!paymentMode && (
                   <div>
-                      <Label htmlFor="payment-mode">Payment Mode *</Label>
-                      <Select 
-                        value={paymentMode} 
-                        onValueChange={(value: 'CASH' | 'ONLINE') => {
-                          setPaymentMode(value);
-                          // Reset QR code fields when changing payment mode
-                          if (value === 'CASH') {
+                    <Label htmlFor="payment-mode">Payment Mode *</Label>
+                    <Select 
+                      value={paymentMode} 
+                      onValueChange={(value: 'CASH' | 'ONLINE') => {
+                        setPaymentMode(value);
+                        // Reset QR code fields when changing payment mode
+                        if (value === 'CASH') {
                           setQrCodeType('');
                           setSelectedQrCodeId('');
                           setPaymentScreenshot('');
-                          }
-                        }}
-                      >
-                        <SelectTrigger className="mt-1">
-                          <SelectValue placeholder="Select payment mode" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="CASH">Cash</SelectItem>
-                          <SelectItem value="ONLINE">Online</SelectItem>
-                        </SelectContent>
-                      </Select>
-                    </div>
-                  )}
+                        }
+                      }}
+                    >
+                      <SelectTrigger className="mt-1">
+                        <SelectValue placeholder="Select payment mode" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="CASH">Cash</SelectItem>
+                        <SelectItem value="ONLINE">Online</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
                   
                   {paymentMode === 'ONLINE' && (
                     <div className="space-y-4 pl-4 border-l-2 border-gray-200">
@@ -3411,7 +3415,7 @@ const TechnicianDashboard = () => {
                           </SelectTrigger>
                           <SelectContent className="!z-[100]">
                             {/* Common QR Codes - show by name */}
-                            {commonQrCodes.length === 0 && technicians.length === 0 ? (
+                            {commonQrCodes.length === 0 && technicians.filter(t => (t as any).qrCode).length === 0 ? (
                               <SelectItem value="no-qr" disabled>
                                 No QR codes available
                               </SelectItem>
@@ -3429,11 +3433,13 @@ const TechnicianDashboard = () => {
                                 )}
                                 
                                 {/* Technician QR Codes Section */}
-                                {technicians.map((tech) => (
-                                  <SelectItem key={`technician_${tech.id}`} value={`technician_${tech.id}`}>
-                                    {tech.fullName}'s QR Code
-                                  </SelectItem>
-                                ))}
+                                {technicians
+                                  .filter(t => (t as any).qrCode && (t as any).qrCode.trim() !== '')
+                                  .map((tech) => (
+                                    <SelectItem key={`technician_${tech.id}`} value={`technician_${tech.id}`}>
+                                      {tech.fullName}'s QR Code
+                                    </SelectItem>
+                                  ))}
                               </>
                             )}
                           </SelectContent>
@@ -3473,7 +3479,7 @@ const TechnicianDashboard = () => {
                             })() : selectedQrCodeId.startsWith('technician_') ? (() => {
                               const techId = selectedQrCodeId.replace('technician_', '');
                               const selectedTech = technicians.find(t => t.id === techId);
-                              if (!selectedTech || !selectedTech.qrCode) {
+                              if (!selectedTech || !(selectedTech as any).qrCode) {
                                 return (
                                   <div className="text-center p-4">
                                     <p className="text-sm text-red-500">QR code not found</p>
@@ -3487,11 +3493,11 @@ const TechnicianDashboard = () => {
                                     {selectedTech.fullName}'s QR Code
                                   </p>
                                   <img 
-                                    src={selectedTech.qrCode} 
+                                    src={(selectedTech as any).qrCode} 
                                     alt={`${selectedTech.fullName}'s QR Code`}
                                     className="w-64 h-64 object-contain mx-auto border-2 border-primary rounded-lg shadow-lg bg-white p-3"
                                     onError={(e) => {
-                                      console.error('Failed to load technician QR code:', selectedTech.qrCode);
+                                      console.error('Failed to load technician QR code:', (selectedTech as any).qrCode);
                                     }}
                                   />
                                 </div>
@@ -3500,39 +3506,34 @@ const TechnicianDashboard = () => {
                         </div>
                       </div>
                     )}
-
-                    {/* Payment Screenshot Upload (Optional) - Right after QR code */}
-                    {selectedQrCodeId && (
-                      <div className="mt-4">
-                        <Label>Payment Screenshot (Optional)</Label>
-                        <p className="text-sm text-gray-500 mb-2">Upload payment confirmation screenshot</p>
-                        <ImageUpload
-                          onImagesChange={(images) => setPaymentScreenshot(images[0] || '')}
-                          maxImages={1}
-                          folder="payment-receipts"
-                          title=""
-                          description=""
-                          maxWidth={800}
-                          quality={0.3}
-                          aggressiveCompression={true}
-                          useSecondaryAccount={true}
-                        />
-                      </div>
-                    )}
-
                   </div>
                 )}
+              </div>
+              )}
 
-                {paymentMode === 'CASH' && (
-                    <div className="p-4 bg-gray-50 border border-gray-200 rounded-lg">
-                      <p className="text-sm text-gray-700">Payment mode: Cash</p>
-                    </div>
-                  )}
+              {/* Step 4: Payment Screenshot (only for ONLINE payment) */}
+              {completeJobStep === 4 && paymentMode === 'ONLINE' && (
+                <div className="space-y-4">
+                  <div>
+                    <Label>Payment Screenshot (Optional)</Label>
+                    <p className="text-sm text-gray-500 mb-2">Upload payment confirmation screenshot</p>
+                    <ImageUpload
+                      onImagesChange={(images) => setPaymentScreenshot(images[0] || '')}
+                      maxImages={1}
+                      folder="payment-receipts"
+                      title=""
+                      description=""
+                      maxWidth={800}
+                      quality={0.3}
+                      aggressiveCompression={true}
+                      useSecondaryAccount={true}
+                    />
+                  </div>
                 </div>
               )}
 
-              {/* Step 4: AMC Info */}
-              {completeJobStep === 4 && (
+              {/* Step 5: AMC Info */}
+              {completeJobStep === 5 && (
                 <div className="space-y-4">
                   {/* AMC Info */}
                   <div className="space-y-4">
@@ -3621,8 +3622,8 @@ const TechnicianDashboard = () => {
                 </div>
               )}
 
-              {/* Step 5: Prefilter Question */}
-              {completeJobStep === 5 && (
+              {/* Step 6: Prefilter Question */}
+              {completeJobStep === 6 && (
                 <div className="space-y-4">
                   <div className="space-y-3">
                     <Label className="text-base font-semibold">Does the customer have a prefilter?</Label>
@@ -3682,7 +3683,7 @@ const TechnicianDashboard = () => {
                 variant="outline"
                 onClick={() => {
                   if (completeJobStep > 1) {
-                    setCompleteJobStep((prev) => (prev - 1) as 1 | 2 | 3 | 4 | 5);
+                    setCompleteJobStep((prev) => (prev - 1) as 1 | 2 | 3 | 4 | 5 | 6);
                   } else {
                   setCompleteDialogOpen(false);
                   setSelectedJobForComplete(null);
@@ -3716,7 +3717,7 @@ const TechnicianDashboard = () => {
                   Skip
                 </Button>
               )}
-              {completeJobStep === 3 && hasAMC && (!amcDateGiven || !amcEndDate) && (
+              {completeJobStep === 5 && hasAMC && (!amcDateGiven || !amcEndDate) && (
                 <Button
                   variant="outline"
                   onClick={() => {
@@ -3732,9 +3733,9 @@ const TechnicianDashboard = () => {
               <Button
                 onClick={handleCompleteJobSubmit}
                 className="bg-black hover:bg-gray-800 !text-white font-semibold"
-                disabled={(completeJobStep === 3 && !paymentMode) || (completeJobStep === 3 && paymentMode === 'ONLINE' && !selectedQrCodeId) || (completeJobStep === 4 && hasAMC && (!amcDateGiven || !amcEndDate))}
+                disabled={(completeJobStep === 3 && !paymentMode) || (completeJobStep === 3 && paymentMode === 'ONLINE' && !qrCodeType) || (completeJobStep === 5 && hasAMC && (!amcDateGiven || !amcEndDate))}
               >
-                {completeJobStep === 5 ? 'Complete Job' : 'Next'}
+                {completeJobStep === 6 ? 'Complete Job' : 'Next'}
               </Button>
             </DialogFooter>
           </DialogContent>
