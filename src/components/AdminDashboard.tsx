@@ -6145,14 +6145,6 @@ const AdminDashboard = () => {
               </DropdownMenu>
               <div className="flex gap-2 flex-wrap">
                 <Button
-                  variant={currentView === 'dashboard' ? 'default' : 'outline'}
-                  onClick={() => handleViewChange('dashboard')}
-                  className="flex items-center gap-2"
-                >
-                  <Wrench className="w-4 h-4" />
-                  <span className="hidden sm:inline">Dashboard</span>
-                </Button>
-                <Button
                   variant={currentView === 'payments' ? 'default' : 'outline'}
                   onClick={() => handleViewChange('payments')}
                   className="flex items-center gap-2"
