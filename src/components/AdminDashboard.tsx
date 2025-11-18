@@ -743,6 +743,7 @@ const AdminDashboard = () => {
   const [commonQrCodes, setCommonQrCodes] = useState<CommonQrCode[]>([]);
   const [technicianQrCode, setTechnicianQrCode] = useState<string>('');
   const [technicianName, setTechnicianName] = useState<string>('');
+  const [customerQrPhotos, setCustomerQrPhotos] = useState<string[]>([]);
   const [paymentScreenshot, setPaymentScreenshot] = useState<string>('');
   const [billAmountConfirmOpen, setBillAmountConfirmOpen] = useState(false);
   const [statusFilter, setStatusFilter] = useState<'ALL' | 'ONGOING' | 'PENDING' | 'ASSIGNED' | 'IN_PROGRESS' | 'COMPLETED' | 'CANCELLED' | 'RESCHEDULED'>('ONGOING');
@@ -925,41 +926,66 @@ const AdminDashboard = () => {
   }, [reloadTechnicians]);
 
   // Load QR codes with localStorage caching
-  useEffect(() => {
-    const loadQrCodes = async () => {
-      try {
-        // Check cache first (for mobile)
+  const loadQrCodes = useCallback(async () => {
+    try {
+      console.log('Loading QR codes in AdminDashboard...');
+      // Check cache first (for mobile)
+      if (shouldUseCache()) {
+        const cachedCommon = getCachedQrCodes();
+        if (cachedCommon) {
+          setCommonQrCodes(cachedCommon);
+        }
+      }
+
+      // Always fetch from database (cache will be updated)
+      const commonResult = await db.commonQrCodes.getAll();
+
+      if (commonResult.error) {
+        console.error('Error fetching QR codes:', commonResult.error);
+        return;
+      }
+
+      if (commonResult.data) {
+        const transformed = commonResult.data.map((qr: any) => ({
+          id: qr.id,
+          name: qr.name,
+          qrCodeUrl: qr.qr_code_url,
+          createdAt: qr.created_at,
+          updatedAt: qr.updated_at
+        }));
+        console.log('QR codes loaded:', transformed.length, 'items');
+        setCommonQrCodes(transformed);
+        // Update cache
         if (shouldUseCache()) {
-          const cachedCommon = getCachedQrCodes();
-          if (cachedCommon) {
-            setCommonQrCodes(cachedCommon);
-          }
+          cacheQrCodes(transformed);
         }
+      } else {
+        console.log('No QR codes found');
+        setCommonQrCodes([]);
+      }
+    } catch (error) {
+      console.error('Error loading QR codes:', error);
+    }
+  }, []);
 
-        // Always fetch from database (cache will be updated)
-        const commonResult = await db.commonQrCodes.getAll();
+  useEffect(() => {
+    loadQrCodes();
+  }, [loadQrCodes]);
 
-        if (commonResult.data) {
-          const transformed = commonResult.data.map((qr: any) => ({
-            id: qr.id,
-            name: qr.name,
-            qrCodeUrl: qr.qr_code_url,
-            createdAt: qr.created_at,
-            updatedAt: qr.updated_at
-          }));
-          setCommonQrCodes(transformed);
-          // Update cache
-          if (shouldUseCache()) {
-            cacheQrCodes(transformed);
-          }
-        }
-      } catch (error) {
-        console.error('Error loading QR codes:', error);
+  // Reload QR codes when page becomes visible (e.g., when returning from Settings)
+  useEffect(() => {
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        console.log('Page became visible, reloading QR codes...');
+        loadQrCodes();
       }
     };
 
-    loadQrCodes();
-  }, []);
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
+  }, [loadQrCodes]);
 
   // Load unique brands and models from database
   const loadBrandsAndModels = useCallback(async () => {
@@ -5140,8 +5166,7 @@ const AdminDashboard = () => {
       setTechnicianQrCode('');
       setTechnicianName('');
       setPaymentScreenshot('');
-      setTechnicianQrPhoto('');
-      setPaymentScreenshot('');
+      setCustomerQrPhotos([]);
     } catch (error) {
       toast.error('Failed to complete job');
     }
@@ -9808,7 +9833,7 @@ const AdminDashboard = () => {
                       if (value === 'CASH') {
                         setQrCodeType('');
                         setCustomerQrPhotos([]);
-                        setTechnicianQrPhoto('');
+                        setTechnicianQrCode('');
                         setPaymentScreenshot('');
                       }
                     }}
@@ -9842,18 +9867,26 @@ const AdminDashboard = () => {
                         <SelectTrigger className="mt-1">
                           <SelectValue placeholder="Select QR code" />
                         </SelectTrigger>
-                        <SelectContent>
+                        <SelectContent className="!z-[100]">
                           {/* Common QR Codes - show by name */}
-                          {commonQrCodes.map((qr) => (
-                            <SelectItem key={`common_${qr.id}`} value={`common_${qr.id}`}>
-                              {qr.name}
+                          {commonQrCodes.length === 0 && !technicianQrCode ? (
+                            <SelectItem value="no-qr" disabled>
+                              No QR codes available
                             </SelectItem>
-                          ))}
-                          {/* Technician QR Code - show by name */}
-                          {technicianQrCode && (
-                            <SelectItem value="technician">
-                              {(technicianName || 'Technician')}'s QR Code
-                            </SelectItem>
+                          ) : (
+                            <>
+                              {commonQrCodes.map((qr) => (
+                                <SelectItem key={`common_${qr.id}`} value={`common_${qr.id}`}>
+                                  {qr.name}
+                                </SelectItem>
+                              ))}
+                              {/* Technician QR Code - show by name */}
+                              {technicianQrCode && (
+                                <SelectItem value="technician">
+                                  {(technicianName || 'Technician')}'s QR Code
+                                </SelectItem>
+                              )}
+                            </>
                           )}
                         </SelectContent>
                       </Select>
@@ -10085,7 +10118,7 @@ const AdminDashboard = () => {
                   setCustomerHasPrefilter(null);
                   setQrCodeType('');
                   setCustomerQrPhotos([]);
-                  setTechnicianQrPhoto('');
+                  setTechnicianQrCode('');
                   setPaymentScreenshot('');
                 }
               }}

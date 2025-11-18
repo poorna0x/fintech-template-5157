@@ -17,7 +17,7 @@ import {
   ArrowLeft
 } from 'lucide-react';
 import { toast } from 'sonner';
-import { db } from '@/lib/supabase';
+import { db, supabase } from '@/lib/supabase';
 import { Technician } from '@/types';
 import ImageUpload from '@/components/ImageUpload';
 import { QrCode } from 'lucide-react';
@@ -27,7 +27,8 @@ const Settings = () => {
   const { user, isAdmin } = useAuth();
   const navigate = useNavigate();
   
-  // No authentication required for now
+  // Note: Currently allows unauthenticated access, but RLS policies need to be updated
+  // Run supabase-qr-codes-rls-fix.sql to allow unauthenticated access
 
   // Technician management states
   const [technicians, setTechnicians] = useState<Technician[]>([]);
@@ -308,8 +309,14 @@ const Settings = () => {
   // Common QR Code management functions
   const loadCommonQrCodes = async () => {
     try {
+      console.log('Loading common QR codes...');
       const { data, error } = await db.commonQrCodes.getAll();
-      if (error) throw error;
+      if (error) {
+        console.error('Error fetching QR codes:', error);
+        throw error;
+      }
+      
+      console.log('QR codes fetched:', data);
       
       if (data) {
         const transformed = data.map((qr: any) => ({
@@ -319,11 +326,16 @@ const Settings = () => {
           createdAt: qr.created_at,
           updatedAt: qr.updated_at
         }));
+        console.log('Transformed QR codes:', transformed);
         setCommonQrCodes(transformed);
+      } else {
+        console.log('No QR codes found in database');
+        setCommonQrCodes([]);
       }
     } catch (error) {
       console.error('Error loading common QR codes:', error);
-      toast.error('Failed to load QR codes');
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      toast.error(`Failed to load QR codes: ${errorMessage}`);
     }
   };
 
@@ -343,35 +355,77 @@ const Settings = () => {
 
   const handleSaveQrCode = async () => {
     try {
-      if (!qrCodeFormData.name || !qrCodeFormData.qrCodeUrl) {
-        toast.error('Please provide both name and QR code');
+      // Validate form data
+      if (!qrCodeFormData.name || !qrCodeFormData.name.trim()) {
+        toast.error('Please provide a QR code name');
         return;
       }
 
+      if (!qrCodeFormData.qrCodeUrl || !qrCodeFormData.qrCodeUrl.trim()) {
+        toast.error('Please upload a QR code image');
+        return;
+      }
+
+      // Validate URL format
+      if (!qrCodeFormData.qrCodeUrl.startsWith('http')) {
+        toast.error('Invalid QR code URL. Please upload the image again.');
+        return;
+      }
+
+      console.log('Saving QR code:', { 
+        name: qrCodeFormData.name, 
+        qrCodeUrl: qrCodeFormData.qrCodeUrl,
+        urlLength: qrCodeFormData.qrCodeUrl.length 
+      });
+
+      // Check authentication
+      const { data: sessionData } = await supabase.auth.getSession();
+      console.log('Current session:', sessionData?.session ? 'Authenticated' : 'Not authenticated');
+
       if (editQrCodeDialogOpen && selectedQrCode) {
-        const { error } = await db.commonQrCodes.update(selectedQrCode.id, {
-          name: qrCodeFormData.name,
-          qr_code_url: qrCodeFormData.qrCodeUrl
+        console.log('Updating QR code with ID:', selectedQrCode.id);
+        const { data, error } = await db.commonQrCodes.update(selectedQrCode.id, {
+          name: qrCodeFormData.name.trim(),
+          qr_code_url: qrCodeFormData.qrCodeUrl.trim()
         });
-        if (error) throw error;
+        if (error) {
+          console.error('Error updating QR code:', error);
+          console.error('Error details:', JSON.stringify(error, null, 2));
+          toast.error(`Failed to update QR code: ${error.message || JSON.stringify(error)}`);
+          return;
+        }
+        console.log('QR code updated successfully:', data);
         toast.success('QR code updated successfully');
       } else {
-        const { error } = await db.commonQrCodes.create({
-          name: qrCodeFormData.name,
-          qr_code_url: qrCodeFormData.qrCodeUrl
+        console.log('Creating new QR code...');
+        const { data, error } = await db.commonQrCodes.create({
+          name: qrCodeFormData.name.trim(),
+          qr_code_url: qrCodeFormData.qrCodeUrl.trim()
         });
-        if (error) throw error;
+        if (error) {
+          console.error('Error creating QR code:', error);
+          console.error('Error details:', JSON.stringify(error, null, 2));
+          toast.error(`Failed to create QR code: ${error.message || JSON.stringify(error)}`);
+          return;
+        }
+        console.log('QR code created successfully:', data);
         toast.success('QR code created successfully');
       }
 
+      // Reload QR codes after successful save
+      console.log('Reloading QR codes...');
       await loadCommonQrCodes();
+      
+      // Close dialogs and reset form
       setAddQrCodeDialogOpen(false);
       setEditQrCodeDialogOpen(false);
       setSelectedQrCode(null);
       setQrCodeFormData({ name: '', qrCodeUrl: '' });
     } catch (error) {
       console.error('Error saving QR code:', error);
-      toast.error('Failed to save QR code');
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      console.error('Full error:', error);
+      toast.error(`Failed to save QR code: ${errorMessage}`);
     }
   };
 
@@ -782,13 +836,25 @@ const Settings = () => {
           </DialogHeader>
           
           <div className="space-y-6">
+            {/* Debug info - remove in production */}
+            {import.meta.env.DEV && (
+              <div className="p-2 bg-gray-100 rounded text-xs">
+                <p><strong>Debug Info:</strong></p>
+                <p>Name: {qrCodeFormData.name || '(empty)'}</p>
+                <p>URL: {qrCodeFormData.qrCodeUrl ? `${qrCodeFormData.qrCodeUrl.substring(0, 50)}...` : '(empty)'}</p>
+                <p>Button disabled: {(!qrCodeFormData.name || !qrCodeFormData.qrCodeUrl) ? 'YES' : 'NO'}</p>
+              </div>
+            )}
             <div className="space-y-4">
               <div>
                 <Label htmlFor="qrCodeName">QR Code Name *</Label>
                 <Input
                   id="qrCodeName"
                   value={qrCodeFormData.name}
-                  onChange={(e) => setQrCodeFormData(prev => ({ ...prev, name: e.target.value }))}
+                  onChange={(e) => {
+                    console.log('Name changed:', e.target.value);
+                    setQrCodeFormData(prev => ({ ...prev, name: e.target.value }));
+                  }}
                   placeholder="e.g., Company UPI QR, Main Account QR"
                 />
               </div>
@@ -797,7 +863,16 @@ const Settings = () => {
                 <Label>Upload QR Code Image *</Label>
                 <p className="text-sm text-gray-500 mb-2">Upload QR code image for payment scanning</p>
                 <ImageUpload
-                  onImagesChange={(images) => setQrCodeFormData(prev => ({ ...prev, qrCodeUrl: images[0] || '' }))}
+                  onImagesChange={(images) => {
+                    console.log('ImageUpload callback called with images:', images);
+                    const url = images[0] || '';
+                    console.log('Setting QR code URL:', url);
+                    setQrCodeFormData(prev => {
+                      const updated = { ...prev, qrCodeUrl: url };
+                      console.log('Updated qrCodeFormData:', updated);
+                      return updated;
+                    });
+                  }}
                   maxImages={1}
                   folder="common-qr-codes"
                   title=""
@@ -814,7 +889,11 @@ const Settings = () => {
                       alt="QR Code" 
                       className="w-32 h-32 object-contain border border-gray-200 rounded"
                     />
+                    <p className="text-xs text-gray-500 mt-1">URL: {qrCodeFormData.qrCodeUrl.substring(0, 50)}...</p>
                   </div>
+                )}
+                {!qrCodeFormData.qrCodeUrl && (
+                  <p className="text-xs text-red-500 mt-1">No QR code uploaded yet</p>
                 )}
               </div>
             </div>
@@ -834,7 +913,17 @@ const Settings = () => {
               Cancel
             </Button>
             <Button
-              onClick={handleSaveQrCode}
+              onClick={() => {
+                console.log('Create/Update QR Code button clicked');
+                console.log('Current form data:', qrCodeFormData);
+                console.log('Form validation:', {
+                  hasName: !!qrCodeFormData.name,
+                  hasUrl: !!qrCodeFormData.qrCodeUrl,
+                  nameValue: qrCodeFormData.name,
+                  urlValue: qrCodeFormData.qrCodeUrl
+                });
+                handleSaveQrCode();
+              }}
               disabled={!qrCodeFormData.name || !qrCodeFormData.qrCodeUrl}
               className="bg-blue-600 hover:bg-blue-700 w-full sm:w-auto"
             >
