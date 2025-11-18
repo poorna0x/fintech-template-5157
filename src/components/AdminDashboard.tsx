@@ -783,6 +783,11 @@ const AdminDashboard = () => {
   const [pageSize] = useState<number>(20);
   const [totalPages, setTotalPages] = useState<number>(0);
   const [totalCount, setTotalCount] = useState<number>(0);
+  // Date filter for denied jobs (default to today)
+  const [deniedDateFilter, setDeniedDateFilter] = useState<string>(() => {
+    const today = new Date();
+    return today.toISOString().split('T')[0]; // Format: YYYY-MM-DD
+  });
   // Job counts for stats cards (loaded separately)
   const [jobCounts, setJobCounts] = useState<{ongoing: number; followup: number; denied: number; completed: number}>({
     ongoing: 0,
@@ -1140,7 +1145,9 @@ const AdminDashboard = () => {
       } else if (filter === 'COMPLETED' || filter === 'CANCELLED') {
         // Use pagination for completed and denied jobs
         const statuses = filter === 'COMPLETED' ? ['COMPLETED'] : ['DENIED', 'CANCELLED'];
-        const { data, error, count, totalPages: pages } = await db.jobs.getByStatusPaginated(statuses, page, pageSize);
+        // Pass date filter for denied jobs
+        const dateFilter = filter === 'CANCELLED' ? deniedDateFilter : undefined;
+        const { data, error, count, totalPages: pages } = await db.jobs.getByStatusPaginated(statuses, page, pageSize, dateFilter);
         if (error) {
           setJobs([]);
         } else {
@@ -1164,7 +1171,7 @@ const AdminDashboard = () => {
     } finally {
       setLoading(false);
     }
-  }, [pageSize]);
+  }, [pageSize, deniedDateFilter]);
 
   const loadDashboardData = async () => {
     try {
@@ -1266,6 +1273,15 @@ const AdminDashboard = () => {
     // Refresh counts when filter changes
     loadJobCounts();
   }, [statusFilter, loadFilteredJobs, loadJobCounts, isInitialLoad]);
+
+  // Reload jobs when denied date filter changes
+  useEffect(() => {
+    if (isInitialLoad) return;
+    if (statusFilter === 'CANCELLED') {
+      setCurrentPage(1); // Reset to first page when date filter changes
+      loadFilteredJobs(statusFilter, 1);
+    }
+  }, [deniedDateFilter, statusFilter, loadFilteredJobs, isInitialLoad]);
 
   // Reload jobs when page changes (for paginated views)
   useEffect(() => {
@@ -6017,6 +6033,32 @@ const AdminDashboard = () => {
           </Card>
         </div>
 
+        {/* Date Filter for Denied Jobs */}
+        {statusFilter === 'CANCELLED' && (
+          <div className="mb-4 flex items-center gap-3 flex-wrap">
+            <Label htmlFor="denied-date-filter" className="text-sm font-medium text-gray-700">
+              Show denied jobs for:
+            </Label>
+            <Input
+              id="denied-date-filter"
+              type="date"
+              value={deniedDateFilter}
+              onChange={(e) => setDeniedDateFilter(e.target.value)}
+              className="max-w-[200px]"
+            />
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => {
+                const today = new Date();
+                setDeniedDateFilter(today.toISOString().split('T')[0]);
+              }}
+            >
+              Today
+            </Button>
+          </div>
+        )}
+
         {/* Customers with Jobs */}
         <div className="mb-6">
                     <h2 className="text-xl font-bold text-gray-900 mb-1">
@@ -6036,7 +6078,7 @@ const AdminDashboard = () => {
                 : statusFilter === 'RESCHEDULED'
                 ? `Showing ${displayedCustomers.length} customers with follow-up jobs`                                                                          
                 : statusFilter === 'CANCELLED'
-                ? `Showing ${displayedCustomers.length} customers with denied jobs`                                                                             
+                ? `Showing ${displayedCustomers.length} customers with denied jobs for ${new Date(deniedDateFilter).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}`                                                                             
                 : `Showing ${displayedCustomers.length} customers with ${statusFilter.toLowerCase().replace('_', ' ')} jobs`                                    
               }
             </p>
@@ -6861,7 +6903,7 @@ const AdminDashboard = () => {
                                           } else if (jobServiceType === 'SOFTENER' && brands.length > 1) {
                                             if (!brand) brand = brands[1] || brands[0] || '';
                                             if (!model) model = models[1] || models[0] || '';
-                                          } else {
+                                              } else {
                                             if (!brand) brand = brands[0] || '';
                                             if (!model) model = models[0] || '';
                                           }
@@ -6894,10 +6936,10 @@ const AdminDashboard = () => {
                                                   {validBrand && validModel 
                                                     ? `${validBrand} - ${validModel}` 
                                                     : validBrand || validModel}
-                                                </div>
-                                              </div>
-                                            </div>
-                                          )}
+                                          </div>
+                                        </div>
+                                      </div>
+                                    )}
                                           
                                           {/* Show Assigned To section if technician is assigned */}
                                           {hasTechnician && (
