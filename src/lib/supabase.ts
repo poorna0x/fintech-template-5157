@@ -971,6 +971,320 @@ export const db = {
       const { data, error } = await supabase.rpc('get_next_invoice_number');
       return { data, error };
     }
+  },
+
+  // Technician Payments operations
+  technicianPayments: {
+    async getAll() {
+      const { data, error } = await supabase
+        .from('technician_payments')
+        .select(`
+          *,
+          technician:technicians(
+            id,
+            full_name,
+            phone,
+            email,
+            employee_id
+          ),
+          job:jobs(
+            id,
+            job_number,
+            service_type,
+            service_sub_type,
+            payment_amount,
+            actual_cost,
+            status
+          )
+        `)
+        .order('created_at', { ascending: false });
+      
+      return { data, error };
+    },
+
+    async getByTechnicianId(technicianId: string) {
+      const { data, error } = await supabase
+        .from('technician_payments')
+        .select(`
+          *,
+          job:jobs(
+            id,
+            job_number,
+            service_type,
+            service_sub_type,
+            payment_amount,
+            actual_cost,
+            status
+          )
+        `)
+        .eq('technician_id', technicianId)
+        .order('created_at', { ascending: false });
+      
+      return { data, error };
+    },
+
+    async update(id: string, updates: any) {
+      const { data, error } = await supabase
+        .from('technician_payments')
+        .update(updates)
+        .eq('id', id)
+        .select();
+      
+      return { data: data?.[0] || null, error };
+    },
+
+    async getSummary() {
+      // Get summary stats for all technicians
+      const { data, error } = await supabase
+        .rpc('get_technician_payment_summary');
+      
+      return { data, error };
+    },
+
+    async createPaymentsForCompletedJobs() {
+      // Call the backfill function to create payment records for completed jobs
+      const { data, error } = await supabase
+        .rpc('backfill_technician_payments');
+      
+      return { data, error };
+    }
+  },
+
+  // Stats operations
+  stats: {
+    async getBillingByCustomer() {
+      const { data, error } = await supabase
+        .from('jobs')
+        .select(`
+          customer_id,
+          customer:customers(
+            id,
+            customer_id,
+            full_name,
+            phone
+          ),
+          payment_amount,
+          actual_cost,
+          status
+        `)
+        .eq('status', 'COMPLETED')
+        .not('payment_amount', 'is', null)
+        .order('created_at', { ascending: false });
+      
+      if (error) return { data: null, error };
+      
+      // Group by customer
+      const customerTotals: Record<string, any> = {};
+      data?.forEach((job: any) => {
+        const customerId = job.customer_id;
+        const amount = job.payment_amount || job.actual_cost || 0;
+        
+        if (!customerTotals[customerId]) {
+          customerTotals[customerId] = {
+            customer: job.customer,
+            totalAmount: 0,
+            jobCount: 0
+          };
+        }
+        
+        customerTotals[customerId].totalAmount += amount;
+        customerTotals[customerId].jobCount += 1;
+      });
+      
+      return { data: Object.values(customerTotals), error: null };
+    },
+
+    async getBillingByDate(date: string) {
+      // Get jobs completed on a specific date
+      const startDate = new Date(date);
+      startDate.setHours(0, 0, 0, 0);
+      const endDate = new Date(date);
+      endDate.setHours(23, 59, 59, 999);
+      
+      const { data, error } = await supabase
+        .from('jobs')
+        .select(`
+          id,
+          job_number,
+          requirements,
+          payment_amount,
+          actual_cost,
+          payment_method,
+          status,
+          assigned_technician_id,
+          technician:technicians(
+            id,
+            full_name,
+            employee_id
+          ),
+          customer:customers(
+            id,
+            customer_id,
+            full_name
+          ),
+          completed_at
+        `)
+        .eq('status', 'COMPLETED')
+        .gte('completed_at', startDate.toISOString())
+        .lte('completed_at', endDate.toISOString())
+        .not('payment_amount', 'is', null);
+      
+      return { data, error };
+    },
+
+    async getBillingByQRCode(date?: string) {
+      // Get jobs with QR code information from requirements
+      let query = supabase
+        .from('jobs')
+        .select(`
+          id,
+          job_number,
+          requirements,
+          payment_amount,
+          actual_cost,
+          status,
+          completed_at,
+          customer:customers(
+            id,
+            customer_id,
+            full_name
+          )
+        `)
+        .eq('status', 'COMPLETED')
+        .not('payment_amount', 'is', null);
+      
+      // Filter by date if provided
+      if (date) {
+        const startDate = new Date(date);
+        startDate.setHours(0, 0, 0, 0);
+        const endDate = new Date(date);
+        endDate.setHours(23, 59, 59, 999);
+        query = query
+          .gte('completed_at', startDate.toISOString())
+          .lte('completed_at', endDate.toISOString());
+      }
+      
+      const { data, error } = await query;
+      
+      if (error) return { data: null, error };
+      
+      // Extract QR codes from requirements
+      const qrCodeTotals: Record<string, any> = {};
+      data?.forEach((job: any) => {
+        try {
+          const requirements = typeof job.requirements === 'string' 
+            ? JSON.parse(job.requirements) 
+            : job.requirements || [];
+          
+          const qrPhotos = requirements.find((r: any) => r?.qr_photos);
+          const qrCodeName = qrPhotos?.qr_photos?.selected_qr_code_name;
+          
+          if (qrCodeName) {
+            const amount = job.payment_amount || job.actual_cost || 0;
+            
+            if (!qrCodeTotals[qrCodeName]) {
+              qrCodeTotals[qrCodeName] = {
+                qrCodeName,
+                totalAmount: 0,
+                jobCount: 0,
+                jobs: []
+              };
+            }
+            
+            qrCodeTotals[qrCodeName].totalAmount += amount;
+            qrCodeTotals[qrCodeName].jobCount += 1;
+            qrCodeTotals[qrCodeName].jobs.push({
+              jobNumber: job.job_number,
+              amount,
+              customer: job.customer
+            });
+          }
+        } catch (e) {
+          // Skip jobs with invalid requirements
+        }
+      });
+      
+      return { data: Object.values(qrCodeTotals), error: null };
+    },
+
+    async getAnalytics() {
+      // Get comprehensive analytics
+      const [jobsResult, techniciansResult, paymentsResult] = await Promise.all([
+        supabase
+          .from('jobs')
+          .select('status, payment_amount, actual_cost, assigned_technician_id, created_at, denied_at, completed_at'),
+        supabase
+          .from('technicians')
+          .select('id, full_name, performance'),
+        supabase
+          .from('technician_payments')
+          .select('technician_id, commission_amount, payment_status')
+      ]);
+      
+      if (jobsResult.error) return { data: null, error: jobsResult.error };
+      
+      const jobs = jobsResult.data || [];
+      const technicians = techniciansResult.data || [];
+      const payments = paymentsResult.data || [];
+      
+      // Calculate stats
+      const totalJobs = jobs.length;
+      const completedJobs = jobs.filter(j => j.status === 'COMPLETED').length;
+      const deniedJobs = jobs.filter(j => j.status === 'DENIED' || j.status === 'CANCELLED').length;
+      const pendingJobs = jobs.filter(j => j.status === 'PENDING').length;
+      const assignedJobs = jobs.filter(j => j.status === 'ASSIGNED').length;
+      const inProgressJobs = jobs.filter(j => j.status === 'IN_PROGRESS').length;
+      
+      // Calculate total billing
+      const completedJobsWithPayment = jobs.filter(j => 
+        j.status === 'COMPLETED' && (j.payment_amount || j.actual_cost)
+      );
+      const totalBilling = completedJobsWithPayment.reduce((sum, j) => 
+        sum + (j.payment_amount || j.actual_cost || 0), 0
+      );
+      const averageBill = completedJobsWithPayment.length > 0
+        ? totalBilling / completedJobsWithPayment.length
+        : 0;
+      
+      // Technician stats
+      const technicianStats = technicians.map(tech => {
+        const techJobs = jobs.filter(j => j.assigned_technician_id === tech.id);
+        const techCompleted = techJobs.filter(j => j.status === 'COMPLETED').length;
+        const techPayments = payments.filter(p => p.technician_id === tech.id);
+        const totalEarnings = techPayments
+          .filter(p => p.payment_status === 'PAID')
+          .reduce((sum, p) => sum + (p.commission_amount || 0), 0);
+        const pendingEarnings = techPayments
+          .filter(p => p.payment_status === 'PENDING')
+          .reduce((sum, p) => sum + (p.commission_amount || 0), 0);
+        
+        return {
+          id: tech.id,
+          name: tech.full_name,
+          totalJobs: techJobs.length,
+          completedJobs: techCompleted,
+          totalEarnings,
+          pendingEarnings
+        };
+      });
+      
+      return {
+        data: {
+          totalJobs,
+          completedJobs,
+          deniedJobs,
+          pendingJobs,
+          assignedJobs,
+          inProgressJobs,
+          totalBilling,
+          averageBill,
+          technicianStats,
+          completionRate: totalJobs > 0 ? (completedJobs / totalJobs) * 100 : 0,
+          denialRate: totalJobs > 0 ? (deniedJobs / totalJobs) * 100 : 0
+        },
+        error: null
+      };
+    }
   }
 };
 

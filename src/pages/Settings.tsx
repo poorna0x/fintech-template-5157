@@ -22,13 +22,15 @@ import { Technician } from '@/types';
 import ImageUpload from '@/components/ImageUpload';
 import { QrCode } from 'lucide-react';
 import { CommonQrCode, invalidateQrCodesCache } from '@/lib/qrCodeManager';
+import PinDialog from '@/components/PinDialog';
 
 const Settings = () => {
   const { user, isAdmin } = useAuth();
   const navigate = useNavigate();
   
-  // Note: Currently allows unauthenticated access, but RLS policies need to be updated
-  // Run supabase-qr-codes-rls-fix.sql to allow unauthenticated access
+  // PIN verification states
+  const [pinDialogOpen, setPinDialogOpen] = useState(false);
+  const [pinVerified, setPinVerified] = useState(false);
 
   // Technician management states
   const [technicians, setTechnicians] = useState<Technician[]>([]);
@@ -51,15 +53,36 @@ const Settings = () => {
     email: '',
     employeeId: '',
     password: '',
-    qrCode: '' // QR code image URL
+    qrCode: '', // QR code image URL
+    baseSalary: 0
   });
 
-
-  // Load data on component mount
+  // Check PIN on mount
   useEffect(() => {
-    loadTechnicians();
-    loadCommonQrCodes();
+    if (sessionStorage.getItem('adminPinVerified') === 'true') {
+      setPinVerified(true);
+    } else {
+      setPinDialogOpen(true);
+    }
   }, []);
+
+  // Load data on component mount (only if PIN verified)
+  useEffect(() => {
+    if (pinVerified) {
+      loadTechnicians();
+      loadCommonQrCodes();
+    }
+  }, [pinVerified]);
+
+  const handlePinSuccess = () => {
+    setPinDialogOpen(false);
+    setPinVerified(true);
+  };
+
+  const handlePinCancel = () => {
+    setPinDialogOpen(false);
+    navigate('/admin');
+  };
 
   // Transform technician data from database format to frontend format
   const transformTechnicianData = (tech: any) => ({
@@ -113,7 +136,8 @@ const Settings = () => {
       email: '',
       employeeId: generateEmployeeId(),
       password: '',
-      qrCode: ''
+      qrCode: '',
+      baseSalary: 0
     });
     setAddTechnicianDialogOpen(true);
   };
@@ -126,7 +150,8 @@ const Settings = () => {
       email: technician.email,
       employeeId: technician.employeeId,
       password: '', // Don't show existing password for security
-      qrCode: (technician as any).qrCode || ''
+      qrCode: (technician as any).qrCode || '',
+      baseSalary: technician.salary?.baseSalary || 0
     });
     setEditTechnicianDialogOpen(true);
   };
@@ -204,9 +229,9 @@ const Settings = () => {
           customerSatisfaction: 0
         },
         salary: {
-          baseSalary: 0,
+          baseSalary: technicianFormData.baseSalary || 0,
           commissionPerJob: 0,
-          commissionPercentage: 0
+          commissionPercentage: 10 // 10% commission per job
         },
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString()
@@ -449,7 +474,21 @@ const Settings = () => {
   };
 
 
-  // No authentication check - allow access to all
+  // Show PIN dialog if not verified
+  if (!pinVerified) {
+    return (
+      <div className="min-h-screen bg-gray-50">
+        <PinDialog
+          open={pinDialogOpen}
+          onSuccess={handlePinSuccess}
+          onCancel={handlePinCancel}
+        />
+      </div>
+    );
+  }
+
+  // Note: Currently allows unauthenticated access, but RLS policies need to be updated
+  // Run supabase-qr-codes-rls-fix.sql to allow unauthenticated access
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -467,13 +506,13 @@ const Settings = () => {
             
             <div className="flex items-center">
               <Button
-                variant="outline"
+                variant="ghost"
                 size="sm"
                 onClick={() => navigate('/admin')}
-                className="w-full sm:w-auto"
+                className="text-gray-600 hover:text-gray-900 -ml-2"
               >
-                <ArrowLeft className="w-4 h-4 mr-2" />
-                Back to Admin
+                <ArrowLeft className="w-4 h-4 mr-1" />
+                Back
               </Button>
             </div>
           </div>
@@ -764,6 +803,19 @@ const Settings = () => {
                     placeholder={editTechnicianDialogOpen ? "Enter new password (optional)" : "Enter password"}
                   />
                 </div>
+                <div>
+                  <Label htmlFor="baseSalary">Basic Salary (INR) *</Label>
+                  <Input
+                    id="baseSalary"
+                    type="number"
+                    min="0"
+                    step="100"
+                    value={technicianFormData.baseSalary || ''}
+                    onChange={(e) => setTechnicianFormData(prev => ({ ...prev, baseSalary: parseFloat(e.target.value) || 0 }))}
+                    placeholder="Enter basic salary"
+                  />
+                  <p className="text-xs text-gray-500 mt-1">Monthly basic salary for this technician</p>
+                </div>
               </div>
             </div>
             
@@ -810,7 +862,7 @@ const Settings = () => {
             </Button>
             <Button
               onClick={handleSaveTechnician}
-              disabled={!technicianFormData.fullName || !technicianFormData.phone || !technicianFormData.email || !technicianFormData.employeeId || (!editTechnicianDialogOpen && !technicianFormData.password)}
+              disabled={!technicianFormData.fullName || !technicianFormData.phone || !technicianFormData.email || !technicianFormData.employeeId || (!editTechnicianDialogOpen && !technicianFormData.password) || technicianFormData.baseSalary < 0}
               className="bg-blue-600 hover:bg-blue-700 w-full sm:w-auto"
             >
               {editTechnicianDialogOpen ? 'Update Technician' : 'Create Technician'}

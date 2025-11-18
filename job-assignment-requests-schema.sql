@@ -2,7 +2,7 @@
 -- This table tracks job assignment requests sent to multiple technicians
 -- First technician to accept gets the job, others are automatically cancelled
 
-CREATE TABLE job_assignment_requests (
+CREATE TABLE IF NOT EXISTS job_assignment_requests (
     id UUID DEFAULT uuid_generate_v4() PRIMARY KEY,
     job_id UUID NOT NULL REFERENCES jobs(id) ON DELETE CASCADE,
     technician_id UUID NOT NULL REFERENCES technicians(id) ON DELETE CASCADE,
@@ -27,9 +27,9 @@ CREATE TABLE job_assignment_requests (
 );
 
 -- Index for efficient queries
-CREATE INDEX idx_job_assignment_requests_job_id ON job_assignment_requests(job_id);
-CREATE INDEX idx_job_assignment_requests_technician_id ON job_assignment_requests(technician_id);
-CREATE INDEX idx_job_assignment_requests_status ON job_assignment_requests(status);
+CREATE INDEX IF NOT EXISTS idx_job_assignment_requests_job_id ON job_assignment_requests(job_id);
+CREATE INDEX IF NOT EXISTS idx_job_assignment_requests_technician_id ON job_assignment_requests(technician_id);
+CREATE INDEX IF NOT EXISTS idx_job_assignment_requests_status ON job_assignment_requests(status);
 
 -- Function to automatically cancel other requests when one is accepted
 CREATE OR REPLACE FUNCTION cancel_other_assignment_requests()
@@ -62,6 +62,7 @@ END;
 $$ LANGUAGE plpgsql;
 
 -- Trigger to automatically cancel other requests when one is accepted
+DROP TRIGGER IF EXISTS trigger_cancel_other_requests ON job_assignment_requests;
 CREATE TRIGGER trigger_cancel_other_requests
     AFTER UPDATE ON job_assignment_requests
     FOR EACH ROW
@@ -77,6 +78,7 @@ END;
 $$ LANGUAGE plpgsql;
 
 -- Trigger to update updated_at timestamp
+DROP TRIGGER IF EXISTS trigger_update_job_assignment_requests_updated_at ON job_assignment_requests;
 CREATE TRIGGER trigger_update_job_assignment_requests_updated_at
     BEFORE UPDATE ON job_assignment_requests
     FOR EACH ROW

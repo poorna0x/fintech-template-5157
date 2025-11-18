@@ -50,7 +50,10 @@ import {
   CheckCircle2,
   Filter,
   Tag,
-  MessageSquare
+  MessageSquare,
+  DollarSign,
+  BarChart3,
+  ArrowLeft
 } from 'lucide-react';
 import { db, supabase } from '@/lib/supabase';
 import { registerAdminPWA, disablePWA } from '@/lib/pwa';
@@ -68,6 +71,10 @@ import QuotationModal from './QuotationModal';
 import TaxInvoiceModal from './TaxInvoiceModal';
 import GSTInvoicesPage from './GSTInvoicesPage';
 import ImageUpload from '@/components/ImageUpload';
+import TechnicianPayments from './TechnicianPayments';
+import BillingStats from './BillingStats';
+import Analytics from './Analytics';
+import PinDialog from '@/components/PinDialog';
 
 declare global {
   interface Window {
@@ -178,6 +185,10 @@ const AdminDashboard = () => {
   const [taxInvoiceModalOpen, setTaxInvoiceModalOpen] = useState(false);
   const [selectedCustomerForTaxInvoice, setSelectedCustomerForTaxInvoice] = useState<Customer | null>(null);
   const [showGSTInvoicesPage, setShowGSTInvoicesPage] = useState(false);
+  const [currentView, setCurrentView] = useState<'dashboard' | 'payments' | 'billing' | 'analytics'>('dashboard');
+  const [pinDialogOpen, setPinDialogOpen] = useState(false);
+  const [pendingView, setPendingView] = useState<'dashboard' | 'payments' | 'billing' | 'analytics' | null>(null);
+  const [pendingSettingsNavigation, setPendingSettingsNavigation] = useState(false);
   const [moreOptionsDialogOpen, setMoreOptionsDialogOpen] = useState<Record<string, boolean>>({});
   const [editFormData, setEditFormData] = useState({
     full_name: '',
@@ -227,6 +238,49 @@ const AdminDashboard = () => {
   // Ref to store calculateDistanceAndTime function to avoid circular dependency
   const calculateDistanceAndTimeRef = useRef<((origin: { lat: number; lng: number }, destination: { lat: number; lng: number }, customerId: string) => Promise<void>) | null>(null);
   
+  // Check if PIN is verified
+  const isPinVerified = () => {
+    return sessionStorage.getItem('adminPinVerified') === 'true';
+  };
+
+  // Handle view change with PIN check
+  const handleViewChange = (view: 'dashboard' | 'payments' | 'billing' | 'analytics') => {
+    if (isPinVerified()) {
+      setCurrentView(view);
+    } else {
+      setPendingView(view);
+      setPinDialogOpen(true);
+    }
+  };
+
+  // Handle PIN success
+  const handlePinSuccess = () => {
+    setPinDialogOpen(false);
+    if (pendingView) {
+      setCurrentView(pendingView);
+      setPendingView(null);
+    }
+    if (pendingSettingsNavigation) {
+      navigate('/settings');
+      setPendingSettingsNavigation(false);
+    }
+  };
+
+  // Handle PIN cancel
+  const handlePinCancel = () => {
+    setPinDialogOpen(false);
+    setPendingView(null);
+    setPendingSettingsNavigation(false);
+  };
+
+  // Check PIN on initial load for dashboard
+  useEffect(() => {
+    if (currentView === 'dashboard' && !isPinVerified()) {
+      setPendingView('dashboard');
+      setPinDialogOpen(true);
+    }
+  }, []);
+
   const bangaloreAreas = [
     // Popular Areas
     'Bansawadi', 'Koramangala', 'Whitefield', 'Indiranagar', 'HSR', 'BTM', 'JP Nagar',
@@ -5966,14 +6020,83 @@ const AdminDashboard = () => {
         <div className="container mx-auto px-4 py-4 sm:py-8">
           <div className="mb-4">
             <Button
-              variant="outline"
+              variant="ghost"
+              size="sm"
               onClick={handleHideGSTInvoices}
-              className="flex items-center gap-2"
+              className="text-gray-600 hover:text-gray-900 -ml-2"
             >
-              ← Back to Dashboard
+              <ArrowLeft className="w-4 h-4 mr-1" />
+              Back
             </Button>
           </div>
           <GSTInvoicesPage />
+        </div>
+      </div>
+    );
+  }
+
+  // Show different views based on currentView state
+  if (currentView === 'payments') {
+    return (
+      <div className="min-h-screen bg-gray-50">
+        <AdminHeader />
+        <div className="container mx-auto px-4 py-4 sm:py-8">
+          <div className="mb-4">
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => setCurrentView('dashboard')}
+              className="text-gray-600 hover:text-gray-900 -ml-2"
+            >
+              <ArrowLeft className="w-4 h-4 mr-1" />
+              Back
+            </Button>
+          </div>
+          <TechnicianPayments />
+        </div>
+      </div>
+    );
+  }
+
+  if (currentView === 'billing') {
+    return (
+      <div className="min-h-screen bg-gray-50">
+        <AdminHeader />
+        <div className="container mx-auto px-4 py-4 sm:py-8">
+          <div className="mb-4">
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => setCurrentView('dashboard')}
+              className="text-gray-600 hover:text-gray-900 -ml-2"
+            >
+              <ArrowLeft className="w-4 h-4 mr-1" />
+              Back
+            </Button>
+          </div>
+          <BillingStats />
+        </div>
+      </div>
+    );
+  }
+
+  if (currentView === 'analytics') {
+    return (
+      <div className="min-h-screen bg-gray-50">
+        <AdminHeader />
+        <div className="container mx-auto px-4 py-4 sm:py-8">
+          <div className="mb-4">
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => setCurrentView('dashboard')}
+              className="text-gray-600 hover:text-gray-900 -ml-2"
+            >
+              <ArrowLeft className="w-4 h-4 mr-1" />
+              Back
+            </Button>
+          </div>
+          <Analytics />
         </div>
       </div>
     );
@@ -6003,7 +6126,14 @@ const AdminDashboard = () => {
                   </Button>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="end" className="w-56">
-                  <DropdownMenuItem onClick={() => navigate('/settings')}>
+                  <DropdownMenuItem onClick={() => {
+                    if (isPinVerified()) {
+                      navigate('/settings');
+                    } else {
+                      setPendingSettingsNavigation(true);
+                      setPinDialogOpen(true);
+                    }
+                  }}>
                     <Settings className="w-4 h-4 mr-2" />
                     Settings
                   </DropdownMenuItem>
@@ -6013,6 +6143,40 @@ const AdminDashboard = () => {
                   </DropdownMenuItem>
                 </DropdownMenuContent>
               </DropdownMenu>
+              <div className="flex gap-2 flex-wrap">
+                <Button
+                  variant={currentView === 'dashboard' ? 'default' : 'outline'}
+                  onClick={() => handleViewChange('dashboard')}
+                  className="flex items-center gap-2"
+                >
+                  <Wrench className="w-4 h-4" />
+                  <span className="hidden sm:inline">Dashboard</span>
+                </Button>
+                <Button
+                  variant={currentView === 'payments' ? 'default' : 'outline'}
+                  onClick={() => handleViewChange('payments')}
+                  className="flex items-center gap-2"
+                >
+                  <DollarSign className="w-4 h-4" />
+                  <span className="hidden sm:inline">Payments</span>
+                </Button>
+                <Button
+                  variant={currentView === 'billing' ? 'default' : 'outline'}
+                  onClick={() => handleViewChange('billing')}
+                  className="flex items-center gap-2"
+                >
+                  <Receipt className="w-4 h-4" />
+                  <span className="hidden sm:inline">Billing</span>
+                </Button>
+                <Button
+                  variant={currentView === 'analytics' ? 'default' : 'outline'}
+                  onClick={() => handleViewChange('analytics')}
+                  className="flex items-center gap-2"
+                >
+                  <BarChart3 className="w-4 h-4" />
+                  <span className="hidden sm:inline">Analytics</span>
+                </Button>
+              </div>
               <Button 
                 onClick={handleAddCustomer}
                 className="bg-blue-600 hover:bg-blue-700 text-white w-full sm:w-auto px-4 py-2 text-sm sm:text-base"
@@ -11699,6 +11863,13 @@ Thank you for your trust in Hydrogen RO! 🙏`;
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* PIN Dialog */}
+      <PinDialog
+        open={pinDialogOpen}
+        onSuccess={handlePinSuccess}
+        onCancel={handlePinCancel}
+      />
     </div>
   );
 };
