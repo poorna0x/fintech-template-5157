@@ -1224,23 +1224,20 @@ const TechnicianPayments = () => {
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="current">Current Period (Today to Next Month 10th)</SelectItem>
-                <SelectItem value="lastMonth">Last Month</SelectItem>
-                <SelectItem value="custom">Custom Month</SelectItem>
-                <SelectItem value="quarter">Current Quarter</SelectItem>
-                <SelectItem value="year">Current Year</SelectItem>
+                <SelectItem value="current">Current Cycle</SelectItem>
+                <SelectItem value="pastMonth">Past Month</SelectItem>
               </SelectContent>
             </Select>
           </div>
           
-          {selectedPeriod === 'custom' && (
+          {selectedPeriod === 'pastMonth' && (
             <div className="flex-1 min-w-[200px]">
               <Label htmlFor="month-select">Select Month</Label>
               <Input
                 id="month-select"
                 type="month"
-                value={selectedMonth}
-                onChange={(e) => setSelectedMonth(e.target.value)}
+                value={selectedPastMonth}
+                onChange={(e) => setSelectedPastMonth(e.target.value)}
               />
             </div>
           )}
