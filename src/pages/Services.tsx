@@ -80,8 +80,8 @@ const Services = () => {
           ],
           "aggregateRating": {
             "@type": "AggregateRating",
-            "ratingValue": "4.8",
-            "reviewCount": "127",
+            "ratingValue": "5",
+            "reviewCount": "1000",
             "bestRating": "5",
             "worstRating": "1"
           }
