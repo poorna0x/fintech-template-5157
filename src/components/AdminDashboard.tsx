@@ -74,7 +74,6 @@ import ImageUpload from '@/components/ImageUpload';
 import TechnicianPayments from './TechnicianPayments';
 import BillingStats from './BillingStats';
 import Analytics from './Analytics';
-import PinDialog from '@/components/PinDialog';
 
 declare global {
   interface Window {
@@ -186,9 +185,6 @@ const AdminDashboard = () => {
   const [selectedCustomerForTaxInvoice, setSelectedCustomerForTaxInvoice] = useState<Customer | null>(null);
   const [showGSTInvoicesPage, setShowGSTInvoicesPage] = useState(false);
   const [currentView, setCurrentView] = useState<'dashboard' | 'payments' | 'billing' | 'analytics'>('dashboard');
-  const [pinDialogOpen, setPinDialogOpen] = useState(false);
-  const [pendingView, setPendingView] = useState<'dashboard' | 'payments' | 'billing' | 'analytics' | null>(null);
-  const [pendingSettingsNavigation, setPendingSettingsNavigation] = useState(false);
   const [moreOptionsDialogOpen, setMoreOptionsDialogOpen] = useState<Record<string, boolean>>({});
   const [editFormData, setEditFormData] = useState({
     full_name: '',
@@ -239,48 +235,10 @@ const AdminDashboard = () => {
   // Ref to store calculateDistanceAndTime function to avoid circular dependency
   const calculateDistanceAndTimeRef = useRef<((origin: { lat: number; lng: number }, destination: { lat: number; lng: number }, customerId: string) => Promise<void>) | null>(null);
   
-  // Check if PIN is verified
-  const isPinVerified = () => {
-    return sessionStorage.getItem('adminPinVerified') === 'true';
-  };
-
-  // Handle view change with PIN check
+  // Handle view change
   const handleViewChange = (view: 'dashboard' | 'payments' | 'billing' | 'analytics') => {
-    if (isPinVerified()) {
-      setCurrentView(view);
-    } else {
-      setPendingView(view);
-      setPinDialogOpen(true);
-    }
+    setCurrentView(view);
   };
-
-  // Handle PIN success
-  const handlePinSuccess = () => {
-    setPinDialogOpen(false);
-    if (pendingView) {
-      setCurrentView(pendingView);
-      setPendingView(null);
-    }
-    if (pendingSettingsNavigation) {
-      navigate('/settings');
-      setPendingSettingsNavigation(false);
-    }
-  };
-
-  // Handle PIN cancel
-  const handlePinCancel = () => {
-    setPinDialogOpen(false);
-    setPendingView(null);
-    setPendingSettingsNavigation(false);
-  };
-
-  // Check PIN on initial load for dashboard
-  useEffect(() => {
-    if (currentView === 'dashboard' && !isPinVerified()) {
-      setPendingView('dashboard');
-      setPinDialogOpen(true);
-    }
-  }, []);
 
   const bangaloreAreas = [
     // Popular Areas
@@ -6048,12 +6006,7 @@ const AdminDashboard = () => {
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="end" className="w-56">
                   <DropdownMenuItem onClick={() => {
-                    if (isPinVerified()) {
-                      navigate('/settings');
-                    } else {
-                      setPendingSettingsNavigation(true);
-                      setPinDialogOpen(true);
-                    }
+                    navigate('/settings');
                   }}>
                     <Settings className="w-4 h-4 mr-2" />
                     Settings
@@ -11796,11 +11749,6 @@ Thank you for your trust in Hydrogen RO! 🙏`;
       </Dialog>
 
       {/* PIN Dialog */}
-      <PinDialog
-        open={pinDialogOpen}
-        onSuccess={handlePinSuccess}
-        onCancel={handlePinCancel}
-      />
     </div>
   );
 };

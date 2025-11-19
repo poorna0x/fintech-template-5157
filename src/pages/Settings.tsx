@@ -22,15 +22,11 @@ import { Technician } from '@/types';
 import ImageUpload from '@/components/ImageUpload';
 import { QrCode } from 'lucide-react';
 import { CommonQrCode, invalidateQrCodesCache } from '@/lib/qrCodeManager';
-import PinDialog from '@/components/PinDialog';
 
 const Settings = () => {
   const { user, isAdmin } = useAuth();
   const navigate = useNavigate();
   
-  // PIN verification states
-  const [pinDialogOpen, setPinDialogOpen] = useState(false);
-  const [pinVerified, setPinVerified] = useState(false);
 
   // Technician management states
   const [technicians, setTechnicians] = useState<Technician[]>([]);
@@ -57,32 +53,11 @@ const Settings = () => {
     baseSalary: 0
   });
 
-  // Check PIN on mount
+  // Load data on component mount
   useEffect(() => {
-    if (sessionStorage.getItem('adminPinVerified') === 'true') {
-      setPinVerified(true);
-    } else {
-      setPinDialogOpen(true);
-    }
+    loadTechnicians();
+    loadCommonQrCodes();
   }, []);
-
-  // Load data on component mount (only if PIN verified)
-  useEffect(() => {
-    if (pinVerified) {
-      loadTechnicians();
-      loadCommonQrCodes();
-    }
-  }, [pinVerified]);
-
-  const handlePinSuccess = () => {
-    setPinDialogOpen(false);
-    setPinVerified(true);
-  };
-
-  const handlePinCancel = () => {
-    setPinDialogOpen(false);
-    navigate('/admin');
-  };
 
   // Transform technician data from database format to frontend format
   const transformTechnicianData = (tech: any) => ({
@@ -474,18 +449,6 @@ const Settings = () => {
   };
 
 
-  // Show PIN dialog if not verified
-  if (!pinVerified) {
-    return (
-      <div className="min-h-screen bg-gray-50">
-        <PinDialog
-          open={pinDialogOpen}
-          onSuccess={handlePinSuccess}
-          onCancel={handlePinCancel}
-        />
-      </div>
-    );
-  }
 
   // Note: Currently allows unauthenticated access, but RLS policies need to be updated
   // Run supabase-qr-codes-rls-fix.sql to allow unauthenticated access
