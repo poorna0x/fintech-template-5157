@@ -381,18 +381,23 @@ const TechnicianPayments = () => {
           }
         });
 
-        // Generate all dates in the period
-        const allDates: string[] = [];
-        const currentDate = new Date(actualStartDate);
-        while (currentDate <= endDate) {
-          allDates.push(currentDate.toISOString().split('T')[0]);
-          currentDate.setDate(currentDate.getDate() + 1);
-        }
-
         // Get today's date for filtering (only count holidays up to today, not future dates)
         const todayForHolidays = new Date();
         todayForHolidays.setHours(0, 0, 0, 0);
         const todayStrForHolidays = todayForHolidays.toISOString().split('T')[0];
+
+        // Generate all dates in the period UP TO TODAY ONLY (not future dates)
+        const allDates: string[] = [];
+        const currentDate = new Date(actualStartDate);
+        const cutoffDate = new Date(endDate > todayForHolidays ? todayForHolidays : endDate);
+        while (currentDate <= cutoffDate) {
+          const dateStr = currentDate.toISOString().split('T')[0];
+          // Only include dates within the period and up to today
+          if (dateStr >= actualStartDate.toISOString().split('T')[0] && dateStr <= todayStrForHolidays) {
+            allDates.push(dateStr);
+          }
+          currentDate.setDate(currentDate.getDate() + 1);
+        }
 
         // Find holidays: dates with no jobs completed (ONLY up to today, not future dates)
         // BUT exclude dates that have been manually marked as present (have a "present" override)
@@ -413,16 +418,22 @@ const TechnicianPayments = () => {
         });
 
         // Combine manual and auto-detected holidays
-        // IMPORTANT: Only count holidays up to today, filter out future dates
+        // IMPORTANT: Only count holidays up to today AND within the period, filter out future dates
         const allHolidayDates = new Set<string>();
+        const periodStartStr = actualStartDate.toISOString().split('T')[0];
         techHolidays.forEach(h => {
           const holidayDate = h.holiday_date.split('T')[0];
-          // Only include holidays up to today
-          if (holidayDate <= todayStrForHolidays) {
+          // Only include holidays up to today AND within the period
+          if (holidayDate <= todayStrForHolidays && holidayDate >= periodStartStr && holidayDate <= endDate.toISOString().split('T')[0]) {
             allHolidayDates.add(holidayDate);
           }
         });
-        autoDetectedHolidays.forEach(date => allHolidayDates.add(date));
+        autoDetectedHolidays.forEach(date => {
+          // Double check date is within period and up to today
+          if (date >= periodStartStr && date <= todayStrForHolidays) {
+            allHolidayDates.add(date);
+          }
+        });
         
         // Group holidays by month and calculate deductions per month
         const holidaysByMonth = new Map<string, string[]>(); // month key -> array of holiday dates
