@@ -10,7 +10,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Textarea } from '@/components/ui/textarea';
 import { db } from '@/lib/supabase';
 import { toast } from 'sonner';
-import { DollarSign, User, Plus, Trash2, Edit, TrendingDown, TrendingUp, RefreshCw, ChevronDown, ChevronUp, Pencil, Check, X } from 'lucide-react';
+import { DollarSign, User, Plus, Trash2, Edit, TrendingDown, TrendingUp, RefreshCw, ChevronDown, ChevronUp, Pencil, Check, X, ChevronLeft, ChevronRight } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 
 interface TechnicianPayment {
@@ -112,6 +112,8 @@ const TechnicianPayments = () => {
   const [commissionPeriod, setCommissionPeriod] = useState<{ start: Date; end: Date } | null>(null);
   const [selectedPeriod, setSelectedPeriod] = useState<'current' | 'lastMonth' | 'custom' | 'year' | 'quarter'>('current');
   const [showDailyDetails, setShowDailyDetails] = useState<Record<string, boolean>>({});
+  const [dailyBreakdownPage, setDailyBreakdownPage] = useState<Record<string, number>>({}); // technicianId -> page number
+  const itemsPerPage = 10; // Show 10 days per page
   const [selectedMonth, setSelectedMonth] = useState<string>(() => {
     const now = new Date();
     return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
@@ -1596,69 +1598,151 @@ const TechnicianPayments = () => {
                   )}
                 </Button>
                 
-                {showDailyDetails[breakdown.technicianId] && (
-                  <div className="mt-4 overflow-x-auto">
-                    <Table>
-                      <TableHeader>
-                        <TableRow>
-                          <TableHead>Date</TableHead>
-                          <TableHead className="text-right">Bill Amount</TableHead>
-                          <TableHead className="text-center">Status</TableHead>
-                          <TableHead className="text-center">Actions</TableHead>
-                        </TableRow>
-                      </TableHeader>
-                      <TableBody>
-                        {breakdown.dailyBreakdown.map((day) => (
-                          <TableRow key={day.date}>
-                            <TableCell>
-                              {new Date(day.date).toLocaleDateString('en-IN', {
-                                weekday: 'short',
-                                year: 'numeric',
-                                month: 'short',
-                                day: 'numeric'
+                {showDailyDetails[breakdown.technicianId] && (() => {
+                  const currentPage = dailyBreakdownPage[breakdown.technicianId] || 1;
+                  const totalDays = breakdown.dailyBreakdown.length;
+                  const totalPages = Math.ceil(totalDays / itemsPerPage);
+                  const startIndex = (currentPage - 1) * itemsPerPage;
+                  const endIndex = startIndex + itemsPerPage;
+                  const paginatedDays = breakdown.dailyBreakdown.slice(startIndex, endIndex);
+
+                  return (
+                    <div className="mt-4">
+                      <div className="overflow-x-auto">
+                        <Table>
+                          <TableHeader>
+                            <TableRow>
+                              <TableHead>Date</TableHead>
+                              <TableHead className="text-right">Bill Amount</TableHead>
+                              <TableHead className="text-center">Status</TableHead>
+                              <TableHead className="text-center">Actions</TableHead>
+                            </TableRow>
+                          </TableHeader>
+                          <TableBody>
+                            {paginatedDays.map((day) => (
+                              <TableRow key={day.date}>
+                                <TableCell>
+                                  {new Date(day.date).toLocaleDateString('en-IN', {
+                                    weekday: 'short',
+                                    year: 'numeric',
+                                    month: 'short',
+                                    day: 'numeric'
+                                  })}
+                                </TableCell>
+                                <TableCell className="text-right font-semibold">
+                                  {day.billAmount > 0 ? `₹${day.billAmount.toFixed(2)}` : '-'}
+                                </TableCell>
+                                <TableCell className="text-center">
+                                  {day.isAbsent ? (
+                                    <Badge variant="destructive">Absent</Badge>
+                                  ) : day.billAmount > 0 ? (
+                                    <Badge variant="default" className="bg-green-600">Worked</Badge>
+                                  ) : (
+                                    <Badge variant="secondary">No Jobs</Badge>
+                                  )}
+                                </TableCell>
+                                <TableCell className="text-center">
+                                  <Button
+                                    size="sm"
+                                    variant="outline"
+                                    onClick={() => {
+                                      setEditingDailyBreakdown({
+                                        technicianId: breakdown.technicianId,
+                                        date: day.date,
+                                        billAmount: day.billAmount,
+                                        isAbsent: day.isAbsent
+                                      });
+                                      setDailyBreakdownFormData({
+                                        billAmount: day.billAmount > 0 ? day.billAmount.toString() : '',
+                                        isAbsent: day.isAbsent
+                                      });
+                                      setDailyBreakdownEditDialogOpen(true);
+                                    }}
+                                    className="h-8 w-8 p-0"
+                                    title="Edit day"
+                                  >
+                                    <Pencil className="w-4 h-4" />
+                                  </Button>
+                                </TableCell>
+                              </TableRow>
+                            ))}
+                          </TableBody>
+                        </Table>
+                      </div>
+                      
+                      {/* Pagination Controls */}
+                      {totalPages > 1 && (
+                        <div className="flex items-center justify-between mt-4 px-2">
+                          <div className="text-sm text-gray-600">
+                            Showing {startIndex + 1} to {Math.min(endIndex, totalDays)} of {totalDays} days
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={() => {
+                                setDailyBreakdownPage(prev => ({
+                                  ...prev,
+                                  [breakdown.technicianId]: Math.max(1, currentPage - 1)
+                                }));
+                              }}
+                              disabled={currentPage === 1}
+                              className="h-8"
+                            >
+                              <ChevronLeft className="w-4 h-4 mr-1" />
+                              Previous
+                            </Button>
+                            <div className="flex items-center gap-1">
+                              {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
+                                let pageNum;
+                                if (totalPages <= 5) {
+                                  pageNum = i + 1;
+                                } else if (currentPage <= 3) {
+                                  pageNum = i + 1;
+                                } else if (currentPage >= totalPages - 2) {
+                                  pageNum = totalPages - 4 + i;
+                                } else {
+                                  pageNum = currentPage - 2 + i;
+                                }
+                                return (
+                                  <Button
+                                    key={pageNum}
+                                    size="sm"
+                                    variant={currentPage === pageNum ? "default" : "outline"}
+                                    onClick={() => {
+                                      setDailyBreakdownPage(prev => ({
+                                        ...prev,
+                                        [breakdown.technicianId]: pageNum
+                                      }));
+                                    }}
+                                    className="h-8 w-8 p-0"
+                                  >
+                                    {pageNum}
+                                  </Button>
+                                );
                               })}
-                            </TableCell>
-                            <TableCell className="text-right font-semibold">
-                              {day.billAmount > 0 ? `₹${day.billAmount.toFixed(2)}` : '-'}
-                            </TableCell>
-                            <TableCell className="text-center">
-                              {day.isAbsent ? (
-                                <Badge variant="destructive">Absent</Badge>
-                              ) : day.billAmount > 0 ? (
-                                <Badge variant="default" className="bg-green-600">Worked</Badge>
-                              ) : (
-                                <Badge variant="secondary">No Jobs</Badge>
-                              )}
-                            </TableCell>
-                            <TableCell className="text-center">
-                              <Button
-                                size="sm"
-                                variant="outline"
-                                onClick={() => {
-                                  setEditingDailyBreakdown({
-                                    technicianId: breakdown.technicianId,
-                                    date: day.date,
-                                    billAmount: day.billAmount,
-                                    isAbsent: day.isAbsent
-                                  });
-                                  setDailyBreakdownFormData({
-                                    billAmount: day.billAmount > 0 ? day.billAmount.toString() : '',
-                                    isAbsent: day.isAbsent
-                                  });
-                                  setDailyBreakdownEditDialogOpen(true);
-                                }}
-                                className="h-8 w-8 p-0"
-                                title="Edit day"
-                              >
-                                <Pencil className="w-4 h-4" />
-                              </Button>
-                            </TableCell>
-                          </TableRow>
-                        ))}
-                      </TableBody>
-                    </Table>
-                  </div>
-                )}
+                            </div>
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={() => {
+                                setDailyBreakdownPage(prev => ({
+                                  ...prev,
+                                  [breakdown.technicianId]: Math.min(totalPages, currentPage + 1)
+                                }));
+                              }}
+                              disabled={currentPage === totalPages}
+                              className="h-8"
+                            >
+                              Next
+                              <ChevronRight className="w-4 h-4 ml-1" />
+                            </Button>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })()}
               </div>
 
 
