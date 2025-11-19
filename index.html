@@ -308,7 +308,7 @@
         "@type": "ReserveAction",
         "target": {
           "@type": "EntryPoint",
-          "urlTemplate": "https://hydrogenro.com/#booking",
+          "urlTemplate": "https://hydrogenro.com/book",
           "actionPlatform": [
             "http://schema.org/DesktopWebPlatform",
             "http://schema.org/MobileWebPlatform"
@@ -324,7 +324,7 @@
           "@type": "Offer",
           "name": "Book RO Service",
           "description": "Book RO water purifier installation, repair or maintenance service",
-          "url": "https://hydrogenro.com/#booking",
+          "url": "https://hydrogenro.com/book",
           "price": "400",
           "priceCurrency": "INR",
           "availability": "https://schema.org/InStock",
@@ -342,8 +342,8 @@
       },
       "geo": {
         "@type": "GeoCoordinates",
-        "latitude": "12.9716",
-        "longitude": "77.5946"
+        "latitude": 12.9716,
+        "longitude": 77.5946
       },
       "openingHours": [
         "Mo-Fr 08:00-20:00",
@@ -371,10 +371,14 @@
         "@type": "GeoCircle",
         "geoMidpoint": {
           "@type": "GeoCoordinates",
-          "latitude": "12.9716",
-          "longitude": "77.5946"
+          "latitude": 12.9716,
+          "longitude": 77.5946
         },
-        "geoRadius": "50000"
+        "geoRadius": {
+          "@type": "Distance",
+          "value": 50,
+          "unitCode": "KMT"
+        }
       },
       "hasOfferCatalog": {
         "@type": "OfferCatalog",
@@ -441,45 +445,7 @@
         "https://www.instagram.com/hydrogenro",
         "https://www.linkedin.com/company/hydrogenro"
       ],
-      "image": "https://hydrogenro.com/logo.jpg",
-      "hasOfferCatalog": {
-        "@type": "OfferCatalog",
-        "name": "Main Navigation Links",
-        "itemListElement": [
-          {
-            "@type": "Offer",
-            "itemOffered": {
-              "@type": "Service",
-              "name": "Book Now",
-              "url": "https://hydrogenro.com/book"
-            }
-          },
-          {
-            "@type": "Offer",
-            "itemOffered": {
-              "@type": "Service",
-              "name": "Contact",
-              "url": "https://hydrogenro.com/contact"
-            }
-          },
-          {
-            "@type": "Offer",
-            "itemOffered": {
-              "@type": "Service",
-              "name": "Services",
-              "url": "https://hydrogenro.com/services"
-            }
-          },
-          {
-            "@type": "Offer",
-            "itemOffered": {
-              "@type": "Service",
-              "name": "About",
-              "url": "https://hydrogenro.com/about"
-            }
-          }
-        ]
-      }
+      "image": "https://hydrogenro.com/logo.jpg"
     }
     </script>
     
@@ -549,7 +515,7 @@
           "name": "What is the cost of RO installation in Whitefield Bengaluru?",
           "acceptedAnswer": {
             "@type": "Answer",
-            "text": "RO installation costs in Whitefield (560066) are competitive and transparent. Contact us at +91-9876543210 for a free quote and same-day service availability in Whitefield and surrounding areas."
+            "text": "RO installation costs in Whitefield (560066) are competitive and transparent. Contact us at +91-8884944288 for a free quote and same-day service availability in Whitefield and surrounding areas."
           }
         },
         {
@@ -557,7 +523,7 @@
           "name": "How much does RO installation cost in Bengaluru?",
           "acceptedAnswer": {
             "@type": "Answer",
-            "text": "Our RO installation costs in Bengaluru are competitive and transparent with no hidden fees. Contact us at +91-9876543210 for a free quote."
+            "text": "Our RO installation costs in Bengaluru are competitive and transparent with no hidden fees. Contact us at +91-8884944288 for a free quote."
           }
         }
       ]
@@ -630,19 +596,66 @@
           "@type": "ListItem",
           "position": 1,
           "name": "Home",
-          "item": "https://hydrogenro.com"
+          "item": "https://hydrogenro.com/"
         },
         {
           "@type": "ListItem",
           "position": 2,
           "name": "RO Services",
-          "item": "https://hydrogenro.com/#services"
+          "item": "https://hydrogenro.com/services"
         },
         {
           "@type": "ListItem",
           "position": 3,
           "name": "Bengaluru RO Service",
-          "item": "https://hydrogenro.com/#service-areas"
+          "item": "https://hydrogenro.com/service-areas"
+        }
+      ]
+    }
+    </script>
+    
+    <!-- ItemList for Website Navigation (Google Sitelinks) -->
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "ItemList",
+      "name": "Main Navigation",
+      "itemListElement": [
+        {
+          "@type": "ListItem",
+          "position": 1,
+          "name": "Home",
+          "url": "https://hydrogenro.com/"
+        },
+        {
+          "@type": "ListItem",
+          "position": 2,
+          "name": "Book Now",
+          "url": "https://hydrogenro.com/book"
+        },
+        {
+          "@type": "ListItem",
+          "position": 3,
+          "name": "Services",
+          "url": "https://hydrogenro.com/services"
+        },
+        {
+          "@type": "ListItem",
+          "position": 4,
+          "name": "Service Areas",
+          "url": "https://hydrogenro.com/service-areas"
+        },
+        {
+          "@type": "ListItem",
+          "position": 5,
+          "name": "About",
+          "url": "https://hydrogenro.com/about"
+        },
+        {
+          "@type": "ListItem",
+          "position": 6,
+          "name": "Contact",
+          "url": "https://hydrogenro.com/contact"
         }
       ]
     }
@@ -666,43 +679,11 @@
       },
       "potentialAction": {
         "@type": "SearchAction",
-        "target": "https://hydrogenro.com/search?q={search_term_string}",
+        "target": {
+          "@type": "EntryPoint",
+          "urlTemplate": "https://hydrogenro.com/search?q={search_term_string}"
+        },
         "query-input": "required name=search_term_string"
-      },
-      "mainEntity": {
-        "@type": "ItemList",
-        "itemListElement": [
-          {
-            "@type": "ListItem",
-            "position": 1,
-            "name": "Book Now",
-            "url": "https://hydrogenro.com/book"
-          },
-          {
-            "@type": "ListItem",
-            "position": 2,
-            "name": "Contact",
-            "url": "https://hydrogenro.com/contact"
-          },
-          {
-            "@type": "ListItem",
-            "position": 3,
-            "name": "Services",
-            "url": "https://hydrogenro.com/services"
-          },
-          {
-            "@type": "ListItem",
-            "position": 4,
-            "name": "About",
-            "url": "https://hydrogenro.com/about"
-          },
-          {
-            "@type": "ListItem",
-            "position": 5,
-            "name": "Service Areas",
-            "url": "https://hydrogenro.com/service-areas"
-          }
-        ]
       }
     }
     </script>
@@ -717,15 +698,15 @@
       "hasPart": [
         {
           "@type": "SiteNavigationElement",
-          "name": "Book Now",
-          "url": "https://hydrogenro.com/book",
-          "description": "Book RO water purifier installation, repair or maintenance service"
+          "name": "Home",
+          "url": "https://hydrogenro.com/",
+          "description": "Hydrogen RO - Best RO Water Purifier Services in Bengaluru"
         },
         {
           "@type": "SiteNavigationElement",
-          "name": "Contact",
-          "url": "https://hydrogenro.com/contact",
-          "description": "Contact Hydrogen RO for RO services in Bengaluru"
+          "name": "Book Now",
+          "url": "https://hydrogenro.com/book",
+          "description": "Book RO water purifier installation, repair or maintenance service"
         },
         {
           "@type": "SiteNavigationElement",
@@ -735,15 +716,21 @@
         },
         {
           "@type": "SiteNavigationElement",
+          "name": "Service Areas",
+          "url": "https://hydrogenro.com/service-areas",
+          "description": "RO service areas in Bengaluru - All pincodes covered"
+        },
+        {
+          "@type": "SiteNavigationElement",
           "name": "About",
           "url": "https://hydrogenro.com/about",
           "description": "About Hydrogen RO - Leading RO service provider in Bengaluru"
         },
         {
           "@type": "SiteNavigationElement",
-          "name": "Service Areas",
-          "url": "https://hydrogenro.com/service-areas",
-          "description": "RO service areas in Bengaluru - All pincodes covered"
+          "name": "Contact",
+          "url": "https://hydrogenro.com/contact",
+          "description": "Contact Hydrogen RO for RO services in Bengaluru"
         }
       ]
     }
@@ -915,7 +902,7 @@
           "@type": "HowToStep",
           "name": "Contact Hydrogen RO",
           "text": "Call +91-8884944288 or visit our website to book service",
-          "url": "https://hydrogenro.com/#booking"
+          "url": "https://hydrogenro.com/book"
         },
         {
           "@type": "HowToStep",
