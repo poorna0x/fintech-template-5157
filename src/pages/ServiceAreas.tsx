@@ -40,7 +40,11 @@ const ServiceAreas = () => {
                 "latitude": 12.9716,
                 "longitude": 77.5946
               },
-              "geoRadius": "50000"
+              "geoRadius": {
+                "@type": "Distance",
+                "value": 50,
+                "unitCode": "KMT"
+              }
             }
           },
           "offers": {
@@ -54,6 +58,41 @@ const ServiceAreas = () => {
               "@type": "City",
               "name": "Bengaluru"
             }
+          }
+        })}
+      </script>
+      
+      <script type="application/ld+json">
+        {JSON.stringify({
+          "@context": "https://schema.org",
+          "@type": "Product",
+          "name": "RO Water Purifier Service",
+          "description": "Professional RO water purifier installation, repair, and maintenance services in Bengaluru, Karnataka",
+          "image": "https://hydrogenro.com/og-image.jpg",
+          "brand": {
+            "@type": "Brand",
+            "name": "Hydrogen RO"
+          },
+          "offers": {
+            "@type": "Offer",
+            "price": "500",
+            "priceCurrency": "INR",
+            "availability": "https://schema.org/InStock",
+            "seller": {
+              "@type": "Organization",
+              "name": "Hydrogen RO"
+            },
+            "areaServed": {
+              "@type": "City",
+              "name": "Bengaluru"
+            }
+          },
+          "aggregateRating": {
+            "@type": "AggregateRating",
+            "ratingValue": "4.8",
+            "reviewCount": "3000",
+            "bestRating": "5",
+            "worstRating": "1"
           }
         })}
       </script>
