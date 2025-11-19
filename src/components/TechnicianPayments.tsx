@@ -110,14 +110,16 @@ const TechnicianPayments = () => {
   const [loading, setLoading] = useState(true);
   const [selectedTechnician, setSelectedTechnician] = useState<string | null>(null);
   const [commissionPeriod, setCommissionPeriod] = useState<{ start: Date; end: Date } | null>(null);
-  const [selectedPeriod, setSelectedPeriod] = useState<'current' | 'lastMonth' | 'custom' | 'year' | 'quarter'>('current');
+  const [selectedPeriod, setSelectedPeriod] = useState<'current' | 'pastMonth'>('current');
+  const [selectedPastMonth, setSelectedPastMonth] = useState<string>(() => {
+    // Default to previous month
+    const now = new Date();
+    const prevMonth = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+    return `${prevMonth.getFullYear()}-${String(prevMonth.getMonth() + 1).padStart(2, '0')}`;
+  });
   const [showDailyDetails, setShowDailyDetails] = useState<Record<string, boolean>>({});
   const [dailyBreakdownPage, setDailyBreakdownPage] = useState<Record<string, number>>({}); // technicianId -> page number
   const itemsPerPage = 10; // Show 10 days per page
-  const [selectedMonth, setSelectedMonth] = useState<string>(() => {
-    const now = new Date();
-    return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
-  });
   
   // Expense dialog
   const [expenseDialogOpen, setExpenseDialogOpen] = useState(false);
@@ -182,7 +184,7 @@ const TechnicianPayments = () => {
 
   useEffect(() => {
     loadData();
-  }, [selectedPeriod, selectedMonth]);
+  }, [selectedPeriod, selectedPastMonth]);
 
   const getMonthlyDateRange = () => {
     const today = new Date();
@@ -191,26 +193,16 @@ const TechnicianPayments = () => {
     let startDate: Date;
     let endDate: Date;
     
-    if (selectedPeriod === 'lastMonth') {
-      // Last month: 1st to last day of previous month
-      const lastMonth = new Date(today.getFullYear(), today.getMonth() - 1, 1);
-      startDate = new Date(lastMonth.getFullYear(), lastMonth.getMonth(), 1);
-      endDate = new Date(lastMonth.getFullYear(), lastMonth.getMonth() + 1, 0, 23, 59, 59, 999);
-    } else if (selectedPeriod === 'custom') {
-      // Custom month: Selected month
-      const [year, month] = selectedMonth.split('-').map(Number);
-      startDate = new Date(year, month - 1, 1);
-      endDate = new Date(year, month, 0, 23, 59, 59, 999);
-    } else if (selectedPeriod === 'year') {
-      // Entire year: January 1st to December 31st of current year
-      startDate = new Date(today.getFullYear(), 0, 1);
-      endDate = new Date(today.getFullYear(), 11, 31, 23, 59, 59, 999);
-    } else if (selectedPeriod === 'quarter') {
-      // Current quarter
-      const currentQuarter = Math.floor(today.getMonth() / 3);
-      const quarterStartMonth = currentQuarter * 3;
-      startDate = new Date(today.getFullYear(), quarterStartMonth, 1);
-      endDate = new Date(today.getFullYear(), quarterStartMonth + 3, 0, 23, 59, 59, 999);
+    if (selectedPeriod === 'pastMonth') {
+      // Past month: 10th of selected month to 10th of next month (salary day)
+      const [year, month] = selectedPastMonth.split('-').map(Number);
+      const selectedMonthIndex = month - 1; // JavaScript months are 0-indexed
+      
+      // Start: 10th of selected month
+      startDate = new Date(year, selectedMonthIndex, 10, 0, 0, 0, 0);
+      
+      // End: 10th of next month (salary day when payment was made)
+      endDate = new Date(year, selectedMonthIndex + 1, 10, 23, 59, 59, 999);
     } else {
       // Current period: 10th of this month to 10th of next month
       const currentMonth = today.getMonth();
@@ -1577,28 +1569,29 @@ const TechnicianPayments = () => {
                 </div>
               )}
 
-              {/* Daily Breakdown - Show More/Less */}
-              <div className="mb-6">
-                <Button
-                  type="button"
-                  variant="outline"
-                  onClick={() => {
-                    setShowDailyDetails(prev => ({
-                      ...prev,
-                      [breakdown.technicianId]: !prev[breakdown.technicianId]
-                    }));
-                  }}
-                  className="w-full flex items-center justify-between"
-                >
-                  <span className="font-semibold">Daily Breakdown</span>
-                  {showDailyDetails[breakdown.technicianId] ? (
-                    <ChevronUp className="w-4 h-4" />
-                  ) : (
-                    <ChevronDown className="w-4 h-4" />
-                  )}
-                </Button>
-                
-                {showDailyDetails[breakdown.technicianId] && (() => {
+              {/* Daily Breakdown - Only show for Current Cycle */}
+              {selectedPeriod === 'current' && (
+                <div className="mb-6">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => {
+                      setShowDailyDetails(prev => ({
+                        ...prev,
+                        [breakdown.technicianId]: !prev[breakdown.technicianId]
+                      }));
+                    }}
+                    className="w-full flex items-center justify-between"
+                  >
+                    <span className="font-semibold">Daily Breakdown</span>
+                    {showDailyDetails[breakdown.technicianId] ? (
+                      <ChevronUp className="w-4 h-4" />
+                    ) : (
+                      <ChevronDown className="w-4 h-4" />
+                    )}
+                  </Button>
+                  
+                  {showDailyDetails[breakdown.technicianId] && (() => {
                   const currentPage = dailyBreakdownPage[breakdown.technicianId] || 1;
                   const totalDays = breakdown.dailyBreakdown.length;
                   const totalPages = Math.ceil(totalDays / itemsPerPage);
@@ -1743,7 +1736,34 @@ const TechnicianPayments = () => {
                     </div>
                   );
                 })()}
-              </div>
+                </div>
+              )}
+
+              {/* Past Month Summary - Show final salary paid on 10th */}
+              {selectedPeriod === 'pastMonth' && (
+                <div className="mb-6 p-4 bg-green-50 rounded-lg border-2 border-green-200">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className="text-sm font-medium text-gray-700">Final Salary Paid on 10th</p>
+                      <p className="text-xs text-gray-500 mt-1">
+                        After all deductions (leaves, advances, expenses)
+                      </p>
+                    </div>
+                    <div className="text-right">
+                      <p className="text-2xl font-bold text-green-700">
+                        ₹{breakdown.totalSalary.toFixed(2)}
+                      </p>
+                      <p className="text-xs text-gray-500 mt-1">
+                        {new Date(commissionPeriod?.end || new Date()).toLocaleDateString('en-IN', {
+                          day: 'numeric',
+                          month: 'long',
+                          year: 'numeric'
+                        })}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              )}
 
 
             </CardContent>
