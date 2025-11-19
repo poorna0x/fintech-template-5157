@@ -29,111 +29,11 @@ const TestimonialsLoading = () => (
 );
 
 const Index = () => {
-  const structuredData = {
-    "@context": "https://schema.org",
-    "@type": "LocalBusiness",
-    "name": "Hydrogen RO - Best RO Water Purifier Services in Bengaluru",
-    "image": "https://hydrogenro.com/og-image.jpg",
-    "@id": "https://hydrogenro.com",
-    "url": "https://hydrogenro.com",
-    "telephone": "+918884944288",
-    "priceRange": "₹₹",
-    "address": {
-      "@type": "PostalAddress",
-      "streetAddress": "MG Road",
-      "addressLocality": "Bengaluru",
-      "addressRegion": "Karnataka",
-      "postalCode": "560001",
-      "addressCountry": "IN"
-    },
-    "geo": {
-      "@type": "GeoCoordinates",
-      "latitude": 12.9716,
-      "longitude": 77.5946
-    },
-    "openingHoursSpecification": {
-      "@type": "OpeningHoursSpecification",
-      "dayOfWeek": [
-        "Monday",
-        "Tuesday",
-        "Wednesday",
-        "Thursday",
-        "Friday",
-        "Saturday",
-        "Sunday"
-      ],
-      "opens": "00:00",
-      "closes": "23:59"
-    },
-    "areaServed": {
-      "@type": "City",
-      "name": "Bengaluru",
-      "sameAs": "https://en.wikipedia.org/wiki/Bangalore"
-    },
-    "serviceArea": {
-      "@type": "GeoCircle",
-      "geoMidpoint": {
-        "@type": "GeoCoordinates",
-        "latitude": 12.9716,
-        "longitude": 77.5946
-      },
-      "geoRadius": {
-        "@type": "Distance",
-        "value": "50",
-        "unitCode": "KMT"
-      }
-    },
-    "hasOfferCatalog": {
-      "@type": "OfferCatalog",
-      "name": "RO Water Purifier Services in Bengaluru",
-      "itemListElement": [
-        {
-          "@type": "Offer",
-          "itemOffered": {
-            "@type": "Service",
-            "name": "RO Installation Service in Bengaluru",
-            "description": "Professional RO water purifier installation service in Bengaluru by certified technicians"
-          }
-        },
-        {
-          "@type": "Offer",
-          "itemOffered": {
-            "@type": "Service",
-            "name": "RO Repair Service in Bengaluru",
-            "description": "Expert RO repair service in Bengaluru for all water purifier brands"
-          }
-        },
-        {
-          "@type": "Offer",
-          "itemOffered": {
-            "@type": "Service",
-            "name": "RO Maintenance Service in Bengaluru",
-            "description": "Regular RO maintenance service in Bengaluru with filter replacement"
-          }
-        },
-        {
-          "@type": "Offer",
-          "itemOffered": {
-            "@type": "Service",
-            "name": "Water Softener Installation in Bengaluru",
-            "description": "Professional water softener installation service in Bengaluru"
-          }
-        }
-      ]
-    },
-    "aggregateRating": {
-      "@type": "AggregateRating",
-      "ratingValue": "4.8",
-      "reviewCount": "3000"
-    }
-  };
+  // Structured data is now handled in index.html to avoid duplicates
+  // Removed duplicate LocalBusiness schema from here
 
   return (
     <div className="min-h-screen flex flex-col bg-background text-foreground">
-      <script
-        type="application/ld+json"
-        dangerouslySetInnerHTML={{ __html: JSON.stringify(structuredData) }}
-      />
       <Header />
       <main>
         <HeroSection />
