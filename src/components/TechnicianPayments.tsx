@@ -305,11 +305,8 @@ const TechnicianPayments = () => {
       if (completedJobsError) throw completedJobsError;
 
       // Calculate number of months in the selected period
-      // Current period is always 1 month (10th to 10th)
-      const monthsInPeriod = selectedPeriod === 'year' ? 12 : 
-                            selectedPeriod === 'quarter' ? 3 : 
-                            selectedPeriod === 'lastMonth' || selectedPeriod === 'custom' || selectedPeriod === 'current' ? 1 : 
-                            (endDate.getTime() - actualStartDate.getTime()) / (1000 * 60 * 60 * 24 * 30); // Approximate for other periods
+      // Both current cycle and past month are always 1 month (10th to 10th)
+      const monthsInPeriod = selectedPeriod === 'current' || selectedPeriod === 'pastMonth' ? 1 : 1;
 
       // Log all technicians' basic salaries from their profiles
       console.log('📊 All Technicians Basic Salaries from Profile:');
@@ -335,8 +332,9 @@ const TechnicianPayments = () => {
           ? (tech.salary as any).baseSalary 
           : 8000; // Default 8000 if not found
         
-        const periodBaseSalary = monthlyBaseSalary * Math.ceil(monthsInPeriod); // Total base salary for the period
-        console.log(`💰 ${tech.full_name}: Monthly=${monthlyBaseSalary}, Months=${Math.ceil(monthsInPeriod)}, Period=${periodBaseSalary}`);
+        // Period is always 1 month (10th to 10th), so periodBaseSalary = monthlyBaseSalary
+        const periodBaseSalary = monthlyBaseSalary; // Always 1 month period
+        console.log(`💰 ${tech.full_name}: Monthly=${monthlyBaseSalary}, Period=${periodBaseSalary} (1 month)`);
         const dailyBaseSalary = monthlyBaseSalary / 30; // 266.67 per day
         const expectedWorkingDays = 26;
         const allowedHolidays = 4;
