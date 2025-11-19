@@ -77,6 +77,7 @@ const ServiceAreas = () => {
             "@type": "Offer",
             "price": "500",
             "priceCurrency": "INR",
+            "priceValidUntil": "2025-12-31",
             "availability": "https://schema.org/InStock",
             "seller": {
               "@type": "Organization",
