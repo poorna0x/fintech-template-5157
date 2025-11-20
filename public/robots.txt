@@ -20,13 +20,21 @@ Sitemap: https://hydrogenro.com/sitemap.xml
 User-agent: *
 Crawl-delay: 1
 
-# Allow specific bots
+# Allow specific bots (but still disallow admin/technician pages)
 User-agent: Googlebot
 Allow: /
+Disallow: /admin
+Disallow: /technician
+Disallow: /dashboard
+Disallow: /api/
 Crawl-delay: 0
 
 User-agent: Googlebot-Mobile
 Allow: /
+Disallow: /admin
+Disallow: /technician
+Disallow: /dashboard
+Disallow: /api/
 Crawl-delay: 0
 
 User-agent: Bingbot
