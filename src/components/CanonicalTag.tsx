@@ -5,6 +5,10 @@ const CanonicalTag = () => {
   const location = useLocation();
 
   useEffect(() => {
+    // Pages that should not have canonical tags (they have noindex)
+    const noIndexPages = ['/technician', '/admin', '/dashboard'];
+    const shouldHaveCanonical = !noIndexPages.some(page => location.pathname.startsWith(page));
+    
     // Get the base URL
     const baseUrl = 'https://hydrogenro.com';
     
@@ -18,13 +22,16 @@ const CanonicalTag = () => {
     const existingCanonicals = document.querySelectorAll('link[rel="canonical"]');
     existingCanonicals.forEach(tag => tag.remove());
     
-    // Create and add new canonical tag
-    const link = document.createElement('link');
-    link.setAttribute('rel', 'canonical');
-    link.setAttribute('href', canonicalUrl);
-    document.head.appendChild(link);
+    // Only add canonical tag if page should be indexed
+    if (shouldHaveCanonical) {
+      // Create and add new canonical tag
+      const link = document.createElement('link');
+      link.setAttribute('rel', 'canonical');
+      link.setAttribute('href', canonicalUrl);
+      document.head.appendChild(link);
+    }
     
-    // Also update og:url meta tag
+    // Also update og:url meta tag (always update this)
     let ogUrl = document.querySelector('meta[property="og:url"]');
     if (ogUrl) {
       ogUrl.setAttribute('content', canonicalUrl);
