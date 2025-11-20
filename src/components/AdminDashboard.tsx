@@ -868,6 +868,39 @@ const AdminDashboard = () => {
     };
   }, []);
 
+  // Add noindex meta tag to prevent search engine indexing
+  useEffect(() => {
+    // Remove any existing robots meta tag
+    const existingRobots = document.querySelector('meta[name="robots"]');
+    if (existingRobots) {
+      existingRobots.remove();
+    }
+    
+    // Add noindex meta tag
+    const metaRobots = document.createElement('meta');
+    metaRobots.name = 'robots';
+    metaRobots.content = 'noindex, nofollow';
+    document.head.appendChild(metaRobots);
+    
+    // Also add X-Robots-Tag header via meta tag
+    const metaXRobots = document.createElement('meta');
+    metaXRobots.httpEquiv = 'X-Robots-Tag';
+    metaXRobots.content = 'noindex, nofollow';
+    document.head.appendChild(metaXRobots);
+    
+    return () => {
+      // Cleanup on unmount
+      const robotsTag = document.querySelector('meta[name="robots"]');
+      if (robotsTag && robotsTag.getAttribute('content') === 'noindex, nofollow') {
+        robotsTag.remove();
+      }
+      const xRobotsTag = document.querySelector('meta[http-equiv="X-Robots-Tag"]');
+      if (xRobotsTag) {
+        xRobotsTag.remove();
+      }
+    };
+  }, []);
+
   // Generate employee ID
   const generateEmployeeId = (): string => {
     const prefix = 'TECH';
