@@ -10,13 +10,13 @@ const CanonicalTag = () => {
     
     // Build the canonical URL - remove trailing slash except for homepage
     const pathname = location.pathname === '/' ? '' : location.pathname;
-    const canonicalUrl = `${baseUrl}${pathname}`;
+    // Remove trailing slash from pathname if it exists (except for root)
+    const cleanPathname = pathname === '/' ? '' : pathname.replace(/\/$/, '');
+    const canonicalUrl = `${baseUrl}${cleanPathname}`;
     
-    // Remove existing canonical tag if any
-    let existingCanonical = document.querySelector('link[rel="canonical"]');
-    if (existingCanonical) {
-      existingCanonical.remove();
-    }
+    // Remove ALL existing canonical tags
+    const existingCanonicals = document.querySelectorAll('link[rel="canonical"]');
+    existingCanonicals.forEach(tag => tag.remove());
     
     // Create and add new canonical tag
     const link = document.createElement('link');
@@ -33,6 +33,12 @@ const CanonicalTag = () => {
       meta.setAttribute('property', 'og:url');
       meta.setAttribute('content', canonicalUrl);
       document.head.appendChild(meta);
+    }
+    
+    // Also update twitter:url if it exists
+    let twitterUrl = document.querySelector('meta[name="twitter:url"]');
+    if (twitterUrl) {
+      twitterUrl.setAttribute('content', canonicalUrl);
     }
     
     // Cleanup function
