@@ -121,6 +121,9 @@ const App = () => (
                   <Route path="/blog" element={<Blog />} />
                   <Route path="/blog/:slug" element={<BlogArticle />} />
                   
+                  {/* Search route - return 404 */}
+                  <Route path="/search" element={<NotFound />} />
+                  
                   {/* Service-specific pages */}
                   <Route path="/ro-installation" element={<Services />} />
                   <Route path="/ro-repair" element={<Services />} />

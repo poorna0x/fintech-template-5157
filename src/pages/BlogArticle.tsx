@@ -1,14 +1,96 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
+import { useParams, useNavigate } from 'react-router-dom';
 import Header from '@/components/Header';
 import Footer from '@/components/Footer';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Phone, Mail } from 'lucide-react';
-import { useNavigate } from 'react-router-dom';
+import NotFound from './NotFound';
+
+// Blog articles data - matches Blog.tsx
+const blogArticles = [
+  {
+    slug: "maintain-ro-purifier-home-guide",
+    title: "How to Maintain Your RO Purifier at Home - Complete Guide",
+    date: "January 20, 2025",
+    category: "Maintenance",
+    readTime: "8 min read",
+    content: "maintain-guide"
+  },
+  {
+    slug: "ro-vs-uv-vs-uf-bengaluru-water",
+    title: "RO vs UV vs UF Water Purifiers - Which is Best for Bengaluru Water?",
+    date: "January 15, 2025",
+    category: "Comparison",
+    readTime: "6 min read",
+    content: "ro-vs-uv-vs-uf"
+  },
+  {
+    slug: "water-softeners-important-karnataka-homes",
+    title: "Why Water Softeners are Important in Karnataka Homes",
+    date: "January 10, 2025",
+    category: "Water Treatment",
+    readTime: "5 min read",
+    content: "water-softeners"
+  },
+  {
+    slug: "ro-filter-replacement-schedule-bengaluru",
+    title: "RO Filter Replacement Schedule for Bengaluru Water Quality",
+    date: "January 05, 2025",
+    category: "Maintenance",
+    readTime: "7 min read",
+    content: "filter-replacement"
+  },
+  {
+    slug: "10-signs-ro-purifier-needs-repair",
+    title: "10 Signs Your RO Purifier Needs Repair - Bengaluru Guide",
+    date: "December 28, 2024",
+    category: "Repair",
+    readTime: "4 min read",
+    content: "signs-repair"
+  },
+  {
+    slug: "best-ro-water-purifier-brands-bengaluru-2025",
+    title: "Best RO Water Purifier Brands in Bengaluru 2025",
+    date: "December 20, 2024",
+    category: "Buying Guide",
+    readTime: "10 min read",
+    content: "best-brands"
+  }
+];
+
+// Slug redirects for old URLs
+const slugRedirects: Record<string, string> = {
+  "signs-ro-purifier-needs-repair": "10-signs-ro-purifier-needs-repair",
+  "best-ro-brands-bengaluru-2025": "best-ro-water-purifier-brands-bengaluru-2025",
+  "ro-vs-uv-vs-uf-water-purifiers-bengaluru": "ro-vs-uv-vs-uf-bengaluru-water"
+};
 
 const BlogArticle = () => {
+  const { slug } = useParams<{ slug: string }>();
   const navigate = useNavigate();
   const [showCallOptions, setShowCallOptions] = useState(false);
+
+  // Handle slug redirects
+  useEffect(() => {
+    if (slug && slugRedirects[slug]) {
+      navigate(`/blog/${slugRedirects[slug]}`, { replace: true });
+      return;
+    }
+  }, [slug, navigate]);
+
+  // Find article by slug
+  const article = slug ? blogArticles.find(a => a.slug === slug) : null;
+
+  // If article not found and not a redirect, show 404
+  if (!article && slug && !slugRedirects[slug]) {
+    return <NotFound />;
+  }
+
+  // If no article found, show 404
+  if (!article) {
+    return <NotFound />;
+  }
 
   const handleCall = (number: string) => {
     window.open(`tel:${number}`, '_self');
@@ -30,10 +112,10 @@ const BlogArticle = () => {
       <main className="flex-1">
       <div className="container mx-auto px-4 py-12 max-w-4xl">
         <h1 className="text-4xl font-bold mb-6 text-gray-900">
-          How to Maintain Your RO Purifier at Home - Complete Guide
+          {article.title}
         </h1>
         
-        <p className="text-sm text-gray-600 mb-8">January 20, 2025 • Maintenance • 8 min read</p>
+        <p className="text-sm text-gray-600 mb-8">{article.date} • {article.category} • {article.readTime}</p>
 
         <div className="prose prose-lg max-w-none">
           <p className="text-lg text-gray-700 mb-6">
