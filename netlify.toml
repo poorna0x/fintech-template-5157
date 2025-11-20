@@ -9,19 +9,6 @@
 [functions]
   directory = "netlify/functions"
 
-# Force HTTPS redirect - redirect HTTP to HTTPS
-[[redirects]]
-  from = "http://hydrogenro.com/*"
-  to = "https://hydrogenro.com/:splat"
-  status = 301
-  force = true
-
-[[redirects]]
-  from = "http://www.hydrogenro.com/*"
-  to = "https://hydrogenro.com/:splat"
-  status = 301
-  force = true
-
 # Redirect old pages to main site with 301 status
 [[redirects]]
   from = "/go"
@@ -80,6 +67,7 @@
     X-Content-Type-Options = "nosniff"
     Referrer-Policy = "strict-origin-when-cross-origin"
     Permissions-Policy = "microphone=(), camera=()"
+    Strict-Transport-Security = "max-age=31536000; includeSubDomains; preload"
 
 # Cache static assets for better performance
 [[headers]]
