@@ -549,6 +549,7 @@ const AdminDashboard = () => {
   const [selectedCustomerForHistory, setSelectedCustomerForHistory] = useState<Customer | null>(null);
   const [customerHistory, setCustomerHistory] = useState<{[customerId: string]: Job[]}>({});
   const [selectedPhoto, setSelectedPhoto] = useState<{url: string, index: number, total: number} | null>(null);
+  const [selectedBillPhotos, setSelectedBillPhotos] = useState<string[] | null>(null); // Track bill photos array for navigation
   const [isCompressingImage, setIsCompressingImage] = useState(false);
   
   // Brand and model suggestions state
@@ -10268,7 +10269,10 @@ const AdminDashboard = () => {
       </Dialog>
 
       {/* Photo Viewer Dialog */}
-      <Dialog open={!!selectedPhoto} onOpenChange={() => setSelectedPhoto(null)}>
+      <Dialog open={!!selectedPhoto} onOpenChange={() => {
+        setSelectedPhoto(null);
+        setSelectedBillPhotos(null);
+      }}>
         <DialogContent className="max-w-4xl max-h-[90vh] p-0">
           <DialogHeader className="sr-only">
             <DialogTitle>Photo Viewer</DialogTitle>
@@ -10276,6 +10280,44 @@ const AdminDashboard = () => {
           </DialogHeader>
           {selectedPhoto && (
             <div className="relative">
+              {/* Previous button - only show if viewing bill photos with multiple photos */}
+              {selectedBillPhotos && selectedBillPhotos.length > 1 && selectedPhoto.index > 0 && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="absolute left-4 top-1/2 transform -translate-y-1/2 z-10 bg-black/50 text-white hover:bg-black/70 rounded-full w-10 h-10"
+                  onClick={() => {
+                    const newIndex = selectedPhoto.index - 1;
+                    setSelectedPhoto({
+                      url: selectedBillPhotos[newIndex],
+                      index: newIndex,
+                      total: selectedBillPhotos.length
+                    });
+                  }}
+                >
+                  <span className="text-2xl">‹</span>
+                </Button>
+              )}
+
+              {/* Next button - only show if viewing bill photos with multiple photos */}
+              {selectedBillPhotos && selectedBillPhotos.length > 1 && selectedPhoto.index < selectedBillPhotos.length - 1 && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="absolute right-4 top-1/2 transform -translate-y-1/2 z-10 bg-black/50 text-white hover:bg-black/70 rounded-full w-10 h-10"
+                  onClick={() => {
+                    const newIndex = selectedPhoto.index + 1;
+                    setSelectedPhoto({
+                      url: selectedBillPhotos[newIndex],
+                      index: newIndex,
+                      total: selectedBillPhotos.length
+                    });
+                  }}
+                >
+                  <span className="text-2xl">›</span>
+                </Button>
+              )}
+
               <img
                 src={selectedPhoto.url}
                 alt={`Photo ${selectedPhoto.index + 1}`}
@@ -10311,14 +10353,19 @@ const AdminDashboard = () => {
                 <Button
                   size="sm"
                   variant="secondary"
-                  onClick={() => setSelectedPhoto(null)}
+                  onClick={() => {
+                    setSelectedPhoto(null);
+                    setSelectedBillPhotos(null);
+                  }}
                 >
                   Close
                 </Button>
               </div>
-              <div className="absolute bottom-4 left-4 bg-black bg-opacity-50 text-white px-3 py-1 rounded">
-                {selectedPhoto.index + 1} of {selectedPhoto.total}
-              </div>
+              {selectedPhoto.total > 1 && (
+                <div className="absolute bottom-4 left-4 bg-black bg-opacity-50 text-white px-3 py-1 rounded">
+                  {selectedPhoto.index + 1} of {selectedPhoto.total}
+                </div>
+              )}
             </div>
           )}
         </DialogContent>
@@ -11905,11 +11952,31 @@ const AdminDashboard = () => {
                               {billPhotos && Array.isArray(billPhotos) && billPhotos.length > 0 && (
                                 <div className="mt-3 pt-3 border-t border-gray-200">
                                   <div className="font-medium text-gray-900 mb-2">Bill Photos ({billPhotos.length}):</div>
-                                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
                                     {billPhotos.map((photo, idx) => (
-                                      <a key={idx} href={photo} target="_blank" rel="noopener noreferrer" className="block">
-                                        <img src={photo} alt={`Bill photo ${idx + 1}`} className="w-full h-24 object-cover rounded border border-gray-200 hover:border-gray-400" />
-                                      </a>
+                                      <div 
+                                        key={idx} 
+                                        className="relative group cursor-pointer rounded-lg overflow-hidden border border-gray-200 hover:border-gray-400 transition-all"
+                                        onClick={() => {
+                                          setSelectedBillPhotos(billPhotos);
+                                          setSelectedPhoto({
+                                            url: photo,
+                                            index: idx,
+                                            total: billPhotos.length
+                                          });
+                                        }}
+                                      >
+                                        <img 
+                                          src={photo} 
+                                          alt={`Bill photo ${idx + 1}`} 
+                                          className="w-full h-40 sm:h-48 object-cover transition-transform group-hover:scale-105" 
+                                        />
+                                        <div className="absolute inset-0 bg-black bg-opacity-0 group-hover:bg-opacity-10 transition-opacity flex items-center justify-center">
+                                          <div className="opacity-0 group-hover:opacity-100 transition-opacity text-white text-sm font-medium bg-black bg-opacity-50 px-3 py-1 rounded">
+                                            Click to view
+                                          </div>
+                                        </div>
+                                      </div>
                                     ))}
                                   </div>
                                 </div>
