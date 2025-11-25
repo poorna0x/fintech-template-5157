@@ -170,3 +170,29 @@ export const clearQueuedPhotos = (): void => {
   }
 };
 
+/**
+ * Link queued photos to a job
+ */
+export const linkQueuedPhotosToJob = (jobId: string, folder: string, photoType: 'bill' | 'before' | 'after' | 'payment' | 'other'): void => {
+  try {
+    const queue = getQueuedPhotos();
+    let updated = false;
+    
+    queue.forEach(photo => {
+      // Link photos that match the folder and don't have a jobId yet
+      if (photo.folder === folder && !photo.jobId) {
+        photo.jobId = jobId;
+        photo.photoType = photoType;
+        updated = true;
+      }
+    });
+    
+    if (updated) {
+      localStorage.setItem(QUEUE_STORAGE_KEY, JSON.stringify(queue));
+      console.log(`✅ Linked queued photos in folder "${folder}" to job ${jobId}`);
+    }
+  } catch (error) {
+    console.error('Error linking queued photos to job:', error);
+  }
+};
+

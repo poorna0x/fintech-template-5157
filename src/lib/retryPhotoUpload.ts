@@ -10,6 +10,7 @@ import {
   isOnline,
   QueuedPhoto,
 } from './offlinePhotoQueue';
+import { db } from '@/lib/supabase';
 import { toast } from 'sonner';
 
 let isProcessing = false;
@@ -39,6 +40,78 @@ const processQueuedPhoto = async (photo: QueuedPhoto): Promise<boolean> => {
     );
     
     console.log('✅ Successfully uploaded queued photo:', photo.id, uploadResult.secure_url);
+    
+    // If photo is linked to a job, update the job's requirements with the new photo URL
+    if (photo.jobId && photo.photoType) {
+      try {
+        const { data: jobData } = await db.jobs.getById(photo.jobId);
+        if (jobData) {
+          const currentRequirements = (jobData as any).requirements || [];
+          let requirements: any[] = [];
+          
+          // Parse requirements if it's a string
+          if (typeof currentRequirements === 'string') {
+            try {
+              requirements = JSON.parse(currentRequirements);
+              if (!Array.isArray(requirements)) {
+                requirements = [];
+              }
+            } catch {
+              requirements = [];
+            }
+          } else if (Array.isArray(currentRequirements)) {
+            requirements = [...currentRequirements];
+          }
+          
+          // Find or create the appropriate photo entry based on photoType
+          if (photo.photoType === 'bill') {
+            // Remove existing bill_photos entries
+            requirements = requirements.filter((req: any) => !req.bill_photos);
+            
+            // Get existing bill photos from job
+            const existingBillPhotos: string[] = [];
+            const billPhotosReq = requirements.find((req: any) => req.bill_photos);
+            if (billPhotosReq && Array.isArray(billPhotosReq.bill_photos)) {
+              existingBillPhotos.push(...billPhotosReq.bill_photos);
+            }
+            
+            // Add new photo URL if not already present
+            if (!existingBillPhotos.includes(uploadResult.secure_url)) {
+              existingBillPhotos.push(uploadResult.secure_url);
+            }
+            
+            // Add bill_photos entry
+            if (existingBillPhotos.length > 0) {
+              requirements.push({ bill_photos: existingBillPhotos });
+            }
+          } else if (photo.photoType === 'payment') {
+            // Handle payment photos similarly
+            requirements = requirements.filter((req: any) => !req.payment_photos);
+            const existingPaymentPhotos: string[] = [];
+            const paymentPhotosReq = requirements.find((req: any) => req.payment_photos);
+            if (paymentPhotosReq && Array.isArray(paymentPhotosReq.payment_photos)) {
+              existingPaymentPhotos.push(...paymentPhotosReq.payment_photos);
+            }
+            if (!existingPaymentPhotos.includes(uploadResult.secure_url)) {
+              existingPaymentPhotos.push(uploadResult.secure_url);
+            }
+            if (existingPaymentPhotos.length > 0) {
+              requirements.push({ payment_photos: existingPaymentPhotos });
+            }
+          }
+          
+          // Update job with new requirements
+          await db.jobs.update(photo.jobId, {
+            requirements: JSON.stringify(requirements)
+          });
+          
+          console.log(`✅ Added uploaded photo to job ${photo.jobId} requirements`);
+        }
+      } catch (error) {
+        console.error('Error updating job with uploaded photo:', error);
+        // Don't fail the upload if job update fails
+      }
+    }
     
     // Remove from queue on success
     removeQueuedPhoto(photo.id);

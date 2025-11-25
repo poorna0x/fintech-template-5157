@@ -53,7 +53,7 @@ import { extractCoordinates, formatAddressForDisplay } from '@/lib/maps';
 import ImageUpload from '@/components/ImageUpload';
 import { Label } from '@/components/ui/label';
 import { processQueuedPhotos, startRetryProcessing, setupOnlineListener, stopRetryProcessing } from '@/lib/retryPhotoUpload';
-import { getQueuedPhotosCount } from '@/lib/offlinePhotoQueue';
+import { getQueuedPhotosCount, linkQueuedPhotosToJob } from '@/lib/offlinePhotoQueue';
 import { queueJobCompletion, saveJobCompletionProgress, getQueuedCompletionForJob, removeQueuedJobCompletion } from '@/lib/offlineJobCompletion';
 import { processQueuedJobCompletions, startJobCompletionRetryProcessing, setupJobCompletionOnlineListener, stopJobCompletionRetryProcessing } from '@/lib/retryJobCompletion';
 import { getQueuedCompletionsCount } from '@/lib/offlineJobCompletion';
@@ -2180,6 +2180,10 @@ const TechnicianDashboard = () => {
         }
       }
 
+      // Link any queued bill photos to this job BEFORE saving completion
+      // This ensures photos uploaded later will be added to the job
+      linkQueuedPhotosToJob(selectedJobForComplete.id, 'bills', 'bill');
+      
       // Save all completion data to localStorage FIRST (before any network call)
       const completionId = queueJobCompletion({
         jobId: selectedJobForComplete.id,
@@ -2304,10 +2308,10 @@ const TechnicianDashboard = () => {
         }
         
         // Job completed successfully! Check if there are queued photos
-        const uploadedBillPhotos = billPhotos.filter(url => 
+        const uploadedBillPhotosCount = billPhotos.filter(url => 
           url && typeof url === 'string' && (url.startsWith('http://') || url.startsWith('https://'))
-        );
-        const queuedBillPhotosCount = billPhotos.length - uploadedBillPhotos.length;
+        ).length;
+        const queuedBillPhotosCount = billPhotos.length - uploadedBillPhotosCount;
         
         if (queuedBillPhotosCount > 0) {
           console.log(`📸 ${queuedBillPhotosCount} bill photo(s) are queued and will be added to job when uploaded`);
