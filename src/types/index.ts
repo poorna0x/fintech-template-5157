@@ -222,6 +222,9 @@ export interface Technician {
     commissionPercentage: number;
   };
   
+  // QR Code Visibility
+  visibleQrCodes?: string[]; // Array of QR code IDs visible to this technician. Empty = none, ["all"] = all, or specific IDs
+  
   // Timestamps
   createdAt: string;
   updatedAt: string;

@@ -70,6 +70,7 @@ import AMCModal from './AMCModal';
 import QuotationModal from './QuotationModal';
 import TaxInvoiceModal from './TaxInvoiceModal';
 import GSTInvoicesPage from './GSTInvoicesPage';
+import AMCViewPage from './AMCViewPage';
 import ImageUpload from '@/components/ImageUpload';
 import TechnicianPayments from './TechnicianPayments';
 import BillingStats from './BillingStats';
@@ -184,6 +185,7 @@ const AdminDashboard = () => {
   const [taxInvoiceModalOpen, setTaxInvoiceModalOpen] = useState(false);
   const [selectedCustomerForTaxInvoice, setSelectedCustomerForTaxInvoice] = useState<Customer | null>(null);
   const [showGSTInvoicesPage, setShowGSTInvoicesPage] = useState(false);
+  const [showAMCViewPage, setShowAMCViewPage] = useState(false);
   const [currentView, setCurrentView] = useState<'dashboard' | 'payments' | 'billing' | 'analytics'>('dashboard');
   const [moreOptionsDialogOpen, setMoreOptionsDialogOpen] = useState<Record<string, boolean>>({});
   const [editFormData, setEditFormData] = useState({
@@ -4429,6 +4431,14 @@ const AdminDashboard = () => {
     setShowGSTInvoicesPage(false);
   };
 
+  const handleShowAMCView = () => {
+    setShowAMCViewPage(true);
+  };
+
+  const handleHideAMCView = () => {
+    setShowAMCViewPage(false);
+  };
+
 
 
   // Job assignment functions
@@ -5878,15 +5888,58 @@ const AdminDashboard = () => {
     );
   });
 
-  const pendingJobs = jobs.filter(job => job.status === 'PENDING');
+  // Filter jobs by today's date for stat cards
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const tomorrow = new Date(today);
+  tomorrow.setDate(tomorrow.getDate() + 1);
+  const todayStart = today.toISOString();
+  const todayEnd = tomorrow.toISOString();
+  const todayDateStr = today.toISOString().split('T')[0];
+
+  const pendingJobs = jobs.filter(job => {
+    if (job.status !== 'PENDING') return false;
+    const createdAt = job.createdAt || (job as any).created_at;
+    if (!createdAt) return false;
+    const createdDate = new Date(createdAt);
+    return createdDate >= today && createdDate < tomorrow;
+  });
+  
   const assignedJobs = jobs.filter(job => job.status === 'ASSIGNED');
-  const inProgressJobs = jobs.filter(job => job.status === 'IN_PROGRESS');
+  
+  const inProgressJobs = jobs.filter(job => {
+    if (job.status !== 'IN_PROGRESS') return false;
+    const createdAt = job.createdAt || (job as any).created_at;
+    if (!createdAt) return false;
+    const createdDate = new Date(createdAt);
+    return createdDate >= today && createdDate < tomorrow;
+  });
+  
   const completedJobs = jobs.filter(job => job.status === 'COMPLETED');
   
-  // New stats for the dashboard cards
-  const ongoingJobs = jobs.filter(job => ['PENDING', 'ASSIGNED', 'IN_PROGRESS'].includes(job.status));
-  const followupJobs = jobs.filter(job => ['FOLLOW_UP', 'RESCHEDULED'].includes(job.status));
-  const deniedJobs = jobs.filter(job => ['DENIED', 'CANCELLED'].includes(job.status));
+  // New stats for the dashboard cards (filtered by today)
+  const ongoingJobs = jobs.filter(job => {
+    if (!['PENDING', 'ASSIGNED', 'IN_PROGRESS'].includes(job.status)) return false;
+    const createdAt = job.createdAt || (job as any).created_at;
+    if (!createdAt) return false;
+    const createdDate = new Date(createdAt);
+    return createdDate >= today && createdDate < tomorrow;
+  });
+  
+  const followupJobs = jobs.filter(job => {
+    if (!['FOLLOW_UP', 'RESCHEDULED'].includes(job.status)) return false;
+    const followUpDate = job.followUpDate || (job as any).follow_up_date;
+    if (!followUpDate) return false;
+    return followUpDate.startsWith(todayDateStr);
+  });
+  
+  const deniedJobs = jobs.filter(job => {
+    if (!['DENIED', 'CANCELLED'].includes(job.status)) return false;
+    const deniedAt = (job as any).denied_at;
+    if (!deniedAt) return false;
+    const deniedDate = new Date(deniedAt);
+    return deniedDate >= today && deniedDate < tomorrow;
+  });
 
   // Show login form if not authenticated
   if (authLoading) {
@@ -5945,6 +5998,11 @@ const AdminDashboard = () => {
         </div>
       </div>
     );
+  }
+
+  // Show AMC View page if requested
+  if (showAMCViewPage) {
+    return <AMCViewPage onBack={handleHideAMCView} />;
   }
 
   // Show different views based on currentView state
@@ -6047,6 +6105,10 @@ const AdminDashboard = () => {
                   <DropdownMenuItem onClick={handleShowGSTInvoices}>
                     <Receipt className="w-4 h-4 mr-2" />
                     GST Invoices
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={handleShowAMCView}>
+                    <FileText className="w-4 h-4 mr-2" />
+                    View AMCs
                   </DropdownMenuItem>
                 </DropdownMenuContent>
               </DropdownMenu>
@@ -7154,7 +7216,7 @@ const AdminDashboard = () => {
                                 </div>
                               </div>
                             )}
-                            <div className="bg-white rounded-lg border border-gray-200 hover:border-gray-300 hover:shadow-sm transition-all duration-200 overflow-hidden group">
+                            <div className={`bg-white rounded-lg border ${job.status === 'PENDING' && !(job.assigned_technician_id || job.assignedTechnicianId) ? 'border-blue-500 border-2' : 'border-gray-200'} hover:border-gray-300 hover:shadow-sm transition-all duration-200 overflow-hidden group`}>
                             <div className="p-3 sm:p-4">
                               <div className="flex items-start justify-between mb-4">
                                 <div className="flex-1 min-w-0">
@@ -9477,6 +9539,7 @@ const AdminDashboard = () => {
                   <option value="Direct call">Direct call</option>
                   <option value="RO care india">RO care india</option>
                   <option value="Home triangle">Home triangle</option>
+                  <option value="Local Ramu">Local Ramu</option>
                   <option value="Other">Other</option>
                 </select>
                 {newJobFormData.lead_source === 'Other' && (
@@ -10274,6 +10337,7 @@ const AdminDashboard = () => {
                     <SelectItem value="Direct call">Direct call</SelectItem>
                     <SelectItem value="RO care india">RO care india</SelectItem>
                     <SelectItem value="Home triangle">Home triangle</SelectItem>
+                    <SelectItem value="Local Ramu">Local Ramu</SelectItem>
                     <SelectItem value="Other">Other</SelectItem>
                   </SelectContent>
                 </Select>

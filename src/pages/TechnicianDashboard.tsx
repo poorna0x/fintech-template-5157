@@ -393,7 +393,10 @@ const TechnicianDashboard = () => {
   const [qrCodeType, setQrCodeType] = useState<string>('');
   const [selectedQrCodeId, setSelectedQrCodeId] = useState<string>('');
   const [commonQrCodes, setCommonQrCodes] = useState<CommonQrCode[]>([]);
+  const [allCommonQrCodes, setAllCommonQrCodes] = useState<CommonQrCode[]>([]); // Store all QR codes
   const [technicians, setTechnicians] = useState<any[]>([]);
+  const [allTechnicians, setAllTechnicians] = useState<any[]>([]); // Store all technicians
+  const [technicianVisibleQrCodes, setTechnicianVisibleQrCodes] = useState<string[]>([]); // Current technician's visibility settings
   const [paymentScreenshot, setPaymentScreenshot] = useState<string>('');
 
   // Phone popup state
@@ -502,23 +505,8 @@ const TechnicianDashboard = () => {
     }
   }, [user?.technicianId, loadAssignedJobs]);
 
-  // Load QR codes with localStorage caching
-  useEffect(() => {
-    console.log('🔍 QR Code useEffect triggered', { 
-      hasUser: !!user, 
-      userRole: user?.role,
-      userId: user?.id,
-      technicianId: user?.technicianId,
-      loading: loading
-    });
-
-    // Wait for auth to finish loading
-    if (loading) {
-      console.log('⏳ Auth still loading, waiting...');
-      return;
-    }
-
-    const loadQrCodes = async () => {
+  // Load QR codes function (extracted so it can be called manually)
+  const loadQrCodes = useCallback(async () => {
       // Only load if user is a technician
       if (!user) {
         console.log('⚠️ No user found, skipping QR code load');
@@ -556,63 +544,150 @@ const TechnicianDashboard = () => {
           db.technicians.getAll()
         ]);
 
+        // Transform common QR codes
+        let allCommonQrCodesData: CommonQrCode[] = [];
         if (commonResult.data) {
-          const transformed = commonResult.data.map((qr: any) => ({
+          allCommonQrCodesData = commonResult.data.map((qr: any) => ({
             id: qr.id,
             name: qr.name,
             qrCodeUrl: qr.qr_code_url,
             createdAt: qr.created_at,
             updatedAt: qr.updated_at
           }));
-          setCommonQrCodes(transformed);
-          console.log('✅ Loaded common QR codes:', transformed.length);
+          setAllCommonQrCodes(allCommonQrCodesData);
+          
           // Update cache
           if (shouldUseCache()) {
-            cacheQrCodes(transformed);
+            cacheQrCodes(allCommonQrCodesData);
           }
         }
 
-        // Load all technicians with QR codes
+        // Transform technicians with QR codes
+        let allTechniciansData: any[] = [];
+        let currentTechnicianVisibleQrCodes: string[] = ['all']; // Default to showing all (backward compatibility)
+        let rawVisibleQrCodes: any = null; // Store raw value to distinguish null/undefined from empty array
+        
         if (allTechniciansResult.data) {
-          const techniciansWithQr = allTechniciansResult.data
+          allTechniciansData = allTechniciansResult.data
             .filter((tech: any) => tech.qr_code && tech.qr_code.trim() !== '')
             .map((tech: any) => ({
               id: tech.id,
               fullName: tech.full_name,
-              qrCode: tech.qr_code
+              qrCode: tech.qr_code,
+              visibleQrCodes: tech.visible_qr_codes || []
             }));
-          setTechnicians(techniciansWithQr);
-          console.log('✅ Loaded technicians with QR codes:', techniciansWithQr.length);
+          
+          setAllTechnicians(allTechniciansData);
+          
+          // Get current technician's visibility settings
+          const currentTech = allTechniciansResult.data.find((tech: any) => tech.id === technicianId);
+          // If visible_qr_codes is null/undefined, default to showing all (backward compatibility)
+          // If it's an empty array [], that means explicitly set to show none
+          rawVisibleQrCodes = currentTech?.visible_qr_codes;
+          currentTechnicianVisibleQrCodes = rawVisibleQrCodes === null || rawVisibleQrCodes === undefined ? ['all'] : rawVisibleQrCodes;
+          setTechnicianVisibleQrCodes(currentTechnicianVisibleQrCodes);
           
           // Cache current technician's QR code if available
-          const currentTech = techniciansWithQr.find(t => t.id === technicianId);
-          if (currentTech && shouldUseCache()) {
-            cacheTechnicianQrCode(technicianId, currentTech.qrCode);
+          const currentTechWithQr = allTechniciansData.find(t => t.id === technicianId);
+          if (currentTechWithQr && shouldUseCache()) {
+            cacheTechnicianQrCode(technicianId, currentTechWithQr.qrCode);
           }
+        }
+
+        // Filter QR codes based on visibility settings
+        // If visibleQrCodes is null/undefined → show all (default, backward compatibility)
+        // If visibleQrCodes is empty array [] → show none (explicitly set to none)
+        // If visibleQrCodes includes 'all' → show all
+        // Otherwise → show only the specified QR codes
+        
+        if (currentTechnicianVisibleQrCodes.length === 0 && rawVisibleQrCodes !== null && rawVisibleQrCodes !== undefined) {
+          // Empty array (explicitly set) = show none
+          setCommonQrCodes([]);
+          setTechnicians([]);
+          console.log('✅ QR code visibility: None (explicitly set to empty array)');
+        } else if (currentTechnicianVisibleQrCodes.includes('all')) {
+          // 'all' = show everything
+          setCommonQrCodes(allCommonQrCodesData);
+          setTechnicians(allTechniciansData);
+          console.log('✅ QR code visibility: All', { common: allCommonQrCodesData.length, technicians: allTechniciansData.length });
+        } else {
+          // Specific IDs = filter
+          // Ensure all IDs are strings for comparison
+          const visibleQrCodesStr = currentTechnicianVisibleQrCodes.map(id => String(id));
+          
+          console.log('🔍 Filtering QR codes:', {
+            visibleQrCodes: visibleQrCodesStr,
+            allCommonQrCodes: allCommonQrCodesData.map(qr => ({ id: qr.id, name: qr.name, formattedId: `common_${String(qr.id)}` })),
+            allTechnicians: allTechniciansData.map(tech => ({ id: tech.id, name: tech.fullName, formattedId: `technician_${String(tech.id)}` }))
+          });
+          
+          const filteredCommon = allCommonQrCodesData.filter(qr => {
+            const formattedId = `common_${String(qr.id)}`;
+            const isIncluded = visibleQrCodesStr.includes(formattedId);
+            console.log(`  Checking common QR ${qr.name}: ${formattedId} -> ${isIncluded ? '✅' : '❌'}`);
+            return isIncluded;
+          });
+          
+          const filteredTechnicians = allTechniciansData.filter(tech => {
+            const formattedId = `technician_${String(tech.id)}`;
+            const isIncluded = visibleQrCodesStr.includes(formattedId);
+            console.log(`  Checking technician QR ${tech.fullName}: ${formattedId} -> ${isIncluded ? '✅' : '❌'}`);
+            return isIncluded;
+          });
+          
+          setCommonQrCodes(filteredCommon);
+          setTechnicians(filteredTechnicians);
+          console.log('✅ QR code visibility: Specific', { 
+            visible: visibleQrCodesStr,
+            common: filteredCommon.length, 
+            technicians: filteredTechnicians.length,
+            filteredCommon: filteredCommon.map(qr => qr.name),
+            filteredTechnicians: filteredTechnicians.map(tech => tech.fullName)
+          });
         }
       } catch (error) {
         console.error('Error loading QR codes:', error);
       }
-    };
+    }, [user]);
+
+  // Load QR codes on mount and when user changes
+  useEffect(() => {
+    console.log('🔍 QR Code useEffect triggered', { 
+      hasUser: !!user, 
+      userRole: user?.role,
+      userId: user?.id,
+      technicianId: user?.technicianId,
+      loading: loading
+    });
+
+    // Wait for auth to finish loading
+    if (loading) {
+      console.log('⏳ Auth still loading, waiting...');
+      return;
+    }
 
     // Always try to load if user exists and auth is done loading (will check role inside)
-    if (!loading && user) {
+    if (user) {
       console.log('🚀 Calling loadQrCodes, user:', { id: user.id, role: user.role });
       loadQrCodes();
-    } else if (loading) {
-      console.log('⏳ Waiting for auth to finish loading...');
     } else {
       console.log('⚠️ No user, not loading QR codes');
     }
-  }, [user, loading]);
+  }, [user, loading, loadQrCodes]);
 
-  // Track app visibility to show notifications when app becomes active
+  // Track app visibility to show notifications when app becomes active and refresh QR codes
   useEffect(() => {
     const handleVisibilityChange = () => {
       if (!document.hidden) {
         // App became active - update last active time
         const now = new Date();
         const timeSinceLastActive = now.getTime() - lastActiveTimeRef.current.getTime();
+        
+        // Reload QR codes when page becomes visible (to get latest visibility settings)
+        if (user && user.role === 'technician') {
+          console.log('🔄 Page visible, refreshing QR codes...');
+          loadQrCodes();
+        }
         
         // Only check for new jobs if app was inactive for more than 5 seconds
         if (timeSinceLastActive > 5000 && user?.technicianId) {
@@ -643,7 +718,23 @@ const TechnicianDashboard = () => {
       document.removeEventListener('visibilitychange', handleVisibilityChange);
       window.removeEventListener('focus', handleFocus);
     };
-  }, [user?.technicianId, loadAssignedJobs]);
+  }, [user?.technicianId, loadAssignedJobs, user, loadQrCodes]);
+
+  // Periodic refresh of QR codes (every 30 seconds) to catch visibility setting changes
+  useEffect(() => {
+    if (!user || user.role !== 'technician') {
+      return;
+    }
+
+    const interval = setInterval(() => {
+      console.log('🔄 Periodic QR code refresh...');
+      loadQrCodes();
+    }, 30000); // Refresh every 30 seconds
+
+    return () => {
+      clearInterval(interval);
+    };
+  }, [user, loadQrCodes]);
 
   // Set up realtime subscription for new job assignments
   useEffect(() => {
@@ -1164,13 +1255,25 @@ const TechnicianDashboard = () => {
       // Filter for follow-up jobs (FOLLOW_UP status)
       filtered = filtered.filter(job => job.status === 'FOLLOW_UP');
     } else if (statusFilter === 'CANCELLED') {
-      // Filter for denied jobs (DENIED status) - only show jobs denied by this technician
+      // Filter for denied jobs (DENIED status) - only show jobs denied by this technician today
       const technicianName = user?.fullName || '';
+      const today = new Date();
+      today.setHours(0, 0, 0, 0); // Start of today
+      const tomorrow = new Date(today);
+      tomorrow.setDate(tomorrow.getDate() + 1); // Start of tomorrow
+      
       filtered = filtered.filter(job => {
         if (job.status !== 'DENIED') return false;
         const deniedBy = (job as any).denied_by || job.deniedBy || '';
+        const deniedAt = (job as any).denied_at || job.deniedAt || null;
+        
         // Only show if denied by this technician (not by admin)
-        return deniedBy && deniedBy !== 'Admin' && deniedBy === technicianName;
+        if (!deniedBy || deniedBy === 'Admin' || deniedBy !== technicianName) return false;
+        
+        // Only show if denied today
+        if (!deniedAt) return false;
+        const deniedDate = new Date(deniedAt);
+        return deniedDate >= today && deniedDate < tomorrow;
       });
     } else if (statusFilter === 'COMPLETED') {
       // Filter completed jobs - only show today's completed jobs by this technician
@@ -1232,21 +1335,7 @@ const TechnicianDashboard = () => {
       if (isFollowUpTodayA && !isFollowUpTodayB) return -1;
       if (!isFollowUpTodayA && isFollowUpTodayB) return 1;
       
-      // Priority 2: New ASSIGNED jobs (those with NEW tag)
-      const isNewA = statusA === 'ASSIGNED' && !seenJobs.has(a.id);
-      const isNewB = statusB === 'ASSIGNED' && !seenJobs.has(b.id);
-      
-      if (isNewA && !isNewB) return -1;
-      if (!isNewA && isNewB) return 1;
-      
-      // If both are new, sort by created_at (newest first)
-      if (isNewA && isNewB) {
-        const createdA = new Date((a as any).created_at || a.createdAt || 0).getTime();
-        const createdB = new Date((b as any).created_at || b.createdAt || 0).getTime();
-        return createdB - createdA;
-      }
-      
-      // Priority 3: IN_PROGRESS and EN_ROUTE (active jobs)
+      // Priority 2: IN_PROGRESS and EN_ROUTE (active jobs)
       const isActiveA = statusA === 'IN_PROGRESS' || statusA === 'EN_ROUTE';
       const isActiveB = statusB === 'IN_PROGRESS' || statusB === 'EN_ROUTE';
       
@@ -1257,6 +1346,13 @@ const TechnicianDashboard = () => {
       if (isActiveA && isActiveB) {
         if (statusA === 'IN_PROGRESS' && statusB === 'EN_ROUTE') return -1;
         if (statusA === 'EN_ROUTE' && statusB === 'IN_PROGRESS') return 1;
+      }
+      
+      // Priority 3: Sort ASSIGNED jobs by created_at (newest first) - maintain position regardless of seen status
+      if (statusA === 'ASSIGNED' && statusB === 'ASSIGNED') {
+        const createdA = new Date((a as any).created_at || a.createdAt || 0).getTime();
+        const createdB = new Date((b as any).created_at || b.createdAt || 0).getTime();
+        return createdB - createdA;
       }
       
       // Priority 4: Sort by created_at (newest first) for all other jobs
@@ -2391,8 +2487,19 @@ const TechnicianDashboard = () => {
     if (job.status !== 'DENIED') return false;
     const technicianName = user?.fullName || '';
     const deniedBy = (job as any).denied_by || job.deniedBy || '';
+    const deniedAt = (job as any).denied_at || job.deniedAt || null;
+    
     // Only count jobs denied by this technician (not by admin)
-    return deniedBy && deniedBy !== 'Admin' && deniedBy === technicianName;
+    if (!deniedBy || deniedBy === 'Admin' || deniedBy !== technicianName) return false;
+    
+    // Only count if denied today
+    if (!deniedAt) return false;
+    const today = new Date();
+    today.setHours(0, 0, 0, 0); // Start of today
+    const tomorrow = new Date(today);
+    tomorrow.setDate(tomorrow.getDate() + 1); // Start of tomorrow
+    const deniedDate = new Date(deniedAt);
+    return deniedDate >= today && deniedDate < tomorrow;
   }).length;
   // Count only today's completed jobs
   const today = new Date();
@@ -2768,7 +2875,7 @@ const TechnicianDashboard = () => {
                 : statusFilter === 'RESCHEDULED'
                 ? `Showing ${filteredJobs.length} follow-up jobs`
                 : statusFilter === 'CANCELLED'
-                ? `Showing ${filteredJobs.length} denied jobs`
+                ? `Showing ${filteredJobs.length} denied jobs (today only)`
                 : `Showing ${filteredJobs.length} ${statusFilter.toLowerCase().replace('_', ' ')} jobs`
               }
             </p>
@@ -2787,7 +2894,7 @@ const TechnicianDashboard = () => {
                     : statusFilter === 'RESCHEDULED'
                     ? 'You have no follow-up jobs scheduled.'
                     : statusFilter === 'CANCELLED'
-                    ? 'You have no denied jobs.'
+                    ? 'You have no denied jobs today.'
                     : statusFilter === 'COMPLETED'
                     ? 'You have no completed jobs.'
                     : 'You have no jobs at the moment.'}

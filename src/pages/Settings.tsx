@@ -5,6 +5,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { Checkbox } from '@/components/ui/checkbox';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Badge } from '@/components/ui/badge';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from '@/components/ui/alert-dialog';
@@ -55,7 +56,8 @@ const Settings = () => {
     password: '',
     qrCode: '', // QR code image URL
     photo: '', // Technician photo URL
-    baseSalary: 0
+    baseSalary: 0,
+    visibleQrCodes: [] as string[] // Array of QR code IDs visible to this technician
   });
   const [newlyCreatedTechnicianId, setNewlyCreatedTechnicianId] = useState<string | null>(null);
 
@@ -83,6 +85,7 @@ const Settings = () => {
     salary: tech.salary,
     qrCode: tech.qr_code || tech.qrCode || '',
     photo: tech.photo || '',
+    visibleQrCodes: tech.visible_qr_codes || [],
     createdAt: tech.created_at,
     updatedAt: tech.updated_at
   });
@@ -125,7 +128,8 @@ const Settings = () => {
       password: '',
       qrCode: '',
       photo: '',
-      baseSalary: 0
+      baseSalary: 0,
+      visibleQrCodes: []
     });
     setNewlyCreatedTechnicianId(null);
     setAddTechnicianDialogOpen(true);
@@ -141,7 +145,8 @@ const Settings = () => {
       password: '', // Don't show existing password for security
       qrCode: (technician as any).qrCode || '',
       photo: (technician as any).photo || '',
-      baseSalary: technician.salary?.baseSalary || 0
+      baseSalary: technician.salary?.baseSalary || 0,
+      visibleQrCodes: technician.visibleQrCodes || []
     });
     setNewlyCreatedTechnicianId(null);
     setEditTechnicianDialogOpen(true);
@@ -191,6 +196,7 @@ const Settings = () => {
         employee_id: technicianFormData.employeeId,
         qr_code: technicianFormData.qrCode || null,
         photo: technicianFormData.photo || null,
+        visible_qr_codes: technicianFormData.visibleQrCodes || [],
         account_status: 'ACTIVE',
         skills: {
           serviceTypes: ['RO', 'SOFTENER', 'AC', 'APPLIANCE'],
@@ -655,12 +661,6 @@ const Settings = () => {
                           <span className="font-medium shrink-0">Phone:</span>
                           <span className="truncate">{technician.phone}</span>
                           </div>
-                          <div className="flex items-center gap-2">
-                          <span className="font-medium shrink-0">Status:</span>
-                            <Badge variant="outline" className="text-xs">
-                              {technician.status}
-                            </Badge>
-                          </div>
                         </div>
 
                         {/* ID Card Link */}
@@ -884,6 +884,121 @@ const Settings = () => {
                     />
                   </div>
                 )}
+              </div>
+            </div>
+            
+            {/* QR Code Visibility Settings */}
+            <div className="space-y-4">
+              <h3 className="text-lg font-semibold text-gray-900">QR Code Visibility</h3>
+              <div>
+                <Label>Select which QR codes this technician can see</Label>
+                <p className="text-sm text-gray-500 mb-3">Control which payment QR codes are available to this technician</p>
+                
+                <div className="space-y-3">
+                  {/* Show All Option */}
+                  <div className="flex items-center space-x-2 p-3 border rounded-lg">
+                    <Checkbox
+                      id="qr-all"
+                      checked={technicianFormData.visibleQrCodes.includes('all')}
+                      onCheckedChange={(checked) => {
+                        if (checked) {
+                          setTechnicianFormData(prev => ({ ...prev, visibleQrCodes: ['all'] }));
+                        } else {
+                          setTechnicianFormData(prev => ({ ...prev, visibleQrCodes: [] }));
+                        }
+                      }}
+                    />
+                    <Label htmlFor="qr-all" className="font-medium cursor-pointer flex-1">
+                      Show All QR Codes
+                    </Label>
+                  </div>
+                  
+                  {/* Common QR Codes */}
+                  {commonQrCodes.length > 0 && (
+                    <div className="space-y-2">
+                      <Label className="text-sm font-medium text-gray-700">Common QR Codes:</Label>
+                      {commonQrCodes.map((qr) => {
+                        const qrId = `common_${qr.id}`;
+                        const isChecked = technicianFormData.visibleQrCodes.includes(qrId);
+                        const isAllSelected = technicianFormData.visibleQrCodes.includes('all');
+                        
+                        return (
+                          <div key={qr.id} className="flex items-center space-x-2 p-2 border rounded-lg">
+                            <Checkbox
+                              id={qrId}
+                              checked={isChecked || isAllSelected}
+                              disabled={isAllSelected}
+                              onCheckedChange={(checked) => {
+                                if (isAllSelected) return;
+                                
+                                if (checked) {
+                                  setTechnicianFormData(prev => ({
+                                    ...prev,
+                                    visibleQrCodes: [...prev.visibleQrCodes.filter(id => id !== 'all'), qrId]
+                                  }));
+                                } else {
+                                  setTechnicianFormData(prev => ({
+                                    ...prev,
+                                    visibleQrCodes: prev.visibleQrCodes.filter(id => id !== qrId)
+                                  }));
+                                }
+                              }}
+                            />
+                            <Label htmlFor={qrId} className="cursor-pointer flex-1 text-sm">
+                              {qr.name}
+                            </Label>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                  
+                  {/* Technician QR Codes */}
+                  {technicians.filter(t => (t as any).qrCode && (t as any).qrCode.trim() !== '').length > 0 && (
+                    <div className="space-y-2">
+                      <Label className="text-sm font-medium text-gray-700">Technician QR Codes:</Label>
+                      {technicians
+                        .filter(t => (t as any).qrCode && (t as any).qrCode.trim() !== '')
+                        .map((tech) => {
+                          const qrId = `technician_${tech.id}`;
+                          const isChecked = technicianFormData.visibleQrCodes.includes(qrId);
+                          const isAllSelected = technicianFormData.visibleQrCodes.includes('all');
+                          
+                          return (
+                            <div key={tech.id} className="flex items-center space-x-2 p-2 border rounded-lg">
+                              <Checkbox
+                                id={qrId}
+                                checked={isChecked || isAllSelected}
+                                disabled={isAllSelected}
+                                onCheckedChange={(checked) => {
+                                  if (isAllSelected) return;
+                                  
+                                  if (checked) {
+                                    setTechnicianFormData(prev => ({
+                                      ...prev,
+                                      visibleQrCodes: [...prev.visibleQrCodes.filter(id => id !== 'all'), qrId]
+                                    }));
+                                  } else {
+                                    setTechnicianFormData(prev => ({
+                                      ...prev,
+                                      visibleQrCodes: prev.visibleQrCodes.filter(id => id !== qrId)
+                                    }));
+                                  }
+                                }}
+                              />
+                              <Label htmlFor={qrId} className="cursor-pointer flex-1 text-sm">
+                                {tech.fullName}'s QR Code
+                              </Label>
+                            </div>
+                          );
+                        })}
+                    </div>
+                  )}
+                  
+                  {commonQrCodes.length === 0 && technicians.filter(t => (t as any).qrCode && (t as any).qrCode.trim() !== '').length === 0 && (
+                    <p className="text-sm text-gray-500 italic">No QR codes available. Add common QR codes or upload QR codes for technicians.</p>
+                  )}
+                </div>
               </div>
             </div>
             
