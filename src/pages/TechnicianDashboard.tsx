@@ -2248,8 +2248,21 @@ const TechnicianDashboard = () => {
 
         requirements = requirements.filter((req: any) => !req.bill_photos && !req.payment_photos && !req.qr_photos && !req.amc_info);
 
-        if (billPhotos.length > 0) {
-          requirements.push({ bill_photos: billPhotos });
+        // Only add bill photos if they are uploaded (Cloudinary URLs)
+        // Photos that are still queued will be uploaded later and added to the job
+        const uploadedBillPhotos = billPhotos.filter(url => 
+          url && (url.startsWith('http://') || url.startsWith('https://'))
+        );
+        if (uploadedBillPhotos.length > 0) {
+          requirements.push({ bill_photos: uploadedBillPhotos });
+        }
+        
+        // If there are queued photos (not uploaded yet), note them for later upload
+        const queuedBillPhotos = billPhotos.filter(url => 
+          url && !url.startsWith('http://') && !url.startsWith('https://')
+        );
+        if (queuedBillPhotos.length > 0) {
+          console.log(`📸 ${queuedBillPhotos.length} bill photo(s) are queued and will be uploaded later`);
         }
 
         if (paymentMode === 'ONLINE') {
@@ -2274,9 +2287,9 @@ const TechnicianDashboard = () => {
           });
         }
 
-        if (billPhotos.length > 0 || (paymentMode === 'ONLINE' && qrCodeType) || (hasAMC && amcDateGiven && amcEndDate)) {
-          updateData.requirements = JSON.stringify(requirements);
-        }
+        // Always update requirements (even if empty) to ensure job is marked as completed
+        // Job completion should succeed even if photos aren't uploaded yet
+        updateData.requirements = JSON.stringify(requirements);
 
         // Wrap database update with timeout (30 seconds)
         const updatePromise = db.jobs.update(selectedJobForComplete.id, updateData);
@@ -2288,6 +2301,19 @@ const TechnicianDashboard = () => {
 
         if (error) {
           throw new Error(error.message);
+        }
+        
+        // Job completed successfully! Check if there are queued photos
+        const uploadedBillPhotos = billPhotos.filter(url => 
+          url && typeof url === 'string' && (url.startsWith('http://') || url.startsWith('https://'))
+        );
+        const queuedBillPhotosCount = billPhotos.length - uploadedBillPhotos.length;
+        
+        if (queuedBillPhotosCount > 0) {
+          console.log(`📸 ${queuedBillPhotosCount} bill photo(s) are queued and will be added to job when uploaded`);
+          toast.info(`📸 ${queuedBillPhotosCount} photo(s) are still uploading. They will be added to this job automatically when upload completes.`, {
+            duration: 6000,
+          });
         }
 
         // Update customer prefilter status if provided (also with timeout)

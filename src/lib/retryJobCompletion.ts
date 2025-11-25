@@ -66,9 +66,13 @@ const processQueuedCompletion = async (completion: OfflineJobCompletion): Promis
       !req.bill_photos && !req.payment_photos && !req.qr_photos && !req.amc_info
     );
 
-    // Add bill photos if any
-    if (completion.billPhotos.length > 0) {
-      requirements.push({ bill_photos: completion.billPhotos });
+    // Only add bill photos if they are uploaded Cloudinary URLs
+    // Photos that failed to upload are queued separately and will be added later
+    const uploadedBillPhotos = completion.billPhotos.filter((url: string) => 
+      url && typeof url === 'string' && (url.startsWith('http://') || url.startsWith('https://'))
+    );
+    if (uploadedBillPhotos.length > 0) {
+      requirements.push({ bill_photos: uploadedBillPhotos });
     }
 
     // Add QR code photos if payment is online
