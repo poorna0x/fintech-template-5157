@@ -10,7 +10,15 @@ const NotFound = () => {
   const location = useLocation();
 
   useEffect(() => {
+    // Remove any existing canonical tags for 404 pages
+    const existingCanonicals = document.querySelectorAll('link[rel="canonical"]');
+    existingCanonicals.forEach(tag => tag.remove());
+    
     // Add noindex meta tag for 404 pages
+    // Remove any existing robots meta tags first
+    const existingRobots = document.querySelectorAll('meta[name="robots"]');
+    existingRobots.forEach(tag => tag.remove());
+    
     const metaRobots = document.createElement('meta');
     metaRobots.name = 'robots';
     metaRobots.content = 'noindex, nofollow';

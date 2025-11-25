@@ -6,17 +6,20 @@ const CanonicalTag = () => {
 
   useEffect(() => {
     // Pages that should not have canonical tags (they have noindex)
-    const noIndexPages = ['/technician', '/admin', '/dashboard'];
+    const noIndexPages = ['/technician', '/admin', '/dashboard', '/search'];
     const shouldHaveCanonical = !noIndexPages.some(page => location.pathname.startsWith(page));
     
     // Get the base URL
     const baseUrl = 'https://hydrogenro.com';
     
     // Build the canonical URL - remove trailing slash except for homepage
-    const pathname = location.pathname === '/' ? '' : location.pathname;
+    let pathname = location.pathname === '/' ? '' : location.pathname;
     // Remove trailing slash from pathname if it exists (except for root)
     const cleanPathname = pathname === '/' ? '' : pathname.replace(/\/$/, '');
-    const canonicalUrl = `${baseUrl}${cleanPathname}`;
+    
+    // Remove query parameters for canonical URL (canonical should be clean URL)
+    const cleanPathWithoutQuery = cleanPathname.split('?')[0];
+    const canonicalUrl = `${baseUrl}${cleanPathWithoutQuery}`;
     
     // Remove ALL existing canonical tags
     const existingCanonicals = document.querySelectorAll('link[rel="canonical"]');
@@ -31,7 +34,7 @@ const CanonicalTag = () => {
       document.head.appendChild(link);
     }
     
-    // Also update og:url meta tag (always update this)
+    // Also update og:url meta tag (always update this, but use clean URL without query params)
     let ogUrl = document.querySelector('meta[property="og:url"]');
     if (ogUrl) {
       ogUrl.setAttribute('content', canonicalUrl);
@@ -52,7 +55,7 @@ const CanonicalTag = () => {
     return () => {
       // Don't remove on cleanup as we want to keep the canonical tag
     };
-  }, [location.pathname]);
+  }, [location.pathname, location.search]);
 
   return null;
 };

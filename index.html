@@ -137,18 +137,22 @@
     
     <!-- Favicon - Responsive for all devices, themes, and PWA -->
     <!-- IMPORTANT: favicon.ico must be first for Google Search results -->
-    <link rel="icon" type="image/x-icon" href="/favicon.ico?v=3" />
-    <link rel="shortcut icon" type="image/x-icon" href="/favicon.ico?v=3" />
+    <!-- Updated version to force Google to refresh cached favicon -->
+    <!-- Google specifically looks for /favicon.ico at root, so we provide both -->
+    <link rel="icon" type="image/x-icon" href="https://hydrogenro.com/favicon.ico?v=4" />
+    <link rel="shortcut icon" type="image/x-icon" href="https://hydrogenro.com/favicon.ico?v=4" />
+    <!-- Additional favicon link for Google Search (without version for compatibility) -->
+    <link rel="icon" href="https://hydrogenro.com/favicon.ico" />
     <!-- SVG favicon (supports light/dark theme via prefers-color-scheme) -->
-    <link rel="icon" type="image/svg+xml" href="/favicon.svg?v=3" />
+    <link rel="icon" type="image/svg+xml" href="https://hydrogenro.com/favicon.svg?v=4" />
     <!-- Apple Touch Icon for iOS devices -->
-    <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png?v=3" />
+    <link rel="apple-touch-icon" sizes="180x180" href="https://hydrogenro.com/apple-touch-icon.png?v=4" />
     <!-- Android Chrome icons -->
-    <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32x32.png?v=3" />
-    <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16x16.png?v=3" />
+    <link rel="icon" type="image/png" sizes="32x32" href="https://hydrogenro.com/favicon-32x32.png?v=4" />
+    <link rel="icon" type="image/png" sizes="16x16" href="https://hydrogenro.com/favicon-16x16.png?v=4" />
     <!-- Windows tiles -->
-    <link rel="icon" type="image/png" sizes="192x192" href="/android-chrome-192x192.png?v=3" />
-    <link rel="icon" type="image/png" sizes="512x512" href="/android-chrome-512x512.png?v=3" />
+    <link rel="icon" type="image/png" sizes="192x192" href="https://hydrogenro.com/android-chrome-192x192.png?v=4" />
+    <link rel="icon" type="image/png" sizes="512x512" href="https://hydrogenro.com/android-chrome-512x512.png?v=4" />
     <!-- PWA Manifest - Set dynamically based on path for iOS compatibility -->
     <script>
       // Set correct manifest IMMEDIATELY (before iOS reads it)

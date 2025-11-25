@@ -6,6 +6,8 @@ import { Loader2, User, Phone, Mail, Briefcase, Building2, MapPin, Globe } from 
 import { supabase } from '@/lib/supabase';
 import { CompanyInfo } from '@/types';
 import Logo from '@/components/Logo';
+import Header from '@/components/Header';
+import { useTheme } from '@/contexts/ThemeContext';
 
 // Company information (same as in BillGenerator)
 const companyInfo: CompanyInfo = {
@@ -33,6 +35,7 @@ interface TechnicianData {
 
 const TechnicianIdCard: React.FC = () => {
   const { id } = useParams<{ id: string }>();
+  const { isDarkMode } = useTheme();
   const [technician, setTechnician] = useState<TechnicianData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -74,10 +77,10 @@ const TechnicianIdCard: React.FC = () => {
 
   if (loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gray-50 p-4">
+      <div className="min-h-screen flex items-center justify-center bg-background p-4">
         <div className="text-center">
           <Loader2 className="w-8 h-8 animate-spin text-primary mx-auto mb-3" />
-          <p className="text-sm text-gray-600">Loading ID card...</p>
+          <p className="text-sm text-muted-foreground">Loading ID card...</p>
         </div>
       </div>
     );
@@ -85,15 +88,15 @@ const TechnicianIdCard: React.FC = () => {
 
   if (error || !technician) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gray-50 p-4">
-        <Card className="w-full max-w-sm bg-white border border-gray-200 shadow-sm">
+      <div className="min-h-screen flex items-center justify-center bg-background p-4">
+        <Card className="w-full max-w-sm bg-card border border-border shadow-sm">
           <CardContent className="pt-6">
             <div className="text-center">
-              <div className="w-12 h-12 bg-red-50 rounded-full flex items-center justify-center mx-auto mb-3">
-                <User className="w-6 h-6 text-red-500" />
+              <div className="w-12 h-12 bg-destructive/10 rounded-full flex items-center justify-center mx-auto mb-3">
+                <User className="w-6 h-6 text-destructive" />
               </div>
-              <h2 className="text-lg font-semibold text-gray-900 mb-1">ID Card Not Found</h2>
-              <p className="text-sm text-gray-600">{error || 'The requested technician ID card could not be found.'}</p>
+              <h2 className="text-lg font-semibold text-card-foreground mb-1">ID Card Not Found</h2>
+              <p className="text-sm text-muted-foreground">{error || 'The requested technician ID card could not be found.'}</p>
             </div>
           </CardContent>
         </Card>
@@ -102,18 +105,18 @@ const TechnicianIdCard: React.FC = () => {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50 p-4">
-      <div className="max-w-sm mx-auto">
+    <div className="min-h-screen bg-background">
+      <Header />
+      <div className="p-4">
+        <div className="max-w-sm mx-auto">
         {/* ID Card */}
-        <Card className="bg-white border border-gray-200 shadow-lg overflow-hidden">
+        <Card className="bg-card border-2 border-primary/20 dark:border-primary/30 shadow-xl overflow-hidden rounded-xl">
           <CardContent className="p-0">
-            {/* Header with Logo */}
-            <div className="bg-gradient-to-r from-primary to-primary/90 text-white px-4 py-4 sm:py-5">
-              <div className="mb-2 sm:mb-3 flex justify-center [&_*]:text-white">
-                <Logo />
-              </div>
-              <h1 className="text-sm sm:text-base font-semibold mb-0.5 text-white text-center">{companyInfo.name}</h1>
-              <p className="text-xs text-white/90 text-center">Authorized Service Technician</p>
+            {/* Header Banner */}
+            <div className="bg-gradient-to-r from-primary to-primary/90 text-primary-foreground px-4 py-4 sm:py-5">
+              <h1 className="text-base sm:text-lg font-bold text-primary-foreground text-center mb-1">{technician.full_name}</h1>
+              <p className="text-xs sm:text-sm text-primary-foreground/90 text-center">Employee ID: {technician.employee_id}</p>
+              <p className="text-xs text-primary-foreground/80 text-center mt-1">Service Technician</p>
             </div>
 
             {/* Photo and Basic Info */}
@@ -124,96 +127,92 @@ const TechnicianIdCard: React.FC = () => {
                     <img
                       src={technician.photo}
                       alt={technician.full_name}
-                      className="w-20 h-20 sm:w-24 sm:h-24 rounded-full object-cover border-3 border-primary shadow-md"
+                      className="w-28 h-28 sm:w-24 sm:h-24 rounded-full object-cover border-4 border-primary shadow-lg"
                       onError={(e) => {
                         const target = e.target as HTMLImageElement;
                         target.style.display = 'none';
                         const parent = target.parentElement;
                         if (parent) {
                           const fallback = document.createElement('div');
-                          fallback.className = 'w-20 h-20 sm:w-24 sm:h-24 rounded-full bg-primary/10 flex items-center justify-center border-3 border-primary';
-                          fallback.innerHTML = `<svg class="w-10 h-10 sm:w-12 sm:h-12 text-primary" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M10 9a3 3 0 100-6 3 3 0 000 6zm-7 9a7 7 0 1114 0H3z" clip-rule="evenodd" /></svg>`;
+                          fallback.className = `w-28 h-28 sm:w-24 sm:h-24 rounded-full bg-primary/10 dark:bg-primary/20 flex items-center justify-center border-4 border-primary shadow-lg`;
+                          fallback.innerHTML = `<svg class="w-14 h-14 sm:w-12 sm:h-12 text-primary" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M10 9a3 3 0 100-6 3 3 0 000 6zm-7 9a7 7 0 1114 0H3z" clip-rule="evenodd" /></svg>`;
                           parent.appendChild(fallback);
                         }
                       }}
                     />
                   ) : (
-                    <div className="w-20 h-20 sm:w-24 sm:h-24 rounded-full bg-primary/10 flex items-center justify-center border-3 border-primary shadow-md">
-                      <User className="w-10 h-10 sm:w-12 sm:h-12 text-primary" />
+                    <div className="w-28 h-28 sm:w-24 sm:h-24 rounded-full bg-primary/10 dark:bg-primary/20 flex items-center justify-center border-4 border-primary shadow-lg">
+                      <User className="w-14 h-14 sm:w-12 sm:h-12 text-primary" />
                     </div>
                   )}
                 </div>
-                <h2 className="text-base sm:text-lg font-bold text-gray-900 mb-1 text-center">
-                  {technician.full_name}
-                </h2>
-                <p className="text-xs sm:text-sm text-primary font-semibold">ID: {technician.employee_id}</p>
               </div>
 
               {/* Contact Details */}
-              <div className="space-y-2.5 sm:space-y-3 border-t border-gray-200 pt-4">
+              <div className="space-y-2.5 sm:space-y-3 border-t border-border pt-4">
                 <div className="flex items-center gap-2.5 sm:gap-3">
-                  <div className="w-8 h-8 sm:w-9 sm:h-9 rounded-full bg-primary/10 flex items-center justify-center flex-shrink-0">
+                  <div className="w-8 h-8 sm:w-9 sm:h-9 rounded-full bg-primary/10 dark:bg-primary/20 flex items-center justify-center flex-shrink-0">
                     <Phone className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-primary" />
                   </div>
-                  <span className="text-sm sm:text-base text-gray-800 font-medium">{technician.phone}</span>
+                  <span className="text-sm sm:text-base text-card-foreground font-medium">{technician.phone}</span>
                 </div>
                 <div className="flex items-center gap-2.5 sm:gap-3">
-                  <div className="w-8 h-8 sm:w-9 sm:h-9 rounded-full bg-primary/10 flex items-center justify-center flex-shrink-0">
+                  <div className="w-8 h-8 sm:w-9 sm:h-9 rounded-full bg-primary/10 dark:bg-primary/20 flex items-center justify-center flex-shrink-0">
                     <Mail className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-primary" />
                   </div>
-                  <span className="text-sm sm:text-base text-gray-800 font-medium break-all">{technician.email}</span>
+                  <span className="text-sm sm:text-base text-card-foreground font-medium break-all">{technician.email}</span>
                 </div>
                 <div className="flex items-center gap-2.5 sm:gap-3">
-                  <div className="w-8 h-8 sm:w-9 sm:h-9 rounded-full bg-primary/10 flex items-center justify-center flex-shrink-0">
+                  <div className="w-8 h-8 sm:w-9 sm:h-9 rounded-full bg-primary/10 dark:bg-primary/20 flex items-center justify-center flex-shrink-0">
                     <Briefcase className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-primary" />
                   </div>
-                  <span className="text-sm sm:text-base text-gray-800 font-medium">Service Technician</span>
+                  <span className="text-sm sm:text-base text-card-foreground font-medium">Service Technician</span>
                 </div>
               </div>
             </div>
 
             {/* Company Details */}
-            <div className="bg-gray-50 px-4 py-3 sm:py-4 border-t border-gray-200">
-              <p className="text-xs font-semibold text-gray-700 mb-3 uppercase tracking-wide">Company Details</p>
+            <div className="bg-muted/50 dark:bg-muted/30 px-4 py-3 sm:py-4 border-t border-border">
+              <p className="text-xs font-semibold text-card-foreground mb-3 uppercase tracking-wide">Company Details</p>
               <div className="space-y-2.5 text-xs sm:text-sm">
                 <div className="flex items-start gap-2">
                   <Building2 className="w-4 h-4 text-primary flex-shrink-0 mt-0.5" />
-                  <span className="text-gray-700 leading-relaxed">
+                  <span className="text-muted-foreground leading-relaxed">
                     {companyInfo.address}, {companyInfo.city} - {companyInfo.pincode}
                   </span>
                 </div>
                 <div className="flex items-center gap-2">
                   <Phone className="w-4 h-4 text-primary flex-shrink-0" />
-                  <span className="text-gray-700">{companyInfo.phone}</span>
+                  <span className="text-muted-foreground">{companyInfo.phone}</span>
                 </div>
                 <div className="flex items-center gap-2">
                   <Mail className="w-4 h-4 text-primary flex-shrink-0" />
-                  <span className="text-gray-700">{companyInfo.email}</span>
+                  <span className="text-muted-foreground">{companyInfo.email}</span>
                 </div>
                 {companyInfo.website && (
                   <div className="flex items-center gap-2">
                     <Globe className="w-4 h-4 text-primary flex-shrink-0" />
-                    <span className="text-gray-700">{companyInfo.website}</span>
+                    <span className="text-muted-foreground">{companyInfo.website}</span>
                   </div>
                 )}
-                <div className="flex items-start gap-2 pt-2 border-t border-gray-200">
+                <div className="flex items-start gap-2 pt-2 border-t border-border">
                   <MapPin className="w-4 h-4 text-primary flex-shrink-0 mt-0.5" />
                   <div className="flex-1">
-                    <span className="text-gray-700 block">GST: {companyInfo.gstNumber}</span>
-                    <span className="text-gray-700 block">PAN: {companyInfo.panNumber}</span>
+                    <span className="text-muted-foreground block">GST: {companyInfo.gstNumber}</span>
                   </div>
                 </div>
               </div>
             </div>
 
             {/* Footer Note */}
-            <div className="bg-primary/5 px-4 py-2.5 sm:py-3 border-t border-gray-200">
-              <p className="text-[10px] sm:text-xs text-gray-600 text-center leading-relaxed">
+            <div className="bg-primary/5 dark:bg-primary/10 px-4 py-2.5 sm:py-3 border-t border-border">
+              <p className="text-[10px] sm:text-xs text-muted-foreground text-center leading-relaxed">
                 This is an official ID card. Verify technician identity before service.
               </p>
             </div>
           </CardContent>
         </Card>
+        </div>
       </div>
     </div>
   );

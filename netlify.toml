@@ -9,6 +9,13 @@
 [functions]
   directory = "netlify/functions"
 
+# Force HTTPS - redirect HTTP to HTTPS
+[[redirects]]
+  from = "http://hydrogenro.com/*"
+  to = "https://hydrogenro.com/:splat"
+  status = 301
+  force = true
+
 # Redirect old pages to main site with 301 status
 [[redirects]]
   from = "/go"
@@ -92,6 +99,29 @@
   for = "/*.svg"
   [headers.values]
     Cache-Control = "public, max-age=31536000"
+
+# Favicon files - shorter cache to allow updates, but still cacheable
+[[headers]]
+  for = "/favicon.ico"
+  [headers.values]
+    Cache-Control = "public, max-age=86400"
+    X-Content-Type-Options = "nosniff"
+[[headers]]
+  for = "/favicon.svg"
+  [headers.values]
+    Cache-Control = "public, max-age=86400"
+[[headers]]
+  for = "/favicon-*.png"
+  [headers.values]
+    Cache-Control = "public, max-age=86400"
+[[headers]]
+  for = "/apple-touch-icon.png"
+  [headers.values]
+    Cache-Control = "public, max-age=86400"
+[[headers]]
+  for = "/android-chrome-*.png"
+  [headers.values]
+    Cache-Control = "public, max-age=86400"
 
 # No cache for HTML files
 [[headers]]

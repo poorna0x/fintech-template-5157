@@ -12,6 +12,7 @@ Disallow: /admin
 Disallow: /technician
 Disallow: /dashboard
 Disallow: /api/
+Disallow: /search
 
 # Sitemap location
 Sitemap: https://hydrogenro.com/sitemap.xml
@@ -27,6 +28,7 @@ Disallow: /admin
 Disallow: /technician
 Disallow: /dashboard
 Disallow: /api/
+Disallow: /search
 Crawl-delay: 0
 
 User-agent: Googlebot-Mobile
@@ -35,6 +37,7 @@ Disallow: /admin
 Disallow: /technician
 Disallow: /dashboard
 Disallow: /api/
+Disallow: /search
 Crawl-delay: 0
 
 User-agent: Bingbot
