@@ -54,6 +54,10 @@ import ImageUpload from '@/components/ImageUpload';
 import { Label } from '@/components/ui/label';
 import { processQueuedPhotos, startRetryProcessing, setupOnlineListener, stopRetryProcessing } from '@/lib/retryPhotoUpload';
 import { getQueuedPhotosCount } from '@/lib/offlinePhotoQueue';
+import { queueJobCompletion, saveJobCompletionProgress, getQueuedCompletionForJob, removeQueuedJobCompletion } from '@/lib/offlineJobCompletion';
+import { processQueuedJobCompletions, startJobCompletionRetryProcessing, setupJobCompletionOnlineListener, stopJobCompletionRetryProcessing } from '@/lib/retryJobCompletion';
+import { getQueuedCompletionsCount } from '@/lib/offlineJobCompletion';
+import { withTimeout, isSlowNetworkError, isTimeoutError } from '@/lib/networkTimeout';
 
 // Bangalore areas list for location extraction
 const bangaloreAreas = [
@@ -400,6 +404,7 @@ const TechnicianDashboard = () => {
   const [allTechnicians, setAllTechnicians] = useState<any[]>([]); // Store all technicians
   const [technicianVisibleQrCodes, setTechnicianVisibleQrCodes] = useState<string[]>([]); // Current technician's visibility settings
   const [paymentScreenshot, setPaymentScreenshot] = useState<string>('');
+  const [isSubmittingJobCompletion, setIsSubmittingJobCompletion] = useState(false);
 
   // Phone popup state
   const [phonePopupOpen, setPhonePopupOpen] = useState(false);
@@ -757,50 +762,109 @@ const TechnicianDashboard = () => {
       }, 500);
     }
 
+    // Process any queued job completions on mount (IMMEDIATELY - data must be saved)
+    const queuedCompletionsCount = getQueuedCompletionsCount();
+    if (queuedCompletionsCount > 0) {
+      console.log(`💼 Found ${queuedCompletionsCount} saved job completion(s) - submitting now...`);
+      toast.info(`💼 Found ${queuedCompletionsCount} saved job completion(s). Submitting automatically...`, {
+        duration: 5000,
+      });
+      // Process immediately - don't wait
+      processQueuedJobCompletions();
+    }
+
     // Start automatic retry processing (every 30 seconds)
     startRetryProcessing(30000);
+    startJobCompletionRetryProcessing(30000);
 
     // Setup listener for when network comes back online
-    const cleanup = setupOnlineListener();
+    const cleanupPhotos = setupOnlineListener();
+    const cleanupCompletions = setupJobCompletionOnlineListener();
+
+    // Also process when page becomes visible (user switches back to tab/window)
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        console.log('👁️ Page became visible - checking for queued items...');
+        const queuedCompletions = getQueuedCompletionsCount();
+        if (queuedCompletions > 0) {
+          console.log(`💼 Processing ${queuedCompletions} queued job completion(s) on visibility change...`);
+          processQueuedJobCompletions();
+        }
+        const queuedPhotos = getQueuedPhotosCount();
+        if (queuedPhotos > 0) {
+          processQueuedPhotos();
+        }
+      }
+    };
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+
+    // Also process when window gets focus (user switches back to window)
+    const handleFocus = () => {
+      console.log('🎯 Window focused - checking for queued items...');
+      const queuedCompletions = getQueuedCompletionsCount();
+      if (queuedCompletions > 0) {
+        console.log(`💼 Processing ${queuedCompletions} queued job completion(s) on focus...`);
+        processQueuedJobCompletions();
+      }
+      const queuedPhotos = getQueuedPhotosCount();
+      if (queuedPhotos > 0) {
+        processQueuedPhotos();
+      }
+    };
+    window.addEventListener('focus', handleFocus);
 
     return () => {
       stopRetryProcessing();
-      cleanup();
+      stopJobCompletionRetryProcessing();
+      cleanupPhotos();
+      cleanupCompletions();
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+      window.removeEventListener('focus', handleFocus);
     };
   }, [user]);
 
-  // Show notification if there are queued photos (less frequent)
+  // Show notification if there are queued photos or job completions (less frequent)
   useEffect(() => {
     if (!user || user.role !== 'technician') {
       return;
     }
 
-    const checkQueuedPhotos = () => {
-      const queuedCount = getQueuedPhotosCount();
-      if (queuedCount > 0) {
+    const checkQueuedItems = () => {
+      const queuedPhotosCount = getQueuedPhotosCount();
+      const queuedCompletionsCount = getQueuedCompletionsCount();
+      
+      if (queuedPhotosCount > 0 || queuedCompletionsCount > 0) {
         // Show notification only once every 2 minutes to avoid spam
-        const lastNotification = localStorage.getItem('last_queued_photo_notification');
+        const lastNotification = localStorage.getItem('last_queued_items_notification');
         const now = Date.now();
         if (!lastNotification || now - parseInt(lastNotification) > 120000) { // Show once per 2 minutes
+          const messages = [];
+          if (queuedPhotosCount > 0) {
+            messages.push(`${queuedPhotosCount} photo(s)`);
+          }
+          if (queuedCompletionsCount > 0) {
+            messages.push(`${queuedCompletionsCount} job completion(s)`);
+          }
+          
           toast.info(
-            `📸 ${queuedCount} photo(s) saved safely. Will upload automatically when internet is available.`, 
+            `💾 ${messages.join(' and ')} saved safely. Will submit automatically when internet is available.`, 
             {
               duration: 6000,
-              id: 'queued-photos-notification', // Prevent duplicate notifications
+              id: 'queued-items-notification', // Prevent duplicate notifications
             }
           );
-          localStorage.setItem('last_queued_photo_notification', now.toString());
+          localStorage.setItem('last_queued_items_notification', now.toString());
         }
       }
     };
 
     // Check after a delay (don't show immediately on load)
     const initialDelay = setTimeout(() => {
-      checkQueuedPhotos();
+      checkQueuedItems();
     }, 5000);
 
     // Check periodically
-    const interval = setInterval(checkQueuedPhotos, 120000); // Check every 2 minutes
+    const interval = setInterval(checkQueuedItems, 120000); // Check every 2 minutes
 
     return () => {
       clearTimeout(initialDelay);
@@ -1704,20 +1768,49 @@ const TechnicianDashboard = () => {
     }
     
     setSelectedJobForComplete(jobWithCustomer);
-    setCompletionNotes('');
-    setCompleteJobStep(1);
-    setBillAmount('');
-    setBillPhotos([]);
-    setPaymentPhotos([]);
-    // Set default AMC date to today
-    const today = new Date().toISOString().split('T')[0];
-    setAmcDateGiven(today);
-    setAmcYears(1);
-    // Calculate end date with default 1 year
-    calculateAMCEndDate(today, 1);
-    setAmcIncludesPrefilter(false);
-    setHasAMC(false);
-    setPaymentMode('');
+    
+    // Check if there's saved progress for this job
+    const savedProgress = getQueuedCompletionForJob(jobWithCustomer.id);
+    if (savedProgress) {
+      // Restore saved progress
+      setBillPhotos(savedProgress.billPhotos || []);
+      setBillAmount(savedProgress.billAmount || '');
+      setCompletionNotes(savedProgress.completionNotes || '');
+      setPaymentMode(savedProgress.paymentMode as 'CASH' | 'ONLINE' | '' || '');
+      setPaymentScreenshot(savedProgress.paymentScreenshot || '');
+      setQrCodeType(savedProgress.qrCodeType || '');
+      setSelectedQrCodeId(savedProgress.selectedQrCodeId || '');
+      setHasAMC(savedProgress.hasAMC || false);
+      setAmcDateGiven(savedProgress.amcDateGiven || new Date().toISOString().split('T')[0]);
+      setAmcEndDate(savedProgress.amcEndDate || '');
+      setAmcYears(savedProgress.amcYears || 1);
+      setAmcIncludesPrefilter(savedProgress.amcIncludesPrefilter || false);
+      setCustomerHasPrefilter(savedProgress.customerHasPrefilter);
+      setCompleteJobStep(savedProgress.currentStep as 1 | 2 | 3 | 4 | 5 | 6 || 1);
+      
+      toast.info('📋 Restored saved progress for this job', { duration: 3000 });
+    } else {
+      // Reset to defaults
+      setCompletionNotes('');
+      setCompleteJobStep(1);
+      setBillAmount('');
+      setBillPhotos([]);
+      setPaymentPhotos([]);
+      // Set default AMC date to today
+      const today = new Date().toISOString().split('T')[0];
+      setAmcDateGiven(today);
+      setAmcYears(1);
+      // Calculate end date with default 1 year
+      calculateAMCEndDate(today, 1);
+      setAmcIncludesPrefilter(false);
+      setHasAMC(false);
+      setPaymentMode('');
+      setCustomerHasPrefilter(null);
+      setQrCodeType('');
+      setSelectedQrCodeId('');
+      setPaymentScreenshot('');
+    }
+    
     // Initialize customerHasPrefilter from customer's existing value if available
     const customerPrefilter = jobWithCustomer.customer 
       ? ((jobWithCustomer.customer as any).has_prefilter ?? (jobWithCustomer.customer as any).hasPrefilter ?? null)
@@ -1943,6 +2036,11 @@ const TechnicianDashboard = () => {
 
     // Step 1: Bill Photo (optional) - move to step 2
     if (completeJobStep === 1) {
+      // Save progress before moving to next step
+      saveJobCompletionProgress(selectedJobForComplete.id, {
+        billPhotos,
+        currentStep: 2,
+      });
       setCompleteJobStep(2);
       return;
     }
@@ -1953,6 +2051,12 @@ const TechnicianDashboard = () => {
         toast.error('Please enter a valid bill amount');
         return;
       }
+      // Save progress before showing confirmation
+      saveJobCompletionProgress(selectedJobForComplete.id, {
+        billPhotos,
+        billAmount,
+        currentStep: 2,
+      });
       // Show confirmation dialog
       setBillAmountConfirmOpen(true);
       return;
@@ -1964,6 +2068,13 @@ const TechnicianDashboard = () => {
         toast.error('Please select a payment mode');
       return;
     }
+      // Save progress
+      saveJobCompletionProgress(selectedJobForComplete.id, {
+        billPhotos,
+        billAmount,
+        paymentMode: paymentMode as 'CASH' | 'ONLINE' | '',
+        currentStep: paymentMode === 'CASH' ? 5 : 4,
+      });
       // If Cash, skip to step 5 (AMC)
       if (paymentMode === 'CASH') {
       setCompleteJobStep(5);
@@ -1975,6 +2086,34 @@ const TechnicianDashboard = () => {
           toast.error('Please select a QR code');
           return;
         }
+        // Save QR code selection
+        let selectedQrCodeUrl: string | undefined;
+        let selectedQrCodeName: string | undefined;
+        if (selectedQrCodeId.startsWith('common_')) {
+          const qrId = selectedQrCodeId.replace('common_', '');
+          const selectedQr = commonQrCodes.find(qr => qr.id === qrId);
+          if (selectedQr) {
+            selectedQrCodeUrl = selectedQr.qrCodeUrl;
+            selectedQrCodeName = selectedQr.name;
+          }
+        } else if (selectedQrCodeId.startsWith('technician_')) {
+          const techId = selectedQrCodeId.replace('technician_', '');
+          const selectedTech = technicians.find(t => t.id === techId);
+          if (selectedTech && selectedTech.qrCode) {
+            selectedQrCodeUrl = selectedTech.qrCode;
+            selectedQrCodeName = selectedTech.fullName || 'Technician';
+          }
+        }
+        saveJobCompletionProgress(selectedJobForComplete.id, {
+          billPhotos,
+          billAmount,
+          paymentMode: 'ONLINE',
+          qrCodeType,
+          selectedQrCodeId,
+          selectedQrCodeUrl,
+          selectedQrCodeName,
+          currentStep: 4,
+        });
         setCompleteJobStep(4);
         return;
       }
@@ -1982,161 +2121,262 @@ const TechnicianDashboard = () => {
 
     // Step 4: Payment Screenshot (optional) - move to step 5 (AMC)
     if (completeJobStep === 4) {
+      // Save progress
+      saveJobCompletionProgress(selectedJobForComplete.id, {
+        billPhotos,
+        billAmount,
+        paymentMode: 'ONLINE',
+        paymentScreenshot,
+        qrCodeType,
+        selectedQrCodeId,
+        currentStep: 5,
+      });
       setCompleteJobStep(5);
       return;
     }
 
     // Step 5: AMC - move to step 6 (Prefilter)
     if (completeJobStep === 5) {
+      // Save progress
+      saveJobCompletionProgress(selectedJobForComplete.id, {
+        billPhotos,
+        billAmount,
+        paymentMode: paymentMode as 'CASH' | 'ONLINE' | '',
+        paymentScreenshot,
+        qrCodeType,
+        selectedQrCodeId,
+        hasAMC,
+        amcDateGiven,
+        amcEndDate,
+        amcYears,
+        amcIncludesPrefilter,
+        currentStep: 6,
+      });
       setCompleteJobStep(6);
       return;
     }
 
     // On step 6, submit the form
+    setIsSubmittingJobCompletion(true);
+    
     try {
-      // Prepare update data
-      // Map payment mode to database allowed values
-      // Database allows: 'CASH', 'CARD', 'UPI', 'BANK_TRANSFER'
-      // Frontend uses: 'CASH', 'ONLINE'
-      let dbPaymentMethod: 'CASH' | 'CARD' | 'UPI' | 'BANK_TRANSFER' | null = null;
-      if (paymentMode === 'CASH') {
-        dbPaymentMethod = 'CASH';
-      } else if (paymentMode === 'ONLINE') {
-        // Map ONLINE to UPI (most common online payment method)
-        dbPaymentMethod = 'UPI';
-      }
+      // STEP 1: ALWAYS save everything to localStorage FIRST (never lose data)
+      let selectedQrCodeUrl: string | undefined;
+      let selectedQrCodeName: string | undefined;
       
-      const updateData: any = {
-        status: 'COMPLETED',
-        end_time: new Date().toISOString(),
-        completion_notes: completionNotes.trim(),
-        completed_by: user?.id || 'technician',
-        completed_at: new Date().toISOString(),
-        actual_cost: parseFloat(billAmount) || 0,
-        payment_amount: parseFloat(billAmount) || 0,
-        payment_method: dbPaymentMethod || 'CASH',
-      };
-
-      // Handle requirements - merge bill photos and AMC info
-      const currentRequirements = selectedJobForComplete.requirements || [];
-      let requirements: any[] = [];
-      
-      if (Array.isArray(currentRequirements)) {
-        requirements = [...currentRequirements];
-      } else if (typeof currentRequirements === 'string') {
-        try {
-          requirements = JSON.parse(currentRequirements);
-          if (!Array.isArray(requirements)) {
-            requirements = [];
-          }
-        } catch {
-          requirements = [];
+      if (selectedQrCodeId.startsWith('common_')) {
+        const qrId = selectedQrCodeId.replace('common_', '');
+        const selectedQr = commonQrCodes.find(qr => qr.id === qrId);
+        if (selectedQr) {
+          selectedQrCodeUrl = selectedQr.qrCodeUrl;
+          selectedQrCodeName = selectedQr.name;
+        }
+      } else if (selectedQrCodeId.startsWith('technician_')) {
+        const techId = selectedQrCodeId.replace('technician_', '');
+        const selectedTech = technicians.find(t => t.id === techId);
+        if (selectedTech && selectedTech.qrCode) {
+          selectedQrCodeUrl = selectedTech.qrCode;
+          selectedQrCodeName = selectedTech.fullName || 'Technician';
         }
       }
 
-      // Remove existing bill_photos, payment_photos, qr_photos and amc_info entries
-      requirements = requirements.filter((req: any) => !req.bill_photos && !req.payment_photos && !req.qr_photos && !req.amc_info);
+      // Save all completion data to localStorage FIRST (before any network call)
+      const completionId = queueJobCompletion({
+        jobId: selectedJobForComplete.id,
+        billPhotos,
+        billAmount,
+        completionNotes,
+        paymentMode,
+        paymentScreenshot,
+        qrCodeType,
+        selectedQrCodeId,
+        selectedQrCodeUrl,
+        selectedQrCodeName,
+        hasAMC,
+        amcDateGiven,
+        amcEndDate,
+        amcYears,
+        amcIncludesPrefilter,
+        customerHasPrefilter,
+        currentStep: 6,
+        userId: user?.id,
+        technicianId: user?.technicianId,
+      });
 
-      // Add bill photos if any
-      if (billPhotos.length > 0) {
-        requirements.push({ bill_photos: billPhotos });
-      }
+      console.log('✅ Job completion data saved to local storage:', completionId);
+      
+      // Show immediate feedback that data is saved
+      toast.success('💾 Job completion saved safely! Submitting now...', { duration: 3000 });
 
-      // Add QR code photos if payment is online
-      if (paymentMode === 'ONLINE') {
-        const qrPhotos: any = {
-          qr_code_type: qrCodeType,
-          selected_qr_code_id: selectedQrCodeId,
-          payment_screenshot: paymentScreenshot || null
-        };
-        
-        // Add selected QR code URL
-        if (selectedQrCodeId.startsWith('common_')) {
-          const qrId = selectedQrCodeId.replace('common_', '');
-          const selectedQr = commonQrCodes.find(qr => qr.id === qrId);
-          if (selectedQr) {
-            qrPhotos.selected_qr_code_url = selectedQr.qrCodeUrl;
-            qrPhotos.selected_qr_code_name = selectedQr.name;
-          }
-        } else if (selectedQrCodeId.startsWith('technician_')) {
-          const techId = selectedQrCodeId.replace('technician_', '');
-          const selectedTech = technicians.find(t => t.id === techId);
-          if (selectedTech && selectedTech.qrCode) {
-            qrPhotos.selected_qr_code_url = selectedTech.qrCode;
-            qrPhotos.selected_qr_code_name = selectedTech.fullName || 'Technician';
-          }
+      // STEP 2: Try to submit to database (with timeout)
+      try {
+        // Prepare update data
+        let dbPaymentMethod: 'CASH' | 'CARD' | 'UPI' | 'BANK_TRANSFER' | null = null;
+        if (paymentMode === 'CASH') {
+          dbPaymentMethod = 'CASH';
+        } else if (paymentMode === 'ONLINE') {
+          dbPaymentMethod = 'UPI';
         }
         
-        requirements.push({ qr_photos: qrPhotos });
-      }
-
-      // Add AMC info if provided
-      if (hasAMC && amcDateGiven && amcEndDate) {
-        requirements.push({ 
-          amc_info: {
-            date_given: amcDateGiven,
-            end_date: amcEndDate,
-            years: amcYears,
-            includes_prefilter: amcIncludesPrefilter
-          }
-        });
-      }
-
-      // Update requirements if we have any changes
-      if (billPhotos.length > 0 || (paymentMode === 'ONLINE' && qrCodeType) || (hasAMC && amcDateGiven && amcEndDate)) {
-        updateData.requirements = JSON.stringify(requirements);
-      }
-
-      const { error } = await db.jobs.update(selectedJobForComplete.id, updateData);
-
-      if (error) {
-        throw new Error(error.message);
-      }
-
-      // Update customer prefilter status if provided
-      if (customerHasPrefilter !== null && selectedJobForComplete.customer) {
-        const customerId = (selectedJobForComplete.customer as any).id || selectedJobForComplete.customer.id;
-        if (customerId) {
-          await db.customers.update(customerId, {
-            has_prefilter: customerHasPrefilter
-          });
-        }
-      }
-
-      // Update local state
-      setJobs(prev => prev.map(job => 
-        job.id === selectedJobForComplete.id ? { 
-              ...job, 
-              status: 'COMPLETED',
-              end_time: new Date().toISOString(),
-          completionNotes: completionNotes.trim(),
-              completedBy: user?.id || 'technician',
-          completedAt: new Date().toISOString(),
+        const updateData: any = {
+          status: 'COMPLETED',
+          end_time: new Date().toISOString(),
+          completion_notes: completionNotes.trim(),
+          completed_by: user?.id || 'technician',
+          completed_at: new Date().toISOString(),
           actual_cost: parseFloat(billAmount) || 0,
           payment_amount: parseFloat(billAmount) || 0,
-        } : job
-      ));
-      
-      toast.success('Job completed successfully');
-      setCompleteDialogOpen(false);
-      setSelectedJobForComplete(null);
-      setCompletionNotes('');
-      setCompleteJobStep(1);
-      setBillAmount('');
-      setBillPhotos([]);
-      setAmcDateGiven(new Date().toISOString().split('T')[0]);
-      setAmcEndDate('');
-      setAmcYears(1);
-      setAmcIncludesPrefilter(false);
-      setHasAMC(false);
-      setPaymentMode('');
-      setCustomerHasPrefilter(null);
-      setQrCodeType('');
-      setSelectedQrCodeId('');
-      setPaymentScreenshot('');
-    } catch (error) {
-      console.error('Error completing job:', error);
-      toast.error('Failed to complete job');
+          payment_method: dbPaymentMethod || 'CASH',
+        };
+
+        // Handle requirements
+        const currentRequirements = selectedJobForComplete.requirements || [];
+        let requirements: any[] = [];
+        
+        if (Array.isArray(currentRequirements)) {
+          requirements = [...currentRequirements];
+        } else if (typeof currentRequirements === 'string') {
+          try {
+            requirements = JSON.parse(currentRequirements);
+            if (!Array.isArray(requirements)) {
+              requirements = [];
+            }
+          } catch {
+            requirements = [];
+          }
+        }
+
+        requirements = requirements.filter((req: any) => !req.bill_photos && !req.payment_photos && !req.qr_photos && !req.amc_info);
+
+        if (billPhotos.length > 0) {
+          requirements.push({ bill_photos: billPhotos });
+        }
+
+        if (paymentMode === 'ONLINE') {
+          const qrPhotos: any = {
+            qr_code_type: qrCodeType,
+            selected_qr_code_id: selectedQrCodeId,
+            payment_screenshot: paymentScreenshot || null,
+            selected_qr_code_url: selectedQrCodeUrl,
+            selected_qr_code_name: selectedQrCodeName,
+          };
+          requirements.push({ qr_photos: qrPhotos });
+        }
+
+        if (hasAMC && amcDateGiven && amcEndDate) {
+          requirements.push({ 
+            amc_info: {
+              date_given: amcDateGiven,
+              end_date: amcEndDate,
+              years: amcYears,
+              includes_prefilter: amcIncludesPrefilter
+            }
+          });
+        }
+
+        if (billPhotos.length > 0 || (paymentMode === 'ONLINE' && qrCodeType) || (hasAMC && amcDateGiven && amcEndDate)) {
+          updateData.requirements = JSON.stringify(requirements);
+        }
+
+        // Wrap database update with timeout (30 seconds)
+        const updatePromise = db.jobs.update(selectedJobForComplete.id, updateData);
+        const { error } = await withTimeout(
+          updatePromise,
+          30000, // 30 second timeout
+          'Job completion submission is taking longer than expected'
+        );
+
+        if (error) {
+          throw new Error(error.message);
+        }
+
+        // Update customer prefilter status if provided (also with timeout)
+        if (customerHasPrefilter !== null && selectedJobForComplete.customer) {
+          const customerId = (selectedJobForComplete.customer as any).id || selectedJobForComplete.customer.id;
+          if (customerId) {
+            const customerUpdatePromise = db.customers.update(customerId, {
+              has_prefilter: customerHasPrefilter
+            });
+            await withTimeout(
+              customerUpdatePromise,
+              15000, // 15 second timeout for customer update
+              'Customer update is taking longer than expected'
+            );
+          }
+        }
+
+        // STEP 3: Submission successful - remove from localStorage
+        removeQueuedJobCompletion(completionId);
+        console.log('✅ Job completion submitted and removed from local storage');
+
+        // Update local state
+        setJobs(prev => prev.map(job => 
+          job.id === selectedJobForComplete.id ? { 
+                ...job, 
+                status: 'COMPLETED',
+                end_time: new Date().toISOString(),
+            completionNotes: completionNotes.trim(),
+                completedBy: user?.id || 'technician',
+            completedAt: new Date().toISOString(),
+            actual_cost: parseFloat(billAmount) || 0,
+            payment_amount: parseFloat(billAmount) || 0,
+          } : job
+        ));
+        
+        setIsSubmittingJobCompletion(false);
+        toast.success('✅ Job completed successfully!');
+        setCompleteDialogOpen(false);
+        setSelectedJobForComplete(null);
+        setCompletionNotes('');
+        setCompleteJobStep(1);
+        setBillAmount('');
+        setBillPhotos([]);
+        setAmcDateGiven(new Date().toISOString().split('T')[0]);
+        setAmcEndDate('');
+        setAmcYears(1);
+        setAmcIncludesPrefilter(false);
+        setHasAMC(false);
+        setPaymentMode('');
+        setCustomerHasPrefilter(null);
+        setQrCodeType('');
+        setSelectedQrCodeId('');
+        setPaymentScreenshot('');
+
+      } catch (submitError: any) {
+        setIsSubmittingJobCompletion(false);
+        
+        // Submission failed - data is already saved in localStorage, so it's safe
+        console.warn('Job completion submission failed, but data is saved locally:', submitError);
+        
+        const isTimeout = isTimeoutError(submitError);
+        const isSlowNetwork = isSlowNetworkError(submitError);
+
+        if (isTimeout) {
+          // Timeout occurred - data is safe, will retry automatically
+          toast.warning(
+            '⏱️ Network is slow. Job completion is saved safely and will submit automatically when connection improves. You can close this dialog.', 
+            { duration: 8000 }
+          );
+          // Allow dialog to be closed - data is safe
+          // Don't reset form state so user can see what was saved
+        } else if (isSlowNetwork) {
+          toast.warning(
+            '🌐 Network issue detected. Job completion saved safely. Will submit automatically when internet is available. You can close this dialog.', 
+            { duration: 8000 }
+          );
+        } else {
+          toast.warning(
+            '⚠️ Submission failed but job completion is saved safely. Will retry automatically. You can close this dialog.', 
+            { duration: 8000 }
+          );
+        }
+        // Data remains in localStorage - will be retried automatically
+        // User can close the dialog - data is safe and will be submitted automatically
+      }
+    } catch (error: any) {
+      setIsSubmittingJobCompletion(false);
+      console.error('Error preparing job completion:', error);
+      toast.error('Failed to save job completion. Please try again.');
     }
   };
 
@@ -4161,7 +4401,8 @@ const TechnicianDashboard = () => {
 
         {/* Complete Job Dialog */}
         <Dialog open={completeDialogOpen} onOpenChange={(open) => {
-          if (!open) {
+          if (!open && !isSubmittingJobCompletion) {
+            // Only allow closing if not submitting (data is safe in localStorage)
             setCompleteDialogOpen(false);
             setSelectedJobForComplete(null);
             setCompletionNotes('');
@@ -4179,18 +4420,27 @@ const TechnicianDashboard = () => {
             setQrCodeType('');
             setSelectedQrCodeId('');
             setPaymentScreenshot('');
+            setIsSubmittingJobCompletion(false);
           }
         }}>
           <DialogContent className="w-[95vw] sm:w-[500px] max-w-[500px] h-[85vh] sm:h-[600px] max-h-[85vh] flex flex-col p-0">
             <DialogHeader className="px-6 pt-6 pb-4 flex-shrink-0 border-b">
               <DialogTitle>Complete Job</DialogTitle>
               <DialogDescription>
-                {completeJobStep === 1 && 'Upload bill photo (optional)'}
-                {completeJobStep === 2 && 'Enter the bill amount for this job'}
-                {completeJobStep === 3 && 'Select payment mode and QR code'}
-                {completeJobStep === 4 && 'Upload payment screenshot (optional)'}
-                {completeJobStep === 5 && 'Add AMC information (optional)'}
-                {completeJobStep === 6 && 'Does the customer have a prefilter?'}
+                {isSubmittingJobCompletion ? (
+                  <span className="text-blue-600 font-medium">
+                    💾 Submitting job completion... Your data is saved safely.
+                  </span>
+                ) : (
+                  <>
+                    {completeJobStep === 1 && 'Upload bill photo (optional)'}
+                    {completeJobStep === 2 && 'Enter the bill amount for this job'}
+                    {completeJobStep === 3 && 'Select payment mode and QR code'}
+                    {completeJobStep === 4 && 'Upload payment screenshot (optional)'}
+                    {completeJobStep === 5 && 'Add AMC information (optional)'}
+                    {completeJobStep === 6 && 'Does the customer have a prefilter?'}
+                  </>
+                )}
               </DialogDescription>
             </DialogHeader>
             
@@ -4246,7 +4496,16 @@ const TechnicianDashboard = () => {
                   <div>
                     <Label>Upload Bill Photo (Optional)</Label>
                     <ImageUpload
-                      onImagesChange={(images) => setBillPhotos(images)}
+                      onImagesChange={(images) => {
+                        setBillPhotos(images);
+                        // Save progress automatically
+                        if (selectedJobForComplete) {
+                          saveJobCompletionProgress(selectedJobForComplete.id, {
+                            billPhotos: images,
+                            currentStep: completeJobStep,
+                          });
+                        }
+                      }}
                       maxImages={5}
                       folder="bills"
                       title=""
@@ -4269,7 +4528,17 @@ const TechnicianDashboard = () => {
                       type="number"
                       placeholder="Enter bill amount"
                       value={billAmount}
-                      onChange={(e) => setBillAmount(e.target.value)}
+                      onChange={(e) => {
+                        setBillAmount(e.target.value);
+                        // Auto-save progress
+                        if (selectedJobForComplete) {
+                          saveJobCompletionProgress(selectedJobForComplete.id, {
+                            billPhotos,
+                            billAmount: e.target.value,
+                            currentStep: completeJobStep,
+                          });
+                        }
+                      }}
                       className="mt-1"
                       min="0"
                       step="0.01"
@@ -4286,7 +4555,18 @@ const TechnicianDashboard = () => {
                   id="completion-notes"
                       placeholder="Add any notes about the job completion..."
                   value={completionNotes}
-                  onChange={(e) => setCompletionNotes(e.target.value)}
+                  onChange={(e) => {
+                    setCompletionNotes(e.target.value);
+                    // Auto-save progress
+                    if (selectedJobForComplete) {
+                      saveJobCompletionProgress(selectedJobForComplete.id, {
+                        billPhotos,
+                        billAmount,
+                        completionNotes: e.target.value,
+                        currentStep: completeJobStep,
+                      });
+                    }
+                  }}
                   rows={3}
                       className="mt-1"
                 />
@@ -4309,6 +4589,19 @@ const TechnicianDashboard = () => {
                           setSelectedQrCodeId('');
                           setPaymentScreenshot('');
                           }
+                          // Auto-save progress
+                          if (selectedJobForComplete) {
+                            saveJobCompletionProgress(selectedJobForComplete.id, {
+                              billPhotos,
+                              billAmount,
+                              completionNotes,
+                              paymentMode: value,
+                              qrCodeType: value === 'CASH' ? '' : qrCodeType,
+                              selectedQrCodeId: value === 'CASH' ? '' : selectedQrCodeId,
+                              paymentScreenshot: value === 'CASH' ? '' : paymentScreenshot,
+                              currentStep: completeJobStep,
+                            });
+                          }
                         }}
                       >
                         <SelectTrigger className="mt-1">
@@ -4330,10 +4623,44 @@ const TechnicianDashboard = () => {
                           onValueChange={(value) => {
                             setSelectedQrCodeId(value);
                             // Set QR code type based on selection
+                            let qrType = '';
+                            let qrUrl: string | undefined;
+                            let qrName: string | undefined;
+                            
                             if (value.startsWith('common_')) {
-                              setQrCodeType('common');
+                              qrType = 'common';
+                              const qrId = value.replace('common_', '');
+                              const selectedQr = commonQrCodes.find(qr => qr.id === qrId);
+                              if (selectedQr) {
+                                qrUrl = selectedQr.qrCodeUrl;
+                                qrName = selectedQr.name;
+                              }
                             } else if (value.startsWith('technician_')) {
-                              setQrCodeType('technician');
+                              qrType = 'technician';
+                              const techId = value.replace('technician_', '');
+                              const selectedTech = technicians.find(t => t.id === techId);
+                              if (selectedTech && selectedTech.qrCode) {
+                                qrUrl = selectedTech.qrCode;
+                                qrName = selectedTech.fullName || 'Technician';
+                              }
+                            }
+                            
+                            setQrCodeType(qrType);
+                            
+                            // Auto-save progress
+                            if (selectedJobForComplete) {
+                              saveJobCompletionProgress(selectedJobForComplete.id, {
+                                billPhotos,
+                                billAmount,
+                                completionNotes,
+                                paymentMode: 'ONLINE',
+                                qrCodeType: qrType,
+                                selectedQrCodeId: value,
+                                selectedQrCodeUrl: qrUrl,
+                                selectedQrCodeName: qrName,
+                                paymentScreenshot,
+                                currentStep: completeJobStep,
+                              });
                             }
                           }}
                         >
@@ -4445,7 +4772,22 @@ const TechnicianDashboard = () => {
                         <Label>Payment Screenshot (Optional)</Label>
                         <p className="text-sm text-gray-500 mb-2">Upload payment confirmation screenshot</p>
                         <ImageUpload
-                          onImagesChange={(images) => setPaymentScreenshot(images[0] || '')}
+                          onImagesChange={(images) => {
+                            setPaymentScreenshot(images[0] || '');
+                            // Auto-save progress
+                            if (selectedJobForComplete) {
+                              saveJobCompletionProgress(selectedJobForComplete.id, {
+                                billPhotos,
+                                billAmount,
+                                completionNotes,
+                                paymentMode: 'ONLINE',
+                                paymentScreenshot: images[0] || '',
+                                qrCodeType,
+                                selectedQrCodeId,
+                                currentStep: completeJobStep,
+                              });
+                            }
+                          }}
                           maxImages={1}
                           folder="payment-receipts"
                           title=""
@@ -4478,6 +4820,24 @@ const TechnicianDashboard = () => {
                             setAmcYears(1);
                             calculateAMCEndDate(today, 1);
                           }
+                          // Auto-save progress
+                          if (selectedJobForComplete) {
+                            saveJobCompletionProgress(selectedJobForComplete.id, {
+                              billPhotos,
+                              billAmount,
+                              completionNotes,
+                              paymentMode: paymentMode as 'CASH' | 'ONLINE' | '',
+                              paymentScreenshot,
+                              qrCodeType,
+                              selectedQrCodeId,
+                              hasAMC: e.target.checked,
+                              amcDateGiven: e.target.checked ? new Date().toISOString().split('T')[0] : '',
+                              amcEndDate: e.target.checked ? amcEndDate : '',
+                              amcYears: e.target.checked ? 1 : amcYears,
+                              amcIncludesPrefilter: amcIncludesPrefilter,
+                              currentStep: completeJobStep,
+                            });
+                          }
                         }}
                         className="w-4 h-4"
                       />
@@ -4494,8 +4854,33 @@ const TechnicianDashboard = () => {
                             value={amcDateGiven}
                             onChange={(e) => {
                               setAmcDateGiven(e.target.value);
+                              let endDate = amcEndDate;
                               if (e.target.value) {
                                 calculateAMCEndDate(e.target.value, amcYears);
+                                // Calculate end date
+                                const startDate = new Date(e.target.value);
+                                const calculatedEndDate = new Date(startDate);
+                                calculatedEndDate.setFullYear(calculatedEndDate.getFullYear() + amcYears);
+                                calculatedEndDate.setDate(calculatedEndDate.getDate() - 1);
+                                endDate = calculatedEndDate.toISOString().split('T')[0];
+                              }
+                              // Auto-save progress
+                              if (selectedJobForComplete) {
+                                saveJobCompletionProgress(selectedJobForComplete.id, {
+                                  billPhotos,
+                                  billAmount,
+                                  completionNotes,
+                                  paymentMode: paymentMode as 'CASH' | 'ONLINE' | '',
+                                  paymentScreenshot,
+                                  qrCodeType,
+                                  selectedQrCodeId,
+                                  hasAMC: true,
+                                  amcDateGiven: e.target.value,
+                                  amcEndDate: endDate,
+                                  amcYears,
+                                  amcIncludesPrefilter,
+                                  currentStep: completeJobStep,
+                                });
                               }
                             }}
                             className="mt-1"
@@ -4507,8 +4892,33 @@ const TechnicianDashboard = () => {
                           <Select value={amcYears.toString()} onValueChange={(value) => {
                             const years = parseInt(value);
                             setAmcYears(years);
+                            let endDate = amcEndDate;
                             if (amcDateGiven) {
                               calculateAMCEndDate(amcDateGiven, years);
+                              // Calculate end date
+                              const startDate = new Date(amcDateGiven);
+                              const calculatedEndDate = new Date(startDate);
+                              calculatedEndDate.setFullYear(calculatedEndDate.getFullYear() + years);
+                              calculatedEndDate.setDate(calculatedEndDate.getDate() - 1);
+                              endDate = calculatedEndDate.toISOString().split('T')[0];
+                            }
+                            // Auto-save progress
+                            if (selectedJobForComplete) {
+                              saveJobCompletionProgress(selectedJobForComplete.id, {
+                                billPhotos,
+                                billAmount,
+                                completionNotes,
+                                paymentMode: paymentMode as 'CASH' | 'ONLINE' | '',
+                                paymentScreenshot,
+                                qrCodeType,
+                                selectedQrCodeId,
+                                hasAMC: true,
+                                amcDateGiven,
+                                amcEndDate: endDate,
+                                amcYears: years,
+                                amcIncludesPrefilter,
+                                currentStep: completeJobStep,
+                              });
                             }
                           }}>
                             <SelectTrigger className="mt-1">
@@ -4538,7 +4948,27 @@ const TechnicianDashboard = () => {
                             type="checkbox"
                             id="amc-prefilter"
                             checked={amcIncludesPrefilter}
-                            onChange={(e) => setAmcIncludesPrefilter(e.target.checked)}
+                            onChange={(e) => {
+                              setAmcIncludesPrefilter(e.target.checked);
+                              // Auto-save progress
+                              if (selectedJobForComplete) {
+                                saveJobCompletionProgress(selectedJobForComplete.id, {
+                                  billPhotos,
+                                  billAmount,
+                                  completionNotes,
+                                  paymentMode: paymentMode as 'CASH' | 'ONLINE' | '',
+                                  paymentScreenshot,
+                                  qrCodeType,
+                                  selectedQrCodeId,
+                                  hasAMC: true,
+                                  amcDateGiven,
+                                  amcEndDate,
+                                  amcYears,
+                                  amcIncludesPrefilter: e.target.checked,
+                                  currentStep: completeJobStep,
+                                });
+                              }
+                            }}
                             className="w-4 h-4"
                           />
                           <Label htmlFor="amc-prefilter" className="cursor-pointer">Includes Prefilter</Label>
@@ -4557,7 +4987,28 @@ const TechnicianDashboard = () => {
                     <div className="grid grid-cols-2 gap-4">
                       <button
                         type="button"
-                        onClick={() => setCustomerHasPrefilter(true)}
+                        onClick={() => {
+                          setCustomerHasPrefilter(true);
+                          // Auto-save progress
+                          if (selectedJobForComplete) {
+                            saveJobCompletionProgress(selectedJobForComplete.id, {
+                              billPhotos,
+                              billAmount,
+                              completionNotes,
+                              paymentMode: paymentMode as 'CASH' | 'ONLINE' | '',
+                              paymentScreenshot,
+                              qrCodeType,
+                              selectedQrCodeId,
+                              hasAMC,
+                              amcDateGiven,
+                              amcEndDate,
+                              amcYears,
+                              amcIncludesPrefilter,
+                              customerHasPrefilter: true,
+                              currentStep: completeJobStep,
+                            });
+                          }
+                        }}
                         className={`p-4 rounded-lg border-2 transition-all duration-200 ${
                           customerHasPrefilter === true
                             ? 'border-black bg-black text-white shadow-md'
@@ -4579,7 +5030,28 @@ const TechnicianDashboard = () => {
                       </button>
                       <button
                         type="button"
-                        onClick={() => setCustomerHasPrefilter(false)}
+                        onClick={() => {
+                          setCustomerHasPrefilter(false);
+                          // Auto-save progress
+                          if (selectedJobForComplete) {
+                            saveJobCompletionProgress(selectedJobForComplete.id, {
+                              billPhotos,
+                              billAmount,
+                              completionNotes,
+                              paymentMode: paymentMode as 'CASH' | 'ONLINE' | '',
+                              paymentScreenshot,
+                              qrCodeType,
+                              selectedQrCodeId,
+                              hasAMC,
+                              amcDateGiven,
+                              amcEndDate,
+                              amcYears,
+                              amcIncludesPrefilter,
+                              customerHasPrefilter: false,
+                              currentStep: completeJobStep,
+                            });
+                          }
+                        }}
                         className={`p-4 rounded-lg border-2 transition-all duration-200 ${
                           customerHasPrefilter === false
                             ? 'border-black bg-black text-white shadow-md'
@@ -4660,9 +5132,21 @@ const TechnicianDashboard = () => {
               <Button
                 onClick={handleCompleteJobSubmit}
                 className="bg-black hover:bg-gray-800 !text-white font-semibold"
-                disabled={(completeJobStep === 3 && !paymentMode) || (completeJobStep === 3 && paymentMode === 'ONLINE' && !qrCodeType) || (completeJobStep === 5 && hasAMC && (!amcDateGiven || !amcEndDate))}
+                disabled={
+                  isSubmittingJobCompletion ||
+                  (completeJobStep === 3 && !paymentMode) || 
+                  (completeJobStep === 3 && paymentMode === 'ONLINE' && !qrCodeType) || 
+                  (completeJobStep === 5 && hasAMC && (!amcDateGiven || !amcEndDate))
+                }
               >
-                {completeJobStep === 6 ? 'Complete Job' : 'Next'}
+                {isSubmittingJobCompletion ? (
+                  <>
+                    <RefreshCw className="w-4 h-4 mr-2 animate-spin" />
+                    {completeJobStep === 6 ? 'Submitting...' : 'Saving...'}
+                  </>
+                ) : (
+                  completeJobStep === 6 ? 'Complete Job' : 'Next'
+                )}
               </Button>
             </DialogFooter>
           </DialogContent>
