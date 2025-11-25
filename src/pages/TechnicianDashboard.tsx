@@ -52,6 +52,8 @@ import { getCachedQrCodes, cacheQrCodes, shouldUseCache, getCachedTechnicianQrCo
 import { extractCoordinates, formatAddressForDisplay } from '@/lib/maps';
 import ImageUpload from '@/components/ImageUpload';
 import { Label } from '@/components/ui/label';
+import { processQueuedPhotos, startRetryProcessing, setupOnlineListener, stopRetryProcessing } from '@/lib/retryPhotoUpload';
+import { getQueuedPhotosCount } from '@/lib/offlinePhotoQueue';
 
 // Bangalore areas list for location extraction
 const bangaloreAreas = [
@@ -735,6 +737,76 @@ const TechnicianDashboard = () => {
       clearInterval(interval);
     };
   }, [user, loadQrCodes]);
+
+  // Setup offline photo upload retry mechanism
+  useEffect(() => {
+    if (!user || user.role !== 'technician') {
+      return;
+    }
+
+    // Process any queued photos on mount
+    const queuedCount = getQueuedPhotosCount();
+    if (queuedCount > 0) {
+      console.log(`📸 Found ${queuedCount} saved photo(s) - uploading now...`);
+      toast.info(`📸 Found ${queuedCount} saved photo(s). Uploading now...`, {
+        duration: 4000,
+      });
+      // Small delay to let user see the message
+      setTimeout(() => {
+        processQueuedPhotos();
+      }, 500);
+    }
+
+    // Start automatic retry processing (every 30 seconds)
+    startRetryProcessing(30000);
+
+    // Setup listener for when network comes back online
+    const cleanup = setupOnlineListener();
+
+    return () => {
+      stopRetryProcessing();
+      cleanup();
+    };
+  }, [user]);
+
+  // Show notification if there are queued photos (less frequent)
+  useEffect(() => {
+    if (!user || user.role !== 'technician') {
+      return;
+    }
+
+    const checkQueuedPhotos = () => {
+      const queuedCount = getQueuedPhotosCount();
+      if (queuedCount > 0) {
+        // Show notification only once every 2 minutes to avoid spam
+        const lastNotification = localStorage.getItem('last_queued_photo_notification');
+        const now = Date.now();
+        if (!lastNotification || now - parseInt(lastNotification) > 120000) { // Show once per 2 minutes
+          toast.info(
+            `📸 ${queuedCount} photo(s) saved safely. Will upload automatically when internet is available.`, 
+            {
+              duration: 6000,
+              id: 'queued-photos-notification', // Prevent duplicate notifications
+            }
+          );
+          localStorage.setItem('last_queued_photo_notification', now.toString());
+        }
+      }
+    };
+
+    // Check after a delay (don't show immediately on load)
+    const initialDelay = setTimeout(() => {
+      checkQueuedPhotos();
+    }, 5000);
+
+    // Check periodically
+    const interval = setInterval(checkQueuedPhotos, 120000); // Check every 2 minutes
+
+    return () => {
+      clearTimeout(initialDelay);
+      clearInterval(interval);
+    };
+  }, [user]);
 
   // Set up realtime subscription for new job assignments
   useEffect(() => {

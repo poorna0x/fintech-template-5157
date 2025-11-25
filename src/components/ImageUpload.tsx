@@ -4,6 +4,7 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Upload, Camera, X, Loader2, Image as ImageIcon, FileImage, Trash2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { cloudinaryService, validateImageFile, compressImage } from '@/lib/cloudinary';
+import { queuePhoto, isOnline, removeQueuedPhoto, getQueuedPhotosCount } from '@/lib/offlinePhotoQueue';
 
 interface ImageUploadProps {
   onImagesChange: (images: string[]) => void;
@@ -81,83 +82,135 @@ const ImageUpload: React.FC<ImageUploadProps> = ({
         }
 
         try {
-          // Optimize compression based on file size and settings
-          let compressedFile: File;
+          // STEP 1: ALWAYS save to localStorage first (never lose the photo)
+          let compressionWidth = maxWidth;
+          let compressionQuality: number;
           const fileSizeMB = file.size / (1024 * 1024);
           
           // Determine compression settings
-          let compressionWidth = maxWidth;
-          let compressionQuality: number;
-          
           if (aggressiveCompression) {
-            // For bills/documents/payment receipts - more aggressive compression
-            // If quality is explicitly set very low (like 0.3), use it directly
             if (quality && quality < 0.4) {
-              compressionWidth = 800; // Even smaller for very low quality
+              compressionWidth = 800;
               compressionQuality = quality;
             } else {
-              compressionWidth = 1024; // Smaller width for documents
+              compressionWidth = 1024;
               if (fileSizeMB > 2) {
-                compressionQuality = quality || 0.4; // Very aggressive for large files
+                compressionQuality = quality || 0.4;
               } else if (fileSizeMB > 1) {
-                compressionQuality = quality || 0.5; // Aggressive
+                compressionQuality = quality || 0.5;
               } else {
-                compressionQuality = quality || 0.6; // Moderate
+                compressionQuality = quality || 0.6;
               }
             }
           } else {
-            // For regular photos - balanced compression
             if (fileSizeMB > 2) {
-              compressionQuality = quality || 0.5; // Aggressive for large files
+              compressionQuality = quality || 0.5;
             } else if (fileSizeMB > 1) {
-              compressionQuality = quality || 0.6; // Moderate
+              compressionQuality = quality || 0.6;
             } else {
-              compressionQuality = quality || 0.7; // Good quality
+              compressionQuality = quality || 0.7;
             }
           }
-          
-          // Use WebP format for better compression (especially for bills/documents)
-          compressedFile = await compressImage(file, compressionWidth, compressionQuality, true);
 
-          setUploadProgress(prev => ({ ...prev, [fileId]: 50 }));
+          // Save to localStorage FIRST (before any upload attempt)
+          let queuedPhotoId: string | null = null;
+          try {
+            queuedPhotoId = await queuePhoto(file, folder, {
+              maxWidth: compressionWidth,
+              quality: compressionQuality,
+              aggressiveCompression,
+              useSecondaryAccount,
+            });
+            console.log('✅ Photo saved to local storage:', file.name);
+          } catch (saveError) {
+            console.error('Failed to save photo to localStorage:', saveError);
+            toast.error(`Failed to save ${file.name}. Please try again.`);
+            continue; // Skip this file if we can't save it
+          }
 
-          // Upload to Cloudinary with progress tracking
-          // Note: Cloudinary will apply additional optimizations during upload
-          const uploadResult = await cloudinaryService.uploadImage(compressedFile, folder, useSecondaryAccount);
-          
-          // Log compression stats (for debugging)
-          const originalSize = (file.size / 1024).toFixed(2);
-          const compressedSize = (compressedFile.size / 1024).toFixed(2);
-          const reduction = ((1 - compressedFile.size / file.size) * 100).toFixed(1);
-          console.log(`Image optimized: ${originalSize}KB → ${compressedSize}KB (${reduction}% reduction)`);
-          
-          setUploadProgress(prev => ({ ...prev, [fileId]: 100 }));
+          setUploadProgress(prev => ({ ...prev, [fileId]: 10 }));
 
-          // Add to new images
-          newImages.push({
-            id: `img_${Date.now()}_${i}`,
-            url: uploadResult.secure_url,
-            publicId: uploadResult.public_id,
-            name: file.name,
-          });
+          // STEP 2: Compress the image
+          const compressedFile = await compressImage(file, compressionWidth, compressionQuality, true);
+          setUploadProgress(prev => ({ ...prev, [fileId]: 30 }));
 
-        } catch (error) {
-          console.error(`Upload failed for ${file.name}:`, error);
-          toast.error(`Failed to upload ${file.name}`);
+          // STEP 3: Try to upload to Cloudinary
+          let uploadResult;
+          try {
+            uploadResult = await cloudinaryService.uploadImage(compressedFile, folder, useSecondaryAccount);
+            setUploadProgress(prev => ({ ...prev, [fileId]: 100 }));
+
+            // STEP 4: Upload successful - remove from localStorage
+            if (queuedPhotoId) {
+              removeQueuedPhoto(queuedPhotoId);
+              console.log('✅ Photo uploaded and removed from local storage:', file.name);
+            }
+
+            // Log compression stats
+            const originalSize = (file.size / 1024).toFixed(2);
+            const compressedSize = (compressedFile.size / 1024).toFixed(2);
+            const reduction = ((1 - compressedFile.size / file.size) * 100).toFixed(1);
+            console.log(`Image optimized: ${originalSize}KB → ${compressedSize}KB (${reduction}% reduction)`);
+
+            // Add to new images
+            newImages.push({
+              id: `img_${Date.now()}_${i}`,
+              url: uploadResult.secure_url,
+              publicId: uploadResult.public_id,
+              name: file.name,
+            });
+
+            toast.success(`${file.name} uploaded successfully`, { duration: 2000 });
+
+          } catch (uploadError: any) {
+            // Upload failed - photo is already saved in localStorage, so it's safe
+            console.warn(`Upload failed for ${file.name}, but photo is saved locally:`, uploadError);
+            
+            const isNetworkError = !isOnline() || 
+              uploadError?.message?.includes('network') || 
+              uploadError?.message?.includes('fetch') ||
+              uploadError?.message?.includes('Failed to fetch') ||
+              uploadError?.code === 'NETWORK_ERROR' ||
+              (uploadError?.name === 'TypeError' && uploadError?.message?.includes('fetch'));
+
+            if (isNetworkError) {
+              toast.warning(
+                `${file.name} saved safely. Will upload automatically when internet is available.`, 
+                { duration: 6000 }
+              );
+            } else {
+              toast.warning(
+                `${file.name} saved safely. Upload failed but will retry automatically.`, 
+                { duration: 6000 }
+              );
+            }
+            // Photo remains in localStorage - will be retried automatically
+          }
+
+        } catch (error: any) {
+          console.error(`Error processing ${file.name}:`, error);
+          toast.error(`Error processing ${file.name}. Please try again.`);
         }
       }
 
-      if (newImages.length === 0) {
-        toast.error('No images were uploaded successfully');
-        return;
+      // Update state with successfully uploaded images
+      if (newImages.length > 0) {
+        const updatedImages = [...uploadedImages, ...newImages];
+        setUploadedImages(updatedImages);
+        onImagesChange(updatedImages.map(img => img.url));
       }
 
-      // Update state
-      const updatedImages = [...uploadedImages, ...newImages];
-      setUploadedImages(updatedImages);
-      onImagesChange(updatedImages.map(img => img.url));
-
-      toast.success(`${newImages.length} image(s) uploaded successfully`);
+      // Check if there are any photos still in queue (upload failed but saved)
+      const queuedCount = getQueuedPhotosCount();
+      if (queuedCount > 0 && newImages.length < filesToUpload.length) {
+        const failedCount = filesToUpload.length - newImages.length;
+        toast.info(
+          `${failedCount} photo(s) saved safely and will upload automatically. ${newImages.length > 0 ? `${newImages.length} uploaded now.` : ''}`,
+          { duration: 6000 }
+        );
+      } else if (newImages.length > 0) {
+        toast.success(`${newImages.length} photo(s) uploaded successfully!`, { duration: 3000 });
+      }
     } catch (error) {
       console.error('Upload error:', error);
       toast.error('Failed to upload images. Please try again.');
