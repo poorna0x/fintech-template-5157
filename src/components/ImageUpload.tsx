@@ -164,32 +164,15 @@ const ImageUpload: React.FC<ImageUploadProps> = ({
 
           } catch (uploadError: any) {
             // Upload failed - photo is already saved in localStorage, so it's safe
+            // No toast needed - will retry automatically from local storage
             console.warn(`Upload failed for ${file.name}, but photo is saved locally:`, uploadError);
-            
-            const isNetworkError = !isOnline() || 
-              uploadError?.message?.includes('network') || 
-              uploadError?.message?.includes('fetch') ||
-              uploadError?.message?.includes('Failed to fetch') ||
-              uploadError?.code === 'NETWORK_ERROR' ||
-              (uploadError?.name === 'TypeError' && uploadError?.message?.includes('fetch'));
-
-            if (isNetworkError) {
-              toast.warning(
-                `${file.name} saved safely. Will upload automatically when internet is available.`, 
-                { duration: 6000 }
-              );
-            } else {
-              toast.warning(
-                `${file.name} saved safely. Upload failed but will retry automatically.`, 
-                { duration: 6000 }
-              );
-            }
             // Photo remains in localStorage - will be retried automatically
           }
 
         } catch (error: any) {
+          // Error processing - photo may be saved to localStorage, will retry automatically
+          // No toast needed - will retry automatically from local storage
           console.error(`Error processing ${file.name}:`, error);
-          toast.error(`Error processing ${file.name}. Please try again.`);
         }
       }
 
@@ -200,20 +183,13 @@ const ImageUpload: React.FC<ImageUploadProps> = ({
         onImagesChange(updatedImages.map(img => img.url));
       }
 
-      // Check if there are any photos still in queue (upload failed but saved)
-      const queuedCount = getQueuedPhotosCount();
-      if (queuedCount > 0 && newImages.length < filesToUpload.length) {
-        const failedCount = filesToUpload.length - newImages.length;
-        toast.info(
-          `${failedCount} photo(s) saved safely and will upload automatically. ${newImages.length > 0 ? `${newImages.length} uploaded now.` : ''}`,
-          { duration: 6000 }
-        );
-      } else if (newImages.length > 0) {
-        toast.success(`${newImages.length} photo(s) uploaded successfully!`, { duration: 3000 });
-      }
+      // Only show success message if photos were uploaded successfully
+      // Failed photos are saved to localStorage and will retry automatically (no toast needed)
+      // Individual success toasts are already shown for each photo above
     } catch (error) {
+      // Error - photos may be saved to localStorage, will retry automatically
+      // No toast needed - will retry automatically from local storage
       console.error('Upload error:', error);
-      toast.error('Failed to upload images. Please try again.');
     } finally {
       setIsUploading(false);
       setUploadProgress({});

@@ -14,6 +14,7 @@ export interface CloudinaryConfig {
   cloudName: string;
   uploadPreset: string;
   apiKey?: string;
+  apiSecret?: string;
 }
 
 class CloudinaryService {
@@ -25,18 +26,21 @@ class CloudinaryService {
       cloudName: import.meta.env.VITE_CLOUDINARY_CLOUD_NAME || '',
       uploadPreset: import.meta.env.VITE_CLOUDINARY_UPLOAD_PRESET || '',
       apiKey: import.meta.env.VITE_CLOUDINARY_API_KEY || '',
+      apiSecret: import.meta.env.VITE_CLOUDINARY_API_SECRET || '',
     };
 
     // Secondary Cloudinary account for optimized/temporary images
     const secondaryCloudName = import.meta.env.VITE_CLOUDINARY_SECONDARY_CLOUD_NAME;
     const secondaryUploadPreset = import.meta.env.VITE_CLOUDINARY_SECONDARY_UPLOAD_PRESET;
     const secondaryApiKey = import.meta.env.VITE_CLOUDINARY_SECONDARY_API_KEY;
+    const secondaryApiSecret = import.meta.env.VITE_CLOUDINARY_SECONDARY_API_SECRET;
 
     if (secondaryCloudName && secondaryUploadPreset) {
       this.secondaryConfig = {
         cloudName: secondaryCloudName,
         uploadPreset: secondaryUploadPreset,
         apiKey: secondaryApiKey || '',
+        apiSecret: secondaryApiSecret || '',
       };
     } else {
       this.secondaryConfig = null;
@@ -262,6 +266,38 @@ class CloudinaryService {
     }
   }
 
+  // Generate signature for Cloudinary API calls
+  private async generateSignature(params: Record<string, string | number>, apiSecret: string): Promise<string> {
+    // Sort parameters alphabetically (excluding signature itself)
+    const sortedKeys = Object.keys(params).sort();
+    const paramString = sortedKeys
+      .map(key => `${key}=${params[key]}`)
+      .join('&');
+    
+    // Cloudinary signature format: SHA-1 hash of (sorted_params + apiSecret)
+    // Note: apiSecret is appended WITHOUT an ampersand
+    // IMPORTANT: api_key is NOT included in signature generation
+    const message = paramString + apiSecret;
+    
+    console.log('🔐 Generating Cloudinary signature:', {
+      paramString,
+      stringToSign: paramString,
+      messageLength: message.length,
+      note: 'api_key is excluded from signature'
+    });
+    
+    const msgBuffer = new TextEncoder().encode(message);
+    const hashBuffer = await crypto.subtle.digest('SHA-1', msgBuffer);
+    const hashArray = Array.from(new Uint8Array(hashBuffer));
+    
+    // Convert hash bytes to hex string (Cloudinary expects hex, not base64)
+    const hexHash = hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+    
+    console.log('✅ Generated signature (hex):', hexHash.substring(0, 20) + '...');
+    
+    return hexHash;
+  }
+
   // Delete image from Cloudinary
   async deleteImage(publicId: string, useSecondary: boolean = false): Promise<boolean> {
     const activeConfig = useSecondary && this.secondaryConfig ? this.secondaryConfig : this.config;
@@ -272,24 +308,78 @@ class CloudinaryService {
     }
 
     try {
+      const timestamp = Math.round(new Date().getTime() / 1000);
+      
+      // Parameters for signature generation (EXCLUDE api_key - it's not part of signature)
+      const signatureParams: Record<string, string | number> = {
+        public_id: publicId,
+        timestamp: timestamp,
+        invalidate: 'true', // Invalidate CDN cache
+      };
+
+      // Add signature if API secret is available (required for deletion)
+      if (!activeConfig.apiSecret) {
+        console.warn('⚠️ API secret not configured. Cloudinary deletion requires API secret for security.');
+        console.warn('💡 Add VITE_CLOUDINARY_API_SECRET to your environment variables.');
+        console.warn('💡 Photo will be removed from database but will remain in Cloudinary storage.');
+        // Return false but don't throw - allow database deletion to proceed
+        return false;
+      }
+
+      // Generate signature for authenticated deletion (from signatureParams only, excluding api_key)
+      const signature = await this.generateSignature(signatureParams, activeConfig.apiSecret);
+      
+      // Request parameters (include api_key in request but NOT in signature)
+      const params: Record<string, string | number> = {
+        public_id: publicId,
+        api_key: activeConfig.apiKey,
+        timestamp: timestamp,
+        invalidate: 'true',
+        signature: signature,
+      };
+
+      // Cloudinary destroy API requires URL-encoded form data (application/x-www-form-urlencoded)
+      const formBody = Object.keys(params)
+        .map(key => `${encodeURIComponent(key)}=${encodeURIComponent(String(params[key]))}`)
+        .join('&');
+
       const response = await fetch(
         `https://api.cloudinary.com/v1_1/${activeConfig.cloudName}/image/destroy`,
         {
           method: 'POST',
           headers: {
-            'Content-Type': 'application/json',
+            'Content-Type': 'application/x-www-form-urlencoded',
           },
-          body: JSON.stringify({
-            public_id: publicId,
-            api_key: activeConfig.apiKey,
-            timestamp: Math.round(new Date().getTime() / 1000),
-          }),
+          body: formBody,
         }
       );
 
-      return response.ok;
+      const result = await response.json();
+      
+      console.log('Cloudinary delete response:', {
+        status: response.status,
+        result: result,
+        publicId: publicId,
+        hasSecret: !!activeConfig.apiSecret
+      });
+      
+      if (response.ok && result.result === 'ok') {
+        console.log(`✅ Successfully deleted image from Cloudinary: ${publicId}`);
+        return true;
+      } else {
+        const errorMsg = result.error?.message || JSON.stringify(result);
+        console.warn(`⚠️ Cloudinary deletion failed for ${publicId}:`, errorMsg);
+        console.warn('Response details:', { status: response.status, result });
+        
+        // If signature is missing and we got an auth error, suggest adding API secret
+        if (result.error?.message?.includes('signature') || result.error?.message?.includes('authentication')) {
+          console.warn('💡 Tip: Add VITE_CLOUDINARY_API_SECRET to enable secure deletion');
+        }
+        
+        return false;
+      }
     } catch (error) {
-      console.error('Error deleting image:', error);
+      console.error('Error deleting image from Cloudinary:', error);
       return false;
     }
   }
@@ -297,6 +387,61 @@ class CloudinaryService {
   // Check if secondary account is available
   hasSecondaryAccount(): boolean {
     return this.secondaryConfig !== null;
+  }
+
+  // Extract public_id from Cloudinary URL
+  extractPublicId(url: string): { publicId: string; useSecondary: boolean } | null {
+    if (!url || typeof url !== 'string') return null;
+    
+    // Match Cloudinary URL pattern: https://res.cloudinary.com/{cloudName}/image/upload/{path}
+    const match = url.match(/res\.cloudinary\.com\/([^\/]+)\/image\/upload\/(.+)/);
+    if (match) {
+      const cloudName = match[1];
+      const pathAfterUpload = match[2];
+      
+      // Check if it's secondary account
+      const useSecondary = this.secondaryConfig?.cloudName === cloudName;
+      
+      // Split path and filter out transformations
+      // Transformations are like: v1234567890, w_500, h_500, c_fill, etc.
+      const parts = pathAfterUpload.split('/');
+      const validParts: string[] = [];
+      
+      for (const part of parts) {
+        const cleanPart = part.split('?')[0]; // Remove query params
+        
+        // Skip transformations:
+        // - Version: v1234567890
+        // - Dimensions/effects: w_500, h_500, c_fill, q_auto, f_auto, etc.
+        // - Any part containing underscore (likely transformation)
+        if (cleanPart.match(/^v\d+$/) || cleanPart.includes('_') || cleanPart.match(/^[a-z]\d/)) {
+          continue;
+        }
+        
+        validParts.push(cleanPart);
+      }
+      
+      if (validParts.length === 0) {
+        console.warn(`Could not extract valid public_id from URL: ${url}`);
+        return null;
+      }
+      
+      // Join parts to get full public_id (including folder path)
+      let publicId = validParts.join('/');
+      
+      // Remove file extension
+      publicId = publicId.replace(/\.[^.]+$/, '');
+      
+      console.log(`Extracted public_id: ${url} -> ${publicId} (secondary: ${useSecondary})`);
+      
+      return {
+        publicId: publicId,
+        useSecondary: useSecondary || false
+      };
+    }
+    
+    console.warn(`Could not extract public_id from URL: ${url}`);
+    return null;
   }
 }
 

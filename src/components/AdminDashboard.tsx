@@ -849,6 +849,9 @@ const AdminDashboard = () => {
   const [photoToDelete, setPhotoToDelete] = useState<{jobId: string, photoIndex: number, photoUrl: string} | null>(null);
   const [deletePhotoDialogOpen, setDeletePhotoDialogOpen] = useState(false);
   const [isDeletingPhoto, setIsDeletingPhoto] = useState(false);
+  const [customerPhotoToDelete, setCustomerPhotoToDelete] = useState<{photoUrl: string, photoIndex: number} | null>(null);
+  const [deleteCustomerPhotoDialogOpen, setDeleteCustomerPhotoDialogOpen] = useState(false);
+  const [isDeletingCustomerPhoto, setIsDeletingCustomerPhoto] = useState(false);
   const [photoViewerOpen, setPhotoViewerOpen] = useState(false);
   
   // Job assignment states
@@ -3588,17 +3591,33 @@ const AdminDashboard = () => {
       const photoSet = new Set<string>(); // Use Set to avoid duplicates
       
       // Extract URLs from Cloudinary objects or use as-is if already strings
+      // Handles both primary and secondary Cloudinary accounts (both use res.cloudinary.com)
       const extractPhotoUrls = (photos: any[]): string[] => {
         if (!Array.isArray(photos)) return [];
         return photos.map(photo => {
           if (typeof photo === 'string' && photo.trim() !== '') {
-            return photo.trim();
-          } else if (photo && typeof photo === 'object' && photo.secure_url) {
-            return photo.secure_url;
+            // Handle string URLs (from both Cloudinary accounts)
+            const trimmed = photo.trim();
+            // Accept any valid URL (http/https) - works for both Cloudinary accounts
+            // Both primary and secondary accounts use res.cloudinary.com domain
+            if (trimmed.startsWith('http://') || trimmed.startsWith('https://')) {
+              return trimmed;
+            }
+            return null;
+          } else if (photo && typeof photo === 'object') {
+            // Handle Cloudinary response objects from both accounts
+            if (photo.secure_url && typeof photo.secure_url === 'string') {
+              return photo.secure_url.trim();
+            } else if (photo.url && typeof photo.url === 'string') {
+              return photo.url.trim();
+            }
           }
           return null;
         }).filter((url): url is string => {
-          return url !== null && url !== '';
+          // Filter out null/empty and ensure it's a valid URL
+          // Accept all Cloudinary URLs (both accounts use res.cloudinary.com)
+          // Also accept any other valid image URLs
+          return url !== null && url !== '' && (url.startsWith('http://') || url.startsWith('https://'));
         });
       };
       
@@ -3635,34 +3654,54 @@ const AdminDashboard = () => {
               if (Array.isArray(requirements)) {
                 requirements.forEach((req: any) => {
                   if (req.bill_photos && Array.isArray(req.bill_photos)) {
-                    req.bill_photos.forEach((photo: string) => {
-                      if (photo && typeof photo === 'string' && photo.trim() !== '') {
-                        photoSet.add(photo.trim());
-                      }
+                    req.bill_photos.forEach((photo: any) => {
+                      const photoUrls = extractPhotoUrls([photo]);
+                      photoUrls.forEach(url => photoSet.add(url));
                     });
                   }
                   if (req.payment_photos && Array.isArray(req.payment_photos)) {
-                    req.payment_photos.forEach((photo: string) => {
-                      if (photo && typeof photo === 'string' && photo.trim() !== '') {
-                        photoSet.add(photo.trim());
-                      }
+                    req.payment_photos.forEach((photo: any) => {
+                      const photoUrls = extractPhotoUrls([photo]);
+                      photoUrls.forEach(url => photoSet.add(url));
                     });
+                  }
+                  // Also check qr_photos for payment screenshots (from secondary account)
+                  if (req.qr_photos && typeof req.qr_photos === 'object') {
+                    if (req.qr_photos.payment_screenshot) {
+                      const screenshotUrls = extractPhotoUrls([req.qr_photos.payment_screenshot]);
+                      screenshotUrls.forEach(url => photoSet.add(url));
+                    }
+                    if (req.qr_photos.selected_qr_code_url) {
+                      // QR code image URL (if stored)
+                      const qrUrls = extractPhotoUrls([req.qr_photos.selected_qr_code_url]);
+                      qrUrls.forEach(url => photoSet.add(url));
+                    }
                   }
                 });
               } else if (typeof requirements === 'object' && requirements !== null) {
                 if (requirements.bill_photos && Array.isArray(requirements.bill_photos)) {
-                  requirements.bill_photos.forEach((photo: string) => {
-                    if (photo && typeof photo === 'string' && photo.trim() !== '') {
-                      photoSet.add(photo.trim());
-                    }
+                  requirements.bill_photos.forEach((photo: any) => {
+                    const photoUrls = extractPhotoUrls([photo]);
+                    photoUrls.forEach(url => photoSet.add(url));
                   });
                 }
                 if (requirements.payment_photos && Array.isArray(requirements.payment_photos)) {
-                  requirements.payment_photos.forEach((photo: string) => {
-                    if (photo && typeof photo === 'string' && photo.trim() !== '') {
-                      photoSet.add(photo.trim());
-                    }
+                  requirements.payment_photos.forEach((photo: any) => {
+                    const photoUrls = extractPhotoUrls([photo]);
+                    photoUrls.forEach(url => photoSet.add(url));
                   });
+                }
+                // Also check qr_photos for payment screenshots (from secondary account)
+                if (requirements.qr_photos && typeof requirements.qr_photos === 'object') {
+                  if (requirements.qr_photos.payment_screenshot) {
+                    const screenshotUrls = extractPhotoUrls([requirements.qr_photos.payment_screenshot]);
+                    screenshotUrls.forEach(url => photoSet.add(url));
+                  }
+                  if (requirements.qr_photos.selected_qr_code_url) {
+                    // QR code image URL (if stored)
+                    const qrUrls = extractPhotoUrls([requirements.qr_photos.selected_qr_code_url]);
+                    qrUrls.forEach(url => photoSet.add(url));
+                  }
                 }
               }
             } catch (e) {
@@ -3680,7 +3719,20 @@ const AdminDashboard = () => {
       
       // Convert Set to Array
       const uniquePhotos = Array.from(photoSet);
-      console.log(`Total unique photos found: ${uniquePhotos.length}`);
+      console.log(`📸 Total unique photos found for customer: ${uniquePhotos.length}`);
+      
+      // Log photo sources for debugging
+      // Both primary and secondary Cloudinary accounts use res.cloudinary.com domain
+      const cloudinaryPhotos = uniquePhotos.filter(url => url.includes('res.cloudinary.com'));
+      const otherPhotos = uniquePhotos.filter(url => !url.includes('res.cloudinary.com') && (url.startsWith('http://') || url.startsWith('https://')));
+      console.log(`📸 Cloudinary photos (both accounts): ${cloudinaryPhotos.length}`);
+      console.log(`📸 Other source photos: ${otherPhotos.length}`);
+      
+      // Log sample URLs to verify both accounts are included
+      if (cloudinaryPhotos.length > 0) {
+        const sampleUrls = cloudinaryPhotos.slice(0, 3);
+        console.log(`📸 Sample Cloudinary URLs:`, sampleUrls);
+      }
 
       setCustomerPhotos(prev => {
         const newState = {
@@ -5641,6 +5693,22 @@ const AdminDashboard = () => {
         }
       }
 
+      // Delete from Cloudinary if it's a Cloudinary URL
+      try {
+        const publicIdInfo = cloudinaryService.extractPublicId(photoToDelete.photoUrl);
+        if (publicIdInfo) {
+          const deleted = await cloudinaryService.deleteImage(publicIdInfo.publicId, publicIdInfo.useSecondary);
+          if (deleted) {
+            console.log(`✅ Photo deleted from Cloudinary: ${publicIdInfo.publicId}`);
+          } else {
+            console.warn(`⚠️ Failed to delete photo from Cloudinary: ${publicIdInfo.publicId}`);
+          }
+        }
+      } catch (cloudinaryError) {
+        console.error('Error deleting photo from Cloudinary:', cloudinaryError);
+        // Continue even if Cloudinary deletion fails - photo is already removed from database
+      }
+
       // Update the job in the database
       const { error } = await db.jobs.update(photoToDelete.jobId, {
         before_photos: updatedBeforePhotos,
@@ -5689,6 +5757,296 @@ const AdminDashboard = () => {
       toast.error('Failed to delete photo');
     } finally {
       setIsDeletingPhoto(false);
+    }
+  };
+
+  // Helper function to normalize URLs for comparison
+  const normalizeUrl = (url: string): string => {
+    if (!url || typeof url !== 'string') return '';
+    // Remove trailing slashes, normalize to lowercase, remove query params for comparison
+    return url.trim().toLowerCase().replace(/\/+$/, '').split('?')[0].split('#')[0];
+  };
+
+  // Helper function to extract URL from photo (handles strings and objects)
+  const extractPhotoUrl = (photo: any): string => {
+    if (typeof photo === 'string') {
+      return photo;
+    } else if (photo && typeof photo === 'object') {
+      return photo.secure_url || photo.url || photo.public_id || '';
+    }
+    return '';
+  };
+
+  // Delete customer photo from all possible sources
+  const confirmDeleteCustomerPhoto = async () => {
+    if (!customerPhotoToDelete || !selectedCustomerForPhotos) return;
+    
+    setIsDeletingCustomerPhoto(true);
+    try {
+      const customerId = selectedCustomerForPhotos.customer_id || selectedCustomerForPhotos.customerId;
+      if (!customerId) {
+        throw new Error('Customer ID not found');
+      }
+
+      // Get customer UUID
+      const { data: customer, error: customerError } = await db.customers.getByCustomerId(customerId);
+      if (customerError || !customer) {
+        throw new Error('Customer not found');
+      }
+
+      // Get all jobs for this customer
+      const { data: customerJobs, error: jobsError } = await db.jobs.getByCustomerId(customer.id);
+      if (jobsError) {
+        throw new Error(jobsError.message);
+      }
+
+      if (!customerJobs || customerJobs.length === 0) {
+        throw new Error('No jobs found for this customer');
+      }
+
+      let photoFound = false;
+      const photoUrl = customerPhotoToDelete.photoUrl;
+      const normalizedPhotoUrl = normalizeUrl(photoUrl);
+      
+      console.log('Deleting photo:', { original: photoUrl, normalized: normalizedPhotoUrl });
+
+      // Search through all jobs to find and remove the photo
+      for (const job of customerJobs) {
+        let needsUpdate = false;
+        const updateData: any = {};
+
+        // Check before_photos
+        const beforePhotos = Array.isArray(job.before_photos || job.beforePhotos) 
+          ? (job.before_photos || job.beforePhotos) 
+          : [];
+        const beforePhotoIndex = beforePhotos.findIndex((photo: any) => {
+          const url = extractPhotoUrl(photo);
+          return normalizeUrl(url) === normalizedPhotoUrl;
+        });
+        
+        if (beforePhotoIndex !== -1) {
+          const updatedBeforePhotos = [...beforePhotos];
+          updatedBeforePhotos.splice(beforePhotoIndex, 1);
+          updateData.before_photos = updatedBeforePhotos;
+          needsUpdate = true;
+          photoFound = true;
+        }
+
+        // Check after_photos
+        const afterPhotos = Array.isArray(job.after_photos || job.afterPhotos) 
+          ? (job.after_photos || job.afterPhotos) 
+          : [];
+        const afterPhotoIndex = afterPhotos.findIndex((photo: any) => {
+          const url = extractPhotoUrl(photo);
+          return normalizeUrl(url) === normalizedPhotoUrl;
+        });
+        
+        if (afterPhotoIndex !== -1) {
+          const updatedAfterPhotos = [...afterPhotos];
+          updatedAfterPhotos.splice(afterPhotoIndex, 1);
+          updateData.after_photos = updatedAfterPhotos;
+          needsUpdate = true;
+          photoFound = true;
+        }
+
+        // Check images field
+        const images = Array.isArray(job.images) ? job.images : [];
+        const imageIndex = images.findIndex((photo: any) => {
+          const url = extractPhotoUrl(photo);
+          return normalizeUrl(url) === normalizedPhotoUrl;
+        });
+        
+        if (imageIndex !== -1) {
+          const updatedImages = [...images];
+          updatedImages.splice(imageIndex, 1);
+          updateData.images = updatedImages;
+          needsUpdate = true;
+          photoFound = true;
+        }
+
+        // Check requirements (bill_photos, payment_photos, qr_photos)
+        if (job.requirements) {
+          try {
+            const requirements = typeof job.requirements === 'string' 
+              ? JSON.parse(job.requirements) 
+              : job.requirements;
+            
+            let updatedRequirements = Array.isArray(requirements) ? [...requirements] : [];
+            
+            // Check if it's an object format
+            if (!Array.isArray(requirements) && typeof requirements === 'object') {
+              updatedRequirements = Object.keys(requirements).map(key => ({ [key]: requirements[key] }));
+            }
+
+            let requirementsChanged = false;
+
+            // Remove from bill_photos
+            updatedRequirements = updatedRequirements.map((req: any) => {
+              if (req.bill_photos && Array.isArray(req.bill_photos)) {
+                const filtered = req.bill_photos.filter((photo: any) => {
+                  const url = extractPhotoUrl(photo);
+                  return normalizeUrl(url) !== normalizedPhotoUrl;
+                });
+                if (filtered.length !== req.bill_photos.length) {
+                  requirementsChanged = true;
+                  photoFound = true;
+                  return { ...req, bill_photos: filtered };
+                }
+              }
+              return req;
+            });
+
+            // Remove from payment_photos
+            updatedRequirements = updatedRequirements.map((req: any) => {
+              if (req.payment_photos && Array.isArray(req.payment_photos)) {
+                const filtered = req.payment_photos.filter((photo: any) => {
+                  const url = extractPhotoUrl(photo);
+                  return normalizeUrl(url) !== normalizedPhotoUrl;
+                });
+                if (filtered.length !== req.payment_photos.length) {
+                  requirementsChanged = true;
+                  photoFound = true;
+                  return { ...req, payment_photos: filtered };
+                }
+              }
+              return req;
+            });
+
+            // Remove from qr_photos.payment_screenshot
+            updatedRequirements = updatedRequirements.map((req: any) => {
+              if (req.qr_photos && typeof req.qr_photos === 'object') {
+                const screenshotUrl = extractPhotoUrl(req.qr_photos.payment_screenshot);
+                const normalizedScreenshot = normalizeUrl(screenshotUrl);
+                if (normalizedScreenshot === normalizedPhotoUrl || screenshotUrl === photoUrl) {
+                  console.log(`Found photo in qr_photos.payment_screenshot for job ${job.id}`);
+                  requirementsChanged = true;
+                  photoFound = true;
+                  const { payment_screenshot, ...restQrPhotos } = req.qr_photos;
+                  return { ...req, qr_photos: restQrPhotos };
+                }
+              }
+              return req;
+            });
+
+            if (requirementsChanged) {
+              updateData.requirements = JSON.stringify(updatedRequirements);
+              needsUpdate = true;
+            }
+          } catch (e) {
+            console.error('Error parsing requirements:', e);
+          }
+        }
+
+        // Update job if photo was found
+        if (needsUpdate) {
+          const { error: updateError } = await db.jobs.update(job.id, updateData);
+          if (updateError) {
+            console.error(`Error updating job ${job.id}:`, updateError);
+          }
+        }
+      }
+
+      // Delete from Cloudinary if it's a Cloudinary URL (always attempt, even if not found in DB)
+      let cloudinaryDeleted = false;
+      try {
+        const publicIdInfo = cloudinaryService.extractPublicId(photoUrl);
+        if (publicIdInfo) {
+          const deleted = await cloudinaryService.deleteImage(publicIdInfo.publicId, publicIdInfo.useSecondary);
+          if (deleted) {
+            console.log(`✅ Photo deleted from Cloudinary: ${publicIdInfo.publicId}`);
+            cloudinaryDeleted = true;
+          } else {
+            console.warn(`⚠️ Failed to delete photo from Cloudinary: ${publicIdInfo.publicId}`);
+          }
+        } else {
+          console.warn('Could not extract public_id from URL:', photoUrl);
+        }
+      } catch (cloudinaryError) {
+        console.error('Error deleting photo from Cloudinary:', cloudinaryError);
+      }
+
+      // If photo wasn't found in database
+      if (!photoFound) {
+        // Log debugging info
+        console.warn('Photo not found in any job. Searching for:', normalizedPhotoUrl);
+        console.warn('Original URL:', photoUrl);
+        
+        // Check requirements more thoroughly for payment screenshots
+        console.log('Checking requirements for payment screenshots...');
+        for (const job of customerJobs) {
+          if (job.requirements) {
+            try {
+              const reqs = typeof job.requirements === 'string' ? JSON.parse(job.requirements) : job.requirements;
+              const reqsArray = Array.isArray(reqs) ? reqs : [reqs];
+              reqsArray.forEach((req: any) => {
+                if (req.qr_photos?.payment_screenshot) {
+                  const screenshotUrl = extractPhotoUrl(req.qr_photos.payment_screenshot);
+                  console.log(`Job ${job.job_number} has payment_screenshot:`, screenshotUrl);
+                  console.log(`  Normalized:`, normalizeUrl(screenshotUrl));
+                  console.log(`  Matches:`, normalizeUrl(screenshotUrl) === normalizedPhotoUrl);
+                }
+              });
+            } catch (e) {
+              console.error('Error checking requirements:', e);
+            }
+          }
+        }
+        
+        // Still update UI even if not found in database
+        // Photo might be orphaned or stored differently
+        console.warn('Photo not found in database. Updating UI anyway. Photo may need manual deletion from Cloudinary if API secret is not configured.');
+        photoFound = true; // Allow UI update to proceed
+      }
+
+      // Reload customer photos
+      await loadCustomerPhotos(customerId);
+
+      // Update local state
+      const customerIdKey = customerId;
+      setCustomerPhotos(prev => {
+        const updated = { ...prev };
+        if (updated[customerIdKey]) {
+          updated[customerIdKey] = updated[customerIdKey].filter(url => url !== photoUrl);
+        }
+        return updated;
+      });
+
+      // Update photo viewer to show next photo or previous if deleted photo was being viewed
+      // Keep viewer open - just update the photo if needed
+      if (selectedPhoto && selectedPhoto.url === photoUrl) {
+        const customerIdKey = customerId;
+        const remainingPhotos = customerPhotos[customerIdKey]?.filter(url => url !== photoUrl) || [];
+        if (remainingPhotos.length > 0) {
+          // Show next photo, or previous if at the end
+          const currentIndex = customerPhotos[customerIdKey]?.indexOf(photoUrl) || 0;
+          const newIndex = currentIndex < remainingPhotos.length ? currentIndex : remainingPhotos.length - 1;
+          setSelectedPhoto({
+            url: remainingPhotos[newIndex],
+            index: newIndex,
+            total: remainingPhotos.length
+          });
+        } else {
+          // No photos left - close viewer
+          setSelectedPhoto(null);
+        }
+      }
+
+      // Show appropriate success message
+      if (cloudinaryDeleted) {
+        toast.success('Photo deleted successfully from both database and Cloudinary');
+      } else if (photoFound) {
+        toast.success('Photo removed from database. Note: Cloudinary deletion requires API secret configuration.');
+      } else {
+        toast.warning('Photo removed from UI. May still exist in Cloudinary if API secret is not configured.');
+      }
+      
+      setDeleteCustomerPhotoDialogOpen(false);
+      setCustomerPhotoToDelete(null);
+    } catch (error) {
+      console.error('Error deleting customer photo:', error);
+      toast.error(error instanceof Error ? error.message : 'Failed to delete photo');
+    } finally {
+      setIsDeletingCustomerPhoto(false);
     }
   };
 
@@ -8535,6 +8893,38 @@ const AdminDashboard = () => {
         </AlertDialogContent>
       </AlertDialog>
 
+      {/* Delete Customer Photo Confirmation Dialog */}
+      <AlertDialog open={deleteCustomerPhotoDialogOpen} onOpenChange={setDeleteCustomerPhotoDialogOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete Photo</AlertDialogTitle>
+            <AlertDialogDescription>
+              Are you sure you want to delete this photo?
+              <br />
+              <br />
+              This action cannot be undone and will permanently remove the photo from all associated jobs.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={isDeletingCustomerPhoto}>Cancel</AlertDialogCancel>
+            <AlertDialogAction 
+              onClick={confirmDeleteCustomerPhoto}
+              disabled={isDeletingCustomerPhoto}
+              className="bg-red-600 hover:bg-red-700"
+            >
+              {isDeletingCustomerPhoto ? (
+                <div className="flex items-center gap-2">
+                  <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                  Deleting...
+                </div>
+              ) : (
+                'Delete Photo'
+              )}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
       {/* Override Existing Customer Dialog */}
       <AlertDialog open={overrideDialogOpen} onOpenChange={setOverrideDialogOpen}>
         <AlertDialogContent>
@@ -9851,6 +10241,21 @@ const AdminDashboard = () => {
                               <div className="text-xs">Failed to load</div>
                             </div>
                           </div>
+                          {/* Delete button - shown on hover */}
+                          <div className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                            <Button
+                              variant="destructive"
+                              size="sm"
+                              className="h-8 w-8 p-0"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setCustomerPhotoToDelete({ photoUrl: photo, photoIndex: index });
+                                setDeleteCustomerPhotoDialogOpen(true);
+                              }}
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </Button>
+                          </div>
                         </div>
                       </div>
                     ))}
@@ -9890,6 +10295,19 @@ const AdminDashboard = () => {
                   <Download className="w-4 h-4 mr-2" />
                   Download
                 </Button>
+                {selectedCustomerForPhotos && (
+                  <Button
+                    size="sm"
+                    variant="destructive"
+                    onClick={() => {
+                      setCustomerPhotoToDelete({ photoUrl: selectedPhoto.url, photoIndex: selectedPhoto.index });
+                      setDeleteCustomerPhotoDialogOpen(true);
+                    }}
+                  >
+                    <Trash2 className="w-4 h-4 mr-2" />
+                    Delete
+                  </Button>
+                )}
                 <Button
                   size="sm"
                   variant="secondary"

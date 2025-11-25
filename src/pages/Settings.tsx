@@ -314,9 +314,9 @@ const Settings = () => {
 
       // Don't close dialog if we just created a technician (to show ID card link)
       if (editTechnicianDialogOpen || !newlyCreatedTechnicianId) {
-        setAddTechnicianDialogOpen(false);
-        setEditTechnicianDialogOpen(false);
-        setSelectedTechnician(null);
+      setAddTechnicianDialogOpen(false);
+      setEditTechnicianDialogOpen(false);
+      setSelectedTechnician(null);
         setNewlyCreatedTechnicianId(null);
       }
     } catch (error) {

@@ -749,29 +749,23 @@ const TechnicianDashboard = () => {
       return;
     }
 
-    // Process any queued photos on mount
-    const queuedCount = getQueuedPhotosCount();
-    if (queuedCount > 0) {
-      console.log(`📸 Found ${queuedCount} saved photo(s) - uploading now...`);
-      toast.info(`📸 Found ${queuedCount} saved photo(s). Uploading now...`, {
-        duration: 4000,
-      });
-      // Small delay to let user see the message
-      setTimeout(() => {
-        processQueuedPhotos();
-      }, 500);
-    }
+      // Process any queued photos on mount
+      const queuedCount = getQueuedPhotosCount();
+      if (queuedCount > 0) {
+        console.log(`📸 Found ${queuedCount} saved photo(s) - uploading now...`);
+        // Process immediately - no toast needed
+        setTimeout(() => {
+          processQueuedPhotos();
+        }, 500);
+      }
 
-    // Process any queued job completions on mount (IMMEDIATELY - data must be saved)
-    const queuedCompletionsCount = getQueuedCompletionsCount();
-    if (queuedCompletionsCount > 0) {
-      console.log(`💼 Found ${queuedCompletionsCount} saved job completion(s) - submitting now...`);
-      toast.info(`💼 Found ${queuedCompletionsCount} saved job completion(s). Submitting automatically...`, {
-        duration: 5000,
-      });
-      // Process immediately - don't wait
-      processQueuedJobCompletions();
-    }
+      // Process any queued job completions on mount (IMMEDIATELY - data must be saved)
+      const queuedCompletionsCount = getQueuedCompletionsCount();
+      if (queuedCompletionsCount > 0) {
+        console.log(`💼 Found ${queuedCompletionsCount} saved job completion(s) - submitting now...`);
+        // Process immediately - no toast needed
+        processQueuedJobCompletions();
+      }
 
     // Start automatic retry processing (every 30 seconds)
     startRetryProcessing(30000);
@@ -846,13 +840,7 @@ const TechnicianDashboard = () => {
             messages.push(`${queuedCompletionsCount} job completion(s)`);
           }
           
-          toast.info(
-            `💾 ${messages.join(' and ')} saved safely. Will submit automatically when internet is available.`, 
-            {
-              duration: 6000,
-              id: 'queued-items-notification', // Prevent duplicate notifications
-            }
-          );
+          // Data saved safely, will submit automatically (no toast needed)
           localStorage.setItem('last_queued_items_notification', now.toString());
         }
       }
@@ -1788,7 +1776,7 @@ const TechnicianDashboard = () => {
       setCustomerHasPrefilter(savedProgress.customerHasPrefilter);
       setCompleteJobStep(savedProgress.currentStep as 1 | 2 | 3 | 4 | 5 | 6 || 1);
       
-      toast.info('📋 Restored saved progress for this job', { duration: 3000 });
+      // Progress restored (no toast needed)
     } else {
       // Reset to defaults
       setCompletionNotes('');
@@ -2208,9 +2196,6 @@ const TechnicianDashboard = () => {
       });
 
       console.log('✅ Job completion data saved to local storage:', completionId);
-      
-      // Show immediate feedback that data is saved
-      toast.success('💾 Job completion saved safely! Submitting now...', { duration: 3000 });
 
       // STEP 2: Try to submit to database (with timeout)
       try {
@@ -2339,15 +2324,15 @@ const TechnicianDashboard = () => {
         ).length;
         const queuedBillPhotosCount = billPhotos.length - uploadedBillPhotosCount;
         
-        if (queuedBillPhotosCount > 0) {
-          console.log(`📸 ${queuedBillPhotosCount} bill photo(s) are queued and will be added to job when uploaded`);
-          toast.info(`📸 ${queuedBillPhotosCount} photo(s) are still uploading. They will be added to this job automatically when upload completes.`, {
-            duration: 6000,
-          });
-        } else if (uploadedBillPhotosCount > 0) {
-          toast.success(`✅ Job completed successfully with ${uploadedBillPhotosCount} photo(s)!`, {
+        // Only show toast if photos were uploaded
+        if (uploadedBillPhotosCount > 0) {
+          toast.success(`📸 ${uploadedBillPhotosCount} photo(s) uploaded successfully!`, {
             duration: 3000,
           });
+        }
+        
+        if (queuedBillPhotosCount > 0) {
+          console.log(`📸 ${queuedBillPhotosCount} bill photo(s) are queued and will be added to job when uploaded`);
         }
 
         // Update customer prefilter status if provided (also with timeout)
@@ -2384,7 +2369,7 @@ const TechnicianDashboard = () => {
         ));
         
         setIsSubmittingJobCompletion(false);
-        toast.success('✅ Job completed successfully!');
+        // Job completed - dialog will close automatically
         setCompleteDialogOpen(false);
         setSelectedJobForComplete(null);
         setCompletionNotes('');
@@ -2412,23 +2397,13 @@ const TechnicianDashboard = () => {
         const isSlowNetwork = isSlowNetworkError(submitError);
 
         if (isTimeout) {
-          // Timeout occurred - data is safe, will retry automatically
-          toast.warning(
-            '⏱️ Network is slow. Job completion is saved safely and will submit automatically when connection improves. You can close this dialog.', 
-            { duration: 8000 }
-          );
+          // Timeout occurred - data is safe, will retry automatically (no toast needed)
           // Allow dialog to be closed - data is safe
           // Don't reset form state so user can see what was saved
         } else if (isSlowNetwork) {
-          toast.warning(
-            '🌐 Network issue detected. Job completion saved safely. Will submit automatically when internet is available. You can close this dialog.', 
-            { duration: 8000 }
-          );
+          // Network issue - data is saved, will retry automatically (no toast needed)
         } else {
-          toast.warning(
-            '⚠️ Submission failed but job completion is saved safely. Will retry automatically. You can close this dialog.', 
-            { duration: 8000 }
-          );
+          // Submission failed - data is saved, will retry automatically (no toast needed)
         }
         // Data remains in localStorage - will be retried automatically
         // User can close the dialog - data is safe and will be submitted automatically
@@ -2517,19 +2492,38 @@ const TechnicianDashboard = () => {
       }
       
       // Extract URLs from Cloudinary objects or use as-is if already strings
+      // Handles both primary and secondary Cloudinary accounts (both use res.cloudinary.com)
       const extractPhotoUrls = (photos: any[]): string[] => {
         if (!Array.isArray(photos)) return [];
         return photos.map(photo => {
           if (typeof photo === 'string' && photo.trim() !== '') {
-            return photo.trim();
-          } else if (photo && typeof photo === 'object' && photo.secure_url) {
-            return photo.secure_url;
-          } else if (photo && typeof photo === 'object' && photo.url) {
-            return photo.url;
+            // Handle string URLs (from both Cloudinary accounts)
+            const trimmed = photo.trim();
+            // Accept any valid URL (http/https) - works for both Cloudinary accounts
+            // Both primary and secondary accounts use res.cloudinary.com domain
+            if (trimmed.startsWith('http://') || trimmed.startsWith('https://')) {
+              return trimmed;
+            }
+            return null;
+          } else if (photo && typeof photo === 'object') {
+            // Handle Cloudinary response objects from both accounts
+            if (photo.secure_url && typeof photo.secure_url === 'string') {
+              return photo.secure_url.trim();
+            } else if (photo.url && typeof photo.url === 'string') {
+              return photo.url.trim();
+            }
+            // Also check for nested objects that might contain URLs
+            if (photo.public_id && typeof photo.public_id === 'string') {
+              // This is a Cloudinary object, but we need the URL
+              // Skip for now - we should have secure_url or url
+            }
           }
           return null;
         }).filter((url): url is string => {
-          return url !== null && url !== '';
+          // Filter out null/empty and ensure it's a valid URL
+          // Accept all Cloudinary URLs (both accounts use res.cloudinary.com)
+          // Also accept any other valid image URLs
+          return url !== null && url !== '' && (url.startsWith('http://') || url.startsWith('https://'));
         });
       };
       
@@ -2577,6 +2571,18 @@ const TechnicianDashboard = () => {
                       photoUrls.forEach(url => photoSet.add(url));
                     });
                   }
+                  // Also check qr_photos for payment screenshots (from secondary account)
+                  if (req.qr_photos && typeof req.qr_photos === 'object') {
+                    if (req.qr_photos.payment_screenshot) {
+                      const screenshotUrls = extractPhotoUrls([req.qr_photos.payment_screenshot]);
+                      screenshotUrls.forEach(url => photoSet.add(url));
+                    }
+                    if (req.qr_photos.selected_qr_code_url) {
+                      // QR code image URL (if stored)
+                      const qrUrls = extractPhotoUrls([req.qr_photos.selected_qr_code_url]);
+                      qrUrls.forEach(url => photoSet.add(url));
+                    }
+                  }
                 });
               } else if (typeof requirements === 'object' && requirements !== null) {
                 if (requirements.bill_photos && Array.isArray(requirements.bill_photos)) {
@@ -2591,6 +2597,18 @@ const TechnicianDashboard = () => {
                     photoUrls.forEach(url => photoSet.add(url));
                   });
                 }
+                // Also check qr_photos for payment screenshots (from secondary account)
+                if (requirements.qr_photos && typeof requirements.qr_photos === 'object') {
+                  if (requirements.qr_photos.payment_screenshot) {
+                    const screenshotUrls = extractPhotoUrls([requirements.qr_photos.payment_screenshot]);
+                    screenshotUrls.forEach(url => photoSet.add(url));
+                  }
+                  if (requirements.qr_photos.selected_qr_code_url) {
+                    // QR code image URL (if stored)
+                    const qrUrls = extractPhotoUrls([requirements.qr_photos.selected_qr_code_url]);
+                    qrUrls.forEach(url => photoSet.add(url));
+                  }
+                }
               }
             } catch (e) {
               // Ignore parse errors
@@ -2602,7 +2620,20 @@ const TechnicianDashboard = () => {
       
       // Convert Set to Array
       const uniquePhotos = Array.from(photoSet);
-      console.log(`Total unique photos found for customer: ${uniquePhotos.length}`);
+      console.log(`📸 Total unique photos found for customer: ${uniquePhotos.length}`);
+      
+      // Log photo sources for debugging
+      // Both primary and secondary Cloudinary accounts use res.cloudinary.com domain
+      const cloudinaryPhotos = uniquePhotos.filter(url => url.includes('res.cloudinary.com'));
+      const otherPhotos = uniquePhotos.filter(url => !url.includes('res.cloudinary.com') && (url.startsWith('http://') || url.startsWith('https://')));
+      console.log(`📸 Cloudinary photos (both accounts): ${cloudinaryPhotos.length}`);
+      console.log(`📸 Other source photos: ${otherPhotos.length}`);
+      
+      // Log sample URLs to verify both accounts are included
+      if (cloudinaryPhotos.length > 0) {
+        const sampleUrls = cloudinaryPhotos.slice(0, 3);
+        console.log(`📸 Sample Cloudinary URLs:`, sampleUrls);
+      }
       
       return uniquePhotos;
     } catch (error) {

@@ -190,16 +190,16 @@ export const processQueuedPhotos = async (): Promise<{ success: number; failed: 
 
   isProcessing = false;
 
+  // Only show success message for uploaded photos
   if (successCount > 0) {
-    toast.success(`✅ ${successCount} saved photo(s) uploaded successfully!`, {
-      duration: 4000,
+    toast.success(`✅ ${successCount} photo(s) uploaded successfully!`, {
+      duration: 3000,
     });
   }
 
-  if (failedCount > 0 && isOnline()) {
-    toast.warning(`⚠️ ${failedCount} photo(s) still waiting. Will retry automatically.`, {
-      duration: 5000,
-    });
+  // Failed photos will retry automatically - no warning toast needed
+  if (failedCount > 0) {
+    console.log(`📸 ${failedCount} photo(s) still waiting. Will retry automatically.`);
   }
 
   return { success: successCount, failed: failedCount };
