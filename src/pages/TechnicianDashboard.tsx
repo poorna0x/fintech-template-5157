@@ -2233,15 +2233,21 @@ const TechnicianDashboard = () => {
           payment_method: dbPaymentMethod || 'CASH',
         };
 
-        // Handle requirements
-        const currentRequirements = selectedJobForComplete.requirements || [];
+        // Fetch latest job data to ensure we have the most up-to-date requirements
+        const { data: latestJobData, error: fetchError } = await db.jobs.getById(selectedJobForComplete.id);
+        if (fetchError) {
+          console.warn('⚠️ Could not fetch latest job data, using cached data:', fetchError);
+        }
+        
+        // Handle requirements - use latest job data if available, otherwise use cached
+        const jobRequirements = latestJobData?.requirements || selectedJobForComplete.requirements || [];
         let requirements: any[] = [];
         
-        if (Array.isArray(currentRequirements)) {
-          requirements = [...currentRequirements];
-        } else if (typeof currentRequirements === 'string') {
+        if (Array.isArray(jobRequirements)) {
+          requirements = [...jobRequirements];
+        } else if (typeof jobRequirements === 'string') {
           try {
-            requirements = JSON.parse(currentRequirements);
+            requirements = JSON.parse(jobRequirements);
             if (!Array.isArray(requirements)) {
               requirements = [];
             }
@@ -2250,23 +2256,33 @@ const TechnicianDashboard = () => {
           }
         }
 
+        // Remove existing photo-related requirements to avoid duplicates
         requirements = requirements.filter((req: any) => !req.bill_photos && !req.payment_photos && !req.qr_photos && !req.amc_info);
 
         // Only add bill photos if they are uploaded (Cloudinary URLs)
         // Photos that are still queued will be uploaded later and added to the job
         const uploadedBillPhotos = billPhotos.filter(url => 
-          url && (url.startsWith('http://') || url.startsWith('https://'))
+          url && typeof url === 'string' && (url.startsWith('http://') || url.startsWith('https://'))
         );
+        
+        console.log(`📸 Job completion: Found ${uploadedBillPhotos.length} uploaded bill photos out of ${billPhotos.length} total`);
+        console.log('📸 Uploaded bill photos URLs:', uploadedBillPhotos);
+        
         if (uploadedBillPhotos.length > 0) {
           requirements.push({ bill_photos: uploadedBillPhotos });
+          console.log('✅ Added bill photos to requirements:', uploadedBillPhotos);
+        } else {
+          console.warn('⚠️ No uploaded bill photos found to add to requirements');
         }
         
-        // If there are queued photos (not uploaded yet), note them for later upload
+        // If there are queued photos (not uploaded yet), link them to this job for later upload
         const queuedBillPhotos = billPhotos.filter(url => 
-          url && !url.startsWith('http://') && !url.startsWith('https://')
+          url && typeof url === 'string' && !url.startsWith('http://') && !url.startsWith('https://')
         );
         if (queuedBillPhotos.length > 0) {
           console.log(`📸 ${queuedBillPhotos.length} bill photo(s) are queued and will be uploaded later`);
+          // Link queued photos to this job so they can be added to requirements when uploaded
+          linkQueuedPhotosToJob(selectedJobForComplete.id, 'bill');
         }
 
         if (paymentMode === 'ONLINE') {
@@ -2307,6 +2323,16 @@ const TechnicianDashboard = () => {
           throw new Error(error.message);
         }
         
+        // Verify requirements were saved correctly
+        const { data: verifyJobData } = await db.jobs.getById(selectedJobForComplete.id);
+        if (verifyJobData) {
+          const savedRequirements = typeof verifyJobData.requirements === 'string' 
+            ? JSON.parse(verifyJobData.requirements) 
+            : verifyJobData.requirements;
+          const savedBillPhotos = savedRequirements?.find((req: any) => req.bill_photos)?.bill_photos || [];
+          console.log(`✅ Job completed! Saved ${savedBillPhotos.length} bill photos to requirements:`, savedBillPhotos);
+        }
+        
         // Job completed successfully! Check if there are queued photos
         const uploadedBillPhotosCount = billPhotos.filter(url => 
           url && typeof url === 'string' && (url.startsWith('http://') || url.startsWith('https://'))
@@ -2317,6 +2343,10 @@ const TechnicianDashboard = () => {
           console.log(`📸 ${queuedBillPhotosCount} bill photo(s) are queued and will be added to job when uploaded`);
           toast.info(`📸 ${queuedBillPhotosCount} photo(s) are still uploading. They will be added to this job automatically when upload completes.`, {
             duration: 6000,
+          });
+        } else if (uploadedBillPhotosCount > 0) {
+          toast.success(`✅ Job completed successfully with ${uploadedBillPhotosCount} photo(s)!`, {
+            duration: 3000,
           });
         }
 

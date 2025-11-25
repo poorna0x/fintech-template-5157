@@ -65,10 +65,7 @@ const processQueuedPhoto = async (photo: QueuedPhoto): Promise<boolean> => {
           
           // Find or create the appropriate photo entry based on photoType
           if (photo.photoType === 'bill') {
-            // Remove existing bill_photos entries
-            requirements = requirements.filter((req: any) => !req.bill_photos);
-            
-            // Get existing bill photos from job
+            // Get existing bill photos BEFORE filtering them out
             const existingBillPhotos: string[] = [];
             const billPhotosReq = requirements.find((req: any) => req.bill_photos);
             if (billPhotosReq && Array.isArray(billPhotosReq.bill_photos)) {
@@ -78,25 +75,42 @@ const processQueuedPhoto = async (photo: QueuedPhoto): Promise<boolean> => {
             // Add new photo URL if not already present
             if (!existingBillPhotos.includes(uploadResult.secure_url)) {
               existingBillPhotos.push(uploadResult.secure_url);
+              console.log(`✅ Adding new bill photo to job ${photo.jobId}: ${uploadResult.secure_url}`);
+            } else {
+              console.log(`⚠️ Bill photo already exists in job ${photo.jobId}: ${uploadResult.secure_url}`);
             }
             
-            // Add bill_photos entry
+            // Remove existing bill_photos entries
+            requirements = requirements.filter((req: any) => !req.bill_photos);
+            
+            // Add updated bill_photos entry
             if (existingBillPhotos.length > 0) {
               requirements.push({ bill_photos: existingBillPhotos });
+              console.log(`✅ Updated job ${photo.jobId} with ${existingBillPhotos.length} bill photo(s)`);
             }
           } else if (photo.photoType === 'payment') {
-            // Handle payment photos similarly
-            requirements = requirements.filter((req: any) => !req.payment_photos);
+            // Get existing payment photos BEFORE filtering them out
             const existingPaymentPhotos: string[] = [];
             const paymentPhotosReq = requirements.find((req: any) => req.payment_photos);
             if (paymentPhotosReq && Array.isArray(paymentPhotosReq.payment_photos)) {
               existingPaymentPhotos.push(...paymentPhotosReq.payment_photos);
             }
+            
+            // Add new photo URL if not already present
             if (!existingPaymentPhotos.includes(uploadResult.secure_url)) {
               existingPaymentPhotos.push(uploadResult.secure_url);
+              console.log(`✅ Adding new payment photo to job ${photo.jobId}: ${uploadResult.secure_url}`);
+            } else {
+              console.log(`⚠️ Payment photo already exists in job ${photo.jobId}: ${uploadResult.secure_url}`);
             }
+            
+            // Remove existing payment_photos entries
+            requirements = requirements.filter((req: any) => !req.payment_photos);
+            
+            // Add updated payment_photos entry
             if (existingPaymentPhotos.length > 0) {
               requirements.push({ payment_photos: existingPaymentPhotos });
+              console.log(`✅ Updated job ${photo.jobId} with ${existingPaymentPhotos.length} payment photo(s)`);
             }
           }
           
