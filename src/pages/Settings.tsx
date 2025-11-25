@@ -14,7 +14,11 @@ import {
   Plus, 
   Edit, 
   Trash2, 
-  ArrowLeft
+  ArrowLeft,
+  Copy,
+  Check,
+  ExternalLink,
+  User
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { db, supabase } from '@/lib/supabase';
@@ -50,8 +54,10 @@ const Settings = () => {
     employeeId: '',
     password: '',
     qrCode: '', // QR code image URL
+    photo: '', // Technician photo URL
     baseSalary: 0
   });
+  const [newlyCreatedTechnicianId, setNewlyCreatedTechnicianId] = useState<string | null>(null);
 
   // Load data on component mount
   useEffect(() => {
@@ -76,9 +82,15 @@ const Settings = () => {
     vehicle: tech.vehicle,
     salary: tech.salary,
     qrCode: tech.qr_code || tech.qrCode || '',
+    photo: tech.photo || '',
     createdAt: tech.created_at,
     updatedAt: tech.updated_at
   });
+
+  // Generate ID card link for technician
+  const generateIdCardLink = (technicianId: string): string => {
+    return `${window.location.origin}/technician-id/${technicianId}`;
+  };
 
   const loadTechnicians = async () => {
     try {
@@ -112,8 +124,10 @@ const Settings = () => {
       employeeId: generateEmployeeId(),
       password: '',
       qrCode: '',
+      photo: '',
       baseSalary: 0
     });
+    setNewlyCreatedTechnicianId(null);
     setAddTechnicianDialogOpen(true);
   };
 
@@ -126,8 +140,10 @@ const Settings = () => {
       employeeId: technician.employeeId,
       password: '', // Don't show existing password for security
       qrCode: (technician as any).qrCode || '',
+      photo: (technician as any).photo || '',
       baseSalary: technician.salary?.baseSalary || 0
     });
+    setNewlyCreatedTechnicianId(null);
     setEditTechnicianDialogOpen(true);
   };
 
@@ -174,6 +190,7 @@ const Settings = () => {
         email: technicianFormData.email,
         employee_id: technicianFormData.employeeId,
         qr_code: technicianFormData.qrCode || null,
+        photo: technicianFormData.photo || null,
         account_status: 'ACTIVE',
         skills: {
           serviceTypes: ['RO', 'SOFTENER', 'AC', 'APPLIANCE'],
@@ -260,7 +277,7 @@ const Settings = () => {
           }
         }
         
-        const { error } = await db.technicians.create(technicianData);
+        const { data: newTechnician, error } = await db.technicians.create(technicianData);
         if (error) {
           // Handle 409 conflict errors with better messages
           if (error.code === '23505') { // PostgreSQL unique violation
@@ -277,16 +294,25 @@ const Settings = () => {
           }
           throw error;
         }
+        
+        // Store the newly created technician ID to show link
+        if (newTechnician && newTechnician.id) {
+          setNewlyCreatedTechnicianId(newTechnician.id);
+        }
+        
         toast.success('Technician created successfully');
       }
 
       // Refresh technicians list
       await loadTechnicians();
 
-      // Close dialogs
-      setAddTechnicianDialogOpen(false);
-      setEditTechnicianDialogOpen(false);
-      setSelectedTechnician(null);
+      // Don't close dialog if we just created a technician (to show ID card link)
+      if (editTechnicianDialogOpen || !newlyCreatedTechnicianId) {
+        setAddTechnicianDialogOpen(false);
+        setEditTechnicianDialogOpen(false);
+        setSelectedTechnician(null);
+        setNewlyCreatedTechnicianId(null);
+      }
     } catch (error) {
       console.error('Error saving technician:', error);
       toast.error('Failed to save technician');
@@ -637,6 +663,29 @@ const Settings = () => {
                           </div>
                         </div>
 
+                        {/* ID Card Link */}
+                        <div className="mb-3 p-2 bg-blue-50 dark:bg-blue-900/20 rounded border border-blue-200 dark:border-blue-800">
+                          <div className="flex items-center justify-between gap-2">
+                            <div className="flex-1 min-w-0">
+                              <p className="text-xs font-medium text-blue-900 dark:text-blue-200 mb-1">ID Card Link:</p>
+                              <p className="text-xs text-blue-700 dark:text-blue-300 truncate font-mono">
+                                {generateIdCardLink(technician.id)}
+                              </p>
+                            </div>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => {
+                                navigator.clipboard.writeText(generateIdCardLink(technician.id));
+                                toast.success('ID Card link copied!');
+                              }}
+                              className="shrink-0 h-8 w-8 p-0"
+                            >
+                              <Copy className="w-3 h-3" />
+                            </Button>
+                          </div>
+                        </div>
+
                         <div className="flex items-center gap-2">
                           <Button
                             variant="outline"
@@ -783,6 +832,34 @@ const Settings = () => {
             </div>
             
             <div className="space-y-4">
+              <h3 className="text-lg font-semibold text-gray-900">Technician Photo</h3>
+              <div>
+                <Label>Upload Technician Photo (Optional)</Label>
+                <p className="text-sm text-gray-500 mb-2">Upload photo for ID card display</p>
+                <ImageUpload
+                  onImagesChange={(images) => setTechnicianFormData(prev => ({ ...prev, photo: images[0] || '' }))}
+                  maxImages={1}
+                  folder="technician-photos"
+                  title=""
+                  description=""
+                  maxWidth={800}
+                  quality={0.8}
+                  aggressiveCompression={false}
+                  useSecondaryAccount={false}
+                />
+                {technicianFormData.photo && (
+                  <div className="mt-2">
+                    <img 
+                      src={technicianFormData.photo} 
+                      alt="Technician Photo" 
+                      className="w-32 h-32 object-cover border border-gray-200 rounded-full"
+                    />
+                  </div>
+                )}
+              </div>
+            </div>
+            
+            <div className="space-y-4">
               <h3 className="text-lg font-semibold text-gray-900">Payment QR Code</h3>
               <div>
                 <Label>Upload Payment QR Code (Optional)</Label>
@@ -809,6 +886,61 @@ const Settings = () => {
                 )}
               </div>
             </div>
+            
+            {/* Show ID Card Link after creation */}
+            {newlyCreatedTechnicianId && (
+              <div className="space-y-4 p-4 bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-lg">
+                <div className="flex items-start gap-3">
+                  <div className="w-10 h-10 bg-green-100 dark:bg-green-900/40 rounded-full flex items-center justify-center shrink-0">
+                    <Check className="w-5 h-5 text-green-600 dark:text-green-400" />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <h3 className="text-lg font-semibold text-green-900 dark:text-green-200 mb-2">
+                      Technician Created Successfully!
+                    </h3>
+                    <p className="text-sm text-green-700 dark:text-green-300 mb-3">
+                      Copy the ID Card link below and use any QR code generator to create a QR code for this technician.
+                    </p>
+                    <div className="bg-white dark:bg-gray-800 p-3 rounded border border-green-200 dark:border-green-700">
+                      <div className="flex items-center justify-between gap-2 mb-2">
+                        <Label className="text-xs font-medium text-gray-700 dark:text-gray-300">ID Card Link:</Label>
+                        <div className="flex items-center gap-2">
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => {
+                              navigator.clipboard.writeText(generateIdCardLink(newlyCreatedTechnicianId));
+                              toast.success('Link copied to clipboard!');
+                            }}
+                            className="h-7 px-2 text-xs"
+                          >
+                            <Copy className="w-3 h-3 mr-1" />
+                            Copy
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => {
+                              window.open(generateIdCardLink(newlyCreatedTechnicianId), '_blank');
+                            }}
+                            className="h-7 px-2 text-xs"
+                          >
+                            <ExternalLink className="w-3 h-3 mr-1" />
+                            Open
+                          </Button>
+                        </div>
+                      </div>
+                      <p className="text-xs font-mono text-gray-600 dark:text-gray-400 break-all">
+                        {generateIdCardLink(newlyCreatedTechnicianId)}
+                      </p>
+                    </div>
+                    <p className="text-xs text-green-600 dark:text-green-400 mt-2">
+                      💡 Tip: Visit <a href="https://www.qr-code-generator.com" target="_blank" rel="noopener noreferrer" className="underline">qr-code-generator.com</a> or any QR generator, paste this link, and download the QR code image.
+                    </p>
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
 
           <DialogFooter className="flex flex-col sm:flex-row gap-2 sm:gap-3">
@@ -830,6 +962,20 @@ const Settings = () => {
             >
               {editTechnicianDialogOpen ? 'Update Technician' : 'Create Technician'}
             </Button>
+            {newlyCreatedTechnicianId && (
+              <Button
+                variant="outline"
+                onClick={() => {
+                  setAddTechnicianDialogOpen(false);
+                  setEditTechnicianDialogOpen(false);
+                  setSelectedTechnician(null);
+                  setNewlyCreatedTechnicianId(null);
+                }}
+                className="w-full sm:w-auto"
+              >
+                Close
+              </Button>
+            )}
           </DialogFooter>
         </DialogContent>
       </Dialog>

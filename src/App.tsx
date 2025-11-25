@@ -38,6 +38,7 @@ const Contact = lazy(() => import("./pages/Contact"));
 const ServiceAreas = lazy(() => import("./pages/ServiceAreas"));
 const Blog = lazy(() => import("./pages/Blog"));
 const BlogArticle = lazy(() => import("./pages/BlogArticle"));
+const TechnicianIdCard = lazy(() => import("./pages/TechnicianIdCard"));
 
 // Loading component for lazy-loaded routes
 const LoadingSpinner = () => (
@@ -149,6 +150,9 @@ const App = () => (
                   <Route path="/ro-service-jayanagar" element={<ServiceAreas />} />
                   <Route path="/ro-service-malleshwaram" element={<ServiceAreas />} />
                   <Route path="/ro-service-rajajinagar" element={<ServiceAreas />} />
+                  
+                  {/* Technician ID Card - Public route */}
+                  <Route path="/technician-id/:id" element={<TechnicianIdCard />} />
                   
                   {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
                   <Route path="*" element={<NotFound />} />
