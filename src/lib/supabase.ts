@@ -911,6 +911,70 @@ export const db = {
       return { data: null, error };
     }
   },
+
+  // Product QR Codes operations (for product verification QR codes)
+  productQrCodes: {
+    async create(qrCode: { name: string; qr_code_url: string; product_image_url?: string; product_name?: string; product_description?: string; product_mrp?: string }) {
+      const { data, error } = await supabase
+        .from('product_qr_codes')
+        .insert({
+          name: qrCode.name,
+          qr_code_url: qrCode.qr_code_url,
+          product_image_url: qrCode.product_image_url || null,
+          product_name: qrCode.product_name || null,
+          product_description: qrCode.product_description || null,
+          product_mrp: qrCode.product_mrp || null,
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString()
+        })
+        .select()
+        .single();
+      
+      return { data, error };
+    },
+    
+    async getAll() {
+      const { data, error } = await supabase
+        .from('product_qr_codes')
+        .select('*')
+        .order('created_at', { ascending: false });
+      
+      return { data, error };
+    },
+    
+    async getById(id: string) {
+      const { data, error } = await supabase
+        .from('product_qr_codes')
+        .select('*')
+        .eq('id', id)
+        .single();
+      
+      return { data, error };
+    },
+    
+    async update(id: string, updates: { name?: string; qr_code_url?: string; product_image_url?: string; product_name?: string; product_description?: string; product_mrp?: string }) {
+      const { data, error } = await supabase
+        .from('product_qr_codes')
+        .update({
+          ...updates,
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', id)
+        .select()
+        .single();
+      
+      return { data, error };
+    },
+    
+    async delete(id: string) {
+      const { error } = await supabase
+        .from('product_qr_codes')
+        .delete()
+        .eq('id', id);
+      
+      return { data: null, error };
+    }
+  },
   
   // Tax Invoices operations
   taxInvoices: {

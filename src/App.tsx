@@ -40,6 +40,7 @@ const ServiceAreas = lazy(() => import("./pages/ServiceAreas"));
 const Blog = lazy(() => import("./pages/Blog"));
 const BlogArticle = lazy(() => import("./pages/BlogArticle"));
 const TechnicianIdCard = lazy(() => import("./pages/TechnicianIdCard"));
+const ProductVerification = lazy(() => import("./pages/ProductVerification"));
 
 // Loading component for lazy-loaded routes
 const LoadingSpinner = () => (
@@ -155,6 +156,9 @@ const App = () => (
                   
                   {/* Technician ID Card - Public route */}
                   <Route path="/technician-id/:id" element={<TechnicianIdCard />} />
+                  
+                  {/* Product Verification - Public route */}
+                  <Route path="/product-verify/:id" element={<ProductVerification />} />
                   
                   {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
                   <Route path="*" element={<NotFound />} />

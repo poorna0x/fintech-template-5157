@@ -20,13 +20,14 @@ import {
   Check,
   ExternalLink,
   User,
-  Phone
+  Phone,
+  QrCode,
+  Package
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { db, supabase } from '@/lib/supabase';
 import { Technician } from '@/types';
 import ImageUpload from '@/components/ImageUpload';
-import { QrCode } from 'lucide-react';
 import { CommonQrCode, invalidateQrCodesCache } from '@/lib/qrCodeManager';
 
 const Settings = () => {
@@ -49,6 +50,20 @@ const Settings = () => {
     name: '',
     qrCodeUrl: ''
   });
+
+  // Product QR Code management states
+  const [productQrCodes, setProductQrCodes] = useState<any[]>([]);
+  const [addProductQrCodeDialogOpen, setAddProductQrCodeDialogOpen] = useState(false);
+  const [editProductQrCodeDialogOpen, setEditProductQrCodeDialogOpen] = useState(false);
+  const [selectedProductQrCode, setSelectedProductQrCode] = useState<any | null>(null);
+  const [productQrCodeFormData, setProductQrCodeFormData] = useState({
+    name: '',
+    qrCodeUrl: '',
+    productImageUrl: '',
+    productName: '',
+    productDescription: '',
+    productMrp: ''
+  });
   const [technicianFormData, setTechnicianFormData] = useState({
     fullName: '',
     phone: '',
@@ -66,6 +81,7 @@ const Settings = () => {
   useEffect(() => {
     loadTechnicians();
     loadCommonQrCodes();
+    loadProductQrCodes();
   }, []);
 
   // Transform technician data from database format to frontend format
@@ -481,6 +497,190 @@ const Settings = () => {
     }
   };
 
+  // Product QR Code management functions
+  const loadProductQrCodes = async () => {
+    try {
+      console.log('Loading product QR codes...');
+      const { data, error } = await db.productQrCodes.getAll();
+      if (error) {
+        console.error('Error fetching product QR codes:', error);
+        throw error;
+      }
+      
+      console.log('Product QR codes fetched:', data);
+      
+      if (data) {
+        const transformed = data.map((qr: any) => ({
+          id: qr.id,
+          name: qr.name,
+          qrCodeUrl: qr.qr_code_url,
+          productImageUrl: qr.product_image_url || '',
+          productName: qr.product_name || '',
+          productDescription: qr.product_description || '',
+          productMrp: qr.product_mrp || '',
+          createdAt: qr.created_at,
+          updatedAt: qr.updated_at
+        }));
+        console.log('Transformed product QR codes:', transformed);
+        setProductQrCodes(transformed);
+      } else {
+        console.log('No product QR codes found in database');
+        setProductQrCodes([]);
+      }
+    } catch (error) {
+      console.error('Error loading product QR codes:', error);
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      toast.error(`Failed to load product QR codes: ${errorMessage}`);
+    }
+  };
+
+  const handleAddProductQrCode = () => {
+    setProductQrCodeFormData({ name: '', qrCodeUrl: '', productImageUrl: '', productName: '', productDescription: '', productMrp: '' });
+    setAddProductQrCodeDialogOpen(true);
+  };
+
+  const handleEditProductQrCode = (qrCode: any) => {
+    setSelectedProductQrCode(qrCode);
+    setProductQrCodeFormData({
+      name: qrCode.name,
+      qrCodeUrl: qrCode.qrCodeUrl,
+      productImageUrl: qrCode.productImageUrl || '',
+      productName: qrCode.productName || '',
+      productDescription: qrCode.productDescription || '',
+      productMrp: qrCode.productMrp || ''
+    });
+    setEditProductQrCodeDialogOpen(true);
+  };
+
+  const handleSaveProductQrCode = async () => {
+    try {
+      // Validate form data
+      if (!productQrCodeFormData.name || !productQrCodeFormData.name.trim()) {
+        toast.error('Please provide a QR code name');
+        return;
+      }
+
+      let qrCodeUrlToSave = productQrCodeFormData.qrCodeUrl;
+
+      // If no QR code uploaded, generate one automatically from the verification link
+      if (!qrCodeUrlToSave || !qrCodeUrlToSave.trim()) {
+        // We need to create the entry first to get the ID, then generate QR code
+        // For now, we'll generate a temporary link and update it after creation
+        toast.info('Generating QR code automatically...');
+      }
+
+      console.log('Saving product QR code:', { 
+        name: productQrCodeFormData.name, 
+        qrCodeUrl: qrCodeUrlToSave,
+        productName: productQrCodeFormData.productName,
+        productDescription: productQrCodeFormData.productDescription
+      });
+
+      let createdQrCodeId: string | null = null;
+
+      if (editProductQrCodeDialogOpen && selectedProductQrCode) {
+        // Update existing - generate QR code if not provided
+        if (!qrCodeUrlToSave || !qrCodeUrlToSave.trim() || !qrCodeUrlToSave.startsWith('http')) {
+          const verificationLink = generateProductVerificationLink(selectedProductQrCode.id);
+          qrCodeUrlToSave = generateQrCodeImageUrl(verificationLink);
+        }
+
+        console.log('Updating product QR code with ID:', selectedProductQrCode.id);
+        const { data, error } = await db.productQrCodes.update(selectedProductQrCode.id, {
+          name: productQrCodeFormData.name.trim(),
+          qr_code_url: qrCodeUrlToSave.trim(),
+          product_image_url: productQrCodeFormData.productImageUrl.trim() || null,
+          product_name: productQrCodeFormData.productName.trim() || null,
+          product_description: productQrCodeFormData.productDescription.trim() || null,
+          product_mrp: productQrCodeFormData.productMrp.trim() || null
+        });
+        if (error) {
+          console.error('Error updating product QR code:', error);
+          toast.error(`Failed to update product QR code: ${error.message || JSON.stringify(error)}`);
+          return;
+        }
+        console.log('Product QR code updated successfully:', data);
+        toast.success('Product QR code updated successfully');
+      } else {
+        // Create new - first create entry, then generate QR code
+        console.log('Creating new product QR code...');
+        const { data, error } = await db.productQrCodes.create({
+          name: productQrCodeFormData.name.trim(),
+          qr_code_url: qrCodeUrlToSave.trim() || '', // Temporary, will update
+          product_image_url: productQrCodeFormData.productImageUrl.trim() || undefined,
+          product_name: productQrCodeFormData.productName.trim() || undefined,
+          product_description: productQrCodeFormData.productDescription.trim() || undefined,
+          product_mrp: productQrCodeFormData.productMrp.trim() || undefined
+        });
+        if (error) {
+          console.error('Error creating product QR code:', error);
+          toast.error(`Failed to create product QR code: ${error.message || JSON.stringify(error)}`);
+          return;
+        }
+
+        if (data && data.id) {
+          createdQrCodeId = data.id;
+          // Generate QR code from verification link
+          const verificationLink = generateProductVerificationLink(data.id);
+          const generatedQrCodeUrl = generateQrCodeImageUrl(verificationLink);
+          
+          // Update with generated QR code
+          const { error: updateError } = await db.productQrCodes.update(data.id, {
+            qr_code_url: generatedQrCodeUrl
+          });
+          
+          if (updateError) {
+            console.error('Error updating QR code URL:', updateError);
+            // Don't fail - QR code was created, just URL generation failed
+          }
+        }
+
+        console.log('Product QR code created successfully:', data);
+        toast.success('Product QR code created successfully');
+      }
+
+      // Reload product QR codes after successful save
+      console.log('Reloading product QR codes...');
+      await loadProductQrCodes();
+      
+      // Close dialogs and reset form
+      setAddProductQrCodeDialogOpen(false);
+      setEditProductQrCodeDialogOpen(false);
+      setSelectedProductQrCode(null);
+      setProductQrCodeFormData({ name: '', qrCodeUrl: '', productImageUrl: '', productName: '', productDescription: '', productMrp: '' });
+    } catch (error) {
+      console.error('Error saving product QR code:', error);
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      console.error('Full error:', error);
+      toast.error(`Failed to save product QR code: ${errorMessage}`);
+    }
+  };
+
+  const handleDeleteProductQrCode = async (qrCodeId: string) => {
+    try {
+      const { error } = await db.productQrCodes.delete(qrCodeId);
+      if (error) throw error;
+      
+      await loadProductQrCodes();
+      toast.success('Product QR code deleted successfully');
+    } catch (error) {
+      console.error('Error deleting product QR code:', error);
+      toast.error('Failed to delete product QR code');
+    }
+  };
+
+  // Generate product verification link for QR code
+  const generateProductVerificationLink = (qrCodeId: string): string => {
+    return `${window.location.origin}/product-verify/${qrCodeId}`;
+  };
+
+  // Generate QR code image URL from verification link
+  const generateQrCodeImageUrl = (link: string): string => {
+    // Using QR Server API (free, no API key needed)
+    const encodedLink = encodeURIComponent(link);
+    return `https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${encodedLink}`;
+  };
+
 
 
   // Note: Currently allows unauthenticated access, but RLS policies need to be updated
@@ -642,6 +842,127 @@ const Settings = () => {
                 {commonQrCodes.length === 0 && (
                   <div className="col-span-full text-center py-8 text-gray-500">
                     No QR codes added yet. Click "Add QR Code" to create one.
+                  </div>
+                )}
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Product QR Codes Management */}
+          <Card>
+            <CardHeader>
+              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+                <div>
+                  <CardTitle className="flex items-center gap-2 text-lg sm:text-xl">
+                    <Package className="w-5 h-5" />
+                    Product Verification QR Codes
+                  </CardTitle>
+                  <CardDescription className="text-sm mt-1">
+                    Manage QR codes for product verification. When scanned, these QR codes will show "Genuine Product"
+                  </CardDescription>
+                </div>
+                <Button 
+                  onClick={handleAddProductQrCode} 
+                  className="bg-green-600 hover:bg-green-700 w-full sm:w-auto"
+                  size="sm"
+                >
+                  <Plus className="w-4 h-4 mr-2" />
+                  Add Product QR Code
+                </Button>
+              </div>
+            </CardHeader>
+            <CardContent className="p-4 sm:p-6">
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                {productQrCodes.map((qrCode) => (
+                  <Card key={qrCode.id} className="hover:shadow-md transition-shadow">
+                    <CardContent className="p-4">
+                      <div className="flex items-start justify-between mb-3 gap-2">
+                        <div className="flex-1 min-w-0">
+                          <h3 className="font-semibold text-gray-900 text-sm sm:text-base truncate">{qrCode.name}</h3>
+                          {qrCode.productName && (
+                            <p className="text-xs text-gray-600 mt-1 truncate">Product: {qrCode.productName}</p>
+                          )}
+                        </div>
+                      </div>
+                      
+                      {qrCode.qrCodeUrl && (
+                        <div className="mb-4 flex justify-center">
+                          <img 
+                            src={qrCode.qrCodeUrl} 
+                            alt={qrCode.name} 
+                            className="w-32 h-32 object-contain border border-gray-200 rounded"
+                          />
+                        </div>
+                      )}
+
+                      {/* Verification Link */}
+                      <div className="mb-3 p-2 bg-green-50 dark:bg-green-900/20 rounded border border-green-200 dark:border-green-800">
+                        <div className="flex items-center justify-between gap-2">
+                          <div className="flex-1 min-w-0">
+                            <p className="text-xs font-medium text-green-900 dark:text-green-200 mb-1">Verification Link:</p>
+                            <p className="text-xs text-green-700 dark:text-green-300 truncate font-mono">
+                              {generateProductVerificationLink(qrCode.id)}
+                            </p>
+                          </div>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => {
+                              navigator.clipboard.writeText(generateProductVerificationLink(qrCode.id));
+                              toast.success('Verification link copied!');
+                            }}
+                            className="shrink-0 h-8 w-8 p-0"
+                          >
+                            <Copy className="w-3 h-3" />
+                          </Button>
+                        </div>
+                      </div>
+
+                      <div className="flex items-center gap-2">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => handleEditProductQrCode(qrCode)}
+                          className="flex-1 text-xs sm:text-sm"
+                        >
+                          <Edit className="w-3 h-3 sm:w-4 sm:h-4 mr-1" />
+                          Edit
+                        </Button>
+                        <AlertDialog>
+                          <AlertDialogTrigger asChild>
+                            <Button 
+                              variant="outline" 
+                              size="sm" 
+                              className="text-red-600 hover:text-red-700 px-2 sm:px-3"
+                            >
+                              <Trash2 className="w-3 h-3 sm:w-4 sm:h-4" />
+                            </Button>
+                          </AlertDialogTrigger>
+                          <AlertDialogContent className="mx-4 sm:mx-0">
+                            <AlertDialogHeader>
+                              <AlertDialogTitle>Delete Product QR Code</AlertDialogTitle>
+                              <AlertDialogDescription>
+                                Are you sure you want to delete "{qrCode.name}"? This action cannot be undone.
+                              </AlertDialogDescription>
+                            </AlertDialogHeader>
+                            <AlertDialogFooter className="flex-col sm:flex-row gap-2">
+                              <AlertDialogCancel className="w-full sm:w-auto">Cancel</AlertDialogCancel>
+                              <AlertDialogAction
+                                onClick={() => handleDeleteProductQrCode(qrCode.id)}
+                                className="bg-red-600 hover:bg-red-700 w-full sm:w-auto"
+                              >
+                                Delete
+                              </AlertDialogAction>
+                            </AlertDialogFooter>
+                          </AlertDialogContent>
+                        </AlertDialog>
+                      </div>
+                    </CardContent>
+                  </Card>
+                ))}
+                {productQrCodes.length === 0 && (
+                  <div className="col-span-full text-center py-8 text-gray-500">
+                    No product QR codes added yet. Click "Add Product QR Code" to create one.
                   </div>
                 )}
               </div>
@@ -1247,6 +1568,156 @@ const Settings = () => {
               className="bg-blue-600 hover:bg-blue-700 w-full sm:w-auto"
             >
               {editQrCodeDialogOpen ? 'Update QR Code' : 'Create QR Code'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Add/Edit Product QR Code Dialog */}
+      <Dialog open={addProductQrCodeDialogOpen || editProductQrCodeDialogOpen}           onOpenChange={(open) => {
+        if (!open) {
+          setAddProductQrCodeDialogOpen(false);
+          setEditProductQrCodeDialogOpen(false);
+          setSelectedProductQrCode(null);
+          setProductQrCodeFormData({ name: '', qrCodeUrl: '', productImageUrl: '', productName: '', productDescription: '', productMrp: '' });
+        }
+      }}>
+        <DialogContent className="sm:max-w-md mx-4 max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>
+              {editProductQrCodeDialogOpen ? 'Edit Product QR Code' : 'Add New Product QR Code'}
+            </DialogTitle>
+            <DialogDescription>
+              {editProductQrCodeDialogOpen 
+                ? 'Update product QR code information'
+                : 'Create a new QR code for product verification. When scanned, it will show "Genuine Product"'
+              }
+            </DialogDescription>
+          </DialogHeader>
+          
+          <div className="space-y-6">
+            <div className="space-y-4">
+              <div>
+                <Label htmlFor="productQrCodeName">Product Identifier/Name *</Label>
+                <Input
+                  id="productQrCodeName"
+                  value={productQrCodeFormData.name}
+                  onChange={(e) => {
+                    setProductQrCodeFormData(prev => ({ ...prev, name: e.target.value }));
+                  }}
+                  placeholder="e.g., Product Model XYZ, Batch 2024"
+                />
+                <p className="text-xs text-gray-500 mt-1">This will be displayed on the verification page</p>
+              </div>
+
+              <div>
+                <Label htmlFor="productName">Product Name (Optional)</Label>
+                <Input
+                  id="productName"
+                  value={productQrCodeFormData.productName}
+                  onChange={(e) => {
+                    setProductQrCodeFormData(prev => ({ ...prev, productName: e.target.value }));
+                  }}
+                  placeholder="e.g., RO Filter Cartridge"
+                />
+                <p className="text-xs text-gray-500 mt-1">Leave empty if you don't want to show product name</p>
+              </div>
+
+              <div>
+                <Label htmlFor="productDescription">Product Description (Optional)</Label>
+                <textarea
+                  id="productDescription"
+                  value={productQrCodeFormData.productDescription}
+                  onChange={(e) => {
+                    setProductQrCodeFormData(prev => ({ ...prev, productDescription: e.target.value }));
+                  }}
+                  placeholder="Additional product information..."
+                  className="flex min-h-[80px] w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+                />
+                <p className="text-xs text-muted-foreground mt-1">Leave empty if you don't want to show description</p>
+              </div>
+
+              <div>
+                <Label htmlFor="productMrp">MRP - Maximum Retail Price (Optional)</Label>
+                <Input
+                  id="productMrp"
+                  value={productQrCodeFormData.productMrp}
+                  onChange={(e) => {
+                    setProductQrCodeFormData(prev => ({ ...prev, productMrp: e.target.value }));
+                  }}
+                  placeholder="e.g., ₹1,299 or ₹1,299.00"
+                />
+                <p className="text-xs text-muted-foreground mt-1">Leave empty if you don't want to show MRP</p>
+              </div>
+              
+              <div>
+                <Label>Product Photo (Optional)</Label>
+                <p className="text-sm text-muted-foreground mb-2">
+                  Upload a product photo. If not uploaded, product photo won't be displayed on the verification page.
+                </p>
+                <ImageUpload
+                  onImagesChange={(images) => {
+                    const url = images[0] || '';
+                    setProductQrCodeFormData(prev => ({ ...prev, productImageUrl: url }));
+                  }}
+                  maxImages={1}
+                  folder="product-images"
+                  title=""
+                  description=""
+                  maxWidth={800}
+                  quality={0.8}
+                  aggressiveCompression={false}
+                  useSecondaryAccount={false}
+                />
+                {productQrCodeFormData.productImageUrl && (
+                  <div className="mt-2">
+                    <img 
+                      src={productQrCodeFormData.productImageUrl} 
+                      alt="Product" 
+                      className="w-32 h-32 object-cover border border-border rounded"
+                    />
+                    <p className="text-xs text-muted-foreground mt-1">Product photo uploaded</p>
+                  </div>
+                )}
+                {!productQrCodeFormData.productImageUrl && (
+                  <div className="mt-2 p-3 bg-muted/50 rounded border border-border">
+                    <p className="text-xs text-muted-foreground">
+                      No product photo uploaded. Product photo won't be displayed on verification page.
+                    </p>
+                  </div>
+                )}
+              </div>
+
+              <div className="p-3 bg-primary/10 rounded border border-primary/20">
+                <p className="text-xs text-primary font-medium mb-1">
+                  ℹ️ QR Code Information
+                </p>
+                <p className="text-xs text-muted-foreground">
+                  QR code will be generated automatically from the verification link when you save. No need to upload QR code image.
+                </p>
+              </div>
+            </div>
+          </div>
+
+          <DialogFooter className="flex flex-col sm:flex-row gap-2 sm:gap-3">
+            <Button
+              variant="outline"
+              onClick={() => {
+                setAddProductQrCodeDialogOpen(false);
+                setEditProductQrCodeDialogOpen(false);
+                setSelectedProductQrCode(null);
+                setProductQrCodeFormData({ name: '', qrCodeUrl: '', productImageUrl: '', productName: '', productDescription: '', productMrp: '' });
+              }}
+              className="w-full sm:w-auto"
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={handleSaveProductQrCode}
+              disabled={!productQrCodeFormData.name}
+              className="bg-green-600 hover:bg-green-700 w-full sm:w-auto"
+            >
+              {editProductQrCodeDialogOpen ? 'Update Product QR Code' : 'Create Product QR Code'}
             </Button>
           </DialogFooter>
         </DialogContent>
