@@ -235,7 +235,7 @@ const AMCViewPage: React.FC<AMCViewPageProps> = ({ onBack }) => {
       const endDate = editFormData.endDate || calculateEndDate(editFormData.dateGiven, editFormData.years);
 
       // Get the job
-      const { data: job, error: jobError } = await db.jobs.get(selectedAMC.jobId);
+      const { data: job, error: jobError } = await db.jobs.getById(selectedAMC.jobId);
       if (jobError || !job) {
         throw new Error('Job not found');
       }
@@ -294,7 +294,7 @@ const AMCViewPage: React.FC<AMCViewPageProps> = ({ onBack }) => {
 
     try {
       // Get the job
-      const { data: job, error: jobError } = await db.jobs.get(amcToDelete.jobId);
+      const { data: job, error: jobError } = await db.jobs.getById(amcToDelete.jobId);
       if (jobError || !job) {
         throw new Error('Job not found');
       }
