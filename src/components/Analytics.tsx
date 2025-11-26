@@ -12,7 +12,8 @@ import {
   DollarSign,
   TrendingUp,
   Award,
-  AlertCircle
+  AlertCircle,
+  Calendar
 } from 'lucide-react';
 
 interface AnalyticsData {
@@ -34,6 +35,11 @@ interface AnalyticsData {
   }>;
   completionRate: number;
   denialRate: number;
+  leadSourceBreakdown?: Array<{ leadType: string; count: number; amount: number }>;
+  serviceTypeBreakdown?: Array<{ serviceType: string; count: number; amount: number }>;
+  paymentMethodBreakdown?: Array<{ method: string; count: number; amount: number }>;
+  averageCompletionTime?: number; // in hours
+  dailyStats?: Array<{ date: string; jobs: number; revenue: number }>;
 }
 
 const Analytics = () => {
@@ -47,7 +53,7 @@ const Analytics = () => {
   const loadAnalytics = async () => {
     try {
       setLoading(true);
-      const { data, error } = await db.stats.getAnalytics();
+      const { data: baseData, error } = await db.stats.getAnalytics();
       
       if (error) {
         console.error('Error loading analytics:', error);
@@ -55,7 +61,135 @@ const Analytics = () => {
         return;
       }
       
-      setAnalytics(data);
+      // Fetch additional detailed data
+      const { data: jobsData, error: jobsError } = await db.jobs.getAll();
+      if (jobsError || !jobsData) {
+        console.error('Error loading jobs for detailed analytics:', jobsError);
+        setAnalytics(baseData);
+        return;
+      }
+      
+      const jobs = Array.isArray(jobsData) ? jobsData : [];
+      const completedJobs = jobs.filter((j: any) => j && j.status === 'COMPLETED');
+      
+      // Lead Source Breakdown
+      const leadSourceMap: Record<string, { count: number; amount: number }> = {};
+      completedJobs.forEach((job: any) => {
+        if (!job) return;
+        try {
+          const requirements = typeof job.requirements === 'string' 
+            ? JSON.parse(job.requirements) 
+            : (job.requirements || []);
+          
+          let leadSource = 'Unknown';
+          if (Array.isArray(requirements)) {
+            const leadSourceObj = requirements.find((r: any) => r && r.lead_source);
+            leadSource = (leadSourceObj && leadSourceObj.lead_source) ? leadSourceObj.lead_source : 'Unknown';
+          } else if (requirements && typeof requirements === 'object') {
+            leadSource = requirements.lead_source || 'Unknown';
+          }
+          
+          const amount = Number(job.payment_amount || job.actual_cost || 0);
+          if (!leadSourceMap[leadSource]) {
+            leadSourceMap[leadSource] = { count: 0, amount: 0 };
+          }
+          leadSourceMap[leadSource].count += 1;
+          leadSourceMap[leadSource].amount += amount;
+        } catch (e) {
+          // Skip invalid requirements
+        }
+      });
+      
+      // Service Type Breakdown
+      const serviceTypeMap: Record<string, { count: number; amount: number }> = {};
+      completedJobs.forEach((job: any) => {
+        if (!job) return;
+        const serviceType = job.service_type || 'Unknown';
+        const amount = Number(job.payment_amount || job.actual_cost || 0);
+        if (!serviceTypeMap[serviceType]) {
+          serviceTypeMap[serviceType] = { count: 0, amount: 0 };
+        }
+        serviceTypeMap[serviceType].count += 1;
+        serviceTypeMap[serviceType].amount += amount;
+      });
+      
+      // Payment Method Breakdown
+      const paymentMethodMap: Record<string, { count: number; amount: number }> = {};
+      completedJobs.forEach((job: any) => {
+        if (!job) return;
+        const method = job.payment_method || 'Unknown';
+        const amount = Number(job.payment_amount || job.actual_cost || 0);
+        if (!paymentMethodMap[method]) {
+          paymentMethodMap[method] = { count: 0, amount: 0 };
+        }
+        paymentMethodMap[method].count += 1;
+        paymentMethodMap[method].amount += amount;
+      });
+      
+      // Average Completion Time
+      const jobsWithTime = completedJobs.filter((job: any) => 
+        job && job.start_time && job.end_time
+      );
+      let averageCompletionTime: number | undefined = undefined;
+      if (jobsWithTime.length > 0) {
+        const totalHours = jobsWithTime.reduce((sum: number, job: any) => {
+          if (!job || !job.start_time || !job.end_time) return sum;
+          try {
+            const start = new Date(job.start_time).getTime();
+            const end = new Date(job.end_time).getTime();
+            if (isNaN(start) || isNaN(end)) return sum;
+            return sum + ((end - start) / (1000 * 60 * 60)); // Convert to hours
+          } catch (e) {
+            return sum;
+          }
+        }, 0);
+        averageCompletionTime = totalHours / jobsWithTime.length;
+      }
+      
+      // Daily Stats (last 30 days)
+      const dailyStatsMap: Record<string, { jobs: number; revenue: number }> = {};
+      const thirtyDaysAgo = new Date();
+      thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+      
+      completedJobs.forEach((job: any) => {
+        if (!job) return;
+        const completedDate = job.completed_at || job.end_time;
+        if (completedDate) {
+          try {
+            const date = new Date(completedDate).toISOString().split('T')[0];
+            const jobDate = new Date(completedDate);
+            if (!isNaN(jobDate.getTime()) && jobDate >= thirtyDaysAgo) {
+              if (!dailyStatsMap[date]) {
+                dailyStatsMap[date] = { jobs: 0, revenue: 0 };
+              }
+              dailyStatsMap[date].jobs += 1;
+              dailyStatsMap[date].revenue += Number(job.payment_amount || job.actual_cost || 0);
+            }
+          } catch (e) {
+            // Skip invalid dates
+          }
+        }
+      });
+      
+      const dailyStats = Object.entries(dailyStatsMap)
+        .map(([date, stats]) => ({ date, ...stats }))
+        .sort((a, b) => a.date.localeCompare(b.date));
+      
+      // Enhance analytics data
+      setAnalytics({
+        ...baseData,
+        leadSourceBreakdown: Object.entries(leadSourceMap)
+          .map(([leadType, stats]) => ({ leadType, ...stats }))
+          .sort((a, b) => b.amount - a.amount),
+        serviceTypeBreakdown: Object.entries(serviceTypeMap)
+          .map(([serviceType, stats]) => ({ serviceType, ...stats }))
+          .sort((a, b) => b.amount - a.amount),
+        paymentMethodBreakdown: Object.entries(paymentMethodMap)
+          .map(([method, stats]) => ({ method, ...stats }))
+          .sort((a, b) => b.amount - a.amount),
+        averageCompletionTime,
+        dailyStats
+      });
     } catch (error: any) {
       console.error('Error loading analytics:', error);
       toast.error('Failed to load analytics: ' + error.message);
@@ -151,44 +285,6 @@ const Analytics = () => {
         </Card>
       </div>
 
-      {/* Job Status Breakdown */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        <Card>
-          <CardHeader className="pb-3">
-            <CardTitle className="text-sm font-medium text-gray-600 flex items-center gap-2">
-              <Clock className="w-4 h-4 text-blue-600" />
-              Pending Jobs
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold text-blue-600">{analytics.pendingJobs}</div>
-          </CardContent>
-        </Card>
-        
-        <Card>
-          <CardHeader className="pb-3">
-            <CardTitle className="text-sm font-medium text-gray-600 flex items-center gap-2">
-              <Users className="w-4 h-4 text-purple-600" />
-              Assigned Jobs
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold text-purple-600">{analytics.assignedJobs}</div>
-          </CardContent>
-        </Card>
-        
-        <Card>
-          <CardHeader className="pb-3">
-            <CardTitle className="text-sm font-medium text-gray-600 flex items-center gap-2">
-              <TrendingUp className="w-4 h-4 text-orange-600" />
-              In Progress
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold text-orange-600">{analytics.inProgressJobs}</div>
-          </CardContent>
-        </Card>
-      </div>
 
       {/* Technician Performance */}
       <Card>
@@ -329,31 +425,182 @@ const Analytics = () => {
               <span className="font-semibold">{analytics.deniedJobs}</span>
             </div>
             
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <div className="w-3 h-3 bg-blue-600 rounded-full"></div>
-                <span className="text-sm">Pending</span>
-              </div>
-              <span className="font-semibold">{analytics.pendingJobs}</span>
-            </div>
-            
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <div className="w-3 h-3 bg-purple-600 rounded-full"></div>
-                <span className="text-sm">Assigned</span>
-              </div>
-              <span className="font-semibold">{analytics.assignedJobs}</span>
-            </div>
-            
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <div className="w-3 h-3 bg-orange-600 rounded-full"></div>
-                <span className="text-sm">In Progress</span>
-              </div>
-              <span className="font-semibold">{analytics.inProgressJobs}</span>
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* Detailed Breakdowns */}
+      {analytics.leadSourceBreakdown && analytics.leadSourceBreakdown.length > 0 && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <TrendingUp className="w-5 h-5" />
+              Lead Source Breakdown
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="overflow-x-auto">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Lead Source</TableHead>
+                    <TableHead className="text-right">Jobs</TableHead>
+                    <TableHead className="text-right">Total Revenue</TableHead>
+                    <TableHead className="text-right">Average Revenue</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {analytics.leadSourceBreakdown.map((item, index) => (
+                    <TableRow key={index}>
+                      <TableCell className="font-medium">{item.leadType}</TableCell>
+                      <TableCell className="text-right">{item.count}</TableCell>
+                      <TableCell className="text-right font-semibold text-green-600">
+                        INR {item.amount.toFixed(2)}
+                      </TableCell>
+                      <TableCell className="text-right text-gray-600">
+                        INR {item.count > 0 ? (item.amount / item.count).toFixed(2) : '0.00'}
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
             </div>
           </CardContent>
         </Card>
+      )}
+
+      {/* Service Type Breakdown */}
+      {analytics.serviceTypeBreakdown && analytics.serviceTypeBreakdown.length > 0 && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <BarChart3 className="w-5 h-5" />
+              Service Type Breakdown
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="overflow-x-auto">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Service Type</TableHead>
+                    <TableHead className="text-right">Jobs</TableHead>
+                    <TableHead className="text-right">Total Revenue</TableHead>
+                    <TableHead className="text-right">Average Revenue</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {analytics.serviceTypeBreakdown.map((item, index) => (
+                    <TableRow key={index}>
+                      <TableCell className="font-medium">{item.serviceType}</TableCell>
+                      <TableCell className="text-right">{item.count}</TableCell>
+                      <TableCell className="text-right font-semibold text-green-600">
+                        INR {item.amount.toFixed(2)}
+                      </TableCell>
+                      <TableCell className="text-right text-gray-600">
+                        INR {item.count > 0 ? (item.amount / item.count).toFixed(2) : '0.00'}
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Payment Method Breakdown */}
+      {analytics.paymentMethodBreakdown && analytics.paymentMethodBreakdown.length > 0 && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <DollarSign className="w-5 h-5" />
+              Payment Method Breakdown
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="overflow-x-auto">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Payment Method</TableHead>
+                    <TableHead className="text-right">Transactions</TableHead>
+                    <TableHead className="text-right">Total Amount</TableHead>
+                    <TableHead className="text-right">Average Amount</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {analytics.paymentMethodBreakdown.map((item, index) => (
+                    <TableRow key={index}>
+                      <TableCell className="font-medium">{item.method}</TableCell>
+                      <TableCell className="text-right">{item.count}</TableCell>
+                      <TableCell className="text-right font-semibold text-green-600">
+                        INR {item.amount.toFixed(2)}
+                      </TableCell>
+                      <TableCell className="text-right text-gray-600">
+                        INR {item.count > 0 ? (item.amount / item.count).toFixed(2) : '0.00'}
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Additional Metrics */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        {analytics.averageCompletionTime !== undefined && (
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-sm font-medium text-gray-600 flex items-center gap-2">
+                <Clock className="w-4 h-4" />
+                Average Job Completion Time
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold text-gray-900">
+                {analytics.averageCompletionTime.toFixed(1)} hours
+              </div>
+              <div className="text-xs text-gray-500 mt-1">
+                Based on completed jobs with time tracking
+              </div>
+            </CardContent>
+          </Card>
+        )}
+
+        {/* Daily Stats Summary */}
+        {analytics.dailyStats && analytics.dailyStats.length > 0 && (
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-sm font-medium text-gray-600 flex items-center gap-2">
+                <Calendar className="w-4 h-4" />
+                Last 7 Days Summary
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="space-y-2">
+                {analytics.dailyStats.slice(-7).map((day, index) => (
+                  <div key={index} className="flex items-center justify-between text-sm">
+                    <span className="text-gray-600">
+                      {new Date(day.date).toLocaleDateString('en-IN', { 
+                        month: 'short', 
+                        day: 'numeric' 
+                      })}
+                    </span>
+                    <div className="flex items-center gap-4">
+                      <span className="text-gray-500">{day.jobs} jobs</span>
+                      <span className="font-medium text-green-600">
+                        ₹{day.revenue.toFixed(0)}
+                      </span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </CardContent>
+          </Card>
+        )}
       </div>
     </div>
   );

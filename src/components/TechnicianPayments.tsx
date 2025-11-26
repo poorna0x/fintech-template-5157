@@ -194,25 +194,25 @@ const TechnicianPayments = () => {
     let endDate: Date;
     
     if (selectedPeriod === 'pastMonth') {
-      // Past month: 10th of selected month to 10th of next month (salary day)
+      // Past month: 1st to last day of selected month (paid on 10th of next month)
       const [year, month] = selectedPastMonth.split('-').map(Number);
       const selectedMonthIndex = month - 1; // JavaScript months are 0-indexed
       
-      // Start: 10th of selected month
-      startDate = new Date(year, selectedMonthIndex, 10, 0, 0, 0, 0);
+      // Start: 1st of selected month
+      startDate = new Date(year, selectedMonthIndex, 1, 0, 0, 0, 0);
       
-      // End: 10th of next month (salary day when payment was made)
-      endDate = new Date(year, selectedMonthIndex + 1, 10, 23, 59, 59, 999);
+      // End: Last day of selected month (30th or 31st)
+      endDate = new Date(year, selectedMonthIndex + 1, 0, 23, 59, 59, 999); // Day 0 = last day of previous month
     } else {
-      // Current period: 10th of this month to 10th of next month
+      // Current period: 1st to last day of current month (will be paid on 10th of next month)
       const currentMonth = today.getMonth();
       const currentYear = today.getFullYear();
       
-      // Start: 10th of current month
-      startDate = new Date(currentYear, currentMonth, 10, 0, 0, 0, 0);
+      // Start: 1st of current month
+      startDate = new Date(currentYear, currentMonth, 1, 0, 0, 0, 0);
       
-      // End: 10th of next month
-      endDate = new Date(currentYear, currentMonth + 1, 10, 23, 59, 59, 999);
+      // End: Last day of current month (30th or 31st)
+      endDate = new Date(currentYear, currentMonth + 1, 0, 23, 59, 59, 999); // Day 0 = last day of previous month
     }
     
     return { startDate, endDate };
@@ -305,7 +305,7 @@ const TechnicianPayments = () => {
       if (completedJobsError) throw completedJobsError;
 
       // Calculate number of months in the selected period
-      // Both current cycle and past month are always 1 month (10th to 10th)
+      // Both current cycle and past month are always 1 month (1st to last day of month)
       const monthsInPeriod = selectedPeriod === 'current' || selectedPeriod === 'pastMonth' ? 1 : 1;
 
       // Log all technicians' basic salaries from their profiles
@@ -332,7 +332,7 @@ const TechnicianPayments = () => {
           ? (tech.salary as any).baseSalary 
           : 8000; // Default 8000 if not found
         
-        // Period is always 1 month (10th to 10th), so periodBaseSalary = monthlyBaseSalary
+        // Period is always 1 month (1st to last day of month), so periodBaseSalary = monthlyBaseSalary
         const periodBaseSalary = monthlyBaseSalary; // Always 1 month period
         console.log(`💰 ${tech.full_name}: Monthly=${monthlyBaseSalary}, Period=${periodBaseSalary} (1 month)`);
         const dailyBaseSalary = monthlyBaseSalary / 30; // 266.67 per day
@@ -1253,7 +1253,7 @@ const TechnicianPayments = () => {
           
           {commissionPeriod && (
             <div className="text-sm text-gray-500 flex items-center">
-              Period: {commissionPeriod.start.toLocaleDateString()} to {commissionPeriod.end.toLocaleDateString()} (Salary Day: 10th)
+              Period: {commissionPeriod.start.toLocaleDateString()} to {commissionPeriod.end.toLocaleDateString()} (Paid on 10th of next month)
             </div>
           )}
         </div>
@@ -1760,11 +1760,17 @@ const TechnicianPayments = () => {
                         ₹{breakdown.totalSalary.toFixed(2)}
                       </p>
                       <p className="text-xs text-gray-500 mt-1">
-                        {new Date(commissionPeriod?.end || new Date()).toLocaleDateString('en-IN', {
-                          day: 'numeric',
-                          month: 'long',
-                          year: 'numeric'
-                        })}
+                        Paid on {(() => {
+                          const endDate = commissionPeriod?.end || new Date();
+                          const paymentDate = new Date(endDate);
+                          paymentDate.setMonth(paymentDate.getMonth() + 1);
+                          paymentDate.setDate(10);
+                          return paymentDate.toLocaleDateString('en-IN', {
+                            day: 'numeric',
+                            month: 'long',
+                            year: 'numeric'
+                          });
+                        })()}
                       </p>
                     </div>
                   </div>

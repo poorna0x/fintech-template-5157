@@ -33,6 +33,12 @@ interface TechnicianBilling {
   jobCount: number;
 }
 
+interface LeadTypeBilling {
+  leadType: string;
+  totalAmount: number;
+  jobCount: number;
+}
+
 type DateFilter = 'today' | 'last30days' | 'year' | 'all';
 
 const BillingStats = () => {
@@ -43,6 +49,7 @@ const BillingStats = () => {
   });
   const [qrCodeBilling, setQrCodeBilling] = useState<QRCodeBilling[]>([]);
   const [technicianBilling, setTechnicianBilling] = useState<TechnicianBilling[]>([]);
+  const [leadTypeBilling, setLeadTypeBilling] = useState<LeadTypeBilling[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -125,6 +132,7 @@ const BillingStats = () => {
       // Group by technician
       const techTotals: Record<string, TechnicianBilling> = {};
       const qrTotals: Record<string, QRCodeBilling> = {};
+      const leadTotals: Record<string, LeadTypeBilling> = {};
       
       jobs.forEach((job: any) => {
         const techId = job.assigned_technician_id;
@@ -167,27 +175,51 @@ const BillingStats = () => {
           const qrPhotos = requirements.find((r: any) => r?.qr_photos);
           const qrCodeName = qrPhotos?.qr_photos?.selected_qr_code_name;
           
-          // Skip if no QR code name (these are cash payments)
-          if (!qrCodeName) {
-            return;
+          // Only add to QR totals if QR code name exists
+          if (qrCodeName) {
+            if (!qrTotals[qrCodeName]) {
+              qrTotals[qrCodeName] = {
+                qrCodeName,
+                totalAmount: 0,
+                jobCount: 0,
+                jobs: []
+              };
+            }
+            
+            qrTotals[qrCodeName].totalAmount += amount;
+            qrTotals[qrCodeName].jobCount += 1;
+            qrTotals[qrCodeName].jobs.push({
+              jobNumber: job.job_number,
+              amount,
+              customer: job.customer
+            });
           }
           
-          if (!qrTotals[qrCodeName]) {
-            qrTotals[qrCodeName] = {
-              qrCodeName,
+          // Lead Type billing
+          // Lead source can be in different formats:
+          // 1. Direct property: requirements.lead_source
+          // 2. In array: requirements[0].lead_source
+          let leadSource = null;
+          
+          if (Array.isArray(requirements)) {
+            const leadSourceObj = requirements.find((r: any) => r?.lead_source);
+            leadSource = leadSourceObj?.lead_source || 'Unknown';
+          } else if (requirements && typeof requirements === 'object') {
+            leadSource = requirements.lead_source || 'Unknown';
+          } else {
+            leadSource = 'Unknown';
+          }
+          
+          if (!leadTotals[leadSource]) {
+            leadTotals[leadSource] = {
+              leadType: leadSource,
               totalAmount: 0,
-              jobCount: 0,
-              jobs: []
+              jobCount: 0
             };
           }
           
-          qrTotals[qrCodeName].totalAmount += amount;
-          qrTotals[qrCodeName].jobCount += 1;
-          qrTotals[qrCodeName].jobs.push({
-            jobNumber: job.job_number,
-            amount,
-            customer: job.customer
-          });
+          leadTotals[leadSource].totalAmount += amount;
+          leadTotals[leadSource].jobCount += 1;
         } catch (e) {
           // Skip jobs with invalid requirements
         }
@@ -195,6 +227,7 @@ const BillingStats = () => {
       
       setTechnicianBilling(Object.values(techTotals));
       setQrCodeBilling(Object.values(qrTotals));
+      setLeadTypeBilling(Object.values(leadTotals));
     } catch (error: any) {
       console.error('Error loading billing stats:', error);
       toast.error('Failed to load billing stats: ' + error.message);
@@ -416,6 +449,64 @@ const BillingStats = () => {
                           INR {item.totalAmount.toFixed(2)}
                         </TableCell>
                         <TableCell className="text-right">{item.jobCount}</TableCell>
+                      </TableRow>
+                    ))
+                )}
+              </TableBody>
+            </Table>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Lead Type Billing */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <TrendingUp className="w-5 h-5" />
+            Billing by Lead Type
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="overflow-x-auto">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Lead Type</TableHead>
+                  <TableHead className="text-right">Total Amount</TableHead>
+                  <TableHead className="text-right">Jobs</TableHead>
+                  <TableHead className="text-right">Average Amount</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {leadTypeBilling.length === 0 ? (
+                  <TableRow>
+                    <TableCell colSpan={4} className="text-center text-gray-500 py-8">
+                      No lead type billing data found for {
+                        dateFilter === 'today' 
+                          ? new Date(selectedDate).toLocaleDateString()
+                          : dateFilter === 'last30days'
+                          ? 'the last 30 days'
+                          : dateFilter === 'year'
+                          ? `year ${new Date().getFullYear()}`
+                          : 'all time'
+                      }
+                    </TableCell>
+                  </TableRow>
+                ) : (
+                  leadTypeBilling
+                    .sort((a, b) => b.totalAmount - a.totalAmount)
+                    .map((item, index) => (
+                      <TableRow key={item.leadType || index}>
+                        <TableCell className="font-medium">
+                          {item.leadType}
+                        </TableCell>
+                        <TableCell className="text-right font-semibold">
+                          INR {item.totalAmount.toFixed(2)}
+                        </TableCell>
+                        <TableCell className="text-right">{item.jobCount}</TableCell>
+                        <TableCell className="text-right text-gray-600">
+                          INR {item.jobCount > 0 ? (item.totalAmount / item.jobCount).toFixed(2) : '0.00'}
+                        </TableCell>
                       </TableRow>
                     ))
                 )}
