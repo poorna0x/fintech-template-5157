@@ -76,6 +76,7 @@ import ImageUpload from '@/components/ImageUpload';
 import TechnicianPayments from './TechnicianPayments';
 import BillingStats from './BillingStats';
 import Analytics from './Analytics';
+import CallingPage from '@/pages/CallingPage';
 
 declare global {
   interface Window {
@@ -187,7 +188,7 @@ const AdminDashboard = () => {
   const [selectedCustomerForTaxInvoice, setSelectedCustomerForTaxInvoice] = useState<Customer | null>(null);
   const [showGSTInvoicesPage, setShowGSTInvoicesPage] = useState(false);
   const [showAMCViewPage, setShowAMCViewPage] = useState(false);
-  const [currentView, setCurrentView] = useState<'dashboard' | 'payments' | 'billing' | 'analytics'>('dashboard');
+  const [currentView, setCurrentView] = useState<'dashboard' | 'payments' | 'billing' | 'analytics' | 'calling'>('dashboard');
   const [moreOptionsDialogOpen, setMoreOptionsDialogOpen] = useState<Record<string, boolean>>({});
   const [editFormData, setEditFormData] = useState({
     full_name: '',
@@ -239,7 +240,7 @@ const AdminDashboard = () => {
   const calculateDistanceAndTimeRef = useRef<((origin: { lat: number; lng: number }, destination: { lat: number; lng: number }, customerId: string) => Promise<void>) | null>(null);
   
   // Handle view change
-  const handleViewChange = (view: 'dashboard' | 'payments' | 'billing' | 'analytics') => {
+  const handleViewChange = (view: 'dashboard' | 'payments' | 'billing' | 'analytics' | 'calling') => {
     setCurrentView(view);
   };
 
@@ -6567,6 +6568,28 @@ const AdminDashboard = () => {
     );
   }
 
+  if (currentView === 'calling') {
+    return (
+      <div className="min-h-screen bg-gray-50">
+        <AdminHeader />
+        <div className="container mx-auto px-4 py-4 sm:py-8">
+          <div className="mb-4">
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => setCurrentView('dashboard')}
+              className="text-gray-600 hover:text-gray-900 -ml-2"
+            >
+              <ArrowLeft className="w-4 h-4 mr-1" />
+              Back
+            </Button>
+          </div>
+          <CallingPage hideHeader={true} onBack={() => setCurrentView('dashboard')} />
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen bg-gray-50">
       <AdminHeader />
@@ -6639,6 +6662,14 @@ const AdminDashboard = () => {
                 >
                   <BarChart3 className="w-4 h-4" />
                   <span className="hidden sm:inline">Analytics</span>
+                </Button>
+                <Button
+                  variant={currentView === 'calling' ? 'default' : 'outline'}
+                  onClick={() => handleViewChange('calling')}
+                  className="flex items-center gap-2"
+                >
+                  <PhoneCall className="w-4 h-4" />
+                  <span className="hidden sm:inline">Calling</span>
                 </Button>
               </div>
               <Button 

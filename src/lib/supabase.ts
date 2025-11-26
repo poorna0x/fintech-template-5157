@@ -1694,6 +1694,65 @@ export const db = {
         error: null
       };
     }
+  },
+
+  // Call History operations
+  callHistory: {
+    async create(callData: {
+      customer_id: string;
+      contact_type: 'CALL' | 'WHATSAPP' | 'SMS' | 'EMAIL';
+      phone_number?: string;
+      message_sent?: string;
+      status?: string;
+      notes?: string;
+    }) {
+      const { data, error } = await supabase
+        .from('call_history')
+        .insert({
+          customer_id: callData.customer_id,
+          contact_type: callData.contact_type,
+          phone_number: callData.phone_number,
+          message_sent: callData.message_sent,
+          status: callData.status || 'COMPLETED',
+          notes: callData.notes
+        })
+        .select()
+        .single();
+      
+      return { data, error };
+    },
+
+    async getByCustomerId(customerId: string) {
+      const { data, error } = await supabase
+        .from('call_history')
+        .select('*')
+        .eq('customer_id', customerId)
+        .order('contacted_at', { ascending: false });
+      
+      return { data, error };
+    },
+
+    async getRecent(days: number = 7) {
+      const cutoffDate = new Date();
+      cutoffDate.setDate(cutoffDate.getDate() - days);
+      
+      const { data, error } = await supabase
+        .from('call_history')
+        .select('*')
+        .gte('contacted_at', cutoffDate.toISOString())
+        .order('contacted_at', { ascending: false });
+      
+      return { data, error };
+    },
+
+    async getAll() {
+      const { data, error } = await supabase
+        .from('call_history')
+        .select('*')
+        .order('contacted_at', { ascending: false });
+      
+      return { data, error };
+    }
   }
 };
 
