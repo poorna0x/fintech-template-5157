@@ -176,6 +176,8 @@ export function generateTaxInvoicePDF(billData: PDFTaxInvoiceData, action: 'prin
             padding: 0;
             border: 2px solid #000;
             box-sizing: border-box;
+            page-break-inside: avoid;
+            page-break-after: avoid;
           }
           
           .header {
@@ -382,11 +384,12 @@ export function generateTaxInvoicePDF(billData: PDFTaxInvoiceData, action: 'prin
           
           .footer {
             margin: 15px 15px 0 15px;
-            padding: 10px 0;
+            padding: 10px 0 0 0;
             border-top: 1px solid #e5e7eb;
             text-align: center;
             font-size: 10px;
             color: #6b7280;
+            page-break-after: avoid;
         }
       
       @media print {
@@ -412,6 +415,14 @@ export function generateTaxInvoicePDF(billData: PDFTaxInvoiceData, action: 'prin
               background: white !important;
               box-sizing: border-box !important;
               border-radius: 0 !important;
+              page-break-inside: avoid !important;
+              page-break-after: avoid !important;
+            }
+            
+            .footer {
+              page-break-after: avoid !important;
+              margin-bottom: 0 !important;
+              padding-bottom: 0 !important;
             }
             
             @page {
@@ -832,7 +843,7 @@ function createTaxInvoiceContent(data: PDFTaxInvoiceData): string {
       </div>
       
       <!-- Footer -->
-      <div class="footer">
+      <div class="footer" style="page-break-after: avoid; margin-bottom: 0; padding-bottom: 0;">
         <p>Thank you for choosing Hydrogenro!</p>
         <p>For any queries, contact us at ${data.company.phone} or ${data.company.email}</p>
       </div>
@@ -1103,5 +1114,385 @@ function generateTaxInvoiceHTML(data: PDFTaxInvoiceData): string {
     </body>
     </html>
   `;
+}
+
+// Generate combined PDF with multiple invoices
+export function generateCombinedTaxInvoicePDF(
+  invoices: PDFTaxInvoiceData[], 
+  filename: string, 
+  action: 'print' | 'pdf' = 'pdf'
+): void {
+  try {
+    console.log(`generateCombinedTaxInvoicePDF called with ${invoices.length} invoices`);
+    if (invoices.length === 0) {
+      console.error('No invoices to generate PDF');
+      return;
+    }
+
+    // Create a new window for printing
+    const printWindow = window.open('', '_blank', 'width=800,height=600');
+    if (!printWindow) {
+      alert('Please allow popups to print the tax invoices');
+      return;
+    }
+
+    // Combine all invoice contents with page breaks
+    const combinedContent = invoices.map((invoice, index) => {
+      const content = createTaxInvoiceContent(invoice);
+      // Add page break before each invoice except the first one
+      if (index > 0) {
+        return `<div class="page-break"></div>${content}`;
+      }
+      return content;
+    }).join('');
+
+    // Write content to new window
+    printWindow.document.write(`
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <title>Tax Invoices - ${filename}</title>
+        <style>
+          @import url('https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&display=swap');
+          
+      * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+      }
+      
+        body {
+            font-family: 'Poppins', sans-serif;
+            line-height: 1.4;
+            color: #333;
+            background: white;
+            margin: 0;
+            padding: 15mm;
+            font-size: 11px;
+        }
+      
+      .bill-container {
+            width: 100%;
+            max-width: 100%;
+            margin: 0;
+            background: white;
+            padding: 0;
+            border: 2px solid #000;
+            box-sizing: border-box;
+          }
+          
+          .page-break {
+            page-break-before: always;
+            margin-top: 20px;
+          }
+          
+          .header {
+            text-align: center;
+            margin-bottom: 15px;
+            border-bottom: 2px solid #000000;
+            padding: 5px 0 8px 0;
+          }
+          
+          .logo-container {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin-bottom: 15px;
+          }
+          
+          .full-logo {
+            max-width: 200px;
+            height: auto;
+            max-height: 60px;
+          }
+          
+          .company-details {
+            font-size: 14px;
+            color: #666;
+            line-height: 1.4;
+          }
+          
+          .bill-info {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 15px;
+            gap: 15px;
+            padding: 0 5px;
+          }
+          
+          .bill-to, .bill-details {
+            flex: 1;
+          }
+          
+          .section-title {
+            font-size: 18px;
+            font-weight: bold;
+            color: #000000;
+            margin-bottom: 15px;
+            border-bottom: 2px solid #e5e7eb;
+            padding-bottom: 5px;
+          }
+          
+          .customer-info, .bill-meta {
+            font-size: 14px;
+            line-height: 1.5;
+          }
+          
+          .items-table {
+            width: calc(100% - 30px);
+            border-collapse: collapse;
+            margin: 0 15px 15px 15px;
+            font-size: 9px;
+            table-layout: fixed;
+          }
+          
+          .items-table th {
+            background-color: #f8fafc;
+            color: #374151;
+            font-weight: bold;
+            padding: 8px 4px;
+            text-align: center;
+            border: 1px solid #d1d5db;
+          }
+          
+          .items-table th:nth-child(1) { width: 20%; }
+          .items-table th:nth-child(2) { width: 7%; }
+          .items-table th:nth-child(3) { width: 7%; }
+          .items-table th:nth-child(4) { width: 10%; }
+          .items-table th:nth-child(5) { width: 10%; }
+          .items-table th:nth-child(6) { width: 8%; }
+          .items-table th:nth-child(7) { width: 10%; }
+          .items-table th:nth-child(8) { width: 6%; }
+          .items-table th:nth-child(9) { width: 10%; }
+          .items-table th:nth-child(10) { width: 12%; }
+          
+          .items-table td {
+            padding: 8px 4px;
+            border: 1px solid #d1d5db;
+            vertical-align: middle;
+            text-align: center;
+            word-wrap: break-word;
+            overflow: hidden;
+          }
+          
+          .items-table tr:nth-child(even) {
+            background-color: #f9fafb;
+          }
+          
+          .text-right {
+            text-align: right;
+          }
+          
+          .text-center {
+            text-align: center;
+          }
+          
+          .summary {
+            margin: 15px 15px 0 15px;
+            text-align: right;
+            width: calc(100% - 30px);
+            box-sizing: border-box;
+          }
+          
+          .summary-row {
+            display: flex;
+            justify-content: space-between;
+            padding: 8px 0;
+            border-bottom: 1px solid #e5e7eb;
+          }
+          
+          .summary-row.total {
+            font-size: 18px;
+            font-weight: bold;
+            color: #000000;
+            border-top: 2px solid #000000;
+            border-bottom: 2px solid #000000;
+            margin-top: 10px;
+            padding: 5px 0;
+          }
+          
+          .notes-section {
+            margin: 15px 5px 0 5px;
+            padding-top: 10px;
+            border-top: 1px solid #e5e7eb;
+          }
+          
+          .notes-title {
+            font-size: 16px;
+            font-weight: bold;
+            color: #374151;
+            margin-bottom: 10px;
+          }
+          
+          .notes-content {
+            font-size: 14px;
+            line-height: 1.5;
+            color: #6b7280;
+          }
+          
+          .terms-list {
+            margin: 0;
+            padding-left: 5px;
+          }
+          
+          .terms-list li {
+            margin-bottom: 8px;
+            list-style-type: disc;
+          }
+          
+          .signatures {
+            display: flex;
+            justify-content: center;
+            margin: 30px 15px 20px 15px;
+            padding-top: 20px;
+            border-top: 1px solid #e5e7eb;
+          }
+          
+          .signature-box {
+            text-align: center;
+            padding-top: 15px;
+          }
+          
+          .signature-label {
+            font-weight: bold;
+            color: #000000;
+            margin-bottom: 5px;
+            font-size: 14px;
+          }
+          
+          .signature-seal {
+            width: 120px;
+            height: 120px;
+            margin: 20px auto 10px auto;
+            display: block;
+          }
+          
+          .signature-date {
+            font-size: 12px;
+            color: #6b7280;
+          }
+          
+          .footer {
+            margin: 15px 15px 0 15px;
+            padding: 10px 0;
+            border-top: 1px solid #e5e7eb;
+            text-align: center;
+            font-size: 10px;
+            color: #6b7280;
+          }
+      
+      @media print {
+            * {
+              -webkit-print-color-adjust: exact !important;
+              color-adjust: exact !important;
+            }
+            
+        body {
+          margin: 0 !important;
+              padding: 15mm 15mm 0 15mm !important;
+              font-size: 12pt !important;
+              line-height: 1.4 !important;
+        }
+        
+        body::after {
+          display: none !important;
+          content: none !important;
+        }
+        
+        .bill-container {
+          width: 100% !important;
+          max-width: 100% !important;
+          margin: 0 !important;
+          padding: 20px 1px 20px 1px !important;
+              border: none !important;
+              box-shadow: none !important;
+              background: white !important;
+              box-sizing: border-box !important;
+              border-radius: 0 !important;
+              page-break-inside: avoid !important;
+              page-break-after: avoid !important;
+            }
+            
+            .bill-container:last-child {
+              page-break-after: avoid !important;
+              margin-bottom: 0 !important;
+              padding-bottom: 0 !important;
+            }
+            
+            .footer {
+              page-break-after: avoid !important;
+              margin-bottom: 0 !important;
+              padding-bottom: 0 !important;
+            }
+            
+            .page-break {
+              page-break-before: always !important;
+              margin-top: 20px !important;
+            }
+            
+            @page {
+              size: A4 !important;
+              margin: 20mm 8mm 20mm 8mm !important;
+              border: 2px solid #000000 !important;
+              border-radius: 12px !important;
+            }
+            
+            @page :first {
+              margin-top: 20mm !important;
+              border: 2px solid #000000 !important;
+              border-radius: 12px !important;
+            }
+            
+            @page :left {
+              margin-left: 8mm !important;
+              margin-right: 5mm !important;
+              margin-top: 20mm !important;
+              border: 2px solid #000000 !important;
+              border-radius: 12px !important;
+            }
+            
+            @page :right {
+              margin-left: 5mm !important;
+              margin-right: 8mm !important;
+              margin-top: 20mm !important;
+              border: 2px solid #000000 !important;
+              border-radius: 12px !important;
+            }
+            
+            .new-page-content {
+              margin-top: 0 !important;
+            }
+            
+            .bill-container:not(:first-child) {
+              padding-top: 20px !important;
+            }
+          }
+        </style>
+      </head>
+      <body>
+        ${combinedContent}
+      </body>
+      </html>
+    `);
+
+    printWindow.document.close();
+
+    // Wait for content to load, then print or save
+    printWindow.onload = () => {
+      setTimeout(() => {
+        printWindow.print();
+        
+        // Close the print window after printing
+        setTimeout(() => {
+          if (printWindow && !printWindow.closed) {
+            printWindow.close();
+          }
+        }, 1000);
+      }, 100);
+    };
+  } catch (error) {
+    console.error('Error generating combined PDF:', error);
+    alert('Failed to generate combined PDF');
+  }
 }
 

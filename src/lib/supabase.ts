@@ -961,11 +961,17 @@ export const db = {
     },
     
     async getAll(limit: number = 100, offset: number = 0) {
-      const { data, error, count } = await supabase
+      let query = supabase
         .from('tax_invoices')
         .select('*', { count: 'exact' })
-        .order('created_at', { ascending: false })
-        .range(offset, offset + limit - 1);
+        .order('created_at', { ascending: false });
+      
+      // Always apply range to avoid Supabase default limit (1000 rows)
+      // Use a high limit if limit is 0 or very large
+      const effectiveLimit = limit <= 0 ? 100000 : (limit > 100000 ? 100000 : limit);
+      query = query.range(offset, offset + effectiveLimit - 1);
+      
+      const { data, error, count } = await query;
       
       return { data, error, count };
     },
@@ -994,6 +1000,43 @@ export const db = {
       // Call the database function to get next invoice number
       const { data, error } = await supabase.rpc('get_next_invoice_number');
       return { data, error };
+    },
+    
+    async update(id: string, updates: any) {
+      const { data, error } = await supabase
+        .from('tax_invoices')
+        .update({
+          ...updates,
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', id)
+        .select()
+        .single();
+      
+      return { data, error };
+    },
+    
+    async delete(id: string) {
+      const { error } = await supabase
+        .from('tax_invoices')
+        .delete()
+        .eq('id', id);
+      
+      return { error };
+    },
+    
+    async checkInvoiceNumberExists(invoiceNumber: string, excludeId?: string) {
+      let query = supabase
+        .from('tax_invoices')
+        .select('id')
+        .eq('invoice_number', invoiceNumber);
+      
+      if (excludeId) {
+        query = query.neq('id', excludeId);
+      }
+      
+      const { data, error } = await query.single();
+      return { exists: !!data && !error, error };
     }
   },
 

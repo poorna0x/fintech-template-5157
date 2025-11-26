@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
-import { db } from '@/lib/supabase';
+import { db, supabase } from '@/lib/supabase';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
@@ -80,7 +80,7 @@ const defaultBankDetails = {
   upiId: "",
   note: "Account Type: Current Account. Please share the payment confirmation once the transfer is complete."
 };
-const PRESET_GST_INVOICE_NUMBER = 'INV-2025-11-001';
+// Removed preset - invoice numbers are now generated dynamically
 
 const defaultTaxInvoiceItems: BillItem[] = [
   {
@@ -104,35 +104,72 @@ export default function TaxInvoiceGenerator({ customer, onPrint }: TaxInvoiceGen
   const customerGst = customer?.gstNumber || '';
   const customerServiceType = customer?.serviceType || 'RO';
 
-  // Get next invoice number from database (with localStorage fallback)
-  const getNextInvoiceNumber = async (): Promise<string> => {
+  // Get preview invoice number (doesn't increment - just shows what the next number would be)
+  const getPreviewInvoiceNumber = async (): Promise<string> => {
     try {
-      // Try to get from database first
-      const { data, error } = await db.taxInvoices.getNextInvoiceNumber();
-      if (!error && data) {
-        return data;
+      const now = new Date();
+      const year = now.getFullYear();
+      const month = String(now.getMonth() + 1).padStart(2, '0');
+      const prefix = `INV-${year}-${month}`;
+      
+      // Query database directly for last saved invoice number (don't use function that might increment)
+      const { data: invoices, error } = await db.taxInvoices.getAll(10000, 0);
+      
+      if (!error && invoices && invoices.length > 0) {
+        // Filter invoices for current month/year and find the highest number
+        const monthInvoices = invoices.filter(inv => 
+          inv.invoice_number && inv.invoice_number.startsWith(prefix)
+        );
+        
+        if (monthInvoices.length > 0) {
+          // Sort by invoice number descending and get the first one
+          monthInvoices.sort((a, b) => {
+            const aNum = parseInt(a.invoice_number.match(/\d{3}$/)?.[0] || '0');
+            const bNum = parseInt(b.invoice_number.match(/\d{3}$/)?.[0] || '0');
+            return bNum - aNum;
+          });
+          
+          const lastInvoice = monthInvoices[0];
+          const match = lastInvoice.invoice_number.match(/\d{3}$/);
+          if (match) {
+            const nextNumber = parseInt(match[0], 10) + 1;
+            return `${prefix}-${String(nextNumber).padStart(3, '0')}`;
+          }
+        }
       }
     } catch (error) {
-      console.warn('Failed to get invoice number from database, using localStorage fallback:', error);
+      console.warn('Failed to query database for invoice numbers, using localStorage fallback:', error);
     }
     
-    // Fallback to localStorage
-    const storageKey = 'lastTaxInvoiceNumber';
+    // Fallback: Generate with month/year pattern using localStorage
+    const now = new Date();
+    const year = now.getFullYear();
+    const month = String(now.getMonth() + 1).padStart(2, '0');
+    const prefix = `INV-${year}-${month}`;
+    
+    // Try to get last number from localStorage for this month
+    const storageKey = `lastTaxInvoiceNumber_${year}_${month}`;
     const lastNumber = localStorage.getItem(storageKey);
     let nextNumber = 1;
     
-    if (lastNumber) {
-      const match = lastNumber.match(/INV-(\d+)/);
+    if (lastNumber && lastNumber.startsWith(prefix)) {
+      const match = lastNumber.match(/-\d{3}$/);
       if (match) {
-        nextNumber = parseInt(match[1], 10) + 1;
+        nextNumber = parseInt(match[0].substring(1), 10) + 1;
       }
     }
     
-    return `INV-${String(nextNumber).padStart(3, '0')}`;
+    return `${prefix}-${String(nextNumber).padStart(3, '0')}`;
+  };
+
+  // Get next invoice number for actual saving (only called when saving)
+  const getNextInvoiceNumberForSave = async (): Promise<string> => {
+    // Use the same logic as preview, but this ensures we get the latest number at save time
+    return await getPreviewInvoiceNumber();
   };
 
   // State management
-  const [billNumber, setBillNumber] = useState(PRESET_GST_INVOICE_NUMBER);
+  const [billNumber, setBillNumber] = useState('');
   const [billDate, setBillDate] = useState(new Date().toISOString().split('T')[0]);
   const [company, setCompany] = useState<CompanyInfo>(defaultCompanyInfo);
   const [items, setItems] = useState<BillItem[]>(defaultTaxInvoiceItems);
@@ -188,19 +225,18 @@ export default function TaxInvoiceGenerator({ customer, onPrint }: TaxInvoiceGen
     }
   }, [invoiceType]);
 
-  // Update invoice number when component mounts (only if empty)
+  // Update invoice number when component mounts (preview only - doesn't reserve number)
   useEffect(() => {
-    if (billNumber) return;
     let isMounted = true;
-    getNextInvoiceNumber().then((invoiceNumber) => {
-      if (isMounted && !billNumber) {
+    getPreviewInvoiceNumber().then((invoiceNumber) => {
+      if (isMounted) {
         setBillNumber(invoiceNumber);
       }
     });
     return () => {
       isMounted = false;
     };
-  }, [billNumber]);
+  }, []); // Only run once on mount
 
   // Editable customer information state
   const [isEditingCustomer, setIsEditingCustomer] = useState(false);
@@ -284,14 +320,7 @@ export default function TaxInvoiceGenerator({ customer, onPrint }: TaxInvoiceGen
   
   const totalAmount = calculatedTotal;
 
-  // Generate invoice number
-  useEffect(() => {
-    if (billNumber) return;
-    const year = new Date().getFullYear();
-    const month = String(new Date().getMonth() + 1).padStart(2, '0');
-    const randomNum = Math.floor(Math.random() * 1000).toString().padStart(3, '0');
-    setBillNumber(`INV-${year}-${month}-${randomNum}`);
-  }, [billNumber]);
+  // Invoice number generation is now handled by getNextInvoiceNumber() function
 
   const addItem = () => {
     const newItem: BillItem = {
@@ -467,52 +496,121 @@ export default function TaxInvoiceGenerator({ customer, onPrint }: TaxInvoiceGen
 
     // Save invoice to database
     try {
-      await db.taxInvoices.create({
+      // Check authentication status (for better error messages)
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) {
+        console.log('No authentication session found, attempting anonymous insert');
+      }
+
+      // Check if invoice number already exists and fetch new one if needed
+      try {
+        const { exists: invoiceExists, error: checkError } = await db.taxInvoices.checkInvoiceNumberExists(billNumber);
+        if (checkError) {
+          console.warn('Could not check for duplicate invoice number:', checkError);
+          // Continue anyway - the insert will fail if duplicate
+        } else if (invoiceExists) {
+          // Invoice number was taken - fetch a new one automatically
+          console.log(`Invoice number ${billNumber} already exists, fetching new number...`);
+          const newInvoiceNumber = await getNextInvoiceNumberForSave();
+          setBillNumber(newInvoiceNumber);
+          toast.info(`Invoice number updated to ${newInvoiceNumber} (previous number was already used)`);
+          // Continue with the new number
+        }
+      } catch (checkErr) {
+        console.warn('Error checking duplicate invoice number:', checkErr);
+        // Continue anyway
+      }
+
+      // Ensure customer_address is a valid JSONB object (not empty)
+      const customerAddress = editableCustomer.address && Object.keys(editableCustomer.address).length > 0
+        ? editableCustomer.address
+        : {
+            street: '',
+            area: '',
+            city: '',
+            state: '',
+            pincode: ''
+          };
+
+      // Ensure notes is an array
+      const notesArray = Array.isArray(notes) ? notes : [];
+
+      const { data: savedInvoice, error: saveError } = await db.taxInvoices.create({
         invoice_number: billNumber,
         invoice_date: billDate,
         invoice_type: invoiceType,
         customer_id: customer.id || null,
-        customer_name: editableCustomer.name,
-        customer_address: editableCustomer.address,
-        customer_phone: editableCustomer.phone,
-        customer_email: editableCustomer.email,
+        customer_name: editableCustomer.name || 'Unknown Customer',
+        customer_address: customerAddress,
+        customer_phone: editableCustomer.phone || null,
+        customer_email: editableCustomer.email || null,
         customer_gstin: editableCustomer.gst || null,
         company_info: company,
         items: items,
-        place_of_supply: placeOfSupply,
-        place_of_supply_code: placeOfSupplyCode,
+        place_of_supply: placeOfSupply || 'Karnataka',
+        place_of_supply_code: placeOfSupplyCode || '29',
         is_intra_state: isIntraState,
-        reverse_charge: reverseCharge,
+        reverse_charge: reverseCharge || false,
         e_way_bill_no: eWayBillNo || null,
         transport_mode: transportMode || null,
         vehicle_no: vehicleNo || null,
-        subtotal: subtotal,
-        total_discount: totalDiscount,
-        service_charge: serviceCharge,
-        total_tax: totalTax,
-        cgst: taxSplit.cgst,
-        sgst: taxSplit.sgst,
-        igst: taxSplit.igst,
-        round_off: finalRoundOff,
-        total_amount: totalAmount,
-        gst_breakup: gstBreakup,
-        invoice_details: (bill as any).invoiceDetails,
-        bank_details: bankDetails,
-        notes: notes,
-        terms: terms,
-        validity_note: validityNote,
-        service_type: customerServiceType
+        subtotal: subtotal || 0,
+        total_discount: totalDiscount || 0,
+        service_charge: serviceCharge || 0,
+        total_tax: totalTax || 0,
+        cgst: taxSplit.cgst || 0,
+        sgst: taxSplit.sgst || 0,
+        igst: taxSplit.igst || 0,
+        round_off: finalRoundOff || 0,
+        total_amount: totalAmount || 0,
+        gst_breakup: gstBreakup || {},
+        invoice_details: (bill as any).invoiceDetails || {},
+        bank_details: bankDetails || {},
+        notes: notesArray,
+        terms: terms || '',
+        validity_note: validityNote || null,
+        service_type: customerServiceType || 'RO'
       });
       
-      // Also save to localStorage as backup
-      localStorage.setItem('lastTaxInvoiceNumber', billNumber);
+      if (saveError) {
+        console.error('Database save error details:', {
+          error: saveError,
+          message: saveError.message,
+          details: saveError.details,
+          hint: saveError.hint,
+          code: saveError.code
+        });
+        throw new Error(saveError.message || saveError.details || 'Failed to save invoice to database');
+      }
+      
+      // Also save to localStorage as backup with month/year pattern
+      const now = new Date();
+      const year = now.getFullYear();
+      const month = String(now.getMonth() + 1).padStart(2, '0');
+      const storageKey = `lastTaxInvoiceNumber_${year}_${month}`;
+      localStorage.setItem(storageKey, billNumber);
+      
+      // Fetch next invoice number for the next invoice (only after successful save)
+      const nextInvoiceNumber = await getNextInvoiceNumberForSave();
+      setBillNumber(nextInvoiceNumber);
+      
+      // Trigger a custom event to refresh GST invoices page if open
+      window.dispatchEvent(new CustomEvent('taxInvoiceCreated'));
+      
       toast.success('Invoice saved to database');
     } catch (error) {
       console.error('Failed to save invoice to database:', error);
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
       // Still allow printing even if database save fails
       // Save to localStorage as fallback
-      localStorage.setItem('lastTaxInvoiceNumber', billNumber);
-      toast.warning('Invoice saved locally (database save failed)');
+      const now = new Date();
+      const year = now.getFullYear();
+      const month = String(now.getMonth() + 1).padStart(2, '0');
+      const storageKey = `lastTaxInvoiceNumber_${year}_${month}`;
+      localStorage.setItem(storageKey, billNumber);
+      toast.error(`Invoice saved locally (database save failed: ${errorMessage})`, {
+        duration: 5000
+      });
     }
 
     onPrint?.(bill, action);
