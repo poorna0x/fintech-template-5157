@@ -169,6 +169,7 @@ const AdminDashboard = () => {
   const [jobs, setJobs] = useState<Job[]>([]);
   const [technicians, setTechnicians] = useState<Technician[]>([]);
   const [loading, setLoading] = useState(true);
+  const [customerAMCStatus, setCustomerAMCStatus] = useState<Record<string, boolean>>({}); // Map customer ID to hasActiveAMC
   const [searchTerm, setSearchTerm] = useState('');
   const [searchQuery, setSearchQuery] = useState(''); // For the input field
   const [isSearching, setIsSearching] = useState(false);
@@ -1291,12 +1292,58 @@ const AdminDashboard = () => {
     try {
       setLoading(true);
       
+      // Automatically create AMC service jobs for customers who need service (4 months since last service)
+      // Wait for authentication first, then run in background
+      const waitForAuth = async () => {
+        // Wait up to 5 seconds for auth session
+        for (let i = 0; i < 10; i++) {
+          const { data: { session } } = await supabase.auth.getSession();
+          if (session) {
+            console.log('✅ Auth session found, creating AMC jobs...');
+            break;
+          }
+          await new Promise(resolve => setTimeout(resolve, 500));
+        }
+        
+        // Now run the job creation
+        db.amcContracts.createAMCServiceJobs().then((result) => {
+          if (result.error) {
+            console.error('Error creating AMC service jobs:', result.error);
+          } else if (result.created > 0) {
+            console.log(`✅ Created ${result.created} AMC service jobs automatically`);
+            toast.success(`Created ${result.created} AMC service job${result.created > 1 ? 's' : ''} automatically`);
+            // Reload jobs after creating AMC service jobs
+            loadFilteredJobs(statusFilter, currentPage);
+          }
+        }).catch((error) => {
+          console.error('Error in AMC service job creation:', error);
+        });
+      };
+      
+      // Run auth wait in background
+      waitForAuth();
+      
       // Load customers and technicians (always needed)
       // Only load jobs for ongoing view initially
       const [customersResult, techniciansResult] = await Promise.all([
         db.customers.getAll(),
         db.technicians.getAll()
       ]);
+
+      // Load AMC contracts to check which customers have active AMC
+      const { data: amcContracts } = await supabase
+        .from('amc_contracts')
+        .select('customer_id, status')
+        .eq('status', 'ACTIVE');
+      
+      // Create a map of customer ID to hasActiveAMC
+      const amcStatusMap: Record<string, boolean> = {};
+      if (amcContracts) {
+        amcContracts.forEach((amc: any) => {
+          amcStatusMap[amc.customer_id] = true;
+        });
+      }
+      setCustomerAMCStatus(amcStatusMap);
 
       // Log errors for debugging
       if (customersResult.error) {
@@ -4692,10 +4739,23 @@ const AdminDashboard = () => {
     try {
       const { error } = await db.jobs.update(jobToAssign.id, {
         assigned_technician_id: selectedTechnicianId,
-        status: 'ASSIGNED'
+        status: 'ASSIGNED',
+        assigned_date: new Date().toISOString()
       });
 
       if (error) throw error;
+
+      // Send notification to technician
+      const assignedTechnician = technicians.find(t => t.id === selectedTechnicianId);
+      if (assignedTechnician) {
+        const notification = createJobAssignedNotification(
+          jobToAssign.job_number || jobToAssign.jobNumber || 'Job',
+          (jobToAssign.customer as any)?.full_name || (jobToAssign.customer as any)?.fullName || 'Customer',
+          assignedTechnician.fullName,
+          assignedTechnician.id
+        );
+        await sendNotification(notification);
+      }
 
       toast.success('Job assigned successfully');
       setAssignJobDialogOpen(false);
@@ -4703,7 +4763,7 @@ const AdminDashboard = () => {
       setSelectedTechnicianId('');
 
       // Refresh jobs data
-      await loadDashboardData();
+      await loadFilteredJobs(statusFilter, currentPage);
     } catch (error) {
       toast.error('Failed to assign job');
     }
@@ -6918,8 +6978,11 @@ const AdminDashboard = () => {
                   {/* Mobile Customer Info */}
                   <div className="mb-4 sm:hidden">
                     <div className="flex items-center gap-3 mb-2">
-                      <div className="w-6 h-6 bg-gray-600 rounded-sm flex items-center justify-center">
+                      <div className={`w-6 h-6 ${customerAMCStatus[customer.id] ? 'bg-green-500' : 'bg-gray-600'} rounded-sm flex items-center justify-center relative`}>
                         <div className="w-3 h-3 bg-white rounded-sm"></div>
+                        {customerAMCStatus[customer.id] && (
+                          <div className="absolute -top-0.5 -right-0.5 w-2 h-2 bg-green-600 rounded-full border border-white" title="Active AMC"></div>
+                        )}
                       </div>
                       <h3 className="text-lg font-semibold text-gray-900 truncate flex-1">
                         {customer.fullName || 'Unknown Customer'}
@@ -7084,8 +7147,11 @@ const AdminDashboard = () => {
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-3 flex-wrap">
                         <div className="flex items-center gap-2">
-                          <div className="w-5 h-5 bg-gray-600 rounded-sm flex items-center justify-center">
+                          <div className={`w-5 h-5 ${customerAMCStatus[customer.id] ? 'bg-green-500' : 'bg-gray-600'} rounded-sm flex items-center justify-center relative`}>
                             <div className="w-2 h-2 bg-white rounded-sm"></div>
+                            {customerAMCStatus[customer.id] && (
+                              <div className="absolute -top-0.5 -right-0.5 w-2 h-2 bg-green-600 rounded-full border border-white" title="Active AMC"></div>
+                            )}
                           </div>
                           <h3 className="text-xl font-semibold text-gray-900 truncate">
                             {customer.fullName || 'Unknown Customer'}

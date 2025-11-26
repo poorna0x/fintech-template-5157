@@ -40,7 +40,9 @@ import {
   ArrowRight,
   RotateCcw,
   Bell,
-  RefreshCw
+  RefreshCw,
+  FileText,
+  Star
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { db, supabase } from '@/lib/supabase';
@@ -258,6 +260,11 @@ const TechnicianDashboard = () => {
   const [jobs, setJobs] = useState<Job[]>([]);
   const [filteredJobs, setFilteredJobs] = useState<Job[]>([]);
   const [jobsLoading, setJobsLoading] = useState(false); // Start as false to prevent flash
+  const [customerAMCStatus, setCustomerAMCStatus] = useState<Record<string, boolean>>({}); // Map customer ID to hasActiveAMC
+  const [amcInfoDialogOpen, setAmcInfoDialogOpen] = useState(false);
+  const [selectedCustomerForAMC, setSelectedCustomerForAMC] = useState<{id: string, name: string} | null>(null);
+  const [amcInfo, setAmcInfo] = useState<any>(null);
+  const [loadingAMCInfo, setLoadingAMCInfo] = useState(false);
   const [realtimeConnected, setRealtimeConnected] = useState(false);
   const processingJobsRef = useRef<Set<string>>(new Set()); // Track jobs being processed to prevent duplicates (use ref for synchronous access)
   const lastActiveTimeRef = useRef<Date>(new Date()); // Track when app was last active
@@ -430,6 +437,26 @@ const TechnicianDashboard = () => {
       console.time('loadAssignedJobs'); // Performance timing
       const { data, error } = await db.jobs.getByTechnicianId(user.technicianId);
       console.timeEnd('loadAssignedJobs'); // Performance timing
+      
+      // Load AMC status for customers in these jobs
+      if (data && data.length > 0) {
+        const customerIds = data.map((job: any) => job.customer_id || (job.customer as any)?.id).filter(Boolean);
+        if (customerIds.length > 0) {
+          const { data: amcContracts } = await supabase
+            .from('amc_contracts')
+            .select('customer_id, status')
+            .in('customer_id', customerIds)
+            .eq('status', 'ACTIVE');
+          
+          const amcStatusMap: Record<string, boolean> = {};
+          if (amcContracts) {
+            amcContracts.forEach((amc: any) => {
+              amcStatusMap[amc.customer_id] = true;
+            });
+          }
+          setCustomerAMCStatus(amcStatusMap);
+        }
+      }
       
       if (error) {
         console.error('Error loading assigned jobs:', error);
@@ -1455,6 +1482,31 @@ const TechnicianDashboard = () => {
       }
 
       setAssignmentRequests(data || []);
+      
+      // Load AMC status for customers in assignment requests
+      if (data && data.length > 0) {
+        const customerIds = data.map((request: any) => {
+          const job = request.job as any;
+          return job?.customer_id || job?.customer?.id;
+        }).filter(Boolean);
+        
+        if (customerIds.length > 0) {
+          const { data: amcContracts } = await supabase
+            .from('amc_contracts')
+            .select('customer_id, status')
+            .in('customer_id', customerIds)
+            .eq('status', 'ACTIVE');
+          
+          const amcStatusMap: Record<string, boolean> = {};
+          if (amcContracts) {
+            amcContracts.forEach((amc: any) => {
+              amcStatusMap[amc.customer_id] = true;
+            });
+          }
+          // Merge with existing AMC status
+          setCustomerAMCStatus(prev => ({ ...prev, ...amcStatusMap }));
+        }
+      }
     } catch (error) {
       console.error('Error loading assignment requests:', error);
       // Only show error toast if it's a critical error, not transient network issues
@@ -2886,6 +2938,12 @@ const TechnicianDashboard = () => {
                         <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4">
                           <div className="flex-1 min-w-0">
                             <div className="flex items-center gap-2 mb-2">
+                              <div className={`w-4 h-4 ${customerAMCStatus[customer?.id] ? 'bg-green-500' : 'bg-gray-400'} rounded-sm flex items-center justify-center relative`}>
+                                <div className="w-2 h-2 bg-white rounded-sm"></div>
+                                {customerAMCStatus[customer?.id] && (
+                                  <div className="absolute -top-0.5 -right-0.5 w-1.5 h-1.5 bg-green-600 rounded-full border border-white" title="Active AMC"></div>
+                                )}
+                              </div>
                               <span className="font-bold text-lg text-gray-900">
                                 {customer?.full_name || 'N/A'}
                               </span>
@@ -3337,6 +3395,12 @@ const TechnicianDashboard = () => {
                     <div className="flex-1 min-w-0">
                       {/* Customer name */}
                       <div className="flex items-center gap-2 mb-3 flex-wrap">
+                          <div className={`w-4 h-4 ${customerAMCStatus[(job.customer as any)?.id] ? 'bg-green-500' : 'bg-gray-400'} rounded-sm flex items-center justify-center relative`}>
+                            <div className="w-2 h-2 bg-white rounded-sm"></div>
+                            {customerAMCStatus[(job.customer as any)?.id] && (
+                              <div className="absolute -top-0.5 -right-0.5 w-1.5 h-1.5 bg-green-600 rounded-full border border-white" title="Active AMC"></div>
+                            )}
+                          </div>
                           <span className="font-bold text-lg text-gray-900">
                             {(job.customer as any)?.full_name || 'N/A'}
                           </span>
@@ -3842,6 +3906,12 @@ const TechnicianDashboard = () => {
                       {/* Job Info */}
                       <div className="bg-gray-50 p-4 rounded-lg">
                         <div className="flex items-center gap-2 mb-3">
+                          <div className={`w-5 h-5 ${customerAMCStatus[customer?.id] ? 'bg-green-500' : 'bg-gray-400'} rounded-sm flex items-center justify-center relative`}>
+                            <div className="w-2.5 h-2.5 bg-white rounded-sm"></div>
+                            {customerAMCStatus[customer?.id] && (
+                              <div className="absolute -top-0.5 -right-0.5 w-2 h-2 bg-green-600 rounded-full border border-white" title="Active AMC"></div>
+                            )}
+                          </div>
                           <span className="font-bold text-xl text-gray-900">
                             {customer?.full_name || 'N/A'}
                           </span>
@@ -5176,6 +5246,46 @@ const TechnicianDashboard = () => {
               </DialogDescription>
             </DialogHeader>
             <div className="flex flex-col gap-3 py-4">
+              {/* AMC Info - Show if customer has active AMC */}
+              {selectedJobForOptions && customerAMCStatus[(selectedJobForOptions.customer as any)?.id] && (
+                <Button
+                  variant="outline"
+                  className="w-full justify-start text-green-700 hover:text-green-800 hover:bg-green-50"
+                  onClick={async () => {
+                    const customerId = (selectedJobForOptions.customer as any)?.id;
+                    if (customerId) {
+                      setLoadingAMCInfo(true);
+                      setSelectedCustomerForAMC({
+                        id: customerId,
+                        name: (selectedJobForOptions.customer as any)?.full_name || 'Customer'
+                      });
+                      setAmcInfoDialogOpen(true);
+                      
+                      // Load AMC contract details
+                      const { data, error } = await supabase
+                        .from('amc_contracts')
+                        .select('*')
+                        .eq('customer_id', customerId)
+                        .eq('status', 'ACTIVE')
+                        .order('start_date', { ascending: false })
+                        .limit(1)
+                        .single();
+                      
+                      if (!error && data) {
+                        setAmcInfo(data);
+                      } else {
+                        setAmcInfo(null);
+                      }
+                      setLoadingAMCInfo(false);
+                    }
+                    setOptionsDialogOpen(prev => ({ ...prev, [selectedJobForOptions.id]: false }));
+                    setSelectedJobForOptions(null);
+                  }}
+                >
+                  <Star className="w-4 h-4 mr-2" />
+                  AMC Info
+                </Button>
+              )}
               {(selectedJobForOptions.status === 'ASSIGNED' || selectedJobForOptions.status === 'EN_ROUTE' || selectedJobForOptions.status === 'IN_PROGRESS') && (
                 <Button
                   variant="outline"
@@ -5219,6 +5329,111 @@ const TechnicianDashboard = () => {
           </DialogContent>
         </Dialog>
       )}
+
+      {/* AMC Info Dialog */}
+      <Dialog open={amcInfoDialogOpen} onOpenChange={setAmcInfoDialogOpen}>
+        <DialogContent className="sm:max-w-lg">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Star className="w-5 h-5 text-green-600" />
+              AMC Information
+            </DialogTitle>
+            <DialogDescription>
+              AMC details for {selectedCustomerForAMC?.name || 'customer'}
+            </DialogDescription>
+          </DialogHeader>
+          {loadingAMCInfo ? (
+            <div className="py-8 text-center">
+              <div className="flex items-center justify-center gap-2">
+                <RefreshCw className="w-5 h-5 animate-spin text-gray-400" />
+                <span className="text-gray-600">Loading AMC information...</span>
+              </div>
+            </div>
+          ) : amcInfo ? (
+            <div className="py-4 space-y-4">
+              <div className="bg-green-50 border border-green-200 rounded-lg p-4 space-y-3">
+                <div className="flex items-center justify-between">
+                  <span className="text-sm font-medium text-gray-700">Status:</span>
+                  <Badge className="bg-green-600 text-white border-0">
+                    {amcInfo.status}
+                  </Badge>
+                </div>
+                
+                <div className="grid grid-cols-2 gap-4 text-sm">
+                  <div>
+                    <span className="text-gray-600 font-medium">Start Date:</span>
+                    <p className="text-gray-900 font-semibold mt-1">
+                      {new Date(amcInfo.start_date).toLocaleDateString('en-IN', {
+                        day: 'numeric',
+                        month: 'short',
+                        year: 'numeric'
+                      })}
+                    </p>
+                  </div>
+                  <div>
+                    <span className="text-gray-600 font-medium">End Date:</span>
+                    <p className="text-gray-900 font-semibold mt-1">
+                      {new Date(amcInfo.end_date).toLocaleDateString('en-IN', {
+                        day: 'numeric',
+                        month: 'short',
+                        year: 'numeric'
+                      })}
+                    </p>
+                  </div>
+                </div>
+                
+                <div className="grid grid-cols-2 gap-4 text-sm">
+                  <div>
+                    <span className="text-gray-600 font-medium">Duration:</span>
+                    <p className="text-gray-900 font-semibold mt-1">
+                      {amcInfo.years} {amcInfo.years === 1 ? 'year' : 'years'}
+                    </p>
+                  </div>
+                  <div>
+                    <span className="text-gray-600 font-medium">Includes Prefilter:</span>
+                    <p className="text-gray-900 font-semibold mt-1">
+                      {amcInfo.includes_prefilter ? 'Yes' : 'No'}
+                    </p>
+                  </div>
+                </div>
+                
+                {amcInfo.additional_info && (
+                  <div className="pt-3 border-t border-green-200">
+                    <span className="text-gray-600 font-medium text-sm">Additional Information:</span>
+                    <p className="text-gray-900 mt-2 whitespace-pre-wrap break-words">
+                      {amcInfo.additional_info}
+                    </p>
+                  </div>
+                )}
+                
+                <div className="pt-3 border-t border-green-200 text-xs text-gray-500">
+                  <p>Created: {new Date(amcInfo.created_at).toLocaleString('en-IN')}</p>
+                  {amcInfo.updated_at && amcInfo.updated_at !== amcInfo.created_at && (
+                    <p>Last Updated: {new Date(amcInfo.updated_at).toLocaleString('en-IN')}</p>
+                  )}
+                </div>
+              </div>
+            </div>
+          ) : (
+            <div className="py-8 text-center text-gray-500">
+              <AlertCircle className="w-12 h-12 mx-auto mb-4 text-gray-300" />
+              <p>No active AMC contract found for this customer</p>
+            </div>
+          )}
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => {
+                setAmcInfoDialogOpen(false);
+                setSelectedCustomerForAMC(null);
+                setAmcInfo(null);
+              }}
+            >
+              Close
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 };

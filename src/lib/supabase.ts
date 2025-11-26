@@ -1260,6 +1260,246 @@ export const db = {
         .order('end_date', { ascending: true });
       
       return { data, error };
+    },
+
+    async createAMCServiceJobs() {
+      console.log('🔵 Starting AMC service job creation...');
+      
+      // Helper function to generate job number
+      const generateJobNumber = (serviceType: string) => {
+        const prefix = serviceType === 'RO' ? 'RO' : 'WS';
+        const timestamp = Date.now().toString().slice(-6);
+        const random = Math.floor(Math.random() * 100).toString().padStart(2, '0');
+        return `${prefix}${timestamp}${random}`;
+      };
+
+      // Get all active AMC contracts first (without nested select to avoid RLS issues)
+      console.log('🔍 Fetching AMC contracts...');
+      
+      // Check authentication status
+      const { data: { user }, error: authError } = await supabase.auth.getUser();
+      console.log('🔍 Auth user:', user?.id);
+      console.log('🔍 Auth error:', authError);
+      console.log('🔍 Auth role:', user ? 'authenticated' : 'not authenticated');
+      
+      // Try with RLS bypass or check if we can access the table
+      const { data: activeAMCsRaw, error: amcError } = await supabase
+        .from('amc_contracts')
+        .select('*')
+        .eq('status', 'ACTIVE');
+      
+      console.log('🔍 Query error:', amcError);
+      console.log('🔍 Query result:', activeAMCsRaw);
+      console.log('🔍 Query result length:', activeAMCsRaw?.length);
+      
+      // If RLS is blocking, try without status filter to see if we can access the table at all
+      if (!activeAMCsRaw || activeAMCsRaw.length === 0) {
+        const { data: allAMCs, error: allError } = await supabase
+          .from('amc_contracts')
+          .select('id, status, customer_id')
+          .limit(5);
+        console.log('🔍 All AMCs (no filter):', allAMCs);
+        console.log('🔍 All AMCs error:', allError);
+      }
+
+      if (amcError) {
+        console.error('❌ Error fetching AMC contracts:', amcError);
+        return { data: null, error: amcError, created: 0 };
+      }
+
+      console.log('📦 Raw AMC contracts (without nested select):', activeAMCsRaw);
+      console.log('📦 AMC contracts count:', activeAMCsRaw?.length);
+
+      if (!activeAMCsRaw || activeAMCsRaw.length === 0) {
+        console.log('ℹ️ No active AMC contracts found');
+        return { data: [], error: null, created: 0 };
+      }
+
+      // Get customer IDs from AMC contracts
+      const amcCustomerIds = activeAMCsRaw.map(amc => amc.customer_id);
+      console.log('👥 Customer IDs from AMCs:', amcCustomerIds);
+
+      // Fetch customers separately
+      const { data: customersData, error: customersError } = await supabase
+        .from('customers')
+        .select('id, customer_id, full_name, phone, email, address, location, service_type, brand, model, last_service_date')
+        .in('id', amcCustomerIds);
+
+      if (customersError) {
+        console.error('❌ Error fetching customers:', customersError);
+        return { data: null, error: customersError, created: 0 };
+      }
+
+      console.log('👥 Fetched customers:', customersData?.length);
+
+      // Combine AMC contracts with customer data
+      const activeAMCs = activeAMCsRaw.map(amc => ({
+        ...amc,
+        customers: customersData?.find(c => c.id === amc.customer_id) || null
+      }));
+
+      console.log(`📋 Found ${activeAMCs.length} active AMC contracts with customer data`);
+      console.log('📋 Sample AMC contract:', activeAMCs[0]);
+
+      const today = new Date();
+      const fourMonthsAgo = new Date();
+      fourMonthsAgo.setMonth(today.getMonth() - 4);
+      const fourMonthsAgoStr = fourMonthsAgo.toISOString().split('T')[0];
+      
+      console.log(`📅 Today: ${today.toISOString().split('T')[0]}, 4 months ago: ${fourMonthsAgoStr}`);
+
+      // Get last completed job for each customer
+      const customerIds = activeAMCs.map(amc => amc.customer_id);
+      const { data: lastJobs, error: jobsError } = await supabase
+        .from('jobs')
+        .select('customer_id, completed_at, service_sub_type')
+        .in('customer_id', customerIds)
+        .eq('status', 'COMPLETED')
+        .not('completed_at', 'is', null)
+        .order('completed_at', { ascending: false });
+
+      if (jobsError) {
+        console.warn('Error fetching last jobs:', jobsError);
+      }
+
+      // Create a map of customer_id to last service date
+      const lastServiceMap = new Map<string, string>();
+      (lastJobs || []).forEach((job: any) => {
+        if (!lastServiceMap.has(job.customer_id)) {
+          lastServiceMap.set(job.customer_id, job.completed_at);
+        }
+      });
+
+      console.log(`📊 Found ${lastServiceMap.size} customers with completed jobs`);
+
+      // Check for existing PENDING, ASSIGNED, or IN_PROGRESS AMC service jobs to avoid duplicates
+      const { data: existingAMCJobs } = await supabase
+        .from('jobs')
+        .select('customer_id')
+        .in('customer_id', customerIds)
+        .eq('service_sub_type', 'AMC Service')
+        .in('status', ['PENDING', 'ASSIGNED', 'IN_PROGRESS']);
+
+      const existingAMCCustomers = new Set(
+        (existingAMCJobs || []).map((job: any) => job.customer_id)
+      );
+
+      console.log(`🚫 Found ${existingAMCCustomers.size} customers with existing AMC service jobs`);
+
+      const jobsToCreate: any[] = [];
+      let createdCount = 0;
+
+      for (const amc of activeAMCs) {
+        const customer = amc.customers as any;
+        if (!customer) {
+          console.log('⚠️ AMC has no customer data:', amc.id);
+          continue;
+        }
+
+        console.log(`\n🔍 Processing customer: ${customer.customer_id || customer.id}`);
+
+        // Skip if already has an active AMC service job (PENDING, ASSIGNED, or IN_PROGRESS)
+        if (existingAMCCustomers.has(customer.id)) {
+          console.log(`  ⏭️ Skipping - already has active AMC service job`);
+          continue;
+        }
+
+        // Get last service date (prefer from jobs, then customer record, then AMC start date)
+        const lastServiceDateRaw = lastServiceMap.get(customer.id) || customer.last_service_date || amc.start_date;
+        
+        console.log(`  📅 Last service date raw:`, lastServiceDateRaw);
+        console.log(`  📅 From jobs map:`, lastServiceMap.get(customer.id));
+        console.log(`  📅 From customer:`, customer.last_service_date);
+        console.log(`  📅 From AMC:`, amc.start_date);
+        
+        // Convert to date string (YYYY-MM-DD) if it's a timestamp
+        let lastServiceDate: string | null = null;
+        if (lastServiceDateRaw) {
+          if (typeof lastServiceDateRaw === 'string') {
+            // Extract date part if it's a timestamp (e.g., "2025-06-26 00:00:00+00" -> "2025-06-26")
+            lastServiceDate = lastServiceDateRaw.split('T')[0].split(' ')[0];
+          } else {
+            // If it's a Date object or other format, convert to ISO string and extract date
+            lastServiceDate = new Date(lastServiceDateRaw).toISOString().split('T')[0];
+          }
+        }
+        
+        console.log(`  📅 Extracted date: ${lastServiceDate}`);
+        console.log(`  📅 4 months ago: ${fourMonthsAgoStr}`);
+        console.log(`  ✅ Comparison: ${lastServiceDate} <= ${fourMonthsAgoStr} = ${lastServiceDate && lastServiceDate <= fourMonthsAgoStr}`);
+        
+        // Check if 4 months have passed since last service
+        if (lastServiceDate && lastServiceDate <= fourMonthsAgoStr) {
+          console.log(`  ✅ Will create job for ${customer.customer_id || customer.id}`);
+          // Generate job number
+          const serviceType = customer.service_type || 'RO';
+          const jobNumber = generateJobNumber(serviceType);
+
+          // Determine scheduled date (today)
+          const scheduledDate = new Date();
+          scheduledDate.setHours(0, 0, 0, 0);
+          const scheduledDateStr = scheduledDate.toISOString().split('T')[0];
+
+          // Format last service date for display
+          const formattedLastServiceDate = new Date(lastServiceDate + 'T00:00:00').toLocaleDateString('en-IN', {
+            day: 'numeric',
+            month: 'short',
+            year: 'numeric'
+          });
+
+          const jobData = {
+            job_number: jobNumber,
+            customer_id: customer.id,
+            service_type: serviceType,
+            service_sub_type: 'AMC Service',
+            brand: customer.brand || 'Not Specified',
+            model: customer.model || 'Not Specified',
+            scheduled_date: scheduledDateStr,
+            scheduled_time_slot: 'MORNING',
+            estimated_duration: 120,
+            service_address: customer.address || {},
+            service_location: customer.location || {},
+            status: 'PENDING',
+            priority: 'MEDIUM',
+            description: `AMC Service - Scheduled maintenance service. Last service was on ${formattedLastServiceDate}. This is an automatic AMC service job created for regular maintenance.`,
+            requirements: [{ 
+              amc_contract_id: amc.id,
+              auto_created: true,
+              service_due: true,
+              amc_service: true
+            }],
+            estimated_cost: 0,
+            payment_status: 'PENDING'
+          };
+
+          jobsToCreate.push(jobData);
+        } else {
+          console.log(`  ❌ Skipping - date not old enough`);
+        }
+      }
+
+      console.log(`\n📦 Total jobs to create: ${jobsToCreate.length}`);
+
+      // Create jobs in batch
+      if (jobsToCreate.length > 0) {
+        console.log(`💾 Creating ${jobsToCreate.length} jobs...`);
+        const { data: createdJobsData, error: createError } = await supabase
+          .from('jobs')
+          .insert(jobsToCreate)
+          .select();
+
+        if (createError) {
+          console.error('❌ Error creating jobs:', createError);
+          return { data: null, error: createError, created: 0 };
+        }
+
+        createdCount = createdJobsData?.length || 0;
+        console.log(`✅ Successfully created ${createdCount} AMC service jobs`);
+        return { data: createdJobsData, error: null, created: createdCount };
+      }
+
+      console.log('ℹ️ No jobs to create');
+      return { data: [], error: null, created: 0 };
     }
   },
 
