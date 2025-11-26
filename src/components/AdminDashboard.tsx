@@ -833,6 +833,9 @@ const AdminDashboard = () => {
   const [jobToReassign, setJobToReassign] = useState<Job | null>(null);
   const [reassignDialogOpen, setReassignDialogOpen] = useState(false);
   const [selectedTechnicianForReassign, setSelectedTechnicianForReassign] = useState<string>('');
+  const [reassignAssignmentType, setReassignAssignmentType] = useState<'direct' | 'distance'>('direct');
+  const [reassignTechnicianDistances, setReassignTechnicianDistances] = useState<TechnicianDistance[]>([]);
+  const [loadingReassignDistances, setLoadingReassignDistances] = useState(false);
   const [jobToEdit, setJobToEdit] = useState<Job | null>(null);
   const [editJobDialogOpen, setEditJobDialogOpen] = useState(false);
   const [editJobFormData, setEditJobFormData] = useState({
@@ -859,9 +862,7 @@ const AdminDashboard = () => {
   const [assignJobDialogOpen, setAssignJobDialogOpen] = useState(false);
   const [jobToAssign, setJobToAssign] = useState<Job | null>(null);
   const [selectedTechnicianId, setSelectedTechnicianId] = useState('');
-  const [selectedTechnicianIds, setSelectedTechnicianIds] = useState<string[]>([]);
-  const [isCreatingAssignmentRequests, setIsCreatingAssignmentRequests] = useState(false);
-  const [assignmentType, setAssignmentType] = useState<'direct' | 'bulk'>('direct');
+  const [assignmentType, setAssignmentType] = useState<'direct' | 'distance'>('direct');
   const [technicianDistances, setTechnicianDistances] = useState<TechnicianDistance[]>([]);
   const [loadingDistances, setLoadingDistances] = useState(false);
 
@@ -1017,7 +1018,6 @@ const AdminDashboard = () => {
     if (!assignJobDialogOpen) {
       setAssignmentType('direct');
       setSelectedTechnicianId('');
-      setSelectedTechnicianIds([]);
       setTechnicianDistances([]);
     }
   }, [assignJobDialogOpen]);
@@ -4498,7 +4498,6 @@ const AdminDashboard = () => {
   const handleAssignJob = async (job: Job) => {
     setJobToAssign(job);
     setSelectedTechnicianId('');
-    setSelectedTechnicianIds([]);
     setAssignmentType('direct');
     setTechnicianDistances([]);
     setAssignJobDialogOpen(true);
@@ -4586,65 +4585,7 @@ const AdminDashboard = () => {
     }
   };
 
-  // New bulk assignment functions
-  const handleBulkAssignJob = (job: Job) => {
-    setJobToAssign(job);
-    setSelectedTechnicianIds([]);
-    setAssignmentType('bulk');
-    setAssignJobDialogOpen(true);
-  };
-
-  const handleSaveBulkJobAssignment = async () => {
-    if (!jobToAssign || selectedTechnicianIds.length === 0) return;
-
-    try {
-      setIsCreatingAssignmentRequests(true);
-
-      // Create assignment requests for all selected technicians
-      const requests = selectedTechnicianIds.map(technicianId => ({
-        job_id: jobToAssign.id,
-        technician_id: technicianId,
-        assigned_by: user?.id,
-        assigned_at: new Date().toISOString(),
-        status: 'PENDING' as const
-      }));
-
-      const { data, error } = await db.jobAssignmentRequests.createMultiple(requests);
-
-      if (error) throw error;
-
-      // Send notifications to all technicians
-      const job = jobToAssign;
-      const customer = job.customer;
-      
-      for (const technicianId of selectedTechnicianIds) {
-        const technician = technicians.find(t => t.id === technicianId);
-        if (technician) {
-          const notification = createJobAssignmentRequestNotification(
-            job.job_number,
-            customer?.full_name || 'Customer',
-            technician.fullName,
-            job.id,
-            technician.id,
-            data?.find(r => r.technician_id === technicianId)?.id || ''
-          );
-          await sendNotification(notification);
-        }
-      }
-
-      toast.success(`Job assignment requests sent to ${selectedTechnicianIds.length} technician${selectedTechnicianIds.length > 1 ? 's' : ''}`);
-      setAssignJobDialogOpen(false);
-      setJobToAssign(null);
-      setSelectedTechnicianIds([]);
-
-      // Refresh jobs data
-      await loadDashboardData();
-    } catch (error) {
-      toast.error('Failed to send assignment requests');
-    } finally {
-      setIsCreatingAssignmentRequests(false);
-    }
-  };
+  // Bulk assignment removed - not needed
 
 
   // Load jobs for a specific customer
@@ -4676,10 +4617,50 @@ const AdminDashboard = () => {
     }
   };
 
+  // Calculate distances for reassign dialog
+  const calculateDistancesForReassign = async (job: Job) => {
+    // Get job location
+    const jobLocation = (job.serviceLocation as any) || (job.customer as any)?.location;
+    
+    if (!jobLocation?.latitude || !jobLocation?.longitude) {
+      console.warn('⚠️ Job location not available for distance calculation');
+      return;
+    }
+
+    const apiKey = import.meta.env.VITE_GOOGLE_MAPS_API_KEY;
+    if (!apiKey) {
+      console.warn('⚠️ Google Maps API key not configured');
+      toast.warning('Google Maps API key not configured. Distance calculation disabled.');
+      return;
+    }
+
+    setLoadingReassignDistances(true);
+    try {
+      const distances = await calculateTechnicianDistances(
+        {
+          latitude: jobLocation.latitude,
+          longitude: jobLocation.longitude,
+        },
+        technicians,
+        apiKey
+      );
+
+      console.log('📏 Distance calculation results for reassign:', distances);
+      setReassignTechnicianDistances(distances);
+    } catch (error) {
+      console.error('❌ Error calculating distances:', error);
+      toast.error('Failed to calculate distances. You can still assign manually.');
+    } finally {
+      setLoadingReassignDistances(false);
+    }
+  };
+
   // Handle job status update
   const handleReassignJob = async (job: Job) => {
     setJobToReassign(job);
     setSelectedTechnicianForReassign(job.assigned_technician_id || job.assignedTechnicianId || '');
+    setReassignAssignmentType('direct');
+    setReassignTechnicianDistances([]);
     // Load technicians when dialog opens
     await reloadTechnicians();
     setReassignDialogOpen(true);
@@ -4709,6 +4690,8 @@ const AdminDashboard = () => {
       setReassignDialogOpen(false);
       setJobToReassign(null);
       setSelectedTechnicianForReassign('');
+      setReassignAssignmentType('direct');
+      setReassignTechnicianDistances([]);
     } catch (error) {
       toast.error('Failed to reassign job');
     }
@@ -9159,140 +9142,113 @@ const AdminDashboard = () => {
 
       {/* Job Assignment Dialog */}
       <Dialog open={assignJobDialogOpen} onOpenChange={setAssignJobDialogOpen}>
-        <DialogContent className="sm:max-w-2xl max-h-[90vh] flex flex-col">
+        <DialogContent className="w-[95vw] sm:w-[90vw] md:w-[600px] max-w-[600px] max-h-[90vh] flex flex-col">
           <DialogHeader>
-            <DialogTitle>Assign Job to Technician(s)</DialogTitle>
-            <DialogDescription>
-              Choose how to assign this job - directly to one technician or send requests to multiple technicians
+            <DialogTitle className="text-lg sm:text-xl">Assign Job to Technician</DialogTitle>
+            <DialogDescription className="text-sm">
+              Choose how to assign this job
             </DialogDescription>
           </DialogHeader>
           
-          <div className="space-y-6 overflow-y-auto flex-1 pr-2">
-            <div>
-              <Label htmlFor="job-info">Job Details</Label>
-              <div className="mt-1 p-4 bg-gray-50 rounded-md">
-                <div className="flex items-center gap-2 mb-2">
-                  <span className="font-mono font-bold text-lg">{(jobToAssign as any)?.job_number}</span>
-                  <Badge className="bg-blue-100 text-blue-800">
+          <div className="space-y-4 sm:space-y-6 overflow-y-auto flex-1 pr-1 sm:pr-2">
+            {/* Job Details */}
+            <div className="bg-gray-50 rounded-lg p-3 sm:p-4">
+              <div className="flex flex-col sm:flex-row sm:items-center gap-2 mb-2">
+                <span className="font-mono font-bold text-base sm:text-lg">{(jobToAssign as any)?.job_number}</span>
+                <Badge className="bg-blue-100 text-blue-800 text-xs sm:text-sm w-fit">
                     {(jobToAssign as any)?.service_type} - {(jobToAssign as any)?.service_sub_type}
                   </Badge>
                 </div>
-                <p className="text-sm text-gray-600">
-                  <strong>Customer:</strong> {(jobToAssign as any)?.customer?.full_name || 'N/A'}
-                </p>
-                <p className="text-sm text-gray-600">
-                  <strong>Scheduled:</strong> {(jobToAssign as any)?.scheduled_date} - {(jobToAssign as any)?.scheduled_time_slot}
-                </p>
-                <p className="text-sm text-gray-600">
-                  <strong>Location:</strong> {(jobToAssign as any)?.service_address?.street || 'N/A'}
-                </p>
+              <div className="space-y-1 text-xs sm:text-sm text-gray-600">
+                <p><strong>Customer:</strong> {(jobToAssign as any)?.customer?.full_name || 'N/A'}</p>
+                <p><strong>Scheduled:</strong> {(jobToAssign as any)?.scheduled_date} - {(jobToAssign as any)?.scheduled_time_slot}</p>
+                <p className="truncate"><strong>Location:</strong> {(jobToAssign as any)?.service_address?.street || 'N/A'}</p>
+              </div>
                 {(jobToAssign as any)?.service_location?.googleLocation && (
-                  <div className="mt-2">
                     <a 
                       href={(jobToAssign as any)?.service_location?.googleLocation}
                       target="_blank"
                       rel="noopener noreferrer"
-                      className="inline-flex items-center gap-1 text-blue-600 hover:text-blue-800 text-sm font-medium"
+                  className="inline-flex items-center gap-1 text-blue-600 hover:text-blue-800 text-xs sm:text-sm font-medium mt-2"
                     >
-                      <MapPin className="w-4 h-4" />
+                  <MapPin className="w-3 h-3 sm:w-4 sm:h-4" />
                       Open in Google Maps
                     </a>
-                  </div>
                 )}
-              </div>
-            </div>
-
-            {/* Calculate Distance & Time Button */}
-            <div className="flex items-center justify-center py-3 border-t border-b">
-              <Button
-                type="button"
-                variant="default"
-                onClick={async () => {
-                  if (jobToAssign) {
-                    await calculateDistancesForJob(jobToAssign);
-                  }
-                }}
-                disabled={loadingDistances || !jobToAssign}
-                className="bg-blue-600 hover:bg-blue-700"
-              >
-                {loadingDistances ? (
-                  <>
-                    <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin mr-2" />
-                    Calculating...
-                  </>
-                ) : (
-                  <>
-                    <MapPin className="w-4 h-4 mr-2" />
-                    Calculate Distance & Time
-                  </>
-                )}
-              </Button>
             </div>
 
             {/* Assignment Type Selection */}
-            <div className="space-y-4">
-              <div>
-                <Label className="text-base font-semibold">Assignment Method</Label>
-                <div className="mt-2 space-y-3">
-                  <div className="flex items-center space-x-3">
+            <div className="space-y-3">
+              <Label className="text-sm sm:text-base font-semibold">Assignment Method</Label>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <button
+                type="button"
+                  onClick={() => setAssignmentType('direct')}
+                  className={`p-4 rounded-lg border-2 transition-all text-left ${
+                    assignmentType === 'direct'
+                      ? 'border-blue-500 bg-blue-50'
+                      : 'border-gray-200 hover:border-gray-300 bg-white'
+                  }`}
+                >
+                  <div className="flex items-center gap-2 mb-1">
                     <input
                       type="radio"
-                      id="direct-assignment"
-                      name="assignment-type"
-                      value="direct"
                       checked={assignmentType === 'direct'}
-                      onChange={(e) => setAssignmentType(e.target.value as 'direct' | 'bulk')}
+                      onChange={() => {}}
                       className="h-4 w-4 text-blue-600"
                     />
-                    <label htmlFor="direct-assignment" className="text-sm font-medium text-gray-700">
-                      Direct Assignment - Assign directly to one technician
-                    </label>
+                    <span className="font-medium text-sm sm:text-base">Direct Assignment</span>
                   </div>
-                  <div className="flex items-center space-x-3">
+                  <p className="text-xs text-gray-600 mt-1">Assign directly to one technician</p>
+                </button>
+                
+                <button
+                  type="button"
+                  onClick={() => {
+                    setAssignmentType('distance');
+                    if (jobToAssign) {
+                      calculateDistancesForJob(jobToAssign);
+                    }
+                  }}
+                  className={`p-4 rounded-lg border-2 transition-all text-left ${
+                    assignmentType === 'distance'
+                      ? 'border-blue-500 bg-blue-50'
+                      : 'border-gray-200 hover:border-gray-300 bg-white'
+                  }`}
+                >
+                  <div className="flex items-center gap-2 mb-1">
                     <input
                       type="radio"
-                      id="bulk-assignment"
-                      name="assignment-type"
-                      value="bulk"
-                      checked={assignmentType === 'bulk'}
-                      onChange={(e) => setAssignmentType(e.target.value as 'direct' | 'bulk')}
+                      checked={assignmentType === 'distance'}
+                      onChange={() => {}}
                       className="h-4 w-4 text-blue-600"
                     />
-                    <label htmlFor="bulk-assignment" className="text-sm font-medium text-gray-700">
-                      Bulk Assignment - Send requests to multiple technicians (first to accept gets the job)
-                    </label>
+                    <span className="font-medium text-sm sm:text-base">By Distance</span>
                   </div>
+                  <p className="text-xs text-gray-600 mt-1">Auto-select nearest technician</p>
+                </button>
                 </div>
               </div>
 
               {/* Direct Assignment */}
               {assignmentType === 'direct' && (
                 <div className="space-y-3">
-                  <div className="flex items-center justify-between">
-                  <Label htmlFor="technician-select">Select Technician</Label>
+                  <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+                    <Label htmlFor="technician-select" className="text-sm sm:text-base">Select Technician</Label>
                     <Button
                       type="button"
                       variant="outline"
                       size="sm"
                       onClick={async () => {
                         await reloadTechnicians();
-                        if (jobToAssign) {
-                          await calculateDistancesForJob(jobToAssign);
-                        }
                       }}
-                      className="text-xs"
+                      className="text-xs w-full sm:w-auto"
                     >
-                      🔄 Refresh Locations
+                      🔄 Refresh List
                     </Button>
                   </div>
-                  {loadingDistances ? (
-                    <div className="flex items-center justify-center p-4">
-                      <div className="w-5 h-5 border-2 border-blue-600 border-t-transparent rounded-full animate-spin mr-2" />
-                      <span className="text-sm text-gray-600">Calculating distances...</span>
-                    </div>
-                  ) : (
                   <Select value={selectedTechnicianId} onValueChange={setSelectedTechnicianId}>
-                    <SelectTrigger>
+                    <SelectTrigger className="w-full border border-gray-300 focus:border-blue-500 focus:ring-0 focus:ring-offset-0">
                       <SelectValue placeholder="Choose a technician" />
                     </SelectTrigger>
                       <SelectContent className="max-h-[300px] overflow-y-auto">
@@ -9301,174 +9257,32 @@ const AdminDashboard = () => {
                           No technicians available
                         </SelectItem>
                       ) : (
-                          // Sort technicians by travel time (duration) if available
-                          // Time is more important than distance in cities like Bengaluru
-                          (() => {
-                            const sortedTechnicians = [...technicians].sort((a, b) => {
-                              const distA = technicianDistances.find(d => d.technicianId === a.id);
-                              const distB = technicianDistances.find(d => d.technicianId === b.id);
-                              
-                              if (!distA?.distance || distA.distance.status !== 'OK') return 1;
-                              if (!distB?.distance || distB.distance.status !== 'OK') return -1;
-                              
-                              return distA.distance.duration.value - distB.distance.duration.value;
-                            });
-
-                            return sortedTechnicians.map((technician) => {
-                              const distanceInfo = technicianDistances.find(d => d.technicianId === technician.id);
-                              const hasDistance = distanceInfo?.distance && distanceInfo.distance.status === 'OK';
-                              
-                              // Determine why location is unavailable
-                              // Show time prominently since it's more important than distance
-                              let distanceText = '';
-                              if (hasDistance) {
-                                distanceText = `${distanceInfo.distance.duration.text} • ${distanceInfo.distance.distance.text}`;
-                              } else {
-                                const hasLocation = technician.currentLocation?.latitude && technician.currentLocation?.longitude;
-                                if (!hasLocation) {
-                                  distanceText = 'No location data - Technician needs to open dashboard';
-                                } else if (distanceInfo?.distance?.status === 'ZERO_RESULTS') {
-                                  distanceText = 'Route not found';
-                                } else {
-                                  distanceText = 'Location unavailable';
-                                }
-                              }
-                              
-                              const rank = distanceInfo?.rank;
-
-                              return (
+                        technicians
+                          .filter(tech => tech.account_status !== 'INACTIVE')
+                          .map((technician) => (
                           <SelectItem
                             key={technician.id}
                             value={technician.id || 'unknown'}
                           >
-                                  <div className="flex items-center justify-between w-full">
                                     <div className="flex items-center gap-2">
-                                      {rank && rank <= 3 && (
-                                        <span className="text-xs font-bold text-blue-600">#{rank}</span>
-                                      )}
                                       <span>{technician.fullName || 'Unknown Technician'}</span>
-                                      <Badge 
-                                        variant={technician.status === 'AVAILABLE' ? 'default' : technician.status === 'BUSY' ? 'secondary' : 'outline'}
-                                        className="text-xs"
-                                        title={
-                                          technician.status === 'OFFLINE' 
-                                            ? 'Technician is offline or hasn\'t opened their dashboard recently'
-                                            : technician.status === 'BUSY'
-                                            ? 'Technician is currently working on a job'
-                                            : technician.status === 'ON_BREAK'
-                                            ? 'Technician is on break'
-                                            : 'Technician is available'
-                                        }
-                                      >
-                                        {technician.status || 'OFFLINE'}
-                                      </Badge>
-                                    </div>
-                                    <span className="text-xs text-gray-500 ml-2">{distanceText}</span>
+                                {technician.employeeId && (
+                                  <span className="text-xs text-gray-500">({technician.employeeId})</span>
+                                )}
                                   </div>
                           </SelectItem>
-                              );
-                            });
-                          })()
+                          ))
                       )}
                     </SelectContent>
                   </Select>
-                  )}
-                  
-                  {/* Show detailed technician list with distances */}
-                  {technicianDistances.length > 0 && !loadingDistances && (
-                    <div className="mt-3 p-3 bg-gray-50 rounded-md space-y-2 max-h-[300px] overflow-y-auto">
-                      <Label className="text-sm font-semibold text-gray-700">Technicians ranked by travel time:</Label>
-                      {technicians
-                        .map(tech => {
-                          const distanceInfo = technicianDistances.find(d => d.technicianId === tech.id);
-                          return { tech, distanceInfo };
-                        })
-                        .sort((a, b) => {
-                          if (!a.distanceInfo?.distance || a.distanceInfo.distance.status !== 'OK') return 1;
-                          if (!b.distanceInfo?.distance || b.distanceInfo.distance.status !== 'OK') return -1;
-                          return a.distanceInfo.distance.duration.value - b.distanceInfo.distance.duration.value;
-                        })
-                        .map(({ tech, distanceInfo }) => {
-                          const hasDistance = distanceInfo?.distance && distanceInfo.distance.status === 'OK';
-                          const hasLocation = tech.currentLocation?.latitude && tech.currentLocation?.longitude;
-                          const isSelected = selectedTechnicianId === tech.id;
-                          
-                          return (
-                            <div
-                              key={tech.id}
-                              onClick={() => setSelectedTechnicianId(tech.id)}
-                              className={`p-2 rounded border cursor-pointer transition-colors ${
-                                isSelected 
-                                  ? 'border-blue-500 bg-blue-50' 
-                                  : 'border-gray-200 hover:border-gray-300 hover:bg-gray-100'
-                              }`}
-                            >
-                              <div className="flex items-center justify-between">
-                                <div className="flex items-center gap-2">
-                                  {distanceInfo?.rank && (
-                                    <span className={`text-sm font-bold ${
-                                      distanceInfo.rank === 1 ? 'text-green-600' :
-                                      distanceInfo.rank === 2 ? 'text-blue-600' :
-                                      distanceInfo.rank === 3 ? 'text-purple-600' :
-                                      'text-gray-500'
-                                    }`}>
-                                      #{distanceInfo.rank}
-                                    </span>
-                                  )}
-                                  <span className="font-medium">{tech.fullName || 'Unknown'}</span>
-                                  <Badge 
-                                    variant={tech.status === 'AVAILABLE' ? 'default' : tech.status === 'BUSY' ? 'secondary' : 'outline'}
-                                    className="text-xs"
-                                    title={
-                                      tech.status === 'OFFLINE' 
-                                        ? 'Technician is offline or hasn\'t opened their dashboard recently'
-                                        : tech.status === 'BUSY'
-                                        ? 'Technician is currently working on a job'
-                                        : tech.status === 'ON_BREAK'
-                                        ? 'Technician is on break'
-                                        : 'Technician is available'
-                                    }
-                                  >
-                                    {tech.status || 'OFFLINE'}
-                                  </Badge>
-                                  {tech.status === 'OFFLINE' && tech.currentLocation?.lastUpdated && (
-                                    <span className="text-xs text-gray-400" title={`Last location update: ${new Date(tech.currentLocation.lastUpdated).toLocaleString()}`}>
-                                      (No recent activity)
-                                    </span>
-                                  )}
-                                </div>
-                                <div className="text-right">
-                                  {hasDistance ? (
-                                    <div className="text-sm">
-                                      <div className="font-semibold text-gray-900">
-                                        {distanceInfo.distance.duration.text}
-                                      </div>
-                                      <div className="text-xs text-gray-500">
-                                        {distanceInfo.distance.distance.text}
-                                      </div>
-                                    </div>
-                                  ) : hasLocation ? (
-                                    <div className="text-xs text-gray-400">Distance calculation failed</div>
-                                  ) : (
-                                    <div className="text-xs text-gray-400" title="Technician needs to open their dashboard to share location">
-                                      No location data
-                                    </div>
-                                  )}
-                                </div>
-                              </div>
-                            </div>
-                          );
-                        })}
-                    </div>
-                  )}
                 </div>
               )}
 
-              {/* Bulk Assignment */}
-              {assignmentType === 'bulk' && (
-                <div>
-                <div className="flex items-center justify-between mb-2">
-                <Label htmlFor="technicians-select">Select Multiple Technicians</Label>
+              {/* Distance-based Assignment */}
+              {assignmentType === 'distance' && (
+                <div className="space-y-3">
+                  <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+                    <Label className="text-sm sm:text-base">Technicians ranked by distance</Label>
                   <Button
                     type="button"
                     variant="outline"
@@ -9479,22 +9293,34 @@ const AdminDashboard = () => {
                         await calculateDistancesForJob(jobToAssign);
                       }
                     }}
-                    className="text-xs"
-                  >
-                    🔄 Refresh Locations
+                      className="text-xs w-full sm:w-auto"
+                      disabled={loadingDistances}
+                    >
+                      {loadingDistances ? (
+                        <>
+                          <div className="w-3 h-3 border-2 border-gray-600 border-t-transparent rounded-full animate-spin mr-1" />
+                          Calculating...
+                        </>
+                      ) : (
+                        <>
+                          🔄 Refresh Distances
+                        </>
+                      )}
                   </Button>
                 </div>
+                  
                 {loadingDistances ? (
-                  <div className="flex items-center justify-center p-4">
-                    <div className="w-5 h-5 border-2 border-blue-600 border-t-transparent rounded-full animate-spin mr-2" />
+                    <div className="flex items-center justify-center p-6">
+                      <div className="w-6 h-6 border-2 border-blue-600 border-t-transparent rounded-full animate-spin mr-3" />
                     <span className="text-sm text-gray-600">Calculating distances...</span>
                   </div>
                 ) : (
-                  <div className="mt-2 space-y-2 max-h-[400px] overflow-y-auto border rounded-md p-3">
+                    <div className="space-y-2 max-h-[400px] overflow-y-auto">
                   {technicians.length === 0 ? (
-                    <p className="text-sm text-gray-500">No technicians available</p>
+                        <p className="text-sm text-gray-500 text-center py-4">No technicians available</p>
                   ) : (
                     technicians
+                          .filter(tech => tech.account_status !== 'INACTIVE')
                         .map(tech => {
                           const distanceInfo = technicianDistances.find(d => d.technicianId === tech.id);
                           return { tech, distanceInfo };
@@ -9505,141 +9331,88 @@ const AdminDashboard = () => {
                           return a.distanceInfo.distance.duration.value - b.distanceInfo.distance.duration.value;
                         })
                         .map(({ tech, distanceInfo }) => {
-                          const technicianId = tech.id || '';
-                        const isSelected = selectedTechnicianIds.includes(technicianId);
                           const hasDistance = distanceInfo?.distance && distanceInfo.distance.status === 'OK';
-                          const hasLocation = tech.currentLocation?.latitude && tech.currentLocation?.longitude;
+                            const isSelected = selectedTechnicianId === tech.id;
 
                         return (
                             <div 
                               key={tech.id} 
-                              className={`flex items-center justify-between p-2 rounded border ${
-                                isSelected ? 'border-blue-500 bg-blue-50' : 'border-gray-200'
-                              }`}
-                            >
-                              <div className="flex items-center space-x-2 flex-1">
-                            <input
-                              type="checkbox"
-                                  id={`tech-${tech.id}`}
-                              value={technicianId}
-                              checked={isSelected}
-                              onChange={(e) => {
-                                if (e.target.checked) {
-                                  setSelectedTechnicianIds(prev => [...prev, technicianId]);
-                                } else {
-                                  setSelectedTechnicianIds(prev => prev.filter(id => id !== technicianId));
-                                }
-                              }}
-                              className="h-4 w-4 text-blue-600 rounded"
-                            />
-                                <div className="flex items-center gap-2 flex-1">
-                                  {distanceInfo?.rank && (
-                                    <span className={`text-xs font-bold ${
+                                onClick={() => setSelectedTechnicianId(tech.id)}
+                                className={`p-3 rounded-lg border-2 cursor-pointer transition-all outline-none ${
+                                  isSelected 
+                                    ? 'border-blue-500 bg-blue-50 ring-0' 
+                                    : 'border-gray-200 hover:border-gray-300 hover:bg-gray-50'
+                                }`}
+                              >
+                                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+                                  <div className="flex items-center gap-2 flex-1 min-w-0">
+                                    {distanceInfo?.rank && distanceInfo.rank <= 3 && (
+                                      <span className={`text-sm font-bold flex-shrink-0 ${
                                       distanceInfo.rank === 1 ? 'text-green-600' :
                                       distanceInfo.rank === 2 ? 'text-blue-600' :
-                                      distanceInfo.rank === 3 ? 'text-purple-600' :
-                                      'text-gray-500'
+                                        'text-purple-600'
                                     }`}>
                                       #{distanceInfo.rank}
                                     </span>
                                   )}
-                            <label
-                                    htmlFor={`tech-${tech.id}`}
-                                    className="text-sm text-gray-700 font-medium cursor-pointer flex-1"
-                            >
-                                    {tech.fullName || 'Unknown Technician'}
-                            </label>
+                                    <div className="flex-1 min-w-0">
+                                      <div className="font-medium text-sm sm:text-base truncate">{tech.fullName || 'Unknown'}</div>
+                                      {tech.employeeId && (
+                                        <div className="text-xs text-gray-500">{tech.employeeId}</div>
+                                      )}
+                                    </div>
+                                    {tech.status && tech.status !== 'OFFLINE' && (
                                   <Badge 
-                                    variant={tech.status === 'AVAILABLE' ? 'default' : tech.status === 'BUSY' ? 'secondary' : 'outline'}
-                                    className="text-xs"
-                                    title={
-                                      tech.status === 'OFFLINE' 
-                                        ? 'Technician is offline or hasn\'t opened their dashboard recently'
-                                        : tech.status === 'BUSY'
-                                        ? 'Technician is currently working on a job'
-                                        : tech.status === 'ON_BREAK'
-                                        ? 'Technician is on break'
-                                        : 'Technician is available'
-                                    }
-                                  >
-                                    {tech.status || 'OFFLINE'}
+                                        variant={tech.status === 'AVAILABLE' ? 'default' : 'secondary'}
+                                        className="text-xs flex-shrink-0"
+                                      >
+                                        {tech.status}
                                   </Badge>
-                                  {tech.status === 'OFFLINE' && tech.currentLocation?.lastUpdated && (
-                                    <span className="text-xs text-gray-400 ml-1" title={`Last location update: ${new Date(tech.currentLocation.lastUpdated).toLocaleString()}`}>
-                                      (No recent activity)
-                                    </span>
                                   )}
                                 </div>
-                              </div>
-                              {hasDistance && (
-                                <div className="text-right text-xs">
-                                  <div className="font-semibold text-gray-900">
+                                  {hasDistance ? (
+                                    <div className="text-right flex-shrink-0">
+                                      <div className="font-semibold text-sm text-gray-900">
                                     {distanceInfo.distance.duration.text}
                                   </div>
-                                  <div className="text-gray-500">
+                                      <div className="text-xs text-gray-500">
                                     {distanceInfo.distance.distance.text}
                                   </div>
                                 </div>
-                              )}
-                              {!hasDistance && hasLocation && (
-                                <div className="text-xs text-gray-400">Distance calc failed</div>
-                              )}
-                              {!hasDistance && !hasLocation && (
-                                <div className="text-xs text-gray-400" title="Technician needs to open their dashboard to share location">
-                                  No location data
+                                  ) : (
+                                    <div className="text-xs text-gray-400 flex-shrink-0">
+                                      No distance data
                                 </div>
                               )}
+                                </div>
                           </div>
                         );
                       })
                   )}
                 </div>
                 )}
-                <p className="text-xs text-gray-500 mt-1">
-                  Selected: {selectedTechnicianIds.length} technician{selectedTechnicianIds.length !== 1 ? 's' : ''}
-                </p>
                 </div>
               )}
-            </div>
           </div>
           
-          <DialogFooter className="mt-4 flex-shrink-0">
+          <DialogFooter className="mt-4 flex-shrink-0 flex-col sm:flex-row gap-2">
             <Button
               variant="outline"
               onClick={() => {
                 setAssignJobDialogOpen(false);
                 setJobToAssign(null);
                 setSelectedTechnicianId('');
-                setSelectedTechnicianIds([]);
               }}
+              className="w-full sm:w-auto"
             >
               Cancel
             </Button>
             <Button
-              onClick={() => {
-                if (assignmentType === 'bulk') {
-                  handleSaveBulkJobAssignment();
-                } else {
-                  handleSaveJobAssignment();
-                }
-              }}
-              disabled={
-                isCreatingAssignmentRequests || 
-                (assignmentType === 'direct' && !selectedTechnicianId) ||
-                (assignmentType === 'bulk' && selectedTechnicianIds.length === 0)
-              }
-              className="bg-blue-600 hover:bg-blue-700"
+              onClick={handleSaveJobAssignment}
+              disabled={!selectedTechnicianId}
+              className="bg-blue-600 hover:bg-blue-700 w-full sm:w-auto"
             >
-              {isCreatingAssignmentRequests ? (
-                <>
-                  <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin mr-2" />
-                  Sending Requests...
-                </>
-              ) : (
-                <>
-                  {assignmentType === 'bulk' ? 'Send Assignment Requests' : 'Assign Job'}
-                </>
-              )}
+              Assign Job
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -10362,9 +10135,9 @@ const AdminDashboard = () => {
                 </Button>
               </div>
               {selectedPhoto.total > 1 && (
-                <div className="absolute bottom-4 left-4 bg-black bg-opacity-50 text-white px-3 py-1 rounded">
-                  {selectedPhoto.index + 1} of {selectedPhoto.total}
-                </div>
+              <div className="absolute bottom-4 left-4 bg-black bg-opacity-50 text-white px-3 py-1 rounded">
+                {selectedPhoto.index + 1} of {selectedPhoto.total}
+              </div>
               )}
             </div>
           )}
@@ -10632,48 +10405,273 @@ const AdminDashboard = () => {
 
       {/* Reassign Job Dialog */}
       <Dialog open={reassignDialogOpen} onOpenChange={setReassignDialogOpen}>
-        <DialogContent className="max-w-md">
+        <DialogContent className="w-[95vw] sm:w-[90vw] md:w-[600px] max-w-[600px] max-h-[90vh] flex flex-col">
           <DialogHeader>
-            <DialogTitle>Reassign Job</DialogTitle>
-            <DialogDescription>
-              Select a new technician for this job
+            <DialogTitle className="text-lg sm:text-xl">Reassign Job to Technician</DialogTitle>
+            <DialogDescription className="text-sm">
+              Choose how to reassign this job
             </DialogDescription>
           </DialogHeader>
           
-          <div className="space-y-4">
-            <div>
-              <Label htmlFor="technician-select">Select Technician</Label>
-              <Select 
-                value={selectedTechnicianForReassign} 
-                onValueChange={setSelectedTechnicianForReassign}
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="Choose a technician" />
-                </SelectTrigger>
-                <SelectContent>
+          <div className="space-y-4 sm:space-y-6 overflow-y-auto flex-1 pr-1 sm:pr-2">
+            {/* Job Details */}
+            {jobToReassign && (
+              <div className="bg-gray-50 rounded-lg p-3 sm:p-4">
+                <div className="flex flex-col sm:flex-row sm:items-center gap-2 mb-2">
+                  <span className="font-mono font-bold text-base sm:text-lg">{(jobToReassign as any)?.job_number}</span>
+                  <Badge className="bg-blue-100 text-blue-800 text-xs sm:text-sm w-fit">
+                    {(jobToReassign as any)?.service_type} - {(jobToReassign as any)?.service_sub_type}
+                  </Badge>
+                </div>
+                <div className="space-y-1 text-xs sm:text-sm text-gray-600">
+                  <p><strong>Customer:</strong> {(jobToReassign as any)?.customer?.full_name || 'N/A'}</p>
+                  <p><strong>Scheduled:</strong> {(jobToReassign as any)?.scheduled_date} - {(jobToReassign as any)?.scheduled_time_slot}</p>
+                  <p className="truncate"><strong>Location:</strong> {(jobToReassign as any)?.service_address?.street || 'N/A'}</p>
+                </div>
+                {(jobToReassign as any)?.service_location?.googleLocation && (
+                  <a 
+                    href={(jobToReassign as any)?.service_location?.googleLocation}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-1 text-blue-600 hover:text-blue-800 text-xs sm:text-sm font-medium mt-2"
+                  >
+                    <MapPin className="w-3 h-3 sm:w-4 sm:h-4" />
+                    Open in Google Maps
+                  </a>
+                )}
+              </div>
+            )}
+
+            {/* Assignment Type Selection */}
+            <div className="space-y-3">
+              <Label className="text-sm sm:text-base font-semibold">Assignment Method</Label>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <button
+                  type="button"
+                  onClick={() => setReassignAssignmentType('direct')}
+                  className={`p-4 rounded-lg border-2 transition-all text-left ${
+                    reassignAssignmentType === 'direct'
+                      ? 'border-blue-500 bg-blue-50'
+                      : 'border-gray-200 hover:border-gray-300 bg-white'
+                  }`}
+                >
+                  <div className="flex items-center gap-2 mb-1">
+                    <input
+                      type="radio"
+                      checked={reassignAssignmentType === 'direct'}
+                      onChange={() => {}}
+                      className="h-4 w-4 text-blue-600"
+                    />
+                    <span className="font-medium text-sm sm:text-base">Direct Assignment</span>
+                  </div>
+                  <p className="text-xs text-gray-600 mt-1">Assign directly to one technician</p>
+                </button>
+                
+                <button
+                  type="button"
+                  onClick={() => {
+                    setReassignAssignmentType('distance');
+                    if (jobToReassign) {
+                      calculateDistancesForReassign(jobToReassign);
+                    }
+                  }}
+                  className={`p-4 rounded-lg border-2 transition-all text-left ${
+                    reassignAssignmentType === 'distance'
+                      ? 'border-blue-500 bg-blue-50'
+                      : 'border-gray-200 hover:border-gray-300 bg-white'
+                  }`}
+                >
+                  <div className="flex items-center gap-2 mb-1">
+                    <input
+                      type="radio"
+                      checked={reassignAssignmentType === 'distance'}
+                      onChange={() => {}}
+                      className="h-4 w-4 text-blue-600"
+                    />
+                    <span className="font-medium text-sm sm:text-base">By Distance</span>
+                  </div>
+                  <p className="text-xs text-gray-600 mt-1">Auto-select nearest technician</p>
+                </button>
+              </div>
+            </div>
+
+            {/* Direct Assignment */}
+            {reassignAssignmentType === 'direct' && (
+              <div className="space-y-3">
+                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+                  <Label htmlFor="technician-select" className="text-sm sm:text-base">Select Technician</Label>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={async () => {
+                      await reloadTechnicians();
+                    }}
+                    className="text-xs w-full sm:w-auto"
+                  >
+                    🔄 Refresh List
+                  </Button>
+                </div>
+                <Select value={selectedTechnicianForReassign} onValueChange={setSelectedTechnicianForReassign}>
+                  <SelectTrigger className="w-full border border-gray-300 focus:border-blue-500 focus:ring-0 focus:ring-offset-0">
+                    <SelectValue placeholder="Choose a technician" />
+                  </SelectTrigger>
+                  <SelectContent className="max-h-[300px] overflow-y-auto">
                   {technicians.length === 0 ? (
                     <SelectItem value="no-technicians" disabled>
-                      Loading technicians...
+                        No technicians available
                     </SelectItem>
                   ) : (
                     technicians
-                      .filter(tech => !tech.account_status || tech.account_status === 'ACTIVE')
-                    .map(tech => (
-                      <SelectItem key={tech.id || 'unknown'} value={tech.id || 'unknown'}>
-                          {tech.fullName || 'Unknown'} {tech.employeeId ? `(${tech.employeeId})` : ''}
+                        .filter(tech => tech.account_status !== 'INACTIVE')
+                        .map((technician) => (
+                          <SelectItem
+                            key={technician.id}
+                            value={technician.id || 'unknown'}
+                          >
+                            <div className="flex items-center gap-2">
+                              <span>{technician.fullName || 'Unknown Technician'}</span>
+                              {technician.employeeId && (
+                                <span className="text-xs text-gray-500">({technician.employeeId})</span>
+                              )}
+                            </div>
                       </SelectItem>
                       ))
                   )}
                 </SelectContent>
               </Select>
             </div>
+            )}
+
+            {/* Distance-based Assignment */}
+            {reassignAssignmentType === 'distance' && (
+              <div className="space-y-3">
+                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+                  <Label className="text-sm sm:text-base">Technicians ranked by distance</Label>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={async () => {
+                      await reloadTechnicians();
+                      if (jobToReassign) {
+                        await calculateDistancesForReassign(jobToReassign);
+                      }
+                    }}
+                    className="text-xs w-full sm:w-auto"
+                    disabled={loadingReassignDistances}
+                  >
+                    {loadingReassignDistances ? (
+                      <>
+                        <div className="w-3 h-3 border-2 border-gray-600 border-t-transparent rounded-full animate-spin mr-1" />
+                        Calculating...
+                      </>
+                    ) : (
+                      <>
+                        🔄 Refresh Distances
+                      </>
+                    )}
+                  </Button>
           </div>
 
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setReassignDialogOpen(false)}>
+                {loadingReassignDistances ? (
+                  <div className="flex items-center justify-center p-6">
+                    <div className="w-6 h-6 border-2 border-blue-600 border-t-transparent rounded-full animate-spin mr-3" />
+                    <span className="text-sm text-gray-600">Calculating distances...</span>
+                  </div>
+                ) : (
+                  <div className="space-y-2 max-h-[400px] overflow-y-auto">
+                    {technicians.length === 0 ? (
+                      <p className="text-sm text-gray-500 text-center py-4">No technicians available</p>
+                    ) : (
+                      technicians
+                        .filter(tech => tech.account_status !== 'INACTIVE')
+                        .map(tech => {
+                          const distanceInfo = reassignTechnicianDistances.find(d => d.technicianId === tech.id);
+                          return { tech, distanceInfo };
+                        })
+                        .sort((a, b) => {
+                          if (!a.distanceInfo?.distance || a.distanceInfo.distance.status !== 'OK') return 1;
+                          if (!b.distanceInfo?.distance || b.distanceInfo.distance.status !== 'OK') return -1;
+                          return a.distanceInfo.distance.duration.value - b.distanceInfo.distance.duration.value;
+                        })
+                        .map(({ tech, distanceInfo }, index) => {
+                          const hasDistance = distanceInfo?.distance && distanceInfo.distance.status === 'OK';
+                          const isSelected = selectedTechnicianForReassign === tech.id;
+                          const rank = hasDistance ? index + 1 : undefined;
+                          
+                          return (
+                            <div
+                              key={tech.id}
+                              onClick={() => setSelectedTechnicianForReassign(tech.id)}
+                              className={`p-3 rounded-lg border-2 cursor-pointer transition-all outline-none ${
+                                isSelected 
+                                  ? 'border-blue-500 bg-blue-50 ring-0' 
+                                  : 'border-gray-200 hover:border-gray-300 hover:bg-gray-50'
+                              }`}
+                            >
+                              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+                                <div className="flex items-center gap-2 flex-1 min-w-0">
+                                  {rank && rank <= 3 && (
+                                    <span className={`text-sm font-bold flex-shrink-0 ${
+                                      rank === 1 ? 'text-green-600' :
+                                      rank === 2 ? 'text-blue-600' :
+                                      'text-purple-600'
+                                    }`}>
+                                      #{rank}
+                                    </span>
+                                  )}
+                                  <div className="flex-1 min-w-0">
+                                    <div className="font-medium text-sm sm:text-base truncate">{tech.fullName || 'Unknown'}</div>
+                                    {tech.employeeId && (
+                                      <div className="text-xs text-gray-500">{tech.employeeId}</div>
+                                    )}
+                                  </div>
+                                </div>
+                                {hasDistance ? (
+                                  <div className="text-right flex-shrink-0">
+                                    <div className="font-semibold text-sm text-gray-900">
+                                      {distanceInfo.distance.duration.text}
+                                    </div>
+                                    <div className="text-xs text-gray-500">
+                                      {distanceInfo.distance.distance.text}
+                                    </div>
+                                  </div>
+                                ) : (
+                                  <div className="text-xs text-gray-400 flex-shrink-0">
+                                    No distance data
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+                          );
+                        })
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+          
+          <DialogFooter className="mt-4 flex-shrink-0 flex-col sm:flex-row gap-2">
+            <Button
+              variant="outline"
+              onClick={() => {
+                setReassignDialogOpen(false);
+                setJobToReassign(null);
+                setSelectedTechnicianForReassign('');
+                setReassignAssignmentType('direct');
+                setReassignTechnicianDistances([]);
+              }}
+              className="w-full sm:w-auto"
+            >
               Cancel
             </Button>
-            <Button onClick={handleReassignSubmit} disabled={!selectedTechnicianForReassign}>
+            <Button
+              onClick={handleReassignSubmit}
+              disabled={!selectedTechnicianForReassign}
+              className="bg-blue-600 hover:bg-blue-700 w-full sm:w-auto"
+            >
               Reassign Job
             </Button>
           </DialogFooter>
