@@ -312,6 +312,15 @@ const TechnicianDashboard = () => {
   // Options dialog state for 3-dot menu
   const [optionsDialogOpen, setOptionsDialogOpen] = useState<{[jobId: string]: boolean}>({});
   const [selectedJobForOptions, setSelectedJobForOptions] = useState<Job | null>(null);
+  // Customer report dialog state
+  const [customerReportDialogOpen, setCustomerReportDialogOpen] = useState(false);
+  const [selectedCustomerForReport, setSelectedCustomerForReport] = useState<any>(null);
+  const [customerReportJobs, setCustomerReportJobs] = useState<any[]>([]);
+  const [loadingCustomerReportJobs, setLoadingCustomerReportJobs] = useState(false);
+  // Photo viewer state for customer report
+  const [photoViewerOpen, setPhotoViewerOpen] = useState(false);
+  const [selectedPhoto, setSelectedPhoto] = useState<{url: string, index: number, total: number} | null>(null);
+  const [selectedBillPhotos, setSelectedBillPhotos] = useState<string[]>([]);
   useEffect(() => {
     registerTechnicianPWA();
     
@@ -796,6 +805,37 @@ const TechnicianDashboard = () => {
       cleanupPhotos();
     };
   }, [user]);
+
+  // Fetch customer jobs when report dialog opens
+  useEffect(() => {
+    const fetchCustomerReportJobs = async () => {
+      if (!customerReportDialogOpen || !selectedCustomerForReport) {
+        setCustomerReportJobs([]);
+        return;
+      }
+
+      setLoadingCustomerReportJobs(true);
+      try {
+        const customerId = selectedCustomerForReport.id || selectedCustomerForReport.customer_id;
+        if (customerId) {
+          const { data, error } = await db.jobs.getByCustomerId(customerId);
+          if (error) {
+            console.error('Error fetching customer jobs for report:', error);
+            setCustomerReportJobs([]);
+          } else {
+            setCustomerReportJobs(data || []);
+          }
+        }
+      } catch (error) {
+        console.error('Error fetching customer jobs for report:', error);
+        setCustomerReportJobs([]);
+      } finally {
+        setLoadingCustomerReportJobs(false);
+      }
+    };
+
+    fetchCustomerReportJobs();
+  }, [customerReportDialogOpen, selectedCustomerForReport]);
 
   // Show notification if there are queued photos or job completions (less frequent)
   useEffect(() => {
@@ -5286,6 +5326,23 @@ const TechnicianDashboard = () => {
                   AMC Info
                 </Button>
               )}
+              {/* Reports Button - Show for all jobs */}
+              <Button
+                variant="outline"
+                className="w-full justify-start"
+                onClick={async () => {
+                  const customer = (selectedJobForOptions.customer as any);
+                  if (customer) {
+                    setSelectedCustomerForReport(customer);
+                    setCustomerReportDialogOpen(true);
+                    setOptionsDialogOpen(prev => ({ ...prev, [selectedJobForOptions.id]: false }));
+                    setSelectedJobForOptions(null);
+                  }
+                }}
+              >
+                <FileText className="w-4 h-4 mr-2" />
+                Reports
+              </Button>
               {(selectedJobForOptions.status === 'ASSIGNED' || selectedJobForOptions.status === 'EN_ROUTE' || selectedJobForOptions.status === 'IN_PROGRESS') && (
                 <Button
                   variant="outline"
@@ -5432,6 +5489,421 @@ const TechnicianDashboard = () => {
               Close
             </Button>
           </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Customer Report Dialog */}
+      <Dialog open={customerReportDialogOpen} onOpenChange={setCustomerReportDialogOpen}>
+        <DialogContent className="sm:max-w-4xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Customer Report - {selectedCustomerForReport?.full_name || selectedCustomerForReport?.fullName || 'Unknown'}</DialogTitle>
+            <DialogDescription>
+              Complete service history and job details
+            </DialogDescription>
+          </DialogHeader>
+          
+          {selectedCustomerForReport && (() => {
+            // Use fetched customer report jobs (filtered to completed)
+            const completedJobs = customerReportJobs.filter(job => {
+              const jobStatus = (job as any).status || job.status;
+              return jobStatus === 'COMPLETED';
+            });
+            
+            return (
+              <div className="space-y-6 py-4">
+                {/* Customer Info */}
+                <div className="bg-gray-50 p-4 rounded-lg">
+                  <h3 className="font-semibold text-lg mb-3">Customer Information</h3>
+                  <div className="grid grid-cols-2 gap-3 text-sm">
+                    <div>
+                      <span className="text-gray-500">Name:</span> {selectedCustomerForReport.full_name || selectedCustomerForReport.fullName}
+                    </div>
+                    <div>
+                      <span className="text-gray-500">Customer ID:</span> {selectedCustomerForReport.customer_id || selectedCustomerForReport.customerId}
+                    </div>
+                    <div>
+                      <span className="text-gray-500">Phone:</span> {selectedCustomerForReport.phone}
+                    </div>
+                    <div>
+                      <span className="text-gray-500">Email:</span> {selectedCustomerForReport.email && selectedCustomerForReport.email.trim() && !selectedCustomerForReport.email.toLowerCase().includes('nomail') && !selectedCustomerForReport.email.toLowerCase().includes('no@mail')
+                        ? selectedCustomerForReport.email
+                        : 'nomail@mail'}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Completed Jobs */}
+                <div>
+                  <h3 className="font-semibold text-lg mb-3">Completed Jobs ({completedJobs.length})</h3>
+                  {loadingCustomerReportJobs ? (
+                    <div className="text-center py-8 text-gray-500">
+                      <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-gray-900 mx-auto mb-3"></div>
+                      <p className="text-sm">Loading completed jobs...</p>
+                    </div>
+                  ) : completedJobs.length === 0 ? (
+                    <div className="text-center py-8 text-gray-500">
+                      <CheckCircle className="w-12 h-12 mx-auto mb-3 text-gray-400" />
+                      <p className="text-sm">No completed jobs found</p>
+                    </div>
+                  ) : (
+                    <div className="space-y-4">
+                      {completedJobs.map((job) => {
+                        // Extract completion details
+                        const completionNotes = (job as any).completion_notes || job.completionNotes || '';
+                        const completedAt = (job as any).completed_at || job.completedAt || null;
+                        const formattedCompletedAt = completedAt ? new Date(completedAt).toLocaleString() : null;
+                        const completedBy = (job as any).completed_by || job.completedBy || null;
+                        const actualCost = (job as any).actual_cost || job.actual_cost || null;
+                        const paymentAmount = (job as any).payment_amount || job.payment_amount || null;
+                        const paymentMethod = (job as any).payment_method || job.payment_method || null;
+                        
+                        // Get technician name who completed the job
+                        let completedByName = 'Unknown';
+                        if (completedBy) {
+                          if (completedBy === 'admin' || completedBy === 'Admin') {
+                            completedByName = 'Admin';
+                          } else {
+                            // Try to find technician by ID from allTechnicians
+                            const completedByTechnician = allTechnicians.find(tech => tech.id === completedBy);
+                            completedByName = completedByTechnician?.fullName || 'Technician';
+                          }
+                        }
+                        
+                        let requirements: any[] = [];
+                        try {
+                          const reqData = (job as any).requirements || job.requirements;
+                          if (typeof reqData === 'string') {
+                            requirements = JSON.parse(reqData);
+                          } else if (Array.isArray(reqData)) {
+                            requirements = reqData;
+                          } else if (reqData && typeof reqData === 'object') {
+                            requirements = [reqData];
+                          }
+                        } catch (e) {
+                          requirements = [];
+                        }
+                        
+                        const amcInfo = requirements.find((r: any) => r?.amc_info)?.amc_info || null;
+                        const qrPhotos = requirements.find((r: any) => r?.qr_photos)?.qr_photos || null;
+                        const billPhotos = requirements.find((r: any) => r?.bill_photos)?.bill_photos || [];
+                        const paymentScreenshot = qrPhotos?.payment_screenshot || null;
+                        
+                        return (
+                          <div key={job.id} className="border border-gray-200 rounded-lg p-4 bg-white">
+                            <div className="flex items-start justify-between mb-3">
+                              <div>
+                                <div className="font-semibold text-lg">
+                                  {(job as any).job_number || job.jobNumber}
+                                </div>
+                                <div className="text-sm text-gray-600">
+                                  {(job as any).service_type || job.serviceType} - {(job as any).service_sub_type || job.serviceSubType}
+                                </div>
+                                {formattedCompletedAt && (
+                                  <div className="text-xs text-gray-500 mt-1">
+                                    Completed on {formattedCompletedAt}
+                                  </div>
+                                )}
+                              </div>
+                              <Badge className="bg-green-100 text-green-800">Completed</Badge>
+                            </div>
+                            
+                            <div className="space-y-3 mt-4 pt-4 border-t border-gray-200">
+                              {/* Bill Amount */}
+                              {(actualCost || paymentAmount) && (
+                                <div className="flex items-center gap-2">
+                                  <span className="text-sm font-medium text-gray-700 w-32">Amount:</span>
+                                  <span className="text-sm text-gray-900">₹{actualCost || paymentAmount}</span>
+                                </div>
+                              )}
+                              
+                              {/* Payment Mode */}
+                              {paymentMethod && (
+                                <div className="flex items-center gap-2">
+                                  <span className="text-sm font-medium text-gray-700 w-32">Payment Mode:</span>
+                                  <span className="text-sm text-gray-900">{
+                                    paymentMethod === 'CASH' ? 'Cash' : 
+                                    paymentMethod === 'ONLINE' || paymentMethod === 'UPI' || paymentMethod === 'CARD' || paymentMethod === 'BANK_TRANSFER' ? 'Online' : 
+                                    paymentMethod
+                                  }</span>
+                                </div>
+                              )}
+                              
+                              {/* Lead Source */}
+                              {(() => {
+                                // Find lead_source in requirements
+                                let leadSource: string | null = null;
+                                
+                                // Try to find lead_source in the array
+                                for (const req of requirements) {
+                                  if (req && typeof req === 'object') {
+                                    if (req.lead_source) {
+                                      leadSource = req.lead_source;
+                                      break;
+                                    }
+                                  }
+                                }
+                                
+                                // If still no lead_source found, check if requirements array has objects with nested properties
+                                if (!leadSource && requirements.length > 0) {
+                                  const flatReq = requirements.flat();
+                                  for (const req of flatReq) {
+                                    if (req && typeof req === 'object' && req.lead_source) {
+                                      leadSource = req.lead_source;
+                                      break;
+                                    }
+                                  }
+                                }
+                                
+                                // Don't show lead source if it's "Website" (same as admin dashboard)
+                                if (leadSource && leadSource !== 'Website') {
+                                  return (
+                                    <div className="flex items-center gap-2">
+                                      <span className="text-sm font-medium text-gray-700 w-32">Lead Source:</span>
+                                      <span className="text-sm text-gray-900">{leadSource}</span>
+                                    </div>
+                                  );
+                                }
+                                return null;
+                              })()}
+                              
+                              {/* QR Code */}
+                              {(paymentMethod === 'ONLINE' || paymentMethod === 'UPI' || paymentMethod === 'CARD' || paymentMethod === 'BANK_TRANSFER') && qrPhotos?.selected_qr_code_name && (
+                                <div className="flex items-center gap-2">
+                                  <span className="text-sm font-medium text-gray-700 w-32">QR Code:</span>
+                                  <span className="text-sm text-gray-900">{qrPhotos.selected_qr_code_name}</span>
+                                </div>
+                              )}
+                              
+                              {/* Payment Screenshot & Bill Photos - Combined Section */}
+                              {((paymentMethod === 'ONLINE' || paymentMethod === 'UPI' || paymentMethod === 'CARD' || paymentMethod === 'BANK_TRANSFER') && paymentScreenshot) || (billPhotos && Array.isArray(billPhotos) && billPhotos.length > 0) ? (
+                                <div className="mt-3 pt-3 border-t border-gray-200">
+                                  <div className="font-medium text-gray-900 mb-3">Payment & Bill Documents</div>
+                                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                                    {/* Payment Screenshot */}
+                                    {(paymentMethod === 'ONLINE' || paymentMethod === 'UPI' || paymentMethod === 'CARD' || paymentMethod === 'BANK_TRANSFER') && paymentScreenshot && (
+                                      <div 
+                                        className="relative group cursor-pointer rounded-lg overflow-hidden border-2 border-blue-300 hover:border-blue-500 transition-all"
+                                        onClick={() => {
+                                          // Combine payment screenshot and bill photos for navigation
+                                          const allPhotos = [paymentScreenshot, ...billPhotos];
+                                          setSelectedBillPhotos(allPhotos);
+                                          setSelectedPhoto({ url: paymentScreenshot, index: 0, total: allPhotos.length });
+                                          setPhotoViewerOpen(true);
+                                        }}
+                                      >
+                                        <img 
+                                          src={paymentScreenshot} 
+                                          alt="Payment Screenshot" 
+                                          className="w-full h-40 sm:h-48 object-cover transition-transform group-hover:scale-105" 
+                                        />
+                                        <div className="absolute top-2 left-2 bg-blue-600 text-white text-xs font-semibold px-2 py-1 rounded">
+                                          Payment
+                                        </div>
+                                        <div className="absolute inset-0 bg-black bg-opacity-0 group-hover:bg-opacity-10 transition-opacity flex items-center justify-center">
+                                          <div className="opacity-0 group-hover:opacity-100 transition-opacity text-white text-sm font-medium bg-black bg-opacity-50 px-3 py-1 rounded">
+                                            Click to view
+                                          </div>
+                                        </div>
+                                      </div>
+                                    )}
+                                    
+                                    {/* Bill Photos */}
+                                    {billPhotos && Array.isArray(billPhotos) && billPhotos.length > 0 && billPhotos.map((photo, idx) => {
+                                      // Calculate index including payment screenshot if it exists
+                                      const paymentScreenshotExists = (paymentMethod === 'ONLINE' || paymentMethod === 'UPI' || paymentMethod === 'CARD' || paymentMethod === 'BANK_TRANSFER') && paymentScreenshot;
+                                      const photoIndex = paymentScreenshotExists ? idx + 1 : idx;
+                                      const allPhotos = paymentScreenshotExists ? [paymentScreenshot, ...billPhotos] : billPhotos;
+                                      
+                                      return (
+                                      <div 
+                                        key={idx} 
+                                        className="relative group cursor-pointer rounded-lg overflow-hidden border-2 border-green-300 hover:border-green-500 transition-all"
+                                        onClick={() => {
+                                          setSelectedBillPhotos(allPhotos);
+                                          setSelectedPhoto({
+                                            url: photo,
+                                            index: photoIndex,
+                                            total: allPhotos.length
+                                          });
+                                          setPhotoViewerOpen(true);
+                                        }}
+                                      >
+                                        <img 
+                                          src={photo} 
+                                          alt={`Bill photo ${idx + 1}`} 
+                                          className="w-full h-40 sm:h-48 object-cover transition-transform group-hover:scale-105" 
+                                        />
+                                        <div className="absolute top-2 left-2 bg-green-600 text-white text-xs font-semibold px-2 py-1 rounded">
+                                          Bill {idx + 1}
+                                        </div>
+                                        <div className="absolute inset-0 bg-black bg-opacity-0 group-hover:bg-opacity-10 transition-opacity flex items-center justify-center">
+                                          <div className="opacity-0 group-hover:opacity-100 transition-opacity text-white text-sm font-medium bg-black bg-opacity-50 px-3 py-1 rounded">
+                                            Click to view
+                                          </div>
+                                        </div>
+                                      </div>
+                                      );
+                                    })}
+                                  </div>
+                                </div>
+                              ) : null}
+                              
+                              {/* AMC Details */}
+                              {amcInfo && (
+                                <div className="mt-3 pt-3 border-t border-green-300 bg-green-50 rounded-lg p-3">
+                                  <div className="flex items-center gap-2 mb-2">
+                                    <Badge className="bg-green-600 text-white">AMC Active</Badge>
+                                    <div className="font-semibold text-gray-900">AMC Details</div>
+                                  </div>
+                                  <div className="space-y-2 text-sm">
+                                    <div className="flex items-center gap-2">
+                                      <span className="text-gray-600 font-medium w-32">Start Date:</span>
+                                      <span className="text-gray-900 font-semibold">{amcInfo.date_given ? new Date(amcInfo.date_given).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }) : 'N/A'}</span>
+                                    </div>
+                                    <div className="flex items-center gap-2">
+                                      <span className="text-gray-600 font-medium w-32">End Date:</span>
+                                      <span className="text-gray-900 font-semibold">{amcInfo.end_date ? new Date(amcInfo.end_date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }) : 'N/A'}</span>
+                                    </div>
+                                    <div className="flex items-center gap-2">
+                                      <span className="text-gray-600 font-medium w-32">Duration:</span>
+                                      <span className="text-gray-900 font-semibold">{amcInfo.years || 1} {amcInfo.years === 1 ? 'year' : 'years'}</span>
+                                    </div>
+                                    {amcInfo.includes_prefilter !== undefined && (
+                                      <div className="flex items-center gap-2">
+                                        <span className="text-gray-600 font-medium w-32">Includes Prefilter:</span>
+                                        <span className="text-gray-900 font-semibold">{amcInfo.includes_prefilter ? 'Yes' : 'No'}</span>
+                                      </div>
+                                    )}
+                                    {amcInfo.additional_info && (
+                                      <div className="mt-3 pt-3 border-t border-green-200">
+                                        <div className="text-gray-600 font-medium mb-2">Additional Info:</div>
+                                        <div className="text-gray-900 whitespace-pre-wrap bg-white p-2 rounded border border-green-200">{amcInfo.additional_info}</div>
+                                      </div>
+                                    )}
+                                  </div>
+                                </div>
+                              )}
+                              
+                              {/* Completion Notes */}
+                              {completionNotes && (
+                                <div className="mt-3 pt-3 border-t border-gray-200">
+                                  <div className="font-medium text-gray-900 mb-1">Notes:</div>
+                                  <div className="text-sm text-gray-700 whitespace-pre-wrap">{completionNotes}</div>
+                                </div>
+                              )}
+                              
+                              {/* Completed By */}
+                              {completedByName && (
+                                <div className="mt-3 pt-3 border-t border-gray-200">
+                                  <div className="flex items-center gap-2">
+                                    <span className="text-sm font-medium text-gray-700 w-32">Completed By:</span>
+                                    <span className="text-sm text-gray-900">{completedByName}</span>
+                                  </div>
+                                </div>
+                              )}
+                              
+                              {/* Job Description */}
+                              {job.description && (
+                                <div className="mt-3 pt-3 border-t border-gray-200">
+                                  <div className="font-medium text-gray-900 mb-1">Description:</div>
+                                  <div className="text-sm text-gray-700 whitespace-pre-wrap">{job.description}</div>
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              </div>
+            );
+          })()}
+          
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setCustomerReportDialogOpen(false)}>
+              Close
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Photo Viewer Dialog for Customer Report */}
+      <Dialog open={photoViewerOpen} onOpenChange={setPhotoViewerOpen}>
+        <DialogContent className="max-w-[95vw] max-h-[95vh] p-0 bg-black">
+          <div className="relative w-full h-full flex items-center justify-center min-h-[60vh]">
+            {/* Close button */}
+            <Button
+              variant="ghost"
+              size="sm"
+              className="absolute top-4 right-4 z-10 bg-black/50 text-white hover:bg-black/70"
+              onClick={() => setPhotoViewerOpen(false)}
+            >
+              <XCircle className="w-5 h-5" />
+            </Button>
+
+            {/* Previous button */}
+            {selectedPhoto && selectedPhoto.total > 1 && selectedPhoto.index > 0 && (
+              <Button
+                variant="ghost"
+                size="sm"
+                className="absolute left-4 top-1/2 transform -translate-y-1/2 z-10 bg-black/50 text-white hover:bg-black/70"
+                onClick={() => {
+                  if (selectedPhoto && selectedBillPhotos.length > 0) {
+                    const newIndex = selectedPhoto.index - 1;
+                    setSelectedPhoto({
+                      url: selectedBillPhotos[newIndex],
+                      index: newIndex,
+                      total: selectedBillPhotos.length
+                    });
+                  }
+                }}
+              >
+                <ArrowRight className="w-5 h-5 rotate-180" />
+              </Button>
+            )}
+
+            {/* Next button */}
+            {selectedPhoto && selectedPhoto.total > 1 && selectedPhoto.index < selectedPhoto.total - 1 && (
+              <Button
+                variant="ghost"
+                size="sm"
+                className="absolute right-4 top-1/2 transform -translate-y-1/2 z-10 bg-black/50 text-white hover:bg-black/70"
+                onClick={() => {
+                  if (selectedPhoto && selectedBillPhotos.length > 0) {
+                    const newIndex = selectedPhoto.index + 1;
+                    setSelectedPhoto({
+                      url: selectedBillPhotos[newIndex],
+                      index: newIndex,
+                      total: selectedBillPhotos.length
+                    });
+                  }
+                }}
+              >
+                <ArrowRight className="w-5 h-5" />
+              </Button>
+            )}
+
+            {/* Photo counter */}
+            {selectedPhoto && selectedPhoto.total > 1 && (
+              <div className="absolute top-4 left-4 z-10 bg-black/50 text-white px-3 py-1 rounded-full text-sm">
+                {selectedPhoto.index + 1} / {selectedPhoto.total}
+              </div>
+            )}
+
+            {/* Main photo */}
+            {selectedPhoto && (
+              <img
+                src={selectedPhoto.url}
+                alt={`Photo ${selectedPhoto.index + 1}`}
+                className="max-w-full max-h-[90vh] object-contain"
+                onError={(e) => {
+                  console.error('Image failed to load:', selectedPhoto.url);
+                  e.currentTarget.style.display = 'none';
+                }}
+              />
+            )}
+          </div>
         </DialogContent>
       </Dialog>
     </div>
