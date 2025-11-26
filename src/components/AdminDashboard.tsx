@@ -53,7 +53,8 @@ import {
   MessageSquare,
   DollarSign,
   BarChart3,
-  ArrowLeft
+  ArrowLeft,
+  X
 } from 'lucide-react';
 import { db, supabase } from '@/lib/supabase';
 import { registerAdminPWA, disablePWA } from '@/lib/pwa';
@@ -5685,24 +5686,54 @@ const AdminDashboard = () => {
 
   // Navigate to previous photo
   const goToPreviousPhoto = () => {
-    if (!selectedPhoto || !selectedJobPhotos) return;
-    const newIndex = selectedPhoto.index > 0 ? selectedPhoto.index - 1 : selectedJobPhotos.photos.length - 1;
-    setSelectedPhoto({ 
-      url: selectedJobPhotos.photos[newIndex], 
-      index: newIndex, 
-      total: selectedJobPhotos.photos.length 
-    });
+    if (!selectedPhoto) return;
+    
+    // Use selectedBillPhotos if available (for combined payment + bill photos)
+    if (selectedBillPhotos && selectedBillPhotos.length > 0) {
+      const newIndex = selectedPhoto.index > 0 ? selectedPhoto.index - 1 : selectedBillPhotos.length - 1;
+      setSelectedPhoto({ 
+        url: selectedBillPhotos[newIndex], 
+        index: newIndex, 
+        total: selectedBillPhotos.length 
+      });
+      return;
+    }
+    
+    // Fallback to selectedJobPhotos
+    if (selectedJobPhotos && selectedJobPhotos.photos) {
+      const newIndex = selectedPhoto.index > 0 ? selectedPhoto.index - 1 : selectedJobPhotos.photos.length - 1;
+      setSelectedPhoto({ 
+        url: selectedJobPhotos.photos[newIndex], 
+        index: newIndex, 
+        total: selectedJobPhotos.photos.length 
+      });
+    }
   };
 
   // Navigate to next photo
   const goToNextPhoto = () => {
-    if (!selectedPhoto || !selectedJobPhotos) return;
-    const newIndex = selectedPhoto.index < selectedJobPhotos.photos.length - 1 ? selectedPhoto.index + 1 : 0;
-    setSelectedPhoto({ 
-      url: selectedJobPhotos.photos[newIndex], 
-      index: newIndex, 
-      total: selectedJobPhotos.photos.length 
-    });
+    if (!selectedPhoto) return;
+    
+    // Use selectedBillPhotos if available (for combined payment + bill photos)
+    if (selectedBillPhotos && selectedBillPhotos.length > 0) {
+      const newIndex = selectedPhoto.index < selectedBillPhotos.length - 1 ? selectedPhoto.index + 1 : 0;
+      setSelectedPhoto({ 
+        url: selectedBillPhotos[newIndex], 
+        index: newIndex, 
+        total: selectedBillPhotos.length 
+      });
+      return;
+    }
+    
+    // Fallback to selectedJobPhotos
+    if (selectedJobPhotos && selectedJobPhotos.photos) {
+      const newIndex = selectedPhoto.index < selectedJobPhotos.photos.length - 1 ? selectedPhoto.index + 1 : 0;
+      setSelectedPhoto({ 
+        url: selectedJobPhotos.photos[newIndex], 
+        index: newIndex, 
+        total: selectedJobPhotos.photos.length 
+      });
+    }
   };
 
   // Download photo
@@ -7497,22 +7528,44 @@ const AdminDashboard = () => {
                                       </div>
                                     )}
                                     
-                                    {/* Payment Screenshot (if online) */}
-                                    {(paymentMethod === 'ONLINE' || paymentMethod === 'UPI' || paymentMethod === 'CARD' || paymentMethod === 'BANK_TRANSFER') && paymentScreenshot && (
-                                      <div className="text-gray-700 break-words">
-                                        <span className="text-gray-500 font-medium">Payment Screenshot:</span>
-                                        <a href={paymentScreenshot} target="_blank" rel="noopener noreferrer" className="ml-2 text-blue-600 hover:underline break-all">
-                                          View Screenshot
-                                        </a>
-                                      </div>
-                                    )}
-                                    
                                     {/* QR Code Info (if online) */}
                                     {(paymentMethod === 'ONLINE' || paymentMethod === 'UPI' || paymentMethod === 'CARD' || paymentMethod === 'BANK_TRANSFER') && qrPhotos?.selected_qr_code_name && (
                                       <div className="text-gray-700 break-words">
                                         <span className="text-gray-500 font-medium">QR Code:</span> {qrPhotos.selected_qr_code_name}
                                       </div>
                                     )}
+                                    
+                                    {/* Payment Screenshot & Bill Photos - Combined */}
+                                    {((paymentMethod === 'ONLINE' || paymentMethod === 'UPI' || paymentMethod === 'CARD' || paymentMethod === 'BANK_TRANSFER') && paymentScreenshot) || (billPhotos && Array.isArray(billPhotos) && billPhotos.length > 0) ? (
+                                      <div className="text-gray-700 mt-2 pt-2 border-t border-green-200">
+                                        <span className="text-gray-500 font-medium">Payment & Bill Documents:</span>
+                                        <button
+                                          onClick={() => {
+                                            // Combine payment screenshot and bill photos
+                                            const allPhotos: string[] = [];
+                                            if (paymentScreenshot) {
+                                              allPhotos.push(paymentScreenshot);
+                                            }
+                                            if (billPhotos && Array.isArray(billPhotos)) {
+                                              allPhotos.push(...billPhotos);
+                                            }
+                                            
+                                            if (allPhotos.length > 0) {
+                                              setSelectedBillPhotos(allPhotos);
+                                              setSelectedPhoto({ 
+                                                url: allPhotos[0], 
+                                                index: 0, 
+                                                total: allPhotos.length 
+                                              });
+                                              setPhotoViewerOpen(true);
+                                            }
+                                          }}
+                                          className="ml-2 text-blue-600 hover:underline break-all cursor-pointer"
+                                        >
+                                          View {paymentScreenshot && billPhotos && billPhotos.length > 0 ? `${billPhotos.length + 1} Photos` : paymentScreenshot ? 'Payment Screenshot' : `Bill Photos (${billPhotos.length})`}
+                                        </button>
+                                      </div>
+                                    ) : null}
                                     
                                     {/* AMC Details */}
                                     {amcInfo && (
@@ -7533,6 +7586,12 @@ const AdminDashboard = () => {
                                               <span className="text-gray-500">Includes Prefilter:</span> {amcInfo.includes_prefilter ? 'Yes' : 'No'}
                                             </div>
                                           )}
+                                          {amcInfo.additional_info && (
+                                            <div className="mt-2 pt-2 border-t border-green-300">
+                                              <span className="text-gray-500 font-medium">Additional Info:</span>
+                                              <div className="text-gray-700 mt-1 whitespace-pre-wrap">{amcInfo.additional_info}</div>
+                                            </div>
+                                          )}
                                         </div>
                                       </div>
                                     )}
@@ -7541,13 +7600,6 @@ const AdminDashboard = () => {
                                     {completionNotes && (
                                       <div className="text-gray-700 mt-2 pt-2 border-t border-green-200 break-words">
                                         <span className="text-gray-500 font-medium">Notes:</span> {completionNotes}
-                                      </div>
-                                    )}
-                                    
-                                    {/* Bill Photos */}
-                                    {billPhotos && Array.isArray(billPhotos) && billPhotos.length > 0 && (
-                                      <div className="text-gray-700 mt-2 pt-2 border-t border-green-200">
-                                        <span className="text-gray-500 font-medium">Bill Photos:</span> {billPhotos.length} photo{billPhotos.length !== 1 ? 's' : ''}
                                       </div>
                                     )}
                                     
@@ -9392,21 +9444,48 @@ const AdminDashboard = () => {
       </Dialog>
 
       {/* Full-Screen Photo Viewer Modal */}
-      <Dialog open={photoViewerOpen} onOpenChange={setPhotoViewerOpen}>
-        <DialogContent className="max-w-[95vw] max-h-[95vh] p-0 bg-black">
+      <Dialog open={photoViewerOpen} onOpenChange={(open) => {
+        // Only handle close if it's from outside click or ESC key
+        if (!open) {
+          setPhotoViewerOpen(false);
+          setSelectedPhoto(null);
+          setSelectedBillPhotos(null);
+        }
+      }}>
+        <DialogContent 
+          className="max-w-[95vw] max-h-[95vh] p-0 bg-black border-none"
+          onInteractOutside={(e) => e.preventDefault()}
+          onEscapeKeyDown={(e) => {
+            e.preventDefault();
+            setPhotoViewerOpen(false);
+            setSelectedPhoto(null);
+            setSelectedBillPhotos(null);
+          }}
+        >
+          <style dangerouslySetInnerHTML={{__html: `
+            [data-radix-dialog-content] button[data-radix-dialog-close] {
+              display: none !important;
+            }
+          `}} />
           <DialogHeader className="sr-only">
             <DialogTitle>Photo Viewer</DialogTitle>
             <DialogDescription>Full-screen photo viewer</DialogDescription>
           </DialogHeader>
-          <div className="relative w-full h-full flex items-center justify-center">
+          <div className="relative w-full h-full flex items-center justify-center min-h-[500px]">
             {/* Close button */}
             <Button
               variant="ghost"
               size="sm"
-              className="absolute top-4 right-4 z-10 bg-black/50 text-white hover:bg-black/70"
-              onClick={() => setPhotoViewerOpen(false)}
+              className="absolute top-4 right-4 z-50 bg-black/70 text-white hover:bg-black/90 rounded-full w-10 h-10 p-0"
+              onClick={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                setPhotoViewerOpen(false);
+                setSelectedPhoto(null);
+                setSelectedBillPhotos(null);
+              }}
             >
-              <span className="text-xl">×</span>
+              <X className="w-5 h-5" />
             </Button>
 
             {/* Previous button */}
@@ -9414,10 +9493,13 @@ const AdminDashboard = () => {
               <Button
                 variant="ghost"
                 size="sm"
-                className="absolute left-4 top-1/2 transform -translate-y-1/2 z-10 bg-black/50 text-white hover:bg-black/70"
-                onClick={goToPreviousPhoto}
+                className="absolute left-4 top-1/2 transform -translate-y-1/2 z-50 bg-black/70 text-white hover:bg-black/90 rounded-full w-10 h-10 p-0"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  goToPreviousPhoto();
+                }}
               >
-                <span className="text-xl">‹</span>
+                <span className="text-2xl">‹</span>
               </Button>
             )}
 
@@ -9426,10 +9508,13 @@ const AdminDashboard = () => {
               <Button
                 variant="ghost"
                 size="sm"
-                className="absolute right-4 top-1/2 transform -translate-y-1/2 z-10 bg-black/50 text-white hover:bg-black/70"
-                onClick={goToNextPhoto}
+                className="absolute right-4 top-1/2 transform -translate-y-1/2 z-50 bg-black/70 text-white hover:bg-black/90 rounded-full w-10 h-10 p-0"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  goToNextPhoto();
+                }}
               >
-                <span className="text-xl">›</span>
+                <span className="text-2xl">›</span>
               </Button>
             )}
 
@@ -9451,27 +9536,6 @@ const AdminDashboard = () => {
                 >
                   <Calendar className="w-4 h-4 mr-2" />
                   Download
-                </Button>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => copyPhotoLink(selectedPhoto.url)}
-                  className="bg-white/90 text-black hover:bg-white border-gray-300"
-                >
-                  <Calendar className="w-4 h-4 mr-2" />
-                  Copy Link
-                </Button>
-                <Button
-                  variant="destructive"
-                  size="sm"
-                  onClick={() => {
-                    setPhotoViewerOpen(false);
-                    handleDeletePhoto((selectedJobPhotos as any)?.jobId, selectedPhoto.index, selectedPhoto.url);
-                  }}
-                  className="bg-red-600/90 text-white hover:bg-red-700"
-                >
-                  <Trash2 className="w-4 h-4 mr-2" />
-                  Delete
                 </Button>
               </div>
             )}
@@ -10393,12 +10457,20 @@ const AdminDashboard = () => {
         </DialogContent>
       </Dialog>
 
-      {/* Photo Viewer Dialog */}
-      <Dialog open={!!selectedPhoto} onOpenChange={() => {
-        setSelectedPhoto(null);
-        setSelectedBillPhotos(null);
+      {/* Photo Viewer Dialog - Only show if photoViewerOpen is false (fallback for customer photos) */}
+      {!photoViewerOpen && (
+      <Dialog open={!!selectedPhoto && !!selectedBillPhotos && !photoViewerOpen} onOpenChange={(open) => {
+        if (!open) {
+          setSelectedPhoto(null);
+          setSelectedBillPhotos(null);
+        }
       }}>
         <DialogContent className="max-w-4xl max-h-[90vh] p-0">
+          <style dangerouslySetInnerHTML={{__html: `
+            [data-radix-dialog-content] button[data-radix-dialog-close] {
+              display: none !important;
+            }
+          `}} />
           <DialogHeader className="sr-only">
             <DialogTitle>Photo Viewer</DialogTitle>
             <DialogDescription>View photo in full screen</DialogDescription>
@@ -10495,6 +10567,7 @@ const AdminDashboard = () => {
           )}
         </DialogContent>
       </Dialog>
+      )}
 
       {/* Service History Dialog */}
       <Dialog open={historyDialogOpen} onOpenChange={setHistoryDialogOpen}>
@@ -12245,16 +12318,6 @@ const AdminDashboard = () => {
                                 </div>
                               )}
                               
-                              {/* Payment Screenshot */}
-                              {(paymentMethod === 'ONLINE' || paymentMethod === 'UPI' || paymentMethod === 'CARD' || paymentMethod === 'BANK_TRANSFER') && paymentScreenshot && (
-                                <div className="flex items-center gap-2">
-                                  <span className="text-sm font-medium text-gray-700 w-32">Payment Screenshot:</span>
-                                  <a href={paymentScreenshot} target="_blank" rel="noopener noreferrer" className="text-sm text-blue-600 hover:underline">
-                                    View Screenshot
-                                  </a>
-                                </div>
-                              )}
-                              
                               {/* QR Code */}
                               {(paymentMethod === 'ONLINE' || paymentMethod === 'UPI' || paymentMethod === 'CARD' || paymentMethod === 'BANK_TRANSFER') && qrPhotos?.selected_qr_code_name && (
                                 <div className="flex items-center gap-2">
@@ -12263,50 +12326,41 @@ const AdminDashboard = () => {
                                 </div>
                               )}
                               
-                              {/* AMC Details */}
-                              {amcInfo && (
+                              {/* Payment Screenshot & Bill Photos - Combined Section */}
+                              {((paymentMethod === 'ONLINE' || paymentMethod === 'UPI' || paymentMethod === 'CARD' || paymentMethod === 'BANK_TRANSFER') && paymentScreenshot) || (billPhotos && Array.isArray(billPhotos) && billPhotos.length > 0) ? (
                                 <div className="mt-3 pt-3 border-t border-gray-200">
-                                  <div className="font-medium text-gray-900 mb-2">AMC Details:</div>
-                                  <div className="space-y-1 text-sm">
-                                    <div className="flex items-center gap-2">
-                                      <span className="text-gray-500 w-32">Start Date:</span>
-                                      <span className="text-gray-900">{amcInfo.date_given ? new Date(amcInfo.date_given).toLocaleDateString('en-IN') : 'N/A'}</span>
-                                    </div>
-                                    <div className="flex items-center gap-2">
-                                      <span className="text-gray-500 w-32">End Date:</span>
-                                      <span className="text-gray-900">{amcInfo.end_date ? new Date(amcInfo.end_date).toLocaleDateString('en-IN') : 'N/A'}</span>
-                                    </div>
-                                    <div className="flex items-center gap-2">
-                                      <span className="text-gray-500 w-32">Duration:</span>
-                                      <span className="text-gray-900">{amcInfo.years || 1} {amcInfo.years === 1 ? 'year' : 'years'}</span>
-                                    </div>
-                                    {amcInfo.includes_prefilter !== undefined && (
-                                      <div className="flex items-center gap-2">
-                                        <span className="text-gray-500 w-32">Includes Prefilter:</span>
-                                        <span className="text-gray-900">{amcInfo.includes_prefilter ? 'Yes' : 'No'}</span>
+                                  <div className="font-medium text-gray-900 mb-3">Payment & Bill Documents</div>
+                                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                                    {/* Payment Screenshot */}
+                                    {(paymentMethod === 'ONLINE' || paymentMethod === 'UPI' || paymentMethod === 'CARD' || paymentMethod === 'BANK_TRANSFER') && paymentScreenshot && (
+                                      <div 
+                                        className="relative group cursor-pointer rounded-lg overflow-hidden border-2 border-blue-300 hover:border-blue-500 transition-all"
+                                        onClick={() => {
+                                          setSelectedPhoto({ url: paymentScreenshot, index: 0, total: 1 });
+                                          setPhotoViewerOpen(true);
+                                        }}
+                                      >
+                                        <img 
+                                          src={paymentScreenshot} 
+                                          alt="Payment Screenshot" 
+                                          className="w-full h-40 sm:h-48 object-cover transition-transform group-hover:scale-105" 
+                                        />
+                                        <div className="absolute top-2 left-2 bg-blue-600 text-white text-xs font-semibold px-2 py-1 rounded">
+                                          Payment
+                                        </div>
+                                        <div className="absolute inset-0 bg-black bg-opacity-0 group-hover:bg-opacity-10 transition-opacity flex items-center justify-center">
+                                          <div className="opacity-0 group-hover:opacity-100 transition-opacity text-white text-sm font-medium bg-black bg-opacity-50 px-3 py-1 rounded">
+                                            Click to view
+                                          </div>
+                                        </div>
                                       </div>
                                     )}
-                                  </div>
-                                </div>
-                              )}
-                              
-                              {/* Completion Notes */}
-                              {completionNotes && (
-                                <div className="mt-3 pt-3 border-t border-gray-200">
-                                  <div className="font-medium text-gray-900 mb-1">Notes:</div>
-                                  <div className="text-sm text-gray-700 whitespace-pre-wrap">{completionNotes}</div>
-                                </div>
-                              )}
-                              
-                              {/* Bill Photos */}
-                              {billPhotos && Array.isArray(billPhotos) && billPhotos.length > 0 && (
-                                <div className="mt-3 pt-3 border-t border-gray-200">
-                                  <div className="font-medium text-gray-900 mb-2">Bill Photos ({billPhotos.length}):</div>
-                                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-                                    {billPhotos.map((photo, idx) => (
+                                    
+                                    {/* Bill Photos */}
+                                    {billPhotos && Array.isArray(billPhotos) && billPhotos.length > 0 && billPhotos.map((photo, idx) => (
                                       <div 
                                         key={idx} 
-                                        className="relative group cursor-pointer rounded-lg overflow-hidden border border-gray-200 hover:border-gray-400 transition-all"
+                                        className="relative group cursor-pointer rounded-lg overflow-hidden border-2 border-green-300 hover:border-green-500 transition-all"
                                         onClick={() => {
                                           setSelectedBillPhotos(billPhotos);
                                           setSelectedPhoto({
@@ -12321,6 +12375,9 @@ const AdminDashboard = () => {
                                           alt={`Bill photo ${idx + 1}`} 
                                           className="w-full h-40 sm:h-48 object-cover transition-transform group-hover:scale-105" 
                                         />
+                                        <div className="absolute top-2 left-2 bg-green-600 text-white text-xs font-semibold px-2 py-1 rounded">
+                                          Bill {idx + 1}
+                                        </div>
                                         <div className="absolute inset-0 bg-black bg-opacity-0 group-hover:bg-opacity-10 transition-opacity flex items-center justify-center">
                                           <div className="opacity-0 group-hover:opacity-100 transition-opacity text-white text-sm font-medium bg-black bg-opacity-50 px-3 py-1 rounded">
                                             Click to view
@@ -12329,6 +12386,50 @@ const AdminDashboard = () => {
                                       </div>
                                     ))}
                                   </div>
+                                </div>
+                              ) : null}
+                              
+                              {/* AMC Details */}
+                              {amcInfo && (
+                                <div className="mt-3 pt-3 border-t border-green-300 bg-green-50 rounded-lg p-3">
+                                  <div className="flex items-center gap-2 mb-2">
+                                    <Badge className="bg-green-600 text-white">AMC Active</Badge>
+                                    <div className="font-semibold text-gray-900">AMC Details</div>
+                                  </div>
+                                  <div className="space-y-2 text-sm">
+                                    <div className="flex items-center gap-2">
+                                      <span className="text-gray-600 font-medium w-32">Start Date:</span>
+                                      <span className="text-gray-900 font-semibold">{amcInfo.date_given ? new Date(amcInfo.date_given).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }) : 'N/A'}</span>
+                                    </div>
+                                    <div className="flex items-center gap-2">
+                                      <span className="text-gray-600 font-medium w-32">End Date:</span>
+                                      <span className="text-gray-900 font-semibold">{amcInfo.end_date ? new Date(amcInfo.end_date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }) : 'N/A'}</span>
+                                    </div>
+                                    <div className="flex items-center gap-2">
+                                      <span className="text-gray-600 font-medium w-32">Duration:</span>
+                                      <span className="text-gray-900 font-semibold">{amcInfo.years || 1} {amcInfo.years === 1 ? 'year' : 'years'}</span>
+                                    </div>
+                                    {amcInfo.includes_prefilter !== undefined && (
+                                      <div className="flex items-center gap-2">
+                                        <span className="text-gray-600 font-medium w-32">Includes Prefilter:</span>
+                                        <span className="text-gray-900 font-semibold">{amcInfo.includes_prefilter ? 'Yes' : 'No'}</span>
+                                      </div>
+                                    )}
+                                    {amcInfo.additional_info && (
+                                      <div className="mt-3 pt-3 border-t border-green-200">
+                                        <div className="text-gray-600 font-medium mb-2">Additional Info:</div>
+                                        <div className="text-gray-900 whitespace-pre-wrap bg-white p-2 rounded border border-green-200">{amcInfo.additional_info}</div>
+                                      </div>
+                                    )}
+                                  </div>
+                                </div>
+                              )}
+                              
+                              {/* Completion Notes */}
+                              {completionNotes && (
+                                <div className="mt-3 pt-3 border-t border-gray-200">
+                                  <div className="font-medium text-gray-900 mb-1">Notes:</div>
+                                  <div className="text-sm text-gray-700 whitespace-pre-wrap">{completionNotes}</div>
                                 </div>
                               )}
                               

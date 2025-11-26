@@ -53,10 +53,8 @@ import { extractCoordinates, formatAddressForDisplay } from '@/lib/maps';
 import ImageUpload from '@/components/ImageUpload';
 import { Label } from '@/components/ui/label';
 import { processQueuedPhotos, startRetryProcessing, setupOnlineListener, stopRetryProcessing } from '@/lib/retryPhotoUpload';
-import { getQueuedPhotosCount, linkQueuedPhotosToJob } from '@/lib/offlinePhotoQueue';
-import { queueJobCompletion, saveJobCompletionProgress, getQueuedCompletionForJob, removeQueuedJobCompletion } from '@/lib/offlineJobCompletion';
-import { processQueuedJobCompletions, startJobCompletionRetryProcessing, setupJobCompletionOnlineListener, stopJobCompletionRetryProcessing } from '@/lib/retryJobCompletion';
-import { getQueuedCompletionsCount } from '@/lib/offlineJobCompletion';
+import { getQueuedPhotosCount } from '@/lib/offlinePhotoQueue';
+import { saveJobCompletionProgress, getQueuedCompletionForJob } from '@/lib/offlineJobCompletion';
 import { withTimeout, isSlowNetworkError, isTimeoutError } from '@/lib/networkTimeout';
 
 // Bangalore areas list for location extraction
@@ -392,6 +390,7 @@ const TechnicianDashboard = () => {
   const [amcEndDate, setAmcEndDate] = useState<string>('');
   const [amcYears, setAmcYears] = useState<number>(1);
   const [amcIncludesPrefilter, setAmcIncludesPrefilter] = useState<boolean>(false);
+  const [amcAdditionalInfo, setAmcAdditionalInfo] = useState<string>('');
   const [hasAMC, setHasAMC] = useState<boolean>(false);
   const [paymentMode, setPaymentMode] = useState<'CASH' | 'ONLINE' | ''>('');
   const [billAmountConfirmOpen, setBillAmountConfirmOpen] = useState(false);
@@ -759,61 +758,15 @@ const TechnicianDashboard = () => {
         }, 500);
       }
 
-      // Process any queued job completions on mount (IMMEDIATELY - data must be saved)
-      const queuedCompletionsCount = getQueuedCompletionsCount();
-      if (queuedCompletionsCount > 0) {
-        console.log(`💼 Found ${queuedCompletionsCount} saved job completion(s) - submitting now...`);
-        // Process immediately - no toast needed
-        processQueuedJobCompletions();
-      }
-
-    // Start automatic retry processing (every 30 seconds)
+    // Start automatic retry processing for photos (every 30 seconds)
     startRetryProcessing(30000);
-    startJobCompletionRetryProcessing(30000);
 
     // Setup listener for when network comes back online
     const cleanupPhotos = setupOnlineListener();
-    const cleanupCompletions = setupJobCompletionOnlineListener();
-
-    // Also process when page becomes visible (user switches back to tab/window)
-    const handleVisibilityChange = () => {
-      if (document.visibilityState === 'visible') {
-        console.log('👁️ Page became visible - checking for queued items...');
-        const queuedCompletions = getQueuedCompletionsCount();
-        if (queuedCompletions > 0) {
-          console.log(`💼 Processing ${queuedCompletions} queued job completion(s) on visibility change...`);
-          processQueuedJobCompletions();
-        }
-        const queuedPhotos = getQueuedPhotosCount();
-        if (queuedPhotos > 0) {
-          processQueuedPhotos();
-        }
-      }
-    };
-    document.addEventListener('visibilitychange', handleVisibilityChange);
-
-    // Also process when window gets focus (user switches back to window)
-    const handleFocus = () => {
-      console.log('🎯 Window focused - checking for queued items...');
-      const queuedCompletions = getQueuedCompletionsCount();
-      if (queuedCompletions > 0) {
-        console.log(`💼 Processing ${queuedCompletions} queued job completion(s) on focus...`);
-        processQueuedJobCompletions();
-      }
-      const queuedPhotos = getQueuedPhotosCount();
-      if (queuedPhotos > 0) {
-        processQueuedPhotos();
-      }
-    };
-    window.addEventListener('focus', handleFocus);
 
     return () => {
       stopRetryProcessing();
-      stopJobCompletionRetryProcessing();
       cleanupPhotos();
-      cleanupCompletions();
-      document.removeEventListener('visibilitychange', handleVisibilityChange);
-      window.removeEventListener('focus', handleFocus);
     };
   }, [user]);
 
@@ -825,9 +778,8 @@ const TechnicianDashboard = () => {
 
     const checkQueuedItems = () => {
       const queuedPhotosCount = getQueuedPhotosCount();
-      const queuedCompletionsCount = getQueuedCompletionsCount();
       
-      if (queuedPhotosCount > 0 || queuedCompletionsCount > 0) {
+      if (queuedPhotosCount > 0) {
         // Show notification only once every 2 minutes to avoid spam
         const lastNotification = localStorage.getItem('last_queued_items_notification');
         const now = Date.now();
@@ -835,9 +787,6 @@ const TechnicianDashboard = () => {
           const messages = [];
           if (queuedPhotosCount > 0) {
             messages.push(`${queuedPhotosCount} photo(s)`);
-          }
-          if (queuedCompletionsCount > 0) {
-            messages.push(`${queuedCompletionsCount} job completion(s)`);
           }
           
           // Data saved safely, will submit automatically (no toast needed)
@@ -1773,6 +1722,7 @@ const TechnicianDashboard = () => {
       setAmcEndDate(savedProgress.amcEndDate || '');
       setAmcYears(savedProgress.amcYears || 1);
       setAmcIncludesPrefilter(savedProgress.amcIncludesPrefilter || false);
+      setAmcAdditionalInfo(savedProgress.amcAdditionalInfo || '');
       setCustomerHasPrefilter(savedProgress.customerHasPrefilter);
       setCompleteJobStep(savedProgress.currentStep as 1 | 2 | 3 | 4 | 5 | 6 || 1);
       
@@ -1792,7 +1742,9 @@ const TechnicianDashboard = () => {
       calculateAMCEndDate(today, 1);
       setAmcIncludesPrefilter(false);
       setHasAMC(false);
-      setPaymentMode('');
+        setAmcAdditionalInfo('');
+        setPaymentScreenshot('');
+        setPaymentMode('');
       setCustomerHasPrefilter(null);
       setQrCodeType('');
       setSelectedQrCodeId('');
@@ -2138,6 +2090,7 @@ const TechnicianDashboard = () => {
         amcEndDate,
         amcYears,
         amcIncludesPrefilter,
+        amcAdditionalInfo,
         currentStep: 6,
       });
       setCompleteJobStep(6);
@@ -2148,18 +2101,41 @@ const TechnicianDashboard = () => {
     setIsSubmittingJobCompletion(true);
     
     try {
-      // STEP 1: ALWAYS save everything to localStorage FIRST (never lose data)
+      // STEP 1: Ensure all photos are uploaded to Cloudinary (must be URLs, not local files)
+      const uploadedBillPhotos = billPhotos.filter(url => 
+        url && typeof url === 'string' && (url.startsWith('http://') || url.startsWith('https://'))
+      );
+      
+      // Check if there are any non-uploaded photos
+      const nonUploadedPhotos = billPhotos.filter(url => 
+        url && typeof url === 'string' && !url.startsWith('http://') && !url.startsWith('https://')
+      );
+      
+      if (nonUploadedPhotos.length > 0) {
+        toast.error(`Please wait for ${nonUploadedPhotos.length} photo(s) to finish uploading before completing the job.`);
+        setIsSubmittingJobCompletion(false);
+        return;
+      }
+      
+      // Check payment screenshot if ONLINE payment
+      if (paymentMode === 'ONLINE' && paymentScreenshot && !paymentScreenshot.startsWith('http://') && !paymentScreenshot.startsWith('https://')) {
+        toast.error('Please wait for payment screenshot to finish uploading before completing the job.');
+        setIsSubmittingJobCompletion(false);
+        return;
+      }
+
+      // STEP 2: Get QR code details
       let selectedQrCodeUrl: string | undefined;
       let selectedQrCodeName: string | undefined;
       
-      if (selectedQrCodeId.startsWith('common_')) {
+      if (selectedQrCodeId && selectedQrCodeId.startsWith('common_')) {
         const qrId = selectedQrCodeId.replace('common_', '');
         const selectedQr = commonQrCodes.find(qr => qr.id === qrId);
         if (selectedQr) {
           selectedQrCodeUrl = selectedQr.qrCodeUrl;
           selectedQrCodeName = selectedQr.name;
         }
-      } else if (selectedQrCodeId.startsWith('technician_')) {
+      } else if (selectedQrCodeId && selectedQrCodeId.startsWith('technician_')) {
         const techId = selectedQrCodeId.replace('technician_', '');
         const selectedTech = technicians.find(t => t.id === techId);
         if (selectedTech && selectedTech.qrCode) {
@@ -2168,36 +2144,7 @@ const TechnicianDashboard = () => {
         }
       }
 
-      // Link any queued bill photos to this job BEFORE saving completion
-      // This ensures photos uploaded later will be added to the job
-      linkQueuedPhotosToJob(selectedJobForComplete.id, 'bills', 'bill');
-      
-      // Save all completion data to localStorage FIRST (before any network call)
-      const completionId = queueJobCompletion({
-        jobId: selectedJobForComplete.id,
-        billPhotos,
-        billAmount,
-        completionNotes,
-        paymentMode,
-        paymentScreenshot,
-        qrCodeType,
-        selectedQrCodeId,
-        selectedQrCodeUrl,
-        selectedQrCodeName,
-        hasAMC,
-        amcDateGiven,
-        amcEndDate,
-        amcYears,
-        amcIncludesPrefilter,
-        customerHasPrefilter,
-        currentStep: 6,
-        userId: user?.id,
-        technicianId: user?.technicianId,
-      });
-
-      console.log('✅ Job completion data saved to local storage:', completionId);
-
-      // STEP 2: Try to submit to database (with timeout)
+      // STEP 3: Submit directly to database
       try {
         // Prepare update data
         let dbPaymentMethod: 'CASH' | 'CARD' | 'UPI' | 'BANK_TRANSFER' | null = null;
@@ -2211,7 +2158,7 @@ const TechnicianDashboard = () => {
           status: 'COMPLETED',
           end_time: new Date().toISOString(),
           completion_notes: completionNotes.trim(),
-          completed_by: user?.id || 'technician',
+          completed_by: user?.id || user?.technicianId || null,
           completed_at: new Date().toISOString(),
           actual_cost: parseFloat(billAmount) || 0,
           payment_amount: parseFloat(billAmount) || 0,
@@ -2244,37 +2191,17 @@ const TechnicianDashboard = () => {
         // Remove existing photo-related requirements to avoid duplicates
         requirements = requirements.filter((req: any) => !req.bill_photos && !req.payment_photos && !req.qr_photos && !req.amc_info);
 
-        // Only add bill photos if they are uploaded (Cloudinary URLs)
-        // Photos that are still queued will be uploaded later and added to the job
-        const uploadedBillPhotos = billPhotos.filter(url => 
-          url && typeof url === 'string' && (url.startsWith('http://') || url.startsWith('https://'))
-        );
-        
-        console.log(`📸 Job completion: Found ${uploadedBillPhotos.length} uploaded bill photos out of ${billPhotos.length} total`);
-        console.log('📸 Uploaded bill photos URLs:', uploadedBillPhotos);
-        
+        // Add bill photos (all should be uploaded Cloudinary URLs at this point)
         if (uploadedBillPhotos.length > 0) {
           requirements.push({ bill_photos: uploadedBillPhotos });
           console.log('✅ Added bill photos to requirements:', uploadedBillPhotos);
-        } else {
-          console.warn('⚠️ No uploaded bill photos found to add to requirements');
-        }
-        
-        // If there are queued photos (not uploaded yet), link them to this job for later upload
-        const queuedBillPhotos = billPhotos.filter(url => 
-          url && typeof url === 'string' && !url.startsWith('http://') && !url.startsWith('https://')
-        );
-        if (queuedBillPhotos.length > 0) {
-          console.log(`📸 ${queuedBillPhotos.length} bill photo(s) are queued and will be uploaded later`);
-          // Link queued photos to this job so they can be added to requirements when uploaded
-          linkQueuedPhotosToJob(selectedJobForComplete.id, 'bill');
         }
 
         if (paymentMode === 'ONLINE') {
           const qrPhotos: any = {
             qr_code_type: qrCodeType,
             selected_qr_code_id: selectedQrCodeId,
-            payment_screenshot: paymentScreenshot || null,
+            payment_screenshot: paymentScreenshot && paymentScreenshot.startsWith('http') ? paymentScreenshot : null,
             selected_qr_code_url: selectedQrCodeUrl,
             selected_qr_code_name: selectedQrCodeName,
           };
@@ -2287,7 +2214,8 @@ const TechnicianDashboard = () => {
               date_given: amcDateGiven,
               end_date: amcEndDate,
               years: amcYears,
-              includes_prefilter: amcIncludesPrefilter
+              includes_prefilter: amcIncludesPrefilter,
+              additional_info: amcAdditionalInfo || null
             }
           });
         }
@@ -2318,41 +2246,30 @@ const TechnicianDashboard = () => {
           console.log(`✅ Job completed! Saved ${savedBillPhotos.length} bill photos to requirements:`, savedBillPhotos);
         }
         
-        // Job completed successfully! Check if there are queued photos
-        const uploadedBillPhotosCount = billPhotos.filter(url => 
-          url && typeof url === 'string' && (url.startsWith('http://') || url.startsWith('https://'))
-        ).length;
-        const queuedBillPhotosCount = billPhotos.length - uploadedBillPhotosCount;
-        
-        // Only show toast if photos were uploaded
-        if (uploadedBillPhotosCount > 0) {
-          toast.success(`📸 ${uploadedBillPhotosCount} photo(s) uploaded successfully!`, {
+        // Job completed successfully!
+        if (uploadedBillPhotos.length > 0) {
+          toast.success(`Job completed successfully with ${uploadedBillPhotos.length} photo(s)!`, {
+            duration: 3000,
+          });
+        } else {
+          toast.success('Job completed successfully!', {
             duration: 3000,
           });
         }
-        
-        if (queuedBillPhotosCount > 0) {
-          console.log(`📸 ${queuedBillPhotosCount} bill photo(s) are queued and will be added to job when uploaded`);
-        }
 
-        // Update customer prefilter status if provided (also with timeout)
+        // Update customer prefilter status if provided
         if (customerHasPrefilter !== null && selectedJobForComplete.customer) {
           const customerId = (selectedJobForComplete.customer as any).id || selectedJobForComplete.customer.id;
           if (customerId) {
-            const customerUpdatePromise = db.customers.update(customerId, {
-              has_prefilter: customerHasPrefilter
-            });
-            await withTimeout(
-              customerUpdatePromise,
-              15000, // 15 second timeout for customer update
-              'Customer update is taking longer than expected'
-            );
+            try {
+              await db.customers.update(customerId, {
+                has_prefilter: customerHasPrefilter
+              });
+            } catch (error) {
+              console.warn('Failed to update customer prefilter status:', error);
+            }
           }
         }
-
-        // STEP 3: Submission successful - remove from localStorage
-        removeQueuedJobCompletion(completionId);
-        console.log('✅ Job completion submitted and removed from local storage');
 
         // Update local state
         setJobs(prev => prev.map(job => 
@@ -2361,7 +2278,7 @@ const TechnicianDashboard = () => {
                 status: 'COMPLETED',
                 end_time: new Date().toISOString(),
             completionNotes: completionNotes.trim(),
-                completedBy: user?.id || 'technician',
+                completedBy: user?.id || user?.technicianId || null,
             completedAt: new Date().toISOString(),
             actual_cost: parseFloat(billAmount) || 0,
             payment_amount: parseFloat(billAmount) || 0,
@@ -2389,24 +2306,8 @@ const TechnicianDashboard = () => {
 
       } catch (submitError: any) {
         setIsSubmittingJobCompletion(false);
-        
-        // Submission failed - data is already saved in localStorage, so it's safe
-        console.warn('Job completion submission failed, but data is saved locally:', submitError);
-        
-        const isTimeout = isTimeoutError(submitError);
-        const isSlowNetwork = isSlowNetworkError(submitError);
-
-        if (isTimeout) {
-          // Timeout occurred - data is safe, will retry automatically (no toast needed)
-          // Allow dialog to be closed - data is safe
-          // Don't reset form state so user can see what was saved
-        } else if (isSlowNetwork) {
-          // Network issue - data is saved, will retry automatically (no toast needed)
-        } else {
-          // Submission failed - data is saved, will retry automatically (no toast needed)
-        }
-        // Data remains in localStorage - will be retried automatically
-        // User can close the dialog - data is safe and will be submitted automatically
+        console.error('Job completion submission failed:', submitError);
+        toast.error(`Failed to complete job: ${submitError?.message || 'Unknown error'}`);
       }
     } catch (error: any) {
       setIsSubmittingJobCompletion(false);
@@ -4926,6 +4827,7 @@ const TechnicianDashboard = () => {
                               amcEndDate: e.target.checked ? amcEndDate : '',
                               amcYears: e.target.checked ? 1 : amcYears,
                               amcIncludesPrefilter: amcIncludesPrefilter,
+                              amcAdditionalInfo: amcAdditionalInfo,
                               currentStep: completeJobStep,
                             });
                           }
@@ -4970,6 +4872,7 @@ const TechnicianDashboard = () => {
                                   amcEndDate: endDate,
                                   amcYears,
                                   amcIncludesPrefilter,
+                                  amcAdditionalInfo,
                                   currentStep: completeJobStep,
                                 });
                               }
@@ -5003,12 +4906,13 @@ const TechnicianDashboard = () => {
                                 paymentScreenshot,
                                 qrCodeType,
                                 selectedQrCodeId,
-                                hasAMC: true,
-                                amcDateGiven,
-                                amcEndDate: endDate,
-                                amcYears: years,
-                                amcIncludesPrefilter,
-                                currentStep: completeJobStep,
+                                  hasAMC: true,
+                                  amcDateGiven,
+                                  amcEndDate: endDate,
+                                  amcYears: years,
+                                  amcIncludesPrefilter,
+                                  amcAdditionalInfo,
+                                  currentStep: completeJobStep,
                               });
                             }
                           }}>
@@ -5056,6 +4960,7 @@ const TechnicianDashboard = () => {
                                   amcEndDate,
                                   amcYears,
                                   amcIncludesPrefilter: e.target.checked,
+                                  amcAdditionalInfo,
                                   currentStep: completeJobStep,
                                 });
                               }
@@ -5063,6 +4968,38 @@ const TechnicianDashboard = () => {
                             className="w-4 h-4"
                           />
                           <Label htmlFor="amc-prefilter" className="cursor-pointer">Includes Prefilter</Label>
+                        </div>
+                        <div>
+                          <Label htmlFor="amc-additional-info">Additional Info (Optional)</Label>
+                          <Textarea
+                            id="amc-additional-info"
+                            value={amcAdditionalInfo}
+                            onChange={(e) => {
+                              setAmcAdditionalInfo(e.target.value);
+                              // Auto-save progress
+                              if (selectedJobForComplete) {
+                                saveJobCompletionProgress(selectedJobForComplete.id, {
+                                  billPhotos,
+                                  billAmount,
+                                  completionNotes,
+                                  paymentMode: paymentMode as 'CASH' | 'ONLINE' | '',
+                                  paymentScreenshot,
+                                  qrCodeType,
+                                  selectedQrCodeId,
+                                  hasAMC: true,
+                                  amcDateGiven,
+                                  amcEndDate,
+                                  amcYears,
+                                  amcIncludesPrefilter,
+                                  amcAdditionalInfo: e.target.value,
+                                  currentStep: completeJobStep,
+                                });
+                              }
+                            }}
+                            placeholder="Enter any additional information about this AMC..."
+                            className="mt-1"
+                            rows={3}
+                          />
                         </div>
                       </div>
                     )}
@@ -5095,6 +5032,7 @@ const TechnicianDashboard = () => {
                               amcEndDate,
                               amcYears,
                               amcIncludesPrefilter,
+                              amcAdditionalInfo,
                               customerHasPrefilter: true,
                               currentStep: completeJobStep,
                             });
@@ -5138,6 +5076,7 @@ const TechnicianDashboard = () => {
                               amcEndDate,
                               amcYears,
                               amcIncludesPrefilter,
+                              amcAdditionalInfo,
                               customerHasPrefilter: false,
                               currentStep: completeJobStep,
                             });
