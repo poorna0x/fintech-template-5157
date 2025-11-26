@@ -1117,6 +1117,152 @@ export const db = {
     }
   },
 
+  // AMC Contracts operations
+  amcContracts: {
+    async create(amc: {
+      customer_id: string;
+      job_id?: string | null;
+      start_date: string;
+      end_date: string;
+      years: number;
+      includes_prefilter: boolean;
+      additional_info?: string | null;
+    }) {
+      // First, mark any existing active AMC for this customer as RENEWED or EXPIRED
+      const { data: existingAMCs } = await supabase
+        .from('amc_contracts')
+        .select('id')
+        .eq('customer_id', amc.customer_id)
+        .eq('status', 'ACTIVE');
+      
+      if (existingAMCs && existingAMCs.length > 0) {
+        // Mark existing AMCs as RENEWED if end_date hasn't passed, otherwise EXPIRED
+        const today = new Date().toISOString().split('T')[0];
+        for (const existingAMC of existingAMCs) {
+          const { data: existing } = await supabase
+            .from('amc_contracts')
+            .select('end_date')
+            .eq('id', existingAMC.id)
+            .single();
+          
+          const newStatus = existing && existing.end_date >= today ? 'RENEWED' : 'EXPIRED';
+          await supabase
+            .from('amc_contracts')
+            .update({ status: newStatus })
+            .eq('id', existingAMC.id);
+        }
+      }
+
+      // Create new AMC contract
+      const { data, error } = await supabase
+        .from('amc_contracts')
+        .insert({
+          customer_id: amc.customer_id,
+          job_id: amc.job_id || null,
+          start_date: amc.start_date,
+          end_date: amc.end_date,
+          years: amc.years,
+          includes_prefilter: amc.includes_prefilter,
+          additional_info: amc.additional_info || null,
+          status: 'ACTIVE'
+        })
+        .select()
+        .single();
+      
+      return { data, error };
+    },
+
+    async getByCustomerId(customerId: string) {
+      const { data, error } = await supabase
+        .from('amc_contracts')
+        .select('*')
+        .eq('customer_id', customerId)
+        .order('created_at', { ascending: false });
+      
+      return { data, error };
+    },
+
+    async getActiveByCustomerId(customerId: string) {
+      const { data, error } = await supabase
+        .from('amc_contracts')
+        .select('*')
+        .eq('customer_id', customerId)
+        .eq('status', 'ACTIVE')
+        .single();
+      
+      return { data, error };
+    },
+
+    async getAll(limit: number = 100, offset: number = 0) {
+      let query = supabase
+        .from('amc_contracts')
+        .select('*, customers(id, full_name, phone, email, customer_id, brand, model)', { count: 'exact' })
+        .order('created_at', { ascending: false });
+
+      if (limit > 0 && limit < 100000) {
+        query = query.range(offset, offset + limit - 1);
+      } else {
+        query = query.range(offset, offset + 99999);
+      }
+
+      const { data, error, count } = await query;
+      return { data, error, count };
+    },
+
+    async getById(id: string) {
+      const { data, error } = await supabase
+        .from('amc_contracts')
+        .select('*, customers(id, full_name, phone, email, customer_id, brand, model)')
+        .eq('id', id)
+        .single();
+      
+      return { data, error };
+    },
+
+    async update(id: string, updates: {
+      start_date?: string;
+      end_date?: string;
+      years?: number;
+      includes_prefilter?: boolean;
+      additional_info?: string | null;
+      status?: 'ACTIVE' | 'EXPIRED' | 'CANCELLED' | 'RENEWED';
+    }) {
+      const { data, error } = await supabase
+        .from('amc_contracts')
+        .update(updates)
+        .eq('id', id)
+        .select()
+        .single();
+      
+      return { data, error };
+    },
+
+    async delete(id: string) {
+      const { error } = await supabase
+        .from('amc_contracts')
+        .delete()
+        .eq('id', id);
+      
+      return { error };
+    },
+
+    async getExpiringSoon(days: number = 30) {
+      const today = new Date();
+      const futureDate = new Date();
+      futureDate.setDate(today.getDate() + days);
+      
+      const { data, error } = await supabase
+        .from('amc_contracts')
+        .select('*, customers(full_name, phone, email, customer_id)')
+        .eq('status', 'ACTIVE')
+        .gte('end_date', today.toISOString().split('T')[0])
+        .lte('end_date', futureDate.toISOString().split('T')[0])
+        .order('end_date', { ascending: true });
+      
+      return { data, error };
+    }
+  },
+
   // Technician expenses operations
   technicianExpenses: {
     async getAll(technicianId?: string) {

@@ -39,11 +39,19 @@ interface LeadTypeBilling {
   jobCount: number;
 }
 
-type DateFilter = 'today' | 'last30days' | 'year' | 'all';
+type DateFilter = 'today' | 'last30days' | 'year' | 'all' | 'range';
 
 const BillingStats = () => {
   const [dateFilter, setDateFilter] = useState<DateFilter>('today');
   const [selectedDate, setSelectedDate] = useState(() => {
+    const today = new Date();
+    return today.toISOString().split('T')[0];
+  });
+  const [startDate, setStartDate] = useState(() => {
+    const today = new Date();
+    return today.toISOString().split('T')[0];
+  });
+  const [endDate, setEndDate] = useState(() => {
     const today = new Date();
     return today.toISOString().split('T')[0];
   });
@@ -54,36 +62,42 @@ const BillingStats = () => {
 
   useEffect(() => {
     loadBillingStats();
-  }, [dateFilter, selectedDate]);
+  }, [dateFilter, selectedDate, startDate, endDate]);
 
   const getDateRange = (): { startDate: Date; endDate: Date } => {
-    const endDate = new Date();
-    endDate.setHours(23, 59, 59, 999);
+    let end = new Date();
+    end.setHours(23, 59, 59, 999);
     
-    let startDate = new Date();
+    let start = new Date();
     
     switch (dateFilter) {
       case 'today':
-        startDate = new Date(selectedDate);
-        startDate.setHours(0, 0, 0, 0);
-        endDate.setTime(startDate.getTime());
-        endDate.setHours(23, 59, 59, 999);
+        start = new Date(selectedDate);
+        start.setHours(0, 0, 0, 0);
+        end.setTime(start.getTime());
+        end.setHours(23, 59, 59, 999);
         break;
       case 'last30days':
-        startDate.setDate(startDate.getDate() - 30);
-        startDate.setHours(0, 0, 0, 0);
+        start.setDate(start.getDate() - 30);
+        start.setHours(0, 0, 0, 0);
         break;
       case 'year':
-        startDate = new Date(endDate.getFullYear(), 0, 1);
-        startDate.setHours(0, 0, 0, 0);
+        start = new Date(end.getFullYear(), 0, 1);
+        start.setHours(0, 0, 0, 0);
+        break;
+      case 'range':
+        start = new Date(startDate);
+        start.setHours(0, 0, 0, 0);
+        end = new Date(endDate);
+        end.setHours(23, 59, 59, 999);
         break;
       case 'all':
-        startDate = new Date(2020, 0, 1); // Start from a very early date
-        startDate.setHours(0, 0, 0, 0);
+        start = new Date(2020, 0, 1); // Start from a very early date
+        start.setHours(0, 0, 0, 0);
         break;
     }
     
-    return { startDate, endDate };
+    return { startDate: start, endDate: end };
   };
 
   const loadBillingStats = async () => {
@@ -271,6 +285,7 @@ const BillingStats = () => {
                 <SelectItem value="today">Today</SelectItem>
                 <SelectItem value="last30days">Last 30 Days</SelectItem>
                 <SelectItem value="year">This Year</SelectItem>
+                <SelectItem value="range">Date Range</SelectItem>
                 <SelectItem value="all">All Time</SelectItem>
               </SelectContent>
             </Select>
@@ -284,6 +299,29 @@ const BillingStats = () => {
                 onChange={(e) => setSelectedDate(e.target.value)}
                 className="w-auto"
               />
+            </div>
+          )}
+          {dateFilter === 'range' && (
+            <div className="flex items-center gap-2 flex-wrap">
+              <Calendar className="w-4 h-4 text-gray-500" />
+              <div className="flex items-center gap-2">
+                <Input
+                  type="date"
+                  value={startDate}
+                  onChange={(e) => setStartDate(e.target.value)}
+                  className="w-auto"
+                  max={endDate}
+                />
+                <span className="text-gray-500">to</span>
+                <Input
+                  type="date"
+                  value={endDate}
+                  onChange={(e) => setEndDate(e.target.value)}
+                  className="w-auto"
+                  min={startDate}
+                  max={new Date().toISOString().split('T')[0]}
+                />
+              </div>
             </div>
           )}
         </div>
@@ -371,6 +409,8 @@ const BillingStats = () => {
                           ? 'the last 30 days'
                           : dateFilter === 'year'
                           ? `year ${new Date().getFullYear()}`
+                          : dateFilter === 'range'
+                          ? `${new Date(startDate).toLocaleDateString()} to ${new Date(endDate).toLocaleDateString()}`
                           : 'all time'
                       }
                     </TableCell>
@@ -419,13 +459,12 @@ const BillingStats = () => {
                 <TableRow>
                   <TableHead>QR Code Name</TableHead>
                   <TableHead className="text-right">Total Amount</TableHead>
-                  <TableHead className="text-right">Jobs</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {qrCodeBilling.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={3} className="text-center text-gray-500 py-8">
+                    <TableCell colSpan={2} className="text-center text-gray-500 py-8">
                       No QR code billing data found for {
                         dateFilter === 'today' 
                           ? new Date(selectedDate).toLocaleDateString()
@@ -433,6 +472,8 @@ const BillingStats = () => {
                           ? 'the last 30 days'
                           : dateFilter === 'year'
                           ? `year ${new Date().getFullYear()}`
+                          : dateFilter === 'range'
+                          ? `${new Date(startDate).toLocaleDateString()} to ${new Date(endDate).toLocaleDateString()}`
                           : 'all time'
                       }
                     </TableCell>
@@ -448,7 +489,6 @@ const BillingStats = () => {
                         <TableCell className="text-right font-semibold">
                           INR {item.totalAmount.toFixed(2)}
                         </TableCell>
-                        <TableCell className="text-right">{item.jobCount}</TableCell>
                       </TableRow>
                     ))
                 )}
@@ -474,13 +514,12 @@ const BillingStats = () => {
                   <TableHead>Lead Type</TableHead>
                   <TableHead className="text-right">Total Amount</TableHead>
                   <TableHead className="text-right">Jobs</TableHead>
-                  <TableHead className="text-right">Average Amount</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {leadTypeBilling.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={4} className="text-center text-gray-500 py-8">
+                    <TableCell colSpan={3} className="text-center text-gray-500 py-8">
                       No lead type billing data found for {
                         dateFilter === 'today' 
                           ? new Date(selectedDate).toLocaleDateString()
@@ -488,6 +527,8 @@ const BillingStats = () => {
                           ? 'the last 30 days'
                           : dateFilter === 'year'
                           ? `year ${new Date().getFullYear()}`
+                          : dateFilter === 'range'
+                          ? `${new Date(startDate).toLocaleDateString()} to ${new Date(endDate).toLocaleDateString()}`
                           : 'all time'
                       }
                     </TableCell>
@@ -504,9 +545,6 @@ const BillingStats = () => {
                           INR {item.totalAmount.toFixed(2)}
                         </TableCell>
                         <TableCell className="text-right">{item.jobCount}</TableCell>
-                        <TableCell className="text-right text-gray-600">
-                          INR {item.jobCount > 0 ? (item.totalAmount / item.jobCount).toFixed(2) : '0.00'}
-                        </TableCell>
                       </TableRow>
                     ))
                 )}

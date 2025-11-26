@@ -12,6 +12,7 @@ import { Edit, Plus, Download, FileText, User, Phone, MapPin, Building, Droplets
 import { toast } from 'sonner';
 import { Customer, Bill, BillItem, CompanyInfo } from '@/types';
 import { generateAMCPDF } from '@/lib/amc-pdf-generator';
+import { db } from '@/lib/supabase';
 
 interface AMCGeneratorProps {
   customer: Customer;
@@ -191,7 +192,7 @@ ${notCoveredWithPreFilter}`;
     }
   };
 
-  const handlePrint = (options?: { termsOnly?: boolean }) => {
+  const handlePrint = async (options?: { termsOnly?: boolean }) => {
     if (!billNumber.trim()) {
       toast.error('Please enter a bill number');
       return;
@@ -276,6 +277,36 @@ ${notCoveredWithPreFilter}`;
     };
 
     try {
+      // Calculate years from dates
+      const startDate = validity === 'Custom' ? customFromDate : billDate;
+      const endDate = validityEndDate;
+      const start = new Date(startDate);
+      const end = new Date(endDate);
+      const years = Math.round((end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24 * 365));
+
+      // Save AMC contract to database
+      try {
+        const { error: amcError } = await db.amcContracts.create({
+          customer_id: customer.id,
+          job_id: null, // AMC created from generator, not from a job
+          start_date: startDate,
+          end_date: endDate,
+          years: years || 1,
+          includes_prefilter: includesPreSedimentFiltration,
+          additional_info: notes || null
+        });
+
+        if (amcError) {
+          console.warn('⚠️ Failed to save AMC contract to database:', amcError);
+          toast.warning('AMC generated but failed to save to database. Please save manually.');
+        } else {
+          toast.success('AMC contract saved to database successfully');
+        }
+      } catch (dbError) {
+        console.error('Error saving AMC contract:', dbError);
+        toast.warning('AMC generated but failed to save to database. Please save manually.');
+      }
+
       generateAMCPDF(bill, 'print', { includeDetails: options?.termsOnly ? false : true });
       onPrint?.(bill);
     } catch (error) {

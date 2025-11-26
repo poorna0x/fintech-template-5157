@@ -382,7 +382,7 @@ const TechnicianDashboard = () => {
   const [completeDialogOpen, setCompleteDialogOpen] = useState(false);
   const [selectedJobForComplete, setSelectedJobForComplete] = useState<Job | null>(null);
   const [completionNotes, setCompletionNotes] = useState('');
-  const [completeJobStep, setCompleteJobStep] = useState<1 | 2 | 3 | 4 | 5 | 6>(1);
+  const [completeJobStep, setCompleteJobStep] = useState<1 | 2 | 3 | 4 | 5>(1);
   const [billAmount, setBillAmount] = useState<string>('');
   const [billPhotos, setBillPhotos] = useState<string[]>([]);
   const [paymentPhotos, setPaymentPhotos] = useState<string[]>([]);
@@ -2015,7 +2015,7 @@ const TechnicianDashboard = () => {
         paymentMode: paymentMode as 'CASH' | 'ONLINE' | '',
         currentStep: paymentMode === 'CASH' ? 5 : 4,
       });
-      // If Cash, skip to step 5 (AMC)
+      // If Cash, skip to step 5 (Prefilter)
       if (paymentMode === 'CASH') {
       setCompleteJobStep(5);
       return;
@@ -2059,7 +2059,7 @@ const TechnicianDashboard = () => {
       }
     }
 
-    // Step 4: Payment Screenshot (optional) - move to step 5 (AMC)
+    // Step 4: Payment Screenshot (optional) - move to step 5 (Prefilter)
     if (completeJobStep === 4) {
       // Save progress
       saveJobCompletionProgress(selectedJobForComplete.id, {
@@ -2075,29 +2075,7 @@ const TechnicianDashboard = () => {
       return;
     }
 
-    // Step 5: AMC - move to step 6 (Prefilter)
-    if (completeJobStep === 5) {
-      // Save progress
-      saveJobCompletionProgress(selectedJobForComplete.id, {
-        billPhotos,
-        billAmount,
-        paymentMode: paymentMode as 'CASH' | 'ONLINE' | '',
-        paymentScreenshot,
-        qrCodeType,
-        selectedQrCodeId,
-        hasAMC,
-        amcDateGiven,
-        amcEndDate,
-        amcYears,
-        amcIncludesPrefilter,
-        amcAdditionalInfo,
-        currentStep: 6,
-      });
-      setCompleteJobStep(6);
-      return;
-    }
-
-    // On step 6, submit the form
+    // On step 5, submit the form
     setIsSubmittingJobCompletion(true);
     
     try {
@@ -2189,7 +2167,7 @@ const TechnicianDashboard = () => {
         }
 
         // Remove existing photo-related requirements to avoid duplicates
-        requirements = requirements.filter((req: any) => !req.bill_photos && !req.payment_photos && !req.qr_photos && !req.amc_info);
+        requirements = requirements.filter((req: any) => !req.bill_photos && !req.payment_photos && !req.qr_photos);
 
         // Add bill photos (all should be uploaded Cloudinary URLs at this point)
         if (uploadedBillPhotos.length > 0) {
@@ -2208,17 +2186,7 @@ const TechnicianDashboard = () => {
           requirements.push({ qr_photos: qrPhotos });
         }
 
-        if (hasAMC && amcDateGiven && amcEndDate) {
-          requirements.push({ 
-            amc_info: {
-              date_given: amcDateGiven,
-              end_date: amcEndDate,
-              years: amcYears,
-              includes_prefilter: amcIncludesPrefilter,
-              additional_info: amcAdditionalInfo || null
-            }
-          });
-        }
+        // AMC info is no longer added here - it's created from AMC generator page
 
         // Always update requirements (even if empty) to ensure job is marked as completed
         // Job completion should succeed even if photos aren't uploaded yet
@@ -2245,6 +2213,7 @@ const TechnicianDashboard = () => {
           const savedBillPhotos = savedRequirements?.find((req: any) => req.bill_photos)?.bill_photos || [];
           console.log(`✅ Job completed! Saved ${savedBillPhotos.length} bill photos to requirements:`, savedBillPhotos);
         }
+        
         
         // Job completed successfully!
         if (uploadedBillPhotos.length > 0) {
@@ -4429,8 +4398,7 @@ const TechnicianDashboard = () => {
                     {completeJobStep === 2 && 'Enter the bill amount for this job'}
                     {completeJobStep === 3 && 'Select payment mode and QR code'}
                     {completeJobStep === 4 && 'Upload payment screenshot (optional)'}
-                    {completeJobStep === 5 && 'Add AMC information (optional)'}
-                    {completeJobStep === 6 && 'Does the customer have a prefilter?'}
+                    {completeJobStep === 5 && 'Does the customer have a prefilter?'}
                   </>
                 )}
               </DialogDescription>
@@ -4793,222 +4761,8 @@ const TechnicianDashboard = () => {
                   </div>
                 )}
 
-              {/* Step 5: AMC Info */}
+              {/* Step 5: Prefilter Question */}
               {completeJobStep === 5 && (
-                <div className="space-y-4">
-                  {/* AMC Info */}
-                  <div className="space-y-4">
-                    <div className="flex items-center space-x-2">
-                      <input
-                        type="checkbox"
-                        id="has-amc"
-                        checked={hasAMC}
-                        onChange={(e) => {
-                          setHasAMC(e.target.checked);
-                          // Reset to default when enabling AMC
-                          if (e.target.checked) {
-                            const today = new Date().toISOString().split('T')[0];
-                            setAmcDateGiven(today);
-                            setAmcYears(1);
-                            calculateAMCEndDate(today, 1);
-                          }
-                          // Auto-save progress
-                          if (selectedJobForComplete) {
-                            saveJobCompletionProgress(selectedJobForComplete.id, {
-                              billPhotos,
-                              billAmount,
-                              completionNotes,
-                              paymentMode: paymentMode as 'CASH' | 'ONLINE' | '',
-                              paymentScreenshot,
-                              qrCodeType,
-                              selectedQrCodeId,
-                              hasAMC: e.target.checked,
-                              amcDateGiven: e.target.checked ? new Date().toISOString().split('T')[0] : '',
-                              amcEndDate: e.target.checked ? amcEndDate : '',
-                              amcYears: e.target.checked ? 1 : amcYears,
-                              amcIncludesPrefilter: amcIncludesPrefilter,
-                              amcAdditionalInfo: amcAdditionalInfo,
-                              currentStep: completeJobStep,
-                            });
-                          }
-                        }}
-                        className="w-4 h-4"
-                      />
-                      <Label htmlFor="has-amc" className="cursor-pointer">This job includes AMC</Label>
-                    </div>
-
-                    {hasAMC && (
-                      <div className="space-y-4 pl-6 border-l-2 border-gray-200">
-                        <div>
-                          <Label htmlFor="amc-date-given">AMC Date of Agreement *</Label>
-                          <Input
-                            id="amc-date-given"
-                            type="date"
-                            value={amcDateGiven}
-                            onChange={(e) => {
-                              setAmcDateGiven(e.target.value);
-                              let endDate = amcEndDate;
-                              if (e.target.value) {
-                                calculateAMCEndDate(e.target.value, amcYears);
-                                // Calculate end date
-                                const startDate = new Date(e.target.value);
-                                const calculatedEndDate = new Date(startDate);
-                                calculatedEndDate.setFullYear(calculatedEndDate.getFullYear() + amcYears);
-                                calculatedEndDate.setDate(calculatedEndDate.getDate() - 1);
-                                endDate = calculatedEndDate.toISOString().split('T')[0];
-                              }
-                              // Auto-save progress
-                              if (selectedJobForComplete) {
-                                saveJobCompletionProgress(selectedJobForComplete.id, {
-                                  billPhotos,
-                                  billAmount,
-                                  completionNotes,
-                                  paymentMode: paymentMode as 'CASH' | 'ONLINE' | '',
-                                  paymentScreenshot,
-                                  qrCodeType,
-                                  selectedQrCodeId,
-                                  hasAMC: true,
-                                  amcDateGiven: e.target.value,
-                                  amcEndDate: endDate,
-                                  amcYears,
-                                  amcIncludesPrefilter,
-                                  amcAdditionalInfo,
-                                  currentStep: completeJobStep,
-                                });
-                              }
-                            }}
-                            className="mt-1"
-                            max={new Date().toISOString().split('T')[0]}
-                          />
-                        </div>
-                        <div>
-                          <Label htmlFor="amc-years">Number of Years *</Label>
-                          <Select value={amcYears.toString()} onValueChange={(value) => {
-                            const years = parseInt(value);
-                            setAmcYears(years);
-                            let endDate = amcEndDate;
-                            if (amcDateGiven) {
-                              calculateAMCEndDate(amcDateGiven, years);
-                              // Calculate end date
-                              const startDate = new Date(amcDateGiven);
-                              const calculatedEndDate = new Date(startDate);
-                              calculatedEndDate.setFullYear(calculatedEndDate.getFullYear() + years);
-                              calculatedEndDate.setDate(calculatedEndDate.getDate() - 1);
-                              endDate = calculatedEndDate.toISOString().split('T')[0];
-                            }
-                            // Auto-save progress
-                            if (selectedJobForComplete) {
-                              saveJobCompletionProgress(selectedJobForComplete.id, {
-                                billPhotos,
-                                billAmount,
-                                completionNotes,
-                                paymentMode: paymentMode as 'CASH' | 'ONLINE' | '',
-                                paymentScreenshot,
-                                qrCodeType,
-                                selectedQrCodeId,
-                                  hasAMC: true,
-                                  amcDateGiven,
-                                  amcEndDate: endDate,
-                                  amcYears: years,
-                                  amcIncludesPrefilter,
-                                  amcAdditionalInfo,
-                                  currentStep: completeJobStep,
-                              });
-                            }
-                          }}>
-                            <SelectTrigger className="mt-1">
-                              <SelectValue />
-                            </SelectTrigger>
-                            <SelectContent>
-                              <SelectItem value="1">1 Year</SelectItem>
-                              <SelectItem value="2">2 Years</SelectItem>
-                              <SelectItem value="3">3 Years</SelectItem>
-                            </SelectContent>
-                          </Select>
-                        </div>
-                        <div>
-                          <Label htmlFor="amc-end-date">AMC End Date *</Label>
-                          <Input
-                            id="amc-end-date"
-                            type="date"
-                            value={amcEndDate}
-                            onChange={(e) => setAmcEndDate(e.target.value)}
-                            className="mt-1"
-                            min={amcDateGiven}
-                            readOnly
-                          />
-                        </div>
-                        <div className="flex items-center space-x-2">
-                          <input
-                            type="checkbox"
-                            id="amc-prefilter"
-                            checked={amcIncludesPrefilter}
-                            onChange={(e) => {
-                              setAmcIncludesPrefilter(e.target.checked);
-                              // Auto-save progress
-                              if (selectedJobForComplete) {
-                                saveJobCompletionProgress(selectedJobForComplete.id, {
-                                  billPhotos,
-                                  billAmount,
-                                  completionNotes,
-                                  paymentMode: paymentMode as 'CASH' | 'ONLINE' | '',
-                                  paymentScreenshot,
-                                  qrCodeType,
-                                  selectedQrCodeId,
-                                  hasAMC: true,
-                                  amcDateGiven,
-                                  amcEndDate,
-                                  amcYears,
-                                  amcIncludesPrefilter: e.target.checked,
-                                  amcAdditionalInfo,
-                                  currentStep: completeJobStep,
-                                });
-                              }
-                            }}
-                            className="w-4 h-4"
-                          />
-                          <Label htmlFor="amc-prefilter" className="cursor-pointer">Includes Prefilter</Label>
-                        </div>
-                        <div>
-                          <Label htmlFor="amc-additional-info">Additional Info (Optional)</Label>
-                          <Textarea
-                            id="amc-additional-info"
-                            value={amcAdditionalInfo}
-                            onChange={(e) => {
-                              setAmcAdditionalInfo(e.target.value);
-                              // Auto-save progress
-                              if (selectedJobForComplete) {
-                                saveJobCompletionProgress(selectedJobForComplete.id, {
-                                  billPhotos,
-                                  billAmount,
-                                  completionNotes,
-                                  paymentMode: paymentMode as 'CASH' | 'ONLINE' | '',
-                                  paymentScreenshot,
-                                  qrCodeType,
-                                  selectedQrCodeId,
-                                  hasAMC: true,
-                                  amcDateGiven,
-                                  amcEndDate,
-                                  amcYears,
-                                  amcIncludesPrefilter,
-                                  amcAdditionalInfo: e.target.value,
-                                  currentStep: completeJobStep,
-                                });
-                              }
-                            }}
-                            placeholder="Enter any additional information about this AMC..."
-                            className="mt-1"
-                            rows={3}
-                          />
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                </div>
-              )}
-
-              {/* Step 6: Prefilter Question */}
-              {completeJobStep === 6 && (
                 <div className="space-y-4">
                   <div className="space-y-3">
                     <Label className="text-base font-semibold">Does the customer have a prefilter?</Label>
@@ -5112,7 +4866,7 @@ const TechnicianDashboard = () => {
                 variant="outline"
                 onClick={() => {
                   if (completeJobStep > 1) {
-                    setCompleteJobStep((prev) => (prev - 1) as 1 | 2 | 3 | 4 | 5 | 6);
+                    setCompleteJobStep((prev) => (prev - 1) as 1 | 2 | 3 | 4 | 5);
                   } else {
                   setCompleteDialogOpen(false);
                   setSelectedJobForComplete(null);
@@ -5146,36 +4900,22 @@ const TechnicianDashboard = () => {
                   Skip
                 </Button>
               )}
-              {completeJobStep === 5 && hasAMC && (!amcDateGiven || !amcEndDate) && (
-                <Button
-                  variant="outline"
-                  onClick={() => {
-                    setHasAMC(false);
-                    setAmcDateGiven('');
-                    setAmcEndDate('');
-                    setAmcIncludesPrefilter(false);
-                  }}
-                >
-                  Skip AMC
-                </Button>
-              )}
               <Button
                 onClick={handleCompleteJobSubmit}
                 className="bg-black hover:bg-gray-800 !text-white font-semibold"
                 disabled={
                   isSubmittingJobCompletion ||
                   (completeJobStep === 3 && !paymentMode) || 
-                  (completeJobStep === 3 && paymentMode === 'ONLINE' && !qrCodeType) || 
-                  (completeJobStep === 5 && hasAMC && (!amcDateGiven || !amcEndDate))
+                  (completeJobStep === 3 && paymentMode === 'ONLINE' && !qrCodeType)
                 }
               >
                 {isSubmittingJobCompletion ? (
                   <>
                     <RefreshCw className="w-4 h-4 mr-2 animate-spin" />
-                    {completeJobStep === 6 ? 'Submitting...' : 'Saving...'}
+                    {completeJobStep === 5 ? 'Submitting...' : 'Saving...'}
                   </>
                 ) : (
-                  completeJobStep === 6 ? 'Complete Job' : 'Next'
+                  completeJobStep === 5 ? 'Complete Job' : 'Next'
                 )}
               </Button>
             </DialogFooter>
