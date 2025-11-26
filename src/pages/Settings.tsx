@@ -717,42 +717,6 @@ const Settings = () => {
 
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4 sm:py-6 lg:py-8">
         <div className="space-y-4 sm:space-y-6">
-          {/* Customer Calling & Messaging */}
-          <Card>
-            <CardHeader>
-              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-                <div>
-                  <CardTitle className="flex items-center gap-2 text-lg sm:text-xl">
-                    <Phone className="w-5 h-5" />
-                    Customer Calling & Messaging
-                  </CardTitle>
-                  <CardDescription className="text-sm mt-1">
-                    Contact customers for service reminders based on last service date
-                  </CardDescription>
-                </div>
-                <Button 
-                  onClick={() => navigate('/calling')} 
-                  className="bg-green-600 hover:bg-green-700 w-full sm:w-auto"
-                  size="sm"
-                >
-                  <Phone className="w-4 h-4 mr-2" />
-                  Open Calling Page
-                </Button>
-              </div>
-            </CardHeader>
-            <CardContent className="p-4 sm:p-6">
-              <div className="text-sm text-gray-600">
-                <p className="mb-2">Features:</p>
-                <ul className="list-disc list-inside space-y-1 text-gray-500">
-                  <li>Filter customers by last service date (3 months, 6 months, 1 year)</li>
-                  <li>Send WhatsApp reminders automatically</li>
-                  <li>Track call history to avoid duplicate contacts</li>
-                  <li>Skip recently contacted customers</li>
-                </ul>
-              </div>
-            </CardContent>
-          </Card>
-
           {/* Common QR Codes Management */}
           <Card>
             <CardHeader>
