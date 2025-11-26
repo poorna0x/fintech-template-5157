@@ -729,6 +729,20 @@ const AdminDashboard = () => {
   const [currentStep, setCurrentStep] = useState(1);
   const [formErrors, setFormErrors] = useState<{[key: string]: string}>({});
   const [isCreating, setIsCreating] = useState(false);
+  const [shouldCreateJob, setShouldCreateJob] = useState(false);
+  const [recentAccountsDialogOpen, setRecentAccountsDialogOpen] = useState(false);
+  const [step5JobData, setStep5JobData] = useState({
+    service_type: 'RO' as 'RO' | 'SOFTENER',
+    service_sub_type: 'Installation',
+    service_sub_type_custom: '',
+    scheduled_date: '',
+    scheduled_time_slot: 'MORNING' as 'MORNING' | 'AFTERNOON' | 'EVENING' | 'CUSTOM',
+    scheduled_time_custom: '',
+    description: '',
+    lead_source: 'Direct call',
+    lead_source_custom: '',
+    priority: 'MEDIUM' as 'LOW' | 'MEDIUM' | 'HIGH' | 'URGENT'
+  });
   const [existingCustomer, setExistingCustomer] = useState<Customer | null>(null);
   const [overrideDialogOpen, setOverrideDialogOpen] = useState(false);
   const [shouldUpdateExisting, setShouldUpdateExisting] = useState(false);
@@ -3022,9 +3036,44 @@ const AdminDashboard = () => {
   };
 
   const handleCreateCustomer = async () => {
-    if (!validateStep(4)) return; // Validate final step
+    if (currentStep === 4) {
+      // Move to step 5 (create job option)
+      setCurrentStep(5);
+      return;
+    }
     
-    await createCustomer();
+    if (currentStep === 5) {
+      // Validate job data if creating job
+      if (shouldCreateJob) {
+        if (!step5JobData.scheduled_date) {
+          toast.error('Please select a scheduled date');
+          return;
+        }
+        
+        if (!step5JobData.lead_source || step5JobData.lead_source.trim() === '') {
+          toast.error('Please select a lead source');
+          return;
+        }
+        
+        if (step5JobData.lead_source === 'Other' && (!step5JobData.lead_source_custom || step5JobData.lead_source_custom.trim() === '')) {
+          toast.error('Please enter a custom lead source');
+          return;
+        }
+
+        if (step5JobData.service_sub_type === 'Custom' && (!step5JobData.service_sub_type_custom || step5JobData.service_sub_type_custom.trim() === '')) {
+          toast.error('Please enter a custom service sub type');
+          return;
+        }
+
+        if (step5JobData.scheduled_time_slot === 'CUSTOM' && (!step5JobData.scheduled_time_custom || step5JobData.scheduled_time_custom.trim() === '')) {
+          toast.error('Please enter a custom time');
+          return;
+        }
+      }
+      
+      // Create customer and optionally create job
+      await createCustomer();
+    }
   };
 
   const createCustomer = async () => {
@@ -3099,6 +3148,66 @@ const AdminDashboard = () => {
       // Refresh customers list
       await loadDashboardData();
 
+      // If should create job, create it now
+      if (shouldCreateJob && result) {
+        try {
+          // Convert CUSTOM time slot to valid database value
+          let scheduledTimeSlot: 'MORNING' | 'AFTERNOON' | 'EVENING' = 'MORNING';
+          let customTimeInRequirements = null;
+          
+          if (step5JobData.scheduled_time_slot === 'CUSTOM' && step5JobData.scheduled_time_custom) {
+            customTimeInRequirements = step5JobData.scheduled_time_custom;
+            const [hours] = step5JobData.scheduled_time_custom.split(':').map(Number);
+            if (hours < 13) {
+              scheduledTimeSlot = 'MORNING';
+            } else if (hours < 18) {
+              scheduledTimeSlot = 'AFTERNOON';
+            } else {
+              scheduledTimeSlot = 'EVENING';
+            }
+          } else {
+            scheduledTimeSlot = step5JobData.scheduled_time_slot as 'MORNING' | 'AFTERNOON' | 'EVENING';
+          }
+          
+          const jobNumber = generateJobNumber(step5JobData.service_type);
+          
+          const jobData = {
+            job_number: jobNumber,
+            customer_id: result.id,
+            service_type: step5JobData.service_type,
+            service_sub_type: step5JobData.service_sub_type === 'Custom' ? step5JobData.service_sub_type_custom : step5JobData.service_sub_type,
+            brand: result.brand || '',
+            model: result.model || '',
+            scheduled_date: step5JobData.scheduled_date,
+            scheduled_time_slot: scheduledTimeSlot,
+            service_address: result.address,
+            service_location: result.location,
+            status: 'PENDING' as const,
+            priority: step5JobData.priority,
+            description: step5JobData.description.trim() || '',
+            requirements: [{ 
+              lead_source: step5JobData.lead_source === 'Other' ? (step5JobData.lead_source_custom || 'Other') : step5JobData.lead_source,
+              custom_time: customTimeInRequirements
+            }],
+            estimated_cost: 0,
+            payment_status: 'PENDING' as const,
+          };
+
+          const { data: newJob, error: jobError } = await db.jobs.create(jobData);
+          
+          if (jobError) {
+            console.error('Failed to create job:', jobError);
+            toast.error('Customer created but failed to create job');
+          } else {
+            toast.success(`Job ${newJob.job_number} created successfully!`);
+            await loadDashboardData();
+          }
+        } catch (error) {
+          console.error('Error creating job:', error);
+          toast.error('Customer created but failed to create job');
+        }
+      }
+
       // Reset form
       setAddFormData({
         full_name: '',
@@ -3120,6 +3229,19 @@ const AdminDashboard = () => {
       setFormErrors({});
       setShouldUpdateExisting(false);
       setExistingCustomer(null);
+      setShouldCreateJob(false);
+      setStep5JobData({
+        service_type: 'RO' as 'RO' | 'SOFTENER',
+        service_sub_type: 'Installation',
+        service_sub_type_custom: '',
+        scheduled_date: '',
+        scheduled_time_slot: 'MORNING' as 'MORNING' | 'AFTERNOON' | 'EVENING' | 'CUSTOM',
+        scheduled_time_custom: '',
+        description: '',
+        lead_source: 'Direct call',
+        lead_source_custom: '',
+        priority: 'MEDIUM' as 'LOW' | 'MEDIUM' | 'HIGH' | 'URGENT'
+      });
 
       setAddDialogOpen(false);
     } catch (error) {
@@ -4340,7 +4462,7 @@ const AdminDashboard = () => {
           return;
         }
       }
-      setCurrentStep(prev => Math.min(prev + 1, 4));
+      setCurrentStep(prev => Math.min(prev + 1, 5));
     }
   };
 
@@ -6454,6 +6576,14 @@ const AdminDashboard = () => {
                   </DropdownMenuItem>
                 </DropdownMenuContent>
               </DropdownMenu>
+              <Button
+                variant="outline"
+                className="flex items-center gap-2"
+                onClick={() => setRecentAccountsDialogOpen(true)}
+              >
+                <Clock className="w-4 h-4" />
+                Recent
+              </Button>
               <div className="flex gap-2 flex-wrap">
                 <Button
                   variant={currentView === 'payments' ? 'default' : 'outline'}
@@ -7022,21 +7152,27 @@ const AdminDashboard = () => {
                     </div>
                     
                     {/* Email */}
-                    {customer.email && customer.email.trim() && !customer.email.toLowerCase().includes('nomail') && !customer.email.toLowerCase().includes('no@mail') && (
-                      <div className="bg-white rounded-lg p-3 border border-gray-200 hover:border-gray-300 hover:shadow-sm transition-all duration-200">
-                        <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-3">
-                          <div className="w-8 h-8 sm:w-10 sm:h-10 bg-gray-100 rounded-lg flex items-center justify-center flex-shrink-0">
+                    <div className="bg-white rounded-lg p-3 border border-gray-200 hover:border-gray-300 hover:shadow-sm transition-all duration-200">
+                      <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-3">
+                        <div className="w-8 h-8 sm:w-10 sm:h-10 bg-gray-100 rounded-lg flex items-center justify-center flex-shrink-0">
+                          {customer.email && customer.email.trim() && !customer.email.toLowerCase().includes('nomail') && !customer.email.toLowerCase().includes('no@mail') ? (
                             <a href={`mailto:${customer.email}`} className="cursor-pointer">
                               <Mail className="w-4 h-4 sm:w-5 sm:h-5 text-gray-600" />
                             </a>
+                          ) : (
+                            <Mail className="w-4 h-4 sm:w-5 sm:h-5 text-gray-400" />
+                          )}
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <div className="text-sm font-semibold text-gray-900 truncate">
+                            {customer.email && customer.email.trim() && !customer.email.toLowerCase().includes('nomail') && !customer.email.toLowerCase().includes('no@mail') 
+                              ? customer.email 
+                              : 'nomail@mail'}
                           </div>
-                          <div className="flex-1 min-w-0">
-                            <div className="text-sm font-semibold text-gray-900 truncate">{customer.email}</div>
-                            <div className="text-xs text-gray-500">Email</div>
-                          </div>
+                          <div className="text-xs text-gray-500">Email</div>
                         </div>
                       </div>
-                    )}
+                    </div>
                     
                     {/* WhatsApp */}
                     <div className="bg-white rounded-lg p-3 border border-gray-200 hover:border-gray-300 hover:shadow-sm transition-all duration-200">
@@ -7981,14 +8117,6 @@ const AdminDashboard = () => {
                                         </DropdownMenuItem>
                                       )}
                                       <DropdownMenuItem 
-                                        onClick={() => {
-                                          toast.info('Job details feature coming soon');
-                                        }}
-                                      >
-                                        <Eye className="mr-2 h-4 w-4" />
-                                        View Details
-                                      </DropdownMenuItem>
-                                      <DropdownMenuItem 
                                         onClick={() => handleEditJob(job)}
                                       >
                                         <Edit className="mr-2 h-4 w-4" />
@@ -8123,6 +8251,7 @@ const AdminDashboard = () => {
               {currentStep === 2 && "Enter customer's address details"}
               {currentStep === 3 && "Select services and equipment details"}
               {currentStep === 4 && "Review and confirm customer information"}
+              {currentStep === 5 && "Create a new job for this customer?"}
             </DialogDescription>
           </DialogHeader>
           
@@ -8394,6 +8523,225 @@ const AdminDashboard = () => {
 
             </div>
             )}
+
+            {/* Step 5: Create Job Option */}
+            {currentStep === 5 && (
+              <div className="space-y-4">
+                <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-4">
+                  <h3 className="font-semibold text-gray-900 mb-2">Create a New Job?</h3>
+                  <p className="text-sm text-gray-600 mb-4">
+                    Would you like to create a new job for this customer right away?
+                  </p>
+                  
+                  <div className="space-y-3">
+                    <label className="flex items-center gap-3 p-3 bg-white rounded-lg border-2 cursor-pointer transition-all hover:border-blue-300">
+                      <input
+                        type="radio"
+                        name="createJob"
+                        checked={shouldCreateJob === true}
+                        onChange={() => {
+                          setShouldCreateJob(true);
+                          // Initialize default values
+                          const tomorrow = new Date();
+                          tomorrow.setDate(tomorrow.getDate() + 1);
+                          setStep5JobData(prev => ({
+                            ...prev,
+                            scheduled_date: tomorrow.toISOString().split('T')[0],
+                            service_type: addFormData.service_types[0] === 'SOFTENER' ? 'SOFTENER' : 'RO'
+                          }));
+                        }}
+                        className="h-4 w-4 text-blue-600"
+                      />
+                      <div>
+                        <span className="font-medium text-gray-900">Yes, create a new job</span>
+                        <p className="text-xs text-gray-500 mt-1">Fill in the job details below</p>
+                      </div>
+                    </label>
+                    
+                    <label className="flex items-center gap-3 p-3 bg-white rounded-lg border-2 cursor-pointer transition-all hover:border-blue-300">
+                      <input
+                        type="radio"
+                        name="createJob"
+                        checked={shouldCreateJob === false}
+                        onChange={() => setShouldCreateJob(false)}
+                        className="h-4 w-4 text-blue-600"
+                      />
+                      <div>
+                        <span className="font-medium text-gray-900">No, just create the customer</span>
+                        <p className="text-xs text-gray-500 mt-1">You can create a job later from the customer's profile</p>
+                      </div>
+                    </label>
+                  </div>
+                </div>
+
+                {shouldCreateJob && (
+                  <div className="space-y-4 border-t pt-4">
+                    <h4 className="font-semibold text-gray-900">Job Information</h4>
+                    
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                      <div className="space-y-2">
+                        <Label htmlFor="step5_service_type">Service Type</Label>
+                        <Select
+                          value={step5JobData.service_type}
+                          onValueChange={(value) => setStep5JobData(prev => ({ ...prev, service_type: value as 'RO' | 'SOFTENER' }))}
+                        >
+                          <SelectTrigger>
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="RO">RO</SelectItem>
+                            <SelectItem value="SOFTENER">Softener</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+
+                      <div className="space-y-2">
+                        <Label htmlFor="step5_service_sub_type">Service Sub Type</Label>
+                        <Select
+                          value={step5JobData.service_sub_type}
+                          onValueChange={(value) => setStep5JobData(prev => ({ 
+                            ...prev, 
+                            service_sub_type: value === 'Custom' ? 'Custom' : value,
+                            service_sub_type_custom: value === 'Custom' ? prev.service_sub_type_custom : ''
+                          }))}
+                        >
+                          <SelectTrigger>
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="Installation">Installation</SelectItem>
+                            <SelectItem value="Reinstallation">Reinstallation</SelectItem>
+                            <SelectItem value="Service">Service</SelectItem>
+                            <SelectItem value="Custom">Custom</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+
+                      {step5JobData.service_sub_type === 'Custom' && (
+                        <div className="space-y-2 sm:col-span-2">
+                          <Label htmlFor="step5_service_sub_type_custom">Custom Service Sub Type</Label>
+                          <Input
+                            id="step5_service_sub_type_custom"
+                            value={step5JobData.service_sub_type_custom}
+                            onChange={(e) => setStep5JobData(prev => ({ ...prev, service_sub_type_custom: e.target.value }))}
+                            placeholder="Enter custom service sub type"
+                          />
+                        </div>
+                      )}
+
+                      <div className="space-y-2">
+                        <Label htmlFor="step5_scheduled_date">Scheduled Date</Label>
+                        <Input
+                          id="step5_scheduled_date"
+                          type="date"
+                          value={step5JobData.scheduled_date}
+                          onChange={(e) => setStep5JobData(prev => ({ ...prev, scheduled_date: e.target.value }))}
+                          min={new Date().toISOString().split('T')[0]}
+                        />
+                      </div>
+
+                      <div className="space-y-2">
+                        <Label htmlFor="step5_scheduled_time_slot">Time Slot</Label>
+                        <Select
+                          value={step5JobData.scheduled_time_slot}
+                          onValueChange={(value) => setStep5JobData(prev => ({ 
+                            ...prev, 
+                            scheduled_time_slot: value as 'MORNING' | 'AFTERNOON' | 'EVENING' | 'CUSTOM'
+                          }))}
+                        >
+                          <SelectTrigger>
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="MORNING">Morning (9 AM - 1 PM)</SelectItem>
+                            <SelectItem value="AFTERNOON">Afternoon (1 PM - 6 PM)</SelectItem>
+                            <SelectItem value="EVENING">Evening (6 PM - 9 PM)</SelectItem>
+                            <SelectItem value="CUSTOM">Custom Time</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+
+                      {step5JobData.scheduled_time_slot === 'CUSTOM' && (
+                        <div className="space-y-2 sm:col-span-2">
+                          <Label htmlFor="step5_scheduled_time_custom">Custom Time (HH:MM)</Label>
+                          <Input
+                            id="step5_scheduled_time_custom"
+                            type="time"
+                            value={step5JobData.scheduled_time_custom}
+                            onChange={(e) => setStep5JobData(prev => ({ ...prev, scheduled_time_custom: e.target.value }))}
+                          />
+                        </div>
+                      )}
+
+                      <div className="space-y-2">
+                        <Label htmlFor="step5_lead_source">Lead Source</Label>
+                        <Select
+                          value={step5JobData.lead_source}
+                          onValueChange={(value) => setStep5JobData(prev => ({ 
+                            ...prev, 
+                            lead_source: value === 'Other' ? 'Other' : value,
+                            lead_source_custom: value === 'Other' ? prev.lead_source_custom : ''
+                          }))}
+                        >
+                          <SelectTrigger>
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="Website">Website</SelectItem>
+                            <SelectItem value="Direct call">Direct call</SelectItem>
+                            <SelectItem value="RO care india">RO care india</SelectItem>
+                            <SelectItem value="Home Triangle">Home Triangle</SelectItem>
+                            <SelectItem value="Local Ramu">Local Ramu</SelectItem>
+                            <SelectItem value="Other">Other</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+
+                      {step5JobData.lead_source === 'Other' && (
+                        <div className="space-y-2">
+                          <Label htmlFor="step5_lead_source_custom">Custom Lead Source</Label>
+                          <Input
+                            id="step5_lead_source_custom"
+                            value={step5JobData.lead_source_custom}
+                            onChange={(e) => setStep5JobData(prev => ({ ...prev, lead_source_custom: e.target.value }))}
+                            placeholder="Enter custom lead source"
+                          />
+                        </div>
+                      )}
+
+                      <div className="space-y-2">
+                        <Label htmlFor="step5_priority">Priority</Label>
+                        <Select
+                          value={step5JobData.priority}
+                          onValueChange={(value) => setStep5JobData(prev => ({ ...prev, priority: value as 'LOW' | 'MEDIUM' | 'HIGH' | 'URGENT' }))}
+                        >
+                          <SelectTrigger>
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="LOW">Low</SelectItem>
+                            <SelectItem value="MEDIUM">Medium</SelectItem>
+                            <SelectItem value="HIGH">High</SelectItem>
+                            <SelectItem value="URGENT">Urgent</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+
+                      <div className="space-y-2 sm:col-span-2">
+                        <Label htmlFor="step5_description">Description (Optional)</Label>
+                        <Textarea
+                          id="step5_description"
+                          value={step5JobData.description}
+                          onChange={(e) => setStep5JobData(prev => ({ ...prev, description: e.target.value }))}
+                          placeholder="Enter job description"
+                          rows={3}
+                        />
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
           </div>
 
           <DialogFooter className="flex-shrink-0 flex flex-col sm:flex-row gap-2 sm:gap-0 sm:justify-between pt-4 border-t">
@@ -8418,10 +8766,14 @@ const AdminDashboard = () => {
                 <Button onClick={nextStep} className="bg-blue-600 hover:bg-blue-700 w-full sm:w-auto text-sm">
                   Next Step
                 </Button>
+              ) : currentStep === 4 ? (
+                <Button onClick={nextStep} className="bg-blue-600 hover:bg-blue-700 w-full sm:w-auto text-sm">
+                  Next Step
+                </Button>
               ) : (
                 <Button 
                   onClick={handleCreateCustomer}
-                  disabled={isCreating}
+                  disabled={isCreating || (shouldCreateJob && (!step5JobData.scheduled_date || !step5JobData.lead_source || (step5JobData.lead_source === 'Other' && !step5JobData.lead_source_custom) || (step5JobData.service_sub_type === 'Custom' && !step5JobData.service_sub_type_custom) || (step5JobData.scheduled_time_slot === 'CUSTOM' && !step5JobData.scheduled_time_custom)))}
                   className="bg-green-600 hover:bg-green-700 w-full sm:w-auto text-sm"
                 >
                   {isCreating ? (
@@ -11790,11 +12142,11 @@ const AdminDashboard = () => {
                     <div>
                       <span className="text-gray-500">Phone:</span> {selectedCustomerForReport.phone}
                     </div>
-                    {selectedCustomerForReport.email && (
-                      <div>
-                        <span className="text-gray-500">Email:</span> {selectedCustomerForReport.email}
-                      </div>
-                    )}
+                    <div>
+                      <span className="text-gray-500">Email:</span> {selectedCustomerForReport.email && selectedCustomerForReport.email.trim() && !selectedCustomerForReport.email.toLowerCase().includes('nomail') && !selectedCustomerForReport.email.toLowerCase().includes('no@mail')
+                        ? selectedCustomerForReport.email
+                        : 'nomail@mail'}
+                    </div>
                   </div>
                 </div>
 
@@ -12329,6 +12681,117 @@ Thank you for your trust in Hydrogen RO! 🙏`;
       </Dialog>
 
       {/* PIN Dialog */}
+
+      {/* Recent Accounts Dialog */}
+      <Dialog open={recentAccountsDialogOpen} onOpenChange={setRecentAccountsDialogOpen}>
+        <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Recent Accounts - Today</DialogTitle>
+            <DialogDescription>
+              All accounts created today ({new Date().toLocaleDateString()})
+            </DialogDescription>
+          </DialogHeader>
+          
+          <div className="space-y-4">
+            {customers
+              .filter(customer => {
+                const customerSince = customer.customer_since || (customer as any).customerSince;
+                if (!customerSince) return false;
+                const createdDate = new Date(customerSince);
+                const today = new Date();
+                return createdDate.toDateString() === today.toDateString();
+              })
+              .length === 0 ? (
+              <div className="text-center py-8 text-gray-500">
+                <p>No accounts created today.</p>
+              </div>
+            ) : (
+              <div className="space-y-2">
+                {customers
+                  .filter(customer => {
+                    const customerSince = customer.customer_since || (customer as any).customerSince;
+                    if (!customerSince) return false;
+                    const createdDate = new Date(customerSince);
+                    const today = new Date();
+                    return createdDate.toDateString() === today.toDateString();
+                  })
+                  .sort((a, b) => {
+                    const dateA = new Date(a.customer_since || (a as any).customerSince || 0);
+                    const dateB = new Date(b.customer_since || (b as any).customerSince || 0);
+                    return dateB.getTime() - dateA.getTime(); // Most recent first
+                  })
+                  .map((customer) => (
+                    <div
+                      key={customer.id}
+                      className="border border-gray-200 rounded-lg p-4 hover:bg-gray-50 transition-colors"
+                    >
+                      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+                        <div className="flex-1">
+                          <div className="flex items-center gap-2 mb-1">
+                            <span className="font-semibold text-gray-900">
+                              {customer.customer_id || (customer as any).customerId}
+                            </span>
+                            <Badge variant="outline" className="text-xs">
+                              {customer.fullName || customer.full_name}
+                            </Badge>
+                          </div>
+                          <div className="text-sm text-gray-600 space-y-1">
+                            <p>
+                              <span className="font-medium">Phone:</span> {customer.phone}
+                              {customer.alternate_phone && ` / ${customer.alternate_phone}`}
+                            </p>
+                            <p>
+                              <span className="font-medium">Email:</span> {customer.email && customer.email.trim() && !customer.email.toLowerCase().includes('nomail') && !customer.email.toLowerCase().includes('no@mail') 
+                                ? customer.email 
+                                : 'nomail@mail'}
+                            </p>
+                            <p>
+                              <span className="font-medium">Service:</span> {customer.service_type || 'N/A'}
+                            </p>
+                            <p className="text-xs text-gray-500">
+                              Created: {new Date(customer.customer_since || (customer as any).customerSince || '').toLocaleString()}
+                            </p>
+                          </div>
+                        </div>
+                        <div className="flex gap-2">
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => {
+                              handleNewJob(customer);
+                              setRecentAccountsDialogOpen(false);
+                            }}
+                          >
+                            <Plus className="w-4 h-4 mr-1" />
+                            New Job
+                          </Button>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => {
+                              setEditingCustomer(customer);
+                              setEditDialogOpen(true);
+                              setRecentAccountsDialogOpen(false);
+                            }}
+                          >
+                            <Edit className="w-4 h-4 mr-1" />
+                            Edit
+                          </Button>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+              </div>
+            )}
+          </div>
+
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setRecentAccountsDialogOpen(false)}>
+              Close
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 };
