@@ -111,6 +111,17 @@ ${notCoveredWithPreFilter}`;
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [includesPreSedimentFiltration]);
 
+  // Auto-populate RO model from customer data
+  React.useEffect(() => {
+    if (customer && customer.model && !roModel) {
+      // Format: Brand + Model (e.g., "Kent Grand Plus")
+      const modelValue = customer.brand && customer.model 
+        ? `${customer.brand} ${customer.model}`.trim()
+        : customer.model;
+      setRoModel(modelValue);
+    }
+  }, [customer, roModel]);
+
   // Editable customer information state
   const [isEditingCustomer, setIsEditingCustomer] = useState(false);
   const [editableCustomer, setEditableCustomer] = useState({
