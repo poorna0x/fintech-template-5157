@@ -7625,6 +7625,42 @@ const AdminDashboard = () => {
                                       </div>
                                     )}
                                     
+                                    {/* Lead Source */}
+                                    {(() => {
+                                      // Find lead_source in requirements
+                                      let leadSource: string | null = null;
+                                      
+                                      // Try to find lead_source in the array
+                                      for (const req of requirements) {
+                                        if (req && typeof req === 'object') {
+                                          if (req.lead_source) {
+                                            leadSource = req.lead_source;
+                                            break;
+                                          }
+                                        }
+                                      }
+                                      
+                                      // If still no lead_source found, check if requirements array has objects with nested properties
+                                      if (!leadSource && requirements.length > 0) {
+                                        const flatReq = requirements.flat();
+                                        for (const req of flatReq) {
+                                          if (req && typeof req === 'object' && req.lead_source) {
+                                            leadSource = req.lead_source;
+                                            break;
+                                          }
+                                        }
+                                      }
+                                      
+                                      if (leadSource) {
+                                        return (
+                                          <div className="text-gray-700 break-words">
+                                            <span className="text-gray-500 font-medium">Lead Source:</span> {leadSource}
+                                          </div>
+                                        );
+                                      }
+                                      return null;
+                                    })()}
+                                    
                                     {/* QR Code Info (if online) */}
                                     {(paymentMethod === 'ONLINE' || paymentMethod === 'UPI' || paymentMethod === 'CARD' || paymentMethod === 'BANK_TRANSFER') && qrPhotos?.selected_qr_code_name && (
                                       <div className="text-gray-700 break-words">
@@ -12415,6 +12451,43 @@ const AdminDashboard = () => {
                                 </div>
                               )}
                               
+                              {/* Lead Source */}
+                              {(() => {
+                                // Find lead_source in requirements
+                                let leadSource: string | null = null;
+                                
+                                // Try to find lead_source in the array
+                                for (const req of requirements) {
+                                  if (req && typeof req === 'object') {
+                                    if (req.lead_source) {
+                                      leadSource = req.lead_source;
+                                      break;
+                                    }
+                                  }
+                                }
+                                
+                                // If still no lead_source found, check if requirements array has objects with nested properties
+                                if (!leadSource && requirements.length > 0) {
+                                  const flatReq = requirements.flat();
+                                  for (const req of flatReq) {
+                                    if (req && typeof req === 'object' && req.lead_source) {
+                                      leadSource = req.lead_source;
+                                      break;
+                                    }
+                                  }
+                                }
+                                
+                                if (leadSource) {
+                                  return (
+                                    <div className="flex items-center gap-2">
+                                      <span className="text-sm font-medium text-gray-700 w-32">Lead Source:</span>
+                                      <span className="text-sm text-gray-900">{leadSource}</span>
+                                    </div>
+                                  );
+                                }
+                                return null;
+                              })()}
+                              
                               {/* QR Code */}
                               {(paymentMethod === 'ONLINE' || paymentMethod === 'UPI' || paymentMethod === 'CARD' || paymentMethod === 'BANK_TRANSFER') && qrPhotos?.selected_qr_code_name && (
                                 <div className="flex items-center gap-2">
@@ -12770,10 +12843,12 @@ const AdminDashboard = () => {
                   }
 
                   // Prepare update data
+                  const amount = parseFloat(completedJobEditData.amount) || 0;
                   const updateData: any = {
-                    actual_cost: parseFloat(completedJobEditData.amount) || 0,
-                    payment_amount: parseFloat(completedJobEditData.amount) || 0,
+                    actual_cost: amount,
+                    payment_amount: amount,
                     payment_method: completedJobEditData.paymentMethod || 'CASH',
+                    payment_status: amount > 0 ? 'PAID' : 'PENDING',
                     completion_notes: completedJobEditData.completionNotes || '',
                     completed_by: completedJobEditData.completedBy || 'admin',
                     requirements: JSON.stringify(requirements)
