@@ -17,6 +17,7 @@ import { db } from '@/lib/supabase';
 interface AMCGeneratorProps {
   customer: Customer;
   onPrint?: (bill: Bill) => void;
+  onAMCSaved?: () => void;
 }
 
 const defaultCompanyInfo: CompanyInfo = {
@@ -32,7 +33,7 @@ const defaultCompanyInfo: CompanyInfo = {
   website: "hydrogenro.com"
 };
 
-export default function AMCGenerator({ customer, onPrint }: AMCGeneratorProps) {
+export default function AMCGenerator({ customer, onPrint, onAMCSaved }: AMCGeneratorProps) {
   const [billNumber, setBillNumber] = useState(`AMC-${new Date().getFullYear()}-${String(Math.floor(Math.random() * 1000)).padStart(3, '0')}`);
   const [billDate, setBillDate] = useState(new Date().toISOString().split('T')[0]);
   const [company, setCompany] = useState<CompanyInfo>(defaultCompanyInfo);
@@ -299,6 +300,10 @@ ${notCoveredWithPreFilter}`;
         toast.success('AMC contract saved to database successfully', {
           description: `Agreement ${billNumber} has been saved with all details.`
         });
+        // Notify parent to refresh AMC status
+        if (onAMCSaved) {
+          onAMCSaved();
+        }
       }
     } catch (error: any) {
       console.error('Error saving AMC contract:', error);
@@ -383,48 +388,8 @@ ${notCoveredWithPreFilter}`;
     };
 
     try {
-      // Save AMC contract to database (optional - user can also use the Save button)
-      try {
-        const metadata = {
-          agreement_number: billNumber,
-          agreement_date: billDate,
-          amc_cost: amcCost,
-          service_charge: serviceCharge,
-          total_amount: totalAmount,
-          ro_model: roModel.trim(),
-          validity_period: validity,
-          description: description.trim() || null,
-          notes: notes || null,
-          customer_name: editableCustomer.name,
-          customer_phone: editableCustomer.phone,
-          customer_email: editableCustomer.email || null,
-          customer_gst: editableCustomer.gst || null,
-          customer_address: editableCustomer.address,
-          agreement_intro: agreementIntro,
-          saved_at: new Date().toISOString()
-        };
-
-        const { error: amcError } = await db.amcContracts.create({
-          customer_id: customer.id,
-          job_id: null,
-          start_date: startDate,
-          end_date: endDate,
-          years: years,
-          includes_prefilter: includesPreSedimentFiltration,
-          additional_info: JSON.stringify(metadata)
-        });
-
-        if (amcError) {
-          console.warn('⚠️ Failed to save AMC contract to database:', amcError);
-          toast.warning('AMC generated but failed to save to database. Please use the Save button to save manually.');
-        } else {
-          toast.success('AMC contract saved to database successfully');
-        }
-      } catch (dbError) {
-        console.error('Error saving AMC contract:', dbError);
-        toast.warning('AMC generated but failed to save to database. Please use the Save button to save manually.');
-      }
-
+      // Don't save to database automatically - user must explicitly click "Save to Database" button
+      // This allows generating/previewing AMC without creating an active contract in the database
       generateAMCPDF(bill, 'print', { includeDetails: options?.termsOnly ? false : true });
       onPrint?.(bill);
     } catch (error) {

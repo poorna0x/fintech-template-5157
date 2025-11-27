@@ -11,9 +11,10 @@ interface AMCModalProps {
   isOpen: boolean;
   onClose: () => void;
   customer: Customer | null;
+  onAMCSaved?: () => void;
 }
 
-export default function AMCModal({ isOpen, onClose, customer }: AMCModalProps) {
+export default function AMCModal({ isOpen, onClose, customer, onAMCSaved }: AMCModalProps) {
   const [isGenerating, setIsGenerating] = useState(false);
 
   const handlePrintAMC = (bill: Bill, action?: 'print' | 'pdf') => {
@@ -60,6 +61,7 @@ export default function AMCModal({ isOpen, onClose, customer }: AMCModalProps) {
             <AMCGenerator
               customer={customer}
               onPrint={handlePrintAMC}
+              onAMCSaved={onAMCSaved}
             />
           ) : (
             <div className="flex items-center justify-center h-64">

@@ -4327,6 +4327,31 @@ const AdminDashboard = () => {
     setSelectedCustomerForAMC(null);
   };
 
+  // Reload AMC status from database
+  const reloadAMCStatus = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('amc_contracts')
+        .select('customer_id, status')
+        .eq('status', 'ACTIVE');
+
+      if (error) {
+        console.error('Error reloading AMC status:', error);
+        return;
+      }
+
+      const amcStatusMap: Record<string, boolean> = {};
+      if (data) {
+        data.forEach((amc: any) => {
+          amcStatusMap[amc.customer_id] = true;
+        });
+      }
+      setCustomerAMCStatus(amcStatusMap);
+    } catch (error) {
+      console.error('Error reloading AMC status:', error);
+    }
+  };
+
   const handleGenerateTaxInvoice = (customer: Customer) => {
     setSelectedCustomerForTaxInvoice(customer);
     setTaxInvoiceModalOpen(true);
@@ -7706,6 +7731,7 @@ const AdminDashboard = () => {
         isOpen={amcModalOpen}
         onClose={handleAMCModalClose}
         customer={selectedCustomerForAMC}
+        onAMCSaved={reloadAMCStatus}
       />
 
       {/* Tax Invoice Generation Modal */}

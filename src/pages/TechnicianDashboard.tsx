@@ -5889,37 +5889,46 @@ const TechnicianDashboard = () => {
                   </div>
                 </div>
                 
-                {amcInfo.amount && (
-                  <div className="text-sm">
-                    <span className="text-gray-600 font-medium">AMC Amount:</span>
-                    <p className="text-gray-900 font-semibold mt-1">
-                      ₹{parseFloat(amcInfo.amount.toString()).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                    </p>
-                  </div>
-                )}
-                
                 {(() => {
-                  // Parse additional_info to extract description
+                  // Parse additional_info to extract description and AMC cost
                   let description = '';
                   let additionalInfo = '';
+                  let amcCost: number | null = null;
+                  let totalAmount: number | null = null;
+                  
                   if (amcInfo.additional_info) {
                     try {
+                      let parsed: any = {};
                       if (typeof amcInfo.additional_info === 'string') {
-                        const parsed = JSON.parse(amcInfo.additional_info);
-                        description = parsed.description || parsed.notes || '';
-                        additionalInfo = parsed.notes || '';
+                        parsed = JSON.parse(amcInfo.additional_info);
                       } else {
-                        description = amcInfo.additional_info.description || amcInfo.additional_info.notes || '';
-                        additionalInfo = amcInfo.additional_info.notes || '';
+                        parsed = amcInfo.additional_info;
                       }
+                      
+                      description = parsed.description || parsed.notes || '';
+                      additionalInfo = parsed.notes || '';
+                      // Extract AMC cost from additional_info
+                      amcCost = parsed.amc_cost || null;
+                      totalAmount = parsed.total_amount || null;
                     } catch (e) {
                       // If not JSON, treat as plain text
                       additionalInfo = amcInfo.additional_info;
                     }
                   }
                   
+                  // Display AMC cost - prioritize from additional_info, fallback to amcInfo.amount
+                  const displayCost = amcCost || totalAmount || amcInfo.amount;
+                  
                   return (
                     <>
+                      {displayCost && (
+                        <div className="text-sm">
+                          <span className="text-gray-600 font-medium">AMC Cost:</span>
+                          <p className="text-gray-900 font-semibold mt-1">
+                            ₹{parseFloat(displayCost.toString()).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                          </p>
+                        </div>
+                      )}
                       {description && (
                         <div className="pt-3 border-t border-green-200">
                           <span className="text-gray-600 font-medium text-sm">Description / Summary:</span>
@@ -5929,13 +5938,13 @@ const TechnicianDashboard = () => {
                         </div>
                       )}
                       {additionalInfo && !description && (
-                  <div className="pt-3 border-t border-green-200">
-                    <span className="text-gray-600 font-medium text-sm">Additional Information:</span>
-                    <p className="text-gray-900 mt-2 whitespace-pre-wrap break-words">
+                        <div className="pt-3 border-t border-green-200">
+                          <span className="text-gray-600 font-medium text-sm">Additional Information:</span>
+                          <p className="text-gray-900 mt-2 whitespace-pre-wrap break-words">
                             {additionalInfo}
-                    </p>
-                  </div>
-                )}
+                          </p>
+                        </div>
+                      )}
                     </>
                   );
                 })()}
