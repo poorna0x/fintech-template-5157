@@ -398,16 +398,17 @@ const TechnicianDashboard = () => {
   const [completeDialogOpen, setCompleteDialogOpen] = useState(false);
   const [selectedJobForComplete, setSelectedJobForComplete] = useState<Job | null>(null);
   const [completionNotes, setCompletionNotes] = useState('');
-  const [completeJobStep, setCompleteJobStep] = useState<1 | 2 | 3 | 4 | 5>(1);
+  const [completeJobStep, setCompleteJobStep] = useState<1 | 2 | 3 | 4 | 5 | 6>(1);
   const [billAmount, setBillAmount] = useState<string>('');
   const [billPhotos, setBillPhotos] = useState<string[]>([]);
   const [paymentPhotos, setPaymentPhotos] = useState<string[]>([]);
   const [amcDateGiven, setAmcDateGiven] = useState<string>('');
   const [amcEndDate, setAmcEndDate] = useState<string>('');
-  const [amcYears, setAmcYears] = useState<number>(1);
+  const [amcYears, setAmcYears] = useState<number>(0);
   const [amcIncludesPrefilter, setAmcIncludesPrefilter] = useState<boolean>(false);
   const [amcAdditionalInfo, setAmcAdditionalInfo] = useState<string>('');
-  const [hasAMC, setHasAMC] = useState<boolean>(false);
+  const [amcAmount, setAmcAmount] = useState<string>('');
+  const [hasAMC, setHasAMC] = useState<boolean | null>(null);
   const [paymentMode, setPaymentMode] = useState<'CASH' | 'ONLINE' | ''>('');
   const [billAmountConfirmOpen, setBillAmountConfirmOpen] = useState(false);
   const [customerHasPrefilter, setCustomerHasPrefilter] = useState<boolean | null>(null);
@@ -546,6 +547,13 @@ const TechnicianDashboard = () => {
       loadAssignmentRequests();
     }
   }, [user?.technicianId, loadAssignedJobs]);
+
+  // Always show AMC question first when entering step 3
+  useEffect(() => {
+    if (completeJobStep === 3) {
+      setHasAMC(null);
+    }
+  }, [completeJobStep]);
 
   // Load QR codes function (extracted so it can be called manually)
   const loadQrCodes = useCallback(async () => {
@@ -1798,50 +1806,26 @@ const TechnicianDashboard = () => {
     
     setSelectedJobForComplete(jobWithCustomer);
     
-    // Check if there's saved progress for this job
-    const savedProgress = getQueuedCompletionForJob(jobWithCustomer.id);
-    if (savedProgress) {
-      // Restore saved progress
-      setBillPhotos(savedProgress.billPhotos || []);
-      setBillAmount(savedProgress.billAmount || '');
-      setCompletionNotes(savedProgress.completionNotes || '');
-      setPaymentMode(savedProgress.paymentMode as 'CASH' | 'ONLINE' | '' || '');
-      setPaymentScreenshot(savedProgress.paymentScreenshot || '');
-      setQrCodeType(savedProgress.qrCodeType || '');
-      setSelectedQrCodeId(savedProgress.selectedQrCodeId || '');
-      setHasAMC(savedProgress.hasAMC || false);
-      setAmcDateGiven(savedProgress.amcDateGiven || new Date().toISOString().split('T')[0]);
-      setAmcEndDate(savedProgress.amcEndDate || '');
-      setAmcYears(savedProgress.amcYears || 1);
-      setAmcIncludesPrefilter(savedProgress.amcIncludesPrefilter || false);
-      setAmcAdditionalInfo(savedProgress.amcAdditionalInfo || '');
-      setCustomerHasPrefilter(savedProgress.customerHasPrefilter);
-      setCompleteJobStep(savedProgress.currentStep as 1 | 2 | 3 | 4 | 5 | 6 || 1);
-      
-      // Progress restored (no toast needed)
-    } else {
-      // Reset to defaults
-      setCompletionNotes('');
-      setCompleteJobStep(1);
-      setBillAmount('');
-      setBillPhotos([]);
-      setPaymentPhotos([]);
-      // Set default AMC date to today
-      const today = new Date().toISOString().split('T')[0];
-      setAmcDateGiven(today);
-      setAmcYears(1);
-      // Calculate end date with default 1 year
-      calculateAMCEndDate(today, 1);
-      setAmcIncludesPrefilter(false);
-      setHasAMC(false);
-        setAmcAdditionalInfo('');
-        setPaymentScreenshot('');
-        setPaymentMode('');
-      setCustomerHasPrefilter(null);
-      setQrCodeType('');
-      setSelectedQrCodeId('');
-      setPaymentScreenshot('');
-    }
+    // Always reset to fresh defaults (don't restore saved progress)
+    setCompletionNotes('');
+    setCompleteJobStep(1);
+    setBillAmount('');
+    setBillPhotos([]);
+    setPaymentPhotos([]);
+    // Set default AMC date to today
+    const today = new Date().toISOString().split('T')[0];
+    setAmcDateGiven(today);
+    setAmcYears(0);
+    setAmcEndDate('');
+    setAmcIncludesPrefilter(false);
+    setHasAMC(null);
+    setAmcAdditionalInfo('');
+    setAmcAmount('');
+    setPaymentScreenshot('');
+    setPaymentMode('');
+    setCustomerHasPrefilter(null);
+    setQrCodeType('');
+    setSelectedQrCodeId('');
     
     // Initialize customerHasPrefilter from customer's existing value if available
     const customerPrefilter = jobWithCustomer.customer 
@@ -2066,19 +2050,8 @@ const TechnicianDashboard = () => {
   const handleCompleteJobSubmit = async () => {
     if (!selectedJobForComplete) return;
 
-    // Step 1: Bill Photo (optional) - move to step 2
+    // Step 1: Bill Amount - validate and show confirmation
     if (completeJobStep === 1) {
-      // Save progress before moving to next step
-      saveJobCompletionProgress(selectedJobForComplete.id, {
-        billPhotos,
-        currentStep: 2,
-      });
-      setCompleteJobStep(2);
-      return;
-    }
-
-    // Step 2: Bill Amount - validate and show confirmation
-    if (completeJobStep === 2) {
       if (!billAmount || parseFloat(billAmount) <= 0) {
         toast.error('Please enter a valid bill amount');
         return;
@@ -2087,15 +2060,59 @@ const TechnicianDashboard = () => {
       saveJobCompletionProgress(selectedJobForComplete.id, {
         billPhotos,
         billAmount,
-        currentStep: 2,
+        currentStep: 1,
       });
       // Show confirmation dialog
       setBillAmountConfirmOpen(true);
       return;
     }
 
-    // Step 3: Payment Mode - validate and move to step 4 (payment screenshot) or step 5 (AMC)
+    // Step 2: Bill Photo (optional) - move to step 3
+    if (completeJobStep === 2) {
+      // Save progress before moving to next step
+      saveJobCompletionProgress(selectedJobForComplete.id, {
+        billPhotos,
+        billAmount,
+        currentStep: 3,
+      });
+      setCompleteJobStep(3);
+      return;
+    }
+
+    // Step 3: AMC Information (optional, can skip) - move to step 4
     if (completeJobStep === 3) {
+      // Only allow proceeding if hasAMC is not null (question has been answered)
+      if (hasAMC === null) {
+        toast.error('Please answer whether the customer needs AMC or not');
+        return;
+      }
+      
+      // If years is 0, treat it as no AMC
+      const effectiveHasAMC = hasAMC === true && amcYears > 0;
+      
+      // Save progress (AMC is optional, can skip)
+      saveJobCompletionProgress(selectedJobForComplete.id, {
+        billPhotos,
+        billAmount,
+        paymentMode: paymentMode as 'CASH' | 'ONLINE' | '',
+        paymentScreenshot,
+        qrCodeType,
+        selectedQrCodeId,
+        customerHasPrefilter,
+        hasAMC: effectiveHasAMC,
+        amcDateGiven: effectiveHasAMC ? amcDateGiven : '',
+        amcEndDate: effectiveHasAMC ? amcEndDate : '',
+        amcYears: effectiveHasAMC ? amcYears : 0,
+        amcIncludesPrefilter: effectiveHasAMC ? amcIncludesPrefilter : false,
+        amcAdditionalInfo: effectiveHasAMC ? amcAdditionalInfo : '',
+        currentStep: 4,
+      });
+      setCompleteJobStep(4);
+      return;
+    }
+
+    // Step 4: Payment Mode - validate and move to step 5
+    if (completeJobStep === 4) {
       if (!paymentMode) {
         toast.error('Please select a payment mode');
       return;
@@ -2105,14 +2122,14 @@ const TechnicianDashboard = () => {
         billPhotos,
         billAmount,
         paymentMode: paymentMode as 'CASH' | 'ONLINE' | '',
-        currentStep: paymentMode === 'CASH' ? 5 : 4,
+        amcDateGiven,
+        amcEndDate,
+        amcYears,
+        amcIncludesPrefilter,
+        amcAdditionalInfo,
+        currentStep: 5,
       });
-      // If Cash, skip to step 5 (Prefilter)
-      if (paymentMode === 'CASH') {
-      setCompleteJobStep(5);
-      return;
-      }
-      // If Online, need to check QR code selection, then go to payment screenshot step
+      // If Online, need to check QR code selection first
       if (paymentMode === 'ONLINE') {
         if (!selectedQrCodeId) {
           toast.error('Please select a QR code');
@@ -2144,30 +2161,60 @@ const TechnicianDashboard = () => {
           selectedQrCodeId,
           selectedQrCodeUrl,
           selectedQrCodeName,
-          currentStep: 4,
+          amcDateGiven,
+          amcEndDate,
+          amcYears,
+          amcIncludesPrefilter,
+          amcAdditionalInfo,
+          currentStep: 5,
         });
-        setCompleteJobStep(4);
-        return;
       }
-    }
-
-    // Step 4: Payment Screenshot (optional) - move to step 5 (Prefilter)
-    if (completeJobStep === 4) {
-      // Save progress
-      saveJobCompletionProgress(selectedJobForComplete.id, {
-        billPhotos,
-        billAmount,
-        paymentMode: 'ONLINE',
-        paymentScreenshot,
-        qrCodeType,
-        selectedQrCodeId,
-        currentStep: 5,
-      });
+      // Move to step 5 (Payment Screenshot)
       setCompleteJobStep(5);
       return;
     }
 
-    // On step 5, submit the form
+    // Step 5: Payment Screenshot (optional) - move to step 6 (Prefilter)
+    if (completeJobStep === 5) {
+      // Save progress
+      saveJobCompletionProgress(selectedJobForComplete.id, {
+        billPhotos,
+        billAmount,
+        paymentMode: paymentMode as 'CASH' | 'ONLINE' | '',
+        paymentScreenshot,
+        qrCodeType,
+        selectedQrCodeId,
+        amcDateGiven,
+        amcEndDate,
+        amcYears,
+        amcIncludesPrefilter,
+        amcAdditionalInfo,
+        currentStep: 6,
+      });
+      setCompleteJobStep(6);
+      return;
+    }
+
+    // Step 6: Prefilter - submit the form
+    if (completeJobStep === 6) {
+      // Save progress before submitting
+      saveJobCompletionProgress(selectedJobForComplete.id, {
+        billPhotos,
+        billAmount,
+        paymentMode: paymentMode as 'CASH' | 'ONLINE' | '',
+        paymentScreenshot,
+        qrCodeType,
+        selectedQrCodeId,
+        amcDateGiven,
+        amcEndDate,
+        amcYears,
+        amcIncludesPrefilter,
+        amcAdditionalInfo,
+        customerHasPrefilter,
+        currentStep: 6,
+      });
+      // Proceed to submit
+    }
     setIsSubmittingJobCompletion(true);
     
     try {
@@ -2278,7 +2325,23 @@ const TechnicianDashboard = () => {
           requirements.push({ qr_photos: qrPhotos });
         }
 
-        // AMC info is no longer added here - it's created from AMC generator page
+        // Add AMC info for reference (technician provides this, admin will create official AMC)
+        // Only add if years > 0 (0 years means no AMC)
+        const effectiveHasAMC = hasAMC === true && amcYears > 0;
+        if (effectiveHasAMC) {
+          const amcInfo = {
+            date_given: amcDateGiven || null,
+            end_date: amcEndDate || null,
+            years: amcYears,
+            amount: amcAmount ? parseFloat(amcAmount) : null,
+            includes_prefilter: amcIncludesPrefilter || false,
+            additional_info: amcAdditionalInfo || null,
+            notes: amcAdditionalInfo || null,
+            technician_reference: true // Mark as technician reference, not official AMC
+          };
+          requirements.push({ amc_info: amcInfo });
+          console.log('✅ Added AMC info (reference) to requirements:', amcInfo);
+        }
 
         // Always update requirements (even if empty) to ensure job is marked as completed
         // Job completion should succeed even if photos aren't uploaded yet
@@ -2356,9 +2419,9 @@ const TechnicianDashboard = () => {
         setBillPhotos([]);
         setAmcDateGiven(new Date().toISOString().split('T')[0]);
         setAmcEndDate('');
-        setAmcYears(1);
+        setAmcYears(0);
         setAmcIncludesPrefilter(false);
-        setHasAMC(false);
+        setHasAMC(null);
         setPaymentMode('');
         setCustomerHasPrefilter(null);
         setQrCodeType('');
@@ -4293,7 +4356,7 @@ const TechnicianDashboard = () => {
               <AlertDialogAction
                 onClick={() => {
                   setBillAmountConfirmOpen(false);
-                  setCompleteJobStep(3);
+                  setCompleteJobStep(2);
                 }}
                 className="bg-black hover:bg-gray-800 !text-white font-semibold"
               >
@@ -4483,9 +4546,9 @@ const TechnicianDashboard = () => {
             const today = new Date().toISOString().split('T')[0];
             setAmcDateGiven(today);
             setAmcEndDate('');
-            setAmcYears(1);
+            setAmcYears(0);
             setAmcIncludesPrefilter(false);
-            setHasAMC(false);
+            setHasAMC(null);
             setPaymentMode('');
             setCustomerHasPrefilter(null);
             setQrCodeType('');
@@ -4504,11 +4567,12 @@ const TechnicianDashboard = () => {
                   </span>
                 ) : (
                   <>
-                    {completeJobStep === 1 && 'Upload bill photo (optional)'}
-                    {completeJobStep === 2 && 'Enter the bill amount for this job'}
-                    {completeJobStep === 3 && 'Select payment mode and QR code'}
-                    {completeJobStep === 4 && 'Upload payment screenshot (optional)'}
-                    {completeJobStep === 5 && 'Does the customer have a prefilter?'}
+                    {completeJobStep === 1 && 'Enter the bill amount for this job'}
+                    {completeJobStep === 2 && 'Upload bill photo (optional)'}
+                    {completeJobStep === 3 && 'AMC Information (Optional - Can Skip)'}
+                    {completeJobStep === 4 && 'Select payment mode and QR code'}
+                    {completeJobStep === 5 && 'Upload payment screenshot (optional)'}
+                    {completeJobStep === 6 && 'Does the customer have a prefilter?'}
                   </>
                 )}
               </DialogDescription>
@@ -4535,61 +4599,99 @@ const TechnicianDashboard = () => {
                 </div>
               )}
               
-              {/* Step Indicator */}
-              <div className="flex items-center justify-center mb-6">
-                <div className="flex items-center space-x-1 sm:space-x-2">
-                  <div className={`flex items-center justify-center w-7 h-7 sm:w-8 sm:h-8 rounded-full text-xs sm:text-sm ${completeJobStep >= 1 ? 'bg-black text-white' : 'bg-gray-200 text-gray-600'}`}>
-                    1
+              {/* Step Indicator - Fixed horizontal scroll and border clipping */}
+              <div className="flex items-center justify-center mb-6 overflow-x-auto pb-2 -mx-2 px-2">
+                <div className="flex items-center space-x-0.5 sm:space-x-1 min-w-0 flex-shrink-0 py-1">
+                  {/* Step 1 - Bill Amount */}
+                  <div className={`flex items-center justify-center w-6 h-6 sm:w-7 sm:h-7 md:w-8 md:h-8 rounded-full text-xs font-medium flex-shrink-0 relative ${
+                    completeJobStep === 1 ? 'bg-black text-white' : 
+                    completeJobStep > 1 ? 'bg-black text-white' : 
+                    'bg-gray-200 text-gray-600'
+                  }`}>
+                    {completeJobStep === 1 && (
+                      <div className="absolute inset-0 rounded-full border-2 border-black" style={{ margin: '-2px' }}></div>
+                    )}
+                    <span className="relative z-10">1</span>
                   </div>
-                  <div className={`w-8 sm:w-12 h-1 ${completeJobStep >= 2 ? 'bg-black' : 'bg-gray-200'}`}></div>
-                  <div className={`flex items-center justify-center w-7 h-7 sm:w-8 sm:h-8 rounded-full text-xs sm:text-sm ${completeJobStep >= 2 ? 'bg-black text-white' : 'bg-gray-200 text-gray-600'}`}>
-                    2
+                  <div className={`w-4 sm:w-6 md:w-8 h-0.5 sm:h-1 transition-colors flex-shrink-0 ${
+                    completeJobStep >= 2 ? 'bg-black' : 'bg-gray-200'
+                  }`}></div>
+                  
+                  {/* Step 2 - Bill Photo */}
+                  <div className={`flex items-center justify-center w-6 h-6 sm:w-7 sm:h-7 md:w-8 md:h-8 rounded-full text-xs font-medium flex-shrink-0 relative ${
+                    completeJobStep === 2 ? 'bg-black text-white' : 
+                    completeJobStep > 2 ? 'bg-black text-white' : 
+                    'bg-gray-200 text-gray-600'
+                  }`}>
+                    {completeJobStep === 2 && (
+                      <div className="absolute inset-0 rounded-full border-2 border-black" style={{ margin: '-2px' }}></div>
+                    )}
+                    <span className="relative z-10">2</span>
                   </div>
-                  <div className={`w-8 sm:w-12 h-1 ${completeJobStep >= 3 ? 'bg-black' : 'bg-gray-200'}`}></div>
-                  <div className={`flex items-center justify-center w-7 h-7 sm:w-8 sm:h-8 rounded-full text-xs sm:text-sm ${completeJobStep >= 3 ? 'bg-black text-white' : 'bg-gray-200 text-gray-600'}`}>
-                    3
+                  <div className={`w-4 sm:w-6 md:w-8 h-0.5 sm:h-1 transition-colors flex-shrink-0 ${
+                    completeJobStep >= 3 ? 'bg-black' : 'bg-gray-200'
+                  }`}></div>
+                  
+                  {/* Step 3 - AMC Info */}
+                  <div className={`flex items-center justify-center w-6 h-6 sm:w-7 sm:h-7 md:w-8 md:h-8 rounded-full text-xs font-medium flex-shrink-0 relative ${
+                    completeJobStep === 3 ? 'bg-black text-white' : 
+                    completeJobStep > 3 ? 'bg-black text-white' : 
+                    'bg-gray-200 text-gray-600'
+                  }`}>
+                    {completeJobStep === 3 && (
+                      <div className="absolute inset-0 rounded-full border-2 border-black" style={{ margin: '-2px' }}></div>
+                    )}
+                    <span className="relative z-10">3</span>
                   </div>
-                  <div className={`w-8 sm:w-12 h-1 ${completeJobStep >= 4 ? 'bg-black' : 'bg-gray-200'}`}></div>
-                  <div className={`flex items-center justify-center w-7 h-7 sm:w-8 sm:h-8 rounded-full text-xs sm:text-sm ${completeJobStep >= 4 ? 'bg-black text-white' : 'bg-gray-200 text-gray-600'}`}>
-                    4
+                  <div className={`w-4 sm:w-6 md:w-8 h-0.5 sm:h-1 transition-colors flex-shrink-0 ${
+                    completeJobStep >= 4 ? 'bg-black' : 'bg-gray-200'
+                  }`}></div>
+                  
+                  {/* Step 4 - Payment Mode */}
+                  <div className={`flex items-center justify-center w-6 h-6 sm:w-7 sm:h-7 md:w-8 md:h-8 rounded-full text-xs font-medium flex-shrink-0 relative ${
+                    completeJobStep === 4 ? 'bg-black text-white' : 
+                    completeJobStep > 4 ? 'bg-black text-white' : 
+                    'bg-gray-200 text-gray-600'
+                  }`}>
+                    {completeJobStep === 4 && (
+                      <div className="absolute inset-0 rounded-full border-2 border-black" style={{ margin: '-2px' }}></div>
+                    )}
+                    <span className="relative z-10">4</span>
                   </div>
-                  <div className={`w-8 sm:w-12 h-1 ${completeJobStep >= 5 ? 'bg-black' : 'bg-gray-200'}`}></div>
-                  <div className={`flex items-center justify-center w-7 h-7 sm:w-8 sm:h-8 rounded-full text-xs sm:text-sm ${completeJobStep >= 5 ? 'bg-black text-white' : 'bg-gray-200 text-gray-600'}`}>
-                    5
+                  <div className={`w-4 sm:w-6 md:w-8 h-0.5 sm:h-1 transition-colors flex-shrink-0 ${
+                    completeJobStep >= 5 ? 'bg-black' : 'bg-gray-200'
+                  }`}></div>
+                  
+                  {/* Step 5 - Payment Screenshot */}
+                  <div className={`flex items-center justify-center w-6 h-6 sm:w-7 sm:h-7 md:w-8 md:h-8 rounded-full text-xs font-medium flex-shrink-0 relative ${
+                    completeJobStep === 5 ? 'bg-black text-white' : 
+                    completeJobStep > 5 ? 'bg-black text-white' : 
+                    'bg-gray-200 text-gray-600'
+                  }`}>
+                    {completeJobStep === 5 && (
+                      <div className="absolute inset-0 rounded-full border-2 border-black" style={{ margin: '-2px' }}></div>
+                    )}
+                    <span className="relative z-10">5</span>
+                  </div>
+                  <div className={`w-4 sm:w-6 md:w-8 h-0.5 sm:h-1 transition-colors flex-shrink-0 ${
+                    completeJobStep >= 6 ? 'bg-black' : 'bg-gray-200'
+                  }`}></div>
+                  
+                  {/* Step 6 - Prefilter */}
+                  <div className={`flex items-center justify-center w-6 h-6 sm:w-7 sm:h-7 md:w-8 md:h-8 rounded-full text-xs font-medium flex-shrink-0 relative ${
+                    completeJobStep === 6 ? 'bg-black text-white' : 
+                    'bg-gray-200 text-gray-600'
+                  }`}>
+                    {completeJobStep === 6 && (
+                      <div className="absolute inset-0 rounded-full border-2 border-black" style={{ margin: '-2px' }}></div>
+                    )}
+                    <span className="relative z-10">6</span>
                   </div>
                 </div>
               </div>
 
-              {/* Step 1: Bill Photo */}
+              {/* Step 1: Bill Amount */}
               {completeJobStep === 1 && (
-                <div className="space-y-4">
-                  <div>
-                    <Label>Upload Bill Photo (Optional)</Label>
-                    <ImageUpload
-                      onImagesChange={(images) => {
-                        setBillPhotos(images);
-                        // Save progress automatically
-                        if (selectedJobForComplete) {
-                          saveJobCompletionProgress(selectedJobForComplete.id, {
-                            billPhotos: images,
-                            currentStep: completeJobStep,
-                          });
-                        }
-                      }}
-                      maxImages={5}
-                      folder="bills"
-                      title=""
-                      description=""
-                      maxWidth={1024}
-                      quality={0.5}
-                      aggressiveCompression={true}
-                    />
-                  </div>
-                </div>
-              )}
-
-              {/* Step 2: Bill Amount */}
-              {completeJobStep === 2 && (
                 <div className="space-y-4">
               <div>
                     <Label htmlFor="bill-amount">Bill Amount *</Label>
@@ -4600,14 +4702,6 @@ const TechnicianDashboard = () => {
                       value={billAmount}
                       onChange={(e) => {
                         setBillAmount(e.target.value);
-                        // Auto-save progress
-                        if (selectedJobForComplete) {
-                          saveJobCompletionProgress(selectedJobForComplete.id, {
-                            billPhotos,
-                            billAmount: e.target.value,
-                            currentStep: completeJobStep,
-                          });
-                        }
                       }}
                       className="mt-1"
                       min="0"
@@ -4627,15 +4721,6 @@ const TechnicianDashboard = () => {
                   value={completionNotes}
                   onChange={(e) => {
                     setCompletionNotes(e.target.value);
-                    // Auto-save progress
-                    if (selectedJobForComplete) {
-                      saveJobCompletionProgress(selectedJobForComplete.id, {
-                        billPhotos,
-                        billAmount,
-                        completionNotes: e.target.value,
-                        currentStep: completeJobStep,
-                      });
-                    }
                   }}
                   rows={3}
                       className="mt-1"
@@ -4644,8 +4729,218 @@ const TechnicianDashboard = () => {
             </div>
               )}
 
-              {/* Step 3: Payment Mode */}
+              {/* Step 2: Bill Photo */}
+              {completeJobStep === 2 && (
+                <div className="space-y-4">
+                  <div>
+                    <Label>Upload Bill Photo (Optional)</Label>
+                    <ImageUpload
+                      onImagesChange={(images) => {
+                        setBillPhotos(images);
+                      }}
+                      maxImages={5}
+                      folder="bills"
+                      title=""
+                      description=""
+                      maxWidth={1024}
+                      quality={0.5}
+                      aggressiveCompression={true}
+                    />
+                  </div>
+                </div>
+              )}
+
+              {/* Step 3: AMC Information (Optional - Can Skip) */}
               {completeJobStep === 3 && (
+                <div className="space-y-4">
+                  {hasAMC === null ? (
+                    <>
+                      <div className="space-y-3">
+                        <Label className="text-base font-semibold">Does the customer need AMC?</Label>
+                        <p className="text-sm text-gray-600 mb-4">
+                          This information is for reference only. The admin will generate the official AMC contract.
+                        </p>
+                        <div className="grid grid-cols-2 gap-4">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setHasAMC(true);
+                            }}
+                            className={`p-4 rounded-lg border-2 transition-all duration-200 ${
+                              hasAMC === true
+                                ? 'border-black bg-black text-white shadow-md'
+                                : 'border-gray-300 bg-white text-gray-700 hover:border-gray-400 hover:bg-gray-50'
+                            }`}
+                          >
+                            <div className="flex flex-col items-center gap-2">
+                              <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center ${
+                                hasAMC === true
+                                  ? 'border-white bg-white'
+                                  : 'border-gray-400'
+                              }`}>
+                                {hasAMC === true && (
+                                  <div className="w-2.5 h-2.5 rounded-full bg-black"></div>
+                                )}
+                              </div>
+                              <span className="font-medium text-sm">Yes</span>
+                            </div>
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setHasAMC(false);
+                              // Auto-advance to next step if No
+                              setCompleteJobStep(4);
+                            }}
+                            className={`p-4 rounded-lg border-2 transition-all duration-200 ${
+                              hasAMC === false
+                                ? 'border-black bg-black text-white shadow-md'
+                                : 'border-gray-300 bg-white text-gray-700 hover:border-gray-400 hover:bg-gray-50'
+                            }`}
+                          >
+                            <div className="flex flex-col items-center gap-2">
+                              <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center ${
+                                hasAMC === false
+                                  ? 'border-white bg-white'
+                                  : 'border-gray-400'
+                              }`}>
+                                {hasAMC === false && (
+                                  <div className="w-2.5 h-2.5 rounded-full bg-black"></div>
+                                )}
+                              </div>
+                              <span className="font-medium text-sm">No</span>
+                            </div>
+                          </button>
+                        </div>
+                      </div>
+                    </>
+                  ) : (
+                    <>
+                      <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-4">
+                        <p className="text-sm text-blue-800">
+                          <strong>Note:</strong> This information is for reference only. The admin will generate the official AMC contract with a summary. If you enter 0 years, it will be treated as no AMC.
+                        </p>
+                      </div>
+                      
+                      <div className="space-y-4">
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                          <div>
+                            <Label htmlFor="amc-start-date" className="text-sm font-medium">AMC Start Date</Label>
+                        <Input
+                          id="amc-start-date"
+                          type="date"
+                          value={amcDateGiven}
+                          onChange={(e) => {
+                            const date = e.target.value;
+                            setAmcDateGiven(date);
+                            if (date && amcYears > 0) {
+                              const endDate = new Date(date);
+                              endDate.setFullYear(endDate.getFullYear() + amcYears);
+                              endDate.setDate(endDate.getDate() - 1);
+                              setAmcEndDate(endDate.toISOString().split('T')[0]);
+                            } else {
+                              setAmcEndDate('');
+                            }
+                          }}
+                          className="mt-1"
+                        />
+                      </div>
+                      <div>
+                        <Label htmlFor="amc-years" className="text-sm font-medium">Number of Years</Label>
+                        <Select
+                          value={amcYears > 0 ? amcYears.toString() : ''}
+                          onValueChange={(value) => {
+                            const years = value ? parseInt(value) : 0;
+                            setAmcYears(years);
+                            // If years is 0 or not selected, treat as no AMC
+                            if (years === 0) {
+                              setHasAMC(false);
+                              setAmcEndDate('');
+                            } else {
+                              setHasAMC(true);
+                              if (amcDateGiven && years > 0) {
+                                const endDate = new Date(amcDateGiven);
+                                endDate.setFullYear(endDate.getFullYear() + years);
+                                endDate.setDate(endDate.getDate() - 1);
+                                setAmcEndDate(endDate.toISOString().split('T')[0]);
+                              }
+                            }
+                          }}
+                        >
+                          <SelectTrigger id="amc-years" className="mt-1">
+                            <SelectValue placeholder="Select years (optional)" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="1">1 Year</SelectItem>
+                            <SelectItem value="2">2 Years</SelectItem>
+                            <SelectItem value="3">3 Years</SelectItem>
+                          </SelectContent>
+                        </Select>
+                        {amcYears === 0 && (
+                          <p className="text-xs text-gray-500 mt-1">If not selected, it means no AMC</p>
+                        )}
+                      </div>
+                    </div>
+
+                    <div>
+                      <Label htmlFor="amc-amount" className="text-sm font-medium">AMC Amount (Reference Only)</Label>
+                      <Input
+                        id="amc-amount"
+                        type="number"
+                        placeholder="Enter AMC amount (optional)"
+                        value={amcAmount}
+                        onChange={(e) => {
+                          setAmcAmount(e.target.value);
+                        }}
+                        className="mt-1"
+                        min="0"
+                        step="0.01"
+                      />
+                    </div>
+
+                    <div>
+                      <Label htmlFor="amc-includes-prefilter" className="text-sm font-medium mb-2 block">Includes Prefilter</Label>
+                      <div className="flex items-center space-x-2">
+                        <input
+                          type="checkbox"
+                          id="amc-includes-prefilter"
+                          checked={amcIncludesPrefilter}
+                          onChange={(e) => {
+                            const checked = e.target.checked;
+                            setAmcIncludesPrefilter(checked);
+                          }}
+                          className="w-4 h-4"
+                        />
+                        <Label htmlFor="amc-includes-prefilter" className="text-sm cursor-pointer">
+                          Customer's AMC includes prefilter maintenance
+                        </Label>
+                      </div>
+                    </div>
+
+                    <div>
+                      <Label htmlFor="amc-additional-info" className="text-sm font-medium">Additional Information (Reference Only)</Label>
+                      <Textarea
+                        id="amc-additional-info"
+                        value={amcAdditionalInfo}
+                        onChange={(e) => {
+                          setAmcAdditionalInfo(e.target.value);
+                        }}
+                        placeholder="Enter any additional AMC information for admin reference (optional)..."
+                        rows={4}
+                        className="mt-1"
+                      />
+                      <p className="text-xs text-gray-500 mt-1">
+                        This information is for admin reference only. The admin will create the official AMC contract.
+                      </p>
+                    </div>
+                      </div>
+                    </>
+                  )}
+                </div>
+              )}
+
+              {/* Step 4: Payment Mode */}
+              {completeJobStep === 4 && (
                 <div className="space-y-4">
                   <div>
                       <Label htmlFor="payment-mode">Payment Mode *</Label>
@@ -4658,19 +4953,6 @@ const TechnicianDashboard = () => {
                           setQrCodeType('');
                           setSelectedQrCodeId('');
                           setPaymentScreenshot('');
-                          }
-                          // Auto-save progress
-                          if (selectedJobForComplete) {
-                            saveJobCompletionProgress(selectedJobForComplete.id, {
-                              billPhotos,
-                              billAmount,
-                              completionNotes,
-                              paymentMode: value,
-                              qrCodeType: value === 'CASH' ? '' : qrCodeType,
-                              selectedQrCodeId: value === 'CASH' ? '' : selectedQrCodeId,
-                              paymentScreenshot: value === 'CASH' ? '' : paymentScreenshot,
-                              currentStep: completeJobStep,
-                            });
                           }
                         }}
                       >
@@ -4716,22 +4998,6 @@ const TechnicianDashboard = () => {
                             }
                             
                             setQrCodeType(qrType);
-                            
-                            // Auto-save progress
-                            if (selectedJobForComplete) {
-                              saveJobCompletionProgress(selectedJobForComplete.id, {
-                                billPhotos,
-                                billAmount,
-                                completionNotes,
-                                paymentMode: 'ONLINE',
-                                qrCodeType: qrType,
-                                selectedQrCodeId: value,
-                                selectedQrCodeUrl: qrUrl,
-                                selectedQrCodeName: qrName,
-                                paymentScreenshot,
-                                currentStep: completeJobStep,
-                              });
-                            }
                           }}
                         >
                           <SelectTrigger className="mt-1">
@@ -4835,44 +5101,35 @@ const TechnicianDashboard = () => {
                       </div>
                     )}
 
-              {/* Step 4: Payment Screenshot (only for ONLINE payment) */}
-              {completeJobStep === 4 && paymentMode === 'ONLINE' && (
+              {/* Step 5: Payment Screenshot (optional) */}
+              {completeJobStep === 5 && (
                 <div className="space-y-4">
                   <div>
-                        <Label>Payment Screenshot (Optional)</Label>
-                        <p className="text-sm text-gray-500 mb-2">Upload payment confirmation screenshot</p>
-                        <ImageUpload
-                          onImagesChange={(images) => {
-                            setPaymentScreenshot(images[0] || '');
-                            // Auto-save progress
-                            if (selectedJobForComplete) {
-                              saveJobCompletionProgress(selectedJobForComplete.id, {
-                                billPhotos,
-                                billAmount,
-                                completionNotes,
-                                paymentMode: 'ONLINE',
-                                paymentScreenshot: images[0] || '',
-                                qrCodeType,
-                                selectedQrCodeId,
-                                currentStep: completeJobStep,
-                              });
-                            }
-                          }}
-                          maxImages={1}
-                          folder="payment-receipts"
-                          title=""
-                          description=""
-                          maxWidth={800}
-                          quality={0.3}
-                          aggressiveCompression={true}
-                          useSecondaryAccount={true}
-                        />
-                      </div>
+                    <Label>Payment Screenshot (Optional)</Label>
+                    <p className="text-sm text-gray-500 mb-2">
+                      {paymentMode === 'ONLINE' 
+                        ? 'Upload payment confirmation screenshot' 
+                        : 'Upload payment screenshot if available (optional)'}
+                    </p>
+                    <ImageUpload
+                      onImagesChange={(images) => {
+                        setPaymentScreenshot(images[0] || '');
+                      }}
+                      maxImages={1}
+                      folder="payment-receipts"
+                      title=""
+                      description=""
+                      maxWidth={800}
+                      quality={0.3}
+                      aggressiveCompression={true}
+                      useSecondaryAccount={true}
+                    />
                   </div>
-                )}
+                </div>
+              )}
 
-              {/* Step 5: Prefilter Question */}
-              {completeJobStep === 5 && (
+              {/* Step 6: Prefilter Question */}
+              {completeJobStep === 6 && (
                 <div className="space-y-4">
                   <div className="space-y-3">
                     <Label className="text-base font-semibold">Does the customer have a prefilter?</Label>
@@ -4881,26 +5138,6 @@ const TechnicianDashboard = () => {
                         type="button"
                         onClick={() => {
                           setCustomerHasPrefilter(true);
-                          // Auto-save progress
-                          if (selectedJobForComplete) {
-                            saveJobCompletionProgress(selectedJobForComplete.id, {
-                              billPhotos,
-                              billAmount,
-                              completionNotes,
-                              paymentMode: paymentMode as 'CASH' | 'ONLINE' | '',
-                              paymentScreenshot,
-                              qrCodeType,
-                              selectedQrCodeId,
-                              hasAMC,
-                              amcDateGiven,
-                              amcEndDate,
-                              amcYears,
-                              amcIncludesPrefilter,
-                              amcAdditionalInfo,
-                              customerHasPrefilter: true,
-                              currentStep: completeJobStep,
-                            });
-                          }
                         }}
                         className={`p-4 rounded-lg border-2 transition-all duration-200 ${
                           customerHasPrefilter === true
@@ -4925,26 +5162,6 @@ const TechnicianDashboard = () => {
                         type="button"
                         onClick={() => {
                           setCustomerHasPrefilter(false);
-                          // Auto-save progress
-                          if (selectedJobForComplete) {
-                            saveJobCompletionProgress(selectedJobForComplete.id, {
-                              billPhotos,
-                              billAmount,
-                              completionNotes,
-                              paymentMode: paymentMode as 'CASH' | 'ONLINE' | '',
-                              paymentScreenshot,
-                              qrCodeType,
-                              selectedQrCodeId,
-                              hasAMC,
-                              amcDateGiven,
-                              amcEndDate,
-                              amcYears,
-                              amcIncludesPrefilter,
-                              amcAdditionalInfo,
-                              customerHasPrefilter: false,
-                              currentStep: completeJobStep,
-                            });
-                          }
                         }}
                         className={`p-4 rounded-lg border-2 transition-all duration-200 ${
                           customerHasPrefilter === false
@@ -4969,6 +5186,7 @@ const TechnicianDashboard = () => {
                   </div>
                 </div>
               )}
+
             </div>
 
             <DialogFooter className="px-6 py-4 flex-shrink-0 border-t">
@@ -4976,7 +5194,7 @@ const TechnicianDashboard = () => {
                 variant="outline"
                 onClick={() => {
                   if (completeJobStep > 1) {
-                    setCompleteJobStep((prev) => (prev - 1) as 1 | 2 | 3 | 4 | 5);
+                    setCompleteJobStep((prev) => (prev - 1) as 1 | 2 | 3 | 4 | 5 | 6);
                   } else {
                   setCompleteDialogOpen(false);
                   setSelectedJobForComplete(null);
@@ -4987,9 +5205,9 @@ const TechnicianDashboard = () => {
                     const today = new Date().toISOString().split('T')[0];
                     setAmcDateGiven(today);
                     setAmcEndDate('');
-                    setAmcYears(1);
+                    setAmcYears(0);
                     setAmcIncludesPrefilter(false);
-                    setHasAMC(false);
+                    setHasAMC(null);
                     setPaymentMode('');
                     setCustomerHasPrefilter(null);
       setQrCodeType('');
@@ -5000,11 +5218,36 @@ const TechnicianDashboard = () => {
               >
                 {completeJobStep > 1 ? 'Back' : 'Cancel'}
               </Button>
-              {completeJobStep === 1 && (
+              {completeJobStep === 2 && (
                 <Button
                   variant="outline"
                   onClick={() => {
-                    setCompleteJobStep(2);
+                    // Skip bill photo step
+                    saveJobCompletionProgress(selectedJobForComplete.id, {
+                      billPhotos: [],
+                      billAmount,
+                      currentStep: 3,
+                    });
+                    setCompleteJobStep(3);
+                  }}
+                >
+                  Skip
+                </Button>
+              )}
+              {completeJobStep === 3 && (
+                <Button
+                  variant="outline"
+                  onClick={() => {
+                    // Skip AMC step - move to payment mode
+                    saveJobCompletionProgress(selectedJobForComplete.id, {
+                      billPhotos,
+                      billAmount,
+                      paymentMode: paymentMode as 'CASH' | 'ONLINE' | '',
+                      qrCodeType,
+                      selectedQrCodeId,
+                      currentStep: 4,
+                    });
+                    setCompleteJobStep(4);
                   }}
                 >
                   Skip
@@ -5015,17 +5258,17 @@ const TechnicianDashboard = () => {
                 className="bg-black hover:bg-gray-800 !text-white font-semibold"
                 disabled={
                   isSubmittingJobCompletion ||
-                  (completeJobStep === 3 && !paymentMode) || 
-                  (completeJobStep === 3 && paymentMode === 'ONLINE' && !qrCodeType)
+                  (completeJobStep === 4 && !paymentMode) || 
+                  (completeJobStep === 4 && paymentMode === 'ONLINE' && !selectedQrCodeId)
                 }
               >
                 {isSubmittingJobCompletion ? (
                   <>
                     <RefreshCw className="w-4 h-4 mr-2 animate-spin" />
-                    {completeJobStep === 5 ? 'Submitting...' : 'Saving...'}
+                    {completeJobStep === 6 ? 'Submitting...' : 'Saving...'}
                   </>
                 ) : (
-                  completeJobStep === 5 ? 'Complete Job' : 'Next'
+                  completeJobStep === 6 ? 'Complete Job' : 'Next'
                 )}
               </Button>
             </DialogFooter>
@@ -5454,6 +5697,15 @@ const TechnicianDashboard = () => {
                   </div>
                 </div>
                 
+                {amcInfo.amount && (
+                  <div className="text-sm">
+                    <span className="text-gray-600 font-medium">AMC Amount:</span>
+                    <p className="text-gray-900 font-semibold mt-1">
+                      ₹{parseFloat(amcInfo.amount.toString()).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                    </p>
+                  </div>
+                )}
+                
                 {(() => {
                   // Parse additional_info to extract description
                   let description = '';
@@ -5821,6 +6073,12 @@ const TechnicianDashboard = () => {
                                         <span className="text-gray-600 font-medium w-32">Duration:</span>
                                         <span className="text-gray-900 font-semibold">{amcInfo.years || 1} {amcInfo.years === 1 ? 'year' : 'years'}</span>
                                       </div>
+                                      {amcInfo.amount && (
+                                        <div className="flex items-center gap-2">
+                                          <span className="text-gray-600 font-medium w-32">AMC Amount:</span>
+                                          <span className="text-gray-900 font-semibold">₹{parseFloat(amcInfo.amount.toString()).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                                        </div>
+                                      )}
                                       {amcInfo.includes_prefilter !== undefined && (
                                         <div className="flex items-center gap-2">
                                           <span className="text-gray-600 font-medium w-32">Includes Prefilter:</span>

@@ -103,6 +103,11 @@ export default function FollowUpModal({ isOpen, onClose, job, onScheduleFollowUp
       
       if (error) {
         console.error('Error loading follow-ups:', error);
+        // If 401 error, show user-friendly message
+        if (error.code === 'PGRST301' || error.message?.includes('401') || error.message?.includes('unauthorized')) {
+          console.warn('Authentication error loading follow-ups. This might be a permissions issue.');
+          // Still set empty array so UI doesn't break
+        }
         setExistingFollowUps([]);
         return;
       }
@@ -120,7 +125,7 @@ export default function FollowUpModal({ isOpen, onClose, job, onScheduleFollowUp
             .from('follow_ups')
             .insert({
               job_id: job.id,
-              scheduled_date: followUpDate,
+              follow_up_date: followUpDate,
               reason: followUpNotes,
               scheduled_by: followUpScheduledBy || 'technician',
               completed: false
@@ -130,13 +135,18 @@ export default function FollowUpModal({ isOpen, onClose, job, onScheduleFollowUp
           
           if (createError) {
             console.error('Error creating follow-up record from job data:', createError);
+            // If 401 error, don't try to create - just show empty list
+            if (createError.code === 'PGRST301' || createError.message?.includes('401') || createError.message?.includes('unauthorized')) {
+              console.warn('Authentication error creating follow-up. Permissions may not be set up.');
+              return;
+            }
           } else if (newFollowUp) {
             // Map the created record to match the FollowUp interface
             const mappedFollowUp: FollowUp = {
               id: newFollowUp.id,
               job_id: newFollowUp.job_id,
               parent_follow_up_id: newFollowUp.parent_follow_up_id,
-              follow_up_date: newFollowUp.scheduled_date || newFollowUp.follow_up_date,
+              follow_up_date: newFollowUp.follow_up_date,
               follow_up_time: newFollowUp.follow_up_time,
               reason: newFollowUp.reason,
               notes: newFollowUp.notes,
@@ -158,7 +168,7 @@ export default function FollowUpModal({ isOpen, onClose, job, onScheduleFollowUp
         id: fu.id,
         job_id: fu.job_id,
         parent_follow_up_id: fu.parent_follow_up_id,
-        follow_up_date: fu.scheduled_date || fu.follow_up_date,
+        follow_up_date: fu.follow_up_date,
         follow_up_time: fu.follow_up_time,
         reason: fu.reason,
         notes: fu.notes,

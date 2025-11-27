@@ -98,14 +98,14 @@ export const CompletedJobSection: React.FC<CompletedJobSectionProps> = ({
           )}
           
           {/* QR Code Info (if online) */}
-          {(paymentMethod === 'ONLINE' || paymentMethod === 'UPI' || paymentMethod === 'CARD' || paymentMethod === 'BANK_TRANSFER') && qrPhotos?.selected_qr_code_name && (
+          {qrPhotos?.selected_qr_code_name && (
             <div className="text-gray-700 break-words">
               <span className="text-gray-500 font-medium">QR Code:</span> {qrPhotos.selected_qr_code_name}
             </div>
           )}
           
           {/* Payment Screenshot & Bill Photos - Combined */}
-          {((paymentMethod === 'ONLINE' || paymentMethod === 'UPI' || paymentMethod === 'CARD' || paymentMethod === 'BANK_TRANSFER') && paymentScreenshot) || (billPhotos && Array.isArray(billPhotos) && billPhotos.length > 0) ? (
+          {paymentScreenshot || (billPhotos && Array.isArray(billPhotos) && billPhotos.length > 0) ? (
             <div className="text-gray-700 mt-2 pt-2 border-t border-green-200">
               <span className="text-gray-500 font-medium">Payment & Bill Documents:</span>
               <button
@@ -149,6 +149,11 @@ export const CompletedJobSection: React.FC<CompletedJobSectionProps> = ({
                 <div>
                   <span className="text-gray-500">Duration:</span> {amcInfo.years || 1} {amcInfo.years === 1 ? 'year' : 'years'}
                 </div>
+                {amcInfo.amount && (
+                  <div>
+                    <span className="text-gray-500">AMC Amount:</span> ₹{parseFloat(amcInfo.amount.toString()).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                  </div>
+                )}
                 {amcInfo.includes_prefilter !== undefined && (
                   <div>
                     <span className="text-gray-500">Includes Prefilter:</span> {amcInfo.includes_prefilter ? 'Yes' : 'No'}

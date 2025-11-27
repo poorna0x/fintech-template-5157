@@ -171,6 +171,15 @@ export const db = {
         .single();
       
       return { data, error };
+    },
+
+    async delete(id: string) {
+      const { error } = await supabase
+        .from('customers')
+        .delete()
+        .eq('id', id);
+      
+      return { error };
     }
   },
   
@@ -374,7 +383,7 @@ export const db = {
     // Get job counts by status (for stats without loading all data)
     async getCounts() {
       try {
-        // Get today's date range (start and end of today)
+        // Get today's date range (start and end of today) for today-specific counts
         const today = new Date();
         today.setHours(0, 0, 0, 0);
         const tomorrow = new Date(today);
@@ -382,35 +391,30 @@ export const db = {
         
         const todayStart = today.toISOString();
         const todayEnd = tomorrow.toISOString();
-        const todayDateStr = today.toISOString().split('T')[0]; // YYYY-MM-DD format
         
-        // Ongoing: jobs created today
-        const ongoingResult = await supabase
-          .from('jobs')
-          .select('id', { count: 'exact', head: true })
-          .in('status', ['PENDING', 'ASSIGNED', 'IN_PROGRESS'])
-          .gte('created_at', todayStart)
-          .lt('created_at', todayEnd);
-        
-        const [followupResult, deniedResult, completedResult] = await Promise.all([
-          // Followup: jobs scheduled for today
+        // Count jobs in parallel for better performance
+        const [ongoingResult, followupResult, deniedResult, completedResult] = await Promise.all([
+          // Ongoing: ALL current jobs with status PENDING, ASSIGNED, or IN_PROGRESS
           supabase
             .from('jobs')
-            .select('*', { count: 'exact', head: true })
-            .in('status', ['FOLLOW_UP', 'RESCHEDULED'])
-            .gte('follow_up_date', todayDateStr)
-            .lt('follow_up_date', tomorrow.toISOString().split('T')[0]),
-          // Denied: jobs denied today (using denied_at field)
+            .select('id', { count: 'exact', head: true })
+            .in('status', ['PENDING', 'ASSIGNED', 'IN_PROGRESS']),
+          // Followup: ALL jobs with status FOLLOW_UP or RESCHEDULED
           supabase
             .from('jobs')
-            .select('*', { count: 'exact', head: true })
+            .select('id', { count: 'exact', head: true })
+            .in('status', ['FOLLOW_UP', 'RESCHEDULED']),
+          // Denied: Only TODAY's jobs with status DENIED or CANCELLED (using denied_at field)
+          supabase
+            .from('jobs')
+            .select('id', { count: 'exact', head: true })
             .in('status', ['DENIED', 'CANCELLED'])
             .gte('denied_at', todayStart)
             .lt('denied_at', todayEnd),
-          // Completed: jobs completed today
+          // Completed: Only TODAY's jobs with status COMPLETED (using completed_at field)
           supabase
             .from('jobs')
-            .select('*', { count: 'exact', head: true })
+            .select('id', { count: 'exact', head: true })
             .eq('status', 'COMPLETED')
             .gte('completed_at', todayStart)
             .lt('completed_at', todayEnd)

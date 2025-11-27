@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -7,7 +8,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { Customer } from '@/types';
 import { db } from '@/lib/supabase';
 import { toast } from 'sonner';
-import { MapPin, Download, ExternalLink } from 'lucide-react';
+import { MapPin, Download, ExternalLink, Trash2 } from 'lucide-react';
 import { mapServiceTypesToDbValue, extractLocationFromAddressString, bangaloreAreas } from '@/lib/adminUtils';
 
 // Brand and model data
@@ -124,6 +125,7 @@ interface EditCustomerDialogProps {
   dbModels: string[];
   onCustomerUpdated: (updatedCustomer: Customer) => void;
   onLoadBrandsAndModels: () => Promise<void>;
+  onCustomerDeleted?: (customerId: string) => void;
 }
 
 const EditCustomerDialog: React.FC<EditCustomerDialogProps> = ({
@@ -133,8 +135,11 @@ const EditCustomerDialog: React.FC<EditCustomerDialogProps> = ({
   dbBrands,
   dbModels,
   onCustomerUpdated,
-  onLoadBrandsAndModels
+  onLoadBrandsAndModels,
+  onCustomerDeleted
 }) => {
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
   const [editFormData, setEditFormData] = useState({
     full_name: '',
     phone: '',
@@ -849,6 +854,34 @@ const EditCustomerDialog: React.FC<EditCustomerDialogProps> = ({
     }
   };
 
+  const handleDeleteCustomer = async () => {
+    if (!customer) return;
+
+    setIsDeleting(true);
+    try {
+      const { error } = await db.customers.delete(customer.id);
+
+      if (error) {
+        throw new Error(error.message);
+      }
+
+      toast.success(`Customer ${(customer as any)?.customer_id || customer.customerId} deleted successfully`);
+      
+      if (onCustomerDeleted) {
+        onCustomerDeleted(customer.id);
+      }
+      
+      setDeleteDialogOpen(false);
+      onOpenChange(false);
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
+      console.error('Error deleting customer:', error);
+      toast.error(`Failed to delete customer: ${errorMessage}`);
+    } finally {
+      setIsDeleting(false);
+    }
+  };
+
   const handleUpdateCustomer = async () => {
     if (!customer) return;
 
@@ -1270,30 +1303,73 @@ const EditCustomerDialog: React.FC<EditCustomerDialogProps> = ({
           </div>
         </div>
 
-        <DialogFooter>
+        <DialogFooter className="flex justify-between">
           <Button 
-            variant="outline" 
-            onClick={() => onOpenChange(false)}
-            disabled={isUpdating}
+            variant="destructive" 
+            onClick={() => setDeleteDialogOpen(true)}
+            disabled={isUpdating || isDeleting}
+            className="mr-auto"
           >
-            Cancel
+            <Trash2 className="w-4 h-4 mr-2" />
+            Delete Customer
           </Button>
-          <Button 
-            onClick={handleUpdateCustomer}
-            disabled={isUpdating}
-            className="bg-blue-600 hover:bg-blue-700"
-          >
-            {isUpdating ? (
-              <div className="flex items-center gap-2">
-                <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
-                Updating...
-              </div>
-            ) : (
-              'Update Customer'
-            )}
-          </Button>
+          <div className="flex gap-2">
+            <Button 
+              variant="outline" 
+              onClick={() => onOpenChange(false)}
+              disabled={isUpdating || isDeleting}
+            >
+              Cancel
+            </Button>
+            <Button 
+              onClick={handleUpdateCustomer}
+              disabled={isUpdating || isDeleting}
+              className="bg-blue-600 hover:bg-blue-700"
+            >
+              {isUpdating ? (
+                <div className="flex items-center gap-2">
+                  <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                  Updating...
+                </div>
+              ) : (
+                'Update Customer'
+              )}
+            </Button>
+          </div>
         </DialogFooter>
       </DialogContent>
+
+      {/* Delete Customer Confirmation Dialog */}
+      <AlertDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete Customer</AlertDialogTitle>
+            <AlertDialogDescription>
+              Are you sure you want to delete customer <strong>{(customer as any)?.customer_id || customer?.customerId}</strong> - <strong>{(customer as any)?.full_name || customer?.fullName}</strong>?
+              <br />
+              <br />
+              This action cannot be undone and will permanently remove the customer and all associated data.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={isDeleting}>Cancel</AlertDialogCancel>
+            <AlertDialogAction 
+              onClick={handleDeleteCustomer}
+              disabled={isDeleting}
+              className="bg-red-600 hover:bg-red-700"
+            >
+              {isDeleting ? (
+                <div className="flex items-center gap-2">
+                  <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                  Deleting...
+                </div>
+              ) : (
+                'Delete Customer'
+              )}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </Dialog>
   );
 };

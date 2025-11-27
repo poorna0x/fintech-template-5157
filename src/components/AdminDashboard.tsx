@@ -1423,18 +1423,23 @@ const AdminDashboard = () => {
     if (!customerToDelete) return;
     
     try {
-      // Note: You'll need to implement delete function in db.customers
-      // const { error } = await db.customers.delete(customerToDelete.id);
+      const { error } = await db.customers.delete(customerToDelete.id);
       
-      // For now, just show success message
+      if (error) {
+        throw new Error(error.message);
+      }
+      
       toast.success(`Customer ${customerToDelete.customer_id || customerToDelete.customerId} deleted successfully`);
       
       // Remove from local state
       setCustomers(customers.filter(c => c.id !== customerToDelete.id));
       setDeleteDialogOpen(false);
       setCustomerToDelete(null);
+      loadDashboardData();
     } catch (error) {
-      toast.error('Failed to delete customer');
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
+      console.error('Error deleting customer:', error);
+      toast.error(`Failed to delete customer: ${errorMessage}`);
     }
   };
 
@@ -4642,7 +4647,12 @@ const AdminDashboard = () => {
           .eq('id', followUpData.rescheduleFollowUpId);
 
         if (deleteError) {
-          throw new Error(deleteError.message);
+          console.error('Delete follow-up error details:', deleteError);
+          // Provide more helpful error message for 401 errors
+          if (deleteError.code === 'PGRST301' || deleteError.message?.includes('401') || deleteError.message?.includes('unauthorized')) {
+            throw new Error('Authentication failed. Please check your login status and try again.');
+          }
+          throw new Error(deleteError.message || 'Failed to delete follow-up record');
         }
       }
 
@@ -4662,7 +4672,12 @@ const AdminDashboard = () => {
         .single();
 
       if (followUpError) {
-        throw new Error(followUpError.message);
+        console.error('Follow-up error details:', followUpError);
+        // Provide more helpful error message for 401 errors
+        if (followUpError.code === 'PGRST301' || followUpError.message?.includes('401') || followUpError.message?.includes('unauthorized')) {
+          throw new Error('Authentication failed. Please check your login status and try again.');
+        }
+        throw new Error(followUpError.message || 'Failed to create follow-up record');
       }
 
       // If this is the first follow-up (no parent), update job status
@@ -6960,6 +6975,11 @@ const AdminDashboard = () => {
           loadDashboardData();
         }}
         onLoadBrandsAndModels={loadBrandsAndModels}
+        onCustomerDeleted={(customerId) => {
+          setCustomers(customers.filter(c => c.id !== customerId));
+          setEditingCustomer(null);
+          loadDashboardData();
+        }}
       />
 
       {/* Legacy Edit Customer Dialog - REMOVED */}

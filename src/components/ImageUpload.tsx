@@ -77,7 +77,7 @@ const ImageUpload: React.FC<ImageUploadProps> = ({
         // Validate file
         const validation = validateImageFile(file);
         if (!validation.valid) {
-          toast.error(`${file.name}: ${validation.error}`);
+          toast.error(`Image: ${validation.error}`);
           continue;
         }
 
@@ -124,7 +124,7 @@ const ImageUpload: React.FC<ImageUploadProps> = ({
             console.log('✅ Photo saved to local storage:', file.name);
           } catch (saveError) {
             console.error('Failed to save photo to localStorage:', saveError);
-            toast.error(`Failed to save ${file.name}. Please try again.`);
+            toast.error('Failed to save image. Please try again.');
             continue; // Skip this file if we can't save it
           }
 
@@ -160,7 +160,7 @@ const ImageUpload: React.FC<ImageUploadProps> = ({
               name: file.name,
             });
 
-            toast.success(`${file.name} uploaded successfully`, { duration: 2000 });
+            toast.success('Image uploaded', { duration: 2000 });
 
           } catch (uploadError: any) {
             // Upload failed - photo is already saved in localStorage, so it's safe
@@ -389,13 +389,13 @@ const ImageUpload: React.FC<ImageUploadProps> = ({
 
                   {/* Image Info Overlay */}
                   <div className="absolute bottom-0 left-0 right-0 bg-black/70 text-white p-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                    <p className="text-xs truncate">{image.name}</p>
+                    <p className="text-xs truncate">Image uploaded</p>
                   </div>
                 </div>
                 
                 <div className="mt-2 space-y-1">
                   <p className="text-xs text-muted-foreground truncate">
-                    {image.name}
+                    Image uploaded
                   </p>
                   <div className="flex items-center justify-between text-xs text-muted-foreground">
                     <span>Optimized</span>
