@@ -1220,60 +1220,113 @@ const TechnicianDashboard = () => {
 
   // Get current location and update in database
   const getCurrentLocation = useCallback(async () => {
-    if (navigator.geolocation) {
-      navigator.geolocation.getCurrentPosition(
-        async (position) => {
-          const location = {
-            lat: position.coords.latitude,
-            lng: position.coords.longitude
-          };
-          setCurrentLocation(location);
-          console.log('Current location:', location);
+    // Check if location tracking is enabled
+    const locationTrackingEnabled = localStorage.getItem('technician_location_tracking_enabled') !== 'false';
+    if (!locationTrackingEnabled) {
+      console.log('Location tracking is disabled in settings');
+      return;
+    }
 
-          // Update technician location and set status to AVAILABLE in database
-          if (user?.technicianId) {
-            try {
-              const locationData = {
-                latitude: position.coords.latitude,
-                longitude: position.coords.longitude,
-                lastUpdated: new Date().toISOString(),
-                accuracy: position.coords.accuracy || null
-              };
-
-              const { error, data } = await db.technicians.update(user.technicianId, {
-                current_location: locationData,
-                status: 'AVAILABLE' // Automatically set to AVAILABLE when location is updated
-              });
-
-              if (error) {
-                console.error('Error updating technician location:', error);
-                toast.error(`Failed to update location: ${error.message}`);
-              } else {
-                console.log('✅ Technician location and status updated successfully:', {
-                  location: locationData,
-                  updatedData: data
-                });
-                // Location updated silently
-              }
-            } catch (error) {
-              console.error('Error updating technician location:', error);
-            }
-          }
-        },
-        (error) => {
-          console.error('Error getting location:', error);
-          toast.error('Unable to get your location. Distance calculations will not be available.');
-        },
-        {
-          enableHighAccuracy: true,
-          timeout: 10000,
-          maximumAge: 300000 // 5 minutes
-        }
-      );
-    } else {
+    if (!navigator.geolocation) {
       console.error('Geolocation not supported');
       toast.error('Location services not supported. Distance calculations will not be available.');
+      return;
     }
+
+    // Check if we're on HTTPS or localhost (required for geolocation)
+    const isSecure = window.location.protocol === 'https:' || 
+                     window.location.hostname === 'localhost' || 
+                     window.location.hostname === '127.0.0.1';
+    
+    if (!isSecure) {
+      console.error('Location access requires HTTPS');
+      toast.error('Location access requires HTTPS. Please use a secure connection.');
+      return;
+    }
+
+    // Check permission status
+    let permissionStatus = 'unknown';
+    try {
+      if ('permissions' in navigator) {
+        const result = await navigator.permissions.query({ name: 'geolocation' as PermissionName });
+        permissionStatus = result.state;
+      }
+    } catch (e) {
+      // Permissions API not supported or failed
+      console.log('Permissions API not available');
+    }
+
+    if (permissionStatus === 'denied') {
+      console.error('Location permission denied');
+      toast.error('Location permission denied. Please enable location access in your browser settings.');
+      return;
+    }
+
+    navigator.geolocation.getCurrentPosition(
+      async (position) => {
+        const location = {
+          lat: position.coords.latitude,
+          lng: position.coords.longitude
+        };
+        setCurrentLocation(location);
+        console.log('Current location:', location);
+
+        // Update technician location and set status to AVAILABLE in database
+        if (user?.technicianId) {
+          try {
+            const locationData = {
+              latitude: position.coords.latitude,
+              longitude: position.coords.longitude,
+              lastUpdated: new Date().toISOString(),
+              accuracy: position.coords.accuracy || null
+            };
+
+            const { error, data } = await db.technicians.update(user.technicianId, {
+              current_location: locationData,
+              status: 'AVAILABLE' // Automatically set to AVAILABLE when location is updated
+            });
+
+            if (error) {
+              console.error('Error updating technician location:', error);
+              toast.error(`Failed to update location: ${error.message}`);
+            } else {
+              console.log('✅ Technician location and status updated successfully:', {
+                location: locationData,
+                updatedData: data
+              });
+              // Location updated silently
+            }
+          } catch (error) {
+            console.error('Error updating technician location:', error);
+            const errorMsg = error instanceof Error ? error.message : 'Unknown error';
+            toast.error(`Failed to update location: ${errorMsg}`);
+          }
+        }
+      },
+      (error) => {
+        console.error('Error getting location:', error);
+        let errorMsg = 'Unable to get your location. Distance calculations will not be available.';
+        
+        switch (error.code) {
+          case error.PERMISSION_DENIED:
+            errorMsg = 'Location permission denied. Please enable location access in your browser settings.';
+            break;
+          case error.POSITION_UNAVAILABLE:
+            errorMsg = 'Location information unavailable. Make sure GPS is enabled and try again.';
+            break;
+          case error.TIMEOUT:
+            errorMsg = 'Location request timed out. Please try again.';
+            break;
+        }
+        
+        toast.error(errorMsg);
+      },
+      {
+        enableHighAccuracy: true,
+        timeout: 15000, // Increased timeout for better reliability
+        maximumAge: 300000 // 5 minutes
+      }
+    );
   }, [user?.technicianId]);
 
   // Calculate distance between two points using Haversine formula

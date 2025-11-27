@@ -1,10 +1,12 @@
-import { useState, useRef } from 'react';
+import { useState, useRef, useEffect, useCallback } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { MapPin, Navigation, ExternalLink, Loader2, MapIcon, Clock, Search } from 'lucide-react';
 import { toast } from 'sonner';
 import DraggableMap from '@/components/DraggableMap';
+import { useAuth } from '@/contexts/AuthContext';
+import { db } from '@/lib/supabase';
 
 interface LocationData {
   latitude: number;
@@ -14,6 +16,7 @@ interface LocationData {
 }
 
 const TechnicianLocation = () => {
+  const { user } = useAuth();
   const [location, setLocation] = useState<LocationData | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -28,21 +31,68 @@ const TechnicianLocation = () => {
   const [googleMapsLink, setGoogleMapsLink] = useState('');
   const [isProcessingLink, setIsProcessingLink] = useState(false);
   const googleMapsLinkRef = useRef<HTMLInputElement>(null);
+  const lastUpdateAttemptRef = useRef<number>(0);
 
-  const getCurrentLocation = () => {
+  const getCurrentLocation = useCallback(async (autoUpdate: boolean = false) => {
+    // Check if location tracking is enabled
+    const locationTrackingEnabled = localStorage.getItem('technician_location_tracking_enabled') !== 'false';
+    if (!locationTrackingEnabled && autoUpdate) {
+      console.log('Location tracking is disabled');
+      return;
+    }
+
     setIsLoading(true);
     setError(null);
 
     if (!navigator.geolocation) {
       const errorMsg = 'Geolocation is not supported by your browser';
       setError(errorMsg);
-      toast.error(errorMsg);
+      if (!autoUpdate) {
+        toast.error(errorMsg);
+      }
+      setIsLoading(false);
+      return;
+    }
+
+    // Check if we're on HTTPS or localhost (required for geolocation)
+    const isSecure = window.location.protocol === 'https:' || 
+                     window.location.hostname === 'localhost' || 
+                     window.location.hostname === '127.0.0.1';
+    
+    if (!isSecure) {
+      const errorMsg = 'Location access requires HTTPS. Please use a secure connection.';
+      setError(errorMsg);
+      if (!autoUpdate) {
+        toast.error(errorMsg);
+      }
+      setIsLoading(false);
+      return;
+    }
+
+    // Check permission status
+    let permissionStatus = 'unknown';
+    try {
+      if ('permissions' in navigator) {
+        const result = await navigator.permissions.query({ name: 'geolocation' as PermissionName });
+        permissionStatus = result.state;
+      }
+    } catch (e) {
+      // Permissions API not supported or failed
+      console.log('Permissions API not available');
+    }
+
+    if (permissionStatus === 'denied') {
+      const errorMsg = 'Location permission denied. Please enable location access in your browser settings and refresh the page.';
+      setError(errorMsg);
+      if (!autoUpdate) {
+        toast.error(errorMsg);
+      }
       setIsLoading(false);
       return;
     }
 
     navigator.geolocation.getCurrentPosition(
-      (position) => {
+      async (position) => {
         const locationData: LocationData = {
           latitude: position.coords.latitude,
           longitude: position.coords.longitude,
@@ -51,38 +101,132 @@ const TechnicianLocation = () => {
         };
         setLocation(locationData);
         setMapCenter({ lat: locationData.latitude, lng: locationData.longitude });
-        toast.success('Location captured successfully!');
+        
+        // Update location in database if user is logged in
+        if (user?.technicianId) {
+          try {
+            const locationUpdateData = {
+              latitude: position.coords.latitude,
+              longitude: position.coords.longitude,
+              lastUpdated: new Date().toISOString(),
+              accuracy: position.coords.accuracy || null
+            };
+
+            const { error: updateError } = await db.technicians.update(user.technicianId, {
+              current_location: locationUpdateData,
+            });
+
+            if (updateError) {
+              console.error('Error updating location in database:', updateError);
+              const dbErrorMsg = `Location captured but failed to save: ${updateError.message}`;
+              setError(dbErrorMsg);
+              if (!autoUpdate) {
+                toast.error(dbErrorMsg);
+              }
+            } else {
+              console.log('✅ Location updated in database successfully');
+              if (!autoUpdate) {
+                toast.success('Location captured and saved successfully!');
+              }
+            }
+          } catch (dbError) {
+            console.error('Error updating location in database:', dbError);
+            const dbErrorMsg = `Location captured but failed to save: ${dbError instanceof Error ? dbError.message : 'Unknown error'}`;
+            setError(dbErrorMsg);
+            if (!autoUpdate) {
+              toast.error(dbErrorMsg);
+            }
+          }
+        } else {
+          if (!autoUpdate) {
+            toast.success('Location captured successfully!');
+          }
+        }
+        
         setIsLoading(false);
+        lastUpdateAttemptRef.current = Date.now();
       },
       (error) => {
         let errorMsg = 'Failed to get your location';
+        let detailedError = '';
         
         switch (error.code) {
           case error.PERMISSION_DENIED:
-            errorMsg = 'Permission denied. Please allow location access.';
+            errorMsg = 'Location permission denied';
+            detailedError = 'Please allow location access in your browser settings. Go to Settings > Privacy > Location Services and enable location access for this website.';
             break;
           case error.POSITION_UNAVAILABLE:
-            errorMsg = 'Location information unavailable.';
+            errorMsg = 'Location information unavailable';
+            detailedError = 'Your device could not determine your location. Make sure GPS is enabled and you have a clear view of the sky, or try again in a different location.';
             break;
           case error.TIMEOUT:
-            errorMsg = 'Location request timed out. Please try again.';
+            errorMsg = 'Location request timed out';
+            detailedError = 'The location request took too long. This can happen if GPS signal is weak. Try moving to an area with better signal or try again.';
             break;
           default:
-            errorMsg = 'An unknown error occurred.';
+            errorMsg = 'An unknown error occurred';
+            detailedError = `Error code: ${error.code}. Please try again or contact support if the problem persists.`;
             break;
         }
         
-        setError(errorMsg);
-        toast.error(errorMsg);
+        setError(`${errorMsg}. ${detailedError}`);
+        if (!autoUpdate) {
+          toast.error(`${errorMsg}. ${detailedError}`, { duration: 6000 });
+        } else {
+          // For auto-updates, show a less intrusive message
+          console.warn('Auto location update failed:', errorMsg, detailedError);
+        }
         setIsLoading(false);
+        lastUpdateAttemptRef.current = Date.now();
       },
       {
         enableHighAccuracy: true,
-        timeout: 10000,
+        timeout: 15000, // Increased timeout for better reliability
         maximumAge: 0,
       }
     );
-  };
+  }, [user?.technicianId]);
+
+  // Auto-update location on page load/refresh
+  useEffect(() => {
+    // Wait a bit before first update to ensure page is fully loaded
+    const initialDelay = setTimeout(() => {
+      getCurrentLocation(true); // Auto-update mode
+    }, 1000); // Wait 1 second after page load
+
+    // Also update when page becomes visible (e.g., when switching back to tab)
+    const handleVisibilityChange = () => {
+      if (!document.hidden) {
+        // Only update if it's been more than 1 minute since last attempt
+        const timeSinceLastUpdate = Date.now() - lastUpdateAttemptRef.current;
+        if (timeSinceLastUpdate > 60000) { // 1 minute
+          setTimeout(() => {
+            getCurrentLocation(true);
+          }, 500);
+        }
+      }
+    };
+
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+
+    // Update on page refresh (beforeunload won't work, but we can use pageshow)
+    const handlePageShow = (e: PageTransitionEvent) => {
+      if (e.persisted || performance.navigation.type === 1) {
+        // Page was loaded from cache or refreshed
+        setTimeout(() => {
+          getCurrentLocation(true);
+        }, 1000);
+      }
+    };
+
+    window.addEventListener('pageshow', handlePageShow);
+
+    return () => {
+      clearTimeout(initialDelay);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+      window.removeEventListener('pageshow', handlePageShow);
+    };
+  }, [getCurrentLocation]); // Include getCurrentLocation in dependencies
 
   const openInGoogleMaps = () => {
     if (!location) {

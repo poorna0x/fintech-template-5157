@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Checkbox } from '@/components/ui/checkbox';
+import { Switch } from '@/components/ui/switch';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Badge } from '@/components/ui/badge';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from '@/components/ui/alert-dialog';
@@ -22,7 +23,8 @@ import {
   User,
   Phone,
   QrCode,
-  Package
+  Package,
+  MapPin
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { db, supabase } from '@/lib/supabase';
@@ -77,12 +79,25 @@ const Settings = () => {
   });
   const [newlyCreatedTechnicianId, setNewlyCreatedTechnicianId] = useState<string | null>(null);
 
+  // Location tracking setting
+  const [locationTrackingEnabled, setLocationTrackingEnabled] = useState<boolean>(() => {
+    const stored = localStorage.getItem('technician_location_tracking_enabled');
+    return stored !== null ? stored === 'true' : true; // Default to enabled
+  });
+
   // Load data on component mount
   useEffect(() => {
     loadTechnicians();
     loadCommonQrCodes();
     loadProductQrCodes();
   }, []);
+
+  // Handle location tracking toggle
+  const handleLocationTrackingToggle = (enabled: boolean) => {
+    setLocationTrackingEnabled(enabled);
+    localStorage.setItem('technician_location_tracking_enabled', enabled.toString());
+    toast.success(enabled ? 'Location tracking enabled for all technicians' : 'Location tracking disabled for all technicians');
+  };
 
   // Transform technician data from database format to frontend format
   const transformTechnicianData = (tech: any) => ({
@@ -1053,6 +1068,37 @@ const Settings = () => {
                 </div>
               </CardContent>
             </Card>
+
+          {/* Location Tracking Setting - At Bottom */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2 text-lg sm:text-xl">
+                <MapPin className="w-5 h-5" />
+                Location Tracking Settings
+              </CardTitle>
+              <CardDescription className="text-sm mt-1">
+                Control whether technicians' current location is automatically tracked and updated
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="p-4 sm:p-6">
+              <div className="flex items-center justify-between p-6 bg-gray-50 dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700">
+                <div className="flex-1">
+                  <h3 className="font-semibold text-gray-900 dark:text-white text-base sm:text-lg mb-2">
+                    Enable Location Tracking
+                  </h3>
+                  <p className="text-sm sm:text-base text-gray-600 dark:text-gray-400">
+                    When enabled, technicians' location will be automatically updated when they open the app or refresh the page. 
+                    This helps calculate distances to customer locations.
+                  </p>
+                </div>
+                <Switch
+                  checked={locationTrackingEnabled}
+                  onCheckedChange={handleLocationTrackingToggle}
+                  className="ml-6 border-2 border-gray-300 dark:border-gray-600 data-[state=unchecked]:bg-white dark:data-[state=unchecked]:bg-gray-700"
+                />
+              </div>
+            </CardContent>
+          </Card>
                 </div>
       </div>
 
