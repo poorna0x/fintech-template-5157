@@ -1809,25 +1809,25 @@ const TechnicianDashboard = () => {
     setSelectedJobForComplete(jobWithCustomer);
     
     // Always reset to fresh defaults (don't restore saved progress)
-    setCompletionNotes('');
-    setCompleteJobStep(1);
-    setBillAmount('');
-    setBillPhotos([]);
-    setPaymentPhotos([]);
-    // Set default AMC date to today
-    const today = new Date().toISOString().split('T')[0];
-    setAmcDateGiven(today);
+      setCompletionNotes('');
+      setCompleteJobStep(1);
+      setBillAmount('');
+      setBillPhotos([]);
+      setPaymentPhotos([]);
+      // Set default AMC date to today
+      const today = new Date().toISOString().split('T')[0];
+      setAmcDateGiven(today);
     setAmcYears(0);
     setAmcEndDate('');
-    setAmcIncludesPrefilter(false);
+      setAmcIncludesPrefilter(false);
     setHasAMC(null);
-    setAmcAdditionalInfo('');
+        setAmcAdditionalInfo('');
     setAmcAmount('');
-    setPaymentScreenshot('');
-    setPaymentMode('');
-    setCustomerHasPrefilter(null);
-    setQrCodeType('');
-    setSelectedQrCodeId('');
+        setPaymentScreenshot('');
+        setPaymentMode('');
+      setCustomerHasPrefilter(null);
+      setQrCodeType('');
+      setSelectedQrCodeId('');
     
     // Initialize customerHasPrefilter from customer's existing value if available
     const customerPrefilter = jobWithCustomer.customer 
@@ -2008,12 +2008,27 @@ const TechnicianDashboard = () => {
       const currentJob = jobs.find(j => j.id === selectedJobForMoveToOngoing.id);
       let requirements: any[] = [];
       try {
-        requirements = currentJob?.requirements ? (Array.isArray(currentJob.requirements) ? currentJob.requirements : [currentJob.requirements]) : [];
+        // Handle requirements - could be array, object, or JSON string
+        const reqData = currentJob?.requirements || (currentJob as any)?.requirements;
+        if (reqData) {
+          if (typeof reqData === 'string') {
+            requirements = JSON.parse(reqData);
+          } else if (Array.isArray(reqData)) {
+            requirements = [...reqData];
+          } else if (typeof reqData === 'object') {
+            requirements = [reqData];
+          }
+        }
+        // Ensure it's an array
+        if (!Array.isArray(requirements)) {
+          requirements = [];
+        }
       } catch (e) {
+        console.error('Error parsing requirements:', e);
         requirements = [];
       }
       
-      // Update or add custom_time in requirements
+      // Update or add custom_time in requirements if CUSTOM time slot
       if (customTimeInRequirements) {
         // Find or create a requirement object to store custom_time
         let found = false;
@@ -2025,23 +2040,53 @@ const TechnicianDashboard = () => {
           }
         }
         if (!found) {
-          requirements.push({ custom_time: customTimeInRequirements });
+          // If requirements is empty, create first object, otherwise append
+          if (requirements.length === 0) {
+            requirements.push({ custom_time: customTimeInRequirements });
+          } else {
+            // Try to add to first object, or create new one
+            const firstReq = requirements[0];
+            if (firstReq && typeof firstReq === 'object' && !Array.isArray(firstReq)) {
+              firstReq.custom_time = customTimeInRequirements;
+            } else {
+              requirements.push({ custom_time: customTimeInRequirements });
+            }
+          }
         }
       }
       
       const updateData: any = {
         status: 'ASSIGNED',
-        scheduled_date: moveToOngoingDate,
+        scheduled_date: moveToOngoingDate, // Already in YYYY-MM-DD format from date input
         scheduled_time_slot: timeSlotToUse,
         assigned_date: assignedDateTime,
-        requirements: requirements
+        // Clear follow-up related fields when moving to ongoing
+        follow_up_date: null,
+        follow_up_notes: null,
+        follow_up_scheduled_by: null,
+        follow_up_scheduled_at: null
       };
 
-      const { error } = await db.jobs.update(selectedJobForMoveToOngoing.id, updateData);
+      // Only update requirements if we have custom time or if requirements exist
+      if (requirements.length > 0) {
+        updateData.requirements = requirements;
+      }
+
+      console.log('Updating job with data:', { 
+        id: selectedJobForMoveToOngoing.id, 
+        scheduled_date: moveToOngoingDate,
+        scheduled_time_slot: timeSlotToUse,
+        status: 'ASSIGNED'
+      });
+
+      const { error, data: updatedJob } = await db.jobs.update(selectedJobForMoveToOngoing.id, updateData);
 
       if (error) {
+        console.error('Error updating job:', error);
         throw new Error(error.message);
       }
+
+      console.log('Job updated successfully:', updatedJob);
 
       // Remove from seenJobs so it shows as a new job
       setSeenJobs(prev => {
@@ -2056,33 +2101,20 @@ const TechnicianDashboard = () => {
         return newSet;
       });
 
-      // Reload jobs to ensure everything is updated everywhere
-      await loadAssignedJobs();
-
-      // Update local state as well
-      setJobs(prev => prev.map(j => {
-        if (j.id === selectedJobForMoveToOngoing.id) {
-          return { 
-            ...j, 
-            status: 'ASSIGNED', 
-            assignedDate: assignedDateTime,
-            scheduledDate: moveToOngoingDate,
-            scheduledTimeSlot: timeSlotToUse,
-            requirements: requirements
-          };
-        }
-        return j;
-      }));
-
-      toast.success('Job moved to ongoing with updated schedule');
-
-      // Close dialog and reset state
+      // Close dialog and reset state first
       setMoveToOngoingDialogOpen(false);
       setSelectedJobForMoveToOngoing(null);
       setMoveToOngoingDate('');
       setMoveToOngoingTime('');
       setMoveToOngoingTimeSlot('MORNING');
       setMoveToOngoingCustomTime('');
+
+      // Reload jobs to ensure everything is updated everywhere - this is critical
+      // Wait a bit to ensure database update is complete
+      await new Promise(resolve => setTimeout(resolve, 500));
+      await loadAssignedJobs();
+
+      toast.success('Job moved to ongoing with updated schedule');
     } catch (error) {
       console.error('Error moving job to ongoing:', error);
       toast.error('Failed to move job to ongoing');
@@ -2178,8 +2210,8 @@ const TechnicianDashboard = () => {
         currentStep: 3,
       });
       setCompleteJobStep(3);
-      return;
-    }
+        return;
+      }
 
     // Step 3: AMC Information (optional, can skip) - move to step 4
     if (completeJobStep === 3) {
@@ -2273,7 +2305,7 @@ const TechnicianDashboard = () => {
       }
       // Move to step 5 (Payment Screenshot)
       setCompleteJobStep(5);
-      return;
+        return;
     }
 
     // Step 5: Payment Screenshot (optional) - move to step 6 (Prefilter)
@@ -4528,15 +4560,15 @@ const TechnicianDashboard = () => {
               {moveToOngoingTimeSlot === 'CUSTOM' && (
                 <div>
                   <Label htmlFor="ongoing-custom-time">Custom Time *</Label>
-                  <Input
+                <Input
                     id="ongoing-custom-time"
-                    type="time"
+                  type="time"
                     value={moveToOngoingCustomTime}
                     onChange={(e) => setMoveToOngoingCustomTime(e.target.value)}
-                    className="mt-1"
-                    required
-                  />
-                </div>
+                  className="mt-1"
+                  required
+                />
+              </div>
               )}
             </div>
             <DialogFooter>
@@ -4966,13 +4998,13 @@ const TechnicianDashboard = () => {
                       
                       <div className="space-y-4">
                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                          <div>
+              <div>
                             <Label htmlFor="amc-start-date" className="text-sm font-medium">AMC Start Date</Label>
-                        <Input
+                    <Input
                           id="amc-start-date"
                           type="date"
                           value={amcDateGiven}
-                          onChange={(e) => {
+                      onChange={(e) => {
                             const date = e.target.value;
                             setAmcDateGiven(date);
                             if (date && amcYears > 0) {
@@ -5033,14 +5065,14 @@ const TechnicianDashboard = () => {
                         value={amcAmount}
                         onChange={(e) => {
                           setAmcAmount(e.target.value);
-                        }}
-                        className="mt-1"
-                        min="0"
-                        step="0.01"
-                      />
-                    </div>
+                      }}
+                      className="mt-1"
+                      min="0"
+                      step="0.01"
+                    />
+                  </div>
 
-                    <div>
+                  <div>
                       <Label htmlFor="amc-includes-prefilter" className="text-sm font-medium mb-2 block">Includes Prefilter</Label>
                       <div className="flex items-center space-x-2">
                         <input
@@ -5061,24 +5093,24 @@ const TechnicianDashboard = () => {
 
                     <div>
                       <Label htmlFor="amc-additional-info" className="text-sm font-medium">Additional Information (Reference Only)</Label>
-                      <Textarea
+                <Textarea
                         id="amc-additional-info"
                         value={amcAdditionalInfo}
-                        onChange={(e) => {
+                  onChange={(e) => {
                           setAmcAdditionalInfo(e.target.value);
                         }}
                         placeholder="Enter any additional AMC information for admin reference (optional)..."
                         rows={4}
-                        className="mt-1"
-                      />
+                      className="mt-1"
+                />
                       <p className="text-xs text-gray-500 mt-1">
                         This information is for admin reference only. The admin will create the official AMC contract.
                       </p>
-                    </div>
+              </div>
                       </div>
                     </>
                   )}
-                </div>
+            </div>
               )}
 
               {/* Step 4: Payment Mode */}
@@ -5247,28 +5279,28 @@ const TechnicianDashboard = () => {
               {completeJobStep === 5 && (
                 <div className="space-y-4">
                   <div>
-                    <Label>Payment Screenshot (Optional)</Label>
+                        <Label>Payment Screenshot (Optional)</Label>
                     <p className="text-sm text-gray-500 mb-2">
                       {paymentMode === 'ONLINE' 
                         ? 'Upload payment confirmation screenshot' 
                         : 'Upload payment screenshot if available (optional)'}
                     </p>
-                    <ImageUpload
-                      onImagesChange={(images) => {
-                        setPaymentScreenshot(images[0] || '');
-                      }}
-                      maxImages={1}
-                      folder="payment-receipts"
-                      title=""
-                      description=""
-                      maxWidth={800}
-                      quality={0.3}
-                      aggressiveCompression={true}
-                      useSecondaryAccount={true}
-                    />
+                        <ImageUpload
+                          onImagesChange={(images) => {
+                            setPaymentScreenshot(images[0] || '');
+                          }}
+                          maxImages={1}
+                          folder="payment-receipts"
+                          title=""
+                          description=""
+                          maxWidth={800}
+                          quality={0.3}
+                          aggressiveCompression={true}
+                          useSecondaryAccount={true}
+                        />
+                      </div>
                   </div>
-                </div>
-              )}
+                )}
 
               {/* Step 6: Prefilter Question */}
               {completeJobStep === 6 && (
@@ -5879,13 +5911,13 @@ const TechnicianDashboard = () => {
                         </div>
                       )}
                       {additionalInfo && !description && (
-                        <div className="pt-3 border-t border-green-200">
-                          <span className="text-gray-600 font-medium text-sm">Additional Information:</span>
-                          <p className="text-gray-900 mt-2 whitespace-pre-wrap break-words">
+                  <div className="pt-3 border-t border-green-200">
+                    <span className="text-gray-600 font-medium text-sm">Additional Information:</span>
+                    <p className="text-gray-900 mt-2 whitespace-pre-wrap break-words">
                             {additionalInfo}
-                          </p>
-                        </div>
-                      )}
+                    </p>
+                  </div>
+                )}
                     </>
                   );
                 })()}
@@ -6197,36 +6229,36 @@ const TechnicianDashboard = () => {
                                 }
                                 
                                 return (
-                                  <div className="mt-3 pt-3 border-t border-green-300 bg-green-50 rounded-lg p-3">
-                                    <div className="flex items-center gap-2 mb-2">
-                                      <Badge className="bg-green-600 text-white">AMC Active</Badge>
-                                      <div className="font-semibold text-gray-900">AMC Details</div>
+                                <div className="mt-3 pt-3 border-t border-green-300 bg-green-50 rounded-lg p-3">
+                                  <div className="flex items-center gap-2 mb-2">
+                                    <Badge className="bg-green-600 text-white">AMC Active</Badge>
+                                    <div className="font-semibold text-gray-900">AMC Details</div>
+                                  </div>
+                                  <div className="space-y-2 text-sm">
+                                    <div className="flex items-center gap-2">
+                                      <span className="text-gray-600 font-medium w-32">Start Date:</span>
+                                      <span className="text-gray-900 font-semibold">{amcInfo.date_given ? new Date(amcInfo.date_given).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }) : 'N/A'}</span>
                                     </div>
-                                    <div className="space-y-2 text-sm">
-                                      <div className="flex items-center gap-2">
-                                        <span className="text-gray-600 font-medium w-32">Start Date:</span>
-                                        <span className="text-gray-900 font-semibold">{amcInfo.date_given ? new Date(amcInfo.date_given).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }) : 'N/A'}</span>
-                                      </div>
-                                      <div className="flex items-center gap-2">
-                                        <span className="text-gray-600 font-medium w-32">End Date:</span>
-                                        <span className="text-gray-900 font-semibold">{amcInfo.end_date ? new Date(amcInfo.end_date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }) : 'N/A'}</span>
-                                      </div>
-                                      <div className="flex items-center gap-2">
-                                        <span className="text-gray-600 font-medium w-32">Duration:</span>
-                                        <span className="text-gray-900 font-semibold">{amcInfo.years || 1} {amcInfo.years === 1 ? 'year' : 'years'}</span>
-                                      </div>
+                                    <div className="flex items-center gap-2">
+                                      <span className="text-gray-600 font-medium w-32">End Date:</span>
+                                      <span className="text-gray-900 font-semibold">{amcInfo.end_date ? new Date(amcInfo.end_date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }) : 'N/A'}</span>
+                                    </div>
+                                    <div className="flex items-center gap-2">
+                                      <span className="text-gray-600 font-medium w-32">Duration:</span>
+                                      <span className="text-gray-900 font-semibold">{amcInfo.years || 1} {amcInfo.years === 1 ? 'year' : 'years'}</span>
+                                    </div>
                                       {amcInfo.amount && (
                                         <div className="flex items-center gap-2">
                                           <span className="text-gray-600 font-medium w-32">AMC Amount:</span>
                                           <span className="text-gray-900 font-semibold">₹{parseFloat(amcInfo.amount.toString()).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
                                         </div>
                                       )}
-                                      {amcInfo.includes_prefilter !== undefined && (
-                                        <div className="flex items-center gap-2">
-                                          <span className="text-gray-600 font-medium w-32">Includes Prefilter:</span>
-                                          <span className="text-gray-900 font-semibold">{amcInfo.includes_prefilter ? 'Yes' : 'No'}</span>
-                                        </div>
-                                      )}
+                                    {amcInfo.includes_prefilter !== undefined && (
+                                      <div className="flex items-center gap-2">
+                                        <span className="text-gray-600 font-medium w-32">Includes Prefilter:</span>
+                                        <span className="text-gray-900 font-semibold">{amcInfo.includes_prefilter ? 'Yes' : 'No'}</span>
+                                      </div>
+                                    )}
                                       {description && (
                                         <div className="mt-3 pt-3 border-t border-green-200">
                                           <div className="text-gray-600 font-medium mb-2">Description / Summary:</div>
@@ -6234,13 +6266,13 @@ const TechnicianDashboard = () => {
                                         </div>
                                       )}
                                       {additionalInfo && !description && (
-                                        <div className="mt-3 pt-3 border-t border-green-200">
-                                          <div className="text-gray-600 font-medium mb-2">Additional Info:</div>
+                                      <div className="mt-3 pt-3 border-t border-green-200">
+                                        <div className="text-gray-600 font-medium mb-2">Additional Info:</div>
                                           <div className="text-gray-900 whitespace-pre-wrap bg-white p-2 rounded border border-green-200">{additionalInfo}</div>
-                                        </div>
-                                      )}
-                                    </div>
+                                      </div>
+                                    )}
                                   </div>
+                                </div>
                                 );
                               })()}
                               

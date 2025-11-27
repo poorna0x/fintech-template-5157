@@ -188,11 +188,11 @@ export const CompletedJobSection: React.FC<CompletedJobSectionProps> = ({
                         </div>
                       )}
                       {additionalInfo && !description && (
-                        <div className="mt-2 pt-2 border-t border-green-300">
-                          <span className="text-gray-500 font-medium">Additional Info:</span>
+                  <div className="mt-2 pt-2 border-t border-green-300">
+                    <span className="text-gray-500 font-medium">Additional Info:</span>
                           <div className="text-gray-700 mt-1 whitespace-pre-wrap">{additionalInfo}</div>
-                        </div>
-                      )}
+                  </div>
+                )}
                     </>
                   );
                 })()}

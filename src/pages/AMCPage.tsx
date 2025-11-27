@@ -378,12 +378,12 @@ export default function AMCPage() {
                                 </div>
                               )}
                               {!description && (
-                                <div className="text-sm text-gray-600">
-                                  <span className="font-medium">Additional Info:</span>
-                                  <p className="mt-1 text-gray-800 bg-gray-50 p-2 rounded min-h-[2rem]">
+                        <div className="text-sm text-gray-600">
+                          <span className="font-medium">Additional Info:</span>
+                          <p className="mt-1 text-gray-800 bg-gray-50 p-2 rounded min-h-[2rem]">
                                     {additionalInfo || <span className="text-gray-400 italic">No additional information</span>}
-                                  </p>
-                                </div>
+                          </p>
+                        </div>
                               )}
                             </>
                           );

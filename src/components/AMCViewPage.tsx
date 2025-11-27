@@ -108,8 +108,8 @@ const AMCViewPage: React.FC<AMCViewPageProps> = ({ onBack }) => {
               } else {
                 metadata = amc.additional_info;
                 additionalNotes = metadata.description || metadata.notes || '';
-              }
-            } catch (e) {
+            }
+          } catch (e) {
               // If parsing fails, treat as plain text
               additionalNotes = amc.additional_info;
             }
@@ -118,7 +118,7 @@ const AMCViewPage: React.FC<AMCViewPageProps> = ({ onBack }) => {
           // Get job number from metadata (agreement_number) or use AMC ID
           const jobNumber = metadata.agreement_number || `AMC-${amc.id.slice(0, 8)}`;
 
-          amcList.push({
+            amcList.push({
             id: amc.id,
             jobId: amc.job_id || '',
             jobNumber: jobNumber,
@@ -138,7 +138,7 @@ const AMCViewPage: React.FC<AMCViewPageProps> = ({ onBack }) => {
             createdAt: amc.created_at,
             completedAt: null,
             completedBy: null,
-          });
+            });
         }
       }
 
@@ -253,8 +253,8 @@ const AMCViewPage: React.FC<AMCViewPageProps> = ({ onBack }) => {
             metadata = JSON.parse(currentAMC.additional_info);
           } else {
             metadata = currentAMC.additional_info;
-          }
-        } catch (e) {
+        }
+      } catch (e) {
           // If parsing fails, create new metadata
           metadata = {};
         }
@@ -267,9 +267,9 @@ const AMCViewPage: React.FC<AMCViewPageProps> = ({ onBack }) => {
       // Update AMC contract
       const { error: updateError } = await db.amcContracts.update(selectedAMC.id, {
         start_date: editFormData.dateGiven,
-        end_date: endDate,
-        years: editFormData.years,
-        includes_prefilter: editFormData.includesPrefilter,
+          end_date: endDate,
+          years: editFormData.years,
+          includes_prefilter: editFormData.includesPrefilter,
         additional_info: JSON.stringify(metadata),
       });
 

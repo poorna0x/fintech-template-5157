@@ -335,11 +335,11 @@ const CustomerReportDialog: React.FC<CustomerReportDialogProps> = ({
                                       </div>
                                     )}
                                     {additionalInfo && !description && (
-                                      <div className="mt-3 pt-3 border-t border-green-200">
-                                        <div className="text-gray-600 font-medium mb-2">Additional Info:</div>
+                                <div className="mt-3 pt-3 border-t border-green-200">
+                                  <div className="text-gray-600 font-medium mb-2">Additional Info:</div>
                                         <div className="text-gray-900 whitespace-pre-wrap bg-white p-2 rounded border border-green-200">{additionalInfo}</div>
-                                      </div>
-                                    )}
+                                </div>
+                              )}
                                   </>
                                 );
                               })()}

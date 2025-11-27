@@ -396,8 +396,8 @@ export const db = {
         const [ongoingResult, followupResult, deniedResult, completedResult] = await Promise.all([
           // Ongoing: ALL current jobs with status PENDING, ASSIGNED, or IN_PROGRESS
           supabase
-            .from('jobs')
-            .select('id', { count: 'exact', head: true })
+          .from('jobs')
+          .select('id', { count: 'exact', head: true })
             .in('status', ['PENDING', 'ASSIGNED', 'IN_PROGRESS']),
           // Followup: ALL jobs with status FOLLOW_UP or RESCHEDULED
           supabase

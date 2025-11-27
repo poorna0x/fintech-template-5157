@@ -1314,27 +1314,27 @@ const EditCustomerDialog: React.FC<EditCustomerDialogProps> = ({
             Delete Customer
           </Button>
           <div className="flex gap-2">
-            <Button 
-              variant="outline" 
-              onClick={() => onOpenChange(false)}
+          <Button 
+            variant="outline" 
+            onClick={() => onOpenChange(false)}
               disabled={isUpdating || isDeleting}
-            >
-              Cancel
-            </Button>
-            <Button 
-              onClick={handleUpdateCustomer}
+          >
+            Cancel
+          </Button>
+          <Button 
+            onClick={handleUpdateCustomer}
               disabled={isUpdating || isDeleting}
-              className="bg-blue-600 hover:bg-blue-700"
-            >
-              {isUpdating ? (
-                <div className="flex items-center gap-2">
-                  <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
-                  Updating...
-                </div>
-              ) : (
-                'Update Customer'
-              )}
-            </Button>
+            className="bg-blue-600 hover:bg-blue-700"
+          >
+            {isUpdating ? (
+              <div className="flex items-center gap-2">
+                <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                Updating...
+              </div>
+            ) : (
+              'Update Customer'
+            )}
+          </Button>
           </div>
         </DialogFooter>
       </DialogContent>

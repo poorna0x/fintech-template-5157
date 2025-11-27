@@ -4533,7 +4533,13 @@ const AdminDashboard = () => {
   // Handle job status update
   const handleReassignJob = async (job: Job) => {
     setJobToReassign(job);
-    setSelectedTechnicianForReassign(job.assigned_technician_id || job.assignedTechnicianId || '');
+    // Check for assigned technician ID in multiple possible fields
+    const technicianId = 
+      (job as any).assigned_technician_id || 
+      job.assignedTechnicianId ||
+      (job as any).assignedTechnician?.id ||
+      '';
+    setSelectedTechnicianForReassign(technicianId);
     setReassignAssignmentType('direct');
     setReassignTechnicianDistances([]);
     // Load technicians when dialog opens
@@ -4831,12 +4837,27 @@ const AdminDashboard = () => {
       const currentJob = jobs.find(j => j.id === selectedJobForMoveToOngoing.id);
       let requirements: any[] = [];
       try {
-        requirements = currentJob?.requirements ? (Array.isArray(currentJob.requirements) ? currentJob.requirements : [currentJob.requirements]) : [];
+        // Handle requirements - could be array, object, or JSON string
+        const reqData = currentJob?.requirements || (currentJob as any)?.requirements;
+        if (reqData) {
+          if (typeof reqData === 'string') {
+            requirements = JSON.parse(reqData);
+          } else if (Array.isArray(reqData)) {
+            requirements = [...reqData];
+          } else if (typeof reqData === 'object') {
+            requirements = [reqData];
+          }
+        }
+        // Ensure it's an array
+        if (!Array.isArray(requirements)) {
+          requirements = [];
+        }
       } catch (e) {
+        console.error('Error parsing requirements:', e);
         requirements = [];
       }
       
-      // Update or add custom_time in requirements
+      // Update or add custom_time in requirements if CUSTOM time slot
       if (customTimeInRequirements) {
         // Find or create a requirement object to store custom_time
         let found = false;
@@ -4848,31 +4869,67 @@ const AdminDashboard = () => {
           }
         }
         if (!found) {
-          requirements.push({ custom_time: customTimeInRequirements });
+          // If requirements is empty, create first object, otherwise append
+          if (requirements.length === 0) {
+            requirements.push({ custom_time: customTimeInRequirements });
+          } else {
+            // Try to add to first object, or create new one
+            const firstReq = requirements[0];
+            if (firstReq && typeof firstReq === 'object' && !Array.isArray(firstReq)) {
+              firstReq.custom_time = customTimeInRequirements;
+            } else {
+              requirements.push({ custom_time: customTimeInRequirements });
+            }
+          }
         }
       }
       
+      // Set status to PENDING so admin can reassign it to a technician
       const updateData: any = {
-        status: 'ASSIGNED',
-        scheduled_date: moveToOngoingDate,
+        status: 'PENDING',
+        scheduled_date: moveToOngoingDate, // Already in YYYY-MM-DD format from date input
         scheduled_time_slot: timeSlotToUse,
-        assigned_date: assignedDateTime,
-        requirements: requirements
+        // Clear follow-up related fields when moving to ongoing
+        follow_up_date: null,
+        follow_up_notes: null,
+        follow_up_scheduled_by: null,
+        follow_up_scheduled_at: null,
+        // Clear assigned fields so it can be reassigned
+        assigned_technician_id: null,
+        assigned_date: null,
+        assigned_by: null
       };
 
-      const { error } = await db.jobs.update(selectedJobForMoveToOngoing.id, updateData);
+      // Only update requirements if we have custom time or if requirements exist
+      if (requirements.length > 0) {
+        updateData.requirements = requirements;
+      }
+
+      console.log('Admin updating job with data:', { 
+        id: selectedJobForMoveToOngoing.id, 
+        scheduled_date: moveToOngoingDate,
+        scheduled_time_slot: timeSlotToUse,
+        status: 'PENDING'
+      });
+
+      const { error, data: updatedJob } = await db.jobs.update(selectedJobForMoveToOngoing.id, updateData);
 
       if (error) {
+        console.error('Error updating job:', error);
         throw new Error(error.message);
       }
+
+      console.log('Job updated successfully:', updatedJob);
 
       // Update local state
       setJobs(prev => prev.map(j => {
         if (j.id === selectedJobForMoveToOngoing.id) {
           const updatedJob = { 
             ...j, 
-            status: 'ASSIGNED', 
-            assignedDate: assignedDateTime,
+            status: 'PENDING', 
+            assignedDate: null,
+            assignedTechnicianId: null,
+            assigned_technician_id: null,
             scheduledDate: moveToOngoingDate,
             scheduledTimeSlot: timeSlotToUse,
             requirements: requirements
@@ -4890,8 +4947,10 @@ const AdminDashboard = () => {
             if (job.id === selectedJobForMoveToOngoing.id) {
               return { 
                 ...job, 
-                status: 'ASSIGNED', 
-                assignedDate: assignedDateTime,
+                status: 'PENDING', 
+                assignedDate: null,
+                assignedTechnicianId: null,
+                assigned_technician_id: null,
                 scheduledDate: moveToOngoingDate,
                 scheduledTimeSlot: timeSlotToUse,
                 requirements: requirements
@@ -7005,14 +7064,28 @@ const AdminDashboard = () => {
                                         <Edit className="mr-2 h-4 w-4" />
                                         Edit Job
                                       </DropdownMenuItem>
-                                      {(job as any).assigned_technician_id && (
-                                        <DropdownMenuItem 
-                                          onClick={() => handleReassignJob(job)}
-                                        >
-                                          <User className="mr-2 h-4 w-4" />
-                                          Reassign Technician
-                                        </DropdownMenuItem>
-                                      )}
+                                      {(() => {
+                                        // Use the same logic as the technician name display above
+                                        const assignedTechnicianId = (job as any).assigned_technician_id || (job as any).assignedTechnicianId;
+                                        const assignedTechnician = job.assignedTechnician || 
+                                          (assignedTechnicianId ? technicians.find(t => t.id === assignedTechnicianId) : null);
+                                        
+                                        // Show reassign option if there's an assigned technician or if status suggests one is assigned
+                                        const hasAssignedTechnician = 
+                                          assignedTechnicianId || 
+                                          assignedTechnician ||
+                                          job.status === 'ASSIGNED' || 
+                                          job.status === 'IN_PROGRESS';
+                                        
+                                        return hasAssignedTechnician ? (
+                                          <DropdownMenuItem 
+                                            onClick={() => handleReassignJob(job)}
+                                          >
+                                            <User className="mr-2 h-4 w-4" />
+                                            Reassign Technician
+                                          </DropdownMenuItem>
+                                        ) : null;
+                                      })()}
                                       <DropdownMenuItem 
                                         onClick={() => {
                                           setJobToDelete(job);
