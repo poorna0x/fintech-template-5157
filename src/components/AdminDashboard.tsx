@@ -512,7 +512,7 @@ const AdminDashboard = () => {
   const [sendMessageDialogOpen, setSendMessageDialogOpen] = useState(false);
   const [selectedJobForMessage, setSelectedJobForMessage] = useState<any | null>(null);
   const [messageSentFilter, setMessageSentFilter] = useState<'all' | 'sent' | 'not_sent'>('not_sent');
-  const [statusFilter, setStatusFilter] = useState<'ALL' | 'ONGOING' | 'PENDING' | 'ASSIGNED' | 'IN_PROGRESS' | 'COMPLETED' | 'CANCELLED' | 'RESCHEDULED'>('ONGOING');
+  const [statusFilter, setStatusFilter] = useState<'ALL' | 'ONGOING' | 'PENDING' | 'ASSIGNED' | 'EN_ROUTE' | 'IN_PROGRESS' | 'COMPLETED' | 'CANCELLED' | 'RESCHEDULED'>('ONGOING');
   const [loadingCustomerJobs, setLoadingCustomerJobs] = useState<{[customerId: string]: boolean}>({});
   // Pagination state
   const [currentPage, setCurrentPage] = useState<number>(1);
@@ -4587,7 +4587,7 @@ const AdminDashboard = () => {
 
   const handleJobStatusUpdate = async (jobId: string, newStatus: string) => {
     try {
-      const { error } = await db.jobs.update(jobId, { status: newStatus as 'PENDING' | 'ASSIGNED' | 'IN_PROGRESS' | 'COMPLETED' | 'CANCELLED' | 'RESCHEDULED' });
+      const { error } = await db.jobs.update(jobId, { status: newStatus as 'PENDING' | 'ASSIGNED' | 'EN_ROUTE' | 'IN_PROGRESS' | 'COMPLETED' | 'CANCELLED' | 'RESCHEDULED' });
       
       if (error) {
         throw new Error(error.message);
@@ -5804,7 +5804,7 @@ const AdminDashboard = () => {
     return {
       customer,
       allJobs: customerJobs,
-      upcomingJobs: customerJobs.filter(job => ['PENDING', 'ASSIGNED', 'IN_PROGRESS'].includes(job.status)),                                                    
+      upcomingJobs: customerJobs.filter(job => ['PENDING', 'ASSIGNED', 'EN_ROUTE', 'IN_PROGRESS'].includes(job.status)),                                                    
       completedJobs: customerJobs.filter(job => job.status === 'COMPLETED'),
       cancelledJobs: customerJobs.filter(job => job.status === 'CANCELLED')
     };
@@ -5851,7 +5851,7 @@ const AdminDashboard = () => {
     } else if (statusFilter === 'ONGOING') {
       // Show customers with ongoing jobs (pending, assigned, in-progress)
       filteredCustomers = customersWithJobs.filter(({ allJobs }) => 
-        allJobs.some(job => ['PENDING', 'ASSIGNED', 'IN_PROGRESS'].includes(job.status))                                                                        
+        allJobs.some(job => ['PENDING', 'ASSIGNED', 'EN_ROUTE', 'IN_PROGRESS'].includes(job.status))                                                                        
       );
     } else if (statusFilter === 'RESCHEDULED') {
       // For RESCHEDULED, use jobs if loaded via pagination, otherwise filter customersWithJobs
@@ -5872,7 +5872,7 @@ const AdminDashboard = () => {
         return Array.from(customerMap.values()).map(({ customer, allJobs }) => ({
           customer,
           allJobs,
-          upcomingJobs: allJobs.filter(job => ['PENDING', 'ASSIGNED', 'IN_PROGRESS'].includes(job.status)),
+          upcomingJobs: allJobs.filter(job => ['PENDING', 'ASSIGNED', 'EN_ROUTE', 'IN_PROGRESS'].includes(job.status)),
           completedJobs: allJobs.filter(job => job.status === 'COMPLETED'),
           cancelledJobs: allJobs.filter(job => job.status === 'CANCELLED' || job.status === 'DENIED')
         }));
@@ -5963,7 +5963,7 @@ const AdminDashboard = () => {
   
   // New stats for the dashboard cards (filtered by today)
   const ongoingJobs = jobs.filter(job => {
-    if (!['PENDING', 'ASSIGNED', 'IN_PROGRESS'].includes(job.status)) return false;
+    if (!['PENDING', 'ASSIGNED', 'EN_ROUTE', 'IN_PROGRESS'].includes(job.status)) return false;
     const createdAt = job.createdAt || (job as any).created_at;
     if (!createdAt) return false;
     const createdDate = new Date(createdAt);
@@ -6501,7 +6501,7 @@ const AdminDashboard = () => {
                           jobsToShow = allJobs;
                         } else if (statusFilter === 'ONGOING') {
                           // Show ongoing jobs (pending, assigned, in-progress)
-                          jobsToShow = allJobs.filter(job => ['PENDING', 'ASSIGNED', 'IN_PROGRESS'].includes(job.status));                                      
+                          jobsToShow = allJobs.filter(job => ['PENDING', 'ASSIGNED', 'EN_ROUTE', 'IN_PROGRESS'].includes(job.status));                                      
                         } else if (statusFilter === 'RESCHEDULED') {
                           // Show follow-up jobs (FOLLOW_UP status)
                           jobsToShow = allJobs.filter(job => job.status === 'FOLLOW_UP');
@@ -7016,7 +7016,7 @@ const AdminDashboard = () => {
                                     </DropdownMenuTrigger>
                                     <DropdownMenuContent align="end" className="w-48">
                                       {/* Complete Job - First option for all active statuses */}
-                                      {(job.status === 'PENDING' || job.status === 'ASSIGNED' || job.status === 'IN_PROGRESS' || job.status === 'FOLLOW_UP' || job.status === 'RESCHEDULED') && (
+                                      {(job.status === 'PENDING' || job.status === 'ASSIGNED' || job.status === 'EN_ROUTE' || job.status === 'IN_PROGRESS' || job.status === 'FOLLOW_UP' || job.status === 'RESCHEDULED') && (
                                         <DropdownMenuItem onClick={() => handleCompleteJob(job)}>
                                           <CheckCircle2 className="mr-2 h-4 w-4" />
                                           Complete Job
@@ -7034,7 +7034,7 @@ const AdminDashboard = () => {
                                           Start Job
                                         </DropdownMenuItem>
                                       )}
-                                      {(job.status === 'PENDING' || job.status === 'ASSIGNED' || job.status === 'IN_PROGRESS') && (
+                                      {(job.status === 'PENDING' || job.status === 'ASSIGNED' || job.status === 'EN_ROUTE' || job.status === 'IN_PROGRESS') && (
                                         <>
                                           <DropdownMenuItem onClick={() => handleScheduleFollowUp(job)}>
                                             <CalendarPlus className="mr-2 h-4 w-4" />
@@ -7075,6 +7075,7 @@ const AdminDashboard = () => {
                                           assignedTechnicianId || 
                                           assignedTechnician ||
                                           job.status === 'ASSIGNED' || 
+                                          job.status === 'EN_ROUTE' ||
                                           job.status === 'IN_PROGRESS';
                                         
                                         return hasAssignedTechnician ? (

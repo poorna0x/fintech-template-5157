@@ -100,7 +100,7 @@ export interface Job {
   serviceLocation: Customer['location'];
   
   // Status & Progress
-  status: 'PENDING' | 'ASSIGNED' | 'IN_PROGRESS' | 'COMPLETED' | 'CANCELLED' | 'RESCHEDULED' | 'FOLLOW_UP' | 'DENIED' | string;
+  status: 'PENDING' | 'ASSIGNED' | 'EN_ROUTE' | 'IN_PROGRESS' | 'COMPLETED' | 'CANCELLED' | 'RESCHEDULED' | 'FOLLOW_UP' | 'DENIED' | string;
   priority: 'LOW' | 'MEDIUM' | 'HIGH' | 'URGENT' | string;
   
   // Job Details

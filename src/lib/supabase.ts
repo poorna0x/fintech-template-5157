@@ -394,11 +394,11 @@ export const db = {
         
         // Count jobs in parallel for better performance
         const [ongoingResult, followupResult, deniedResult, completedResult] = await Promise.all([
-          // Ongoing: ALL current jobs with status PENDING, ASSIGNED, or IN_PROGRESS
+          // Ongoing: ALL current jobs with status PENDING, ASSIGNED, EN_ROUTE, or IN_PROGRESS
           supabase
           .from('jobs')
           .select('id', { count: 'exact', head: true })
-            .in('status', ['PENDING', 'ASSIGNED', 'IN_PROGRESS']),
+            .in('status', ['PENDING', 'ASSIGNED', 'EN_ROUTE', 'IN_PROGRESS']),
           // Followup: ALL jobs with status FOLLOW_UP or RESCHEDULED
           supabase
             .from('jobs')
@@ -550,7 +550,7 @@ export const db = {
             updated_at
           )
         `)
-        .in('status', ['PENDING', 'ASSIGNED', 'IN_PROGRESS'])
+        .in('status', ['PENDING', 'ASSIGNED', 'EN_ROUTE', 'IN_PROGRESS'])
         .order('created_at', { ascending: false });
       
       return { data: data || [], error };
@@ -1446,7 +1446,7 @@ export const db = {
         .select('customer_id')
         .in('customer_id', customerIds)
         .eq('service_sub_type', 'AMC Service')
-        .in('status', ['PENDING', 'ASSIGNED', 'IN_PROGRESS']);
+        .in('status', ['PENDING', 'ASSIGNED', 'EN_ROUTE', 'IN_PROGRESS']);
 
       const existingAMCCustomers = new Set(
         (existingAMCJobs || []).map((job: any) => job.customer_id)
