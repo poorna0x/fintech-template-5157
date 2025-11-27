@@ -3,7 +3,6 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Badge } from '@/components/ui/badge';
 import { Job, Technician } from '@/types';
 import { TechnicianDistance } from '@/lib/distance';
 import { MapPin } from 'lucide-react';
@@ -106,9 +105,9 @@ const AssignJobDialog: React.FC<AssignJobDialogProps> = ({
               
               <button
                 type="button"
-                onClick={async () => {
+                onClick={() => {
                   onAssignmentTypeChange('distance');
-                  await onCalculateDistances();
+                  // Don't calculate distances automatically - user must click Refresh Distances button
                 }}
                 className={`p-4 rounded-lg border-2 transition-all text-left ${
                   assignmentType === 'distance'
@@ -255,14 +254,6 @@ const AssignJobDialog: React.FC<AssignJobDialogProps> = ({
                                     <div className="text-xs text-gray-500">{tech.employeeId}</div>
                                   )}
                                 </div>
-                                {tech.status && tech.status !== 'OFFLINE' && (
-                                  <Badge 
-                                    variant={tech.status === 'AVAILABLE' ? 'default' : 'secondary'}
-                                    className="text-xs flex-shrink-0"
-                                  >
-                                    {tech.status}
-                                  </Badge>
-                                )}
                               </div>
                               {hasDistance && distanceInfo.distance ? (
                                 <div className="text-right flex-shrink-0">

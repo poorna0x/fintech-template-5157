@@ -481,16 +481,18 @@ const TechnicianDashboard = () => {
         throw new Error(error.message);
       }
 
-      console.log('Loaded jobs count:', data?.length || 0);
-      
       // All jobs go to regular jobs list (ASSIGNED jobs will show with blue border in the list)
       const allJobs: Job[] = [];
       const newAssignedJobs: Job[] = [];
+      const statusCounts: Record<string, number> = {};
       
       if (data && data.length > 0) {
         data.forEach((job: Job) => {
-          const status = (job as any).status || job.status;
+          const status = (job as any).status || job.status || 'UNKNOWN';
           allJobs.push(job);
+          
+          // Count jobs by status
+          statusCounts[status] = (statusCounts[status] || 0) + 1;
           
           // Track ASSIGNED jobs for notifications
           if (status === 'ASSIGNED') {
@@ -498,6 +500,17 @@ const TechnicianDashboard = () => {
           }
         });
       }
+      
+      // Calculate ongoing jobs count (PENDING, ASSIGNED, EN_ROUTE, IN_PROGRESS)
+      const ongoingJobs = allJobs.filter(job => {
+        const status = (job as any).status || job.status;
+        return ['PENDING', 'ASSIGNED', 'EN_ROUTE', 'IN_PROGRESS'].includes(status);
+      });
+      
+      console.log(`📊 Jobs loaded from database: ${data?.length || 0} total`, {
+        ongoing: ongoingJobs.length,
+        statusBreakdown: statusCounts
+      });
       
       setJobs(allJobs);
       hasJobsRef.current = true; // Mark that we've loaded jobs at least once
@@ -1206,7 +1219,7 @@ const TechnicianDashboard = () => {
   }, [user?.technicianId]);
 
   // Get current location and update in database
-  const getCurrentLocation = async () => {
+  const getCurrentLocation = useCallback(async () => {
     if (navigator.geolocation) {
       navigator.geolocation.getCurrentPosition(
         async (position) => {
@@ -1261,7 +1274,7 @@ const TechnicianDashboard = () => {
       console.error('Geolocation not supported');
       toast.error('Location services not supported. Distance calculations will not be available.');
     }
-  };
+  }, [user?.technicianId]);
 
   // Calculate distance between two points using Haversine formula
   const calculateDistance = (lat1: number, lng1: number, lat2: number, lng2: number): number => {
@@ -1357,38 +1370,37 @@ const TechnicianDashboard = () => {
   }, [user?.technicianId, realtimeConnected]);
 
   // Periodic location update (every 5 minutes) - ONLY when app is open and visible
-  // TEMPORARILY DISABLED - Can be re-enabled later
-  // useEffect(() => {
-  //   if (!user?.technicianId) return;
+  useEffect(() => {
+    if (!user?.technicianId) return;
 
-  //   // Update location immediately on mount (only if page is visible)
-  //   if (!document.hidden) {
-  //     getCurrentLocation();
-  //   }
+    // Update location immediately on mount (only if page is visible)
+    if (!document.hidden) {
+      getCurrentLocation();
+    }
 
-  //   // Then update every 5 minutes - ONLY if page is visible
-  //   const locationInterval = setInterval(() => {
-  //     // Only update location if the page is visible (app is open and active)
-  //     if (!document.hidden) {
-  //       getCurrentLocation();
-  //     }
-  //   }, 5 * 60 * 1000); // 5 minutes
+    // Then update every 5 minutes - ONLY if page is visible
+    const locationInterval = setInterval(() => {
+      // Only update location if the page is visible (app is open and active)
+      if (!document.hidden) {
+        getCurrentLocation();
+      }
+    }, 5 * 60 * 1000); // 5 minutes
 
-  //   // Also listen for visibility changes to update when app becomes visible again
-  //   const handleVisibilityChange = () => {
-  //     if (!document.hidden && user?.technicianId) {
-  //       // Update location when app becomes visible again
-  //       getCurrentLocation();
-  //     }
-  //   };
+    // Also listen for visibility changes to update when app becomes visible again
+    const handleVisibilityChange = () => {
+      if (!document.hidden && user?.technicianId) {
+        // Update location when app becomes visible again
+        getCurrentLocation();
+      }
+    };
 
-  //   document.addEventListener('visibilitychange', handleVisibilityChange);
+    document.addEventListener('visibilitychange', handleVisibilityChange);
 
-  //   return () => {
-  //     clearInterval(locationInterval);
-  //     document.removeEventListener('visibilitychange', handleVisibilityChange);
-  //   };
-  // }, [user?.technicianId]);
+    return () => {
+      clearInterval(locationInterval);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
+  }, [user?.technicianId, getCurrentLocation]);
 
   // Filter jobs based on status
   useEffect(() => {
@@ -1509,6 +1521,12 @@ const TechnicianDashboard = () => {
       const createdA = new Date((a as any).created_at || a.createdAt || 0).getTime();
       const createdB = new Date((b as any).created_at || b.createdAt || 0).getTime();
       return createdB - createdA;
+    });
+
+    console.log(`🎯 Filtered jobs for display (filter: ${statusFilter}): ${filtered.length} jobs`, {
+      totalJobs: jobs.length,
+      filter: statusFilter,
+      filteredCount: filtered.length
     });
 
     setFilteredJobs(filtered);

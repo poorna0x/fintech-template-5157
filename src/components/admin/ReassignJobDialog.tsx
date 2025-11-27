@@ -107,9 +107,9 @@ const ReassignJobDialog: React.FC<ReassignJobDialogProps> = ({
               
               <button
                 type="button"
-                onClick={async () => {
+                onClick={() => {
                   onAssignmentTypeChange('distance');
-                  await onCalculateDistances();
+                  // Don't calculate distances automatically - user must click Refresh Distances button
                 }}
                 className={`p-4 rounded-lg border-2 transition-all text-left ${
                   assignmentType === 'distance'

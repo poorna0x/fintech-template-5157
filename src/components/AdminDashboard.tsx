@@ -7443,9 +7443,7 @@ const AdminDashboard = () => {
         onTechnicianSelect={setSelectedTechnicianId}
         onAssignmentTypeChange={(type) => {
           setAssignmentType(type);
-          if (type === 'distance' && jobToAssign) {
-            calculateDistancesForJob(jobToAssign);
-          }
+          // Don't calculate distances automatically - user must click the button
         }}
         onCalculateDistances={async () => {
           if (jobToAssign) {
@@ -7658,9 +7656,7 @@ const AdminDashboard = () => {
         onTechnicianSelect={setSelectedTechnicianForReassign}
         onAssignmentTypeChange={(type) => {
           setReassignAssignmentType(type);
-          if (type === 'distance' && jobToReassign) {
-                      calculateDistancesForReassign(jobToReassign);
-                    }
+          // Don't calculate distances automatically - user must click Refresh Distances button
                   }}
         onCalculateDistances={async () => {
                       if (jobToReassign) {
