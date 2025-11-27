@@ -347,12 +347,47 @@ export default function AMCPage() {
                             )}
                           </span>
                         </div>
-                        <div className="text-sm text-gray-600">
-                          <span className="font-medium">Additional Info:</span>
-                          <p className="mt-1 text-gray-800 bg-gray-50 p-2 rounded min-h-[2rem]">
-                            {amc.additional_info || <span className="text-gray-400 italic">No additional information</span>}
-                          </p>
-                        </div>
+                        {(() => {
+                          // Parse additional_info to extract description
+                          let description = '';
+                          let additionalInfo = '';
+                          if (amc.additional_info) {
+                            try {
+                              if (typeof amc.additional_info === 'string') {
+                                const parsed = JSON.parse(amc.additional_info);
+                                description = parsed.description || parsed.notes || '';
+                                additionalInfo = parsed.notes || '';
+                              } else {
+                                description = amc.additional_info.description || amc.additional_info.notes || '';
+                                additionalInfo = amc.additional_info.notes || '';
+                              }
+                            } catch (e) {
+                              // If not JSON, treat as plain text
+                              additionalInfo = amc.additional_info;
+                            }
+                          }
+                          
+                          return (
+                            <>
+                              {description && (
+                                <div className="text-sm text-gray-600">
+                                  <span className="font-medium">Description / Summary:</span>
+                                  <p className="mt-1 text-gray-800 bg-gray-50 p-2 rounded min-h-[2rem] whitespace-pre-wrap">
+                                    {description}
+                                  </p>
+                                </div>
+                              )}
+                              {!description && (
+                                <div className="text-sm text-gray-600">
+                                  <span className="font-medium">Additional Info:</span>
+                                  <p className="mt-1 text-gray-800 bg-gray-50 p-2 rounded min-h-[2rem]">
+                                    {additionalInfo || <span className="text-gray-400 italic">No additional information</span>}
+                                  </p>
+                                </div>
+                              )}
+                            </>
+                          );
+                        })()}
                       </div>
                     </div>
                   </CardContent>

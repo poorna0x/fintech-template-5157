@@ -8,7 +8,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Badge } from '@/components/ui/badge';
 import { Checkbox } from '@/components/ui/checkbox';
-import { Edit, Plus, Download, FileText, User, Phone, MapPin, Building, Droplets, Mail } from 'lucide-react';
+import { Edit, Plus, Download, FileText, User, Phone, MapPin, Building, Droplets, Mail, Save } from 'lucide-react';
 import { toast } from 'sonner';
 import { Customer, Bill, BillItem, CompanyInfo } from '@/types';
 import { generateAMCPDF } from '@/lib/amc-pdf-generator';
@@ -104,6 +104,8 @@ ${notCoveredWithPreFilter}`;
   const [newNote, setNewNote] = useState('');
   const [isEditingIntro, setIsEditingIntro] = useState(false);
   const [agreementIntro, setAgreementIntro] = useState('We M/s <strong>Hydrogen RO</strong>, Authorized Service Provider, undertake to maintain your <strong>RO Water Purifier</strong> Unit as detailed below:');
+  const [description, setDescription] = useState('');
+  const [isSaving, setIsSaving] = useState(false);
 
   // Update terms when pre-sediment filtration checkbox changes
   React.useEffect(() => {
@@ -203,6 +205,111 @@ ${notCoveredWithPreFilter}`;
     }
   };
 
+  // Function to calculate dates and years
+  const calculateDates = () => {
+    let validityEndDate = '';
+    const agreementDate = new Date(billDate);
+    
+    if (validity === 'Custom') {
+      validityEndDate = customToDate;
+    } else {
+      const years = parseInt(validity) || 1;
+      const endDate = new Date(agreementDate);
+      endDate.setFullYear(endDate.getFullYear() + years);
+      endDate.setDate(endDate.getDate() - 1); // Subtract 1 day to get the last day of the period
+      validityEndDate = endDate.toISOString().split('T')[0];
+    }
+
+    const startDate = validity === 'Custom' ? customFromDate : billDate;
+    const start = new Date(startDate);
+    const end = new Date(validityEndDate);
+    const years = Math.round((end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24 * 365));
+
+    return { startDate, endDate: validityEndDate, years: years || 1 };
+  };
+
+  // Function to save AMC contract to database
+  const handleSaveToDatabase = async () => {
+    if (!billNumber.trim()) {
+      toast.error('Please enter an agreement number');
+      return;
+    }
+
+    // Validate RO Model/Brand
+    if (!roModel.trim()) {
+      toast.error('Please enter RO Model/Brand before saving', {
+        description: 'RO Model is required to save the AMC contract.',
+        duration: 6000
+      });
+      return;
+    }
+
+    if (validity === 'Custom' && (!customFromDate || !customToDate)) {
+      toast.error('Please select both from and to dates for custom validity');
+      return;
+    }
+
+    if (validity === 'Custom' && customFromDate && customToDate && new Date(customFromDate) >= new Date(customToDate)) {
+      toast.error('To date must be after from date');
+      return;
+    }
+
+    setIsSaving(true);
+
+    try {
+      const { startDate, endDate, years } = calculateDates();
+
+      // Prepare comprehensive metadata to store in additional_info
+      const metadata = {
+        agreement_number: billNumber,
+        agreement_date: billDate,
+        amc_cost: amcCost,
+        service_charge: serviceCharge,
+        total_amount: totalAmount,
+        ro_model: roModel.trim(),
+        validity_period: validity,
+        description: description.trim() || null,
+        notes: notes || null,
+        customer_name: editableCustomer.name,
+        customer_phone: editableCustomer.phone,
+        customer_email: editableCustomer.email || null,
+        customer_gst: editableCustomer.gst || null,
+        customer_address: editableCustomer.address,
+        agreement_intro: agreementIntro,
+        saved_at: new Date().toISOString()
+      };
+
+      // Save AMC contract to database
+      const { error: amcError } = await db.amcContracts.create({
+        customer_id: customer.id,
+        job_id: null, // AMC created from generator, not from a job
+        start_date: startDate,
+        end_date: endDate,
+        years: years,
+        includes_prefilter: includesPreSedimentFiltration,
+        additional_info: JSON.stringify(metadata)
+      });
+
+      if (amcError) {
+        console.error('Failed to save AMC contract to database:', amcError);
+        toast.error('Failed to save AMC contract to database', {
+          description: amcError.message || 'Please try again or contact support.'
+        });
+      } else {
+        toast.success('AMC contract saved to database successfully', {
+          description: `Agreement ${billNumber} has been saved with all details.`
+        });
+      }
+    } catch (error: any) {
+      console.error('Error saving AMC contract:', error);
+      toast.error('Failed to save AMC contract', {
+        description: error.message || 'An unexpected error occurred. Please try again.'
+      });
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
   const handlePrint = async (options?: { termsOnly?: boolean }) => {
     if (!billNumber.trim()) {
       toast.error('Please enter a bill number');
@@ -228,19 +335,7 @@ ${notCoveredWithPreFilter}`;
       return;
     }
 
-    // Calculate validity end date
-    let validityEndDate = '';
-    const agreementDate = new Date(billDate);
-    
-    if (validity === 'Custom') {
-      validityEndDate = customToDate;
-    } else {
-      const years = parseInt(validity) || 1;
-      const endDate = new Date(agreementDate);
-      endDate.setFullYear(endDate.getFullYear() + years);
-      endDate.setDate(endDate.getDate() - 1); // Subtract 1 day to get the last day of the period
-      validityEndDate = endDate.toISOString().split('T')[0];
-    }
+    const { startDate, endDate, years } = calculateDates();
 
     // Use the current terms state (preserves any manual edits)
     // Create a single item from the AMC cost
@@ -280,42 +375,54 @@ ${notCoveredWithPreFilter}`;
       notes,
       terms,
       validity: validity === 'Custom' ? 
-        `${new Date(customFromDate).toLocaleDateString('en-IN', { day: '2-digit', month: '2-digit', year: 'numeric' })} to ${new Date(customToDate).toLocaleDateString('en-IN', { day: '2-digit', month: '2-digit', year: 'numeric' })}` : 
-        `${new Date(billDate).toLocaleDateString('en-IN', { day: '2-digit', month: '2-digit', year: 'numeric' })} to ${new Date(validityEndDate).toLocaleDateString('en-IN', { day: '2-digit', month: '2-digit', year: 'numeric' })}`,
+        `${new Date(customFromDate).toLocaleDateString('en-IN', { day: '2-digit', month: '2-digit', year: 'numeric' })} to ${new Date(endDate).toLocaleDateString('en-IN', { day: '2-digit', month: '2-digit', year: 'numeric' })}` : 
+        `${new Date(billDate).toLocaleDateString('en-IN', { day: '2-digit', month: '2-digit', year: 'numeric' })} to ${new Date(endDate).toLocaleDateString('en-IN', { day: '2-digit', month: '2-digit', year: 'numeric' })}`,
       agreementIntro,
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString()
     };
 
     try {
-      // Calculate years from dates
-      const startDate = validity === 'Custom' ? customFromDate : billDate;
-      const endDate = validityEndDate;
-      const start = new Date(startDate);
-      const end = new Date(endDate);
-      const years = Math.round((end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24 * 365));
-
-      // Save AMC contract to database
+      // Save AMC contract to database (optional - user can also use the Save button)
       try {
+        const metadata = {
+          agreement_number: billNumber,
+          agreement_date: billDate,
+          amc_cost: amcCost,
+          service_charge: serviceCharge,
+          total_amount: totalAmount,
+          ro_model: roModel.trim(),
+          validity_period: validity,
+          description: description.trim() || null,
+          notes: notes || null,
+          customer_name: editableCustomer.name,
+          customer_phone: editableCustomer.phone,
+          customer_email: editableCustomer.email || null,
+          customer_gst: editableCustomer.gst || null,
+          customer_address: editableCustomer.address,
+          agreement_intro: agreementIntro,
+          saved_at: new Date().toISOString()
+        };
+
         const { error: amcError } = await db.amcContracts.create({
           customer_id: customer.id,
-          job_id: null, // AMC created from generator, not from a job
+          job_id: null,
           start_date: startDate,
           end_date: endDate,
-          years: years || 1,
+          years: years,
           includes_prefilter: includesPreSedimentFiltration,
-          additional_info: notes || null
+          additional_info: JSON.stringify(metadata)
         });
 
         if (amcError) {
           console.warn('⚠️ Failed to save AMC contract to database:', amcError);
-          toast.warning('AMC generated but failed to save to database. Please save manually.');
+          toast.warning('AMC generated but failed to save to database. Please use the Save button to save manually.');
         } else {
           toast.success('AMC contract saved to database successfully');
         }
       } catch (dbError) {
         console.error('Error saving AMC contract:', dbError);
-        toast.warning('AMC generated but failed to save to database. Please save manually.');
+        toast.warning('AMC generated but failed to save to database. Please use the Save button to save manually.');
       }
 
       generateAMCPDF(bill, 'print', { includeDetails: options?.termsOnly ? false : true });
@@ -650,6 +757,31 @@ ${notCoveredWithPreFilter}`;
             </CardContent>
           </Card>
 
+          {/* Description/Summary Section */}
+          <Card>
+            <CardHeader>
+              <CardTitle>Description / Summary</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div>
+                <Label htmlFor="description" className="text-sm font-medium mb-2 block">
+                  Contract Description
+                </Label>
+                <Textarea
+                  id="description"
+                  value={description}
+                  onChange={(e) => setDescription(e.target.value)}
+                  placeholder="Enter a description or summary of this AMC contract for future reference (e.g., 'Annual maintenance for Kent RO, includes filter replacement, customer requested quarterly visits')"
+                  rows={4}
+                  className="resize-none"
+                />
+                <p className="text-xs text-gray-500 mt-2">
+                  This description will be saved with the contract for easy identification in the future.
+                </p>
+              </div>
+            </CardContent>
+          </Card>
+
           {/* Service Charge */}
           <Card>
             <CardHeader>
@@ -861,6 +993,14 @@ ${notCoveredWithPreFilter}`;
               </div>
 
               <Button 
+                onClick={handleSaveToDatabase}
+                className="w-full text-sm sm:text-base bg-green-600 hover:bg-green-700"
+                disabled={!billNumber.trim() || isSaving}
+              >
+                <Save className="w-4 h-4 mr-2" />
+                {isSaving ? 'Saving...' : 'Save to Database'}
+              </Button>
+              <Button 
                 onClick={() => handlePrint()} 
                 className="w-full text-sm sm:text-base"
                 disabled={!billNumber.trim()}
@@ -878,7 +1018,7 @@ ${notCoveredWithPreFilter}`;
                 Share Terms Only
               </Button>
               <p className="text-xs text-gray-500 text-center">
-                Terms-only mode removes customer and agreement details, leaving just clauses.
+                Save to Database stores all contract details including description, dates, costs, and prefilter settings. Terms-only mode removes customer and agreement details, leaving just clauses.
               </p>
             </CardContent>
           </Card>

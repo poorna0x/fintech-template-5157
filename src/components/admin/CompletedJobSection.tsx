@@ -154,12 +154,43 @@ export const CompletedJobSection: React.FC<CompletedJobSectionProps> = ({
                     <span className="text-gray-500">Includes Prefilter:</span> {amcInfo.includes_prefilter ? 'Yes' : 'No'}
                   </div>
                 )}
-                {amcInfo.additional_info && (
-                  <div className="mt-2 pt-2 border-t border-green-300">
-                    <span className="text-gray-500 font-medium">Additional Info:</span>
-                    <div className="text-gray-700 mt-1 whitespace-pre-wrap">{amcInfo.additional_info}</div>
-                  </div>
-                )}
+                {(() => {
+                  // Parse additional_info to extract description
+                  let description = '';
+                  let additionalInfo = '';
+                  if (amcInfo.additional_info) {
+                    try {
+                      if (typeof amcInfo.additional_info === 'string') {
+                        const parsed = JSON.parse(amcInfo.additional_info);
+                        description = parsed.description || parsed.notes || '';
+                        additionalInfo = parsed.notes || '';
+                      } else {
+                        description = amcInfo.additional_info.description || amcInfo.additional_info.notes || '';
+                        additionalInfo = amcInfo.additional_info.notes || '';
+                      }
+                    } catch (e) {
+                      // If not JSON, treat as plain text
+                      additionalInfo = amcInfo.additional_info;
+                    }
+                  }
+                  
+                  return (
+                    <>
+                      {description && (
+                        <div className="mt-2 pt-2 border-t border-green-300">
+                          <span className="text-gray-500 font-medium">Description / Summary:</span>
+                          <div className="text-gray-700 mt-1 whitespace-pre-wrap">{description}</div>
+                        </div>
+                      )}
+                      {additionalInfo && !description && (
+                        <div className="mt-2 pt-2 border-t border-green-300">
+                          <span className="text-gray-500 font-medium">Additional Info:</span>
+                          <div className="text-gray-700 mt-1 whitespace-pre-wrap">{additionalInfo}</div>
+                        </div>
+                      )}
+                    </>
+                  );
+                })()}
               </div>
             </div>
           )}

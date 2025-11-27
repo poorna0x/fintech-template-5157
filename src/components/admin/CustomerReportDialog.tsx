@@ -306,12 +306,43 @@ const CustomerReportDialog: React.FC<CustomerReportDialogProps> = ({
                                   <span className="text-gray-900 font-semibold">{amcInfo.includes_prefilter ? 'Yes' : 'No'}</span>
                                 </div>
                               )}
-                              {amcInfo.additional_info && (
-                                <div className="mt-3 pt-3 border-t border-green-200">
-                                  <div className="text-gray-600 font-medium mb-2">Additional Info:</div>
-                                  <div className="text-gray-900 whitespace-pre-wrap bg-white p-2 rounded border border-green-200">{amcInfo.additional_info}</div>
-                                </div>
-                              )}
+                              {(() => {
+                                // Parse additional_info to extract description
+                                let description = '';
+                                let additionalInfo = '';
+                                if (amcInfo.additional_info) {
+                                  try {
+                                    if (typeof amcInfo.additional_info === 'string') {
+                                      const parsed = JSON.parse(amcInfo.additional_info);
+                                      description = parsed.description || parsed.notes || '';
+                                      additionalInfo = parsed.notes || '';
+                                    } else {
+                                      description = amcInfo.additional_info.description || amcInfo.additional_info.notes || '';
+                                      additionalInfo = amcInfo.additional_info.notes || '';
+                                    }
+                                  } catch (e) {
+                                    // If not JSON, treat as plain text
+                                    additionalInfo = amcInfo.additional_info;
+                                  }
+                                }
+                                
+                                return (
+                                  <>
+                                    {description && (
+                                      <div className="mt-3 pt-3 border-t border-green-200">
+                                        <div className="text-gray-600 font-medium mb-2">Description / Summary:</div>
+                                        <div className="text-gray-900 whitespace-pre-wrap bg-white p-2 rounded border border-green-200">{description}</div>
+                                      </div>
+                                    )}
+                                    {additionalInfo && !description && (
+                                      <div className="mt-3 pt-3 border-t border-green-200">
+                                        <div className="text-gray-600 font-medium mb-2">Additional Info:</div>
+                                        <div className="text-gray-900 whitespace-pre-wrap bg-white p-2 rounded border border-green-200">{additionalInfo}</div>
+                                      </div>
+                                    )}
+                                  </>
+                                );
+                              })()}
                             </div>
                           </div>
                         )}

@@ -5454,14 +5454,47 @@ const TechnicianDashboard = () => {
                   </div>
                 </div>
                 
-                {amcInfo.additional_info && (
-                  <div className="pt-3 border-t border-green-200">
-                    <span className="text-gray-600 font-medium text-sm">Additional Information:</span>
-                    <p className="text-gray-900 mt-2 whitespace-pre-wrap break-words">
-                      {amcInfo.additional_info}
-                    </p>
-                  </div>
-                )}
+                {(() => {
+                  // Parse additional_info to extract description
+                  let description = '';
+                  let additionalInfo = '';
+                  if (amcInfo.additional_info) {
+                    try {
+                      if (typeof amcInfo.additional_info === 'string') {
+                        const parsed = JSON.parse(amcInfo.additional_info);
+                        description = parsed.description || parsed.notes || '';
+                        additionalInfo = parsed.notes || '';
+                      } else {
+                        description = amcInfo.additional_info.description || amcInfo.additional_info.notes || '';
+                        additionalInfo = amcInfo.additional_info.notes || '';
+                      }
+                    } catch (e) {
+                      // If not JSON, treat as plain text
+                      additionalInfo = amcInfo.additional_info;
+                    }
+                  }
+                  
+                  return (
+                    <>
+                      {description && (
+                        <div className="pt-3 border-t border-green-200">
+                          <span className="text-gray-600 font-medium text-sm">Description / Summary:</span>
+                          <p className="text-gray-900 mt-2 whitespace-pre-wrap break-words">
+                            {description}
+                          </p>
+                        </div>
+                      )}
+                      {additionalInfo && !description && (
+                        <div className="pt-3 border-t border-green-200">
+                          <span className="text-gray-600 font-medium text-sm">Additional Information:</span>
+                          <p className="text-gray-900 mt-2 whitespace-pre-wrap break-words">
+                            {additionalInfo}
+                          </p>
+                        </div>
+                      )}
+                    </>
+                  );
+                })()}
                 
                 <div className="pt-3 border-t border-green-200 text-xs text-gray-500">
                   <p>Created: {new Date(amcInfo.created_at).toLocaleString('en-IN')}</p>
@@ -5749,40 +5782,67 @@ const TechnicianDashboard = () => {
                               ) : null}
                               
                               {/* AMC Details */}
-                              {amcInfo && (
-                                <div className="mt-3 pt-3 border-t border-green-300 bg-green-50 rounded-lg p-3">
-                                  <div className="flex items-center gap-2 mb-2">
-                                    <Badge className="bg-green-600 text-white">AMC Active</Badge>
-                                    <div className="font-semibold text-gray-900">AMC Details</div>
-                                  </div>
-                                  <div className="space-y-2 text-sm">
-                                    <div className="flex items-center gap-2">
-                                      <span className="text-gray-600 font-medium w-32">Start Date:</span>
-                                      <span className="text-gray-900 font-semibold">{amcInfo.date_given ? new Date(amcInfo.date_given).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }) : 'N/A'}</span>
+                              {amcInfo && (() => {
+                                // Parse additional_info to extract description
+                                let description = '';
+                                let additionalInfo = '';
+                                if (amcInfo.additional_info) {
+                                  try {
+                                    if (typeof amcInfo.additional_info === 'string') {
+                                      const parsed = JSON.parse(amcInfo.additional_info);
+                                      description = parsed.description || parsed.notes || '';
+                                      additionalInfo = parsed.notes || '';
+                                    } else {
+                                      description = amcInfo.additional_info.description || amcInfo.additional_info.notes || '';
+                                      additionalInfo = amcInfo.additional_info.notes || '';
+                                    }
+                                  } catch (e) {
+                                    // If not JSON, treat as plain text
+                                    additionalInfo = amcInfo.additional_info;
+                                  }
+                                }
+                                
+                                return (
+                                  <div className="mt-3 pt-3 border-t border-green-300 bg-green-50 rounded-lg p-3">
+                                    <div className="flex items-center gap-2 mb-2">
+                                      <Badge className="bg-green-600 text-white">AMC Active</Badge>
+                                      <div className="font-semibold text-gray-900">AMC Details</div>
                                     </div>
-                                    <div className="flex items-center gap-2">
-                                      <span className="text-gray-600 font-medium w-32">End Date:</span>
-                                      <span className="text-gray-900 font-semibold">{amcInfo.end_date ? new Date(amcInfo.end_date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }) : 'N/A'}</span>
-                                    </div>
-                                    <div className="flex items-center gap-2">
-                                      <span className="text-gray-600 font-medium w-32">Duration:</span>
-                                      <span className="text-gray-900 font-semibold">{amcInfo.years || 1} {amcInfo.years === 1 ? 'year' : 'years'}</span>
-                                    </div>
-                                    {amcInfo.includes_prefilter !== undefined && (
+                                    <div className="space-y-2 text-sm">
                                       <div className="flex items-center gap-2">
-                                        <span className="text-gray-600 font-medium w-32">Includes Prefilter:</span>
-                                        <span className="text-gray-900 font-semibold">{amcInfo.includes_prefilter ? 'Yes' : 'No'}</span>
+                                        <span className="text-gray-600 font-medium w-32">Start Date:</span>
+                                        <span className="text-gray-900 font-semibold">{amcInfo.date_given ? new Date(amcInfo.date_given).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }) : 'N/A'}</span>
                                       </div>
-                                    )}
-                                    {amcInfo.additional_info && (
-                                      <div className="mt-3 pt-3 border-t border-green-200">
-                                        <div className="text-gray-600 font-medium mb-2">Additional Info:</div>
-                                        <div className="text-gray-900 whitespace-pre-wrap bg-white p-2 rounded border border-green-200">{amcInfo.additional_info}</div>
+                                      <div className="flex items-center gap-2">
+                                        <span className="text-gray-600 font-medium w-32">End Date:</span>
+                                        <span className="text-gray-900 font-semibold">{amcInfo.end_date ? new Date(amcInfo.end_date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }) : 'N/A'}</span>
                                       </div>
-                                    )}
+                                      <div className="flex items-center gap-2">
+                                        <span className="text-gray-600 font-medium w-32">Duration:</span>
+                                        <span className="text-gray-900 font-semibold">{amcInfo.years || 1} {amcInfo.years === 1 ? 'year' : 'years'}</span>
+                                      </div>
+                                      {amcInfo.includes_prefilter !== undefined && (
+                                        <div className="flex items-center gap-2">
+                                          <span className="text-gray-600 font-medium w-32">Includes Prefilter:</span>
+                                          <span className="text-gray-900 font-semibold">{amcInfo.includes_prefilter ? 'Yes' : 'No'}</span>
+                                        </div>
+                                      )}
+                                      {description && (
+                                        <div className="mt-3 pt-3 border-t border-green-200">
+                                          <div className="text-gray-600 font-medium mb-2">Description / Summary:</div>
+                                          <div className="text-gray-900 whitespace-pre-wrap bg-white p-2 rounded border border-green-200">{description}</div>
+                                        </div>
+                                      )}
+                                      {additionalInfo && !description && (
+                                        <div className="mt-3 pt-3 border-t border-green-200">
+                                          <div className="text-gray-600 font-medium mb-2">Additional Info:</div>
+                                          <div className="text-gray-900 whitespace-pre-wrap bg-white p-2 rounded border border-green-200">{additionalInfo}</div>
+                                        </div>
+                                      )}
+                                    </div>
                                   </div>
-                                </div>
-                              )}
+                                );
+                              })()}
                               
                               {/* Completion Notes */}
                               {completionNotes && (

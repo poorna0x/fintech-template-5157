@@ -82,58 +82,63 @@ const AMCViewPage: React.FC<AMCViewPageProps> = ({ onBack }) => {
   const loadAMCRecords = async () => {
     try {
       setLoading(true);
-      const { data: jobs, error } = await db.jobs.getAll();
+      // Load AMC contracts from the amc_contracts table
+      const { data: amcContracts, error } = await db.amcContracts.getAll(1000, 0);
 
       if (error) {
         throw error;
       }
 
-      // Extract AMC records from jobs
+      // Transform AMC contracts to AMCRecord format
       const amcList: AMCRecord[] = [];
       
-      if (jobs) {
-        for (const job of jobs) {
-          // Parse requirements to find AMC info
-          let requirements: any[] = [];
-          try {
-            const reqData = (job as any).requirements || job.requirements;
-            if (typeof reqData === 'string') {
-              requirements = JSON.parse(reqData);
-            } else if (Array.isArray(reqData)) {
-              requirements = reqData;
-            } else if (reqData && typeof reqData === 'object') {
-              requirements = [reqData];
+      if (amcContracts) {
+        for (const amc of amcContracts) {
+          const customer = (amc as any).customers;
+          
+          // Parse additional_info if it's a JSON string
+          let metadata: any = {};
+          let additionalNotes = '';
+          if (amc.additional_info) {
+            try {
+              if (typeof amc.additional_info === 'string') {
+                metadata = JSON.parse(amc.additional_info);
+                // Extract description and notes from metadata
+                additionalNotes = metadata.description || metadata.notes || '';
+              } else {
+                metadata = amc.additional_info;
+                additionalNotes = metadata.description || metadata.notes || '';
+              }
+            } catch (e) {
+              // If parsing fails, treat as plain text
+              additionalNotes = amc.additional_info;
             }
-          } catch (e) {
-            requirements = [];
           }
 
-          const amcInfo = requirements.find((r: any) => r?.amc_info)?.amc_info;
-          
-          if (amcInfo) {
-            const customer = job.customer;
-            amcList.push({
-              id: `${job.id}-amc`,
-              jobId: job.id || '',
-              jobNumber: (job as any).job_number || job.jobNumber || 'N/A',
-              customerId: job.customerId || (job as any).customer_id || '',
-              customerName: customer?.fullName || customer?.full_name || 'Unknown',
-              customerPhone: customer?.phone || '',
-              customerEmail: customer?.email || '',
-              customerAddress: customer?.address || {},
-              serviceType: job.serviceType || (job as any).service_type || '',
-              brand: job.brand || '',
-              model: job.model || '',
-              dateGiven: amcInfo.date_given || '',
-              endDate: amcInfo.end_date || '',
-              years: amcInfo.years || 1,
-              includesPrefilter: amcInfo.includes_prefilter || false,
-              additionalNotes: amcInfo.additional_notes || amcInfo.notes || '',
-              createdAt: job.createdAt || (job as any).created_at || '',
-              completedAt: job.completedAt || (job as any).completed_at || null,
-              completedBy: (job as any).completed_by || job.completedBy || null,
-            });
-          }
+          // Get job number from metadata (agreement_number) or use AMC ID
+          const jobNumber = metadata.agreement_number || `AMC-${amc.id.slice(0, 8)}`;
+
+          amcList.push({
+            id: amc.id,
+            jobId: amc.job_id || '',
+            jobNumber: jobNumber,
+            customerId: amc.customer_id,
+            customerName: customer?.full_name || metadata.customer_name || 'Unknown',
+            customerPhone: customer?.phone || metadata.customer_phone || '',
+            customerEmail: customer?.email || metadata.customer_email || '',
+            customerAddress: customer?.address || metadata.customer_address || {},
+            serviceType: customer?.service_type || 'RO',
+            brand: customer?.brand || metadata.brand || '',
+            model: customer?.model || metadata.ro_model || '',
+            dateGiven: amc.start_date,
+            endDate: amc.end_date,
+            years: amc.years,
+            includesPrefilter: amc.includes_prefilter,
+            additionalNotes: additionalNotes,
+            createdAt: amc.created_at,
+            completedAt: null,
+            completedBy: null,
+          });
         }
       }
 
@@ -147,7 +152,7 @@ const AMCViewPage: React.FC<AMCViewPageProps> = ({ onBack }) => {
       setAmcRecords(amcList);
     } catch (error: any) {
       console.error('Error loading AMC records:', error);
-      toast.error('Failed to load AMC records');
+      toast.error('Failed to load AMC records: ' + (error.message || 'Unknown error'));
     } finally {
       setLoading(false);
     }
@@ -234,45 +239,38 @@ const AMCViewPage: React.FC<AMCViewPageProps> = ({ onBack }) => {
       // Calculate end date if years changed
       const endDate = editFormData.endDate || calculateEndDate(editFormData.dateGiven, editFormData.years);
 
-      // Get the job
-      const { data: job, error: jobError } = await db.jobs.getById(selectedAMC.jobId);
-      if (jobError || !job) {
-        throw new Error('Job not found');
+      // Get the current AMC contract to preserve metadata
+      const { data: currentAMC, error: getError } = await db.amcContracts.getById(selectedAMC.id);
+      if (getError || !currentAMC) {
+        throw new Error('AMC contract not found');
       }
 
-      // Parse requirements
-      let requirements: any[] = [];
-      try {
-        const reqData = (job as any).requirements || job.requirements;
-        if (typeof reqData === 'string') {
-          requirements = JSON.parse(reqData);
-        } else if (Array.isArray(reqData)) {
-          requirements = reqData;
-        } else if (reqData && typeof reqData === 'object') {
-          requirements = [reqData];
+      // Parse existing additional_info to preserve metadata
+      let metadata: any = {};
+      if (currentAMC.additional_info) {
+        try {
+          if (typeof currentAMC.additional_info === 'string') {
+            metadata = JSON.parse(currentAMC.additional_info);
+          } else {
+            metadata = currentAMC.additional_info;
+          }
+        } catch (e) {
+          // If parsing fails, create new metadata
+          metadata = {};
         }
-      } catch (e) {
-        requirements = [];
       }
 
-      // Remove existing amc_info
-      requirements = requirements.filter((req: any) => !req.amc_info);
+      // Update description/notes in metadata
+      metadata.description = editFormData.additionalNotes || null;
+      metadata.notes = editFormData.additionalNotes || null;
 
-      // Add updated AMC info
-      requirements.push({
-        amc_info: {
-          date_given: editFormData.dateGiven,
-          end_date: endDate,
-          years: editFormData.years,
-          includes_prefilter: editFormData.includesPrefilter,
-          additional_notes: editFormData.additionalNotes || null,
-          notes: editFormData.additionalNotes || null,
-        },
-      });
-
-      // Update job
-      const { error: updateError } = await db.jobs.update(selectedAMC.jobId, {
-        requirements: requirements,
+      // Update AMC contract
+      const { error: updateError } = await db.amcContracts.update(selectedAMC.id, {
+        start_date: editFormData.dateGiven,
+        end_date: endDate,
+        years: editFormData.years,
+        includes_prefilter: editFormData.includesPrefilter,
+        additional_info: JSON.stringify(metadata),
       });
 
       if (updateError) {
@@ -293,37 +291,11 @@ const AMCViewPage: React.FC<AMCViewPageProps> = ({ onBack }) => {
     if (!amcToDelete) return;
 
     try {
-      // Get the job
-      const { data: job, error: jobError } = await db.jobs.getById(amcToDelete.jobId);
-      if (jobError || !job) {
-        throw new Error('Job not found');
-      }
+      // Delete AMC contract from database
+      const { error: deleteError } = await db.amcContracts.delete(amcToDelete.id);
 
-      // Parse requirements
-      let requirements: any[] = [];
-      try {
-        const reqData = (job as any).requirements || job.requirements;
-        if (typeof reqData === 'string') {
-          requirements = JSON.parse(reqData);
-        } else if (Array.isArray(reqData)) {
-          requirements = reqData;
-        } else if (reqData && typeof reqData === 'object') {
-          requirements = [reqData];
-        }
-      } catch (e) {
-        requirements = [];
-      }
-
-      // Remove amc_info
-      requirements = requirements.filter((req: any) => !req.amc_info);
-
-      // Update job
-      const { error: updateError } = await db.jobs.update(amcToDelete.jobId, {
-        requirements: requirements,
-      });
-
-      if (updateError) {
-        throw updateError;
+      if (deleteError) {
+        throw deleteError;
       }
 
       toast.success('AMC deleted successfully');
@@ -667,7 +639,7 @@ const AMCViewPage: React.FC<AMCViewPageProps> = ({ onBack }) => {
                 )}
                 {selectedAMC.additionalNotes && (
                   <div>
-                    <Label className="text-xs text-gray-500">Additional Notes / Info</Label>
+                    <Label className="text-xs text-gray-500">Description / Summary</Label>
                     <p className="font-medium whitespace-pre-wrap mt-1 p-3 bg-gray-50 rounded-md">
                       {selectedAMC.additionalNotes}
                     </p>
@@ -761,17 +733,17 @@ const AMCViewPage: React.FC<AMCViewPageProps> = ({ onBack }) => {
                     </div>
                   </div>
                   <div className="col-span-2">
-                    <Label htmlFor="edit-additional-notes">Additional Notes / Info</Label>
+                    <Label htmlFor="edit-additional-notes">Description / Summary</Label>
                     <Textarea
                       id="edit-additional-notes"
                       value={editFormData.additionalNotes}
                       onChange={(e) => setEditFormData({ ...editFormData, additionalNotes: e.target.value })}
-                      placeholder="Enter any additional notes, terms, or special instructions..."
+                      placeholder="Enter a description or summary of this AMC contract for future reference..."
                       rows={4}
                       className="mt-1"
                     />
                     <p className="text-xs text-gray-500 mt-1">
-                      Add any additional information, terms, or special instructions for this AMC.
+                      Add a description or summary to help identify and understand this AMC contract in the future.
                     </p>
                   </div>
                 </div>
