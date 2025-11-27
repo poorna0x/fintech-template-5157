@@ -54,6 +54,7 @@ import {
   DollarSign,
   BarChart3,
   ArrowLeft,
+  ArrowRight,
   X,
   LogOut
 } from 'lucide-react';
@@ -460,6 +461,13 @@ const AdminDashboard = () => {
   const [denyDialogOpen, setDenyDialogOpen] = useState(false);
   const [selectedJobForDeny, setSelectedJobForDeny] = useState<Job | null>(null);
   const [denyReason, setDenyReason] = useState('');
+  
+  // Move to ongoing dialog state
+  const [moveToOngoingDialogOpen, setMoveToOngoingDialogOpen] = useState(false);
+  const [selectedJobForMoveToOngoing, setSelectedJobForMoveToOngoing] = useState<Job | null>(null);
+  const [moveToOngoingDate, setMoveToOngoingDate] = useState<string>('');
+  const [moveToOngoingTimeSlot, setMoveToOngoingTimeSlot] = useState<'MORNING' | 'AFTERNOON' | 'EVENING' | 'CUSTOM'>('MORNING');
+  const [moveToOngoingCustomTime, setMoveToOngoingCustomTime] = useState<string>('');
   const [showDenySuggestions, setShowDenySuggestions] = useState(false);
   const denyReasonInputRef = useRef<HTMLTextAreaElement>(null);
   
@@ -4736,6 +4744,184 @@ const AdminDashboard = () => {
     }
   };
 
+  // Handle moving follow-up job to ongoing
+  const handleMoveToOngoing = (job: Job) => {
+    // Set default values to current date and time
+    const now = new Date();
+    const today = now.toISOString().split('T')[0];
+    const currentHour = now.getHours();
+    
+    // Determine time slot based on current time
+    let defaultTimeSlot: 'MORNING' | 'AFTERNOON' | 'EVENING' | 'CUSTOM' = 'MORNING';
+    let defaultTime = '09:00'; // Default to 9 AM for MORNING
+    
+    if (currentHour >= 5 && currentHour < 12) {
+      defaultTimeSlot = 'MORNING';
+      defaultTime = '09:00';
+    } else if (currentHour >= 12 && currentHour < 17) {
+      defaultTimeSlot = 'AFTERNOON';
+      defaultTime = '14:00';
+    } else if (currentHour >= 17 && currentHour < 20) {
+      defaultTimeSlot = 'EVENING';
+      defaultTime = '17:00';
+    } else {
+      defaultTimeSlot = 'CUSTOM';
+      defaultTime = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+    }
+    
+    setMoveToOngoingDate(today);
+    setMoveToOngoingTimeSlot(defaultTimeSlot);
+    setMoveToOngoingCustomTime(defaultTimeSlot === 'CUSTOM' ? defaultTime : '');
+    setSelectedJobForMoveToOngoing(job);
+    setMoveToOngoingDialogOpen(true);
+  };
+
+  // Actually perform the move to ongoing action with date and time
+  const performMoveToOngoing = async () => {
+    if (!selectedJobForMoveToOngoing) return;
+
+    if (!moveToOngoingDate) {
+      toast.error('Please select a date');
+      return;
+    }
+
+    if (moveToOngoingTimeSlot === 'CUSTOM' && !moveToOngoingCustomTime) {
+      toast.error('Please enter a custom time');
+      return;
+    }
+
+    try {
+      setIsUpdating(true);
+      
+      // Determine the time to use based on time slot
+      let timeToUse: string;
+      if (moveToOngoingTimeSlot === 'CUSTOM') {
+        timeToUse = moveToOngoingCustomTime;
+      } else if (moveToOngoingTimeSlot === 'MORNING') {
+        timeToUse = '09:00';
+      } else if (moveToOngoingTimeSlot === 'AFTERNOON') {
+        timeToUse = '14:00';
+      } else { // EVENING
+        timeToUse = '17:00';
+      }
+      
+      // Combine date and time into ISO string for assigned_date
+      const dateTimeString = `${moveToOngoingDate}T${timeToUse}:00`;
+      const assignedDateTime = new Date(dateTimeString).toISOString();
+
+      // Update job with new scheduled date, time slot, and status
+      // If CUSTOM is selected, convert to appropriate time slot and store custom time in requirements
+      let timeSlotToUse: 'MORNING' | 'AFTERNOON' | 'EVENING' = moveToOngoingTimeSlot as any;
+      let customTimeInRequirements: string | null = null;
+      
+      if (moveToOngoingTimeSlot === 'CUSTOM' && moveToOngoingCustomTime) {
+        // Parse the custom time to determine time slot
+        const [hours] = moveToOngoingCustomTime.split(':').map(Number);
+        if (hours < 13) {
+          timeSlotToUse = 'MORNING';
+        } else if (hours < 18) {
+          timeSlotToUse = 'AFTERNOON';
+        } else {
+          timeSlotToUse = 'EVENING';
+        }
+        customTimeInRequirements = moveToOngoingCustomTime;
+      }
+      
+      // Get current requirements to preserve existing data
+      const currentJob = jobs.find(j => j.id === selectedJobForMoveToOngoing.id);
+      let requirements: any[] = [];
+      try {
+        requirements = currentJob?.requirements ? (Array.isArray(currentJob.requirements) ? currentJob.requirements : [currentJob.requirements]) : [];
+      } catch (e) {
+        requirements = [];
+      }
+      
+      // Update or add custom_time in requirements
+      if (customTimeInRequirements) {
+        // Find or create a requirement object to store custom_time
+        let found = false;
+        for (let i = 0; i < requirements.length; i++) {
+          if (requirements[i] && typeof requirements[i] === 'object' && !Array.isArray(requirements[i])) {
+            requirements[i].custom_time = customTimeInRequirements;
+            found = true;
+            break;
+          }
+        }
+        if (!found) {
+          requirements.push({ custom_time: customTimeInRequirements });
+        }
+      }
+      
+      const updateData: any = {
+        status: 'ASSIGNED',
+        scheduled_date: moveToOngoingDate,
+        scheduled_time_slot: timeSlotToUse,
+        assigned_date: assignedDateTime,
+        requirements: requirements
+      };
+
+      const { error } = await db.jobs.update(selectedJobForMoveToOngoing.id, updateData);
+
+      if (error) {
+        throw new Error(error.message);
+      }
+
+      // Update local state
+      setJobs(prev => prev.map(j => {
+        if (j.id === selectedJobForMoveToOngoing.id) {
+          const updatedJob = { 
+            ...j, 
+            status: 'ASSIGNED', 
+            assignedDate: assignedDateTime,
+            scheduledDate: moveToOngoingDate,
+            scheduledTimeSlot: timeSlotToUse,
+            requirements: requirements
+          };
+          return updatedJob;
+        }
+        return j;
+      }));
+
+      // Update customer jobs state
+      setCustomerJobs(prev => {
+        const updated = { ...prev };
+        Object.keys(updated).forEach(customerId => {
+          updated[customerId] = updated[customerId].map(job => {
+            if (job.id === selectedJobForMoveToOngoing.id) {
+              return { 
+                ...job, 
+                status: 'ASSIGNED', 
+                assignedDate: assignedDateTime,
+                scheduledDate: moveToOngoingDate,
+                scheduledTimeSlot: timeSlotToUse,
+                requirements: requirements
+              };
+            }
+            return job;
+          });
+        });
+        return updated;
+      });
+
+      // Reload jobs to ensure everything is updated everywhere
+      await loadFilteredJobs(statusFilter, currentPage);
+
+      toast.success('Job moved to ongoing with updated schedule');
+
+      // Close dialog and reset state
+      setMoveToOngoingDialogOpen(false);
+      setSelectedJobForMoveToOngoing(null);
+      setMoveToOngoingDate('');
+      setMoveToOngoingTimeSlot('MORNING');
+      setMoveToOngoingCustomTime('');
+    } catch (error) {
+      console.error('Error moving job to ongoing:', error);
+      toast.error('Failed to move job to ongoing');
+    } finally {
+      setIsUpdating(false);
+    }
+  };
+
   // Handle job denial
   const handleDenyJob = async (job: Job) => {
     // Fetch full job data with customer if not already loaded
@@ -6802,10 +6988,16 @@ const AdminDashboard = () => {
                                         </>
                                       )}
                                       {(job.status === 'FOLLOW_UP' || job.status === 'RESCHEDULED') && (
-                                        <DropdownMenuItem onClick={() => handleScheduleFollowUp(job)}>
-                                          <CalendarPlus className="mr-2 h-4 w-4" />
-                                          Schedule Follow-up
-                                        </DropdownMenuItem>
+                                        <>
+                                          <DropdownMenuItem onClick={() => handleMoveToOngoing(job)}>
+                                            <ArrowRight className="mr-2 h-4 w-4" />
+                                            Move to Ongoing
+                                          </DropdownMenuItem>
+                                          <DropdownMenuItem onClick={() => handleScheduleFollowUp(job)}>
+                                            <CalendarPlus className="mr-2 h-4 w-4" />
+                                            Schedule Follow-up
+                                          </DropdownMenuItem>
+                                        </>
                                       )}
                                       <DropdownMenuItem 
                                         onClick={() => handleEditJob(job)}
@@ -7454,15 +7646,107 @@ const AdminDashboard = () => {
       />
 
       {/* Follow-up Modal */}
-      <FollowUpModal
-        isOpen={followUpModalOpen}
-        onClose={() => {
-          setFollowUpModalOpen(false);
-          setSelectedJobForFollowUp(null);
-        }}
-        job={selectedJobForFollowUp}
-        onScheduleFollowUp={handleFollowUpSubmit}
-      />
+        <FollowUpModal
+          isOpen={followUpModalOpen}
+          onClose={() => {
+            setFollowUpModalOpen(false);
+            setSelectedJobForFollowUp(null);
+          }}
+          job={selectedJobForFollowUp}
+          onScheduleFollowUp={handleFollowUpSubmit}
+        />
+
+        {/* Move to Ongoing Dialog */}
+        <Dialog open={moveToOngoingDialogOpen} onOpenChange={setMoveToOngoingDialogOpen}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Move to Ongoing</DialogTitle>
+              <DialogDescription>
+                Please select the new scheduled date and time slot for this job.
+              </DialogDescription>
+            </DialogHeader>
+            <div className="space-y-4 py-4">
+              <div>
+                <Label htmlFor="admin-ongoing-date">Scheduled Date *</Label>
+                <Input
+                  id="admin-ongoing-date"
+                  type="date"
+                  value={moveToOngoingDate}
+                  onChange={(e) => setMoveToOngoingDate(e.target.value)}
+                  className="mt-1"
+                  required
+                />
+              </div>
+              <div>
+                <Label htmlFor="admin-ongoing-time-slot">Time Slot *</Label>
+                <Select
+                  value={moveToOngoingTimeSlot}
+                  onValueChange={(value: 'MORNING' | 'AFTERNOON' | 'EVENING' | 'CUSTOM') => {
+                    setMoveToOngoingTimeSlot(value);
+                    // Set default time based on time slot
+                    if (value === 'MORNING') {
+                      setMoveToOngoingCustomTime('');
+                    } else if (value === 'AFTERNOON') {
+                      setMoveToOngoingCustomTime('');
+                    } else if (value === 'EVENING') {
+                      setMoveToOngoingCustomTime('');
+                    } else {
+                      // CUSTOM - use current time
+                      const now = new Date();
+                      const customTime = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+                      setMoveToOngoingCustomTime(customTime);
+                    }
+                  }}
+                >
+                  <SelectTrigger id="admin-ongoing-time-slot" className="mt-1">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="MORNING">Morning (9 AM - 12 PM)</SelectItem>
+                    <SelectItem value="AFTERNOON">Afternoon (12 PM - 5 PM)</SelectItem>
+                    <SelectItem value="EVENING">Evening (5 PM - 8 PM)</SelectItem>
+                    <SelectItem value="CUSTOM">Custom Time</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              {moveToOngoingTimeSlot === 'CUSTOM' && (
+                <div>
+                  <Label htmlFor="admin-ongoing-custom-time">Custom Time *</Label>
+                  <Input
+                    id="admin-ongoing-custom-time"
+                    type="time"
+                    value={moveToOngoingCustomTime}
+                    onChange={(e) => setMoveToOngoingCustomTime(e.target.value)}
+                    className="mt-1"
+                    required
+                  />
+                </div>
+              )}
+            </div>
+            <DialogFooter>
+              <Button
+                variant="outline"
+                onClick={() => {
+                  setMoveToOngoingDialogOpen(false);
+                  setSelectedJobForMoveToOngoing(null);
+                  setMoveToOngoingDate('');
+                  setMoveToOngoingTimeSlot('MORNING');
+                  setMoveToOngoingCustomTime('');
+                }}
+                disabled={isUpdating}
+              >
+                Cancel
+              </Button>
+              <Button
+                onClick={performMoveToOngoing}
+                disabled={isUpdating || !moveToOngoingDate || (moveToOngoingTimeSlot === 'CUSTOM' && !moveToOngoingCustomTime)}
+                className="bg-black hover:bg-gray-800 text-white"
+              >
+                {isUpdating ? 'Moving...' : 'Move to Ongoing'}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
 
       {/* Deny Job Dialog */}
       <DenyJobDialog

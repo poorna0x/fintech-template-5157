@@ -309,6 +309,8 @@ const TechnicianDashboard = () => {
   const [selectedJobForMoveToOngoing, setSelectedJobForMoveToOngoing] = useState<Job | null>(null);
   const [moveToOngoingDate, setMoveToOngoingDate] = useState<string>('');
   const [moveToOngoingTime, setMoveToOngoingTime] = useState<string>('');
+  const [moveToOngoingTimeSlot, setMoveToOngoingTimeSlot] = useState<'MORNING' | 'AFTERNOON' | 'EVENING' | 'CUSTOM'>('MORNING');
+  const [moveToOngoingCustomTime, setMoveToOngoingCustomTime] = useState<string>('');
   // Options dialog state for 3-dot menu
   const [optionsDialogOpen, setOptionsDialogOpen] = useState<{[jobId: string]: boolean}>({});
   const [selectedJobForOptions, setSelectedJobForOptions] = useState<Job | null>(null);
@@ -1923,10 +1925,30 @@ const TechnicianDashboard = () => {
     // Set default values to current date and time
     const now = new Date();
     const today = now.toISOString().split('T')[0];
-    const currentTime = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+    const currentHour = now.getHours();
+    
+    // Determine time slot based on current time
+    let defaultTimeSlot: 'MORNING' | 'AFTERNOON' | 'EVENING' | 'CUSTOM' = 'MORNING';
+    let defaultTime = '09:00'; // Default to 9 AM for MORNING
+    
+    if (currentHour >= 5 && currentHour < 12) {
+      defaultTimeSlot = 'MORNING';
+      defaultTime = '09:00';
+    } else if (currentHour >= 12 && currentHour < 17) {
+      defaultTimeSlot = 'AFTERNOON';
+      defaultTime = '14:00';
+    } else if (currentHour >= 17 && currentHour < 20) {
+      defaultTimeSlot = 'EVENING';
+      defaultTime = '17:00';
+    } else {
+      defaultTimeSlot = 'CUSTOM';
+      defaultTime = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+    }
     
     setMoveToOngoingDate(today);
-    setMoveToOngoingTime(currentTime);
+    setMoveToOngoingTime(defaultTime);
+    setMoveToOngoingTimeSlot(defaultTimeSlot);
+    setMoveToOngoingCustomTime(defaultTimeSlot === 'CUSTOM' ? defaultTime : '');
     setSelectedJobForMoveToOngoing(job);
     setMoveToOngoingDialogOpen(true);
   };
@@ -1935,22 +1957,87 @@ const TechnicianDashboard = () => {
   const performMoveToOngoing = async () => {
     if (!selectedJobForMoveToOngoing) return;
 
-    if (!moveToOngoingDate || !moveToOngoingTime) {
-      toast.error('Please select both date and time');
+    if (!moveToOngoingDate) {
+      toast.error('Please select a date');
+      return;
+    }
+
+    if (moveToOngoingTimeSlot === 'CUSTOM' && !moveToOngoingCustomTime) {
+      toast.error('Please enter a custom time');
       return;
     }
 
     try {
       setIsUpdating(true);
       
-      // Combine date and time into ISO string
-      const dateTimeString = `${moveToOngoingDate}T${moveToOngoingTime}:00`;
+      // Determine the time to use based on time slot
+      let timeToUse: string;
+      if (moveToOngoingTimeSlot === 'CUSTOM') {
+        timeToUse = moveToOngoingCustomTime;
+      } else if (moveToOngoingTimeSlot === 'MORNING') {
+        timeToUse = '09:00';
+      } else if (moveToOngoingTimeSlot === 'AFTERNOON') {
+        timeToUse = '14:00';
+      } else { // EVENING
+        timeToUse = '17:00';
+      }
+      
+      // Combine date and time into ISO string for assigned_date
+      const dateTimeString = `${moveToOngoingDate}T${timeToUse}:00`;
       const assignedDateTime = new Date(dateTimeString).toISOString();
 
-      const { error } = await db.jobs.update(selectedJobForMoveToOngoing.id, {
+      // Update job with new scheduled date, time slot, and status
+      // If CUSTOM is selected, convert to appropriate time slot and store custom time in requirements
+      let timeSlotToUse: 'MORNING' | 'AFTERNOON' | 'EVENING' = moveToOngoingTimeSlot as any;
+      let customTimeInRequirements: string | null = null;
+      
+      if (moveToOngoingTimeSlot === 'CUSTOM' && moveToOngoingCustomTime) {
+        // Parse the custom time to determine time slot
+        const [hours] = moveToOngoingCustomTime.split(':').map(Number);
+        if (hours < 13) {
+          timeSlotToUse = 'MORNING';
+        } else if (hours < 18) {
+          timeSlotToUse = 'AFTERNOON';
+        } else {
+          timeSlotToUse = 'EVENING';
+        }
+        customTimeInRequirements = moveToOngoingCustomTime;
+      }
+      
+      // Get current requirements to preserve existing data
+      const currentJob = jobs.find(j => j.id === selectedJobForMoveToOngoing.id);
+      let requirements: any[] = [];
+      try {
+        requirements = currentJob?.requirements ? (Array.isArray(currentJob.requirements) ? currentJob.requirements : [currentJob.requirements]) : [];
+      } catch (e) {
+        requirements = [];
+      }
+      
+      // Update or add custom_time in requirements
+      if (customTimeInRequirements) {
+        // Find or create a requirement object to store custom_time
+        let found = false;
+        for (let i = 0; i < requirements.length; i++) {
+          if (requirements[i] && typeof requirements[i] === 'object' && !Array.isArray(requirements[i])) {
+            requirements[i].custom_time = customTimeInRequirements;
+            found = true;
+            break;
+          }
+        }
+        if (!found) {
+          requirements.push({ custom_time: customTimeInRequirements });
+        }
+      }
+      
+      const updateData: any = {
         status: 'ASSIGNED',
-        assigned_date: assignedDateTime
-      });
+        scheduled_date: moveToOngoingDate,
+        scheduled_time_slot: timeSlotToUse,
+        assigned_date: assignedDateTime,
+        requirements: requirements
+      };
+
+      const { error } = await db.jobs.update(selectedJobForMoveToOngoing.id, updateData);
 
       if (error) {
         throw new Error(error.message);
@@ -1969,18 +2056,33 @@ const TechnicianDashboard = () => {
         return newSet;
       });
 
-      // Update local state
-      setJobs(prev => prev.map(j => 
-        j.id === selectedJobForMoveToOngoing.id 
-          ? { ...j, status: 'ASSIGNED', assignedDate: assignedDateTime }
-          : j
-      ));
+      // Reload jobs to ensure everything is updated everywhere
+      await loadAssignedJobs();
+
+      // Update local state as well
+      setJobs(prev => prev.map(j => {
+        if (j.id === selectedJobForMoveToOngoing.id) {
+          return { 
+            ...j, 
+            status: 'ASSIGNED', 
+            assignedDate: assignedDateTime,
+            scheduledDate: moveToOngoingDate,
+            scheduledTimeSlot: timeSlotToUse,
+            requirements: requirements
+          };
+        }
+        return j;
+      }));
+
+      toast.success('Job moved to ongoing with updated schedule');
 
       // Close dialog and reset state
       setMoveToOngoingDialogOpen(false);
       setSelectedJobForMoveToOngoing(null);
       setMoveToOngoingDate('');
       setMoveToOngoingTime('');
+      setMoveToOngoingTimeSlot('MORNING');
+      setMoveToOngoingCustomTime('');
     } catch (error) {
       console.error('Error moving job to ongoing:', error);
       toast.error('Failed to move job to ongoing');
@@ -4372,12 +4474,12 @@ const TechnicianDashboard = () => {
             <DialogHeader>
               <DialogTitle>Move to Ongoing</DialogTitle>
               <DialogDescription>
-                Please select the date and time when this job should be moved to ongoing status.
+                Please select the new scheduled date and time slot for this job.
               </DialogDescription>
             </DialogHeader>
             <div className="space-y-4 py-4">
               <div>
-                <Label htmlFor="ongoing-date">Date *</Label>
+                <Label htmlFor="ongoing-date">Scheduled Date *</Label>
                 <Input
                   id="ongoing-date"
                   type="date"
@@ -4388,16 +4490,54 @@ const TechnicianDashboard = () => {
                 />
               </div>
               <div>
-                <Label htmlFor="ongoing-time">Time *</Label>
-                <Input
-                  id="ongoing-time"
-                  type="time"
-                  value={moveToOngoingTime}
-                  onChange={(e) => setMoveToOngoingTime(e.target.value)}
-                  className="mt-1"
-                  required
-                />
+                <Label htmlFor="ongoing-time-slot">Time Slot *</Label>
+                <Select
+                  value={moveToOngoingTimeSlot}
+                  onValueChange={(value: 'MORNING' | 'AFTERNOON' | 'EVENING' | 'CUSTOM') => {
+                    setMoveToOngoingTimeSlot(value);
+                    // Set default time based on time slot
+                    if (value === 'MORNING') {
+                      setMoveToOngoingTime('09:00');
+                      setMoveToOngoingCustomTime('');
+                    } else if (value === 'AFTERNOON') {
+                      setMoveToOngoingTime('14:00');
+                      setMoveToOngoingCustomTime('');
+                    } else if (value === 'EVENING') {
+                      setMoveToOngoingTime('17:00');
+                      setMoveToOngoingCustomTime('');
+                    } else {
+                      // CUSTOM - use current time
+                      const now = new Date();
+                      const customTime = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+                      setMoveToOngoingTime(customTime);
+                      setMoveToOngoingCustomTime(customTime);
+                    }
+                  }}
+                >
+                  <SelectTrigger id="ongoing-time-slot" className="mt-1">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="MORNING">Morning (9 AM - 12 PM)</SelectItem>
+                    <SelectItem value="AFTERNOON">Afternoon (12 PM - 5 PM)</SelectItem>
+                    <SelectItem value="EVENING">Evening (5 PM - 8 PM)</SelectItem>
+                    <SelectItem value="CUSTOM">Custom Time</SelectItem>
+                  </SelectContent>
+                </Select>
               </div>
+              {moveToOngoingTimeSlot === 'CUSTOM' && (
+                <div>
+                  <Label htmlFor="ongoing-custom-time">Custom Time *</Label>
+                  <Input
+                    id="ongoing-custom-time"
+                    type="time"
+                    value={moveToOngoingCustomTime}
+                    onChange={(e) => setMoveToOngoingCustomTime(e.target.value)}
+                    className="mt-1"
+                    required
+                  />
+                </div>
+              )}
             </div>
             <DialogFooter>
               <Button
@@ -4407,6 +4547,8 @@ const TechnicianDashboard = () => {
                   setSelectedJobForMoveToOngoing(null);
                   setMoveToOngoingDate('');
                   setMoveToOngoingTime('');
+                  setMoveToOngoingTimeSlot('MORNING');
+                  setMoveToOngoingCustomTime('');
                 }}
                 disabled={isUpdating}
               >
@@ -4414,7 +4556,7 @@ const TechnicianDashboard = () => {
               </Button>
               <Button
                 onClick={performMoveToOngoing}
-                disabled={isUpdating || !moveToOngoingDate || !moveToOngoingTime}
+                disabled={isUpdating || !moveToOngoingDate || (moveToOngoingTimeSlot === 'CUSTOM' && !moveToOngoingCustomTime)}
                 className="bg-black hover:bg-gray-800 text-white"
               >
                 {isUpdating ? 'Moving...' : 'Move to Ongoing'}
