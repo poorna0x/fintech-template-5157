@@ -54,7 +54,8 @@ import {
   DollarSign,
   BarChart3,
   ArrowLeft,
-  X
+  X,
+  LogOut
 } from 'lucide-react';
 import { db, supabase } from '@/lib/supabase';
 import { registerAdminPWA, disablePWA } from '@/lib/pwa';
@@ -118,7 +119,7 @@ declare global {
 
 const AdminDashboard = () => {
   const navigate = useNavigate();
-  const { user, isAdmin, loading: authLoading } = useAuth();
+  const { user, isAdmin, loading: authLoading, logout } = useAuth();
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [jobs, setJobs] = useState<Job[]>([]);
   const [technicians, setTechnicians] = useState<Technician[]>([]);
@@ -5885,19 +5886,64 @@ const AdminDashboard = () => {
         {/* Page Header */}
         <div className="mb-6 sm:mb-8">
           <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-            <div>
-              <h1 className="text-2xl sm:text-3xl font-bold text-gray-900 mb-2">Admin Dashboard</h1>
-              <p className="text-sm sm:text-base text-gray-600">Manage customers, jobs, and system operations</p>
+            
+            {/* Search Bar - visible on desktop only, replaces title */}
+            <div className="hidden sm:flex flex-1 max-w-2xl gap-2">
+              <div className="relative flex-1">
+                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
+                <Input
+                  placeholder="Search by customer ID, name, phone, or email..."
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  onKeyPress={handleSearchKeyPress}
+                  className="pl-10 bg-white border-gray-300 focus:border-blue-500 focus:ring-blue-500"
+                />
             </div>
-            <div className="flex gap-3 flex-wrap">
+              <Button
+                onClick={handleSearch}
+                disabled={isSearching || !searchQuery.trim()}
+                className="bg-blue-600 hover:bg-blue-700 text-white px-4"
+              >
+                {isSearching ? (
+                  <div className="flex items-center gap-2">
+                    <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                    <span>Searching...</span>
+                  </div>
+                ) : (
+                  <div className="flex items-center gap-2">
+                    <Search className="w-4 h-4" />
+                    <span>Search</span>
+                  </div>
+                )}
+              </Button>
+              {searchQuery && (
+                <Button
+                  onClick={() => {
+                    setSearchQuery('');
+                    setSearchTerm('');
+                    setIsSearching(false);
+                  }}
+                  variant="outline"
+                  className="px-4"
+                  title="Clear"
+                >
+                  <X className="w-4 h-4" />
+                </Button>
+              )}
+            </div>
+            <div className="flex flex-col sm:flex-row gap-3 sm:flex-wrap">
+              {/* All 6 buttons in a 3x2 grid on mobile, flex on desktop */}
+              <div className="grid grid-cols-3 gap-2 sm:flex sm:gap-2 w-full sm:w-auto">
+                {/* Row 1: Settings, Recent, Payments */}
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
                   <Button 
                     variant="outline"
-                    className="flex items-center gap-2"
+                      className="flex items-center justify-center gap-2 w-full sm:w-auto sm:px-3"
+                      title="Settings"
                   >
                     <Settings className="w-4 h-4" />
-                    Settings
+                      <span className="hidden sm:inline">Settings</span>
                   </Button>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="end" className="w-56">
@@ -5915,29 +5961,42 @@ const AdminDashboard = () => {
                     <FileText className="w-4 h-4 mr-2" />
                     View AMCs
                   </DropdownMenuItem>
+                  <DropdownMenuItem 
+                    onClick={async () => {
+                      await logout();
+                    }}
+                    className="text-red-600 focus:text-red-600"
+                  >
+                    <LogOut className="w-4 h-4 mr-2" />
+                    Logout
+                  </DropdownMenuItem>
                 </DropdownMenuContent>
               </DropdownMenu>
               <Button
                 variant="outline"
-                className="flex items-center gap-2"
+                  className="flex items-center justify-center gap-2 w-full sm:w-auto sm:px-3"
                 onClick={() => setRecentAccountsDialogOpen(true)}
+                  title="Recent"
               >
                 <Clock className="w-4 h-4" />
-                Recent
+                  <span className="hidden sm:inline">Recent</span>
               </Button>
-              <div className="flex gap-2 flex-wrap">
                 <Button
                   variant={(currentView as string) === 'payments' ? 'default' : 'outline'}
                   onClick={() => handleViewChange('payments')}
-                  className="flex items-center gap-2"
+                  className="flex items-center justify-center gap-2 w-full sm:w-auto sm:px-3"
+                  title="Payments"
                 >
                   <DollarSign className="w-4 h-4" />
                   <span className="hidden sm:inline">Payments</span>
                 </Button>
+                
+                {/* Row 2: Billing, Analytics, Calling */}
                 <Button
                   variant={(currentView as string) === 'billing' ? 'default' : 'outline'}
                   onClick={() => handleViewChange('billing')}
-                  className="flex items-center gap-2"
+                  className="flex items-center justify-center gap-2 w-full sm:w-auto sm:px-3"
+                  title="Billing"
                 >
                   <Receipt className="w-4 h-4" />
                   <span className="hidden sm:inline">Billing</span>
@@ -5945,7 +6004,8 @@ const AdminDashboard = () => {
                 <Button
                   variant={(currentView as string) === 'analytics' ? 'default' : 'outline'}
                   onClick={() => handleViewChange('analytics')}
-                  className="flex items-center gap-2"
+                  className="flex items-center justify-center gap-2 w-full sm:w-auto sm:px-3"
+                  title="Analytics"
                 >
                   <BarChart3 className="w-4 h-4" />
                   <span className="hidden sm:inline">Analytics</span>
@@ -5953,12 +6013,15 @@ const AdminDashboard = () => {
                 <Button
                   variant={(currentView as string) === 'calling' ? 'default' : 'outline'}
                   onClick={() => handleViewChange('calling')}
-                  className="flex items-center gap-2"
+                  className="flex items-center justify-center gap-2 w-full sm:w-auto sm:px-3"
+                  title="Calling"
                 >
                   <PhoneCall className="w-4 h-4" />
                   <span className="hidden sm:inline">Calling</span>
                 </Button>
               </div>
+              
+              {/* Add Customer button */}
               <Button 
                 onClick={handleAddCustomer}
                 className="bg-blue-600 hover:bg-blue-700 text-white w-full sm:w-auto px-4 py-2 text-sm sm:text-base"
@@ -5971,8 +6034,8 @@ const AdminDashboard = () => {
           </div>
         </div>
 
-        {/* Search Bar */}
-        <div className="mb-4 sm:mb-6">
+        {/* Search Bar - visible on mobile only (desktop version is in header) */}
+        <div className="mb-4 sm:mb-6 sm:hidden">
           <div className="flex gap-2 w-full max-w-2xl">
             <div className="relative flex-1">
             <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
@@ -5981,7 +6044,7 @@ const AdminDashboard = () => {
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 onKeyPress={handleSearchKeyPress}
-              className="pl-10 bg-white border-gray-300 focus:border-blue-500 focus:ring-blue-500 text-sm sm:text-base"
+              className="pl-10 bg-white border-gray-300 focus:border-blue-500 focus:ring-blue-500 text-sm"
             />
           </div>
             <Button
@@ -6001,16 +6064,18 @@ const AdminDashboard = () => {
                 </div>
               )}
             </Button>
-            {searchTerm && (
+            {searchQuery && (
               <Button
-                onClick={handleClearSearch}
+                onClick={() => {
+                  setSearchQuery('');
+                  setSearchTerm('');
+                  setIsSearching(false);
+                }}
                 variant="outline"
-                className="border-gray-300 hover:bg-gray-50"
+                className="px-4"
+                title="Clear"
               >
-                <div className="flex items-center gap-2">
-                  <span className="text-gray-500">×</span>
-                  <span className="hidden sm:inline">Clear</span>
-                </div>
+                <X className="w-4 h-4" />
               </Button>
             )}
           </div>

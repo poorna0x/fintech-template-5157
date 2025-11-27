@@ -56,13 +56,13 @@ const CustomerPhotoGalleryDialog: React.FC<CustomerPhotoGalleryDialogProps> = ({
         <DialogHeader>
           <DialogTitle className="flex items-center justify-between">
             <span>Photo Gallery</span>
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-4 pr-10">
               <span className="text-sm text-gray-500">
                 {customer.customer_id || customer.customerId} - {customer.fullName || customer.full_name}
               </span>
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
-                  <Button variant="outline" size="sm">
+                  <Button variant="outline" size="sm" className="mr-4">
                     <MoreVertical className="w-4 h-4" />
                   </Button>
                 </DropdownMenuTrigger>
