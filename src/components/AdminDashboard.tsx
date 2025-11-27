@@ -5896,7 +5896,7 @@ const AdminDashboard = () => {
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
                   onKeyPress={handleSearchKeyPress}
-                  className="pl-10 bg-white border-gray-300 focus:border-blue-500 focus:ring-blue-500"
+                  className="pl-10 bg-white border-gray-400 focus:border-blue-500 focus:ring-blue-500"
                 />
             </div>
               <Button
@@ -6182,7 +6182,7 @@ const AdminDashboard = () => {
           {/* Customer Cards with Jobs */}
           <div className="space-y-6">
             {displayedCustomers.map(({ customer, allJobs, upcomingJobs, completedJobs, cancelledJobs }) => (
-              <Card key={customer.id} className="bg-white border border-gray-200 hover:border-gray-300 hover:shadow-md transition-all duration-200 overflow-hidden mb-6 rounded-lg group">
+              <Card key={customer.id} className="bg-white border border-gray-300 hover:border-gray-400 hover:shadow-md transition-all duration-200 overflow-hidden mb-6 rounded-lg group">
                 <CustomerCardHeader
                   customer={customer}
                   customerAMCStatus={customerAMCStatus}
@@ -6370,7 +6370,7 @@ const AdminDashboard = () => {
                               formattedFollowUpScheduledAt={formattedFollowUpScheduledAt}
                               followUpScheduledByName={followUpScheduledByName}
                             />
-                            <div className={`bg-white rounded-lg border ${job.status === 'PENDING' && !(job.assigned_technician_id || job.assignedTechnicianId) ? 'border-blue-500 border-2' : 'border-gray-200'} hover:border-gray-300 hover:shadow-sm transition-all duration-200 overflow-hidden group`}>
+                            <div className={`bg-white rounded-lg border ${job.status === 'PENDING' && !(job.assigned_technician_id || job.assignedTechnicianId) ? 'border-blue-500 border-2' : 'border-gray-300'} hover:border-gray-400 hover:shadow-sm transition-all duration-200 overflow-hidden group`}>
                             <div className="p-3 sm:p-4">
                               <div className="flex items-start justify-between mb-4">
                                 <div className="flex-1 min-w-0">
@@ -6730,7 +6730,7 @@ const AdminDashboard = () => {
 
                                   {/* Photos Section - Mobile responsive */}
                                   {allPhotos.length > 0 && (
-                                    <div className="mt-4 pt-4 border-t border-gray-100">
+                                    <div className="mt-4 pt-4 border-t border-gray-200">
                                       <button
                                         onClick={() => openPhotoGallery(job.id, allPhotos, 'photos')}
                                         className="w-full sm:w-auto text-sm text-gray-600 hover:text-gray-800 font-medium flex items-center justify-center sm:justify-start gap-2 bg-gray-50 hover:bg-gray-100 px-3 py-2 rounded-md transition-colors"
@@ -7666,7 +7666,7 @@ const AdminDashboard = () => {
                   .map((customer) => (
                     <div
                       key={customer.id}
-                      className="border border-gray-200 rounded-lg p-4 hover:bg-gray-50 transition-colors"
+                      className="border border-gray-300 rounded-lg p-4 hover:bg-gray-50 transition-colors"
                     >
                       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
                         <div className="flex-1">
