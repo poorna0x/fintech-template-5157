@@ -1100,9 +1100,11 @@ const AdminDashboard = () => {
     }
   }, []);
 
-  useEffect(() => {
-    loadQrCodes();
-  }, [loadQrCodes]);
+  // OPTIMIZATION: Defer QR code loading until needed (only load when completing a job)
+  // QR codes are only needed when completing a job, so we don't need to load them on mount
+  // useEffect(() => {
+  //   loadQrCodes();
+  // }, [loadQrCodes]);
 
   // Reload QR codes when page becomes visible only if cache is expired (e.g., when returning from Settings)
   useEffect(() => {
@@ -1125,45 +1127,43 @@ const AdminDashboard = () => {
     };
   }, [loadQrCodes]);
 
-  // Load unique brands and models from database
+  // OPTIMIZATION: Load unique brands and models from database in parallel
   const loadBrandsAndModels = useCallback(async () => {
     try {
-      // Fetch unique brands from customers
-      const { data: customerData, error: customerError } = await supabase
-        .from('customers')
-        .select('brand')
-        .not('brand', 'is', null)
-        .neq('brand', '')
-        .neq('brand', 'Not specified');
+      // OPTIMIZATION: Fetch all 4 queries in parallel instead of sequentially
+      const [customerBrandsResult, jobBrandsResult, customerModelsResult, jobModelsResult] = await Promise.all([
+        supabase
+          .from('customers')
+          .select('brand')
+          .not('brand', 'is', null)
+          .neq('brand', '')
+          .neq('brand', 'Not specified'),
+        supabase
+          .from('jobs')
+          .select('brand')
+          .not('brand', 'is', null)
+          .neq('brand', '')
+          .neq('brand', 'Not specified'),
+        supabase
+          .from('customers')
+          .select('model')
+          .not('model', 'is', null)
+          .neq('model', '')
+          .neq('model', 'Not specified'),
+        supabase
+          .from('jobs')
+          .select('model')
+          .not('model', 'is', null)
+          .neq('model', '')
+          .neq('model', 'Not specified')
+      ]);
       
-      // Fetch unique brands from jobs
-      const { data: jobData, error: jobError } = await supabase
-        .from('jobs')
-        .select('brand')
-        .not('brand', 'is', null)
-        .neq('brand', '')
-        .neq('brand', 'Not specified');
-      
-      // Fetch unique models from customers
-      const { data: customerModelData, error: customerModelError } = await supabase
-        .from('customers')
-        .select('model')
-        .not('model', 'is', null)
-        .neq('model', '')
-        .neq('model', 'Not specified');
-      
-      // Fetch unique models from jobs
-      const { data: jobModelData, error: jobModelError } = await supabase
-        .from('jobs')
-        .select('model')
-        .not('model', 'is', null)
-        .neq('model', '')
-        .neq('model', 'Not specified');
-      
-      if (!customerError && !jobError && !customerModelError && !jobModelError) {
+      // Only process if all queries succeeded
+      if (!customerBrandsResult.error && !jobBrandsResult.error && 
+          !customerModelsResult.error && !jobModelsResult.error) {
         // Extract all brands (handle comma-separated values)
         const allBrands = new Set<string>();
-        [...(customerData || []), ...(jobData || [])].forEach(item => {
+        [...(customerBrandsResult.data || []), ...(jobBrandsResult.data || [])].forEach(item => {
           if (item.brand) {
             item.brand.split(',').forEach((b: string) => {
               const trimmed = b.trim();
@@ -1176,7 +1176,7 @@ const AdminDashboard = () => {
         
         // Extract all models (handle comma-separated values)
         const allModels = new Set<string>();
-        [...(customerModelData || []), ...(jobModelData || [])].forEach(item => {
+        [...(customerModelsResult.data || []), ...(jobModelsResult.data || [])].forEach(item => {
           if (item.model) {
             item.model.split(',').forEach((m: string) => {
               const trimmed = m.trim();
@@ -1191,6 +1191,7 @@ const AdminDashboard = () => {
         setDbModels(Array.from(allModels));
       }
     } catch (error) {
+      console.error('Error loading brands and models:', error);
     }
   }, []);
 
@@ -1292,64 +1293,61 @@ const AdminDashboard = () => {
     try {
       setLoading(true);
       
-      // Automatically create AMC service jobs for customers who need service (4 months since last service)
-      // Wait for authentication first, then run in background
-      const waitForAuth = async () => {
-        // Wait up to 5 seconds for auth session
-        for (let i = 0; i < 10; i++) {
-          const { data: { session } } = await supabase.auth.getSession();
-          if (session) {
-            console.log('✅ Auth session found, creating AMC jobs...');
-            break;
-          }
-          await new Promise(resolve => setTimeout(resolve, 500));
+      // OPTIMIZATION: Run AMC job creation in background without blocking initial load
+      // Check auth once and proceed - no wait loop
+      supabase.auth.getSession().then(({ data: { session } }) => {
+        if (session) {
+          // Run AMC job creation in background without blocking
+          db.amcContracts.createAMCServiceJobs().then((result) => {
+            if (result.error) {
+              console.error('Error creating AMC service jobs:', result.error);
+            } else if (result.created > 0) {
+              console.log(`✅ Created ${result.created} AMC service jobs automatically`);
+              toast.success(`Created ${result.created} AMC service job${result.created > 1 ? 's' : ''} automatically`);
+              // Reload jobs after creating AMC service jobs
+              loadFilteredJobs(statusFilter, currentPage);
+            }
+          }).catch((error) => {
+            console.error('Error in AMC service job creation:', error);
+          });
         }
-        
-        // Now run the job creation
-        db.amcContracts.createAMCServiceJobs().then((result) => {
-          if (result.error) {
-            console.error('Error creating AMC service jobs:', result.error);
-          } else if (result.created > 0) {
-            console.log(`✅ Created ${result.created} AMC service jobs automatically`);
-            toast.success(`Created ${result.created} AMC service job${result.created > 1 ? 's' : ''} automatically`);
-            // Reload jobs after creating AMC service jobs
-            loadFilteredJobs(statusFilter, currentPage);
-          }
-        }).catch((error) => {
-          console.error('Error in AMC service job creation:', error);
-        });
-      };
+      }).catch(() => {
+        // Silently fail - auth check failed, skip AMC job creation
+      });
       
-      // Run auth wait in background
-      waitForAuth();
-      
-      // Load customers and technicians (always needed)
-      // Only load jobs for ongoing view initially
-      const [customersResult, techniciansResult] = await Promise.all([
+      // OPTIMIZATION: Parallelize all independent data loading operations
+      const [customersResult, techniciansResult, amcContractsResult, jobCountsResult] = await Promise.all([
         db.customers.getAll(),
-        db.technicians.getAll()
+        db.technicians.getAll(),
+        // Load AMC contracts in parallel
+        supabase
+          .from('amc_contracts')
+          .select('customer_id, status')
+          .eq('status', 'ACTIVE'),
+        // Load job counts in parallel
+        db.jobs.getCounts()
       ]);
 
-      // Load AMC contracts to check which customers have active AMC
-      const { data: amcContracts } = await supabase
-        .from('amc_contracts')
-        .select('customer_id, status')
-        .eq('status', 'ACTIVE');
-      
-      // Create a map of customer ID to hasActiveAMC
+      // Process AMC contracts
       const amcStatusMap: Record<string, boolean> = {};
-      if (amcContracts) {
-        amcContracts.forEach((amc: any) => {
+      if (amcContractsResult.data) {
+        amcContractsResult.data.forEach((amc: any) => {
           amcStatusMap[amc.customer_id] = true;
         });
       }
       setCustomerAMCStatus(amcStatusMap);
+
+      // Process job counts
+      if (jobCountsResult.data) {
+        setJobCounts(jobCountsResult.data);
+      }
 
       // Log errors for debugging
       if (customersResult.error) {
         toast.error(`Failed to load customers: ${customersResult.error.message}`);
       }
       if (techniciansResult.error) {
+        console.error('Failed to load technicians:', techniciansResult.error);
       }
 
       if (customersResult.data) {
@@ -1382,14 +1380,14 @@ const AdminDashboard = () => {
         setTechnicians([]);
       }
 
-      // Load job counts for stats
-      await loadJobCounts();
-      
-      // Load brands and models from database
-      await loadBrandsAndModels();
-      
-      // Load initial jobs based on filter (defaults to ALL which shows ongoing)
-      await loadFilteredJobs(statusFilter, currentPage);
+      // OPTIMIZATION: Load brands/models and jobs in parallel (non-blocking)
+      // Brands/models can load in background while jobs load
+      Promise.all([
+        loadBrandsAndModels(),
+        loadFilteredJobs(statusFilter, currentPage)
+      ]).catch((error) => {
+        console.error('Error loading secondary data:', error);
+      });
 
     } catch (error) {
       toast.error(`Failed to load dashboard data: ${error instanceof Error ? error.message : 'Unknown error'}`);
@@ -5402,6 +5400,17 @@ const AdminDashboard = () => {
 
   // Handle job completion
   const handleCompleteJob = async (job: Job) => {
+    // OPTIMIZATION: Load QR codes only when completing a job (deferred loading)
+    // Check cache first, then load if needed
+    const cachedQrCodes = getCachedQrCodes();
+    if (!cachedQrCodes || cachedQrCodes.length === 0) {
+      // Load QR codes in background - don't block dialog opening
+      loadQrCodes().catch(err => console.error('Error loading QR codes:', err));
+    } else {
+      // Use cached QR codes immediately
+      setCommonQrCodes(cachedQrCodes);
+    }
+    
     // Fetch full job data with customer if not already loaded
     let jobWithCustomer = job;
     if (!job.customer || !job.serviceType) {
