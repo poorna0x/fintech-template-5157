@@ -31,7 +31,9 @@ import {
   XCircle,
   Clock,
   Edit,
-  Lock
+  Lock,
+  Camera,
+  FileText
 } from 'lucide-react';
 
 // WhatsApp Icon Component
@@ -43,6 +45,8 @@ const WhatsAppIcon = ({ className }: { className?: string }) => (
 import { toast } from 'sonner';
 import { db, supabase } from '@/lib/supabase';
 import { Customer } from '@/types';
+import CustomerPhotoGalleryDialog from '@/components/admin/CustomerPhotoGalleryDialog';
+import CustomerReportDialog from '@/components/admin/CustomerReportDialog';
 
 interface CallHistory {
   id: string;
@@ -96,6 +100,12 @@ const CallingPage = ({ hideHeader = false, onBack }: CallingPageProps = {}) => {
   const [paginatedCustomers, setPaginatedCustomers] = useState<CustomerWithHistory[]>([]);
   const [whatsappDialogOpen, setWhatsappDialogOpen] = useState(false);
   const [selectedCustomerForWhatsApp, setSelectedCustomerForWhatsApp] = useState<CustomerWithHistory | null>(null);
+  const [customerPhotoGalleryOpen, setCustomerPhotoGalleryOpen] = useState(false);
+  const [selectedCustomerForPhotos, setSelectedCustomerForPhotos] = useState<Customer | null>(null);
+  const [customerPhotos, setCustomerPhotos] = useState<string[]>([]);
+  const [isLoadingPhotos, setIsLoadingPhotos] = useState(false);
+  const [customerReportDialogOpen, setCustomerReportDialogOpen] = useState(false);
+  const [selectedCustomerForReport, setSelectedCustomerForReport] = useState<Customer | null>(null);
 
   // Redirect to admin login if not authenticated or not admin (only if standalone page)
   useEffect(() => {
@@ -434,6 +444,115 @@ const CallingPage = ({ hideHeader = false, onBack }: CallingPageProps = {}) => {
     setWhatsappDialogOpen(false);
     setSelectedCustomerForWhatsApp(null);
     openStatusDialog(customer, 'WHATSAPP', customer.phone, message);
+  };
+
+  // Handle viewing photos
+  const handleViewPhotos = async (customer: CustomerWithHistory) => {
+    setSelectedCustomerForPhotos(customer);
+    setCustomerPhotoGalleryOpen(true);
+    // Always reload customer photos to get the latest data
+    const customerId = customer.customer_id || customer.customerId;
+    await loadCustomerPhotos(customerId);
+  };
+
+  // Load customer photos
+  const loadCustomerPhotos = async (customerId: string) => {
+    setIsLoadingPhotos(true);
+    try {
+      if (!customerId) {
+        throw new Error('Customer ID is required but not provided');
+      }
+      
+      // First, find the customer by customer_id to get their UUID
+      const { data: customer, error: customerError } = await db.customers.getByCustomerId(customerId);
+      
+      if (customerError || !customer) {
+        throw new Error(`Customer not found: ${customerError?.message || 'Unknown error'}`);
+      }
+      
+      // Now fetch jobs using the customer's UUID
+      const { data: jobs, error } = await db.jobs.getByCustomerId(customer.id);
+      
+      if (error) {
+        throw error;
+      }
+      
+      // Extract all photos from ALL jobs
+      const photoSet = new Set<string>();
+      
+      const extractPhotoUrls = (photos: any[]): string[] => {
+        if (!Array.isArray(photos)) return [];
+        return photos.map(photo => {
+          if (typeof photo === 'string' && photo.trim() !== '') {
+            const trimmed = photo.trim();
+            if (trimmed.startsWith('http://') || trimmed.startsWith('https://')) {
+              return trimmed;
+            }
+            return null;
+          } else if (photo && typeof photo === 'object') {
+            if (photo.secure_url && typeof photo.secure_url === 'string') {
+              return photo.secure_url.trim();
+            } else if (photo.url && typeof photo.url === 'string') {
+              return photo.url.trim();
+            }
+          }
+          return null;
+        }).filter((url): url is string => {
+          return url !== null && url !== '' && (url.startsWith('http://') || url.startsWith('https://'));
+        });
+      };
+      
+      if (jobs && jobs.length > 0) {
+        jobs.forEach((job: any) => {
+          const jobBeforePhotos = Array.isArray(job.before_photos || job.beforePhotos) 
+            ? (job.before_photos || job.beforePhotos) 
+            : [];
+          extractPhotoUrls(jobBeforePhotos).forEach(url => photoSet.add(url));
+          
+          const jobAfterPhotos = Array.isArray(job.after_photos || job.afterPhotos) 
+            ? (job.after_photos || job.afterPhotos) 
+            : [];
+          extractPhotoUrls(jobAfterPhotos).forEach(url => photoSet.add(url));
+          
+          if (job.requirements) {
+            try {
+              const requirements = typeof job.requirements === 'string' 
+                ? JSON.parse(job.requirements) 
+                : job.requirements;
+              
+              if (Array.isArray(requirements)) {
+                requirements.forEach((req: any) => {
+                  if (req.bill_photos && Array.isArray(req.bill_photos)) {
+                    extractPhotoUrls(req.bill_photos).forEach(url => photoSet.add(url));
+                  }
+                  if (req.payment_photos && Array.isArray(req.payment_photos)) {
+                    extractPhotoUrls(req.payment_photos).forEach(url => photoSet.add(url));
+                  }
+                });
+              } else if (typeof requirements === 'object' && requirements !== null) {
+                if (requirements.bill_photos && Array.isArray(requirements.bill_photos)) {
+                  extractPhotoUrls(requirements.bill_photos).forEach(url => photoSet.add(url));
+                }
+                if (requirements.payment_photos && Array.isArray(requirements.payment_photos)) {
+                  extractPhotoUrls(requirements.payment_photos).forEach(url => photoSet.add(url));
+                }
+              }
+            } catch (e) {
+              console.error('Error parsing requirements:', e);
+            }
+          }
+        });
+      }
+      
+      const uniquePhotos = Array.from(photoSet);
+      setCustomerPhotos(uniquePhotos);
+    } catch (error) {
+      console.error('Error loading customer photos:', error);
+      toast.error('Failed to load photos');
+      setCustomerPhotos([]);
+    } finally {
+      setIsLoadingPhotos(false);
+    }
   };
 
 
@@ -805,6 +924,32 @@ const CallingPage = ({ hideHeader = false, onBack }: CallingPageProps = {}) => {
                         <WhatsAppIcon className="w-4 h-4 mr-2" />
                         WhatsApp
                       </Button>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => handleViewPhotos(customer)}
+                        disabled={isLoadingPhotos && selectedCustomerForPhotos?.id === customer.id}
+                        className="flex-1 sm:flex-none"
+                      >
+                        {isLoadingPhotos && selectedCustomerForPhotos?.id === customer.id ? (
+                          <div className="w-4 h-4 border-2 border-gray-600 border-t-transparent rounded-full animate-spin mr-2" />
+                        ) : (
+                          <Camera className="w-4 h-4 mr-2" />
+                        )}
+                        Photos
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => {
+                          setSelectedCustomerForReport(customer);
+                          setCustomerReportDialogOpen(true);
+                        }}
+                        className="flex-1 sm:flex-none"
+                      >
+                        <FileText className="w-4 h-4 mr-2" />
+                        Reports
+                      </Button>
                     </div>
                   </div>
                 </CardContent>
@@ -1054,6 +1199,54 @@ const CallingPage = ({ hideHeader = false, onBack }: CallingPageProps = {}) => {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* Customer Photo Gallery Dialog */}
+      {selectedCustomerForPhotos && (
+        <CustomerPhotoGalleryDialog
+          open={customerPhotoGalleryOpen}
+          onOpenChange={(open) => {
+            setCustomerPhotoGalleryOpen(open);
+            if (!open) {
+              setSelectedCustomerForPhotos(null);
+              setCustomerPhotos([]);
+            }
+          }}
+          customer={selectedCustomerForPhotos}
+          customerPhotos={{
+            [selectedCustomerForPhotos.customer_id || selectedCustomerForPhotos.customerId || '']: customerPhotos
+          }}
+          uploadingThumbnails={{}}
+          isUploadingPhoto={false}
+          isLoadingPhotos={isLoadingPhotos}
+          isDragOverPhotos={false}
+          isCompressingImage={false}
+          onPhotoUpload={() => {}}
+          onCameraCapture={() => {}}
+          onDragOver={() => {}}
+          onDragLeave={() => {}}
+          onDrop={() => {}}
+          onPhotoClick={(photo, index, total) => {
+            // Open photo in new tab
+            window.open(photo, '_blank');
+          }}
+          onDeletePhoto={() => {
+            // Disable delete in calling page
+          }}
+        />
+      )}
+
+      {/* Customer Report Dialog */}
+      <CustomerReportDialog
+        open={customerReportDialogOpen}
+        customer={selectedCustomerForReport}
+        technicians={[]}
+        onOpenChange={(open) => {
+          setCustomerReportDialogOpen(open);
+          if (!open) {
+            setSelectedCustomerForReport(null);
+          }
+        }}
+      />
     </div>
   );
 };
