@@ -77,90 +77,44 @@ import TechnicianPayments from './TechnicianPayments';
 import BillingStats from './BillingStats';
 import Analytics from './Analytics';
 import CallingPage from '@/pages/CallingPage';
+import { generateJobNumber, formatPreferredTimeSlot, mapServiceTypesToDbValue, extractLocationFromAddressString, bangaloreAreas, levenshteinDistance, calculateSimilarity, extractPhotoUrls, parseJobRequirements, getFormattedTimeSlot } from '@/lib/adminUtils';
+import { StatusBadge } from './admin/StatusBadge';
+import { CustomerCardHeader } from './admin/CustomerCardHeader';
+import { WhatsAppIcon } from './WhatsAppIcon';
+import { ContactSection } from './admin/ContactSection';
+import { CompletedJobSection } from './admin/CompletedJobSection';
+import { DeniedJobSection } from './admin/DeniedJobSection';
+import { FollowUpJobSection } from './admin/FollowUpJobSection';
+import { CompleteJobDialog } from './admin/CompleteJobDialog';
+import { StatsCards } from './admin/StatsCards';
+import EditCustomerDialog from './admin/EditCustomerDialog';
+import AddCustomerDialog from './admin/AddCustomerDialog';
+import CustomerReportDialog from './admin/CustomerReportDialog';
+import SendMessageDialog from './admin/SendMessageDialog';
+import RecentAccountsDialog from './admin/RecentAccountsDialog';
+import ServiceHistoryDialog from './admin/ServiceHistoryDialog';
+import PhotoGalleryDialog from './admin/PhotoGalleryDialog';
+import PhotoViewerDialog from './admin/PhotoViewerDialog';
+import CustomerPhotoGalleryDialog from './admin/CustomerPhotoGalleryDialog';
+import AssignJobDialog from './admin/AssignJobDialog';
+import NewJobDialog from './admin/NewJobDialog';
+import EditJobDialog from './admin/EditJobDialog';
+import PhoneNumbersDialog from './admin/PhoneNumbersDialog';
+import DescriptionDialog from './admin/DescriptionDialog';
+import JobAddressDialog from './admin/JobAddressDialog';
+import AddressDialog from './admin/AddressDialog';
+import DenyJobDialog from './admin/DenyJobDialog';
+import ReassignJobDialog from './admin/ReassignJobDialog';
+import EditCompletedJobDialog from './admin/EditCompletedJobDialog';
 
 declare global {
   interface Window {
-    google: typeof google;
+    google: any;
     initMap: () => void;
   }
 }
 
-// Generate job number utility
-const generateJobNumber = (serviceType: 'RO' | 'SOFTENER'): string => {
-  const prefix = serviceType === 'RO' ? 'RO' : 'WS';
-  const timestamp = Date.now().toString().slice(-6);
-  const random = Math.floor(Math.random() * 100).toString().padStart(2, '0');
-  return `${prefix}${timestamp}${random}`;
-};
-
-// Map service types array to database service_type value
-// Helper function to format preferred time slot with custom time
-const formatPreferredTimeSlot = (timeSlot: string | undefined, customTime: string | null | undefined): string => {
-  if (!timeSlot) return 'Not specified';
-  
-  if (timeSlot === 'CUSTOM' && customTime) {
-    // Format custom time (HH:MM) to readable format (e.g., "2:30 PM")
-    const [hours, minutes] = customTime.split(':');
-    const hour24 = parseInt(hours);
-    const hour12 = hour24 > 12 ? hour24 - 12 : (hour24 === 0 ? 12 : hour24);
-    const ampm = hour24 >= 12 ? 'PM' : 'AM';
-    return `Custom: ${hour12}:${minutes} ${ampm}`;
-  }
-  
-  const timeSlotMap: { [key: string]: string } = {
-    'MORNING': 'Morning (9 AM - 1 PM)',
-    'AFTERNOON': 'Afternoon (1 PM - 6 PM)',
-    'EVENING': 'Evening (6 PM - 9 PM)',
-    'CUSTOM': 'Custom Time'
-  };
-  
-  return timeSlotMap[timeSlot] || timeSlot;
-};
-
-const mapServiceTypesToDbValue = (serviceTypes: string[]): string => {
-  if (serviceTypes.length === 0) return 'RO'; // Default
-  
-  const sortedTypes = [...serviceTypes].sort();
-  const hasRO = sortedTypes.includes('RO');
-  const hasSOFTENER = sortedTypes.includes('SOFTENER');
-  const hasAC = sortedTypes.includes('AC');
-  const hasAPPLIANCE = sortedTypes.includes('APPLIANCE');
-  
-  // Check for ALL_SERVICES (RO, SOFTENER, AC)
-  if (hasRO && hasSOFTENER && hasAC && sortedTypes.length === 3) {
-    return 'ALL_SERVICES';
-  }
-  
-  // Check for RO_SOFTENER
-  if (hasRO && hasSOFTENER && sortedTypes.length === 2) {
-    return 'RO_SOFTENER';
-  }
-  
-  // Check for RO_AC
-  if (hasRO && hasAC && sortedTypes.length === 2) {
-    return 'RO_AC';
-  }
-  
-  // Check for SOFTENER_AC
-  if (hasSOFTENER && hasAC && sortedTypes.length === 2) {
-    return 'SOFTENER_AC';
-  }
-  
-  // Single service types
-  if (sortedTypes.length === 1) {
-    return sortedTypes[0];
-  }
-  
-  // Fallback: if multiple types not matching above, use first one
-  return sortedTypes[0] || 'RO';
-};
-
-// WhatsApp Icon Component
-const WhatsAppIcon = ({ className }: { className?: string }) => (
-  <svg className={className} viewBox="0 0 24 24" fill="currentColor">
-    <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893A11.821 11.821 0 0020.885 3.488"/>
-  </svg>
-);
+// Utility functions moved to @/lib/adminUtils
 
 const AdminDashboard = () => {
   const navigate = useNavigate();
@@ -245,259 +199,7 @@ const AdminDashboard = () => {
     setCurrentView(view);
   };
 
-  const bangaloreAreas = [
-    // Popular Areas
-    'Bansawadi', 'Koramangala', 'Whitefield', 'Indiranagar', 'HSR', 'BTM', 'JP Nagar',
-    'Malleshwaram', 'Rajajinagar', 'Vijayanagar', 'Basavanagudi', 'Banashankari', 'Jayanagar',
-    'Yelahanka', 'Hebbal', 'RT Nagar', 'Vasanthnagar', 'Cunningham', 'Frazer Town', 'Marathahalli',
-    'Bellandur', 'Electronic City', 'Bommanahalli', 'Bommasandra', 'Kadubeesanahalli', 'Mahadevapura',
-    'KR Puram', 'HAL', 'Domlur', 'Ulsoor', 'Richmond', 'Shivajinagar', 'Cox Town', 'Cooke Town',
-    'Austin Town', 'Richards Town', 'Murphy Town', 'Benson Town', 'HBR Layout', 'Kalyan Nagar',
-    'Sahakara Nagar', 'Mathikere', 'Yeshwanthpur', 'Peenya', 'Chamrajpet', 'Chickpet', 'Gandhinagar',
-    'Majestic', 'City Market', 'KR Market', 'Lalbagh', 'BTM Layout', 'Hosur Road', 'Bannerghatta',
-    'Jigani', 'Anekal', 'Varthur', 'Sarjapur', 'Hoodi', 'Kundalahalli', 'Brookefield', 'Kaggadasapura',
-    'Nagavara', 'Thanisandra', 'Hennur', 'Horamavu', 'Kothanur', 'Ramamurthy Nagar', 'Banaswadi',
-    'CV Raman Nagar', 'Murugeshpalya', 'Adugodi', 'Wilson Garden', 'Richmond Town', 'Shanti Nagar',
-    'Ashok Nagar', 'MG Road', 'Brigade Road', 'Commercial Street', 'Residency Road', 'Cubbon Park',
-    'Vidhana Soudha', 'Cantonment', 'Bowring', 'Richmond Circle', 'Lavelle Road', 'St Marks Road',
-    'Kasturba Road', 'Nrupathunga Road', 'Hudson Circle', 'Kempegowda', 'Majestic Bus Stand',
-    // Additional North Bangalore
-    'Sanjay Nagar', 'Gokula', 'Attiguppe', 'Vijaya Nagar', 'Nagarbhavi', 'Kengeri', 'Rajajinagar Extension',
-    'Basaveshwara Nagar', 'Vijayanagar Extension', 'Yeshwanthpur Industrial', 'Nelamangala', 'Doddaballapur',
-    'Devanahalli', 'Yelahanka New Town', 'Jakkur', 'Bagalur', 'Vidyaranyapura', 'MS Palya', 'Byatarayanapura',
-    // Additional South Bangalore
-    'BTM 2nd Stage', 'BTM 1st Stage', 'Uttarahalli', 'Girinagar',
-    'JP Nagar 1st Phase', 'JP Nagar 2nd Phase', 'JP Nagar 3rd Phase', 'JP Nagar 4th Phase', 'JP Nagar 5th Phase',
-    'JP Nagar 6th Phase', 'JP Nagar 7th Phase', 'JP Nagar 8th Phase', 'JP Nagar 9th Phase', 'Bannerghatta Road',
-    'Arekere', 'Hulimavu', 'Begur', 'HSR Sector 1', 'HSR Sector 2', 'HSR Sector 3', 'HSR Sector 4',
-    'HSR Sector 5', 'HSR Sector 6', 'HSR Sector 7', 'Arakere Mico Layout', 'Bommanahalli', 'Singasandra',
-    'Hosa Road', 'Konanakunte', 'Doddakallasandra', 'Vijaya Bank Layout', 'Padmanabhanagar', 'Hosur',
-    // Additional East Bangalore
-    'Whitefield Main Road', 'ITPL', 'Kadugodi', 'Varthur Kodi', 'Panathur', 'Kundalahalli Gate',
-    'AECS Layout', 'Doddanekundi', 'Marathahalli Bridge', 'Varthur Road', 'Whitefield Road', 'Hope Farm',
-    'Budigere', 'Avalahalli', 'Bidrahalli', 'Kannamangala', 'Vaddarahalli', 'Chikkajala', 'Bagalur',
-    'KR Puram Railway Station', 'Baiyappanahalli', 'Hennur Main Road', 'Kalyan Nagar Main Road',
-    // Additional West Bangalore
-    'Rajajinagar Industrial', 'Peenya Industrial', 'Jalahalli', 'Dasarahalli', 'Nagasandra', 'Tumkur Road',
-    'Nelamangala Road', 'Magadi Road', 'Mysore Road', 'Kengeri Satellite Town', 'Rajarajeshwari Nagar',
-    'Kumbalgodu', 'Anjanapura', 'Nayandahalli', 'Kengeri', 'Uttarahalli Hobli', 'Bidadi', 'Ramanagara',
-    // Additional Central Bangalore
-    'MG Road', 'Brigade Road', 'Commercial Street', 'Residency Road', 'Cubbon Park', 'Vidhana Soudha',
-    'Cantonment', 'Bowring', 'Richmond Circle', 'Lavelle Road', 'St Marks Road', 'Kasturba Road',
-    'Nrupathunga Road', 'Hudson Circle', 'Kempegowda Bus Stand', 'Shivajinagar Bus Stand', 'Russell Market',
-    'Church Street', 'Rest House Road', 'Cunningham Road', 'Miller Road', 'Palace Road',
-    'Kempegowda', 'Majestic Bus Stand', 'City Railway Station',
-    // Outer Areas
-    'Nelamangala', 'Doddaballapur', 'Devanahalli', 'Hoskote', 'Anekal', 'Jigani', 'Bidadi', 'Ramanagara', 'Ramanagaram',
-    'Magadi', 'Tumkur', 'Tumkuru', 'Kolar', 'Kolar City', 'Chikkaballapur',
-    // Additional Areas - Kaknpura side and nearby
-    'Adda', 'Kaknpura', 'Kakanpura', 'Kaknepura', 'Kaknepura Side', 'Kaknpura Side',
-    'Ttible', 'Ttibble', 'Tibble', 'Tibble Side',
-    // Layouts and Extensions
-    'HBR Layout', 'HRBR Layout', 'KHB Layout', 'ARE Layout', 'BEML Layout', 'BEL Layout', 'ISRO Layout',
-    'BDA Layout', 'BDA Complex', 'NRI Layout', 'Prestige Layout', 'Prestige Shantiniketan',
-    // Generic Types
-    'Home', 'Office', 'Shop', 'Factory', 'Warehouse', 'Residence', 'Apartment', 'Villa', 'House',
-    'Showroom', 'Workshop', 'Store', 'Building', 'Complex', 'Tower', 'Plaza', 'Mall',
-    // More Areas - Extended Coverage
-    'Agara', 'Akshayanagar', 'Amruthahalli', 'Anandnagar', 'Ananthapura', 'Anjanapura', 'Arakere',
-    'Arekere', 'Avalahalli', 'Bagalur', 'Baiyappanahalli', 'Banaswadi', 'Bannerghatta', 'Basapura',
-    'G.B palya', 'GB palya', 'GB Palya', 'Hongasandra', 'Mico Layout', 'Arakere Mico Layout',
-    'HSR Layout', 'Somasandrapalya', 'ITI Layout',
-    'Basavanagudi', 'Basaveshwara Nagar', 'Begur', 'Bellandur', 'BEML Layout', 'Benson Town',
-    'Bhairava Nagar', 'Bidadi', 'Bidrahalli', 'Bommanahalli', 'Bommasandra', 'Brigade Road',
-    'Brookefield', 'BTM', 'BTM Layout', 'Budigere', 'Byatarayanapura', 'Chamrajpet', 'Chickpet',
-    'Chikkaballapur', 'Chikkajala', 'Church Street', 'City Market', 'Commercial Street', 'Cooke Town',
-    'Cox Town', 'Cubbon Park', 'Cunningham', 'CV Raman Nagar', 'Dasarahalli', 'Devanahalli',
-    'Doddaballapur', 'Doddakallasandra', 'Doddanekundi', 'Domlur', 'Electronic City', 'Frazer Town',
-    'Gandhinagar', 'Girinagar', 'Gokula', 'HAL', 'Hebbal', 'Hennur', 'Hennur Main Road', 'Hoodi',
-    'Hope Farm', 'Horamavu', 'Hosa Road', 'Hoskote', 'Hosur', 'Hosur Road', 'HSR', 'HSR Sector 1',
-    'HSR Sector 2', 'HSR Sector 3', 'HSR Sector 4', 'HSR Sector 5', 'HSR Sector 6', 'HSR Sector 7',
-    'Hudson Circle', 'Hulimavu', 'Indiranagar', 'ITPL', 'Jakkur', 'Jalahalli', 'Jayanagar', 'Jigani',
-    'JP Nagar', 'JP Nagar 1st Phase', 'JP Nagar 2nd Phase', 'JP Nagar 3rd Phase', 'JP Nagar 4th Phase',
-    'JP Nagar 5th Phase', 'JP Nagar 6th Phase', 'JP Nagar 7th Phase', 'JP Nagar 8th Phase', 'JP Nagar 9th Phase',
-    'Kadubeesanahalli', 'Kadugodi', 'Kaggadasapura', 'Kalyan Nagar', 'Kalyan Nagar Main Road',
-    'Kannamangala', 'Kasturba Road', 'Kempegowda', 'Kempegowda Bus Stand', 'Kengeri', 'Kengeri Satellite Town',
-    'Konanakunte', 'Koramangala', 'Kothanur', 'KR Market', 'KR Puram', 'KR Puram Railway Station',
-    'Kumbalgodu', 'Kundalahalli', 'Kundalahalli Gate', 'Lalbagh', 'Lavelle Road', 'Magadi', 'Magadi Road',
-    'Mahadevapura', 'Majestic', 'Majestic Bus Stand', 'Marathahalli', 'Marathahalli Bridge', 'Mathikere',
-    'MG Road', 'Miller Road', 'MS Palya', 'Murphy Town', 'Murugeshpalya', 'Mysore Road', 'Nagarbhavi',
-    'Nagasandra', 'Nagavara', 'Nayandahalli', 'Nelamangala', 'Nelamangala Road', 'NRI Layout',
-    'Nrupathunga Road', 'Padmanabhanagar', 'Palace Road', 'Panathur', 'Peenya', 'Peenya Industrial',
-    'Prestige Layout', 'Prestige Shantiniketan', 'Rajarajeshwari Nagar', 'Rajajinagar', 'Rajajinagar Extension',
-    'Rajajinagar Industrial', 'Ramamurthy Nagar', 'Ramanagara', 'Ramanagaram', 'Residency Road', 'Rest House Road',
-    'Richmond', 'Richmond Circle', 'Richmond Town', 'RT Nagar', 'Russell Market', 'Sahakara Nagar',
-    'Sanjay Nagar', 'Sarjapur', 'Shanti Nagar', 'Shivajinagar', 'Shivajinagar Bus Stand', 'Singasandra', 'Seshadripuram',
-    'St Marks Road', 'Thanisandra', 'Tumkur', 'Tumkuru', 'Tumkur Road', 'Ulsoor', 'Uttarahalli', 'Uttarahalli Hobli',
-    'Vaddarahalli', 'Varthur', 'Varthur Kodi', 'Varthur Road', 'Vasanthnagar', 'Vidhana Soudha',
-    'Vidyaranyapura', 'Vijaya Bank Layout', 'Vijaya Nagar', 'Vijayanagar', 'Vijayanagar Extension',
-    'Whitefield', 'Whitefield Main Road', 'Whitefield Road', 'Wilson Garden', 'Yelahanka', 'Yelahanka New Town',
-    'Yeshwanthpur', 'Yeshwanthpur Industrial',
-    // Additional Areas - Kaknpura side, Ramanagara, Kolar, Tumkur
-    'Adda', 'Kaknpura', 'Kakanpura', 'Kaknepura', 'Kaknepura Side', 'Kaknpura Side',
-    'Ttible', 'Ttibble', 'Tibble', 'Tibble Side',
-    'Ramanagaram', 'Kolar City', 'Tumkuru',
-    // Additional Popular Areas
-    'Adugodi', 'AECS Layout', 'Anekal', 'Anjanapura', 'Arakere Mico Layout', 'Arekere', 'Ashok Nagar',
-    'Attiguppe', 'Austin Town', 'Avalahalli', 'Baiyappanahalli', 'Banaswadi', 'Bannerghatta Road',
-    'Basapura', 'Basaveshwara Nagar', 'BEML Layout', 'Bhairava Nagar', 'Bidrahalli', 'Bommanahalli',
-    'Bommasandra', 'Brigade Road', 'Brookefield', 'BTM 1st Stage', 'BTM 2nd Stage', 'Budigere',
-    'Byatarayanapura', 'Chikkajala', 'City Railway Station', 'Commercial Street', 'Cooke Town',
-    'Cox Town', 'Cunningham Road', 'CV Raman Nagar', 'Dasarahalli', 'Devanahalli', 'Doddaballapur',
-    'Doddakallasandra', 'Doddanekundi', 'Domlur', 'Electronic City', 'Frazer Town', 'Gandhinagar',
-    'Girinagar', 'Gokula', 'HAL', 'Hebbal', 'Hennur', 'Hennur Main Road', 'Hoodi', 'Hope Farm',
-    'Horamavu', 'Hosa Road', 'Hoskote', 'Hosur', 'Hosur Road', 'HSR Sector 1', 'HSR Sector 2',
-    'HSR Sector 3', 'HSR Sector 4', 'HSR Sector 5', 'HSR Sector 6', 'HSR Sector 7', 'Hudson Circle',
-    'Hulimavu', 'Indiranagar', 'ITPL', 'Jakkur', 'Jalahalli', 'Jayanagar', 'Jigani', 'JP Nagar 1st Phase',
-    'JP Nagar 2nd Phase', 'JP Nagar 3rd Phase', 'JP Nagar 4th Phase', 'JP Nagar 5th Phase',
-    'JP Nagar 6th Phase', 'JP Nagar 7th Phase', 'JP Nagar 8th Phase', 'JP Nagar 9th Phase',
-    'Kadubeesanahalli', 'Kadugodi', 'Kaggadasapura', 'Kalyan Nagar', 'Kalyan Nagar Main Road',
-    'Kannamangala', 'Kasturba Road', 'Kempegowda', 'Kempegowda Bus Stand', 'Kengeri',
-    'Kengeri Satellite Town', 'Konanakunte', 'Koramangala', 'Kothanur', 'KR Market', 'KR Puram',
-    'KR Puram Railway Station', 'Kumbalgodu', 'Kundalahalli', 'Kundalahalli Gate', 'Lalbagh',
-    'Lavelle Road', 'Magadi', 'Magadi Road', 'Mahadevapura', 'Majestic', 'Majestic Bus Stand',
-    'Marathahalli', 'Marathahalli Bridge', 'Mathikere', 'MG Road', 'Miller Road', 'MS Palya',
-    'Murphy Town', 'Murugeshpalya', 'Mysore Road', 'Nagarbhavi', 'Nagasandra', 'Nagavara',
-    'Nayandahalli', 'Nelamangala', 'Nelamangala Road', 'NRI Layout', 'Nrupathunga Road',
-    'Padmanabhanagar', 'Palace Road', 'Panathur', 'Peenya', 'Peenya Industrial', 'Prestige Layout',
-    'Prestige Shantiniketan', 'Rajarajeshwari Nagar', 'Rajajinagar', 'Rajajinagar Extension',
-    'Rajajinagar Industrial', 'Ramamurthy Nagar', 'Ramanagara', 'Residency Road', 'Rest House Road',
-    'Richmond', 'Richmond Circle', 'Richmond Town', 'RT Nagar', 'Russell Market', 'Sahakara Nagar',
-    'Sanjay Nagar', 'Sarjapur', 'Shanti Nagar', 'Shivajinagar', 'Shivajinagar Bus Stand', 'Singasandra', 'Seshadripuram',
-    'St Marks Road', 'Thanisandra', 'Tumkur', 'Tumkur Road', 'Ulsoor', 'Uttarahalli',
-    'Uttarahalli Hobli', 'Vaddarahalli', 'Varthur', 'Varthur Kodi', 'Varthur Road', 'Vasanthnagar',
-    'Vidhana Soudha', 'Vidyaranyapura', 'Vijaya Bank Layout', 'Vijaya Nagar', 'Vijayanagar',
-    'Vijayanagar Extension', 'Whitefield', 'Whitefield Main Road', 'Whitefield Road', 'Wilson Garden',
-    'Yelahanka', 'Yelahanka New Town', 'Yeshwanthpur', 'Yeshwanthpur Industrial'
-  ];
-
-  // Calculate Levenshtein distance for fuzzy matching (handles typos)
-  const levenshteinDistance = (str1: string, str2: string): number => {
-    const s1 = str1.toLowerCase();
-    const s2 = str2.toLowerCase();
-    const matrix: number[][] = [];
-
-    for (let i = 0; i <= s2.length; i++) {
-      matrix[i] = [i];
-    }
-
-    for (let j = 0; j <= s1.length; j++) {
-      matrix[0][j] = j;
-    }
-
-    for (let i = 1; i <= s2.length; i++) {
-      for (let j = 1; j <= s1.length; j++) {
-        if (s2.charAt(i - 1) === s1.charAt(j - 1)) {
-          matrix[i][j] = matrix[i - 1][j - 1];
-        } else {
-          matrix[i][j] = Math.min(
-            matrix[i - 1][j - 1] + 1, // substitution
-            matrix[i][j - 1] + 1,     // insertion
-            matrix[i - 1][j] + 1      // deletion
-          );
-        }
-      }
-    }
-
-    return matrix[s2.length][s1.length];
-  };
-
-  // Calculate similarity score (0-1, where 1 is perfect match)
-  const calculateSimilarity = (str1: string, str2: string): number => {
-    const maxLen = Math.max(str1.length, str2.length);
-    if (maxLen === 0) return 1;
-    const distance = levenshteinDistance(str1, str2);
-    return 1 - (distance / maxLen);
-  };
-
-  // Reusable function to extract location from any address string
-  // Only returns a match if it's confident - otherwise returns null
-  const extractLocationFromAddressString = (completeAddress: string): string | null => {
-    if (!completeAddress || completeAddress.trim().length === 0) {
-      return null;
-    }
-
-    // Remove duplicates from bangaloreAreas
-    const uniqueAreas = [...new Set(bangaloreAreas)];
-    
-    // Split address by common delimiters and extract potential location keywords
-    const addressParts = completeAddress
-      .split(/[,\s]+/)
-      .map(part => part.trim())
-      .filter(part => part.length > 2); // Filter out very short parts
-
-    // First, try exact matches (highest priority - most confident)
-    for (const part of addressParts) {
-      const partLower = part.toLowerCase();
-      const exactMatch = uniqueAreas.find(area => 
-        area.toLowerCase() === partLower
-      );
-      if (exactMatch) {
-        return exactMatch;
-      }
-    }
-
-    // Second, try multi-word exact matches (e.g., "G.B palya" should match "G.B palya")
-    // This is more confident than partial matches
-    for (let i = 0; i < addressParts.length - 1; i++) {
-      const twoWordPart = `${addressParts[i]} ${addressParts[i + 1]}`.toLowerCase();
-      const multiWordMatch = uniqueAreas.find(area => 
-        area.toLowerCase() === twoWordPart
-      );
-      if (multiWordMatch) {
-        return multiWordMatch;
-      }
-    }
-
-    // Third, try strict partial matches (only if part is significant length and match is substantial)
-    // Only match if the part is at least 5 characters and the match covers at least 70% of the shorter string
-    for (const part of addressParts) {
-      if (part.length < 5) continue; // Require at least 5 characters for partial match
-      const partLower = part.toLowerCase();
-      const partialMatch = uniqueAreas.find(area => {
-        const areaLower = area.toLowerCase();
-        // Only match if one contains the other AND the overlap is substantial
-        if (areaLower.includes(partLower)) {
-          // Part must be at least 70% of the area name
-          return partLower.length >= areaLower.length * 0.7;
-        }
-        if (partLower.includes(areaLower)) {
-          // Area must be at least 70% of the part
-          return areaLower.length >= partLower.length * 0.7;
-        }
-        return false;
-      });
-      if (partialMatch) {
-        return partialMatch;
-      }
-    }
-
-    // Last resort: fuzzy matching for typos (very strict - only for longer parts with high similarity)
-    let bestMatch: string | null = null;
-    let bestScore = 0.85; // Very high threshold (85%) to avoid false matches
-
-    for (const part of addressParts) {
-      if (part.length < 6) continue; // Require at least 6 characters for fuzzy matching
-
-      for (const area of uniqueAreas) {
-        // Skip if lengths are too different (more than 30% difference - very strict)
-        const lengthDiff = Math.abs(area.length - part.length) / Math.max(area.length, part.length);
-        if (lengthDiff > 0.3) continue;
-
-        // Calculate similarity
-        const similarity = calculateSimilarity(part, area);
-        
-        // Only use fuzzy match if similarity is very high
-        if (similarity > bestScore) {
-          bestScore = similarity;
-          bestMatch = area;
-        }
-      }
-    }
-
-    // Only return match if we found a confident one, otherwise return null
-    return bestMatch;
-  };
+  // bangaloreAreas imported from @/lib/adminUtils
 
   // Extract location keywords from complete address and match with location array (for edit form)
   const extractLocationFromAddress = useMemo(() => {
@@ -789,27 +491,8 @@ const AdminDashboard = () => {
   }, [denyReason]);
   const [completeDialogOpen, setCompleteDialogOpen] = useState(false);
   const [selectedJobForComplete, setSelectedJobForComplete] = useState<Job | null>(null);
-  const [completionNotes, setCompletionNotes] = useState('');
-  // Complete job multi-step form state
-  const [completeJobStep, setCompleteJobStep] = useState<1 | 2 | 3 | 4 | 5 | 6>(1);
-  const [billAmount, setBillAmount] = useState<string>('');
-  const [billPhotos, setBillPhotos] = useState<string[]>([]);
-  const [paymentPhotos, setPaymentPhotos] = useState<string[]>([]);
-  const [amcDateGiven, setAmcDateGiven] = useState<string>('');
-  const [amcEndDate, setAmcEndDate] = useState<string>('');
-  const [amcYears, setAmcYears] = useState<number>(1);
-  const [amcIncludesPrefilter, setAmcIncludesPrefilter] = useState<boolean>(false);
-  const [hasAMC, setHasAMC] = useState<boolean>(false);
-  const [paymentMode, setPaymentMode] = useState<'CASH' | 'ONLINE' | ''>('');
-  const [customerHasPrefilter, setCustomerHasPrefilter] = useState<boolean | null>(null);
-  const [qrCodeType, setQrCodeType] = useState<string>('');
-  const [selectedQrCodeId, setSelectedQrCodeId] = useState<string>('');
+  // Complete job state moved to CompleteJobDialog component
   const [commonQrCodes, setCommonQrCodes] = useState<CommonQrCode[]>([]);
-  const [technicianQrCode, setTechnicianQrCode] = useState<string>('');
-  const [technicianName, setTechnicianName] = useState<string>('');
-  const [customerQrPhotos, setCustomerQrPhotos] = useState<string[]>([]);
-  const [paymentScreenshot, setPaymentScreenshot] = useState<string>('');
-  const [billAmountConfirmOpen, setBillAmountConfirmOpen] = useState(false);
   const [customerReportDialogOpen, setCustomerReportDialogOpen] = useState(false);
   const [selectedCustomerForReport, setSelectedCustomerForReport] = useState<Customer | null>(null);
   const [customerReportJobs, setCustomerReportJobs] = useState<any[]>([]);
@@ -855,18 +538,6 @@ const AdminDashboard = () => {
   const [loadingReassignDistances, setLoadingReassignDistances] = useState(false);
   const [jobToEdit, setJobToEdit] = useState<Job | null>(null);
   const [editJobDialogOpen, setEditJobDialogOpen] = useState(false);
-  const [editJobFormData, setEditJobFormData] = useState({
-    serviceType: 'RO' as 'RO' | 'SOFTENER',
-    serviceSubType: 'Installation',
-    serviceSubTypeCustom: '',
-    description: '',
-    scheduledDate: '',
-    scheduledTimeSlot: 'MORNING' as 'MORNING' | 'AFTERNOON' | 'EVENING' | 'CUSTOM' | 'FLEXIBLE',
-    scheduledTimeCustom: '',
-    lead_source: 'Direct call',
-    lead_source_custom: '',
-    cost_agreed: ''
-  });
   const [photoToDelete, setPhotoToDelete] = useState<{jobId: string, photoIndex: number, photoUrl: string} | null>(null);
   const [deletePhotoDialogOpen, setDeletePhotoDialogOpen] = useState(false);
   const [isDeletingPhoto, setIsDeletingPhoto] = useState(false);
@@ -964,7 +635,7 @@ const AdminDashboard = () => {
       if (data) {
         const transformedTechnicians = data.map(transformTechnicianData);
         console.log('🔄 Reloaded technicians with latest locations:', {
-          rawData: data.map(t => ({
+          rawData: data.map((t: any) => ({
             id: t.id,
             name: t.full_name,
             current_location: t.current_location,
@@ -1133,28 +804,28 @@ const AdminDashboard = () => {
       // OPTIMIZATION: Fetch all 4 queries in parallel instead of sequentially
       const [customerBrandsResult, jobBrandsResult, customerModelsResult, jobModelsResult] = await Promise.all([
         supabase
-          .from('customers')
-          .select('brand')
-          .not('brand', 'is', null)
-          .neq('brand', '')
+        .from('customers')
+        .select('brand')
+        .not('brand', 'is', null)
+        .neq('brand', '')
           .neq('brand', 'Not specified'),
         supabase
-          .from('jobs')
-          .select('brand')
-          .not('brand', 'is', null)
-          .neq('brand', '')
+        .from('jobs')
+        .select('brand')
+        .not('brand', 'is', null)
+        .neq('brand', '')
           .neq('brand', 'Not specified'),
         supabase
-          .from('customers')
-          .select('model')
-          .not('model', 'is', null)
-          .neq('model', '')
+        .from('customers')
+        .select('model')
+        .not('model', 'is', null)
+        .neq('model', '')
           .neq('model', 'Not specified'),
         supabase
-          .from('jobs')
-          .select('model')
-          .not('model', 'is', null)
-          .neq('model', '')
+        .from('jobs')
+        .select('model')
+        .not('model', 'is', null)
+        .neq('model', '')
           .neq('model', 'Not specified')
       ]);
       
@@ -1163,7 +834,7 @@ const AdminDashboard = () => {
           !customerModelsResult.error && !jobModelsResult.error) {
         // Extract all brands (handle comma-separated values)
         const allBrands = new Set<string>();
-        [...(customerBrandsResult.data || []), ...(jobBrandsResult.data || [])].forEach(item => {
+        [...(customerBrandsResult.data || []), ...(jobBrandsResult.data || [])].forEach((item: any) => {
           if (item.brand) {
             item.brand.split(',').forEach((b: string) => {
               const trimmed = b.trim();
@@ -1176,7 +847,7 @@ const AdminDashboard = () => {
         
         // Extract all models (handle comma-separated values)
         const allModels = new Set<string>();
-        [...(customerModelsResult.data || []), ...(jobModelsResult.data || [])].forEach(item => {
+        [...(customerModelsResult.data || []), ...(jobModelsResult.data || [])].forEach((item: any) => {
           if (item.model) {
             item.model.split(',').forEach((m: string) => {
               const trimmed = m.trim();
@@ -1296,20 +967,20 @@ const AdminDashboard = () => {
       // OPTIMIZATION: Run AMC job creation in background without blocking initial load
       // Check auth once and proceed - no wait loop
       supabase.auth.getSession().then(({ data: { session } }) => {
-        if (session) {
+          if (session) {
           // Run AMC job creation in background without blocking
-          db.amcContracts.createAMCServiceJobs().then((result) => {
-            if (result.error) {
-              console.error('Error creating AMC service jobs:', result.error);
-            } else if (result.created > 0) {
-              console.log(`✅ Created ${result.created} AMC service jobs automatically`);
-              toast.success(`Created ${result.created} AMC service job${result.created > 1 ? 's' : ''} automatically`);
-              // Reload jobs after creating AMC service jobs
-              loadFilteredJobs(statusFilter, currentPage);
-            }
-          }).catch((error) => {
-            console.error('Error in AMC service job creation:', error);
-          });
+        db.amcContracts.createAMCServiceJobs().then((result) => {
+          if (result.error) {
+            console.error('Error creating AMC service jobs:', result.error);
+          } else if (result.created > 0) {
+            console.log(`✅ Created ${result.created} AMC service jobs automatically`);
+            toast.success(`Created ${result.created} AMC service job${result.created > 1 ? 's' : ''} automatically`);
+            // Reload jobs after creating AMC service jobs
+            loadFilteredJobs(statusFilter, currentPage);
+          }
+        }).catch((error) => {
+          console.error('Error in AMC service job creation:', error);
+        });
         }
       }).catch(() => {
         // Silently fail - auth check failed, skip AMC job creation
@@ -1321,13 +992,13 @@ const AdminDashboard = () => {
         db.technicians.getAll(),
         // Load AMC contracts in parallel
         supabase
-          .from('amc_contracts')
-          .select('customer_id, status')
+        .from('amc_contracts')
+        .select('customer_id, status')
           .eq('status', 'ACTIVE'),
         // Load job counts in parallel
         db.jobs.getCounts()
       ]);
-
+      
       // Process AMC contracts
       const amcStatusMap: Record<string, boolean> = {};
       if (amcContractsResult.data) {
@@ -1360,7 +1031,7 @@ const AdminDashboard = () => {
       if (techniciansResult.data) {
         const transformedTechnicians = techniciansResult.data.map(transformTechnicianData);
         console.log('📊 Loaded technicians with locations:', {
-          rawData: techniciansResult.data.map(t => ({
+          rawData: techniciansResult.data.map((t: any) => ({
             id: t.id,
             name: t.full_name,
             current_location: t.current_location,
@@ -1598,7 +1269,7 @@ const AdminDashboard = () => {
             has_prefilter: editFormData.has_prefilter,
             address: updatedAddress,
             location: updatedLocation
-          });
+          } as any);
 
           if (error) {
             console.error('❌ Database update error:', error);
@@ -1695,7 +1366,7 @@ const AdminDashboard = () => {
         }
 
         // Get the most recent job
-        const mostRecentJob = newJobs[0];
+        const mostRecentJob = newJobs[0] as any;
         const mostRecentJobId = mostRecentJob?.id;
         const mostRecentJobCreatedAt = mostRecentJob?.created_at || mostRecentJob?.createdAt;
 
@@ -2473,7 +2144,7 @@ const AdminDashboard = () => {
   const ensureGoogleMapsLoaded = useCallback((): Promise<void> => {
     return new Promise((resolve, reject) => {
       // Check if already loaded
-      if (window.google && window.google.maps && window.google.maps.DistanceMatrixService) {
+      if ((window as any).google && (window as any).google.maps && (window as any).google.maps.DistanceMatrixService) {
         resolve();
         return;
       }
@@ -2489,7 +2160,7 @@ const AdminDashboard = () => {
       if (existingScript) {
         // Wait for it to load
         const checkInterval = setInterval(() => {
-          if (window.google && window.google.maps && window.google.maps.DistanceMatrixService) {
+          if ((window as any).google && (window as any).google.maps && (window as any).google.maps.DistanceMatrixService) {
             clearInterval(checkInterval);
             resolve();
           }
@@ -2498,7 +2169,7 @@ const AdminDashboard = () => {
         // Timeout after 10 seconds
         setTimeout(() => {
           clearInterval(checkInterval);
-          if (window.google && window.google.maps && window.google.maps.DistanceMatrixService) {
+          if ((window as any).google && (window as any).google.maps && (window as any).google.maps.DistanceMatrixService) {
             resolve();
           } else {
             reject(new Error('Google Maps failed to load'));
@@ -2520,7 +2191,7 @@ const AdminDashboard = () => {
         const maxAttempts = 50; // 5 seconds max
         const checkInterval = setInterval(() => {
           attempts++;
-          if (window.google && window.google.maps && window.google.maps.DistanceMatrixService) {
+          if ((window as any).google && (window as any).google.maps && (window as any).google.maps.DistanceMatrixService) {
             console.log('DistanceMatrixService is now available');
             clearInterval(checkInterval);
             resolve();
@@ -2592,12 +2263,12 @@ const AdminDashboard = () => {
       console.log('Google Maps loaded');
 
       // Now safely use DistanceMatrixService
-      if (!window.google?.maps?.DistanceMatrixService) {
+      if (!(window as any).google?.maps?.DistanceMatrixService) {
         throw new Error('DistanceMatrixService not available');
       }
 
       console.log('Creating DistanceMatrixService...');
-      const distanceMatrix = new window.google.maps.DistanceMatrixService();
+      const distanceMatrix = new (window as any).google.maps.DistanceMatrixService();
       
       console.log('Calling getDistanceMatrix...', { 
         origin: { lat: origin.lat, lng: origin.lng }, 
@@ -2615,7 +2286,7 @@ const AdminDashboard = () => {
       }, 15000); // 15 second timeout
       
       // Try DRIVING first (motor bike/scooty), fallback to BICYCLING only if needed
-      const tryCalculateDistance = (travelMode: google.maps.TravelMode, modeName: string, isRetry: boolean = false) => {
+      const tryCalculateDistance = (travelMode: any, modeName: string, isRetry: boolean = false) => {
         const originCoords = { lat: Number(origin.lat), lng: Number(origin.lng) };
         const destCoords = { lat: Number(destination.lat), lng: Number(destination.lng) };
         
@@ -2626,12 +2297,12 @@ const AdminDashboard = () => {
             origins: [originCoords],
             destinations: [destCoords],
             travelMode: travelMode,
-            unitSystem: window.google.maps.UnitSystem.METRIC,
+            unitSystem: (window as any).google.maps.UnitSystem.METRIC,
           },
           (response, status) => {
             console.log(`Distance Matrix callback (${modeName}):`, { status, response });
             
-            if (status === window.google.maps.DistanceMatrixStatus.OK && response) {
+            if (status === (window as any).google.maps.DistanceMatrixStatus.OK && response) {
               const result = response.rows[0].elements[0];
               console.log('Distance Matrix result:', result);
               
@@ -2940,7 +2611,7 @@ const AdminDashboard = () => {
       if (existingScript) {
         // Wait for it to load
         const checkInterval = setInterval(() => {
-          if (window.google && window.google.maps && window.google.maps.Geocoder) {
+          if ((window as any).google && (window as any).google.maps && (window as any).google.maps.Geocoder) {
             clearInterval(checkInterval);
             resolve();
           }
@@ -2949,7 +2620,7 @@ const AdminDashboard = () => {
         // Timeout after 10 seconds
         setTimeout(() => {
           clearInterval(checkInterval);
-          if (window.google && window.google.maps && window.google.maps.Geocoder) {
+          if ((window as any).google && (window as any).google.maps && (window as any).google.maps.Geocoder) {
             resolve();
           } else {
             // Resolve anyway, will use fallback
@@ -2971,7 +2642,7 @@ const AdminDashboard = () => {
         const maxAttempts = 50; // 5 seconds max
         const checkInterval = setInterval(() => {
           attempts++;
-          if (window.google && window.google.maps && window.google.maps.Geocoder) {
+          if ((window as any).google && (window as any).google.maps && (window as any).google.maps.Geocoder) {
             clearInterval(checkInterval);
             resolve();
           } else if (attempts >= maxAttempts) {
@@ -3240,13 +2911,13 @@ const AdminDashboard = () => {
             payment_status: 'PENDING' as const,
           };
 
-          const { data: newJob, error: jobError } = await db.jobs.create(jobData);
+          const { data: newJob, error: jobError } = await db.jobs.create(jobData as any);
           
           if (jobError) {
             console.error('Failed to create job:', jobError);
             toast.error('Customer created but failed to create job');
-          } else {
-            toast.success(`Job ${newJob.job_number} created successfully!`);
+          } else if (newJob) {
+            toast.success(`Job ${(newJob as any).job_number || (newJob as any).jobNumber} created successfully!`);
             await loadDashboardData();
           }
         } catch (error) {
@@ -3407,7 +3078,7 @@ const AdminDashboard = () => {
         } else {
           scheduledTimeSlot = 'EVENING';
         }
-      } else if (newJobFormData.scheduled_time_slot === 'FLEXIBLE') {
+      } else if ((newJobFormData.scheduled_time_slot as any) === 'FLEXIBLE') {
         isFlexible = true;
         scheduledTimeSlot = 'MORNING'; // Default to MORNING for flexible
       } else {
@@ -3441,10 +3112,14 @@ const AdminDashboard = () => {
         before_photos: newJobFormData.photos.filter(photo => photo && photo.trim() !== '' && photo.startsWith('http')) // Only include uploaded Cloudinary URLs, not thumbnails
       };
 
-      const { data: newJob, error } = await db.jobs.create(jobData);
+      const { data: newJob, error } = await db.jobs.create(jobData as any);
       
       if (error) {
         throw new Error(error.message);
+      }
+
+      if (!newJob) {
+        throw new Error('Failed to create job');
       }
 
       // Add to local state
@@ -3500,9 +3175,9 @@ const AdminDashboard = () => {
       // Send notification if technician is assigned
       if (newJobFormData.assigned_technician_id) {
         const assignedTechnician = technicians.find(t => t.id === newJobFormData.assigned_technician_id);
-        if (assignedTechnician) {
+        if (assignedTechnician && newJob) {
           const notification = createJobAssignedNotification(
-            newJob.job_number,
+            (newJob as any).job_number || (newJob as any).jobNumber || 'Job',
             selectedCustomerForJob.fullName,
             assignedTechnician.fullName,
             newJob.id,
@@ -3512,7 +3187,9 @@ const AdminDashboard = () => {
         }
       }
 
-      toast.success(`Job ${newJob.job_number} created successfully!`);
+      if (newJob) {
+        toast.success(`Job ${(newJob as any).job_number || (newJob as any).jobNumber} created successfully!`);
+      }
       
       // Reload customer photos to show the newly uploaded photos
       const customerId = selectedCustomerForJob.customer_id || selectedCustomerForJob.customerId;
@@ -3582,12 +3259,13 @@ const AdminDashboard = () => {
     
     // Get models from local data
     const localModels: string[] = [];
-    if (serviceType && brand && modelData[serviceType]) {
-      const brandKey = Object.keys(modelData[serviceType]).find(key => 
+    if (serviceType && brand && modelData[serviceType as keyof typeof modelData]) {
+      const serviceData = modelData[serviceType as keyof typeof modelData] as Record<string, string[]>;
+      const brandKey = Object.keys(serviceData).find(key => 
         key.toLowerCase() === brand.toLowerCase()
       );
-      if (brandKey && modelData[serviceType][brandKey as keyof typeof modelData[serviceType]]) {
-        localModels.push(...(modelData[serviceType][brandKey as keyof typeof modelData[serviceType]] || []));
+      if (brandKey && serviceData[brandKey]) {
+        localModels.push(...(serviceData[brandKey] || []));
       }
     }
     
@@ -4086,7 +3764,7 @@ const AdminDashboard = () => {
               beforePhotos: uploadedPhotos,
             };
 
-            const { error: createError } = await db.jobs.create(jobData);
+            const { error: createError } = await db.jobs.create(jobData as any);
             if (createError) {
               toast.warning('Photos uploaded but failed to save to database');
             } else {
@@ -4739,7 +4417,7 @@ const AdminDashboard = () => {
         assigned_technician_id: selectedTechnicianId,
         status: 'ASSIGNED',
         assigned_date: new Date().toISOString()
-      });
+      } as any);
 
       if (error) throw error;
 
@@ -4747,9 +4425,10 @@ const AdminDashboard = () => {
       const assignedTechnician = technicians.find(t => t.id === selectedTechnicianId);
       if (assignedTechnician) {
         const notification = createJobAssignedNotification(
-          jobToAssign.job_number || jobToAssign.jobNumber || 'Job',
+          (jobToAssign as any).job_number || jobToAssign.jobNumber || 'Job',
           (jobToAssign.customer as any)?.full_name || (jobToAssign.customer as any)?.fullName || 'Customer',
           assignedTechnician.fullName,
+          jobToAssign.id,
           assignedTechnician.id
         );
         await sendNotification(notification);
@@ -4881,195 +4560,10 @@ const AdminDashboard = () => {
 
   const handleEditJob = (job: Job) => {
     setJobToEdit(job);
-    
-    // Determine if service sub type is custom
-    const serviceSubType = job.service_sub_type || job.serviceSubType || 'Installation';
-    const isCustomSubType = !['Installation', 'Reinstallation', 'Service', 'Repair', 'Other'].includes(serviceSubType);
-    
-    // Determine if time slot is custom
-    const timeSlot = job.scheduled_time_slot || job.scheduledTimeSlot || 'MORNING';
-    const isCustomTimeSlot = !['MORNING', 'AFTERNOON', 'EVENING'].includes(timeSlot);
-    
-    // Convert custom time to HH:MM format for time picker
-    let customTimeValue = '';
-    if (isCustomTimeSlot && timeSlot) {
-      // Try to parse various time formats and convert to HH:MM
-      const timeStr = timeSlot.toString();
-      if (timeStr.includes(':')) {
-        // Already in HH:MM format
-        customTimeValue = timeStr;
-      } else if (timeStr.includes('AM') || timeStr.includes('PM')) {
-        // Convert 12-hour format to 24-hour format
-        const time = new Date(`2000-01-01 ${timeStr}`);
-        if (!isNaN(time.getTime())) {
-          customTimeValue = time.toTimeString().slice(0, 5);
-        }
-      }
-    }
-    
-    // Extract lead_source and cost_range from requirements
-    let leadSource = 'Direct call';
-    let leadSourceCustom = '';
-    let costAgreed = '';
-    try {
-      const requirements = (job as any).requirements;
-      if (requirements) {
-        let reqs = requirements;
-        if (typeof reqs === 'string') {
-          reqs = JSON.parse(reqs);
-        }
-        if (Array.isArray(reqs)) {
-          const req = reqs.find((r: any) => r && typeof r === 'object');
-          if (req) {
-            if (req.lead_source) {
-              leadSource = req.lead_source === 'Other' ? 'Other' : req.lead_source;
-              leadSourceCustom = req.lead_source === 'Other' ? (req.lead_source_custom || '') : '';
-            }
-            if (req.cost_range) {
-              costAgreed = req.cost_range;
-            }
-          }
-        } else if (reqs && typeof reqs === 'object') {
-          if (reqs.lead_source) {
-            leadSource = reqs.lead_source === 'Other' ? 'Other' : reqs.lead_source;
-            leadSourceCustom = reqs.lead_source === 'Other' ? (reqs.lead_source_custom || '') : '';
-          }
-          if (reqs.cost_range) {
-            costAgreed = reqs.cost_range;
-          }
-        }
-      }
-    } catch (e) {
-    }
-    
-    // If cost_range not found in requirements, try to get from estimated_cost
-    if (!costAgreed && ((job as any).estimated_cost || job.estimatedCost)) {
-      const estimatedCost = (job as any).estimated_cost || job.estimatedCost || 0;
-      costAgreed = estimatedCost.toString();
-    }
-
-    setEditJobFormData({
-      serviceType: (job.service_type || job.serviceType || 'RO') as 'RO' | 'SOFTENER',
-      serviceSubType: isCustomSubType ? 'Custom' : serviceSubType,
-      serviceSubTypeCustom: isCustomSubType ? serviceSubType : '',
-      description: job.description || '',
-      scheduledDate: job.scheduled_date || job.scheduledDate || '',
-      scheduledTimeSlot: isCustomTimeSlot ? 'CUSTOM' : (timeSlot as 'MORNING' | 'AFTERNOON' | 'EVENING'),
-      scheduledTimeCustom: customTimeValue,
-      lead_source: leadSource,
-      lead_source_custom: leadSourceCustom,
-      cost_agreed: costAgreed
-    });
     setEditJobDialogOpen(true);
   };
 
-  const handleEditJobSubmit = async () => {
-    if (!jobToEdit) return;
-
-    try {
-      // Convert time picker value to readable format for custom time
-      let timeSlotValue = editJobFormData.scheduledTimeSlot;
-      let customTimeInRequirements = null;
-      
-      if (editJobFormData.scheduledTimeSlot === 'CUSTOM' && editJobFormData.scheduledTimeCustom) {
-        // Store custom time in requirements and convert to time slot for DB
-        customTimeInRequirements = editJobFormData.scheduledTimeCustom;
-        // Convert HH:MM to time slot based on hour
-        const [hours, minutes] = editJobFormData.scheduledTimeCustom.split(':');
-        const hour24 = parseInt(hours);
-        if (hour24 < 13) {
-          timeSlotValue = 'MORNING';
-        } else if (hour24 < 18) {
-          timeSlotValue = 'AFTERNOON';
-        } else {
-          timeSlotValue = 'EVENING';
-        }
-      } else if (editJobFormData.scheduledTimeSlot === 'FLEXIBLE') {
-        timeSlotValue = 'MORNING'; // Default to MORNING for flexible, store in requirements
-      }
-
-      // Get existing requirements or create new one
-      let requirements = (jobToEdit as any).requirements || [];
-      if (typeof requirements === 'string') {
-        try {
-          requirements = JSON.parse(requirements);
-        } catch (e) {
-          requirements = [];
-        }
-      }
-      if (!Array.isArray(requirements)) {
-        requirements = [requirements];
-      }
-      
-      // Update or add lead_source and custom_time
-      const leadSourceValue = editJobFormData.lead_source === 'Other' 
-        ? (editJobFormData.lead_source_custom || 'Other')
-        : editJobFormData.lead_source;
-      
-      // Find existing requirement object or create new one
-      let reqObj = requirements.find((r: any) => r && typeof r === 'object') || {};
-      reqObj.lead_source = leadSourceValue;
-      if (editJobFormData.lead_source === 'Other' && editJobFormData.lead_source_custom) {
-        reqObj.lead_source_custom = editJobFormData.lead_source_custom;
-      }
-      if (customTimeInRequirements) {
-        reqObj.custom_time = customTimeInRequirements;
-      }
-      if (editJobFormData.scheduledTimeSlot === 'FLEXIBLE') {
-        reqObj.flexible_time = true;
-      }
-      // Add cost_range if cost_agreed is provided
-      if (editJobFormData.cost_agreed && editJobFormData.cost_agreed.trim()) {
-        reqObj.cost_range = editJobFormData.cost_agreed.trim();
-      }
-      
-      // Replace requirements array with updated object
-      requirements = [reqObj];
-
-      // Calculate estimated_cost from cost_agreed (take first number if range)
-      const estimatedCost = editJobFormData.cost_agreed 
-        ? (parseFloat(editJobFormData.cost_agreed.toString().split('-')[0].trim()) || 0)
-        : 0;
-
-      const { error } = await db.jobs.update(jobToEdit.id, {
-        service_type: editJobFormData.serviceType,
-        service_sub_type: editJobFormData.serviceSubType === 'Custom' ? editJobFormData.serviceSubTypeCustom : editJobFormData.serviceSubType,
-        description: editJobFormData.description,
-        scheduled_date: editJobFormData.scheduledDate,
-        scheduled_time_slot: timeSlotValue,
-        estimated_cost: estimatedCost,
-        requirements: requirements
-      });
-
-      if (error) {
-        toast.error('Failed to update job');
-        return;
-      }
-
-      // Update local state
-      setJobs(prev => prev.map(job => 
-        job.id === jobToEdit.id 
-          ? { 
-              ...job, 
-              serviceType: editJobFormData.serviceType,
-              serviceSubType: editJobFormData.serviceSubType === 'Custom' ? editJobFormData.serviceSubTypeCustom : editJobFormData.serviceSubType,
-              description: editJobFormData.description,
-              scheduledDate: editJobFormData.scheduledDate,
-              scheduledTimeSlot: timeSlotValue,
-              estimatedCost: estimatedCost,
-              estimated_cost: estimatedCost,
-              requirements: requirements
-            }
-          : job
-      ));
-
-      toast.success('Job updated successfully');
-      setEditJobDialogOpen(false);
-      setJobToEdit(null);
-    } catch (error) {
-      toast.error('Failed to update job');
-    }
-  };
+  // handleEditJobSubmit moved to EditJobDialog component
 
   const handleJobStatusUpdate = async (jobId: string, newStatus: string) => {
     try {
@@ -5162,7 +4656,7 @@ const AdminDashboard = () => {
           notes: null,
           scheduled_by: user?.id || 'admin',
           completed: false
-        })
+        } as any)
         .select()
         .single();
 
@@ -5178,7 +4672,7 @@ const AdminDashboard = () => {
           follow_up_notes: followUpData.followUpReason,
           follow_up_scheduled_by: user?.id || 'admin',
           follow_up_scheduled_at: new Date().toISOString()
-        });
+        } as any);
 
         if (jobError) {
           throw new Error(jobError.message);
@@ -5204,7 +4698,7 @@ const AdminDashboard = () => {
                 ...job, 
                 status: 'FOLLOW_UP',
                 followUpDate: followUpData.followUpDate,
-                followUpNotes: followUpData.followUpReason + (followUpData.followUpNotes ? ` - ${followUpData.followUpNotes}` : ''),
+                followUpNotes: followUpData.followUpReason + ((followUpData as any).followUpNotes ? ` - ${(followUpData as any).followUpNotes}` : ''),
                 followUpScheduledBy: user?.id || 'admin',
                 followUpScheduledAt: new Date().toISOString()
               } : job
@@ -5263,7 +4757,7 @@ const AdminDashboard = () => {
         denial_reason: denyReason.trim(),
         denied_by: deniedByValue,
         denied_at: new Date().toISOString()
-      });
+      } as any);
 
       if (error) {
         throw new Error(error.message);
@@ -5370,7 +4864,7 @@ const AdminDashboard = () => {
       // Update job in database
       const { error } = await db.jobs.update(jobId, {
         requirements: JSON.stringify(requirements)
-      });
+      } as any);
 
       if (error) {
         console.error('Error marking message as sent:', error);
@@ -5388,15 +4882,7 @@ const AdminDashboard = () => {
   };
 
   // Calculate AMC end date: agreement date + years - 1 day
-  const calculateAMCEndDate = (agreementDate: string, years: number) => {
-    if (!agreementDate) return;
-    const startDate = new Date(agreementDate);
-    const endDate = new Date(startDate);
-    endDate.setFullYear(endDate.getFullYear() + years);
-    // Subtract 1 day (AMC covers up to that date - 1 day)
-    endDate.setDate(endDate.getDate() - 1);
-    setAmcEndDate(endDate.toISOString().split('T')[0]);
-  };
+  // calculateAMCEndDate moved to CompleteJobDialog component
 
   // Handle job completion
   const handleCompleteJob = async (job: Job) => {
@@ -5426,251 +4912,7 @@ const AdminDashboard = () => {
     }
     
     setSelectedJobForComplete(jobWithCustomer);
-    setCompletionNotes('');
-    setCompleteJobStep(1);
-    setBillAmount('');
-    setBillPhotos([]);
-    // Set default AMC date to today
-    const today = new Date().toISOString().split('T')[0];
-    setAmcDateGiven(today);
-    setAmcYears(1);
-    // Calculate end date with default 1 year
-    calculateAMCEndDate(today, 1);
-    setAmcIncludesPrefilter(false);
-    setHasAMC(false);
-    setPaymentMode('');
-    // Initialize customerHasPrefilter from customer's existing value if available
-    const customerPrefilter = jobWithCustomer.customer 
-      ? ((jobWithCustomer.customer as any).has_prefilter ?? (jobWithCustomer.customer as any).hasPrefilter ?? null)
-      : null;
-    setCustomerHasPrefilter(customerPrefilter);
-    setQrCodeType('');
-    setSelectedQrCodeId('');
-    setPaymentScreenshot('');
-
     setCompleteDialogOpen(true);
-  };
-
-  // Handle job completion submission
-  const handleCompleteJobSubmit = async () => {
-    if (!selectedJobForComplete) return;
-
-    // Step 1: Bill Photo (optional) - move to step 2
-    if (completeJobStep === 1) {
-      setCompleteJobStep(2);
-      return;
-    }
-
-    // Step 2: Bill Amount - validate and show confirmation
-    if (completeJobStep === 2) {
-      if (!billAmount || parseFloat(billAmount) <= 0) {
-        toast.error('Please enter a valid bill amount');
-        return;
-      }
-      // Show confirmation dialog
-      setBillAmountConfirmOpen(true);
-      return;
-    }
-
-    // Step 3: Payment Mode - validate and move to step 4 (payment screenshot) or step 5 (AMC)
-    if (completeJobStep === 3) {
-      if (!paymentMode) {
-        toast.error('Please select a payment mode');
-        return;
-      }
-      // If Cash, skip to step 5 (AMC)
-      if (paymentMode === 'CASH') {
-      setCompleteJobStep(5);
-      return;
-      }
-      // If Online, need to check QR code selection, then go to payment screenshot step
-      if (paymentMode === 'ONLINE') {
-        if (!selectedQrCodeId) {
-          toast.error('Please select a QR code');
-          return;
-        }
-        setCompleteJobStep(4);
-        return;
-      }
-    }
-
-    // Step 4: Payment Screenshot (optional) - move to step 5 (AMC)
-    if (completeJobStep === 4) {
-      setCompleteJobStep(5);
-      return;
-    }
-
-    // Step 5: AMC - move to step 6 (Prefilter)
-    if (completeJobStep === 5) {
-      setCompleteJobStep(6);
-      return;
-    }
-
-    // On step 6, submit the form
-    try {
-      // Prepare update data
-      // Map payment mode to database allowed values
-      // Database allows: 'CASH', 'CARD', 'UPI', 'BANK_TRANSFER'
-      // Frontend uses: 'CASH', 'ONLINE'
-      let dbPaymentMethod: 'CASH' | 'CARD' | 'UPI' | 'BANK_TRANSFER' | null = null;
-      if (paymentMode === 'CASH') {
-        dbPaymentMethod = 'CASH';
-      } else if (paymentMode === 'ONLINE') {
-        // Map ONLINE to UPI (most common online payment method)
-        dbPaymentMethod = 'UPI';
-      }
-      
-      const updateData: any = {
-        status: 'COMPLETED',
-        end_time: new Date().toISOString(),
-        completion_notes: completionNotes.trim(),
-        completed_by: user?.id || 'admin',
-        completed_at: new Date().toISOString(),
-        actual_cost: parseFloat(billAmount) || 0,
-        payment_amount: parseFloat(billAmount) || 0,
-        payment_method: dbPaymentMethod || null,
-        customer_has_prefilter: customerHasPrefilter,
-      };
-
-      // Handle requirements - merge bill photos and AMC info
-      const currentRequirements = selectedJobForComplete.requirements || [];
-      let requirements: any[] = [];
-      
-      if (Array.isArray(currentRequirements)) {
-        requirements = [...currentRequirements];
-      } else if (typeof currentRequirements === 'string') {
-        try {
-          requirements = JSON.parse(currentRequirements);
-          if (!Array.isArray(requirements)) {
-            requirements = [];
-          }
-        } catch {
-          requirements = [];
-        }
-      }
-
-      // Remove existing bill_photos, payment_photos, qr_photos and amc_info entries
-      requirements = requirements.filter((req: any) => !req.bill_photos && !req.payment_photos && !req.qr_photos && !req.amc_info);
-
-      // Add bill photos if any
-      if (billPhotos.length > 0) {
-        requirements.push({ bill_photos: billPhotos });
-      }
-
-      // Add QR code data if payment mode is ONLINE
-      if (paymentMode === 'ONLINE' && selectedQrCodeId) {
-        const qrPhotos: any = {
-          qr_code_type: qrCodeType,
-          selected_qr_code_id: selectedQrCodeId,
-          payment_screenshot: paymentScreenshot || null
-        };
-        
-        // Add selected QR code URL
-        if (selectedQrCodeId.startsWith('common_')) {
-          const qrId = selectedQrCodeId.replace('common_', '');
-          const selectedQr = commonQrCodes.find(qr => qr.id === qrId);
-          if (selectedQr) {
-            qrPhotos.selected_qr_code_url = selectedQr.qrCodeUrl;
-            qrPhotos.selected_qr_code_name = selectedQr.name;
-          }
-        } else if (selectedQrCodeId.startsWith('technician_')) {
-          const techId = selectedQrCodeId.replace('technician_', '');
-          const selectedTech = technicians.find(t => t.id === techId);
-          if (selectedTech && (selectedTech as any).qrCode) {
-            qrPhotos.selected_qr_code_url = (selectedTech as any).qrCode;
-            qrPhotos.selected_qr_code_name = selectedTech.fullName || 'Technician';
-          }
-        }
-        
-        requirements.push({ qr_photos: qrPhotos });
-      }
-
-      // Add AMC info if provided
-      if (hasAMC && amcDateGiven && amcEndDate) {
-        requirements.push({ 
-          amc_info: {
-            date_given: amcDateGiven,
-            end_date: amcEndDate,
-            years: amcYears,
-            includes_prefilter: amcIncludesPrefilter
-          }
-        });
-      }
-
-      // Update requirements if we have any changes
-      if (billPhotos.length > 0 || (paymentMode === 'ONLINE' && selectedQrCodeId) || (hasAMC && amcDateGiven && amcEndDate)) {
-        updateData.requirements = JSON.stringify(requirements);
-      }
-
-      const { error } = await db.jobs.update(selectedJobForComplete.id, updateData);
-
-      if (error) {
-        throw new Error(error.message);
-      }
-
-      // Update local state
-      setJobs(prev => prev.map(job => 
-        job.id === selectedJobForComplete.id ? { 
-          ...job, 
-          status: 'COMPLETED',
-          end_time: new Date().toISOString(),
-          completionNotes: completionNotes.trim(),
-          completedBy: user?.id || 'admin',
-          completedAt: new Date().toISOString(),
-          actual_cost: parseFloat(billAmount) || 0,
-          payment_amount: parseFloat(billAmount) || 0,
-        } : job
-      ));
-
-      setCustomerJobs(prev => {
-        const updated = { ...prev };
-        Object.keys(updated).forEach(customerId => {
-          updated[customerId] = updated[customerId].map(job => 
-            job.id === selectedJobForComplete.id ? { 
-              ...job, 
-              status: 'COMPLETED',
-              end_time: new Date().toISOString(),
-              completionNotes: completionNotes.trim(),
-              completedBy: user?.id || 'admin',
-              completedAt: new Date().toISOString(),
-              actual_cost: parseFloat(billAmount) || 0,
-              payment_amount: parseFloat(billAmount) || 0,
-            } : job
-          );
-        });
-        return updated;
-      });
-
-      toast.success('Job completed successfully');
-      setCompleteDialogOpen(false);
-      setSelectedJobForComplete(null);
-      setCompletionNotes('');
-      setCompleteJobStep(1);
-      setBillAmount('');
-      setBillPhotos([]);
-      setAmcDateGiven(new Date().toISOString().split('T')[0]);
-      setAmcEndDate('');
-      setAmcYears(1);
-      setAmcIncludesPrefilter(false);
-      setHasAMC(false);
-      setPaymentMode('');
-      setCustomerHasPrefilter(null);
-      setQrCodeType('');
-      setSelectedQrCodeId('');
-      setTechnicianQrCode('');
-      setTechnicianName('');
-      setPaymentScreenshot('');
-      setPaymentMode('');
-      setCustomerHasPrefilter(null);
-      setQrCodeType('');
-      setSelectedQrCodeId('');
-      setTechnicianQrCode('');
-      setTechnicianName('');
-      setPaymentScreenshot('');
-      setCustomerQrPhotos([]);
-    } catch (error) {
-      toast.error('Failed to complete job');
-    }
   };
 
   // Handle job deletion
@@ -6257,29 +5499,6 @@ const AdminDashboard = () => {
     }
   };
 
-  const getStatusBadge = (status: string) => {
-    const statusConfig = {
-      'PENDING': { color: 'bg-yellow-100 text-yellow-800', icon: Clock },
-      'ASSIGNED': { color: 'bg-blue-100 text-blue-800', icon: Wrench },
-      'IN_PROGRESS': { color: 'bg-orange-100 text-orange-800', icon: Wrench },
-      'COMPLETED': { color: 'bg-green-100 text-green-800', icon: CheckCircle },
-      'CANCELLED': { color: 'bg-red-100 text-red-800', icon: AlertCircle },
-      'FOLLOW_UP': { color: 'bg-indigo-100 text-indigo-800', icon: CalendarPlus },
-      'DENIED': { color: 'bg-red-100 text-red-800', icon: XCircle },
-      'ACTIVE': { color: 'bg-green-100 text-green-800', icon: CheckCircle },
-      'INACTIVE': { color: 'bg-gray-100 text-gray-800', icon: AlertCircle },
-    };
-
-    const config = statusConfig[status as keyof typeof statusConfig] || statusConfig['PENDING'];
-    const Icon = config.icon;
-
-    return (
-      <Badge className={`${config.color} border-0`}>
-        <Icon className="w-3 h-3 mr-1" />
-        {status}
-      </Badge>
-    );
-  };
 
   // Filter data based on search term (case insensitive)
   // Search by name, phone, email, and customer ID only
@@ -6332,8 +5551,7 @@ const AdminDashboard = () => {
   
   // Customers with Jobs processing complete
 
-
-    // Filter customers based on status filter
+  // Filter customers based on status filter
   const getFilteredCustomers = () => {
     // For COMPLETED and CANCELLED, use jobs directly since they're paginated
     if (statusFilter === 'COMPLETED' || statusFilter === 'CANCELLED') {
@@ -6405,7 +5623,7 @@ const AdminDashboard = () => {
     } else if (statusFilter === 'CANCELLED') {
       // Already handled above
       filteredCustomers = customersWithJobs.filter(({ allJobs }) => 
-        allJobs.some(job => ['DENIED', 'CANCELLED'].includes(job.status))
+        allJobs.some(job => ['DENIED', 'CANCELLED'].includes(job.status as any))
       );
     } else {
       // Filter by specific job status
@@ -6424,7 +5642,7 @@ const AdminDashboard = () => {
           const bDate = new Date(b.customer.createdAt).getTime();
           return bDate - aDate;
         })
-    : filteredCustomers.map(customer => {
+    : filteredCustomers.map((customer: Customer) => {
         // Find the customer in customersWithJobs to get their jobs
         const customerWithJobs = customersWithJobs.find(cwj => cwj.customer.id === customer.id);
         // If found, return it; otherwise create a new entry with empty jobs
@@ -6709,7 +5927,7 @@ const AdminDashboard = () => {
               </Button>
               <div className="flex gap-2 flex-wrap">
                 <Button
-                  variant={currentView === 'payments' ? 'default' : 'outline'}
+                  variant={(currentView as string) === 'payments' ? 'default' : 'outline'}
                   onClick={() => handleViewChange('payments')}
                   className="flex items-center gap-2"
                 >
@@ -6717,7 +5935,7 @@ const AdminDashboard = () => {
                   <span className="hidden sm:inline">Payments</span>
                 </Button>
                 <Button
-                  variant={currentView === 'billing' ? 'default' : 'outline'}
+                  variant={(currentView as string) === 'billing' ? 'default' : 'outline'}
                   onClick={() => handleViewChange('billing')}
                   className="flex items-center gap-2"
                 >
@@ -6725,7 +5943,7 @@ const AdminDashboard = () => {
                   <span className="hidden sm:inline">Billing</span>
                 </Button>
                 <Button
-                  variant={currentView === 'analytics' ? 'default' : 'outline'}
+                  variant={(currentView as string) === 'analytics' ? 'default' : 'outline'}
                   onClick={() => handleViewChange('analytics')}
                   className="flex items-center gap-2"
                 >
@@ -6733,7 +5951,7 @@ const AdminDashboard = () => {
                   <span className="hidden sm:inline">Analytics</span>
                 </Button>
                 <Button
-                  variant={currentView === 'calling' ? 'default' : 'outline'}
+                  variant={(currentView as string) === 'calling' ? 'default' : 'outline'}
                   onClick={() => handleViewChange('calling')}
                   className="flex items-center gap-2"
                 >
@@ -6807,95 +6025,13 @@ const AdminDashboard = () => {
         </div>
 
         {/* Stats Cards - Clickable Filter Buttons */}
-        <div className="grid grid-cols-2 gap-3 mb-6 sm:grid-cols-4 sm:gap-6">
-          <Card 
-            className={`border-2 p-3 sm:p-6 cursor-pointer transition-all hover:shadow-md ${
-              statusFilter === 'ONGOING' 
-                ? 'bg-blue-50 border-blue-500 shadow-md' 
-                : 'bg-white border-gray-200 hover:border-gray-300'
-            }`}
-            onClick={() => setStatusFilter('ONGOING')}
-          >
-            <div className="flex items-center justify-between mb-2">
-              <Wrench className={`h-5 w-5 sm:h-4 sm:w-4 ${statusFilter === 'ONGOING' ? 'text-blue-600' : 'text-blue-600'}`} />
-              <div className="text-right">
-                <div className={`text-lg font-bold sm:text-2xl ${statusFilter === 'ONGOING' ? 'text-blue-900' : 'text-gray-900'}`}>
-                  {jobCounts.ongoing}
-                </div>
-                <p className="text-xs text-gray-500">Ongoing</p>
-              </div>
-            </div>
-            <p className="text-xs text-gray-500">
-                {pendingJobs.length} pending, {inProgressJobs.length} in progress
-              </p>
-          </Card>
-
-          <Card 
-            className={`border-2 p-3 sm:p-6 cursor-pointer transition-all hover:shadow-md ${
-              statusFilter === 'RESCHEDULED' 
-                ? 'bg-indigo-50 border-indigo-500 shadow-md' 
-                : 'bg-white border-gray-200 hover:border-gray-300'
-            }`}
-            onClick={() => setStatusFilter('RESCHEDULED')}
-          >
-            <div className="flex items-center justify-between mb-2">
-              <CalendarPlus className={`h-5 w-5 sm:h-4 sm:w-4 ${statusFilter === 'RESCHEDULED' ? 'text-indigo-600' : 'text-indigo-600'}`} />
-              <div className="text-right">
-                <div className={`text-lg font-bold sm:text-2xl ${statusFilter === 'RESCHEDULED' ? 'text-indigo-900' : 'text-gray-900'}`}>
-                  {jobCounts.followup}
-                </div>
-                <p className="text-xs text-gray-500">Followup</p>
-              </div>
-            </div>
-            <p className="text-xs text-gray-500">
-                Jobs requiring follow-up
-              </p>
-          </Card>
-
-          <Card 
-            className={`border-2 p-3 sm:p-6 cursor-pointer transition-all hover:shadow-md ${
-              statusFilter === 'CANCELLED' 
-                ? 'bg-red-50 border-red-500 shadow-md' 
-                : 'bg-white border-gray-200 hover:border-gray-300'
-            }`}
-            onClick={() => setStatusFilter('CANCELLED')}
-          >
-            <div className="flex items-center justify-between mb-2">
-              <XCircle className={`h-5 w-5 sm:h-4 sm:w-4 ${statusFilter === 'CANCELLED' ? 'text-red-600' : 'text-red-600'}`} />
-              <div className="text-right">
-                <div className={`text-lg font-bold sm:text-2xl ${statusFilter === 'CANCELLED' ? 'text-red-900' : 'text-gray-900'}`}>
-                  {jobCounts.denied}
-                </div>
-                <p className="text-xs text-gray-500">Denied</p>
-              </div>
-            </div>
-            <p className="text-xs text-gray-500">
-                Cancelled or denied jobs
-              </p>
-          </Card>
-
-          <Card 
-            className={`border-2 p-3 sm:p-6 cursor-pointer transition-all hover:shadow-md ${
-              statusFilter === 'COMPLETED' 
-                ? 'bg-green-50 border-green-500 shadow-md' 
-                : 'bg-white border-gray-200 hover:border-gray-300'
-            }`}
-            onClick={() => setStatusFilter('COMPLETED')}
-          >
-            <div className="flex items-center justify-between mb-2">
-              <CheckCircle className={`h-5 w-5 sm:h-4 sm:w-4 ${statusFilter === 'COMPLETED' ? 'text-green-600' : 'text-green-600'}`} />
-              <div className="text-right">
-                <div className={`text-lg font-bold sm:text-2xl ${statusFilter === 'COMPLETED' ? 'text-green-900' : 'text-gray-900'}`}>
-                  {jobCounts.completed}
-                </div>
-                <p className="text-xs text-gray-500">Completed</p>
-              </div>
-            </div>
-            <p className="text-xs text-gray-500">
-                Successfully completed jobs
-              </p>
-          </Card>
-        </div>
+        <StatsCards
+          statusFilter={statusFilter}
+          onFilterChange={(filter) => setStatusFilter(filter as typeof statusFilter)}
+          jobCounts={jobCounts}
+          pendingJobs={pendingJobs}
+          inProgressJobs={inProgressJobs}
+        />
 
         {/* Date Filter for Denied Jobs */}
         {statusFilter === 'CANCELLED' && (
@@ -6982,487 +6118,35 @@ const AdminDashboard = () => {
           <div className="space-y-6">
             {displayedCustomers.map(({ customer, allJobs, upcomingJobs, completedJobs, cancelledJobs }) => (
               <Card key={customer.id} className="bg-white border border-gray-200 hover:border-gray-300 hover:shadow-md transition-all duration-200 overflow-hidden mb-6 rounded-lg group">
-                {/* Customer Profile Header - Mobile First Design */}
-                <div className="bg-gray-50 p-4 border-b border-gray-200">
-                  {/* Mobile Customer Info */}
-                  <div className="mb-4 sm:hidden">
-                    <div className="flex items-center gap-3 mb-2">
-                      <div className={`w-6 h-6 ${customerAMCStatus[customer.id] ? 'bg-green-500' : 'bg-gray-600'} rounded-sm flex items-center justify-center relative`}>
-                        <div className="w-3 h-3 bg-white rounded-sm"></div>
-                        {customerAMCStatus[customer.id] && (
-                          <div className="absolute -top-0.5 -right-0.5 w-2 h-2 bg-green-600 rounded-full border border-white" title="Active AMC"></div>
-                        )}
-                      </div>
-                      <h3 className="text-lg font-semibold text-gray-900 truncate flex-1">
-                        {customer.fullName || 'Unknown Customer'}
-                      </h3>
-                      <div className="bg-gray-800 text-white px-2 py-1 rounded-md font-mono text-xs font-medium">
-                        {customer.customerId || 'N/A'}
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Action Buttons - Mobile Grid */}
-                  <div className="grid grid-cols-2 gap-2 sm:hidden">
-                    <Button 
-                      variant="outline" 
-                      size="sm" 
-                      className="flex items-center justify-center gap-2 h-10 bg-white hover:bg-gray-50 border-gray-300 hover:border-gray-400 text-gray-700 hover:text-gray-900 transition-all duration-200 rounded-md text-sm"
-                      onClick={() => handleEditCustomer(customer)}
-                    >
-                      <Edit className="w-4 h-4" />
-                      Edit Profile
-                    </Button>
-                    <Button 
-                      variant="outline" 
-                      size="sm" 
-                      className="flex items-center justify-center gap-2 h-10 bg-white hover:bg-gray-50 border-gray-300 hover:border-gray-400 text-gray-700 hover:text-gray-900 transition-all duration-200 rounded-md text-sm"
-                      onClick={() => handleNewJob(customer)}
-                    >
-                      <Plus className="w-4 h-4" />
-                      New Job
-                    </Button>
-                    <Button 
-                      variant="outline" 
-                      size="sm" 
-                      className="flex items-center justify-center gap-2 h-10 bg-white hover:bg-gray-50 border-gray-300 hover:border-gray-400 text-gray-700 hover:text-gray-900 transition-all duration-200 rounded-md text-sm"
-                      onClick={() => handleViewPhotos(customer)}
-                      disabled={isLoadingPhotos}
-                    >
-                      {isLoadingPhotos && selectedCustomerForPhotos?.customer_id === (customer.customer_id || customer.customerId) ? (
-                        <div className="flex items-center gap-1">
-                          <div className="w-2 h-2 bg-black rounded-full animate-bounce" style={{ animationDelay: '0ms' }}></div>
-                          <div className="w-2 h-2 bg-black rounded-full animate-bounce" style={{ animationDelay: '150ms' }}></div>
-                          <div className="w-2 h-2 bg-black rounded-full animate-bounce" style={{ animationDelay: '300ms' }}></div>
-                        </div>
-                      ) : (
-                        <Camera className="w-4 h-4" />
-                      )}
-                      Photos
-                    </Button>
-                    <Button 
-                      variant="outline" 
-                      size="sm" 
-                      className="flex items-center justify-center gap-2 h-10 bg-white hover:bg-gray-50 border-gray-300 hover:border-gray-400 text-gray-700 hover:text-gray-900 transition-all duration-200 rounded-md text-sm"
-                      onClick={() => {
-                        setSelectedCustomerForReport(customer);
-                        setCustomerReportDialogOpen(true);
-                      }}
-                    >
-                      <FileText className="w-4 h-4" />
-                      Reports
-                    </Button>
-                    
-                    {/* Mobile More Options Button - Opens Dialog */}
-                    <div className="col-span-2">
-                      <Button 
-                        variant="outline" 
-                        size="sm" 
-                        className="w-full flex items-center justify-center gap-2 h-10 bg-white hover:bg-gray-50 border-gray-300 hover:border-gray-400 text-gray-700 hover:text-gray-900 transition-all duration-200 rounded-md text-sm"
-                        onClick={() => {
-                          setMoreOptionsDialogOpen(prev => ({
-                            ...prev,
-                            [customer.id]: true
-                          }));
-                        }}
-                      >
-                        <MoreVertical className="w-4 h-4" />
-                        More Options
-                      </Button>
-                      
-                      {/* More Options Dialog */}
-                      <Dialog 
-                        open={moreOptionsDialogOpen[customer.id] || false}
-                        onOpenChange={(open) => {
-                          setMoreOptionsDialogOpen(prev => ({
-                            ...prev,
-                            [customer.id]: open
-                          }));
-                        }}
-                      >
-                        <DialogContent className="sm:max-w-md">
-                          <DialogHeader>
-                            <DialogTitle>More Options</DialogTitle>
-                            <DialogDescription>
-                              Choose an action for {customer.fullName || 'this customer'}
-                            </DialogDescription>
-                          </DialogHeader>
-                          <div className="grid gap-2 py-4">
-                            <Button 
-                              variant="outline"
-                              className="w-full justify-start h-auto py-3 px-4"
-                              onClick={() => {
-                                setMoreOptionsDialogOpen(prev => ({ ...prev, [customer.id]: false }));
-                                handleGenerateBill(customer);
-                              }}
-                            >
-                              <Receipt className="mr-3 h-5 w-5" />
-                              <div className="text-left">
-                                <div className="font-medium">Generate Bill</div>
-                                <div className="text-xs text-muted-foreground">Create a bill for this customer</div>
-                              </div>
-                            </Button>
-                            <Button 
-                              variant="outline"
-                              className="w-full justify-start h-auto py-3 px-4"
-                              onClick={() => {
-                                setMoreOptionsDialogOpen(prev => ({ ...prev, [customer.id]: false }));
-                                handleGenerateQuotation(customer);
-                              }}
-                            >
-                              <FileText className="mr-3 h-5 w-5" />
-                              <div className="text-left">
-                                <div className="font-medium">Generate Quotation</div>
-                                <div className="text-xs text-muted-foreground">Create a quotation for this customer</div>
-                              </div>
-                            </Button>
-                            <Button 
-                              variant="outline"
-                              className="w-full justify-start h-auto py-3 px-4"
-                              onClick={() => {
-                                setMoreOptionsDialogOpen(prev => ({ ...prev, [customer.id]: false }));
-                                handleGenerateAMC(customer);
-                              }}
-                            >
-                              <Star className="mr-3 h-5 w-5" />
-                              <div className="text-left">
-                                <div className="font-medium">Generate AMC</div>
-                                <div className="text-xs text-muted-foreground">Create full AMC or share terms only</div>
-                              </div>
-                            </Button>
-                            <Button 
-                              variant="outline"
-                              className="w-full justify-start h-auto py-3 px-4"
-                              onClick={() => {
-                                setMoreOptionsDialogOpen(prev => ({ ...prev, [customer.id]: false }));
-                                handleGenerateTaxInvoice(customer);
-                              }}
-                            >
-                              <Receipt className="mr-3 h-5 w-5" />
-                              <div className="text-left">
-                                <div className="font-medium">Generate Tax Invoice</div>
-                                <div className="text-xs text-muted-foreground">Create a tax invoice with GST for this customer</div>
-                              </div>
-                            </Button>
-                          </div>
-                        </DialogContent>
-                      </Dialog>
-                    </div>
-                  </div>
-
-                  {/* Desktop Layout - Customer Info and Action Buttons in Same Row */}
-                  <div className="hidden sm:flex sm:items-center sm:justify-between sm:gap-4">
-                    {/* Customer Info */}
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-3 flex-wrap">
-                        <div className="flex items-center gap-2">
-                          <div className={`w-5 h-5 ${customerAMCStatus[customer.id] ? 'bg-green-500' : 'bg-gray-600'} rounded-sm flex items-center justify-center relative`}>
-                            <div className="w-2 h-2 bg-white rounded-sm"></div>
-                            {customerAMCStatus[customer.id] && (
-                              <div className="absolute -top-0.5 -right-0.5 w-2 h-2 bg-green-600 rounded-full border border-white" title="Active AMC"></div>
-                            )}
-                          </div>
-                          <h3 className="text-xl font-semibold text-gray-900 truncate">
-                            {customer.fullName || 'Unknown Customer'}
-                          </h3>
-                          <div className="bg-gray-800 text-white px-2 py-1 rounded-md font-mono text-sm font-medium">
-                            {customer.customerId || 'N/A'}
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                    
-                    {/* Desktop Action Buttons */}
-                    <div className="flex items-center gap-2">
-                      <Button 
-                        variant="outline" 
-                        size="sm" 
-                        className="flex items-center gap-2 h-8 px-3 bg-white hover:bg-gray-50 border-gray-300 hover:border-gray-400 text-gray-700 hover:text-gray-900 transition-all duration-200 rounded-md text-xs"
-                        onClick={() => handleEditCustomer(customer)}
-                      >
-                        <Edit className="w-3 h-3" />
-                        Edit
-                      </Button>
-                      <Button 
-                        variant="outline" 
-                        size="sm" 
-                        className="flex items-center gap-2 h-8 px-3 bg-white hover:bg-gray-50 border-gray-300 hover:border-gray-400 text-gray-700 hover:text-gray-900 transition-all duration-200 rounded-md text-xs"
-                        onClick={() => handleNewJob(customer)}
-                      >
-                        <Plus className="w-3 h-3" />
-                        Job
-                      </Button>
-                      <Button 
-                        variant="outline" 
-                        size="sm" 
-                        className="flex items-center gap-2 h-8 px-3 bg-white hover:bg-gray-50 border-gray-300 hover:border-gray-400 text-gray-700 hover:text-gray-900 transition-all duration-200 rounded-md text-xs"
-                        onClick={() => handleViewPhotos(customer)}
-                        disabled={isLoadingPhotos}
-                      >
-                        {isLoadingPhotos && selectedCustomerForPhotos?.customer_id === (customer.customer_id || customer.customerId) ? (
-                          <div className="flex items-center gap-0.5">
-                            <div className="w-1.5 h-1.5 bg-black rounded-full animate-bounce" style={{ animationDelay: '0ms' }}></div>
-                            <div className="w-1.5 h-1.5 bg-black rounded-full animate-bounce" style={{ animationDelay: '150ms' }}></div>
-                            <div className="w-1.5 h-1.5 bg-black rounded-full animate-bounce" style={{ animationDelay: '300ms' }}></div>
-                          </div>
-                        ) : (
-                          <Camera className="w-3 h-3" />
-                        )}
-                        Photos
-                      </Button>
-                      <Button 
-                        variant="outline" 
-                        size="sm" 
-                        className="flex items-center gap-2 h-8 px-3 bg-white hover:bg-gray-50 border-gray-300 hover:border-gray-400 text-gray-700 hover:text-gray-900 transition-all duration-200 rounded-md text-xs"
-                        onClick={() => {
-                          setSelectedCustomerForReport(customer);
-                          setCustomerReportDialogOpen(true);
-                        }}
-                      >
-                        <FileText className="w-3 h-3" />
-                        Reports
-                      </Button>
-                      
-                      {/* Desktop 3 Dots Menu */}
-                      <DropdownMenu>
-                        <DropdownMenuTrigger asChild>
-                          <Button 
-                            variant="outline" 
-                            size="sm" 
-                            className="flex items-center gap-2 h-8 px-3 bg-white hover:bg-gray-50 border-gray-300 hover:border-gray-400 text-gray-700 hover:text-gray-900 transition-all duration-200 rounded-md text-xs"
-                          >
-                            <MoreVertical className="w-3 h-3" />
-                            More
-                          </Button>
-                        </DropdownMenuTrigger>
-                        <DropdownMenuContent align="end" className="w-48">
-                          <DropdownMenuItem onClick={() => handleGenerateBill(customer)}>
-                            <Receipt className="mr-2 h-4 w-4" />
-                            Generate Bill
-                          </DropdownMenuItem>
-                          <DropdownMenuItem onClick={() => handleGenerateQuotation(customer)}>
-                            <FileText className="mr-2 h-4 w-4" />
-                            Generate Quotation
-                          </DropdownMenuItem>
-                          <DropdownMenuItem onClick={() => handleGenerateAMC(customer)}>
-                            <Star className="mr-2 h-4 w-4" />
-                            Generate AMC / Share Terms
-                          </DropdownMenuItem>
-                          <DropdownMenuItem onClick={() => handleGenerateTaxInvoice(customer)}>
-                            <Receipt className="mr-2 h-4 w-4" />
-                            Generate Tax Invoice
-                          </DropdownMenuItem>
-                        </DropdownMenuContent>
-                      </DropdownMenu>
-                    </div>
-                  </div>
-                </div>
+                <CustomerCardHeader
+                  customer={customer}
+                  customerAMCStatus={customerAMCStatus}
+                  isLoadingPhotos={isLoadingPhotos}
+                  selectedCustomerForPhotos={selectedCustomerForPhotos}
+                  moreOptionsDialogOpen={moreOptionsDialogOpen}
+                  onEditCustomer={handleEditCustomer}
+                  onNewJob={handleNewJob}
+                  onViewPhotos={handleViewPhotos}
+                  onGenerateBill={handleGenerateBill}
+                  onGenerateQuotation={handleGenerateQuotation}
+                  onGenerateAMC={handleGenerateAMC}
+                  onGenerateTaxInvoice={handleGenerateTaxInvoice}
+                  onSetSelectedCustomerForReport={setSelectedCustomerForReport}
+                  onSetCustomerReportDialogOpen={setCustomerReportDialogOpen}
+                  onSetMoreOptionsDialogOpen={setMoreOptionsDialogOpen}
+                />
 
                 {/* Contact & Communication - Mobile First */}
-                <div className="p-4 border-b border-gray-100">
-                  <div className="grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
-                    {/* Phone */}
-                    <div className="bg-white rounded-lg p-3 border border-gray-200 hover:border-gray-300 hover:shadow-sm transition-all duration-200">
-                      <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-3">
-                        <div className="w-8 h-8 sm:w-10 sm:h-10 bg-gray-100 rounded-lg flex items-center justify-center flex-shrink-0">
-                          {/* Mobile: Show popup, Desktop: Direct call */}
-                          <button 
-                            onClick={() => {
-                              // Show popup if there's alternate phone, otherwise direct call
-                              if (customer.alternate_phone) {
-                                handlePhoneClick(customer);
-                              } else {
-                                window.open(`tel:${customer.phone}`, '_self');
-                              }
-                            }}
-                            className="cursor-pointer"
-                          >
-                            <Phone className="w-4 h-4 sm:w-5 sm:h-5 text-gray-600" />
-                          </button>
-                        </div>
-                        <div className="flex-1 min-w-0">
-                          <div className="text-sm font-semibold text-gray-900 truncate">{customer.phone}</div>
-                          {/* Show only primary label, no alternate phone in display */}
-                          <div className="text-xs text-gray-500">Primary</div>
-                        </div>
-                      </div>
-                    </div>
-                    
-                    {/* Email */}
-                    <div className="bg-white rounded-lg p-3 border border-gray-200 hover:border-gray-300 hover:shadow-sm transition-all duration-200">
-                      <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-3">
-                        <div className="w-8 h-8 sm:w-10 sm:h-10 bg-gray-100 rounded-lg flex items-center justify-center flex-shrink-0">
-                          {customer.email && customer.email.trim() && !customer.email.toLowerCase().includes('nomail') && !customer.email.toLowerCase().includes('no@mail') ? (
-                            <a href={`mailto:${customer.email}`} className="cursor-pointer">
-                              <Mail className="w-4 h-4 sm:w-5 sm:h-5 text-gray-600" />
-                            </a>
-                          ) : (
-                            <Mail className="w-4 h-4 sm:w-5 sm:h-5 text-gray-400" />
-                          )}
-                        </div>
-                        <div className="flex-1 min-w-0">
-                          <div className="text-sm font-semibold text-gray-900 truncate">
-                            {customer.email && customer.email.trim() && !customer.email.toLowerCase().includes('nomail') && !customer.email.toLowerCase().includes('no@mail') 
-                              ? customer.email 
-                              : 'nomail@mail'}
-                          </div>
-                          <div className="text-xs text-gray-500">Email</div>
-                        </div>
-                      </div>
-                    </div>
-                    
-                    {/* WhatsApp */}
-                    <div className="bg-white rounded-lg p-3 border border-gray-200 hover:border-gray-300 hover:shadow-sm transition-all duration-200">
-                      <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-3">
-                        <div className="w-8 h-8 sm:w-10 sm:h-10 bg-gray-100 rounded-lg flex items-center justify-center flex-shrink-0">
-                          <button
-                            onClick={() => toast.info('WhatsApp integration coming soon')}
-                            className="cursor-pointer"
-                          >
-                            <WhatsAppIcon className="w-4 h-4 sm:w-5 sm:h-5 text-gray-600" />
-                          </button>
-                        </div>
-                        <div className="flex-1 min-w-0">
-                          <div className="text-sm font-semibold text-gray-900">WhatsApp</div>
-                          <div className="text-xs text-gray-500">Send Message</div>
-                        </div>
-                      </div>
-                    </div>
-                    
-                    {/* Location */}
-                    <div className="bg-white rounded-lg p-3 border border-gray-200 hover:border-gray-300 hover:shadow-sm transition-all duration-200">
-                      <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-3">
-                        <div className="w-8 h-8 sm:w-10 sm:h-10 bg-gray-100 rounded-lg flex items-center justify-center flex-shrink-0">
-                          <button
-                            onClick={() => {
-                              // Open Google Maps
-                              const googleLoc = (customer.location as any)?.googleLocation;
-                              if (googleLoc && typeof googleLoc === 'string' && 
-                                  (googleLoc.includes('google.com/maps') || googleLoc.includes('maps.app.goo.gl') || googleLoc.includes('goo.gl/maps')) &&
-                                  !googleLoc.includes('localhost') && 
-                                  !googleLoc.includes('127.0.0.1')) {
-                                window.open(googleLoc, '_blank', 'noopener,noreferrer');
-                              } else {
-                                const location = extractCoordinates(customer.location);
-                                if (location && location.latitude !== 0 && location.longitude !== 0) {
-                                  window.open(`https://www.google.com/maps/place/${location.latitude},${location.longitude}`, '_blank', 'noopener,noreferrer');
-                                } else {
-                                  toast.error('Location data not available');
-                                }
-                              }
-                            }}
-                            className="cursor-pointer"
-                          >
-                            <MapPin className="w-4 h-4 sm:w-5 sm:h-5 text-gray-600" />
-                          </button>
-                        </div>
-                        <div className="flex-1 min-w-0">
-                          <div className="text-sm font-semibold text-gray-900">
-                            Location
-                          </div>
-                          <div className="text-xs">
-                            {(customer.address as any)?.visible_address && String((customer.address as any).visible_address).trim() ? (
-                              <button
-                                onClick={async (e) => {
-                                  e.stopPropagation();
-                                  
-                                  // First, get current location if not already set
-                                  if (!currentLocation) {
-                                    if (!navigator.geolocation) {
-                                      toast.error('Geolocation is not supported by your browser');
-                                      return;
-                                    }
-                                    
-                                    setIsGettingLocation(true);
-                                    navigator.geolocation.getCurrentPosition(
-                                      (position) => {
-                                        const location = {
-                                          lat: position.coords.latitude,
-                                          lng: position.coords.longitude
-                                        };
-                                        setCurrentLocation(location);
-                                        setIsGettingLocation(false);
-                                      },
-                                      (error) => {
-                                        setIsGettingLocation(false);
-                                        toast.error('Failed to get your location');
-                                      },
-                                      {
-                                        enableHighAccuracy: true,
-                                        timeout: 10000,
-                                        maximumAge: 0,
-                                      }
-                                    );
-                                  }
-                                  
-                                  // Open address dialog (don't calculate automatically)
-                                  setAddressDialogOpen(prev => ({ ...prev, [customer.id]: true }));
-                                }}
-                                className="text-left text-black hover:text-gray-700 hover:underline transition-colors cursor-pointer font-medium w-full text-left"
-                                title="Click to view full address and calculate distance"
-                              >
-                                {String((customer.address as any).visible_address).trim()}
-                              </button>
-                            ) : (
-                              <button
-                                onClick={async (e) => {
-                                  e.stopPropagation();
-                                  
-                                  // First, get current location if not already set
-                                  if (!currentLocation) {
-                                    if (!navigator.geolocation) {
-                                      toast.error('Geolocation is not supported by your browser');
-                                      return;
-                                    }
-                                    
-                                    setIsGettingLocation(true);
-                                    navigator.geolocation.getCurrentPosition(
-                                      (position) => {
-                                        const location = {
-                                          lat: position.coords.latitude,
-                                          lng: position.coords.longitude
-                                        };
-                                        setCurrentLocation(location);
-                                        setIsGettingLocation(false);
-                                      },
-                                      (error) => {
-                                        setIsGettingLocation(false);
-                                        toast.error('Failed to get your location');
-                                      },
-                                      {
-                                        enableHighAccuracy: true,
-                                        timeout: 10000,
-                                        maximumAge: 0,
-                                      }
-                                    );
-                                  }
-                                  
-                                  // Open address dialog (don't calculate automatically)
-                                  setAddressDialogOpen(prev => ({ ...prev, [customer.id]: true }));
-                                }}
-                                className="text-left text-black hover:text-gray-700 hover:underline transition-colors cursor-pointer font-medium w-full text-left"
-                                title="Click to view full address and calculate distance"
-                              >
-                                Location
-                              </button>
-                            )}
-                            {customerDistances[customer.id] && (
-                              <div className="mt-1 text-xs font-medium text-black">
-                                {customerDistances[customer.id].isCalculating ? (
-                                  <span className="text-gray-400">Calculating...</span>
-                                ) : (
-                                  <>
-                                    {customerDistances[customer.id].distance} • {customerDistances[customer.id].duration}
-                                  </>
-                                )}
-                              </div>
-                            )}
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                </div>
+                <ContactSection
+                  customer={customer}
+                  handlePhoneClick={handlePhoneClick}
+                  currentLocation={currentLocation}
+                  isGettingLocation={isGettingLocation}
+                  customerDistances={customerDistances}
+                  setCurrentLocation={setCurrentLocation}
+                  setIsGettingLocation={setIsGettingLocation}
+                  setAddressDialogOpen={setAddressDialogOpen}
+                />
 
                                 {/* Services Section - Always show, even if no jobs */}
                 <div className="p-4 bg-gray-50">
@@ -7517,17 +6201,6 @@ const AdminDashboard = () => {
                         ) : jobsToShow.map((job) => {
                         const beforePhotos = Array.isArray(job.before_photos || job.beforePhotos) ? (job.before_photos || job.beforePhotos) : [];               
                         const afterPhotos = Array.isArray(job.after_photos || job.afterPhotos) ? (job.after_photos || job.afterPhotos) : [];                    
-                        
-                        const extractPhotoUrls = (photos: any[]) => {
-                          return photos.map(photo => {
-                            if (typeof photo === 'string') {
-                              return photo;
-                            } else if (photo && typeof photo === 'object' && photo.secure_url) {                                                                
-                              return photo.secure_url;
-                            }
-                            return null;
-                          }).filter(url => url !== null);
-                        };
                         
                         const allPhotos = [...extractPhotoUrls(beforePhotos), ...extractPhotoUrls(afterPhotos)];                                                
                         const followUpDate = (job as any).follow_up_date || job.followUpDate || null;
@@ -7586,19 +6259,7 @@ const AdminDashboard = () => {
                         }
                         
                         // Parse requirements to get AMC info, bill photos, payment screenshot
-                        let requirements: any[] = [];
-                        try {
-                          const reqData = (job as any).requirements || job.requirements;
-                          if (typeof reqData === 'string') {
-                            requirements = JSON.parse(reqData);
-                          } else if (Array.isArray(reqData)) {
-                            requirements = reqData;
-                          } else if (reqData && typeof reqData === 'object') {
-                            requirements = [reqData];
-                          }
-                        } catch (e) {
-                          requirements = [];
-                        }
+                        const requirements = parseJobRequirements((job as any).requirements || job.requirements);
                         
                         const amcInfo = requirements.find((r: any) => r?.amc_info)?.amc_info || null;
                         const qrPhotos = requirements.find((r: any) => r?.qr_photos)?.qr_photos || null;
@@ -7607,287 +6268,43 @@ const AdminDashboard = () => {
                         
                         return (
                           <div key={job.id}>
-                            {job.status === 'COMPLETED' && (
-                              <div className="mt-4 mb-2">
-                                <div className="flex flex-col sm:flex-row items-start gap-3 rounded-md border border-green-200 bg-green-50 px-3 py-2">
-                                  <CheckCircle className="w-4 h-4 text-green-600 mt-0.5 flex-shrink-0" />
-                                  <div className="space-y-2 text-sm text-gray-900 flex-1 min-w-0">
-                                    <div className="font-semibold text-green-900">
-                                      Job Completed
-                                    </div>
-                                    
-                                    {/* Bill Amount */}
-                                    {(actualCost || paymentAmount) && (
-                                      <div className="text-gray-700 break-words">
-                                        <span className="text-gray-500 font-medium">Amount:</span> ₹{actualCost || paymentAmount}
-                                      </div>
-                                    )}
-                                    
-                                    {/* Payment Mode */}
-                                    {paymentMethod && (
-                                      <div className="text-gray-700 break-words">
-                                        <span className="text-gray-500 font-medium">Payment Mode:</span> {
-                                          paymentMethod === 'CASH' ? 'Cash' : 
-                                          paymentMethod === 'ONLINE' || paymentMethod === 'UPI' || paymentMethod === 'CARD' || paymentMethod === 'BANK_TRANSFER' ? 'Online' : 
-                                          paymentMethod
-                                        }
-                                      </div>
-                                    )}
-                                    
-                                    {/* Lead Source */}
-                                    {(() => {
-                                      // Find lead_source in requirements
-                                      let leadSource: string | null = null;
-                                      
-                                      // Try to find lead_source in the array
-                                      for (const req of requirements) {
-                                        if (req && typeof req === 'object') {
-                                          if (req.lead_source) {
-                                            leadSource = req.lead_source;
-                                            break;
-                                          }
-                                        }
-                                      }
-                                      
-                                      // If still no lead_source found, check if requirements array has objects with nested properties
-                                      if (!leadSource && requirements.length > 0) {
-                                        const flatReq = requirements.flat();
-                                        for (const req of flatReq) {
-                                          if (req && typeof req === 'object' && req.lead_source) {
-                                            leadSource = req.lead_source;
-                                            break;
-                                          }
-                                        }
-                                      }
-                                      
-                                      if (leadSource) {
-                                        return (
-                                          <div className="text-gray-700 break-words">
-                                            <span className="text-gray-500 font-medium">Lead Source:</span> {leadSource}
-                                          </div>
-                                        );
-                                      }
-                                      return null;
-                                    })()}
-                                    
-                                    {/* QR Code Info (if online) */}
-                                    {(paymentMethod === 'ONLINE' || paymentMethod === 'UPI' || paymentMethod === 'CARD' || paymentMethod === 'BANK_TRANSFER') && qrPhotos?.selected_qr_code_name && (
-                                      <div className="text-gray-700 break-words">
-                                        <span className="text-gray-500 font-medium">QR Code:</span> {qrPhotos.selected_qr_code_name}
-                                      </div>
-                                    )}
-                                    
-                                    {/* Payment Screenshot & Bill Photos - Combined */}
-                                    {((paymentMethod === 'ONLINE' || paymentMethod === 'UPI' || paymentMethod === 'CARD' || paymentMethod === 'BANK_TRANSFER') && paymentScreenshot) || (billPhotos && Array.isArray(billPhotos) && billPhotos.length > 0) ? (
-                                      <div className="text-gray-700 mt-2 pt-2 border-t border-green-200">
-                                        <span className="text-gray-500 font-medium">Payment & Bill Documents:</span>
-                                        <button
-                                          onClick={() => {
-                                            // Combine payment screenshot and bill photos
-                                            const allPhotos: string[] = [];
-                                            if (paymentScreenshot) {
-                                              allPhotos.push(paymentScreenshot);
-                                            }
-                                            if (billPhotos && Array.isArray(billPhotos)) {
-                                              allPhotos.push(...billPhotos);
-                                            }
-                                            
-                                            if (allPhotos.length > 0) {
-                                              setSelectedBillPhotos(allPhotos);
-                                              setSelectedPhoto({ 
-                                                url: allPhotos[0], 
-                                                index: 0, 
-                                                total: allPhotos.length 
-                                              });
-                                              setPhotoViewerOpen(true);
-                                            }
-                                          }}
-                                          className="ml-2 text-blue-600 hover:underline break-all cursor-pointer"
-                                        >
-                                          View {paymentScreenshot && billPhotos && billPhotos.length > 0 ? `${billPhotos.length + 1} Photos` : paymentScreenshot ? 'Payment Screenshot' : `Bill Photos (${billPhotos.length})`}
-                                        </button>
-                                      </div>
-                                    ) : null}
-                                    
-                                    {/* AMC Details */}
-                                    {amcInfo && (
-                                      <div className="mt-2 pt-2 border-t border-green-200">
-                                        <div className="font-medium text-green-900 mb-1">AMC Details:</div>
-                                        <div className="text-gray-700 space-y-1">
-                                          <div>
-                                            <span className="text-gray-500">Start Date:</span> {amcInfo.date_given ? new Date(amcInfo.date_given).toLocaleDateString('en-IN') : 'N/A'}
-                                          </div>
-                                          <div>
-                                            <span className="text-gray-500">End Date:</span> {amcInfo.end_date ? new Date(amcInfo.end_date).toLocaleDateString('en-IN') : 'N/A'}
-                                          </div>
-                                          <div>
-                                            <span className="text-gray-500">Duration:</span> {amcInfo.years || 1} {amcInfo.years === 1 ? 'year' : 'years'}
-                                          </div>
-                                          {amcInfo.includes_prefilter !== undefined && (
-                                            <div>
-                                              <span className="text-gray-500">Includes Prefilter:</span> {amcInfo.includes_prefilter ? 'Yes' : 'No'}
-                                            </div>
-                                          )}
-                                          {amcInfo.additional_info && (
-                                            <div className="mt-2 pt-2 border-t border-green-300">
-                                              <span className="text-gray-500 font-medium">Additional Info:</span>
-                                              <div className="text-gray-700 mt-1 whitespace-pre-wrap">{amcInfo.additional_info}</div>
-                                            </div>
-                                          )}
-                                        </div>
-                                      </div>
-                                    )}
-                                    
-                                    {/* Completion Notes */}
-                                    {completionNotes && (
-                                      <div className="text-gray-700 mt-2 pt-2 border-t border-green-200 break-words">
-                                        <span className="text-gray-500 font-medium">Notes:</span> {completionNotes}
-                                      </div>
-                                    )}
-                                    
-                                    {/* Completed By */}
-                                    {completedByName && (
-                                      <div className="text-gray-700 mt-2 pt-2 border-t border-green-200 break-words">
-                                        <span className="text-gray-500 font-medium">Completed By:</span> {completedByName}
-                                      </div>
-                                    )}
-                                    
-                                    {/* Completed At */}
-                                    {formattedCompletedAt && (
-                                      <div className="text-xs text-gray-500 mt-1 break-words">
-                                        Completed on {formattedCompletedAt}
-                                      </div>
-                                    )}
-                                    
-                                    {/* Message Sent Status - Always show */}
-                                    {(() => {
-                                      const messageSent = requirements.some((r: any) => {
-                                        if (r && typeof r === 'object') {
-                                          return r.message_sent === true || r.message_sent === 'true';
-                                        }
-                                        return false;
-                                      });
-                                      const messageSentAt = requirements.find((r: any) => r?.message_sent_at)?.message_sent_at;
-                                      
-                                      if (messageSent) {
-                                        return (
-                                          <div className="text-xs text-green-600 mt-2 pt-2 border-t border-green-200 break-words font-medium">
-                                            ✓ Message Sent{messageSentAt ? ` on ${new Date(messageSentAt).toLocaleString()}` : ''}
-                                          </div>
-                                        );
-                                      } else {
-                                        return (
-                                          <div className="text-xs text-orange-600 mt-2 pt-2 border-t border-green-200 break-words font-medium">
-                                            ⚠ Message Not Sent
-                                          </div>
-                                        );
-                                      }
-                                    })()}
-                                  </div>
-                                  <div className="flex flex-row sm:flex-col gap-2 mt-2 sm:mt-0 w-full sm:w-auto">
-                                    <Button
-                                      size="sm"
-                                      variant="outline"
-                                      onClick={() => {
-                                        setSelectedCompletedJob(job);
-                                        // Initialize edit data
-                                        const editData: any = {
-                                          amount: actualCost || paymentAmount || '',
-                                          paymentMethod: paymentMethod || 'CASH',
-                                          qrCodeName: qrPhotos?.selected_qr_code_name || '',
-                                          amcInfo: amcInfo || null,
-                                          completionNotes: completionNotes || '',
-                                          completedBy: completedBy || '',
-                                        };
-                                        setCompletedJobEditData(editData);
-                                        setEditCompletedJobDialogOpen(true);
-                                      }}
-                                      className="text-xs flex-1 sm:flex-none"
-                                    >
-                                      <Edit className="w-3 h-3 mr-1" />
-                                      Edit
-                                    </Button>
-                                    {(() => {
-                                      const messageSent = requirements.some((r: any) => r?.message_sent === true);
-                                      if (!messageSent) {
-                                        return (
-                                          <Button
-                                            size="sm"
-                                            variant="outline"
-                                            onClick={() => {
-                                              setSelectedJobForMessage(job);
-                                              setSendMessageDialogOpen(true);
-                                            }}
-                                            className="text-xs flex-1 sm:flex-none"
-                                          >
-                                            <WhatsAppIcon className="w-3 h-3 mr-1" />
-                                            Send Message
-                                          </Button>
-                                        );
-                                      }
-                                      return (
-                                        <Button
-                                          size="sm"
-                                          variant="outline"
-                                          disabled
-                                          className="text-xs opacity-50 flex-1 sm:flex-none"
-                                        >
-                                          <WhatsAppIcon className="w-3 h-3 mr-1" />
-                                          Message Sent
-                                        </Button>
-                                      );
-                                    })()}
-                                  </div>
-                                </div>
-                              </div>
-                            )}
-                            {job.status === 'DENIED' && (denialReason || deniedBy || deniedAt) && (
-                              <div className="mt-4 mb-2">
-                                <div className="flex items-start gap-3 rounded-md border border-red-200 bg-red-50 px-3 py-2">
-                                  <XCircle className="w-4 h-4 text-red-600 mt-0.5" />
-                                  <div className="space-y-1 text-sm text-gray-900">
-                                    <div className="font-semibold text-red-900">
-                                      Job Denied
-                                    </div>
-                                    {deniedBy && (
-                                      <div className="text-gray-700">
-                                        <span className="text-gray-500">Denied by:</span> {deniedBy}
-                                      </div>
-                                    )}
-                                    {denialReason && (
-                                      <div className="text-gray-700">
-                                        <span className="text-gray-500">Reason:</span> {denialReason}
-                                      </div>
-                                    )}
-                                    {formattedDeniedAt && (
-                                      <div className="text-xs text-gray-500">
-                                        Denied on {formattedDeniedAt}
-                                      </div>
-                                    )}
-                                  </div>
-                                </div>
-                              </div>
-                            )}
-                            {job.status === 'FOLLOW_UP' && (formattedFollowUpDate || formattedFollowUpTime || followUpNotes || formattedFollowUpScheduledAt) && (
-                              <div className="mt-4 mb-2">
-                                <div className="flex items-start gap-3 rounded-md border border-gray-200 px-3 py-2">
-                                  <CalendarPlus className="w-4 h-4 text-gray-500 mt-0.5" />
-                                  <div className="space-y-1 text-sm text-gray-900">
-                                    <div className="font-semibold">
-                                      Follow-up scheduled for {formattedFollowUpDate || 'Date not set'}
-                                      {formattedFollowUpTime ? ` at ${formattedFollowUpTime}` : ''}
-                                    </div>
-                                    <div className="text-gray-700">
-                                      <span className="text-gray-500">Reason:</span> {followUpNotes || 'Not confirmed'}
-                                    </div>
-                                    <div className="text-xs text-gray-500">
-                                      Scheduled by {followUpScheduledByName}
-                                      {formattedFollowUpScheduledAt ? ` on ${formattedFollowUpScheduledAt}` : ''}
-                                    </div>
-                                  </div>
-                                </div>
-                              </div>
-                            )}
+                            <CompletedJobSection
+                              job={job}
+                              technicians={technicians}
+                              requirements={requirements}
+                              actualCost={actualCost}
+                              paymentAmount={paymentAmount}
+                              paymentMethod={paymentMethod}
+                              qrPhotos={qrPhotos}
+                              billPhotos={billPhotos}
+                              paymentScreenshot={paymentScreenshot}
+                              amcInfo={amcInfo}
+                              completionNotes={completionNotes}
+                              completedByName={completedByName}
+                              formattedCompletedAt={formattedCompletedAt}
+                              setSelectedCompletedJob={setSelectedCompletedJob}
+                              setCompletedJobEditData={setCompletedJobEditData}
+                              setEditCompletedJobDialogOpen={setEditCompletedJobDialogOpen}
+                              setSelectedJobForMessage={setSelectedJobForMessage}
+                              setSendMessageDialogOpen={setSendMessageDialogOpen}
+                              setSelectedBillPhotos={setSelectedBillPhotos}
+                              setSelectedPhoto={setSelectedPhoto}
+                              setPhotoViewerOpen={setPhotoViewerOpen}
+                            />
+                            <DeniedJobSection
+                              job={job}
+                              denialReason={denialReason}
+                              deniedBy={deniedBy}
+                              formattedDeniedAt={formattedDeniedAt}
+                            />
+                            <FollowUpJobSection
+                              job={job}
+                              formattedFollowUpDate={formattedFollowUpDate}
+                              formattedFollowUpTime={formattedFollowUpTime}
+                              followUpNotes={followUpNotes}
+                              formattedFollowUpScheduledAt={formattedFollowUpScheduledAt}
+                              followUpScheduledByName={followUpScheduledByName}
+                            />
                             <div className={`bg-white rounded-lg border ${job.status === 'PENDING' && !(job.assigned_technician_id || job.assignedTechnicianId) ? 'border-blue-500 border-2' : 'border-gray-200'} hover:border-gray-300 hover:shadow-sm transition-all duration-200 overflow-hidden group`}>
                             <div className="p-3 sm:p-4">
                               <div className="flex items-start justify-between mb-4">
@@ -7898,7 +6315,7 @@ const AdminDashboard = () => {
                                       <Badge className="bg-blue-100 text-blue-800 border-0">
                                         {job.service_type || job.serviceType} {job.service_sub_type || job.serviceSubType}
                                       </Badge>
-                                      {getStatusBadge(job.status)}
+                                      <StatusBadge status={job.status} />
                                     </div>
                                     <div className="flex items-center gap-2 flex-wrap">
                                       {allPhotos.length > 0 && (
@@ -8418,930 +6835,69 @@ const AdminDashboard = () => {
 
       </main>
 
-      {/* Add Customer Dialog - Step by Step */}
-      <Dialog open={addDialogOpen} onOpenChange={setAddDialogOpen}>
-        <DialogContent className="w-[95vw] sm:w-[90vw] md:w-[80vw] lg:w-[60vw] xl:w-[50vw] max-w-2xl h-[90vh] max-h-[90vh] overflow-hidden flex flex-col">
-          <DialogHeader className="flex-shrink-0">
-            <DialogTitle className="flex items-center gap-2 sm:gap-3">
-              <div className="flex items-center gap-2">
-                <div className="w-6 h-6 sm:w-8 sm:h-8 rounded-full bg-blue-100 flex items-center justify-center text-blue-600 font-semibold text-xs sm:text-sm">
-                  {currentStep}
-                </div>
-                <span className="text-sm sm:text-base">Add New Customer</span>
-              </div>
-              <div className="flex gap-1 ml-auto">
-                {[1, 2, 3, 4, 5].map((step) => (
-                  <div
-                    key={step}
-                    className={`w-1.5 h-1.5 sm:w-2 sm:h-2 rounded-full ${
-                      step <= currentStep ? 'bg-blue-600' : 'bg-gray-300'
-                    }`}
-                  />
-                ))}
-              </div>
-            </DialogTitle>
-            <DialogDescription className="text-xs sm:text-sm">
-              {currentStep === 1 && "Enter customer's personal information"}
-              {currentStep === 2 && "Enter customer's address details"}
-              {currentStep === 3 && "Select services and equipment details"}
-              {currentStep === 4 && "Review and confirm customer information"}
-              {currentStep === 5 && "Create a new job for this customer?"}
-            </DialogDescription>
-          </DialogHeader>
-          
-          <div className="py-6 px-2 sm:px-4 flex-1 overflow-y-auto">
-            {/* Step 1: Personal Information */}
-            {currentStep === 1 && (
-              <div className="space-y-4">
-            <div className="space-y-2">
-              <Label htmlFor="add_full_name" className="text-sm font-medium">Full Name</Label>
-              <Input
-                id="add_full_name"
-                value={addFormData.full_name}
-                onChange={(e) => handleAddFormChange('full_name', e.target.value)}
-                placeholder="Enter full name"
-                className={`text-sm ${formErrors.full_name ? 'border-red-500' : ''}`}
-              />
-                  {formErrors?.full_name && (
-                    <p className="text-xs text-red-500">{formErrors.full_name}</p>
-                  )}
-            </div>
+      {/* Add Customer Dialog */}
+      <AddCustomerDialog
+        open={addDialogOpen}
+        onOpenChange={setAddDialogOpen}
+        customers={customers}
+        onCustomerCreated={loadDashboardData}
+        onExistingCustomerFound={(customer) => {
+          setExistingCustomer(customer);
+          setOverrideDialogOpen(true);
+        }}
+      />
 
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <div className="space-y-2">
-                    <Label htmlFor="add_phone" className="text-sm font-medium">Primary Phone</Label>
-              <Input
-                id="add_phone"
-                value={addFormData.phone}
-                onChange={(e) => handlePhoneChange(e.target.value)}
-                placeholder="Enter 10-digit phone number"
-                className={`text-sm ${formErrors.phone ? 'border-red-500' : ''}`}
-              />
-                    {formErrors?.phone && (
-                      <p className="text-xs text-red-500">{formErrors.phone}</p>
-                    )}
-            </div>
+      {/* Override Dialog for Existing Customer */}
+      <AlertDialog open={overrideDialogOpen} onOpenChange={setOverrideDialogOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Customer Already Exists</AlertDialogTitle>
+            <AlertDialogDescription>
+              A customer with this phone number or email already exists: {existingCustomer?.customer_id || existingCustomer?.customerId} - {existingCustomer?.fullName || existingCustomer?.full_name}
+              <br /><br />
+              Would you like to update the existing customer instead?
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel onClick={() => {
+              setOverrideDialogOpen(false);
+              setExistingCustomer(null);
+              setAddDialogOpen(false);
+            }}>
+              Cancel
+            </AlertDialogCancel>
+            <AlertDialogAction onClick={() => {
+              setShouldUpdateExisting(true);
+              setOverrideDialogOpen(false);
+              // Move to step 2 to continue
+              setCurrentStep(2);
+            }}>
+              Update Existing
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
-            <div className="space-y-2">
-                    <Label htmlFor="add_alternate_phone" className="text-sm font-medium">Alternate Phone</Label>
-              <Input
-                      id="add_alternate_phone"
-                      value={addFormData.alternate_phone}
-                      onChange={(e) => handleAlternatePhoneChange(e.target.value)}
-                      placeholder="Enter 10-digit phone number (optional)"
-                      className={`text-sm ${formErrors.alternate_phone ? 'border-red-500' : ''}`}
-              />
-                    {formErrors?.alternate_phone && (
-                      <p className="text-xs text-red-500">{formErrors.alternate_phone}</p>
-                    )}
-            </div>
-            </div>
+      {/* Legacy Add Customer Dialog - REMOVED - Now using AddCustomerDialog component */}
 
-            <div className="space-y-2">
-                  <Label htmlFor="add_email" className="text-sm font-medium">Email Address</Label>
-              <Input
-                id="add_email"
-                type="email"
-                value={addFormData.email}
-                onChange={(e) => handleAddFormChange('email', e.target.value)}
-                placeholder="Enter email address"
-                className={`text-sm ${formErrors.email ? 'border-red-500' : ''}`}
-              />
-                  {formErrors?.email && (
-                    <p className="text-xs text-red-500">{formErrors.email}</p>
-                  )}
-            </div>
-            </div>
-            )}
-
-            {/* Step 2: Address Information */}
-            {currentStep === 2 && (
-              <div className="space-y-4">
-            <div className="space-y-2">
-                  <Label htmlFor="add_address">Complete Address</Label>
-                  <Textarea
-                    id="add_address"
-                    value={addFormData.address}
-                    onChange={(e) => handleAddFormChange('address', e.target.value)}
-                    placeholder="Enter complete address (street, area, city, state, pincode)"
-                    rows={3}
-                    className={formErrors.address ? 'border-red-500' : ''}
-                  />
-                  {formErrors?.address && (
-                    <p className="text-sm text-red-500">{formErrors.address}</p>
-                  )}
-            </div>
-
-            <div className="space-y-2">
-                  <Label htmlFor="add_google_location">Google Maps Location (Optional)</Label>
-                  <div className="flex gap-2">
-              <Input
-                      id="add_google_location"
-                      value={addFormData.google_location}
-                      onChange={(e) => handleAddFormChange('google_location', e.target.value)}
-                      placeholder="Enter Google Maps link or coordinates"
-                    />
-                    <Button
-                      type="button"
-                      variant="outline"
-                      onClick={handleGoogleMapsNavigation}
-                      disabled={!addFormData.address.trim()}
-                      className="flex items-center gap-2 whitespace-nowrap"
-                    >
-                      <MapPin className="w-4 h-4" />
-                      Open in Maps
-                    </Button>
-            </div>
-                  <p className="text-xs text-gray-500">
-                    Enter the address above, then click "Open in Maps" to navigate to the location
-                  </p>
-                </div>
-              </div>
-            )}
-
-            {/* Step 3: Service Information */}
-            {currentStep === 3 && (
-              <div className="space-y-4">
-                <div className="space-y-3">
-                  <Label>Service Types</Label>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                    {[
-                      { value: 'RO', label: 'RO (Reverse Osmosis)', icon: '💧' },
-                      { value: 'SOFTENER', label: 'Water Softener', icon: '🧂' },
-                      { value: 'AC', label: 'AC Services', icon: '❄️' },
-                      { value: 'APPLIANCE', label: 'Home Appliances', icon: '🏠' }
-                    ].map((service) => (
-                      <div
-                        key={service.value}
-                        onClick={() => handleServiceTypeToggle(service.value)}
-                        className={`p-3 border-2 rounded-lg cursor-pointer transition-all ${
-                          addFormData.service_types.includes(service.value)
-                            ? 'border-blue-500 bg-blue-50 text-blue-700'
-                            : 'border-gray-200 hover:border-gray-300'
-                        }`}
-                      >
-                        <div className="flex items-center gap-2">
-                          <span className="text-lg">{service.icon}</span>
-                          <span className="text-sm font-medium">{service.label}</span>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                  {formErrors?.service_types && (
-                    <p className="text-sm text-red-500">{formErrors.service_types}</p>
-                  )}
-                </div>
-
-                {/* Dynamic Equipment Fields for Each Selected Service Type */}
-                {addFormData.service_types.length > 0 && (
-                  <div className="space-y-4">
-                    <Label className="text-base font-semibold">Equipment Details</Label>
-                    {addFormData.service_types.map((serviceType) => {
-                      const serviceInfo = [
-                        { value: 'RO', label: 'RO (Reverse Osmosis)', icon: '💧' },
-                        { value: 'SOFTENER', label: 'Water Softener', icon: '🧂' },
-                        { value: 'AC', label: 'AC Services', icon: '❄️' },
-                        { value: 'APPLIANCE', label: 'Home Appliances', icon: '🏠' }
-                      ].find(s => s.value === serviceType);
-                      
-                      const equipment = addFormData.equipment[serviceType] || { brand: '', model: '' };
-                      
-                      return (
-                        <div key={serviceType} className="bg-gray-50 p-4 rounded-lg space-y-3">
-                          <div className="flex items-center gap-2">
-                            <span className="text-lg">{serviceInfo?.icon}</span>
-                            <span className="font-medium text-gray-900">{serviceInfo?.label}</span>
-                          </div>
-                          
-                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            <div className="space-y-2">
-                              <Label htmlFor={`brand_${serviceType}`}>Brand</Label>
-              <Input
-                                id={`brand_${serviceType}`}
-                                value={equipment.brand}
-                                onChange={(e) => handleEquipmentChange(serviceType, 'brand', e.target.value)}
-                                placeholder={`Enter ${serviceType} brand`}
-                                className={formErrors[`equipment.${serviceType}.brand`] ? 'border-red-500' : ''}
-                              />
-                              {formErrors?.[`equipment.${serviceType}.brand`] && (
-                                <p className="text-sm text-red-500">{formErrors[`equipment.${serviceType}.brand`]}</p>
-                              )}
-            </div>
-
-            <div className="space-y-2">
-                              <Label htmlFor={`model_${serviceType}`}>Model</Label>
-              <Input
-                                id={`model_${serviceType}`}
-                                value={equipment.model}
-                                onChange={(e) => handleEquipmentChange(serviceType, 'model', e.target.value)}
-                                placeholder={`Enter ${serviceType} model`}
-                                className={formErrors[`equipment.${serviceType}.model`] ? 'border-red-500' : ''}
-                              />
-                              {formErrors?.[`equipment.${serviceType}.model`] && (
-                                <p className="text-sm text-red-500">{formErrors[`equipment.${serviceType}.model`]}</p>
-                              )}
-            </div>
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                )}
-              </div>
-            )}
-
-
-            {/* Step 4: Review & Notes */}
-            {currentStep === 4 && (
-              <div className="space-y-4">
-                <div className="bg-gray-50 p-4 rounded-lg space-y-3">
-                  <h3 className="font-semibold text-gray-900">Customer Information Summary</h3>
-                  
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-sm">
-                    <div>
-                      <span className="font-medium text-gray-600">Name:</span>
-                      <p className="text-gray-900">{addFormData.full_name || 'Not provided'}</p>
-                    </div>
-                    <div>
-                      <span className="font-medium text-gray-600">Phone:</span>
-                      <p className="text-gray-900">{addFormData.phone || 'Not provided'}</p>
-                    </div>
-                    {addFormData.alternate_phone && (
-                      <div>
-                        <span className="font-medium text-gray-600">Alternate Phone:</span>
-                        <p className="text-gray-900">{addFormData.alternate_phone}</p>
-                      </div>
-                    )}
-                    <div>
-                      <span className="font-medium text-gray-600">Email:</span>
-                      <p className="text-gray-900">{addFormData.email || 'Not provided'}</p>
-                    </div>
-                    <div className="sm:col-span-2">
-                      <span className="font-medium text-gray-600">Address:</span>
-                      <p className="text-gray-900">{addFormData.address || 'Not provided'}</p>
-                      {addFormData.google_location && (
-                        <div className="mt-1">
-                          <span className="font-medium text-gray-600">Google Maps:</span>
-                          <p className="text-blue-600 text-sm break-all">{addFormData.google_location}</p>
-                        </div>
-                      )}
-                    </div>
-                    <div className="sm:col-span-2">
-                      <span className="font-medium text-gray-600">Services & Equipment:</span>
-                      <div className="mt-1 space-y-2">
-                        {addFormData.service_types.map((serviceType) => {
-                          const serviceInfo = [
-                            { value: 'RO', label: 'RO (Reverse Osmosis)', icon: '💧' },
-                            { value: 'SOFTENER', label: 'Water Softener', icon: '🧂' },
-                            { value: 'AC', label: 'AC Services', icon: '❄️' },
-                            { value: 'APPLIANCE', label: 'Home Appliances', icon: '🏠' }
-                          ].find(s => s.value === serviceType);
-                          
-                          const equipment = addFormData.equipment[serviceType];
-                          
-                          return (
-                            <div key={serviceType} className="flex items-center gap-2 text-sm">
-                              <span>{serviceInfo?.icon}</span>
-                              <span className="font-medium">{serviceInfo?.label}:</span>
-                              <span className="text-gray-700">
-                                {equipment?.brand} - {equipment?.model}
-                              </span>
-                            </div>
-                          );
-                        })}
-                      </div>
-                    </div>
-                  </div>
-            </div>
-
-
-            </div>
-            )}
-
-            {/* Step 5: Create Job Option */}
-            {currentStep === 5 && (
-              <div className="space-y-4">
-                <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-4">
-                  <h3 className="font-semibold text-gray-900 mb-2">Create a New Job?</h3>
-                  <p className="text-sm text-gray-600 mb-4">
-                    Would you like to create a new job for this customer right away?
-                  </p>
-                  
-                  <div className="space-y-3">
-                    <label className="flex items-center gap-3 p-3 bg-white rounded-lg border-2 cursor-pointer transition-all hover:border-blue-300">
-                      <input
-                        type="radio"
-                        name="createJob"
-                        checked={shouldCreateJob === true}
-                        onChange={() => {
-                          setShouldCreateJob(true);
-                          // Initialize default values
-                          const tomorrow = new Date();
-                          tomorrow.setDate(tomorrow.getDate() + 1);
-                          setStep5JobData(prev => ({
-                            ...prev,
-                            scheduled_date: tomorrow.toISOString().split('T')[0],
-                            service_type: addFormData.service_types[0] === 'SOFTENER' ? 'SOFTENER' : 'RO'
-                          }));
-                        }}
-                        className="h-4 w-4 text-blue-600"
-                      />
-                      <div>
-                        <span className="font-medium text-gray-900">Yes, create a new job</span>
-                        <p className="text-xs text-gray-500 mt-1">Fill in the job details below</p>
-                      </div>
-                    </label>
-                    
-                    <label className="flex items-center gap-3 p-3 bg-white rounded-lg border-2 cursor-pointer transition-all hover:border-blue-300">
-                      <input
-                        type="radio"
-                        name="createJob"
-                        checked={shouldCreateJob === false}
-                        onChange={() => setShouldCreateJob(false)}
-                        className="h-4 w-4 text-blue-600"
-                      />
-                      <div>
-                        <span className="font-medium text-gray-900">No, just create the customer</span>
-                        <p className="text-xs text-gray-500 mt-1">You can create a job later from the customer's profile</p>
-                      </div>
-                    </label>
-                  </div>
-                </div>
-
-                {shouldCreateJob && (
-                  <div className="space-y-4 border-t pt-4">
-                    <h4 className="font-semibold text-gray-900">Job Information</h4>
-                    
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                      <div className="space-y-2">
-                        <Label htmlFor="step5_service_type">Service Type</Label>
-                        <Select
-                          value={step5JobData.service_type}
-                          onValueChange={(value) => setStep5JobData(prev => ({ ...prev, service_type: value as 'RO' | 'SOFTENER' }))}
-                        >
-                          <SelectTrigger>
-                            <SelectValue />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="RO">RO</SelectItem>
-                            <SelectItem value="SOFTENER">Softener</SelectItem>
-                          </SelectContent>
-                        </Select>
-                      </div>
-
-                      <div className="space-y-2">
-                        <Label htmlFor="step5_service_sub_type">Service Sub Type</Label>
-                        <Select
-                          value={step5JobData.service_sub_type}
-                          onValueChange={(value) => setStep5JobData(prev => ({ 
-                            ...prev, 
-                            service_sub_type: value === 'Custom' ? 'Custom' : value,
-                            service_sub_type_custom: value === 'Custom' ? prev.service_sub_type_custom : ''
-                          }))}
-                        >
-                          <SelectTrigger>
-                            <SelectValue />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="Installation">Installation</SelectItem>
-                            <SelectItem value="Reinstallation">Reinstallation</SelectItem>
-                            <SelectItem value="Service">Service</SelectItem>
-                            <SelectItem value="Custom">Custom</SelectItem>
-                          </SelectContent>
-                        </Select>
-                      </div>
-
-                      {step5JobData.service_sub_type === 'Custom' && (
-                        <div className="space-y-2 sm:col-span-2">
-                          <Label htmlFor="step5_service_sub_type_custom">Custom Service Sub Type</Label>
-                          <Input
-                            id="step5_service_sub_type_custom"
-                            value={step5JobData.service_sub_type_custom}
-                            onChange={(e) => setStep5JobData(prev => ({ ...prev, service_sub_type_custom: e.target.value }))}
-                            placeholder="Enter custom service sub type"
-                          />
-                        </div>
-                      )}
-
-                      <div className="space-y-2">
-                        <Label htmlFor="step5_scheduled_date">Scheduled Date</Label>
-                        <Input
-                          id="step5_scheduled_date"
-                          type="date"
-                          value={step5JobData.scheduled_date}
-                          onChange={(e) => setStep5JobData(prev => ({ ...prev, scheduled_date: e.target.value }))}
-                          min={new Date().toISOString().split('T')[0]}
-                        />
-                      </div>
-
-                      <div className="space-y-2">
-                        <Label htmlFor="step5_scheduled_time_slot">Time Slot</Label>
-                        <Select
-                          value={step5JobData.scheduled_time_slot}
-                          onValueChange={(value) => setStep5JobData(prev => ({ 
-                            ...prev, 
-                            scheduled_time_slot: value as 'MORNING' | 'AFTERNOON' | 'EVENING' | 'CUSTOM'
-                          }))}
-                        >
-                          <SelectTrigger>
-                            <SelectValue />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="MORNING">Morning (9 AM - 1 PM)</SelectItem>
-                            <SelectItem value="AFTERNOON">Afternoon (1 PM - 6 PM)</SelectItem>
-                            <SelectItem value="EVENING">Evening (6 PM - 9 PM)</SelectItem>
-                            <SelectItem value="CUSTOM">Custom Time</SelectItem>
-                          </SelectContent>
-                        </Select>
-                      </div>
-
-                      {step5JobData.scheduled_time_slot === 'CUSTOM' && (
-                        <div className="space-y-2 sm:col-span-2">
-                          <Label htmlFor="step5_scheduled_time_custom">Custom Time (HH:MM)</Label>
-                          <Input
-                            id="step5_scheduled_time_custom"
-                            type="time"
-                            value={step5JobData.scheduled_time_custom}
-                            onChange={(e) => setStep5JobData(prev => ({ ...prev, scheduled_time_custom: e.target.value }))}
-                          />
-                        </div>
-                      )}
-
-                      <div className="space-y-2">
-                        <Label htmlFor="step5_lead_source">Lead Source</Label>
-                        <Select
-                          value={step5JobData.lead_source}
-                          onValueChange={(value) => setStep5JobData(prev => ({ 
-                            ...prev, 
-                            lead_source: value === 'Other' ? 'Other' : value,
-                            lead_source_custom: value === 'Other' ? prev.lead_source_custom : ''
-                          }))}
-                        >
-                          <SelectTrigger>
-                            <SelectValue />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="Website">Website</SelectItem>
-                            <SelectItem value="Direct call">Direct call</SelectItem>
-                            <SelectItem value="RO care india">RO care india</SelectItem>
-                            <SelectItem value="Home Triangle">Home Triangle</SelectItem>
-                            <SelectItem value="Local Ramu">Local Ramu</SelectItem>
-                            <SelectItem value="Other">Other</SelectItem>
-                          </SelectContent>
-                        </Select>
-                      </div>
-
-                      {step5JobData.lead_source === 'Other' && (
-                        <div className="space-y-2">
-                          <Label htmlFor="step5_lead_source_custom">Custom Lead Source</Label>
-                          <Input
-                            id="step5_lead_source_custom"
-                            value={step5JobData.lead_source_custom}
-                            onChange={(e) => setStep5JobData(prev => ({ ...prev, lead_source_custom: e.target.value }))}
-                            placeholder="Enter custom lead source"
-                          />
-                        </div>
-                      )}
-
-                      <div className="space-y-2">
-                        <Label htmlFor="step5_priority">Priority</Label>
-                        <Select
-                          value={step5JobData.priority}
-                          onValueChange={(value) => setStep5JobData(prev => ({ ...prev, priority: value as 'LOW' | 'MEDIUM' | 'HIGH' | 'URGENT' }))}
-                        >
-                          <SelectTrigger>
-                            <SelectValue />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="LOW">Low</SelectItem>
-                            <SelectItem value="MEDIUM">Medium</SelectItem>
-                            <SelectItem value="HIGH">High</SelectItem>
-                            <SelectItem value="URGENT">Urgent</SelectItem>
-                          </SelectContent>
-                        </Select>
-                      </div>
-
-                      <div className="space-y-2 sm:col-span-2">
-                        <Label htmlFor="step5_description">Description (Optional)</Label>
-                        <Textarea
-                          id="step5_description"
-                          value={step5JobData.description}
-                          onChange={(e) => setStep5JobData(prev => ({ ...prev, description: e.target.value }))}
-                          placeholder="Enter job description"
-                          rows={3}
-                        />
-                      </div>
-                    </div>
-                  </div>
-                )}
-              </div>
-            )}
-          </div>
-
-          <DialogFooter className="flex-shrink-0 flex flex-col sm:flex-row gap-2 sm:gap-0 sm:justify-between pt-4 border-t">
-            <div className="flex gap-2 order-2 sm:order-1">
-              {currentStep > 1 && (
-                <Button variant="outline" onClick={prevStep} className="flex-1 sm:flex-none text-sm">
-                  Previous
-                </Button>
-              )}
-              <Button 
-                variant="outline" 
-                onClick={() => setAddDialogOpen(false)}
-                disabled={isCreating}
-                className="flex-1 sm:flex-none text-sm"
-              >
-                Cancel
-              </Button>
-            </div>
-            
-            <div className="order-1 sm:order-2">
-              {currentStep < 4 ? (
-                <Button onClick={nextStep} className="bg-blue-600 hover:bg-blue-700 w-full sm:w-auto text-sm">
-                  Next Step
-                </Button>
-              ) : currentStep === 4 ? (
-                <Button onClick={nextStep} className="bg-blue-600 hover:bg-blue-700 w-full sm:w-auto text-sm">
-                  Next Step
-                </Button>
-              ) : (
-                <Button 
-                  onClick={handleCreateCustomer}
-                  disabled={isCreating || (shouldCreateJob && (!step5JobData.scheduled_date || !step5JobData.lead_source || (step5JobData.lead_source === 'Other' && !step5JobData.lead_source_custom) || (step5JobData.service_sub_type === 'Custom' && !step5JobData.service_sub_type_custom) || (step5JobData.scheduled_time_slot === 'CUSTOM' && !step5JobData.scheduled_time_custom)))}
-                  className="bg-green-600 hover:bg-green-700 w-full sm:w-auto text-sm"
-                >
-                  {isCreating ? (
-                    <div className="flex items-center gap-2">
-                      <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
-                      Creating...
-                    </div>
-                  ) : (
-                    'Create Customer'
-                  )}
-                </Button>
-              )}
-            </div>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
 
       {/* Edit Customer Dialog */}
-      <Dialog open={editDialogOpen} onOpenChange={setEditDialogOpen}>
-        <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
-          <DialogHeader>
-            <DialogTitle>Edit Customer</DialogTitle>
-            <DialogDescription>
-              Update customer information for {(editingCustomer as any)?.customer_id} - {(editingCustomer as any)?.full_name}
-            </DialogDescription>
-          </DialogHeader>
-          
-          <div className="py-4 space-y-6">
-            {/* Personal Information */}
-            <div className="space-y-4">
-              <h3 className="text-lg font-semibold text-gray-900">Personal Information</h3>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <Label htmlFor="edit_full_name">Full Name</Label>
-                  <Input
-                    id="edit_full_name"
-                    value={editFormData?.full_name ?? ''}
-                    onChange={(e) => handleEditFormChange('full_name', e.target.value)}
-                    placeholder="Enter full name"
-                  />
-                </div>
+      <EditCustomerDialog
+        open={editDialogOpen}
+        onOpenChange={setEditDialogOpen}
+        customer={editingCustomer}
+        dbBrands={dbBrands}
+        dbModels={dbModels}
+        onCustomerUpdated={(updatedCustomer) => {
+          setCustomers(customers.map(c => c.id === updatedCustomer.id ? updatedCustomer : c));
+          setEditingCustomer(null);
+          setEditDialogOpen(false);
+          loadDashboardData();
+        }}
+        onLoadBrandsAndModels={loadBrandsAndModels}
+      />
 
-                <div className="space-y-2">
-                  <Label htmlFor="edit_phone">Primary Phone</Label>
-                  <Input
-                    id="edit_phone"
-                    value={editFormData?.phone ?? ''}
-                    onChange={(e) => handleEditFormChange('phone', e.target.value)}
-                    placeholder="Enter primary phone number"
-                  />
-                </div>
-
-                <div className="space-y-2">
-                  <Label htmlFor="edit_alternate_phone">Alternate Phone</Label>
-                  <Input
-                    id="edit_alternate_phone"
-                    value={editFormData?.alternate_phone ?? ''}
-                    onChange={(e) => handleEditFormChange('alternate_phone', e.target.value)}
-                    placeholder="Enter alternate phone number (optional)"
-                  />
-                </div>
-
-                <div className="space-y-2">
-                  <Label htmlFor="edit_email">Email</Label>
-                  <Input
-                    id="edit_email"
-                    type="email"
-                    value={editFormData?.email ?? ''}
-                    onChange={(e) => handleEditFormChange('email', e.target.value)}
-                    placeholder="Enter email address"
-                  />
-                </div>
-              </div>
-            </div>
-
-            {/* Address Information */}
-            <div className="space-y-4">
-              <h3 className="text-lg font-semibold text-gray-900">Address Information</h3>
-              <div className="space-y-4">
-                <div className="space-y-2">
-                  <Label htmlFor="edit_visible_address">Location</Label>
-                  <div className="relative">
-                    <Input
-                      id="edit_visible_address"
-                      value={editFormData?.visible_address ?? ''}
-                      onChange={(e) => {
-                        locationManuallyEditedRef.current = true; // Mark as manually edited
-                        handleEditFormChange('visible_address', e.target.value);
-                        setVisibleAddressSuggestions(e.target.value.length > 0);
-                      }}
-                      onFocus={() => setVisibleAddressSuggestions((editFormData?.visible_address || '').length > 0)}
-                      onBlur={() => {
-                        setTimeout(() => setVisibleAddressSuggestions(false), 200);
-                      }}
-                      placeholder="e.g., Bansawadi, Koramangala, Whitefield, etc."
-                      maxLength={20}
-                      className="text-sm"
-                    />
-                    {visibleAddressSuggestions && filteredAddressSuggestions.length > 0 && (
-                      <div className="absolute z-50 w-full mt-1 bg-white border border-gray-300 rounded-md shadow-lg max-h-48 overflow-y-auto">
-                        {filteredAddressSuggestions.map((suggestion, idx) => (
-                          <button
-                            key={idx}
-                            type="button"
-                            onMouseDown={(e) => {
-                              e.preventDefault();
-                              locationManuallyEditedRef.current = true; // Mark as manually edited
-                              handleEditFormChange('visible_address', suggestion);
-                              setVisibleAddressSuggestions(false);
-                            }}
-                            className="w-full text-left px-3 py-2 hover:bg-gray-100 text-sm"
-                          >
-                            {suggestion}
-                          </button>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                  <p className="text-xs text-gray-500">Enter a one-word location identifier for quick recognition. Start typing to see suggestions.</p>
-                </div>
-
-                <div className="space-y-2">
-                  <div className="flex items-center justify-between">
-                    <Label htmlFor="edit_full_address">Complete Address</Label>
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      onClick={handleFetchLocationFromAddress}
-                      className="whitespace-nowrap"
-                      title={editFormData?.visible_address && editFormData.visible_address.trim().length > 0 
-                        ? "Location already set. Clear it first to fetch a new one."
-                        : "Extract location from complete address"}
-                      disabled={!editFormData?.address?.street || editFormData.address.street.trim().length === 0 || (editFormData?.visible_address && editFormData.visible_address.trim().length > 0)}
-                    >
-                      <MapPin className="w-3 h-3 mr-1" />
-                      Fetch Location
-                    </Button>
-                  </div>
-                  <Textarea
-                    id="edit_full_address"
-                    value={editFormData?.address?.street ?? ''}
-                    onChange={(e) => handleAddressFieldChange('street', e.target.value)}
-                    placeholder="Enter complete address (e.g., 123 MG Road, Koramangala, Bangalore, Karnataka, 560034)"
-                    rows={3}
-                    className="resize-none"
-                  />
-                </div>
-
-              </div>
-
-              {/* Google Maps Location Section */}
-              <div className="space-y-2">
-                <Label htmlFor="edit_google_location" className="text-sm font-medium text-gray-900">
-                  Google Maps Location
-                </Label>
-                <div className="flex gap-2">
-                  <Input
-                    id="edit_google_location"
-                    value={editFormData?.google_location ?? ''}
-                    onChange={(e) => handleGoogleMapsLinkChange(e.target.value)}
-                    placeholder="Paste Google Maps share link here..."
-                    className="text-sm flex-1"
-                  />
-                  {editFormData?.google_location && (
-                    <>
-                      <Button
-                        type="button"
-                        variant="outline"
-                        size="sm"
-                        onClick={fetchAddressFromGoogleLocation}
-                        className="whitespace-nowrap"
-                        title="Fetch address from Google Maps link"
-                      >
-                        <Download className="w-3 h-3 mr-1" />
-                        Fetch Address
-                      </Button>
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      onClick={() => {
-                        window.open(editFormData.google_location, '_blank', 'noopener,noreferrer');
-                      }}
-                      className="whitespace-nowrap"
-                        title="Open in Google Maps"
-                    >
-                      <ExternalLink className="w-3 h-3 mr-1" />
-                      Test
-                    </Button>
-                    </>
-                  )}
-                </div>
-              </div>
-            </div>
-
-            {/* Service Information */}
-            <div className="space-y-4">
-              <h3 className="text-lg font-semibold text-gray-900">Service Information</h3>
-              
-              <div className="space-y-3">
-                <Label>Service Types</Label>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  {[
-                    { value: 'RO', label: 'RO (Reverse Osmosis)' },
-                    { value: 'SOFTENER', label: 'Water Softener' }
-                  ].map((service) => (
-                    <div
-                      key={service.value}
-                      onClick={() => handleEditServiceTypeToggle(service.value)}
-                      className={`p-3 border-2 rounded-lg cursor-pointer transition-all ${
-                        editFormData?.service_types?.includes(service.value)
-                          ? 'border-blue-500 bg-blue-50 text-blue-700'
-                          : 'border-gray-200 hover:border-gray-300'
-                      }`}
-                    >
-                      <div className="flex items-center gap-2">
-                        <span className="text-sm font-medium">{service.label}</span>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-
-              {/* Dynamic Equipment Fields for Each Selected Service Type */}
-              {editFormData?.service_types?.length > 0 && (
-                <div className="space-y-4">
-                  <Label className="text-base font-semibold">Equipment Details</Label>
-                  {editFormData?.service_types?.map((serviceType) => {
-                    const serviceInfo = [
-                      { value: 'RO', label: 'RO (Reverse Osmosis)' },
-                      { value: 'SOFTENER', label: 'Water Softener' }
-                    ].find(s => s.value === serviceType);
-                    
-                    const equipment = editFormData?.equipment?.[serviceType] || { brand: '', model: '' };
-                    
-                    return (
-                      <div key={serviceType} className="bg-gray-50 p-4 rounded-lg space-y-3">
-                        <div className="flex items-center gap-2">
-                          <span className="font-medium text-gray-900">{serviceInfo?.label}</span>
-                        </div>
-                        
-                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                          <div className="space-y-2 relative">
-                            <Label htmlFor={`edit_brand_${serviceType}`}>Brand</Label>
-                            <Input
-                              id={`edit_brand_${serviceType}`}
-                              value={equipment.brand}
-                              onChange={(e) => handleEditEquipmentChange(serviceType, 'brand', e.target.value)}
-                              placeholder={`Enter ${serviceType} brand`}
-                              onBlur={() => {
-                                setTimeout(() => setShowBrandSuggestions(false), 200);
-                              }}
-                            />
-                            {showBrandSuggestions && brandSuggestions.length > 0 && (
-                              <div className="absolute z-10 w-full mt-1 bg-card border border-border rounded-md shadow-lg max-h-40 overflow-y-auto">
-                                {brandSuggestions.map((brand, index) => (
-                                  <div
-                                    key={index}
-                                    className="px-3 py-2 hover:bg-accent hover:text-accent-foreground cursor-pointer text-sm text-foreground"
-                                    onClick={() => selectEditBrand(serviceType, brand)}
-                                  >
-                                    {brand}
-                                  </div>
-                                ))}
-                              </div>
-                            )}
-                          </div>
-
-                          <div className="space-y-2 relative">
-                            <Label htmlFor={`edit_model_${serviceType}`}>Model</Label>
-                            <Input
-                              id={`edit_model_${serviceType}`}
-                              value={equipment.model}
-                              onChange={(e) => handleEditEquipmentChange(serviceType, 'model', e.target.value)}
-                              placeholder={`Enter ${serviceType} model`}
-                              onBlur={() => {
-                                setTimeout(() => setShowModelSuggestions(false), 200);
-                              }}
-                            />
-                            {showModelSuggestions && modelSuggestions.length > 0 && (
-                              <div className="absolute z-10 w-full mt-1 bg-card border border-border rounded-md shadow-lg max-h-40 overflow-y-auto">
-                                {modelSuggestions.map((model, index) => (
-                                  <div
-                                    key={index}
-                                    className="px-3 py-2 hover:bg-accent hover:text-accent-foreground cursor-pointer text-sm text-foreground"
-                                    onClick={() => selectEditModel(serviceType, model)}
-                                  >
-                                    {model}
-                                  </div>
-                                ))}
-                              </div>
-                            )}
-                          </div>
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
-            </div>
-
-            {/* Additional Information */}
-            <div className="space-y-4">
-              <h3 className="text-lg font-semibold text-gray-900">Additional Information</h3>
-              <div className="space-y-4">
-                <div className="space-y-2">
-                  <Label>Does the customer have a prefilter?</Label>
-                  <div className="flex gap-4">
-                    <div className="flex items-center space-x-2">
-                      <input
-                        type="radio"
-                        id="edit-prefilter-yes"
-                        name="edit-prefilter"
-                        checked={editFormData.has_prefilter === true}
-                        onChange={() => handleEditFormChange('has_prefilter', true)}
-                        className="w-4 h-4"
-                      />
-                      <Label htmlFor="edit-prefilter-yes" className="cursor-pointer">Yes</Label>
-                    </div>
-                    <div className="flex items-center space-x-2">
-                      <input
-                        type="radio"
-                        id="edit-prefilter-no"
-                        name="edit-prefilter"
-                        checked={editFormData.has_prefilter === false}
-                        onChange={() => handleEditFormChange('has_prefilter', false)}
-                        className="w-4 h-4"
-                      />
-                      <Label htmlFor="edit-prefilter-no" className="cursor-pointer">No</Label>
-                    </div>
-                    <div className="flex items-center space-x-2">
-                      <input
-                        type="radio"
-                        id="edit-prefilter-unknown"
-                        name="edit-prefilter"
-                        checked={editFormData.has_prefilter === null}
-                        onChange={() => handleEditFormChange('has_prefilter', null)}
-                        className="w-4 h-4"
-                      />
-                      <Label htmlFor="edit-prefilter-unknown" className="cursor-pointer">Not Set</Label>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </div>
-
-          </div>
-
-          <DialogFooter>
-            <Button 
-              variant="outline" 
-              onClick={() => setEditDialogOpen(false)}
-              disabled={isUpdating}
-            >
-              Cancel
-            </Button>
-            <Button 
-              onClick={handleUpdateCustomer}
-              disabled={isUpdating}
-              className="bg-blue-600 hover:bg-blue-700"
-            >
-              {isUpdating ? (
-                <div className="flex items-center gap-2">
-                  <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
-                  Updating...
-                </div>
-              ) : (
-                'Update Customer'
-              )}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      {/* Legacy Edit Customer Dialog - REMOVED */}
 
       {/* Delete Customer Confirmation Dialog */}
       <AlertDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
@@ -9497,1107 +7053,117 @@ const AdminDashboard = () => {
       </AlertDialog>
 
       {/* Photo Gallery Dialog */}
-      <Dialog open={photoGalleryOpen} onOpenChange={setPhotoGalleryOpen}>
-        <DialogContent className="max-w-6xl max-h-[95vh] overflow-y-auto">
-          <DialogHeader>
-            <DialogTitle>
-              Job Photos
-            </DialogTitle>
-            <DialogDescription>
-              Click on any photo to view it in full size or use the delete button to remove photos
-            </DialogDescription>
-          </DialogHeader>
-          
-          <div className="py-4">
-            {selectedJobPhotos?.photos && Array.isArray(selectedJobPhotos.photos) && selectedJobPhotos.photos.length > 0 ? (
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-                {selectedJobPhotos.photos.map((photo, index) => {
-                  // Check if photo is a valid URL
-                  const isValidUrl = photo && typeof photo === 'string' && (photo.startsWith('http') || photo.startsWith('data:') || photo.startsWith('/'));
-                  
-                  return (
-                    <div key={`photo-${index}-${photo?.slice(-10) || 'unknown'}`} className="relative group">
-                      {isValidUrl ? (
-                        <img
-                          src={photo}
-                          alt={`Photo ${index + 1}`}
-                          className="w-full h-48 object-cover rounded-lg border border-gray-200 cursor-pointer hover:opacity-90 transition-opacity"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            if (photo && photo.trim()) {
-                              openPhotoViewer(photo, index, selectedJobPhotos.photos.length);
-                            } else {
-                              toast.error('Invalid photo URL');
-                            }
-                          }}
-                          onError={(e) => {
-                            e.currentTarget.style.display = 'none';
-                          }}
-                        />
-                      ) : (
-                        <div className="w-full h-48 bg-gray-100 rounded-lg border border-gray-200 flex items-center justify-center">
-                          <div className="text-center text-gray-500">
-                            <Calendar className="w-8 h-8 mx-auto mb-2 text-gray-300" />
-                            <p className="text-sm">Invalid photo URL</p>
-                            <p className="text-xs text-gray-400">{photo || 'No URL provided'}</p>
-                          </div>
-                        </div>
-                      )}
-                      <div className="absolute inset-0 bg-black bg-opacity-0 group-hover:bg-opacity-20 transition-all duration-200 rounded-lg flex items-center justify-center">
-                        <div className="opacity-0 group-hover:opacity-100 transition-opacity flex gap-2">
-                          <Button 
-                            variant="secondary" 
-                            size="sm"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              if (photo && photo.trim()) {
-                                openPhotoViewer(photo, index, selectedJobPhotos.photos.length);
-                              } else {
-                                toast.error('Invalid photo URL');
-                              }
-                            }}
-                          >
-                            View Full Size
-                          </Button>
-                          <Button 
-                            variant="destructive" 
-                            size="sm"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              handleDeletePhoto((selectedJobPhotos as any)?.jobId, index, photo);
-                            }}
-                          >
-                            <Trash2 className="w-4 h-4" />
-                          </Button>
-                        </div>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            ) : (
-              <div className="text-center py-8 text-gray-500">
-                <Calendar className="w-12 h-12 mx-auto mb-2 text-gray-300" />
-                <p>No photos available</p>
-              </div>
-            )}
-          </div>
-        </DialogContent>
-      </Dialog>
+      <PhotoGalleryDialog
+        open={photoGalleryOpen}
+        onOpenChange={setPhotoGalleryOpen}
+        selectedJobPhotos={selectedJobPhotos}
+        onViewPhoto={openPhotoViewer}
+        onDeletePhoto={handleDeletePhoto}
+      />
 
       {/* Full-Screen Photo Viewer Modal */}
-      <Dialog open={photoViewerOpen} onOpenChange={(open) => {
-        // Only handle close if it's from outside click or ESC key
-        if (!open) {
+      <PhotoViewerDialog
+        open={photoViewerOpen}
+        onOpenChange={setPhotoViewerOpen}
+        selectedPhoto={selectedPhoto}
+        selectedBillPhotos={selectedBillPhotos}
+        selectedJobPhotos={selectedJobPhotos}
+        onPrevious={goToPreviousPhoto}
+        onNext={goToNextPhoto}
+        onDownload={downloadPhoto}
+        onClose={() => {
           setPhotoViewerOpen(false);
           setSelectedPhoto(null);
           setSelectedBillPhotos(null);
-        }
-      }}>
-        <DialogContent 
-          className="max-w-[95vw] max-h-[95vh] p-0 bg-black border-none"
-          onInteractOutside={(e) => e.preventDefault()}
-          onEscapeKeyDown={(e) => {
-            e.preventDefault();
-            setPhotoViewerOpen(false);
-            setSelectedPhoto(null);
-            setSelectedBillPhotos(null);
-          }}
-        >
-          <style dangerouslySetInnerHTML={{__html: `
-            [data-radix-dialog-content] button[data-radix-dialog-close] {
-              display: none !important;
-            }
-          `}} />
-          <DialogHeader className="sr-only">
-            <DialogTitle>Photo Viewer</DialogTitle>
-            <DialogDescription>Full-screen photo viewer</DialogDescription>
-          </DialogHeader>
-          <div className="relative w-full h-full flex items-center justify-center min-h-[500px]">
-            {/* Close button */}
-            <Button
-              variant="ghost"
-              size="sm"
-              className="absolute top-4 right-4 z-50 bg-black/70 text-white hover:bg-black/90 rounded-full w-10 h-10 p-0"
-              onClick={(e) => {
-                e.preventDefault();
-                e.stopPropagation();
-                setPhotoViewerOpen(false);
-                setSelectedPhoto(null);
-                setSelectedBillPhotos(null);
-              }}
-            >
-              <X className="w-5 h-5" />
-            </Button>
-
-            {/* Previous button */}
-            {selectedPhoto && selectedPhoto.total > 1 && (
-              <Button
-                variant="ghost"
-                size="sm"
-                className="absolute left-4 top-1/2 transform -translate-y-1/2 z-50 bg-black/70 text-white hover:bg-black/90 rounded-full w-10 h-10 p-0"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  goToPreviousPhoto();
-                }}
-              >
-                <span className="text-2xl">‹</span>
-              </Button>
-            )}
-
-            {/* Next button */}
-            {selectedPhoto && selectedPhoto.total > 1 && (
-              <Button
-                variant="ghost"
-                size="sm"
-                className="absolute right-4 top-1/2 transform -translate-y-1/2 z-50 bg-black/70 text-white hover:bg-black/90 rounded-full w-10 h-10 p-0"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  goToNextPhoto();
-                }}
-              >
-                <span className="text-2xl">›</span>
-              </Button>
-            )}
-
-            {/* Photo counter */}
-            {selectedPhoto && selectedPhoto.total > 1 && (
-              <div className="absolute top-4 left-4 z-10 bg-black/50 text-white px-3 py-1 rounded-full text-sm">
-                {selectedPhoto.index + 1} / {selectedPhoto.total}
-              </div>
-            )}
-
-            {/* Action buttons */}
-            {selectedPhoto && (
-              <div className="absolute bottom-4 left-1/2 transform -translate-x-1/2 z-10 flex gap-2">
-                <Button
-                  variant="secondary"
-                  size="sm"
-                  onClick={() => downloadPhoto(selectedPhoto.url, selectedPhoto.index)}
-                  className="bg-white/90 text-black hover:bg-white"
-                >
-                  <Calendar className="w-4 h-4 mr-2" />
-                  Download
-                </Button>
-              </div>
-            )}
-
-            {/* Main photo */}
-            {selectedPhoto && (
-              <img
-                src={selectedPhoto.url}
-                alt={`Photo ${selectedPhoto.index + 1}`}
-                className="max-w-full max-h-full object-contain"
-                onError={(e) => {
-                  e.currentTarget.style.display = 'none';
-                }}
-              />
-            )}
-          </div>
-        </DialogContent>
-      </Dialog>
+        }}
+      />
 
 
       {/* Job Assignment Dialog */}
-      <Dialog open={assignJobDialogOpen} onOpenChange={setAssignJobDialogOpen}>
-        <DialogContent className="w-[95vw] sm:w-[90vw] md:w-[600px] max-w-[600px] max-h-[90vh] flex flex-col">
-          <DialogHeader>
-            <DialogTitle className="text-lg sm:text-xl">Assign Job to Technician</DialogTitle>
-            <DialogDescription className="text-sm">
-              Choose how to assign this job
-            </DialogDescription>
-          </DialogHeader>
-          
-          <div className="space-y-4 sm:space-y-6 overflow-y-auto flex-1 pr-1 sm:pr-2">
-            {/* Job Details */}
-            <div className="bg-gray-50 rounded-lg p-3 sm:p-4">
-              <div className="flex flex-col sm:flex-row sm:items-center gap-2 mb-2">
-                <span className="font-mono font-bold text-base sm:text-lg">{(jobToAssign as any)?.job_number}</span>
-                <Badge className="bg-blue-100 text-blue-800 text-xs sm:text-sm w-fit">
-                    {(jobToAssign as any)?.service_type} - {(jobToAssign as any)?.service_sub_type}
-                  </Badge>
-                </div>
-              <div className="space-y-1 text-xs sm:text-sm text-gray-600">
-                <p><strong>Customer:</strong> {(jobToAssign as any)?.customer?.full_name || 'N/A'}</p>
-                <p><strong>Scheduled:</strong> {(jobToAssign as any)?.scheduled_date} - {(jobToAssign as any)?.scheduled_time_slot}</p>
-                <p className="truncate"><strong>Location:</strong> {(jobToAssign as any)?.service_address?.street || 'N/A'}</p>
-              </div>
-                {(jobToAssign as any)?.service_location?.googleLocation && (
-                    <a 
-                      href={(jobToAssign as any)?.service_location?.googleLocation}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                  className="inline-flex items-center gap-1 text-blue-600 hover:text-blue-800 text-xs sm:text-sm font-medium mt-2"
-                    >
-                  <MapPin className="w-3 h-3 sm:w-4 sm:h-4" />
-                      Open in Google Maps
-                    </a>
-                )}
-            </div>
-
-            {/* Assignment Type Selection */}
-            <div className="space-y-3">
-              <Label className="text-sm sm:text-base font-semibold">Assignment Method</Label>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <button
-                type="button"
-                  onClick={() => setAssignmentType('direct')}
-                  className={`p-4 rounded-lg border-2 transition-all text-left ${
-                    assignmentType === 'direct'
-                      ? 'border-blue-500 bg-blue-50'
-                      : 'border-gray-200 hover:border-gray-300 bg-white'
-                  }`}
-                >
-                  <div className="flex items-center gap-2 mb-1">
-                    <input
-                      type="radio"
-                      checked={assignmentType === 'direct'}
-                      onChange={() => {}}
-                      className="h-4 w-4 text-blue-600"
-                    />
-                    <span className="font-medium text-sm sm:text-base">Direct Assignment</span>
-                  </div>
-                  <p className="text-xs text-gray-600 mt-1">Assign directly to one technician</p>
-                </button>
-                
-                <button
-                  type="button"
-                  onClick={() => {
-                    setAssignmentType('distance');
-                    if (jobToAssign) {
-                      calculateDistancesForJob(jobToAssign);
-                    }
-                  }}
-                  className={`p-4 rounded-lg border-2 transition-all text-left ${
-                    assignmentType === 'distance'
-                      ? 'border-blue-500 bg-blue-50'
-                      : 'border-gray-200 hover:border-gray-300 bg-white'
-                  }`}
-                >
-                  <div className="flex items-center gap-2 mb-1">
-                    <input
-                      type="radio"
-                      checked={assignmentType === 'distance'}
-                      onChange={() => {}}
-                      className="h-4 w-4 text-blue-600"
-                    />
-                    <span className="font-medium text-sm sm:text-base">By Distance</span>
-                  </div>
-                  <p className="text-xs text-gray-600 mt-1">Auto-select nearest technician</p>
-                </button>
-                </div>
-              </div>
-
-              {/* Direct Assignment */}
-              {assignmentType === 'direct' && (
-                <div className="space-y-3">
-                  <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
-                    <Label htmlFor="technician-select" className="text-sm sm:text-base">Select Technician</Label>
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      onClick={async () => {
-                        await reloadTechnicians();
-                      }}
-                      className="text-xs w-full sm:w-auto"
-                    >
-                      🔄 Refresh List
-                    </Button>
-                  </div>
-                  <Select value={selectedTechnicianId} onValueChange={setSelectedTechnicianId}>
-                    <SelectTrigger className="w-full border border-gray-300 focus:border-blue-500 focus:ring-0 focus:ring-offset-0">
-                      <SelectValue placeholder="Choose a technician" />
-                    </SelectTrigger>
-                      <SelectContent className="max-h-[300px] overflow-y-auto">
-                      {technicians.length === 0 ? (
-                        <SelectItem value="no-technicians" disabled>
-                          No technicians available
-                        </SelectItem>
-                      ) : (
-                        technicians
-                          .filter(tech => tech.account_status !== 'INACTIVE')
-                          .map((technician) => (
-                          <SelectItem
-                            key={technician.id}
-                            value={technician.id || 'unknown'}
-                          >
-                                    <div className="flex items-center gap-2">
-                                      <span>{technician.fullName || 'Unknown Technician'}</span>
-                                {technician.employeeId && (
-                                  <span className="text-xs text-gray-500">({technician.employeeId})</span>
-                                )}
-                                  </div>
-                          </SelectItem>
-                          ))
-                      )}
-                    </SelectContent>
-                  </Select>
-                </div>
-              )}
-
-              {/* Distance-based Assignment */}
-              {assignmentType === 'distance' && (
-                <div className="space-y-3">
-                  <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
-                    <Label className="text-sm sm:text-base">Technicians ranked by distance</Label>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    onClick={async () => {
-                      await reloadTechnicians();
-                      if (jobToAssign) {
-                        await calculateDistancesForJob(jobToAssign);
-                      }
-                    }}
-                      className="text-xs w-full sm:w-auto"
-                      disabled={loadingDistances}
-                    >
-                      {loadingDistances ? (
-                        <>
-                          <div className="w-3 h-3 border-2 border-gray-600 border-t-transparent rounded-full animate-spin mr-1" />
-                          Calculating...
-                        </>
-                      ) : (
-                        <>
-                          🔄 Refresh Distances
-                        </>
-                      )}
-                  </Button>
-                </div>
-                  
-                {loadingDistances ? (
-                    <div className="flex items-center justify-center p-6">
-                      <div className="w-6 h-6 border-2 border-blue-600 border-t-transparent rounded-full animate-spin mr-3" />
-                    <span className="text-sm text-gray-600">Calculating distances...</span>
-                  </div>
-                ) : (
-                    <div className="space-y-2 max-h-[400px] overflow-y-auto">
-                  {technicians.length === 0 ? (
-                        <p className="text-sm text-gray-500 text-center py-4">No technicians available</p>
-                  ) : (
-                    technicians
-                          .filter(tech => tech.account_status !== 'INACTIVE')
-                        .map(tech => {
-                          const distanceInfo = technicianDistances.find(d => d.technicianId === tech.id);
-                          return { tech, distanceInfo };
-                        })
-                        .sort((a, b) => {
-                          if (!a.distanceInfo?.distance || a.distanceInfo.distance.status !== 'OK') return 1;
-                          if (!b.distanceInfo?.distance || b.distanceInfo.distance.status !== 'OK') return -1;
-                          return a.distanceInfo.distance.duration.value - b.distanceInfo.distance.duration.value;
-                        })
-                        .map(({ tech, distanceInfo }) => {
-                          const hasDistance = distanceInfo?.distance && distanceInfo.distance.status === 'OK';
-                            const isSelected = selectedTechnicianId === tech.id;
-
-                        return (
-                            <div 
-                              key={tech.id} 
-                                onClick={() => setSelectedTechnicianId(tech.id)}
-                                className={`p-3 rounded-lg border-2 cursor-pointer transition-all outline-none ${
-                                  isSelected 
-                                    ? 'border-blue-500 bg-blue-50 ring-0' 
-                                    : 'border-gray-200 hover:border-gray-300 hover:bg-gray-50'
-                                }`}
-                              >
-                                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
-                                  <div className="flex items-center gap-2 flex-1 min-w-0">
-                                    {distanceInfo?.rank && distanceInfo.rank <= 3 && (
-                                      <span className={`text-sm font-bold flex-shrink-0 ${
-                                      distanceInfo.rank === 1 ? 'text-green-600' :
-                                      distanceInfo.rank === 2 ? 'text-blue-600' :
-                                        'text-purple-600'
-                                    }`}>
-                                      #{distanceInfo.rank}
-                                    </span>
-                                  )}
-                                    <div className="flex-1 min-w-0">
-                                      <div className="font-medium text-sm sm:text-base truncate">{tech.fullName || 'Unknown'}</div>
-                                      {tech.employeeId && (
-                                        <div className="text-xs text-gray-500">{tech.employeeId}</div>
-                                      )}
-                                    </div>
-                                    {tech.status && tech.status !== 'OFFLINE' && (
-                                  <Badge 
-                                        variant={tech.status === 'AVAILABLE' ? 'default' : 'secondary'}
-                                        className="text-xs flex-shrink-0"
-                                      >
-                                        {tech.status}
-                                  </Badge>
-                                  )}
-                                </div>
-                                  {hasDistance ? (
-                                    <div className="text-right flex-shrink-0">
-                                      <div className="font-semibold text-sm text-gray-900">
-                                    {distanceInfo.distance.duration.text}
-                                  </div>
-                                      <div className="text-xs text-gray-500">
-                                    {distanceInfo.distance.distance.text}
-                                  </div>
-                                </div>
-                                  ) : (
-                                    <div className="text-xs text-gray-400 flex-shrink-0">
-                                      No distance data
-                                </div>
-                              )}
-                                </div>
-                          </div>
-                        );
-                      })
-                  )}
-                </div>
-                )}
-                </div>
-              )}
-          </div>
-          
-          <DialogFooter className="mt-4 flex-shrink-0 flex-col sm:flex-row gap-2">
-            <Button
-              variant="outline"
-              onClick={() => {
-                setAssignJobDialogOpen(false);
-                setJobToAssign(null);
-                setSelectedTechnicianId('');
-              }}
-              className="w-full sm:w-auto"
-            >
-              Cancel
-            </Button>
-            <Button
-              onClick={handleSaveJobAssignment}
-              disabled={!selectedTechnicianId}
-              className="bg-blue-600 hover:bg-blue-700 w-full sm:w-auto"
-            >
-              Assign Job
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      <AssignJobDialog
+        open={assignJobDialogOpen}
+        onOpenChange={setAssignJobDialogOpen}
+        job={jobToAssign}
+        technicians={technicians}
+        selectedTechnicianId={selectedTechnicianId}
+        assignmentType={assignmentType}
+        technicianDistances={technicianDistances}
+        loadingDistances={loadingDistances}
+        onTechnicianSelect={setSelectedTechnicianId}
+        onAssignmentTypeChange={(type) => {
+          setAssignmentType(type);
+          if (type === 'distance' && jobToAssign) {
+            calculateDistancesForJob(jobToAssign);
+          }
+        }}
+        onCalculateDistances={async () => {
+          if (jobToAssign) {
+            await calculateDistancesForJob(jobToAssign);
+          }
+        }}
+        onReloadTechnicians={reloadTechnicians}
+        onSave={handleSaveJobAssignment}
+        onCancel={() => {
+          setAssignJobDialogOpen(false);
+          setJobToAssign(null);
+          setSelectedTechnicianId('');
+        }}
+      />
 
       {/* New Job Dialog */}
-      <Dialog open={newJobDialogOpen} onOpenChange={handleCloseNewJobDialog}>
-        <DialogContent className="w-[95vw] sm:w-[90vw] md:w-[80vw] lg:w-[60vw] xl:w-[50vw] max-w-2xl h-[90vh] max-h-[90vh] overflow-hidden flex flex-col">
-          <DialogHeader>
-            <DialogTitle>Create New Job</DialogTitle>
-            <DialogDescription>
-              Create a new service job for {(selectedCustomerForJob as any)?.customer_id} - {(selectedCustomerForJob as any)?.full_name}
-            </DialogDescription>
-          </DialogHeader>
-          
-          {selectedCustomerForJob && isJobDialogReady && (
-            <div className="py-4 px-2 sm:px-4 space-y-6 flex-1 overflow-y-auto">
-            {/* Service Information */}
-            <div className="space-y-4 p-4 border border-gray-200 rounded-lg bg-gray-50">
-              <h3 className="text-lg font-semibold text-gray-900">Service Information</h3>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <Label htmlFor="job_service_type">Service Type</Label>
-                  <select
-                    id="job_service_type"
-                    value={newJobFormData.service_type || 'RO'}
-                    onChange={(e) => handleNewJobFormChange('service_type', e.target.value)}
-                    className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-base ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 appearance-none bg-white"
-                    style={{
-                      backgroundImage: `url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3e%3cpath stroke='%236b7280' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='m6 8 4 4 4-4'/%3e%3c/svg%3e")`,
-                      backgroundPosition: 'right 0.5rem center',
-                      backgroundRepeat: 'no-repeat',
-                      backgroundSize: '1.5em 1.5em',
-                      paddingRight: '2.5rem'
-                    }}
-                  >
-                    <option value="RO">RO Water Purifier</option>
-                    <option value="SOFTENER">Water Softener</option>
-                  </select>
-                </div>
-
-                <div className="space-y-2">
-                  <Label htmlFor="job_service_sub_type">Service Sub Type</Label>
-                  <select
-                    id="job_service_sub_type"
-                    value={newJobFormData.service_sub_type || 'Installation'}
-                    onChange={(e) => handleNewJobFormChange('service_sub_type', e.target.value)}
-                    className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 appearance-none bg-white"
-                  >
-                    <option value="Installation">Installation</option>
-                    <option value="Repair">Repair</option>
-                    <option value="Maintenance">Maintenance</option>
-                    <option value="Replacement">Replacement</option>
-                    <option value="Inspection">Inspection</option>
-                    <option value="Other">Other</option>
-                  </select>
-                  {newJobFormData.service_sub_type === 'Other' && (
-                    <Input
-                      id="job_service_sub_type_custom"
-                      value={newJobFormData.service_sub_type_custom}
-                      onChange={(e) => handleNewJobFormChange('service_sub_type_custom', e.target.value)}
-                      placeholder="Enter custom service sub type"
-                      className="mt-2"
-                    />
-                  )}
-                </div>
-
-              </div>
-            </div>
-
-            {/* Scheduling */}
-            <div className="space-y-4 p-4 border border-gray-200 rounded-lg bg-gray-50">
-              <h3 className="text-lg font-semibold text-gray-900">Scheduling</h3>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <Label htmlFor="job_scheduled_date">Scheduled Date</Label>
-                  <Input
-                    id="job_scheduled_date"
-                    type="date"
-                    value={newJobFormData.scheduled_date}
-                    onChange={(e) => handleNewJobFormChange('scheduled_date', e.target.value)}
-                    min={new Date().toISOString().split('T')[0]}
-                  />
-                </div>
-
-                <div className="space-y-2">
-                  <Label htmlFor="job_scheduled_time_slot">Time Slot</Label>
-                  <select
-                    id="job_scheduled_time_slot"
-                    value={newJobFormData.scheduled_time_slot || 'MORNING'}
-                    onChange={(e) => handleNewJobFormChange('scheduled_time_slot', e.target.value)}
-                    className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 appearance-none bg-white"
-                  >
-                    <option value="MORNING">Morning (9 AM - 1 PM)</option>
-                    <option value="AFTERNOON">Afternoon (1 PM - 6 PM)</option>
-                    <option value="EVENING">Evening (6 PM - 9 PM)</option>
-                    <option value="FLEXIBLE">Flexible</option>
-                    <option value="CUSTOM">Custom Time</option>
-                  </select>
-                  {newJobFormData.scheduled_time_slot === 'CUSTOM' && (
-                    <Input
-                      id="job_scheduled_time_custom"
-                      type="time"
-                      value={newJobFormData.scheduled_time_custom}
-                      onChange={(e) => handleNewJobFormChange('scheduled_time_custom', e.target.value)}
-                      className="mt-2"
-                    />
-                  )}
-                </div>
-
-
-              </div>
-            </div>
-
-            {/* Photo Upload */}
-            <div className="space-y-4 p-4 border border-gray-200 rounded-lg bg-gray-50">
-              <h3 className="text-lg font-semibold text-gray-900">Photos</h3>
-              <div className="space-y-4">
-                {/* Photo Upload Area */}
-                <div 
-                  className={`border-2 border-dashed rounded-lg p-6 text-center transition-all duration-200 cursor-pointer ${
-                    isDragOverNewJob 
-                      ? 'border-blue-500 bg-blue-50 scale-105' 
-                      : 'border-gray-300 hover:border-gray-400'
-                  }`}
-                  onDragOver={(e) => {
-                    e.preventDefault();
-                    e.stopPropagation();
-                    setIsDragOverNewJob(true);
-                  }}
-                  onDragLeave={(e) => {
-                    e.preventDefault();
-                    e.stopPropagation();
-                    setIsDragOverNewJob(false);
-                  }}
-                  onDrop={(e) => {
-                    e.preventDefault();
-                    e.stopPropagation();
-                    setIsDragOverNewJob(false);
-                    const files = Array.from(e.dataTransfer.files).filter(file => file.type.startsWith('image/'));
-                    if (files.length > 0) {
-                      handleNewJobPhotoUpload(files);
-                    } else {
-                      toast.error('Please drop image files only');
-                    }
-                  }}
-                  onClick={() => document.getElementById('photo-upload')?.click()}
-                >
-                  <div className="flex flex-col items-center space-y-2">
-                    {isDragOverNewJob ? (
-                      <Upload className="w-8 h-8 text-blue-500" />
-                    ) : (
-                      <svg className="w-8 h-8 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
-                      </svg>
-                    )}
-                    <p className="text-sm text-gray-600">
-                      {isDragOverNewJob ? (
-                        <span className="font-medium text-blue-600">Drop photos here</span>
-                      ) : (
-                        <>
-                          <span className="font-medium text-blue-600">Click to upload</span> or drag and drop
-                        </>
-                      )}
-                    </p>
-                    <p className="text-xs text-gray-500">PNG, JPG, WEBP up to 10MB each</p>
-                  </div>
-                </div>
-                
-                {/* Hidden file input */}
-                <input
-                  id="photo-upload"
-                  type="file"
-                  multiple
-                  accept="image/*"
-                  onChange={(e) => {
-                    if (e.target.files) {
-                      const files = Array.from(e.target.files);
-                      handleNewJobPhotoUpload(files);
-                    }
-                  }}
-                  className="hidden"
-                />
-                
-                {/* Camera button for mobile */}
-                <div className="flex justify-center">
-                  <Button
-                    type="button"
-                    variant="outline"
-                    onClick={() => document.getElementById('camera-upload')?.click()}
-                    className="flex items-center gap-2"
-                  >
-                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" />
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 13a3 3 0 11-6 0 3 3 0 016 0z" />
-                    </svg>
-                    Take Photo
-                  </Button>
-                </div>
-                
-                {/* Hidden camera input */}
-                <input
-                  id="camera-upload"
-                  type="file"
-                  accept="image/*"
-                  capture="environment"
-                  onChange={(e) => {
-                    if (e.target.files) {
-                      const files = Array.from(e.target.files);
-                      handleNewJobPhotoUpload(files);
-                    }
-                  }}
-                  className="hidden"
-                />
-                
-                {/* Photo Preview Grid */}
-                {newJobFormData.photos.length > 0 && (
-                  <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4">
-                    {newJobFormData.photos.map((photo, index) => (
-                      <div key={index} className="relative group">
-                        <img
-                          src={photo}
-                          alt={`Upload ${index + 1}`}
-                          className="w-full h-24 object-cover rounded-lg border"
-                        />
-                        {/* Show loading indicator for thumbnails (data URLs) */}
-                        {photo.startsWith('data:') && (
-                          <div className="absolute inset-0 bg-black bg-opacity-50 rounded-lg flex items-center justify-center">
-                            <div className="w-6 h-6 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
-                          </div>
-                        )}
-                        <button
-                          type="button"
-                          onClick={() => handleRemovePhoto(index)}
-                          className="absolute -top-2 -right-2 bg-red-500 text-white rounded-full w-6 h-6 flex items-center justify-center text-xs hover:bg-red-600"
-                        >
-                          ×
-                        </button>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-            </div>
-
-            {/* Job Details */}
-            <div className="space-y-4 p-4 border border-gray-200 rounded-lg bg-gray-50">
-              <h3 className="text-lg font-semibold text-gray-900">Job Details</h3>
-              <div className="space-y-2">
-                <Label htmlFor="job_description">Description (Optional)</Label>
-                <Textarea
-                  id="job_description"
-                  value={newJobFormData.description}
-                  onChange={(e) => handleNewJobFormChange('description', e.target.value)}
-                  placeholder="Describe the service requirements (optional)..."
-                  rows={4}
-                />
-              </div>
-
-              <div className="space-y-2">
-                <Label htmlFor="job_cost_agreed">Cost Already Agreed (₹)</Label>
-                <Input
-                  id="job_cost_agreed"
-                  type="text"
-                  value={newJobFormData.cost_agreed}
-                  onChange={(e) => {
-                    const value = e.target.value;
-                    // Allow numbers, dashes, and spaces for ranges like "400-500"
-                    if (value === '' || /^[\d\s-]+$/.test(value)) {
-                      handleNewJobFormChange('cost_agreed', value);
-                    }
-                  }}
-                  placeholder="e.g., 400 or 400-500"
-                />
-                <p className="text-xs text-gray-500">Enter a single amount or a range (e.g., 400-500)</p>
-              </div>
-
-              <div className="space-y-2">
-                <Label htmlFor="job_lead_source">Lead Source *</Label>
-                <select
-                  id="job_lead_source"
-                  value={newJobFormData.lead_source}
-                  onChange={(e) => handleNewJobFormChange('lead_source', e.target.value)}
-                  required
-                  className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 appearance-none bg-white"
-                >
-                  <option value="Website">Website</option>
-                  <option value="Direct call">Direct call</option>
-                  <option value="RO care india">RO care india</option>
-                  <option value="Home triangle">Home triangle</option>
-                  <option value="Local Ramu">Local Ramu</option>
-                  <option value="Other">Other</option>
-                </select>
-                {newJobFormData.lead_source === 'Other' && (
-                  <Input
-                    id="job_lead_source_custom"
-                    value={newJobFormData.lead_source_custom || ''}
-                    onChange={(e) => handleNewJobFormChange('lead_source_custom', e.target.value)}
-                    placeholder="Enter lead source"
-                    className="mt-2"
-                  />
-                )}
-              </div>
-            </div>
-          </div>
-          )}
-          
-          <DialogFooter>
-            <Button
-              variant="outline"
-              onClick={handleCloseNewJobDialog}
-            >
-              Cancel
-            </Button>
-            <Button
-              onClick={handleCreateJob}
-              disabled={isCreatingJob}
-              className="bg-blue-600 hover:bg-blue-700"
-            >
-              {isCreatingJob ? 'Creating...' : 'Create Job'}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      <NewJobDialog
+        open={newJobDialogOpen}
+        onOpenChange={(open) => {
+          setNewJobDialogOpen(open);
+          if (!open) {
+            setIsJobDialogReady(false);
+            setSelectedCustomerForJob(null);
+          }
+        }}
+        customer={selectedCustomerForJob}
+        technicians={technicians}
+        onJobCreated={(newJob) => {
+          setJobs([newJob, ...jobs]);
+          const customerId = selectedCustomerForJob?.customer_id || selectedCustomerForJob?.customerId;
+          if (customerId) {
+            setTimeout(() => {
+              loadCustomerPhotos(customerId);
+            }, 1000);
+          }
+        }}
+        onCustomerUpdated={(updatedCustomer) => {
+          setCustomers(customers.map(c => 
+            c.id === updatedCustomer.id ? updatedCustomer : c
+          ));
+        }}
+        onBrandsModelsReload={loadBrandsAndModels}
+        parseDbServiceType={parseDbServiceType}
+      />
 
       {/* Customer Photo Gallery Dialog */}
-      <Dialog open={customerPhotoGalleryOpen} onOpenChange={handleClosePhotoGallery}>
-        <DialogContent className="max-w-7xl max-h-[95vh] overflow-y-auto">
-          <DialogHeader>
-            <DialogTitle className="flex items-center justify-between">
-              <span>Photo Gallery</span>
-              <div className="flex items-center gap-2">
-                <span className="text-sm text-gray-500">
-                  {(selectedCustomerForPhotos as any)?.customer_id} - {(selectedCustomerForPhotos as any)?.full_name}
-                </span>
-                <DropdownMenu>
-                  <DropdownMenuTrigger asChild>
-                    <Button variant="outline" size="sm">
-                      <MoreVertical className="w-4 h-4" />
-                    </Button>
-                  </DropdownMenuTrigger>
-                  <DropdownMenuContent align="end">
-                    <DropdownMenuItem onClick={() => {
-                      const input = document.createElement('input');
-                      input.type = 'file';
-                      input.multiple = true;
-                      input.accept = 'image/*';
-                      input.onchange = (e) => {
-                        const files = (e.target as HTMLInputElement).files;
-                        if (files) handlePhotoUpload(files);
-                      };
-                      input.click();
-                    }}>
-                      <Upload className="w-4 h-4 mr-2" />
-                      Add Photos
-                    </DropdownMenuItem>
-                    <DropdownMenuItem onClick={() => {
-                      // Download all photos as zip (placeholder)
-                      toast.info('Download all photos feature coming soon');
-                    }}>
-                      <Download className="w-4 h-4 mr-2" />
-                      Download All
-                    </DropdownMenuItem>
-                  </DropdownMenuContent>
-                </DropdownMenu>
-              </div>
-            </DialogTitle>
-            <DialogDescription>
-              View and manage photos for this customer
-            </DialogDescription>
-          </DialogHeader>
-          
-          {selectedCustomerForPhotos && (
-            <div className="space-y-6">
-              {/* Upload Area - Only show if no photos and no uploading thumbnails */}
-              {(() => {
-                const customerId = selectedCustomerForPhotos?.customer_id || selectedCustomerForPhotos?.customerId;
-                const photos = customerPhotos[customerId || ''];
-                const uploadingCount = Object.keys(uploadingThumbnails).length;
-                return (!photos || photos.length === 0) && uploadingCount === 0;
-              })() && (
-                <div
-                  className={`border-2 border-dashed rounded-lg p-12 text-center transition-all duration-200 ${
-                    isDragOverPhotos 
-                      ? 'border-blue-500 bg-blue-100 scale-105' 
-                      : 'border-gray-300 hover:border-blue-400 hover:bg-blue-50'
-                  } ${isUploadingPhoto ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}`}
-                  onDragOver={handleDragOver}
-                  onDragLeave={handleDragLeave}
-                  onDrop={handleDrop}
-                  onClick={(e) => {
-                    // Don't trigger file input if clicking on buttons
-                    if ((e.target as HTMLElement).closest('button')) return;
-                    const input = document.createElement('input');
-                    input.type = 'file';
-                    input.multiple = true;
-                    input.accept = 'image/*';
-                    input.onchange = (e) => {
-                      const files = (e.target as HTMLInputElement).files;
-                      if (files) handlePhotoUpload(files);
-                    };
-                    input.click();
-                  }}
-                >
-                  <div className="space-y-6">
-                    <div className="relative">
-                      <Camera className={`w-16 h-16 mx-auto ${isDragOverPhotos ? 'text-blue-500' : 'text-gray-400'}`} />
-                      {isCompressingImage && (
-                        <div className="absolute inset-0 flex items-center justify-center">
-                          <div className="flex items-center gap-1">
-                            <div className="w-3 h-3 bg-black rounded-full animate-bounce" style={{ animationDelay: '0ms' }}></div>
-                            <div className="w-3 h-3 bg-black rounded-full animate-bounce" style={{ animationDelay: '150ms' }}></div>
-                            <div className="w-3 h-3 bg-black rounded-full animate-bounce" style={{ animationDelay: '300ms' }}></div>
-                          </div>
-                        </div>
-                      )}
-                    </div>
-                    <div className="space-y-3">
-                      <div className="text-xl font-medium text-gray-600">
-                        {isUploadingPhoto ? 'Uploading photos...' : isDragOverPhotos ? 'Drop photos here' : 'No photos found'}
-                      </div>
-                      <div className="text-sm text-gray-500">
-                        Drag & drop photos here, click to browse, or use camera capture
-                      </div>
-                      <div className="flex flex-col sm:flex-row gap-3 justify-center items-center pt-2">
-                        <Button
-                          type="button"
-                          variant="outline"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            const input = document.createElement('input');
-                            input.type = 'file';
-                            input.multiple = true;
-                            input.accept = 'image/*';
-                            input.onchange = (e) => {
-                              const files = (e.target as HTMLInputElement).files;
-                              if (files) handlePhotoUpload(files);
-                            };
-                            input.click();
-                          }}
-                          disabled={isUploadingPhoto}
-                          className="flex items-center gap-2"
-                        >
-                          <Upload className="w-4 h-4" />
-                          Browse Files
-                        </Button>
-                        <Button
-                          type="button"
-                          variant="outline"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            handleCameraCapture();
-                          }}
-                          disabled={isUploadingPhoto}
-                          className="flex items-center gap-2"
-                        >
-                          <Camera className="w-4 h-4" />
-                          Capture Photo
-                        </Button>
-                      </div>
-                      <div className="text-xs text-gray-400 pt-2">
-                        Supports JPG, PNG, GIF up to 10MB • All photos stored in Cloudinary
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              )}
-
-              {/* Loading State */}
-              {isLoadingPhotos && (
-                <div className="flex items-center justify-center py-12">
-                  <div className="flex flex-col items-center gap-3">
-                    <div className="flex items-center gap-1">
-                      <div className="w-3 h-3 bg-black rounded-full animate-bounce" style={{ animationDelay: '0ms' }}></div>
-                      <div className="w-3 h-3 bg-black rounded-full animate-bounce" style={{ animationDelay: '150ms' }}></div>
-                      <div className="w-3 h-3 bg-black rounded-full animate-bounce" style={{ animationDelay: '300ms' }}></div>
-                    </div>
-                    <p className="text-sm text-gray-600">Loading photos...</p>
-                  </div>
-                </div>
-              )}
-
-              {/* Photo Grid */}
-              {(() => {
-                const customerId = selectedCustomerForPhotos?.customer_id || selectedCustomerForPhotos?.customerId;
-                const photos = customerPhotos[customerId || ''];
-                const uploadingCount = Object.keys(uploadingThumbnails).length;
-                // Photo display check - show if we have photos OR uploading thumbnails
-                return !isLoadingPhotos && customerId && ((photos && photos.length > 0) || uploadingCount > 0);
-              })() && (
-                <div className="space-y-4">
-                  <div className="flex items-center justify-between flex-wrap gap-3">
-                    <h3 className="text-lg font-medium">
-                      {(() => {
-                        const customerId = selectedCustomerForPhotos?.customer_id || selectedCustomerForPhotos?.customerId;
-                        const photoCount = customerPhotos[customerId || '']?.length || 0;
-                        const uploadingCount = Object.keys(uploadingThumbnails).length;
-                        const total = photoCount + uploadingCount;
-                        return `${total} Photo${total !== 1 ? 's' : ''}${uploadingCount > 0 ? ` (${uploadingCount} uploading...)` : ''}`;
-                      })()}
-                    </h3>
-                    <div className="flex gap-2">
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => {
-                          const input = document.createElement('input');
-                          input.type = 'file';
-                          input.multiple = true;
-                          input.accept = 'image/*';
-                          input.onchange = (e) => {
-                            const files = (e.target as HTMLInputElement).files;
-                            if (files) handlePhotoUpload(files);
-                          };
-                          input.click();
-                        }}
-                        disabled={isUploadingPhoto}
-                        className="flex items-center gap-2"
-                      >
-                        <Upload className="w-4 h-4" />
-                        Add Files
-                      </Button>
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={handleCameraCapture}
-                        disabled={isUploadingPhoto}
-                        className="flex items-center gap-2"
-                      >
-                        <Camera className="w-4 h-4" />
-                        Capture
-                      </Button>
-                    </div>
-                  </div>
-                  
-                  <div 
-                    className={`grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4 p-4 rounded-lg border-2 border-dashed transition-all ${
-                      isDragOverPhotos 
-                        ? 'border-blue-500 bg-blue-50' 
-                        : 'border-transparent'
-                    }`}
-                    onDragOver={handleDragOver}
-                    onDragLeave={handleDragLeave}
-                    onDrop={handleDrop}
-                  >
-                    {/* Show uploading thumbnails first */}
-                    {Object.entries(uploadingThumbnails).map(([thumbnailId, thumbnail]) => (
-                      <div key={thumbnailId} className="relative group">
-                        <div className="w-full h-40 bg-gray-100 rounded-lg border-2 border-dashed border-blue-400 overflow-hidden relative">
-                          <img
-                            src={thumbnail.url}
-                            alt="Uploading..."
-                            className="w-full h-full object-cover opacity-60"
-                          />
-                          <div className="absolute inset-0 flex items-center justify-center bg-black/20">
-                            <div className="flex flex-col items-center gap-2">
-                              <div className="flex items-center gap-1">
-                                <div className="w-2 h-2 bg-white rounded-full animate-bounce" style={{ animationDelay: '0ms' }}></div>
-                                <div className="w-2 h-2 bg-white rounded-full animate-bounce" style={{ animationDelay: '150ms' }}></div>
-                                <div className="w-2 h-2 bg-white rounded-full animate-bounce" style={{ animationDelay: '300ms' }}></div>
-                              </div>
-                              <span className="text-xs text-white font-medium">Uploading...</span>
-                            </div>
-                          </div>
-                        </div>
-                      </div>
-                    ))}
-                    
-                    {/* Show uploaded photos */}
-                    {customerPhotos[selectedCustomerForPhotos?.customer_id || selectedCustomerForPhotos?.customerId || '']?.map((photo, index) => (
-                      <div key={`${selectedCustomerForPhotos.id}-${index}`} className="relative group">
-                        <div className="w-full h-40 bg-gray-100 rounded-lg border border-gray-200 overflow-hidden cursor-pointer">
-                          <img
-                            src={photo}
-                            alt={`Photo ${index + 1}`}
-                            className="w-full h-full object-cover transition-transform group-hover:scale-105"
-                            onLoad={(e) => {
-                              e.currentTarget.style.display = 'block';
-                            }}
-                            onError={(e) => {
-                              e.currentTarget.style.display = 'none';
-                              const placeholder = e.currentTarget.nextElementSibling as HTMLElement;
-                              if (placeholder) placeholder.style.display = 'flex';
-                            }}
-                            onClick={() => {
-                              const customerId = selectedCustomerForPhotos?.customer_id || selectedCustomerForPhotos?.customerId || '';
-                              setSelectedPhoto({
-                                url: photo,
-                                index: index,
-                                total: customerPhotos[customerId]?.length || 0
-                              });
-                            }}
-                          />
-                          <div 
-                            className="w-full h-full flex items-center justify-center text-gray-400"
-                            style={{ display: 'none' }}
-                          >
-                            <div className="text-center">
-                              <Image className="w-8 h-8 mx-auto mb-2" />
-                              <div className="text-xs">Failed to load</div>
-                            </div>
-                          </div>
-                          {/* Delete button - shown on hover */}
-                          <div className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                            <Button
-                              variant="destructive"
-                              size="sm"
-                              className="h-8 w-8 p-0"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                setCustomerPhotoToDelete({ photoUrl: photo, photoIndex: index });
-                                setDeleteCustomerPhotoDialogOpen(true);
-                              }}
-                            >
-                              <Trash2 className="w-4 h-4" />
-                            </Button>
-                          </div>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-            </div>
-          )}
-        </DialogContent>
-      </Dialog>
+      <CustomerPhotoGalleryDialog
+        open={customerPhotoGalleryOpen}
+        onOpenChange={handleClosePhotoGallery}
+        customer={selectedCustomerForPhotos}
+        customerPhotos={customerPhotos}
+        uploadingThumbnails={uploadingThumbnails}
+        isUploadingPhoto={isUploadingPhoto}
+        isLoadingPhotos={isLoadingPhotos}
+        isDragOverPhotos={isDragOverPhotos}
+        isCompressingImage={isCompressingImage}
+        onPhotoUpload={handlePhotoUpload}
+        onCameraCapture={handleCameraCapture}
+        onDragOver={handleDragOver}
+        onDragLeave={handleDragLeave}
+        onDrop={handleDrop}
+        onPhotoClick={(photo, index, total) => {
+          setSelectedPhoto({ url: photo, index, total });
+        }}
+        onDeletePhoto={(photoUrl, photoIndex) => {
+          setCustomerPhotoToDelete({ photoUrl, photoIndex });
+          setDeleteCustomerPhotoDialogOpen(true);
+        }}
+      />
 
       {/* Photo Viewer Dialog - Only show if photoViewerOpen is false (fallback for customer photos) */}
       {!photoViewerOpen && (
@@ -10712,708 +7278,67 @@ const AdminDashboard = () => {
       )}
 
       {/* Service History Dialog */}
-      <Dialog open={historyDialogOpen} onOpenChange={setHistoryDialogOpen}>
-        <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
-          <DialogHeader>
-            <DialogTitle>Service History</DialogTitle>
-            <DialogDescription>
-              Complete service history for {(selectedCustomerForHistory as any)?.customer_id} - {(selectedCustomerForHistory as any)?.full_name}
-            </DialogDescription>
-          </DialogHeader>
-          
-          {selectedCustomerForHistory && (() => {
-            const customerId = selectedCustomerForHistory.customer_id || selectedCustomerForHistory.customerId;
-            const history = customerHistory[customerId] || [];
-            
-            return (
-              <div className="space-y-4">
-                {history.length > 0 ? (
-                  <div className="space-y-4">
-                    {history.map((job, index) => {
-                    const lastServiceDate = job.completedAt || job.scheduledDate || job.createdAt;
-                    const serviceDate = lastServiceDate ? new Date(lastServiceDate) : null;
-                    
-                    return (
-                      <Card key={job.id} className="p-4 border-l-4 border-l-blue-500">
-                        <div className="space-y-4">
-                          {/* Header with Job Number and Status */}
-                          <div className="flex items-start justify-between flex-wrap gap-3">
-                            <div className="flex items-center gap-2 flex-wrap">
-                              <Badge variant="outline" className="font-mono text-xs font-semibold">
-                                {job.jobNumber || job.job_number || `Job #${index + 1}`}
-                              </Badge>
-                              <Badge 
-                                variant={
-                                  job.status === 'COMPLETED' ? 'default' :
-                                  job.status === 'IN_PROGRESS' ? 'secondary' :
-                                  job.status === 'CANCELLED' ? 'destructive' : 
-                                  job.status === 'ASSIGNED' ? 'outline' : 'outline'
-                                }
-                                className="text-xs"
-                              >
-                                {job.status?.replace('_', ' ') || 'PENDING'}
-                              </Badge>
-                              {job.priority && (
-                                <Badge variant="outline" className="text-xs">
-                                  {job.priority}
-                                </Badge>
-                              )}
-                            </div>
-                            {serviceDate && (
-                              <div className="text-right">
-                                <div className="text-sm font-semibold text-gray-900">
-                                  {job.completedAt ? 'Completed' : job.status === 'IN_PROGRESS' ? 'In Progress' : 'Scheduled'}
-                                </div>
-                                <div className="text-xs text-gray-500">
-                                  {serviceDate.toLocaleDateString('en-IN', { 
-                                    day: 'numeric', 
-                                    month: 'short', 
-                                    year: 'numeric' 
-                                  })}
-                                </div>
-                                {job.completedAt && (
-                                  <div className="text-xs text-gray-500">
-                                    {new Date(job.completedAt).toLocaleTimeString('en-IN', { 
-                                      hour: '2-digit', 
-                                      minute: '2-digit' 
-                                    })}
-                                  </div>
-                                )}
-                              </div>
-                            )}
-                          </div>
+      <ServiceHistoryDialog
+        open={historyDialogOpen}
+        onOpenChange={setHistoryDialogOpen}
+        customer={selectedCustomerForHistory}
+        history={selectedCustomerForHistory ? (customerHistory[selectedCustomerForHistory.customer_id || selectedCustomerForHistory.customerId || ''] || []) : []}
+      />
 
-                          {/* Service Details */}
-                          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                            <div className="space-y-2">
-                              <div className="flex items-center gap-2">
-                                <Wrench className="w-4 h-4 text-gray-500" />
-                                <div>
-                                  <div className="text-sm font-semibold text-gray-900">
-                                    {job.serviceType || job.service_type || 'N/A'} - {job.serviceSubType || job.service_sub_type || 'N/A'}
-                                  </div>
-                                  {(job.brand && job.model && 
-                                    !job.brand.toLowerCase().includes('not specified') && 
-                                    !job.brand.toLowerCase().includes('n/a') &&
-                                    !job.model.toLowerCase().includes('not specified') && 
-                                    !job.model.toLowerCase().includes('n/a')) && (
-                                    <div className="text-xs text-gray-600">
-                                      {job.brand} {job.model}
-                                    </div>
-                                  )}
-                                </div>
-                              </div>
-                            </div>
-
-                            {/* Technician Information */}
-                            <div className="space-y-2">
-                              {job.assignedTechnician ? (
-                                <div className="flex items-center gap-2">
-                                  <User className="w-4 h-4 text-gray-500" />
-                                  <div>
-                                    <div className="text-sm font-semibold text-gray-900">
-                                      {job.assignedTechnician.fullName}
-                                    </div>
-                                    {job.assignedTechnician.phone && (
-                                      <div className="text-xs text-gray-600">
-                                        {job.assignedTechnician.phone}
-                                      </div>
-                                    )}
-                                  </div>
-                                </div>
-                              ) : (
-                                <div className="flex items-center gap-2 text-sm text-gray-500">
-                                  <User className="w-4 h-4" />
-                                  <span>No technician assigned</span>
-                                </div>
-                              )}
-                            </div>
-                          </div>
-
-                          {/* Schedule Information */}
-                          {job.scheduledDate && (
-                            <div className="flex items-center gap-2 text-sm text-gray-600">
-                              <Calendar className="w-4 h-4" />
-                              <span>
-                                Scheduled: {new Date(job.scheduledDate).toLocaleDateString('en-IN', { 
-                                  day: 'numeric', 
-                                  month: 'short', 
-                                  year: 'numeric' 
-                                })}
-                                {job.scheduledTimeSlot && (
-                                  <span className="ml-1">
-                                    ({job.scheduledTimeSlot.replace('_', ' ')})
-                                  </span>
-                                )}
-                              </span>
-                            </div>
-                          )}
-
-                          {/* Description */}
-                          {job.description && (
-                            <div className="text-sm text-gray-700 bg-gray-50 p-3 rounded-md">
-                              <div className="font-medium mb-1">Description:</div>
-                              <div className="break-words">{job.description}</div>
-                            </div>
-                          )}
-
-                          {/* Financial Information */}
-                          <div className="grid grid-cols-2 md:grid-cols-4 gap-3 pt-2 border-t">
-                            {job.estimated_cost !== undefined && job.estimated_cost > 0 && (
-                              <div>
-                                <div className="text-xs text-gray-500">Estimated Cost</div>
-                                <div className="text-sm font-semibold">₹{job.estimated_cost}</div>
-                              </div>
-                            )}
-                            {job.actual_cost !== undefined && job.actual_cost > 0 && (
-                              <div>
-                                <div className="text-xs text-gray-500">Actual Cost</div>
-                                <div className="text-sm font-semibold">₹{job.actual_cost}</div>
-                              </div>
-                            )}
-                            {job.payment_status && (
-                              <div>
-                                <div className="text-xs text-gray-500">Payment Status</div>
-                                <Badge 
-                                  variant={job.payment_status === 'PAID' ? 'default' : 'outline'}
-                                  className="text-xs mt-1"
-                                >
-                                  {job.payment_status}
-                                </Badge>
-                              </div>
-                            )}
-                            {job.estimatedDuration && (
-                              <div>
-                                <div className="text-xs text-gray-500">Duration</div>
-                                <div className="text-sm font-semibold">{job.estimatedDuration} min</div>
-                              </div>
-                            )}
-                          </div>
-
-                          {/* Completion Notes */}
-                          {job.completionNotes && (
-                            <div className="text-sm text-gray-700 bg-green-50 p-3 rounded-md border border-green-200">
-                              <div className="font-medium mb-1 text-green-800">Completion Notes:</div>
-                              <div className="break-words text-green-900">{job.completionNotes}</div>
-                            </div>
-                          )}
-                        </div>
-                      </Card>
-                    );
-                    })}
-                  </div>
-                ) : (
-                  <div className="text-center py-8 text-gray-500">
-                    <History className="w-12 h-12 mx-auto mb-4 text-gray-300" />
-                    <div className="text-lg font-medium">No service history yet</div>
-                    <div className="text-sm">Create a new job to start building service history</div>
-                  </div>
-                )}
-              </div>
-            );
-          })()}
-        </DialogContent>
-      </Dialog>
+      {/* Legacy Service History Dialog - REMOVED - Now using ServiceHistoryDialog component */}
 
       {/* Phone Numbers Popup */}
-      <Dialog open={phonePopupOpen} onOpenChange={setPhonePopupOpen}>
-        <DialogContent className="max-w-md">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <Phone className="w-5 h-5 text-blue-600" />
-              Contact Numbers
-            </DialogTitle>
-            <DialogDescription>
-              Choose a phone number to call for {(selectedCustomerPhone as any)?.full_name}
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-4">
-            {/* Primary Phone */}
-            <div className="flex items-center justify-between p-4 bg-blue-50 rounded-lg border border-blue-200">
-              <div>
-                <div className="font-semibold text-gray-900">{selectedCustomerPhone?.phone}</div>
-                <div className="text-sm text-blue-600 font-medium">Primary Number</div>
-              </div>
-              <a 
-                href={`tel:${selectedCustomerPhone?.phone}`}
-                className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg font-medium transition-colors"
-              >
-                Call
-              </a>
-            </div>
-            
-            {/* Secondary Phone */}
-            {(selectedCustomerPhone as any)?.alternate_phone && (
-              <div className="flex items-center justify-between p-4 bg-gray-50 rounded-lg border border-gray-200">
-                <div>
-                  <div className="font-semibold text-gray-900">{(selectedCustomerPhone as any).alternate_phone}</div>
-                  <div className="text-sm text-gray-600 font-medium">Secondary Number</div>
-                </div>
-                <a 
-                  href={`tel:${(selectedCustomerPhone as any).alternate_phone}`}
-                  className="bg-gray-600 hover:bg-gray-700 text-white px-4 py-2 rounded-lg font-medium transition-colors"
-                >
-                  Call
-                </a>
-              </div>
-            )}
-          </div>
-          <DialogFooter>
-            <Button 
-              variant="outline" 
-              onClick={() => setPhonePopupOpen(false)}
-              className="w-full"
-            >
-              Close
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      <PhoneNumbersDialog
+        open={phonePopupOpen}
+        onOpenChange={setPhonePopupOpen}
+        customer={selectedCustomerPhone}
+      />
 
       {/* Reassign Job Dialog */}
-      <Dialog open={reassignDialogOpen} onOpenChange={setReassignDialogOpen}>
-        <DialogContent className="w-[95vw] sm:w-[90vw] md:w-[600px] max-w-[600px] max-h-[90vh] flex flex-col">
-          <DialogHeader>
-            <DialogTitle className="text-lg sm:text-xl">Reassign Job to Technician</DialogTitle>
-            <DialogDescription className="text-sm">
-              Choose how to reassign this job
-            </DialogDescription>
-          </DialogHeader>
-          
-          <div className="space-y-4 sm:space-y-6 overflow-y-auto flex-1 pr-1 sm:pr-2">
-            {/* Job Details */}
-            {jobToReassign && (
-              <div className="bg-gray-50 rounded-lg p-3 sm:p-4">
-                <div className="flex flex-col sm:flex-row sm:items-center gap-2 mb-2">
-                  <span className="font-mono font-bold text-base sm:text-lg">{(jobToReassign as any)?.job_number}</span>
-                  <Badge className="bg-blue-100 text-blue-800 text-xs sm:text-sm w-fit">
-                    {(jobToReassign as any)?.service_type} - {(jobToReassign as any)?.service_sub_type}
-                  </Badge>
-                </div>
-                <div className="space-y-1 text-xs sm:text-sm text-gray-600">
-                  <p><strong>Customer:</strong> {(jobToReassign as any)?.customer?.full_name || 'N/A'}</p>
-                  <p><strong>Scheduled:</strong> {(jobToReassign as any)?.scheduled_date} - {(jobToReassign as any)?.scheduled_time_slot}</p>
-                  <p className="truncate"><strong>Location:</strong> {(jobToReassign as any)?.service_address?.street || 'N/A'}</p>
-                </div>
-                {(jobToReassign as any)?.service_location?.googleLocation && (
-                  <a 
-                    href={(jobToReassign as any)?.service_location?.googleLocation}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="inline-flex items-center gap-1 text-blue-600 hover:text-blue-800 text-xs sm:text-sm font-medium mt-2"
-                  >
-                    <MapPin className="w-3 h-3 sm:w-4 sm:h-4" />
-                    Open in Google Maps
-                  </a>
-                )}
-              </div>
-            )}
-
-            {/* Assignment Type Selection */}
-            <div className="space-y-3">
-              <Label className="text-sm sm:text-base font-semibold">Assignment Method</Label>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <button
-                  type="button"
-                  onClick={() => setReassignAssignmentType('direct')}
-                  className={`p-4 rounded-lg border-2 transition-all text-left ${
-                    reassignAssignmentType === 'direct'
-                      ? 'border-blue-500 bg-blue-50'
-                      : 'border-gray-200 hover:border-gray-300 bg-white'
-                  }`}
-                >
-                  <div className="flex items-center gap-2 mb-1">
-                    <input
-                      type="radio"
-                      checked={reassignAssignmentType === 'direct'}
-                      onChange={() => {}}
-                      className="h-4 w-4 text-blue-600"
-                    />
-                    <span className="font-medium text-sm sm:text-base">Direct Assignment</span>
-                  </div>
-                  <p className="text-xs text-gray-600 mt-1">Assign directly to one technician</p>
-                </button>
-                
-                <button
-                  type="button"
-                  onClick={() => {
-                    setReassignAssignmentType('distance');
-                    if (jobToReassign) {
+      <ReassignJobDialog
+        open={reassignDialogOpen}
+        onOpenChange={setReassignDialogOpen}
+        job={jobToReassign}
+        technicians={technicians}
+        selectedTechnicianId={selectedTechnicianForReassign}
+        assignmentType={reassignAssignmentType}
+        technicianDistances={reassignTechnicianDistances}
+        loadingDistances={loadingReassignDistances}
+        onTechnicianSelect={setSelectedTechnicianForReassign}
+        onAssignmentTypeChange={(type) => {
+          setReassignAssignmentType(type);
+          if (type === 'distance' && jobToReassign) {
                       calculateDistancesForReassign(jobToReassign);
                     }
                   }}
-                  className={`p-4 rounded-lg border-2 transition-all text-left ${
-                    reassignAssignmentType === 'distance'
-                      ? 'border-blue-500 bg-blue-50'
-                      : 'border-gray-200 hover:border-gray-300 bg-white'
-                  }`}
-                >
-                  <div className="flex items-center gap-2 mb-1">
-                    <input
-                      type="radio"
-                      checked={reassignAssignmentType === 'distance'}
-                      onChange={() => {}}
-                      className="h-4 w-4 text-blue-600"
-                    />
-                    <span className="font-medium text-sm sm:text-base">By Distance</span>
-                  </div>
-                  <p className="text-xs text-gray-600 mt-1">Auto-select nearest technician</p>
-                </button>
-              </div>
-            </div>
-
-            {/* Direct Assignment */}
-            {reassignAssignmentType === 'direct' && (
-              <div className="space-y-3">
-                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
-                  <Label htmlFor="technician-select" className="text-sm sm:text-base">Select Technician</Label>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    onClick={async () => {
-                      await reloadTechnicians();
-                    }}
-                    className="text-xs w-full sm:w-auto"
-                  >
-                    🔄 Refresh List
-                  </Button>
-                </div>
-                <Select value={selectedTechnicianForReassign} onValueChange={setSelectedTechnicianForReassign}>
-                  <SelectTrigger className="w-full border border-gray-300 focus:border-blue-500 focus:ring-0 focus:ring-offset-0">
-                    <SelectValue placeholder="Choose a technician" />
-                  </SelectTrigger>
-                  <SelectContent className="max-h-[300px] overflow-y-auto">
-                  {technicians.length === 0 ? (
-                    <SelectItem value="no-technicians" disabled>
-                        No technicians available
-                    </SelectItem>
-                  ) : (
-                    technicians
-                        .filter(tech => tech.account_status !== 'INACTIVE')
-                        .map((technician) => (
-                          <SelectItem
-                            key={technician.id}
-                            value={technician.id || 'unknown'}
-                          >
-                            <div className="flex items-center gap-2">
-                              <span>{technician.fullName || 'Unknown Technician'}</span>
-                              {technician.employeeId && (
-                                <span className="text-xs text-gray-500">({technician.employeeId})</span>
-                              )}
-                            </div>
-                      </SelectItem>
-                      ))
-                  )}
-                </SelectContent>
-              </Select>
-            </div>
-            )}
-
-            {/* Distance-based Assignment */}
-            {reassignAssignmentType === 'distance' && (
-              <div className="space-y-3">
-                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
-                  <Label className="text-sm sm:text-base">Technicians ranked by distance</Label>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    onClick={async () => {
-                      await reloadTechnicians();
+        onCalculateDistances={async () => {
                       if (jobToReassign) {
                         await calculateDistancesForReassign(jobToReassign);
                       }
                     }}
-                    className="text-xs w-full sm:w-auto"
-                    disabled={loadingReassignDistances}
-                  >
-                    {loadingReassignDistances ? (
-                      <>
-                        <div className="w-3 h-3 border-2 border-gray-600 border-t-transparent rounded-full animate-spin mr-1" />
-                        Calculating...
-                      </>
-                    ) : (
-                      <>
-                        🔄 Refresh Distances
-                      </>
-                    )}
-                  </Button>
-          </div>
-
-                {loadingReassignDistances ? (
-                  <div className="flex items-center justify-center p-6">
-                    <div className="w-6 h-6 border-2 border-blue-600 border-t-transparent rounded-full animate-spin mr-3" />
-                    <span className="text-sm text-gray-600">Calculating distances...</span>
-                  </div>
-                ) : (
-                  <div className="space-y-2 max-h-[400px] overflow-y-auto">
-                    {technicians.length === 0 ? (
-                      <p className="text-sm text-gray-500 text-center py-4">No technicians available</p>
-                    ) : (
-                      technicians
-                        .filter(tech => tech.account_status !== 'INACTIVE')
-                        .map(tech => {
-                          const distanceInfo = reassignTechnicianDistances.find(d => d.technicianId === tech.id);
-                          return { tech, distanceInfo };
-                        })
-                        .sort((a, b) => {
-                          if (!a.distanceInfo?.distance || a.distanceInfo.distance.status !== 'OK') return 1;
-                          if (!b.distanceInfo?.distance || b.distanceInfo.distance.status !== 'OK') return -1;
-                          return a.distanceInfo.distance.duration.value - b.distanceInfo.distance.duration.value;
-                        })
-                        .map(({ tech, distanceInfo }, index) => {
-                          const hasDistance = distanceInfo?.distance && distanceInfo.distance.status === 'OK';
-                          const isSelected = selectedTechnicianForReassign === tech.id;
-                          const rank = hasDistance ? index + 1 : undefined;
-                          
-                          return (
-                            <div
-                              key={tech.id}
-                              onClick={() => setSelectedTechnicianForReassign(tech.id)}
-                              className={`p-3 rounded-lg border-2 cursor-pointer transition-all outline-none ${
-                                isSelected 
-                                  ? 'border-blue-500 bg-blue-50 ring-0' 
-                                  : 'border-gray-200 hover:border-gray-300 hover:bg-gray-50'
-                              }`}
-                            >
-                              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
-                                <div className="flex items-center gap-2 flex-1 min-w-0">
-                                  {rank && rank <= 3 && (
-                                    <span className={`text-sm font-bold flex-shrink-0 ${
-                                      rank === 1 ? 'text-green-600' :
-                                      rank === 2 ? 'text-blue-600' :
-                                      'text-purple-600'
-                                    }`}>
-                                      #{rank}
-                                    </span>
-                                  )}
-                                  <div className="flex-1 min-w-0">
-                                    <div className="font-medium text-sm sm:text-base truncate">{tech.fullName || 'Unknown'}</div>
-                                    {tech.employeeId && (
-                                      <div className="text-xs text-gray-500">{tech.employeeId}</div>
-                                    )}
-                                  </div>
-                                </div>
-                                {hasDistance ? (
-                                  <div className="text-right flex-shrink-0">
-                                    <div className="font-semibold text-sm text-gray-900">
-                                      {distanceInfo.distance.duration.text}
-                                    </div>
-                                    <div className="text-xs text-gray-500">
-                                      {distanceInfo.distance.distance.text}
-                                    </div>
-                                  </div>
-                                ) : (
-                                  <div className="text-xs text-gray-400 flex-shrink-0">
-                                    No distance data
-                                  </div>
-                                )}
-                              </div>
-                            </div>
-                          );
-                        })
-                    )}
-                  </div>
-                )}
-              </div>
-            )}
-          </div>
-          
-          <DialogFooter className="mt-4 flex-shrink-0 flex-col sm:flex-row gap-2">
-            <Button
-              variant="outline"
-              onClick={() => {
+        onReloadTechnicians={reloadTechnicians}
+        onSave={handleReassignSubmit}
+        onCancel={() => {
                 setReassignDialogOpen(false);
                 setJobToReassign(null);
                 setSelectedTechnicianForReassign('');
                 setReassignAssignmentType('direct');
                 setReassignTechnicianDistances([]);
               }}
-              className="w-full sm:w-auto"
-            >
-              Cancel
-            </Button>
-            <Button
-              onClick={handleReassignSubmit}
-              disabled={!selectedTechnicianForReassign}
-              className="bg-blue-600 hover:bg-blue-700 w-full sm:w-auto"
-            >
-              Reassign Job
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      />
+      
+      {/* Legacy Reassign Job Dialog - REMOVED - Now using ReassignJobDialog component */}
 
       {/* Edit Job Dialog */}
-      <Dialog open={editJobDialogOpen} onOpenChange={setEditJobDialogOpen}>
-        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
-          <DialogHeader>
-            <DialogTitle>Edit Job</DialogTitle>
-            <DialogDescription>
-              Update job details and information
-            </DialogDescription>
-          </DialogHeader>
-          
-          <div className="space-y-4">
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <div>
-                <Label htmlFor="edit-service-type">Service Type</Label>
-                <Select 
-                  value={editJobFormData.serviceType} 
-                  onValueChange={(value) => setEditJobFormData(prev => ({ ...prev, serviceType: value }))}
-                >
-                  <SelectTrigger>
-                    <SelectValue placeholder="Select service type" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="RO">RO</SelectItem>
-                    <SelectItem value="SOFTENER">Softener</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-
-              <div>
-                <Label htmlFor="edit-service-subtype">Service Sub Type</Label>
-                <Select 
-                  value={editJobFormData.serviceSubType} 
-                  onValueChange={(value) => setEditJobFormData(prev => ({ ...prev, serviceSubType: value }))}
-                >
-                  <SelectTrigger>
-                    <SelectValue placeholder="Select service sub type" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="Installation">Installation</SelectItem>
-                    <SelectItem value="Reinstallation">Reinstallation</SelectItem>
-                    <SelectItem value="Service">Service</SelectItem>
-                    <SelectItem value="Repair">Repair</SelectItem>
-                    <SelectItem value="Other">Other</SelectItem>
-                    <SelectItem value="Custom">Custom</SelectItem>
-                  </SelectContent>
-                </Select>
-                {editJobFormData.serviceSubType === 'Custom' && (
-                  <Input
-                    className="mt-2"
-                    placeholder="Enter custom service sub type"
-                    value={editJobFormData.serviceSubTypeCustom}
-                    onChange={(e) => setEditJobFormData(prev => ({ ...prev, serviceSubTypeCustom: e.target.value }))}
-                  />
-                )}
-              </div>
-
-              <div>
-                <Label htmlFor="edit-scheduled-date">Scheduled Date</Label>
-                <Input
-                  id="edit-scheduled-date"
-                  type="date"
-                  value={editJobFormData.scheduledDate}
-                  onChange={(e) => setEditJobFormData(prev => ({ ...prev, scheduledDate: e.target.value }))}
-                />
-              </div>
-
-              <div>
-                <Label htmlFor="edit-time-slot">Time Slot</Label>
-                <Select 
-                  value={editJobFormData.scheduledTimeSlot} 
-                  onValueChange={(value) => setEditJobFormData(prev => ({ ...prev, scheduledTimeSlot: value }))}
-                >
-                  <SelectTrigger>
-                    <SelectValue placeholder="Select time slot" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="MORNING">Morning (9 AM - 1 PM)</SelectItem>
-                    <SelectItem value="AFTERNOON">Afternoon (1 PM - 6 PM)</SelectItem>
-                    <SelectItem value="EVENING">Evening (6 PM - 9 PM)</SelectItem>
-                    <SelectItem value="FLEXIBLE">Flexible</SelectItem>
-                    <SelectItem value="CUSTOM">Custom Time</SelectItem>
-                  </SelectContent>
-                </Select>
-                {editJobFormData.scheduledTimeSlot === 'CUSTOM' && (
-                  <Input
-                    className="mt-2"
-                    type="time"
-                    value={editJobFormData.scheduledTimeCustom}
-                    onChange={(e) => setEditJobFormData(prev => ({ ...prev, scheduledTimeCustom: e.target.value }))}
-                  />
-                )}
-              </div>
-
-
-            </div>
-
-            <div>
-              <Label htmlFor="edit-description">Description</Label>
-              <Textarea
-                id="edit-description"
-                value={editJobFormData.description}
-                onChange={(e) => setEditJobFormData(prev => ({ ...prev, description: e.target.value }))}
-                placeholder="Job description and special instructions..."
-                rows={3}
-              />
-            </div>
-
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <div>
-                <Label htmlFor="edit-lead-source">Lead Source</Label>
-                <Select 
-                  value={editJobFormData.lead_source} 
-                  onValueChange={(value) => setEditJobFormData(prev => ({ ...prev, lead_source: value }))}
-                >
-                  <SelectTrigger>
-                    <SelectValue placeholder="Select lead source" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="Website">Website</SelectItem>
-                    <SelectItem value="Direct call">Direct call</SelectItem>
-                    <SelectItem value="RO care india">RO care india</SelectItem>
-                    <SelectItem value="Home triangle">Home triangle</SelectItem>
-                    <SelectItem value="Local Ramu">Local Ramu</SelectItem>
-                    <SelectItem value="Other">Other</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-              {editJobFormData.lead_source === 'Other' && (
-                <div>
-                  <Label htmlFor="edit-lead-source-custom">Custom Lead Source</Label>
-                  <Input
-                    id="edit-lead-source-custom"
-                    value={editJobFormData.lead_source_custom}
-                    onChange={(e) => setEditJobFormData(prev => ({ ...prev, lead_source_custom: e.target.value }))}
-                    placeholder="Enter custom lead source"
-                  />
-                </div>
-              )}
-            </div>
-
-            <div>
-              <Label htmlFor="edit-cost-agreed">Cost Already Agreed (INR)</Label>
-              <Input
-                id="edit-cost-agreed"
-                type="text"
-                value={editJobFormData.cost_agreed}
-                onChange={(e) => {
-                  const value = e.target.value;
-                  // Allow numbers, dashes, and spaces for ranges like "400-500"
-                  if (value === '' || /^[\d\s-]+$/.test(value)) {
-                    setEditJobFormData(prev => ({ ...prev, cost_agreed: value }));
-                  }
-                }}
-                placeholder="e.g., 400 or 400-500"
-              />
-              <p className="text-xs text-gray-500 mt-1">Enter a single amount or a range (e.g., 400-500)</p>
-            </div>
-          </div>
-
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setEditJobDialogOpen(false)}>
-              Cancel
-            </Button>
-            <Button onClick={handleEditJobSubmit}>
-              Update Job
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      <EditJobDialog
+        open={editJobDialogOpen}
+        onOpenChange={setEditJobDialogOpen}
+        job={jobToEdit}
+        onJobUpdated={(updatedJob) => {
+          setJobs(prev => prev.map(j => j.id === updatedJob.id ? updatedJob : j));
+          setJobToEdit(null);
+        }}
+      />
 
       {/* Bill Generation Modal */}
       <BillModal
@@ -11455,688 +7380,46 @@ const AdminDashboard = () => {
       />
 
       {/* Deny Job Dialog */}
-      <Dialog open={denyDialogOpen} onOpenChange={setDenyDialogOpen}>
-        <DialogContent className="max-w-md">
-          <DialogHeader>
-            <DialogTitle>Deny Job</DialogTitle>
-            <DialogDescription>
-              Please provide a reason for denying this job.
-            </DialogDescription>
-          </DialogHeader>
-          
-          {selectedJobForDeny && (
-            <div className="p-3 bg-gray-50 rounded-lg mb-4">
-              <div className="text-sm font-medium text-gray-900">
-                Job: {(selectedJobForDeny as any).job_number || selectedJobForDeny.jobNumber}
-              </div>
-              <div className="text-sm text-gray-600">
-                {((selectedJobForDeny as any).service_type || selectedJobForDeny.serviceType || 'N/A')} - {((selectedJobForDeny as any).service_sub_type || selectedJobForDeny.serviceSubType || 'N/A')}
-              </div>
-              <div className="text-sm text-gray-600">
-                Customer: {(selectedJobForDeny.customer as any)?.full_name || selectedJobForDeny.customer?.fullName || 'Unknown'}
-              </div>
-            </div>
-          )}
-
-          <div className="space-y-4">
-            <div>
-              <Label htmlFor="deny-reason">Reason for Denial *</Label>
-              <div className="relative">
-              <Textarea
-                  ref={denyReasonInputRef}
-                id="deny-reason"
-                  placeholder="Type a reason..."
-                value={denyReason}
-                  onChange={(e) => {
-                    setDenyReason(e.target.value);
-                    setShowDenySuggestions(e.target.value.length > 0);
-                  }}
-                  onFocus={() => setShowDenySuggestions(denyReason.length > 0)}
-                  onBlur={() => {
-                    // Delay to allow clicking on suggestions
-                    setTimeout(() => setShowDenySuggestions(false), 200);
-                  }}
-                rows={3}
-                  className="mt-1 pr-10"
-                  required
-                />
-                {showDenySuggestions && filteredDenialSuggestions.length > 0 && (
-                  <div className="absolute z-50 w-full mt-1 bg-white border border-gray-300 rounded-md shadow-lg max-h-48 overflow-y-auto">
-                    {filteredDenialSuggestions.map((suggestion, idx) => (
-                      <button
-                        key={idx}
-                        type="button"
-                        onMouseDown={(e) => {
-                          e.preventDefault();
-                          setDenyReason(suggestion);
-                          setShowDenySuggestions(false);
-                          denyReasonInputRef.current?.blur();
-                        }}
-                        className="w-full text-left px-3 py-2 hover:bg-gray-100 text-sm"
-                      >
-                        {suggestion}
-                      </button>
-                    ))}
-                  </div>
-                )}
-              </div>
-              {!showDenySuggestions && denyReason.length === 0 && (
-                <p className="text-xs text-gray-500 mt-1">
-                  Start typing to see suggested reasons
-                </p>
-              )}
-            </div>
-          </div>
-
-          <DialogFooter>
-            <Button
-              variant="outline"
-              onClick={() => {
-                setDenyDialogOpen(false);
-                setSelectedJobForDeny(null);
-                setDenyReason('');
-              }}
-            >
-              Cancel
-            </Button>
-            <Button
-              onClick={handleDenyJobSubmit}
-              disabled={!denyReason.trim()}
-              variant="destructive"
-            >
-              Deny Job
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      <DenyJobDialog
+        open={denyDialogOpen}
+        onOpenChange={setDenyDialogOpen}
+        job={selectedJobForDeny}
+        denyReason={denyReason}
+        onDenyReasonChange={setDenyReason}
+        onDeny={handleDenyJobSubmit}
+      />
 
       {/* Complete Job Dialog */}
-      <Dialog open={completeDialogOpen} onOpenChange={(open) => {
+      <CompleteJobDialog
+        open={completeDialogOpen}
+        onOpenChange={(open) => {
+          setCompleteDialogOpen(open);
         if (!open) {
-          setCompleteDialogOpen(false);
           setSelectedJobForComplete(null);
-          setCompletionNotes('');
-          setCompleteJobStep(1);
-          setBillAmount('');
-          setBillPhotos([]);
-          const today = new Date().toISOString().split('T')[0];
-          setAmcDateGiven(today);
-          setAmcEndDate('');
-          setAmcYears(1);
-          setAmcIncludesPrefilter(false);
-          setHasAMC(false);
-          setPaymentMode('');
-          setCustomerHasPrefilter(null);
-          setQrCodeType('');
-          setSelectedQrCodeId('');
-          setTechnicianQrCode('');
-          setTechnicianName('');
-          setPaymentScreenshot('');
-        }
-      }}>
-        <DialogContent className="w-[95vw] sm:w-[500px] max-w-[500px] h-[85vh] sm:h-[600px] max-h-[85vh] flex flex-col p-0">
-          <DialogHeader className="px-6 pt-6 pb-4 flex-shrink-0 border-b">
-            <DialogTitle>Complete Job</DialogTitle>
-            <DialogDescription>
-              {completeJobStep === 1 && 'Upload bill photo (optional)'}
-              {completeJobStep === 2 && 'Enter the bill amount for this job'}
-              {completeJobStep === 3 && 'Select payment mode and QR code'}
-              {completeJobStep === 4 && 'Upload payment screenshot (optional)'}
-              {completeJobStep === 5 && 'Add AMC information (optional)'}
-              {completeJobStep === 6 && 'Does the customer have a prefilter?'}
-            </DialogDescription>
-          </DialogHeader>
-          
-          {/* Scrollable Content */}
-          <div className="flex-1 overflow-y-auto px-6 py-4">
-          {selectedJobForComplete && (
-            <div className="p-3 bg-gray-50 rounded-lg mb-4">
-              <div className="text-sm font-medium text-gray-900">
-                Job: {(selectedJobForComplete as any).job_number || selectedJobForComplete.jobNumber}
-              </div>
-              <div className="text-sm text-gray-600">
-                  {(selectedJobForComplete.serviceType || (selectedJobForComplete as any).service_type || 'N/A')} - {(selectedJobForComplete.serviceSubType || (selectedJobForComplete as any).service_sub_type || 'N/A')}
-              </div>
-              <div className="text-sm text-gray-600">
-                  Customer: {
-                    selectedJobForComplete.customer?.fullName || 
-                    (selectedJobForComplete.customer as any)?.full_name ||
-                    (selectedJobForComplete.customer as any)?.name ||
-                    'Unknown'
-                  }
-              </div>
-            </div>
-          )}
-
-            {/* Step Indicator */}
-            <div className="flex items-center justify-center mb-6">
-              <div className="flex items-center space-x-1 sm:space-x-2">
-                <div className={`flex items-center justify-center w-7 h-7 sm:w-8 sm:h-8 rounded-full text-xs sm:text-sm ${completeJobStep >= 1 ? 'bg-black text-white' : 'bg-gray-200 text-gray-600'}`}>
-                  1
-                </div>
-                <div className={`w-8 sm:w-12 h-1 ${completeJobStep >= 2 ? 'bg-black' : 'bg-gray-200'}`}></div>
-                <div className={`flex items-center justify-center w-7 h-7 sm:w-8 sm:h-8 rounded-full text-xs sm:text-sm ${completeJobStep >= 2 ? 'bg-black text-white' : 'bg-gray-200 text-gray-600'}`}>
-                  2
-                </div>
-                <div className={`w-8 sm:w-12 h-1 ${completeJobStep >= 3 ? 'bg-black' : 'bg-gray-200'}`}></div>
-                <div className={`flex items-center justify-center w-7 h-7 sm:w-8 sm:h-8 rounded-full text-xs sm:text-sm ${completeJobStep >= 3 ? 'bg-black text-white' : 'bg-gray-200 text-gray-600'}`}>
-                  3
-                </div>
-                <div className={`w-8 sm:w-12 h-1 ${completeJobStep >= 4 ? 'bg-black' : 'bg-gray-200'}`}></div>
-                <div className={`flex items-center justify-center w-7 h-7 sm:w-8 sm:h-8 rounded-full text-xs sm:text-sm ${completeJobStep >= 4 ? 'bg-black text-white' : 'bg-gray-200 text-gray-600'}`}>
-                  4
-                </div>
-                <div className={`w-8 sm:w-12 h-1 ${completeJobStep >= 5 ? 'bg-black' : 'bg-gray-200'}`}></div>
-                <div className={`flex items-center justify-center w-7 h-7 sm:w-8 sm:h-8 rounded-full text-xs sm:text-sm ${completeJobStep >= 5 ? 'bg-black text-white' : 'bg-gray-200 text-gray-600'}`}>
-                  5
-                </div>
-              </div>
-            </div>
-
-            {/* Step 1: Bill Photo */}
-            {completeJobStep === 1 && (
-              <div className="space-y-4">
-                <div>
-                  <Label>Upload Bill Photo (Optional)</Label>
-                  <ImageUpload
-                    onImagesChange={(images) => setBillPhotos(images)}
-                    maxImages={5}
-                    folder="bills"
-                    title=""
-                    description=""
-                    maxWidth={1024}
-                    quality={0.5}
-                    aggressiveCompression={true}
-                  />
-                </div>
-              </div>
-            )}
-
-            {/* Step 2: Bill Amount */}
-            {completeJobStep === 2 && (
-          <div className="space-y-4">
-                <div>
-                  <Label htmlFor="bill-amount">Bill Amount *</Label>
-                  <Input
-                    id="bill-amount"
-                    type="number"
-                    placeholder="Enter bill amount"
-                    value={billAmount}
-                    onChange={(e) => setBillAmount(e.target.value)}
-                    className="mt-1"
-                    min="0"
-                    step="0.01"
-                  />
-                  {billAmount && parseFloat(billAmount) > 0 && (
-                    <p className="text-sm text-gray-600 mt-2">
-                      Bill Amount: ₹{parseFloat(billAmount).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                    </p>
-                  )}
-                </div>
-            <div>
-              <Label htmlFor="completion-notes">Completion Notes (Optional)</Label>
-              <Textarea
-                id="completion-notes"
-                placeholder="Add any notes about the job completion..."
-                value={completionNotes}
-                onChange={(e) => setCompletionNotes(e.target.value)}
-                rows={3}
-                className="mt-1"
-              />
-            </div>
-          </div>
-            )}
-
-            {/* Step 3: Payment Mode */}
-            {completeJobStep === 3 && (
-              <div className="space-y-4">
-                <div>
-                  <Label htmlFor="payment-mode">Payment Mode *</Label>
-                  <Select 
-                    value={paymentMode} 
-                    onValueChange={(value: 'CASH' | 'ONLINE') => {
-                      setPaymentMode(value);
-                      // Reset QR code fields when changing payment mode
-                      if (value === 'CASH') {
-                        setQrCodeType('');
-                        setCustomerQrPhotos([]);
-                        setTechnicianQrCode('');
-                        setPaymentScreenshot('');
-                      }
-                    }}
-                  >
-                    <SelectTrigger className="mt-1">
-                      <SelectValue placeholder="Select payment mode" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="CASH">Cash</SelectItem>
-                      <SelectItem value="ONLINE">Online</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-                
-                {paymentMode === 'ONLINE' && (
-                  <div className="space-y-4 pl-4 border-l-2 border-gray-200">
-                    <div>
-                      <Label htmlFor="qr-code-type">Select QR Code *</Label>
-                      <Select 
-                        value={selectedQrCodeId} 
-                        onValueChange={(value) => {
-                          setSelectedQrCodeId(value);
-                          // Set QR code type based on selection
-                          if (value.startsWith('common_')) {
-                            setQrCodeType('common');
-                          } else if (value.startsWith('technician_')) {
-                            setQrCodeType('technician');
-                          }
-                        }}
-                      >
-                        <SelectTrigger className="mt-1">
-                          <SelectValue placeholder="Select QR code" />
-                        </SelectTrigger>
-                        <SelectContent className="!z-[100]">
-                          {/* Common QR Codes - show by name */}
-                          {commonQrCodes.length === 0 && technicians.filter(t => (t as any).qrCode).length === 0 ? (
-                            <SelectItem value="no-qr" disabled>
-                              No QR codes available
-                            </SelectItem>
-                          ) : (
-                            <>
-                              {/* Common QR Codes Section */}
-                              {commonQrCodes.length > 0 && (
-                                <>
-                          {commonQrCodes.map((qr) => (
-                            <SelectItem key={`common_${qr.id}`} value={`common_${qr.id}`}>
-                              {qr.name}
-                            </SelectItem>
-                          ))}
-                                </>
-                              )}
-                              
-                              {/* Technician QR Codes Section */}
-                              {technicians
-                                .filter(t => (t as any).qrCode && (t as any).qrCode.trim() !== '')
-                                .map((tech) => (
-                                  <SelectItem key={`technician_${tech.id}`} value={`technician_${tech.id}`}>
-                                    {tech.fullName}'s QR Code
-                            </SelectItem>
-                                ))}
-                            </>
-                          )}
-                        </SelectContent>
-                      </Select>
-                    </div>
-
-                    {/* Display selected QR code image immediately */}
-                    {selectedQrCodeId && (
-                      <div className="mt-4 p-4 bg-primary/10 border border-primary rounded-lg">
-                        <p className="text-sm font-semibold text-primary mb-3 text-center">
-                          QR Code - Show to Customer
-                        </p>
-                        <div className="flex justify-center">
-                          {selectedQrCodeId.startsWith('common_') ? (() => {
-                            const qrId = selectedQrCodeId.replace('common_', '');
-                            const selectedQr = commonQrCodes.find(qr => qr.id === qrId);
-                            if (!selectedQr) {
-                              return (
-                                <div className="text-center p-4">
-                                  <p className="text-sm text-red-500">QR code not found</p>
-                                </div>
-                              );
-                            }
-                            return (
-                              <div className="text-center">
-                                <p className="text-sm font-medium mb-3 text-gray-700">{selectedQr.name}</p>
-                                <img 
-                                  src={selectedQr.qrCodeUrl} 
-                                  alt={selectedQr.name}
-                                  className="w-64 h-64 object-contain mx-auto border-2 border-primary rounded-lg shadow-lg bg-white p-3"
-                                  onError={(e) => {
-                                    console.error('Failed to load QR code:', selectedQr.qrCodeUrl);
-                                  }}
-                  />
-                </div>
-                            );
-                          })() : selectedQrCodeId.startsWith('technician_') ? (() => {
-                            const techId = selectedQrCodeId.replace('technician_', '');
-                            const selectedTech = technicians.find(t => t.id === techId);
-                            if (!selectedTech || !(selectedTech as any).qrCode) {
-                              return (
-                                <div className="text-center p-4">
-                                  <p className="text-sm text-red-500">QR code not found</p>
-                                  <p className="text-xs text-gray-500 mt-1">Technician QR code not available</p>
-                                </div>
-                              );
-                            }
-                            return (
-                              <div className="text-center">
-                                <p className="text-sm font-medium mb-3 text-gray-700">
-                                  {selectedTech.fullName}'s QR Code
-                                </p>
-                                <img 
-                                  src={(selectedTech as any).qrCode} 
-                                  alt={`${selectedTech.fullName}'s QR Code`}
-                                  className="w-64 h-64 object-contain mx-auto border-2 border-primary rounded-lg shadow-lg bg-white p-3"
-                                  onError={(e) => {
-                                    console.error('Failed to load technician QR code:', (selectedTech as any).qrCode);
-                                  }}
-                                />
-                              </div>
-                            );
-                          })() : null}
-                              </div>
-                        </div>
-                    )}
-                      </div>
-                    )}
-                  </div>
-                )}
-
-            {/* Step 4: Payment Screenshot (only for ONLINE payment) */}
-            {completeJobStep === 4 && paymentMode === 'ONLINE' && (
-              <div className="space-y-4">
-                <div>
-                  <Label>Payment Screenshot (Optional)</Label>
-                  <p className="text-sm text-gray-500 mb-2">Upload payment confirmation screenshot</p>
-                  <ImageUpload
-                    onImagesChange={(images) => setPaymentScreenshot(images[0] || '')}
-                    maxImages={1}
-                    folder="payment-receipts"
-                    title=""
-                    description=""
-                    maxWidth={800}
-                    quality={0.3}
-                    aggressiveCompression={true}
-                    useSecondaryAccount={true}
-                  />
-                </div>
-              </div>
-            )}
-
-            {/* Step 5: AMC Info */}
-            {completeJobStep === 5 && (
-              <div className="space-y-4">
-                <div className="flex items-center space-x-2">
-                  <input
-                    type="checkbox"
-                    id="has-amc"
-                    checked={hasAMC}
-                    onChange={(e) => {
-                      setHasAMC(e.target.checked);
-                      // Reset to default when enabling AMC
-                      if (e.target.checked) {
-                        const today = new Date().toISOString().split('T')[0];
-                        setAmcDateGiven(today);
-                        setAmcYears(1);
-                        calculateAMCEndDate(today, 1);
-                      }
-                    }}
-                    className="w-4 h-4"
-                  />
-                  <Label htmlFor="has-amc" className="cursor-pointer">This job includes AMC</Label>
-                </div>
-
-                {hasAMC && (
-                  <div className="space-y-4 pl-6 border-l-2 border-gray-200">
-                    <div>
-                      <Label htmlFor="amc-date-given">AMC Date of Agreement *</Label>
-                      <Input
-                        id="amc-date-given"
-                        type="date"
-                        value={amcDateGiven}
-                        onChange={(e) => {
-                          setAmcDateGiven(e.target.value);
-                          if (e.target.value) {
-                            calculateAMCEndDate(e.target.value, amcYears);
-                          }
-                        }}
-                        className="mt-1"
-                        max={new Date().toISOString().split('T')[0]}
-                      />
-                    </div>
-                    <div>
-                      <Label htmlFor="amc-years">Number of Years *</Label>
-                      <Select value={amcYears.toString()} onValueChange={(value) => {
-                        const years = parseInt(value);
-                        setAmcYears(years);
-                        if (amcDateGiven) {
-                          calculateAMCEndDate(amcDateGiven, years);
-                        }
-                      }}>
-                        <SelectTrigger className="mt-1">
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="1">1 Year</SelectItem>
-                          <SelectItem value="2">2 Years</SelectItem>
-                          <SelectItem value="3">3 Years</SelectItem>
-                        </SelectContent>
-                      </Select>
-                    </div>
-                    <div>
-                      <Label htmlFor="amc-end-date">AMC End Date *</Label>
-                      <Input
-                        id="amc-end-date"
-                        type="date"
-                        value={amcEndDate}
-                        onChange={(e) => setAmcEndDate(e.target.value)}
-                        className="mt-1"
-                        min={amcDateGiven}
-                        readOnly
-                      />
-                    </div>
-                    <div className="flex items-center space-x-2">
-                      <input
-                        type="checkbox"
-                        id="amc-prefilter"
-                        checked={amcIncludesPrefilter}
-                        onChange={(e) => setAmcIncludesPrefilter(e.target.checked)}
-                        className="w-4 h-4"
-                      />
-                      <Label htmlFor="amc-prefilter" className="cursor-pointer">Includes Prefilter</Label>
-                    </div>
-                  </div>
-                )}
-              </div>
-            )}
-
-            {/* Step 6: Prefilter Question */}
-            {completeJobStep === 6 && (
-              <div className="space-y-4">
-                <div className="space-y-3">
-                  <Label className="text-base font-semibold">Does the customer have a prefilter?</Label>
-                  <div className="grid grid-cols-2 gap-4">
-                    <button
-                      type="button"
-                      onClick={() => setCustomerHasPrefilter(true)}
-                      className={`p-4 rounded-lg border-2 transition-all duration-200 ${
-                        customerHasPrefilter === true
-                          ? 'border-black bg-black text-white shadow-md'
-                          : 'border-gray-300 bg-white text-gray-700 hover:border-gray-400 hover:bg-gray-50'
-                      }`}
-                    >
-                      <div className="flex flex-col items-center gap-2">
-                        <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center ${
-                          customerHasPrefilter === true
-                            ? 'border-white bg-white'
-                            : 'border-gray-400'
-                        }`}>
-                          {customerHasPrefilter === true && (
-                            <div className="w-2.5 h-2.5 rounded-full bg-black"></div>
-                          )}
-                </div>
-                        <span className="font-medium text-sm">Yes</span>
-                      </div>
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setCustomerHasPrefilter(false)}
-                      className={`p-4 rounded-lg border-2 transition-all duration-200 ${
-                        customerHasPrefilter === false
-                          ? 'border-black bg-black text-white shadow-md'
-                          : 'border-gray-300 bg-white text-gray-700 hover:border-gray-400 hover:bg-gray-50'
-                      }`}
-                    >
-                      <div className="flex flex-col items-center gap-2">
-                        <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center ${
-                          customerHasPrefilter === false
-                            ? 'border-white bg-white'
-                            : 'border-gray-400'
-                        }`}>
-                          {customerHasPrefilter === false && (
-                            <div className="w-2.5 h-2.5 rounded-full bg-black"></div>
-                          )}
-                        </div>
-                        <span className="font-medium text-sm">No</span>
-                      </div>
-                    </button>
-                  </div>
-                </div>
-              </div>
-            )}
-          </div>
-
-          <DialogFooter className="px-6 py-4 flex-shrink-0 border-t">
-            <Button
-              variant="outline"
-              onClick={() => {
-                if (completeJobStep > 1) {
-                  setCompleteJobStep((prev) => (prev - 1) as 1 | 2 | 3 | 4 | 5 | 6);
-                } else {
-                setCompleteDialogOpen(false);
-                setSelectedJobForComplete(null);
-                setCompletionNotes('');
-                  setCompleteJobStep(1);
-                  setBillAmount('');
-                  setBillPhotos([]);
-                  const today = new Date().toISOString().split('T')[0];
-                  setAmcDateGiven(today);
-                  setAmcEndDate('');
-                  setAmcYears(1);
-                  setAmcIncludesPrefilter(false);
-                  setHasAMC(false);
-                  setPaymentMode('');
-                  setCustomerHasPrefilter(null);
-                  setQrCodeType('');
-                  setCustomerQrPhotos([]);
-                  setTechnicianQrCode('');
-                  setPaymentScreenshot('');
-                }
-              }}
-            >
-              {completeJobStep > 1 ? 'Back' : 'Cancel'}
-            </Button>
-            {completeJobStep === 2 && (
-              <Button
-                variant="outline"
-                onClick={() => {
-                  setCompleteJobStep(3);
-                }}
-              >
-                Skip
-              </Button>
-            )}
-            {completeJobStep === 5 && hasAMC && (!amcDateGiven || !amcEndDate) && (
-              <Button
-                variant="outline"
-                onClick={() => {
-                  setHasAMC(false);
-                  setAmcDateGiven('');
-                  setAmcEndDate('');
-                  setAmcIncludesPrefilter(false);
-                }}
-              >
-                Skip AMC
-              </Button>
-            )}
-            <Button
-              onClick={handleCompleteJobSubmit}
-              className="bg-black hover:bg-gray-800 !text-white font-semibold"
-              disabled={(completeJobStep === 3 && !paymentMode) || (completeJobStep === 3 && paymentMode === 'ONLINE' && !qrCodeType) || (completeJobStep === 5 && hasAMC && (!amcDateGiven || !amcEndDate))}
-            >
-              {completeJobStep === 6 ? 'Complete Job' : 'Next'}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      {/* Bill Amount Confirmation Dialog */}
-      <AlertDialog open={billAmountConfirmOpen} onOpenChange={setBillAmountConfirmOpen}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Confirm Bill Amount</AlertDialogTitle>
-            <AlertDialogDescription>
-              Please confirm the bill amount before proceeding:
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <div className="py-4">
-            <div className="text-center">
-              <div className="text-3xl font-bold text-gray-900 mb-2">
-                ₹{parseFloat(billAmount || '0').toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-              </div>
-              <div className="text-sm text-gray-500">
-                {selectedJobForComplete && (
-                  <>
-                    Job: {(selectedJobForComplete as any).job_number || selectedJobForComplete.jobNumber}
-                  </>
-                )}
-              </div>
-            </div>
-          </div>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction
-              onClick={() => {
-                setBillAmountConfirmOpen(false);
-                setCompleteJobStep(3);
-              }}
-              className="bg-black hover:bg-gray-800 !text-white font-semibold"
-            >
-              Confirm & Continue
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
-
+          }
+        }}
+        job={selectedJobForComplete}
+        technicians={technicians}
+        commonQrCodes={commonQrCodes}
+        onLoadQrCodes={loadQrCodes}
+        onJobCompleted={async () => {
+          await loadFilteredJobs(statusFilter, currentPage);
+        }}
+      />
+      
+      {/* Complete Job Dialog - Now handled by CompleteJobDialog component */}
       {/* Address Dialog */}
-      {customers.map((customer) => (
-        <Dialog
-          key={customer.id}
-          open={addressDialogOpen[customer.id] || false}
-          onOpenChange={(open) => {
-            setAddressDialogOpen(prev => ({ ...prev, [customer.id]: open }));
-          }}
-        >
-          <DialogContent className="sm:max-w-md">
-            <DialogHeader>
-              <DialogTitle>Full Address</DialogTitle>
-              <DialogDescription>
-                Complete address for {customer.fullName || 'Customer'}
-              </DialogDescription>
-            </DialogHeader>
-            <div className="py-4 space-y-4">
-              <div className="text-sm text-gray-900 whitespace-pre-wrap break-words">
-                {formatAddressForDisplay(customer.address) || 'No address available'}
-              </div>
-              
-              {/* Distance and Time */}
-              <div className="pt-3 border-t border-gray-200">
-                <div className="flex items-center justify-between mb-2">
-                  <div className="text-sm font-semibold text-gray-900">Distance & Time</div>
-                  <Button
-                    type="button"
-                    variant="default"
-                    size="sm"
-                    onClick={async () => {
-                      if (!currentLocation) {
-                        toast.error('Your location is not available. Please enable location services.');
-                        return;
-                      }
-                      
+      <AddressDialog
+        open={addressDialogOpen}
+        onOpenChange={setAddressDialogOpen}
+        customers={customers}
+        currentLocation={currentLocation}
+        customerDistances={customerDistances}
+        onCalculateDistance={async (customer) => {
+          if (calculateDistanceAndTimeRef.current && currentLocation) {
                       const customerLocation = extractCoordinates(customer.location);
                       let finalCustomerLocation = customerLocation;
                       
-                      // If no coordinates from location, try to extract from Google Maps link
                       if (!finalCustomerLocation || finalCustomerLocation.latitude === 0 || finalCustomerLocation.longitude === 0) {
                         const googleMapsLink = customer.location?.formattedAddress;
                         if (googleMapsLink && (googleMapsLink.includes('google.com/maps') || googleMapsLink.includes('maps.app.goo.gl'))) {
@@ -12145,669 +7428,57 @@ const AdminDashboard = () => {
                       }
                       
                       if (finalCustomerLocation && finalCustomerLocation.latitude && finalCustomerLocation.longitude) {
-                        if (calculateDistanceAndTimeRef.current) {
                           await calculateDistanceAndTimeRef.current(
                             currentLocation,
                             { lat: finalCustomerLocation.latitude, lng: finalCustomerLocation.longitude },
                             customer.id
                           );
                         }
-                      } else {
-                        toast.error('Customer location coordinates are invalid');
-                      }
-                    }}
-                    disabled={customerDistances[customer.id]?.isCalculating || !currentLocation}
-                    className="bg-black hover:bg-gray-800 text-white text-xs h-7 px-2"
-                  >
-                    {customerDistances[customer.id]?.isCalculating ? (
-                      <>
-                        <div className="w-2.5 h-2.5 border-2 border-white border-t-transparent rounded-full animate-spin mr-1" />
-                        <span className="text-xs">Calculating...</span>
-                      </>
-                    ) : (
-                      <>
-                        <MapPin className="w-2.5 h-2.5 mr-1" />
-                        <span className="text-xs">Calculate</span>
-                      </>
-                    )}
-                  </Button>
-                </div>
-                {customerDistances[customer.id] ? (
-                  <div className="text-sm">
-                    {customerDistances[customer.id].isCalculating ? (
-                      <span className="text-gray-500">Calculating...</span>
-                    ) : (
-                      <div className="flex items-center gap-2 text-black font-medium">
-                        <span>{customerDistances[customer.id].distance}</span>
-                        {customerDistances[customer.id].duration && (
-                          <>
-                            <span className="text-gray-400">•</span>
-                            <span>{customerDistances[customer.id].duration}</span>
-                          </>
-                        )}
-                      </div>
-                    )}
-                  </div>
-                ) : (
-                  <div className="text-xs text-gray-500">Click "Calculate" button to get distance and time</div>
-                )}
-              </div>
-            </div>
-            <DialogFooter>
-              <Button
-                variant="outline"
-                onClick={() => {
-                  setAddressDialogOpen(prev => ({ ...prev, [customer.id]: false }));
-                }}
-              >
-                Close
-              </Button>
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>
-      ))}
+          }
+        }}
+      />
       
       {/* Description Dialog */}
-      <Dialog open={descriptionDialogOpen} onOpenChange={setDescriptionDialogOpen}>
-        <DialogContent className="sm:max-w-2xl">
-          <DialogHeader>
-            <DialogTitle>Job Description</DialogTitle>
-            <DialogDescription>
-              Full description for job {(() => {
-                const job = jobs.find(j => j.id === selectedJobDescription?.jobId);
-                return job?.job_number || job?.jobNumber || selectedJobDescription?.jobId || 'N/A';
-              })()}
-            </DialogDescription>
-          </DialogHeader>
-          <div className="py-4">
-            <div className="prose max-w-none">
-              <p className="text-gray-900 whitespace-pre-wrap break-words">
-                {selectedJobDescription?.description || 'No description available'}
-              </p>
-            </div>
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setDescriptionDialogOpen(false)}>
-              Close
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      <DescriptionDialog
+        open={descriptionDialogOpen}
+        onOpenChange={setDescriptionDialogOpen}
+        selectedJobDescription={selectedJobDescription}
+        jobs={jobs}
+      />
 
       {/* Job Address Dialog */}
-      {jobs.map((job) => {
-        const jobCustomer = job.customer as any;
-        const serviceAddress = (job as any)?.service_address || jobCustomer?.address || {};
-        const serviceLocation = (job as any)?.service_location || jobCustomer?.location || {};
-        
-        return (
-          <Dialog
-            key={job.id}
-            open={jobAddressDialogOpen[job.id] || false}
-            onOpenChange={(open) => {
-              setJobAddressDialogOpen(prev => ({ ...prev, [job.id]: open }));
-            }}
-          >
-            <DialogContent className="sm:max-w-md">
-              <DialogHeader>
-                <DialogTitle>Full Address</DialogTitle>
-                <DialogDescription>
-                  Complete address for job {job?.job_number || job?.jobNumber || job.id}
-                </DialogDescription>
-              </DialogHeader>
-              <div className="py-4">
-                <div className="text-sm text-gray-900 whitespace-pre-wrap break-words">
-                  {(() => {
-                    const address = serviceAddress;
-                    if (!address || (!address.street && !address.area)) {
-                      return 'No address available';
-                    }
-                    
-                    const parts = [];
-                    if (address.visible_address) {
-                      parts.push(`Location: ${address.visible_address}`);
-                    }
-                    if (address.street) parts.push(address.street);
-                    if (address.area) parts.push(address.area);
-                    if (address.city) parts.push(address.city);
-                    if (address.state) parts.push(address.state);
-                    if (address.pincode) parts.push(address.pincode);
-                    if (address.landmark) parts.push(`Landmark: ${address.landmark}`);
-                    
-                    return parts.length > 0 ? parts.join(', ') : 'No address available';
-                  })()}
-                </div>
-                {serviceLocation?.formattedAddress && (
-                  <div className="mt-4 pt-4 border-t border-gray-200">
-                    <div className="text-xs text-gray-500 mb-2">Google Maps Location:</div>
-                    <div className="text-xs text-gray-700 break-all">
-                      {serviceLocation.formattedAddress}
-                    </div>
-                    {serviceLocation?.formattedAddress && (
-                      <a
-                        href={serviceLocation.formattedAddress}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="inline-flex items-center gap-1 text-blue-600 hover:text-blue-800 text-sm font-medium mt-2"
-                      >
-                        <MapPin className="w-4 h-4" />
-                        Open in Google Maps
-                      </a>
-                    )}
-                  </div>
-                )}
-                {(serviceLocation?.latitude && serviceLocation?.longitude) && (
-                  <div className="mt-2">
-                    <a
-                      href={`https://www.google.com/maps/place/${serviceLocation.latitude},${serviceLocation.longitude}`}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="inline-flex items-center gap-1 text-blue-600 hover:text-blue-800 text-sm font-medium"
-                    >
-                      <MapPin className="w-4 h-4" />
-                      Open in Google Maps
-                    </a>
-                  </div>
-                )}
-              </div>
-              <DialogFooter>
-                <Button
-                  variant="outline"
-                  onClick={() => {
-                    setJobAddressDialogOpen(prev => ({ ...prev, [job.id]: false }));
-                  }}
-                >
-                  Close
-                </Button>
-              </DialogFooter>
-            </DialogContent>
-          </Dialog>
-        );
-      })}
+      <JobAddressDialog
+        open={jobAddressDialogOpen}
+        onOpenChange={setJobAddressDialogOpen}
+        jobs={jobs}
+      />
 
       {/* Customer Report Dialog */}
-      <Dialog open={customerReportDialogOpen} onOpenChange={setCustomerReportDialogOpen}>
-        <DialogContent className="sm:max-w-4xl max-h-[90vh] overflow-y-auto">
-          <DialogHeader>
-            <DialogTitle>Customer Report - {selectedCustomerForReport?.fullName || 'Unknown'}</DialogTitle>
-            <DialogDescription>
-              Complete service history and job details
-            </DialogDescription>
-          </DialogHeader>
-          
-          {selectedCustomerForReport && (() => {
-            // Use fetched customer report jobs (filtered to completed)
-            const completedJobs = customerReportJobs.filter(job => {
-              const jobStatus = (job as any).status || job.status;
-              return jobStatus === 'COMPLETED';
-            });
-            
-            return (
-              <div className="space-y-6 py-4">
-                {/* Customer Info */}
-                <div className="bg-gray-50 p-4 rounded-lg">
-                  <h3 className="font-semibold text-lg mb-3">Customer Information</h3>
-                  <div className="grid grid-cols-2 gap-3 text-sm">
-                    <div>
-                      <span className="text-gray-500">Name:</span> {selectedCustomerForReport.fullName}
-                    </div>
-                    <div>
-                      <span className="text-gray-500">Customer ID:</span> {selectedCustomerForReport.customerId}
-                    </div>
-                    <div>
-                      <span className="text-gray-500">Phone:</span> {selectedCustomerForReport.phone}
-                    </div>
-                    <div>
-                      <span className="text-gray-500">Email:</span> {selectedCustomerForReport.email && selectedCustomerForReport.email.trim() && !selectedCustomerForReport.email.toLowerCase().includes('nomail') && !selectedCustomerForReport.email.toLowerCase().includes('no@mail')
-                        ? selectedCustomerForReport.email
-                        : 'nomail@mail'}
-                    </div>
-                  </div>
-                </div>
-
-                {/* Completed Jobs */}
-                <div>
-                  <h3 className="font-semibold text-lg mb-3">Completed Jobs ({completedJobs.length})</h3>
-                  {loadingCustomerReportJobs ? (
-                    <div className="text-center py-8 text-gray-500">
-                      <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-gray-900 mx-auto mb-3"></div>
-                      <p className="text-sm">Loading completed jobs...</p>
-                    </div>
-                  ) : completedJobs.length === 0 ? (
-                    <div className="text-center py-8 text-gray-500">
-                      <CheckCircle className="w-12 h-12 mx-auto mb-3 text-gray-400" />
-                      <p className="text-sm">No completed jobs found</p>
-                    </div>
-                  ) : (
-                    <div className="space-y-4">
-                      {completedJobs.map((job) => {
-                        // Extract completion details (same logic as in job card)
-                        const completionNotes = (job as any).completion_notes || job.completionNotes || '';
-                        const completedAt = (job as any).completed_at || job.completedAt || null;
-                        const formattedCompletedAt = completedAt ? new Date(completedAt).toLocaleString() : null;
-                        const completedBy = (job as any).completed_by || job.completedBy || null;
-                        const actualCost = (job as any).actual_cost || job.actual_cost || null;
-                        const paymentAmount = (job as any).payment_amount || job.payment_amount || null;
-                        const paymentMethod = (job as any).payment_method || job.payment_method || null;
-                        
-                        // Get technician name who completed the job
-                        let completedByName = 'Unknown';
-                        if (completedBy) {
-                          if (completedBy === 'admin' || completedBy === 'Admin') {
-                            completedByName = 'Admin';
-                          } else {
-                            const completedByTechnician = technicians.find(tech => tech.id === completedBy);
-                            completedByName = completedByTechnician?.fullName || 'Technician';
-                          }
-                        }
-                        
-                        let requirements: any[] = [];
-                        try {
-                          const reqData = (job as any).requirements || job.requirements;
-                          if (typeof reqData === 'string') {
-                            requirements = JSON.parse(reqData);
-                          } else if (Array.isArray(reqData)) {
-                            requirements = reqData;
-                          } else if (reqData && typeof reqData === 'object') {
-                            requirements = [reqData];
-                          }
-                        } catch (e) {
-                          requirements = [];
-                        }
-                        
-                        const amcInfo = requirements.find((r: any) => r?.amc_info)?.amc_info || null;
-                        const qrPhotos = requirements.find((r: any) => r?.qr_photos)?.qr_photos || null;
-                        const billPhotos = requirements.find((r: any) => r?.bill_photos)?.bill_photos || [];
-                        const paymentScreenshot = qrPhotos?.payment_screenshot || null;
-                        
-                        return (
-                          <div key={job.id} className="border border-gray-200 rounded-lg p-4 bg-white">
-                            <div className="flex items-start justify-between mb-3">
-                              <div>
-                                <div className="font-semibold text-lg">
-                                  {(job as any).job_number || job.jobNumber}
-                                </div>
-                                <div className="text-sm text-gray-600">
-                                  {(job as any).service_type || job.serviceType} - {(job as any).service_sub_type || job.serviceSubType}
-                                </div>
-                                {formattedCompletedAt && (
-                                  <div className="text-xs text-gray-500 mt-1">
-                                    Completed on {formattedCompletedAt}
-                                  </div>
-                                )}
-                              </div>
-                              <Badge className="bg-green-100 text-green-800">Completed</Badge>
-                            </div>
-                            
-                            <div className="space-y-3 mt-4 pt-4 border-t border-gray-200">
-                              {/* Bill Amount */}
-                              {(actualCost || paymentAmount) && (
-                                <div className="flex items-center gap-2">
-                                  <span className="text-sm font-medium text-gray-700 w-32">Amount:</span>
-                                  <span className="text-sm text-gray-900">₹{actualCost || paymentAmount}</span>
-                                </div>
-                              )}
-                              
-                              {/* Payment Mode */}
-                              {paymentMethod && (
-                                <div className="flex items-center gap-2">
-                                  <span className="text-sm font-medium text-gray-700 w-32">Payment Mode:</span>
-                                  <span className="text-sm text-gray-900">{
-                                    paymentMethod === 'CASH' ? 'Cash' : 
-                                    paymentMethod === 'ONLINE' || paymentMethod === 'UPI' || paymentMethod === 'CARD' || paymentMethod === 'BANK_TRANSFER' ? 'Online' : 
-                                    paymentMethod
-                                  }</span>
-                                </div>
-                              )}
-                              
-                              {/* Lead Source */}
-                              {(() => {
-                                // Find lead_source in requirements
-                                let leadSource: string | null = null;
-                                
-                                // Try to find lead_source in the array
-                                for (const req of requirements) {
-                                  if (req && typeof req === 'object') {
-                                    if (req.lead_source) {
-                                      leadSource = req.lead_source;
-                                      break;
-                                    }
-                                  }
-                                }
-                                
-                                // If still no lead_source found, check if requirements array has objects with nested properties
-                                if (!leadSource && requirements.length > 0) {
-                                  const flatReq = requirements.flat();
-                                  for (const req of flatReq) {
-                                    if (req && typeof req === 'object' && req.lead_source) {
-                                      leadSource = req.lead_source;
-                                      break;
-                                    }
-                                  }
-                                }
-                                
-                                if (leadSource) {
-                                  return (
-                                    <div className="flex items-center gap-2">
-                                      <span className="text-sm font-medium text-gray-700 w-32">Lead Source:</span>
-                                      <span className="text-sm text-gray-900">{leadSource}</span>
-                                    </div>
-                                  );
-                                }
-                                return null;
-                              })()}
-                              
-                              {/* QR Code */}
-                              {(paymentMethod === 'ONLINE' || paymentMethod === 'UPI' || paymentMethod === 'CARD' || paymentMethod === 'BANK_TRANSFER') && qrPhotos?.selected_qr_code_name && (
-                                <div className="flex items-center gap-2">
-                                  <span className="text-sm font-medium text-gray-700 w-32">QR Code:</span>
-                                  <span className="text-sm text-gray-900">{qrPhotos.selected_qr_code_name}</span>
-                                </div>
-                              )}
-                              
-                              {/* Payment Screenshot & Bill Photos - Combined Section */}
-                              {((paymentMethod === 'ONLINE' || paymentMethod === 'UPI' || paymentMethod === 'CARD' || paymentMethod === 'BANK_TRANSFER') && paymentScreenshot) || (billPhotos && Array.isArray(billPhotos) && billPhotos.length > 0) ? (
-                                <div className="mt-3 pt-3 border-t border-gray-200">
-                                  <div className="font-medium text-gray-900 mb-3">Payment & Bill Documents</div>
-                                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-                                    {/* Payment Screenshot */}
-                                    {(paymentMethod === 'ONLINE' || paymentMethod === 'UPI' || paymentMethod === 'CARD' || paymentMethod === 'BANK_TRANSFER') && paymentScreenshot && (
-                                      <div 
-                                        className="relative group cursor-pointer rounded-lg overflow-hidden border-2 border-blue-300 hover:border-blue-500 transition-all"
-                                        onClick={() => {
-                                          setSelectedPhoto({ url: paymentScreenshot, index: 0, total: 1 });
-                                          setPhotoViewerOpen(true);
-                                        }}
-                                      >
-                                        <img 
-                                          src={paymentScreenshot} 
-                                          alt="Payment Screenshot" 
-                                          className="w-full h-40 sm:h-48 object-cover transition-transform group-hover:scale-105" 
-                                        />
-                                        <div className="absolute top-2 left-2 bg-blue-600 text-white text-xs font-semibold px-2 py-1 rounded">
-                                          Payment
-                                        </div>
-                                        <div className="absolute inset-0 bg-black bg-opacity-0 group-hover:bg-opacity-10 transition-opacity flex items-center justify-center">
-                                          <div className="opacity-0 group-hover:opacity-100 transition-opacity text-white text-sm font-medium bg-black bg-opacity-50 px-3 py-1 rounded">
-                                            Click to view
-                                          </div>
-                                        </div>
-                                      </div>
-                                    )}
-                                    
-                                    {/* Bill Photos */}
-                                    {billPhotos && Array.isArray(billPhotos) && billPhotos.length > 0 && billPhotos.map((photo, idx) => (
-                                      <div 
-                                        key={idx} 
-                                        className="relative group cursor-pointer rounded-lg overflow-hidden border-2 border-green-300 hover:border-green-500 transition-all"
-                                        onClick={() => {
-                                          setSelectedBillPhotos(billPhotos);
-                                          setSelectedPhoto({
-                                            url: photo,
-                                            index: idx,
-                                            total: billPhotos.length
-                                          });
-                                        }}
-                                      >
-                                        <img 
-                                          src={photo} 
-                                          alt={`Bill photo ${idx + 1}`} 
-                                          className="w-full h-40 sm:h-48 object-cover transition-transform group-hover:scale-105" 
-                                        />
-                                        <div className="absolute top-2 left-2 bg-green-600 text-white text-xs font-semibold px-2 py-1 rounded">
-                                          Bill {idx + 1}
-                                        </div>
-                                        <div className="absolute inset-0 bg-black bg-opacity-0 group-hover:bg-opacity-10 transition-opacity flex items-center justify-center">
-                                          <div className="opacity-0 group-hover:opacity-100 transition-opacity text-white text-sm font-medium bg-black bg-opacity-50 px-3 py-1 rounded">
-                                            Click to view
-                                          </div>
-                                        </div>
-                                      </div>
-                                    ))}
-                                  </div>
-                                </div>
-                              ) : null}
-                              
-                              {/* AMC Details */}
-                              {amcInfo && (
-                                <div className="mt-3 pt-3 border-t border-green-300 bg-green-50 rounded-lg p-3">
-                                  <div className="flex items-center gap-2 mb-2">
-                                    <Badge className="bg-green-600 text-white">AMC Active</Badge>
-                                    <div className="font-semibold text-gray-900">AMC Details</div>
-                                  </div>
-                                  <div className="space-y-2 text-sm">
-                                    <div className="flex items-center gap-2">
-                                      <span className="text-gray-600 font-medium w-32">Start Date:</span>
-                                      <span className="text-gray-900 font-semibold">{amcInfo.date_given ? new Date(amcInfo.date_given).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }) : 'N/A'}</span>
-                                    </div>
-                                    <div className="flex items-center gap-2">
-                                      <span className="text-gray-600 font-medium w-32">End Date:</span>
-                                      <span className="text-gray-900 font-semibold">{amcInfo.end_date ? new Date(amcInfo.end_date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }) : 'N/A'}</span>
-                                    </div>
-                                    <div className="flex items-center gap-2">
-                                      <span className="text-gray-600 font-medium w-32">Duration:</span>
-                                      <span className="text-gray-900 font-semibold">{amcInfo.years || 1} {amcInfo.years === 1 ? 'year' : 'years'}</span>
-                                    </div>
-                                    {amcInfo.includes_prefilter !== undefined && (
-                                      <div className="flex items-center gap-2">
-                                        <span className="text-gray-600 font-medium w-32">Includes Prefilter:</span>
-                                        <span className="text-gray-900 font-semibold">{amcInfo.includes_prefilter ? 'Yes' : 'No'}</span>
-                                      </div>
-                                    )}
-                                    {amcInfo.additional_info && (
-                                      <div className="mt-3 pt-3 border-t border-green-200">
-                                        <div className="text-gray-600 font-medium mb-2">Additional Info:</div>
-                                        <div className="text-gray-900 whitespace-pre-wrap bg-white p-2 rounded border border-green-200">{amcInfo.additional_info}</div>
-                                      </div>
-                                    )}
-                                  </div>
-                                </div>
-                              )}
-                              
-                              {/* Completion Notes */}
-                              {completionNotes && (
-                                <div className="mt-3 pt-3 border-t border-gray-200">
-                                  <div className="font-medium text-gray-900 mb-1">Notes:</div>
-                                  <div className="text-sm text-gray-700 whitespace-pre-wrap">{completionNotes}</div>
-                                </div>
-                              )}
-                              
-                              {/* Completed By */}
-                              {completedByName && (
-                                <div className="mt-3 pt-3 border-t border-gray-200">
-                                  <div className="flex items-center gap-2">
-                                    <span className="text-sm font-medium text-gray-700 w-32">Completed By:</span>
-                                    <span className="text-sm text-gray-900">{completedByName}</span>
-                                  </div>
-                                </div>
-                              )}
-                              
-                              {/* Job Description */}
-                              {job.description && (
-                                <div className="mt-3 pt-3 border-t border-gray-200">
-                                  <div className="font-medium text-gray-900 mb-1">Description:</div>
-                                  <div className="text-sm text-gray-700 whitespace-pre-wrap">{job.description}</div>
-                                </div>
-                              )}
-                            </div>
-    </div>
-  );
-                      })}
-                    </div>
-                  )}
-                </div>
-              </div>
-            );
-          })()}
-          
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setCustomerReportDialogOpen(false)}>
-              Close
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      <CustomerReportDialog
+        open={customerReportDialogOpen}
+        onOpenChange={setCustomerReportDialogOpen}
+        customer={selectedCustomerForReport}
+        technicians={technicians}
+        onPhotoClick={(url, index, total) => {
+          setSelectedPhoto({ url, index, total });
+          setPhotoViewerOpen(true);
+        }}
+        onBillPhotosClick={(photos, index) => {
+          setSelectedBillPhotos(photos);
+          setSelectedPhoto({ url: photos[index], index, total: photos.length });
+          setPhotoViewerOpen(true);
+        }}
+      />
 
       {/* Edit Completed Job Dialog */}
-      <Dialog open={editCompletedJobDialogOpen} onOpenChange={setEditCompletedJobDialogOpen}>
-        <DialogContent className="sm:max-w-2xl max-h-[90vh] overflow-y-auto">
-          <DialogHeader>
-            <DialogTitle>Edit Completed Job Details</DialogTitle>
-            <DialogDescription>
-              Update completion information for {(selectedCompletedJob as any)?.job_number || selectedCompletedJob?.jobNumber}
-            </DialogDescription>
-          </DialogHeader>
-          
-          <div className="space-y-4 py-4">
-            {/* Amount */}
-            <div>
-              <Label htmlFor="edit-amount">Amount (₹)</Label>
-              <Input
-                id="edit-amount"
-                type="number"
-                value={completedJobEditData.amount || ''}
-                onChange={(e) => setCompletedJobEditData({ ...completedJobEditData, amount: e.target.value })}
-                placeholder="Enter amount"
-              />
-            </div>
-
-            {/* Payment Method */}
-            <div>
-              <Label htmlFor="edit-payment-method">Payment Method</Label>
-              <Select
-                value={completedJobEditData.paymentMethod || 'CASH'}
-                onValueChange={(value) => setCompletedJobEditData({ ...completedJobEditData, paymentMethod: value })}
-              >
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="CASH">Cash</SelectItem>
-                  <SelectItem value="UPI">UPI</SelectItem>
-                  <SelectItem value="CARD">Card</SelectItem>
-                  <SelectItem value="BANK_TRANSFER">Bank Transfer</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-
-            {/* QR Code Name (if online payment) */}
-            {(completedJobEditData.paymentMethod === 'UPI' || completedJobEditData.paymentMethod === 'CARD' || completedJobEditData.paymentMethod === 'BANK_TRANSFER') && (
-              <div>
-                <Label htmlFor="edit-qr-code">QR Code Name</Label>
-                <Input
-                  id="edit-qr-code"
-                  value={completedJobEditData.qrCodeName || ''}
-                  onChange={(e) => setCompletedJobEditData({ ...completedJobEditData, qrCodeName: e.target.value })}
-                  placeholder="Enter QR code name"
-                />
-              </div>
-            )}
-
-            {/* AMC Details */}
-            <div className="border-t pt-4">
-              <Label className="text-base font-semibold">AMC Details</Label>
-              <div className="space-y-3 mt-2">
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <Label htmlFor="amc-start-date">Start Date</Label>
-                    <Input
-                      id="amc-start-date"
-                      type="date"
-                      value={completedJobEditData.amcInfo?.date_given ? new Date(completedJobEditData.amcInfo.date_given).toISOString().split('T')[0] : ''}
-                      onChange={(e) => {
-                        const amcInfo = { ...completedJobEditData.amcInfo, date_given: e.target.value };
-                        setCompletedJobEditData({ ...completedJobEditData, amcInfo });
-                      }}
-                    />
-                  </div>
-                  <div>
-                    <Label htmlFor="amc-end-date">End Date</Label>
-                    <Input
-                      id="amc-end-date"
-                      type="date"
-                      value={completedJobEditData.amcInfo?.end_date ? new Date(completedJobEditData.amcInfo.end_date).toISOString().split('T')[0] : ''}
-                      onChange={(e) => {
-                        const amcInfo = { ...completedJobEditData.amcInfo, end_date: e.target.value };
-                        setCompletedJobEditData({ ...completedJobEditData, amcInfo });
-                      }}
-                    />
-                  </div>
-                </div>
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <Label htmlFor="amc-years">Duration (Years)</Label>
-                    <Input
-                      id="amc-years"
-                      type="number"
-                      value={completedJobEditData.amcInfo?.years || 1}
-                      onChange={(e) => {
-                        const amcInfo = { ...completedJobEditData.amcInfo, years: parseInt(e.target.value) || 1 };
-                        setCompletedJobEditData({ ...completedJobEditData, amcInfo });
-                      }}
-                    />
-                  </div>
-                  <div>
-                    <Label htmlFor="amc-prefilter">Includes Prefilter</Label>
-                    <Select
-                      value={completedJobEditData.amcInfo?.includes_prefilter !== undefined ? String(completedJobEditData.amcInfo.includes_prefilter) : 'false'}
-                      onValueChange={(value) => {
-                        const amcInfo = { ...completedJobEditData.amcInfo, includes_prefilter: value === 'true' };
-                        setCompletedJobEditData({ ...completedJobEditData, amcInfo });
-                      }}
-                    >
-                      <SelectTrigger>
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="true">Yes</SelectItem>
-                        <SelectItem value="false">No</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            {/* Completion Notes */}
-            <div>
-              <Label htmlFor="edit-notes">Completion Notes</Label>
-              <Textarea
-                id="edit-notes"
-                value={completedJobEditData.completionNotes || ''}
-                onChange={(e) => setCompletedJobEditData({ ...completedJobEditData, completionNotes: e.target.value })}
-                placeholder="Enter completion notes"
-                rows={4}
-              />
-            </div>
-
-            {/* Completed By */}
-            <div>
-              <Label htmlFor="edit-completed-by">Completed By</Label>
-              <Select
-                value={completedJobEditData.completedBy || ''}
-                onValueChange={(value) => setCompletedJobEditData({ ...completedJobEditData, completedBy: value })}
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="Select who completed" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="admin">Admin</SelectItem>
-                  {technicians.map((tech) => (
-                    <SelectItem key={tech.id} value={tech.id}>
-                      {tech.fullName}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-          </div>
-
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setEditCompletedJobDialogOpen(false)}>
-              Cancel
-            </Button>
-            <Button
-              onClick={async () => {
+      <EditCompletedJobDialog
+        open={editCompletedJobDialogOpen}
+        onOpenChange={setEditCompletedJobDialogOpen}
+        job={selectedCompletedJob}
+        editData={completedJobEditData}
+        onEditDataChange={setCompletedJobEditData}
+        technicians={technicians}
+        onSave={async () => {
                 try {
                   if (!selectedCompletedJob) return;
 
@@ -12871,96 +7542,21 @@ const AdminDashboard = () => {
                     toast.success('Job updated successfully');
                     setEditCompletedJobDialogOpen(false);
                     // Reload jobs
-                    await loadFilteredJobs();
+                    await loadFilteredJobs(statusFilter, currentPage);
                   }
                 } catch (error: any) {
                   toast.error('Error updating job: ' + error.message);
                 }
               }}
-            >
-              Save Changes
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      />
 
       {/* Send Message Dialog */}
-      <Dialog open={sendMessageDialogOpen} onOpenChange={setSendMessageDialogOpen}>
-        <DialogContent className="sm:max-w-2xl">
-          <DialogHeader>
-            <DialogTitle>Send Completion Confirmation Message</DialogTitle>
-            <DialogDescription>
-              Send confirmation message to customer for completed job
-            </DialogDescription>
-          </DialogHeader>
-          
-          {selectedJobForMessage && (() => {
-            const customer = (selectedJobForMessage as any).customer || selectedJobForMessage.customer;
-            const customerName = customer?.full_name || customer?.fullName || 'Customer';
-            const customerPhone = customer?.phone || '';
-            
-            // Extract completion details
-            const actualCost = (selectedJobForMessage as any).actual_cost || selectedJobForMessage.actual_cost || null;
-            const paymentAmount = (selectedJobForMessage as any).payment_amount || selectedJobForMessage.payment_amount || null;
-            const amount = actualCost || paymentAmount || 0;
-            
-            // Generate WhatsApp message template
-            const whatsappMessage = `Dear ${customerName},
-
-Thank you for choosing Hydrogen RO! 💧
-
-✅ Your service has been completed successfully.
-💰 Amount of ₹${amount} has been collected.
-
-For any queries or support, please contact us:
-📞 Phone: +91-8884944288, +91-9886944288
-📧 Email: info@hydrogenro.com
-🌐 Website: https://hydrogenro.com
-
-📱 For future bookings, you can book directly on https://hydrogenro.com/book for ease and convenience.
-
-Thank you for your trust in Hydrogen RO! 🙏`;
-
-            return (
-              <div className="space-y-4 py-4">
-                <div className="bg-gray-50 p-4 rounded-lg">
-                  <div className="text-sm text-gray-600 mb-2">Customer: <span className="font-medium">{customerName}</span></div>
-                  <div className="text-sm text-gray-600">Phone: <span className="font-medium">{customerPhone}</span></div>
-                </div>
-
-                <div className="space-y-3">
-                  <div>
-                    <Label>Message Preview</Label>
-                    <div className="mt-2 p-3 bg-gray-50 rounded-md text-sm text-gray-700 whitespace-pre-wrap max-h-40 overflow-y-auto">
-                      {whatsappMessage}
-                    </div>
-                  </div>
-
-                  <Button
-                    variant="default"
-                    className="w-full bg-green-600 hover:bg-green-700 text-white"
-                    onClick={async () => {
-                      const whatsappUrl = `https://wa.me/${customerPhone.replace(/\D/g, '')}?text=${encodeURIComponent(whatsappMessage)}`;
-                      window.open(whatsappUrl, '_blank', 'noopener,noreferrer');
-                      // Mark message as sent
-                      await handleMessageSent(selectedJobForMessage.id);
-                    }}
-                  >
-                    <WhatsAppIcon className="w-4 h-4 mr-2" />
-                    Send WhatsApp Message
-                  </Button>
-                </div>
-              </div>
-            );
-          })()}
-
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setSendMessageDialogOpen(false)}>
-              Close
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      <SendMessageDialog
+        open={sendMessageDialogOpen}
+        onOpenChange={setSendMessageDialogOpen}
+        job={selectedJobForMessage}
+        onMessageSent={handleMessageSent}
+      />
 
       {/* PIN Dialog */}
 
@@ -12977,7 +7573,7 @@ Thank you for your trust in Hydrogen RO! 🙏`;
           <div className="space-y-4">
             {customers
               .filter(customer => {
-                const customerSince = customer.customer_since || (customer as any).customerSince;
+                const customerSince = (customer as any).customerSince || (customer as any).customer_since;
                 if (!customerSince) return false;
                 const createdDate = new Date(customerSince);
                 const today = new Date();
@@ -12991,15 +7587,15 @@ Thank you for your trust in Hydrogen RO! 🙏`;
               <div className="space-y-2">
                 {customers
                   .filter(customer => {
-                    const customerSince = customer.customer_since || (customer as any).customerSince;
+                    const customerSince = (customer as any).customerSince || (customer as any).customer_since;
                     if (!customerSince) return false;
                     const createdDate = new Date(customerSince);
                     const today = new Date();
                     return createdDate.toDateString() === today.toDateString();
                   })
                   .sort((a, b) => {
-                    const dateA = new Date(a.customer_since || (a as any).customerSince || 0);
-                    const dateB = new Date(b.customer_since || (b as any).customerSince || 0);
+                    const dateA = new Date((a as any).customerSince || (a as any).customer_since || 0);
+                    const dateB = new Date((b as any).customerSince || (b as any).customer_since || 0);
                     return dateB.getTime() - dateA.getTime(); // Most recent first
                   })
                   .map((customer) => (
@@ -13031,7 +7627,7 @@ Thank you for your trust in Hydrogen RO! 🙏`;
                               <span className="font-medium">Service:</span> {customer.service_type || 'N/A'}
                             </p>
                             <p className="text-xs text-gray-500">
-                              Created: {new Date(customer.customer_since || (customer as any).customerSince || '').toLocaleString()}
+                              Created: {new Date((customer as any).customerSince || (customer as any).customer_since || '').toLocaleString()}
                             </p>
                           </div>
                         </div>

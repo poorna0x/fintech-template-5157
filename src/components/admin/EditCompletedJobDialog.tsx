@@ -1,0 +1,199 @@
+import React from 'react';
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Button } from '@/components/ui/button';
+import { Label } from '@/components/ui/label';
+import { Input } from '@/components/ui/input';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Textarea } from '@/components/ui/textarea';
+import { Job, Technician } from '@/types';
+import { db } from '@/lib/supabase';
+import { toast } from 'sonner';
+
+interface EditCompletedJobDialogProps {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  job: Job | null;
+  editData: any;
+  onEditDataChange: (data: any) => void;
+  technicians: Technician[];
+  onSave: () => Promise<void>;
+}
+
+const EditCompletedJobDialog: React.FC<EditCompletedJobDialogProps> = ({
+  open,
+  onOpenChange,
+  job,
+  editData,
+  onEditDataChange,
+  technicians,
+  onSave
+}) => {
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="sm:max-w-2xl max-h-[90vh] overflow-y-auto">
+        <DialogHeader>
+          <DialogTitle>Edit Completed Job Details</DialogTitle>
+          <DialogDescription>
+            Update completion information for {(job as any)?.job_number || job?.jobNumber}
+          </DialogDescription>
+        </DialogHeader>
+        
+        <div className="space-y-4 py-4">
+          {/* Amount */}
+          <div>
+            <Label htmlFor="edit-amount">Amount (₹)</Label>
+            <Input
+              id="edit-amount"
+              type="number"
+              value={editData.amount || ''}
+              onChange={(e) => onEditDataChange({ ...editData, amount: e.target.value })}
+              placeholder="Enter amount"
+            />
+          </div>
+
+          {/* Payment Method */}
+          <div>
+            <Label htmlFor="edit-payment-method">Payment Method</Label>
+            <Select
+              value={editData.paymentMethod || 'CASH'}
+              onValueChange={(value) => onEditDataChange({ ...editData, paymentMethod: value })}
+            >
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="CASH">Cash</SelectItem>
+                <SelectItem value="UPI">UPI</SelectItem>
+                <SelectItem value="CARD">Card</SelectItem>
+                <SelectItem value="BANK_TRANSFER">Bank Transfer</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+
+          {/* QR Code Name (if online payment) */}
+          {(editData.paymentMethod === 'UPI' || editData.paymentMethod === 'CARD' || editData.paymentMethod === 'BANK_TRANSFER') && (
+            <div>
+              <Label htmlFor="edit-qr-code">QR Code Name</Label>
+              <Input
+                id="edit-qr-code"
+                value={editData.qrCodeName || ''}
+                onChange={(e) => onEditDataChange({ ...editData, qrCodeName: e.target.value })}
+                placeholder="Enter QR code name"
+              />
+            </div>
+          )}
+
+          {/* AMC Details */}
+          <div className="border-t pt-4">
+            <Label className="text-base font-semibold">AMC Details</Label>
+            <div className="space-y-3 mt-2">
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <Label htmlFor="amc-start-date">Start Date</Label>
+                  <Input
+                    id="amc-start-date"
+                    type="date"
+                    value={editData.amcInfo?.date_given ? new Date(editData.amcInfo.date_given).toISOString().split('T')[0] : ''}
+                    onChange={(e) => {
+                      const amcInfo = { ...editData.amcInfo, date_given: e.target.value };
+                      onEditDataChange({ ...editData, amcInfo });
+                    }}
+                  />
+                </div>
+                <div>
+                  <Label htmlFor="amc-end-date">End Date</Label>
+                  <Input
+                    id="amc-end-date"
+                    type="date"
+                    value={editData.amcInfo?.end_date ? new Date(editData.amcInfo.end_date).toISOString().split('T')[0] : ''}
+                    onChange={(e) => {
+                      const amcInfo = { ...editData.amcInfo, end_date: e.target.value };
+                      onEditDataChange({ ...editData, amcInfo });
+                    }}
+                  />
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <Label htmlFor="amc-years">Duration (Years)</Label>
+                  <Input
+                    id="amc-years"
+                    type="number"
+                    value={editData.amcInfo?.years || 1}
+                    onChange={(e) => {
+                      const amcInfo = { ...editData.amcInfo, years: parseInt(e.target.value) || 1 };
+                      onEditDataChange({ ...editData, amcInfo });
+                    }}
+                  />
+                </div>
+                <div>
+                  <Label htmlFor="amc-prefilter">Includes Prefilter</Label>
+                  <Select
+                    value={editData.amcInfo?.includes_prefilter !== undefined ? String(editData.amcInfo.includes_prefilter) : 'false'}
+                    onValueChange={(value) => {
+                      const amcInfo = { ...editData.amcInfo, includes_prefilter: value === 'true' };
+                      onEditDataChange({ ...editData, amcInfo });
+                    }}
+                  >
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="true">Yes</SelectItem>
+                      <SelectItem value="false">No</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Completion Notes */}
+          <div>
+            <Label htmlFor="edit-notes">Completion Notes</Label>
+            <Textarea
+              id="edit-notes"
+              value={editData.completionNotes || ''}
+              onChange={(e) => onEditDataChange({ ...editData, completionNotes: e.target.value })}
+              placeholder="Enter completion notes"
+              rows={4}
+            />
+          </div>
+
+          {/* Completed By */}
+          <div>
+            <Label htmlFor="edit-completed-by">Completed By</Label>
+            <Select
+              value={editData.completedBy || ''}
+              onValueChange={(value) => onEditDataChange({ ...editData, completedBy: value })}
+            >
+              <SelectTrigger>
+                <SelectValue placeholder="Select who completed" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="admin">Admin</SelectItem>
+                {technicians.map((tech) => (
+                  <SelectItem key={tech.id} value={tech.id}>
+                    {tech.fullName}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+        </div>
+
+        <DialogFooter>
+          <Button variant="outline" onClick={() => onOpenChange(false)}>
+            Cancel
+          </Button>
+          <Button onClick={onSave}>
+            Save Changes
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+};
+
+export default EditCompletedJobDialog;
+
