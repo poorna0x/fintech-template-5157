@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -10,7 +10,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Textarea } from '@/components/ui/textarea';
 import { db } from '@/lib/supabase';
 import { toast } from 'sonner';
-import { DollarSign, User, Plus, Trash2, Edit, TrendingDown, TrendingUp, RefreshCw, ChevronDown, ChevronUp, Pencil, Check, X, ChevronLeft, ChevronRight } from 'lucide-react';
+import { DollarSign, User, Plus, Trash2, Edit, TrendingDown, TrendingUp, RefreshCw, ChevronDown, ChevronUp, Pencil, Check, X, ChevronLeft, ChevronRight, Eye, BarChart3, TrendingUp as TrendingUpIcon } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 
 interface TechnicianPayment {
@@ -182,6 +182,13 @@ const TechnicianPayments = () => {
     isAbsent: false
   });
 
+  // Job details dialog
+  const [jobDetailsDialogOpen, setJobDetailsDialogOpen] = useState(false);
+  const [selectedDateForJobs, setSelectedDateForJobs] = useState<{technicianId: string; date: string} | null>(null);
+  const [jobsForDate, setJobsForDate] = useState<any[]>([]);
+  const [loadingJobsForDate, setLoadingJobsForDate] = useState(false);
+  const [editingJobCommission, setEditingJobCommission] = useState<{jobId: string; commissionPercentage: number} | null>(null);
+
   useEffect(() => {
     loadData();
   }, [selectedPeriod, selectedPastMonth]);
@@ -189,6 +196,7 @@ const TechnicianPayments = () => {
   const getMonthlyDateRange = () => {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
+    const todayDay = today.getDate();
     
     let startDate: Date;
     let endDate: Date;
@@ -204,19 +212,36 @@ const TechnicianPayments = () => {
       // End: Last day of selected month (30th or 31st)
       endDate = new Date(year, selectedMonthIndex + 1, 0, 23, 59, 59, 999); // Day 0 = last day of previous month
     } else {
-      // Current period: 1st to last day of current month (will be paid on 10th of next month)
-      const currentMonth = today.getMonth();
-      const currentYear = today.getFullYear();
+      // Current period logic:
+      // If today is after 10th: Show current month (e.g., Dec 1-31, paid Jan 10)
+      // If today is before/on 10th: Show previous month (e.g., Nov 1-30, paid Dec 10)
+      let targetMonth: number;
+      let targetYear: number;
       
-      // Start: 1st of current month
-      startDate = new Date(currentYear, currentMonth, 1, 0, 0, 0, 0);
+      if (todayDay > 10) {
+        // After 10th: Show current month cycle
+        targetMonth = today.getMonth();
+        targetYear = today.getFullYear();
+      } else {
+        // Before/on 10th: Show previous month cycle (which was just paid)
+        targetMonth = today.getMonth() - 1;
+        targetYear = today.getFullYear();
+        if (targetMonth < 0) {
+          targetMonth = 11;
+          targetYear -= 1;
+        }
+      }
       
-      // End: Last day of current month (30th or 31st)
-      endDate = new Date(currentYear, currentMonth + 1, 0, 23, 59, 59, 999); // Day 0 = last day of previous month
+      // Start: 1st of target month
+      startDate = new Date(targetYear, targetMonth, 1, 0, 0, 0, 0);
+      
+      // End: Last day of target month (30th or 31st)
+      endDate = new Date(targetYear, targetMonth + 1, 0, 23, 59, 59, 999);
     }
     
     return { startDate, endDate };
   };
+
 
   const loadData = async (showLoading: boolean = true) => {
     try {
@@ -342,17 +367,35 @@ const TechnicianPayments = () => {
         // Get payments for this technician (only from current month cycle)
         const techPayments = (paymentsData || []).filter((p: TechnicianPayment) => p.technician_id === techId);
         
-        // Calculate commission: 10% of total bill amount from completed jobs
-        // Commission should be calculated from completed jobs' bill amounts, not from technician_payments table
+        // Calculate commission from technician_payments table (uses stored commission_percentage per job)
+        // Get all payments for this technician in the period
+        const techPaymentsForCommission = (paymentsData || []).filter((p: TechnicianPayment) => p.technician_id === techId);
+        
+        // Also get completed jobs to calculate commission for jobs without payment records
         const techCompletedJobsForCommission = (completedJobsData || []).filter((j: any) => j.assigned_technician_id === techId);
+        
+        // Calculate commission: use stored commission_amount from payments, or calculate 10% default for jobs without payment records
+        let totalCommission = techPaymentsForCommission.reduce((sum: number, payment: TechnicianPayment) => {
+          return sum + (payment.commission_amount || 0);
+        }, 0);
+        
+        // For jobs without payment records, calculate 10% default commission
+        const jobsWithPayments = new Set(techPaymentsForCommission.map(p => p.job_id));
+        const jobsWithoutPayments = techCompletedJobsForCommission.filter(j => !jobsWithPayments.has(j.id));
+        const defaultCommission = jobsWithoutPayments.reduce((sum: number, job: any) => {
+          const billAmount = parseFloat(job.actual_cost || job.payment_amount || 0);
+          return sum + (billAmount * 0.10); // 10% default
+        }, 0);
+        
+        totalCommission += defaultCommission;
+        
+        // Calculate total bill amount for display
         const totalBillAmount = techCompletedJobsForCommission.reduce((sum: number, job: any) => {
           const billAmount = parseFloat(job.actual_cost || job.payment_amount || 0);
           return sum + billAmount;
         }, 0);
-        const commissionPercentage = 10; // 10% commission
-        const totalCommission = totalBillAmount * (commissionPercentage / 100);
         
-        console.log(`💰 ${tech.full_name}: Total Bill = ${totalBillAmount}, Commission (10%) = ${totalCommission}`);
+        console.log(`💰 ${tech.full_name}: Total Bill = ${totalBillAmount}, Total Commission = ${totalCommission} (${techPaymentsForCommission.length} with custom %, ${jobsWithoutPayments.length} with default 10%)`);
         
         // Get expenses for this technician
         const techExpenses = (expensesData || []).filter((e: TechnicianExpense) => e.technician_id === techId);
@@ -885,6 +928,167 @@ const TechnicianPayments = () => {
     }
   };
 
+  const loadJobsForDate = async (technicianId: string, date: string) => {
+    setLoadingJobsForDate(true);
+    try {
+      const startOfDay = new Date(date);
+      startOfDay.setHours(0, 0, 0, 0);
+      const endOfDay = new Date(date);
+      endOfDay.setHours(23, 59, 59, 999);
+
+      // Load jobs completed on this date
+      const { data: jobsData, error: jobsError } = await supabase
+        .from('jobs')
+        .select(`
+          id,
+          job_number,
+          actual_cost,
+          payment_amount,
+          service_type,
+          service_sub_type,
+          customer:customers(full_name, phone)
+        `)
+        .eq('assigned_technician_id', technicianId)
+        .eq('status', 'COMPLETED')
+        .not('end_time', 'is', null)
+        .gte('end_time', startOfDay.toISOString())
+        .lte('end_time', endOfDay.toISOString())
+        .order('end_time', { ascending: false });
+
+      if (jobsError) throw jobsError;
+
+      // Load commission percentages from technician_payments
+      if (jobsData && jobsData.length > 0) {
+        const jobIds = jobsData.map(j => j.id);
+        const { data: paymentsData, error: paymentsError } = await supabase
+          .from('technician_payments')
+          .select('job_id, commission_percentage, commission_amount, bill_amount')
+          .in('job_id', jobIds);
+
+        if (paymentsError) throw paymentsError;
+
+        // Merge job data with payment data
+        const jobsWithCommission = jobsData.map(job => {
+          const payment = paymentsData?.find(p => p.job_id === job.id);
+          return {
+            ...job,
+            // Use nullish coalescing (??) instead of || to allow 0% commission
+            commission_percentage: payment?.commission_percentage ?? 10,
+            commission_amount: payment?.commission_amount ?? 0,
+            bill_amount: payment?.bill_amount ?? job.actual_cost ?? job.payment_amount ?? 0
+          };
+        });
+
+        setJobsForDate(jobsWithCommission);
+      } else {
+        setJobsForDate([]);
+      }
+    } catch (error: any) {
+      console.error('Error loading jobs for date:', error);
+      toast.error('Failed to load jobs: ' + error.message);
+      setJobsForDate([]);
+    } finally {
+      setLoadingJobsForDate(false);
+    }
+  };
+
+  const handleUpdateJobCommission = async (jobId: string, newCommissionPercentage: number) => {
+    try {
+      // Validate commission percentage (0-100, max 2 decimal places)
+      if (newCommissionPercentage < 0 || newCommissionPercentage > 100) {
+        toast.error('Commission percentage must be between 0 and 100');
+        return;
+      }
+      
+      // Round to 2 decimal places to match database precision
+      const roundedPercentage = Math.round(newCommissionPercentage * 100) / 100;
+      
+      // Get the job to find bill amount
+      const job = jobsForDate.find(j => j.id === jobId);
+      if (!job) {
+        toast.error('Job not found');
+        return;
+      }
+
+      const billAmount = job.bill_amount || job.actual_cost || job.payment_amount || 0;
+      const newCommissionAmount = billAmount * (roundedPercentage / 100);
+
+      // Update or create technician_payment record
+      const { data: existingPayment, error: checkError } = await supabase
+        .from('technician_payments')
+        .select('id')
+        .eq('job_id', jobId)
+        .single();
+
+      if (checkError && checkError.code !== 'PGRST116') { // PGRST116 = no rows returned
+        throw checkError;
+      }
+
+      if (existingPayment) {
+        // Update existing payment
+        const { error: updateError } = await supabase
+          .from('technician_payments')
+          .update({
+            commission_percentage: roundedPercentage,
+            commission_amount: Math.round(newCommissionAmount * 100) / 100, // Round to 2 decimal places
+            updated_at: new Date().toISOString()
+          })
+          .eq('id', existingPayment.id);
+
+        if (updateError) throw updateError;
+      } else {
+        // Create new payment record
+        if (!selectedDateForJobs) {
+          toast.error('Technician ID not found');
+          return;
+        }
+
+        const { error: insertError } = await supabase
+          .from('technician_payments')
+          .insert({
+            technician_id: selectedDateForJobs.technicianId,
+            job_id: jobId,
+            bill_amount: Math.round(billAmount * 100) / 100, // Round to 2 decimal places
+            commission_percentage: roundedPercentage,
+            commission_amount: Math.round(newCommissionAmount * 100) / 100, // Round to 2 decimal places
+            payment_status: 'PENDING'
+          });
+
+        if (insertError) {
+          // If RLS error, provide helpful message
+          if (insertError.code === '42501' || insertError.message?.includes('row-level security')) {
+            toast.error('Permission denied. Please ensure you are logged in as an admin and have run the RLS policy fix SQL.');
+            console.error('RLS Error - Make sure you have run fix-technician-payments-rls-final.sql in Supabase');
+          }
+          throw insertError;
+        }
+      }
+
+      toast.success(`Commission updated to ${roundedPercentage}%`);
+      
+      // Reload jobs to reflect changes
+      if (selectedDateForJobs) {
+        await loadJobsForDate(selectedDateForJobs.technicianId, selectedDateForJobs.date);
+      }
+      
+      // Reload main data to update commission totals
+      await loadData(false);
+      
+      setEditingJobCommission(null);
+    } catch (error: any) {
+      console.error('Error updating commission:', error);
+      
+      // Provide specific error messages
+      if (error.code === '42501' || error.message?.includes('row-level security')) {
+        toast.error('Permission denied. Please ensure you are logged in as an admin and have run the RLS policy fix SQL in Supabase.');
+      } else if (error.code === 'PGRST301' || error.message?.includes('JWT')) {
+        toast.error('Authentication expired. Please log out and log back in.');
+      } else {
+        toast.error('Failed to update commission: ' + error.message);
+      }
+    }
+  };
+
   const handleSaveDailyBreakdown = async () => {
     if (!editingDailyBreakdown) return;
 
@@ -929,18 +1133,52 @@ const TechnicianPayments = () => {
           
           if (jobsOnDate.length === 1) {
             // Single job - update it with the exact amount
+            const jobId = jobsOnDate[0].id;
+            
+            // Update the job's actual_cost and payment_amount
             const { error: updateError } = await supabase
               .from('jobs')
               .update({
                 actual_cost: newBillAmount,
                 payment_amount: newBillAmount
               })
-              .eq('id', jobsOnDate[0].id);
+              .eq('id', jobId);
 
             if (updateError) {
               console.error('Error updating job:', updateError);
               throw updateError;
             }
+
+            // Also update the technician_payment record's bill_amount if it exists
+            const { data: existingPayment, error: paymentCheckError } = await supabase
+              .from('technician_payments')
+              .select('id, commission_percentage')
+              .eq('job_id', jobId)
+              .single();
+
+            if (paymentCheckError && paymentCheckError.code !== 'PGRST116') {
+              console.error('Error checking payment record:', paymentCheckError);
+              // Don't throw - continue even if payment record doesn't exist
+            } else if (existingPayment) {
+              // Recalculate commission amount with new bill amount
+              const commissionPercentage = existingPayment.commission_percentage || 10;
+              const newCommissionAmount = newBillAmount * (commissionPercentage / 100);
+              
+              const { error: paymentUpdateError } = await supabase
+                .from('technician_payments')
+                .update({
+                  bill_amount: Math.round(newBillAmount * 100) / 100,
+                  commission_amount: Math.round(newCommissionAmount * 100) / 100,
+                  updated_at: new Date().toISOString()
+                })
+                .eq('id', existingPayment.id);
+
+              if (paymentUpdateError) {
+                console.error('Error updating payment record:', paymentUpdateError);
+                // Don't throw - job update succeeded, payment update is secondary
+              }
+            }
+            
             toast.success(`Updated bill amount to ₹${newBillAmount.toFixed(2)} for ${new Date(date).toLocaleDateString()}`);
           } else {
             // Multiple jobs - update first job with total, set others to 0
@@ -1253,7 +1491,26 @@ const TechnicianPayments = () => {
           
           {commissionPeriod && (
             <div className="text-sm text-gray-500 flex items-center">
-              Period: {commissionPeriod.start.toLocaleDateString()} to {commissionPeriod.end.toLocaleDateString()} (Paid on 10th of next month)
+              Period: {(() => {
+                const startDay = commissionPeriod.start.getDate();
+                const endDay = commissionPeriod.end.getDate();
+                const month = commissionPeriod.start.toLocaleDateString('en-IN', { month: 'long', year: 'numeric' });
+                
+                // Calculate payment date: 10th of next month
+                const nextMonth = new Date(commissionPeriod.end);
+                nextMonth.setMonth(nextMonth.getMonth() + 1);
+                nextMonth.setDate(10); // Set to 10th of next month
+                const paymentDate = nextMonth.toLocaleDateString('en-IN', { day: 'numeric', month: 'long', year: 'numeric' });
+                
+                const getDaySuffix = (day: number) => {
+                  if (day === 1 || day === 21 || day === 31) return 'st';
+                  if (day === 2 || day === 22) return 'nd';
+                  if (day === 3 || day === 23) return 'rd';
+                  return 'th';
+                };
+                
+                return `${startDay}${getDaySuffix(startDay)} to ${endDay}${getDaySuffix(endDay)} of ${month} (Paid on ${paymentDate})`;
+              })()}
             </div>
           )}
         </div>
@@ -1293,8 +1550,9 @@ const TechnicianPayments = () => {
                   )}
                 </div>
                 <div className="bg-green-50 p-4 rounded-lg">
-                  <p className="text-sm text-gray-600 mb-1">Commission (10%)</p>
+                  <p className="text-sm text-gray-600 mb-1">Commission</p>
                   <p className="text-xl font-semibold text-green-600">INR {breakdown.totalCommission.toFixed(2)}</p>
+                  <p className="text-xs text-gray-500 mt-1">(Variable % per job)</p>
                 </div>
                 <div className="bg-purple-50 p-4 rounded-lg">
                   <p className="text-sm text-gray-600 mb-1">Extra Commission</p>
@@ -1335,7 +1593,7 @@ const TechnicianPayments = () => {
                     </>
                   )}
                   <div className="flex justify-between text-green-600">
-                    <span>+ Commission (10%):</span>
+                    <span>+ Commission:</span>
                     <span className="font-medium">+ INR {breakdown.totalCommission.toFixed(2)}</span>
                   </div>
                   <div className="flex justify-between text-purple-600">
@@ -1641,27 +1899,48 @@ const TechnicianPayments = () => {
                                   )}
                                 </TableCell>
                                 <TableCell className="text-center">
-                                  <Button
-                                    size="sm"
-                                    variant="outline"
-                                    onClick={() => {
-                                      setEditingDailyBreakdown({
-                                        technicianId: breakdown.technicianId,
-                                        date: day.date,
-                                        billAmount: day.billAmount,
-                                        isAbsent: day.isAbsent
-                                      });
-                                      setDailyBreakdownFormData({
-                                        billAmount: day.billAmount > 0 ? day.billAmount.toString() : '',
-                                        isAbsent: day.isAbsent
-                                      });
-                                      setDailyBreakdownEditDialogOpen(true);
-                                    }}
-                                    className="h-8 w-8 p-0"
-                                    title="Edit day"
-                                  >
-                                    <Pencil className="w-4 h-4" />
-                                  </Button>
+                                  <div className="flex items-center justify-center gap-1">
+                                    {day.billAmount > 0 && (
+                                      <Button
+                                        size="sm"
+                                        variant="outline"
+                                        onClick={async () => {
+                                          setSelectedDateForJobs({
+                                            technicianId: breakdown.technicianId,
+                                            date: day.date
+                                          });
+                                          setJobDetailsDialogOpen(true);
+                                          await loadJobsForDate(breakdown.technicianId, day.date);
+                                        }}
+                                        className="h-8 px-2 text-xs"
+                                        title="View jobs"
+                                      >
+                                        <Eye className="w-3 h-3 mr-1" />
+                                        Jobs
+                                      </Button>
+                                    )}
+                                    <Button
+                                      size="sm"
+                                      variant="outline"
+                                      onClick={() => {
+                                        setEditingDailyBreakdown({
+                                          technicianId: breakdown.technicianId,
+                                          date: day.date,
+                                          billAmount: day.billAmount,
+                                          isAbsent: day.isAbsent
+                                        });
+                                        setDailyBreakdownFormData({
+                                          billAmount: day.billAmount > 0 ? day.billAmount.toString() : '',
+                                          isAbsent: day.isAbsent
+                                        });
+                                        setDailyBreakdownEditDialogOpen(true);
+                                      }}
+                                      className="h-8 w-8 p-0"
+                                      title="Edit day"
+                                    >
+                                      <Pencil className="w-4 h-4" />
+                                    </Button>
+                                  </div>
                                 </TableCell>
                               </TableRow>
                             ))}
@@ -2126,6 +2405,184 @@ const TechnicianPayments = () => {
         </DialogContent>
       </Dialog>
 
+      {/* Job Details Dialog */}
+      <Dialog open={jobDetailsDialogOpen} onOpenChange={setJobDetailsDialogOpen}>
+        <DialogContent className="sm:max-w-4xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>
+              Job Details - {selectedDateForJobs && new Date(selectedDateForJobs.date).toLocaleDateString('en-IN', {
+                weekday: 'long',
+                year: 'numeric',
+                month: 'long',
+                day: 'numeric'
+              })}
+            </DialogTitle>
+            <DialogDescription>
+              View and edit commission percentage for each job completed on this date
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            {loadingJobsForDate ? (
+              <div className="flex items-center justify-center py-8">
+                <RefreshCw className="w-6 h-6 animate-spin text-gray-400" />
+                <span className="ml-2 text-gray-600">Loading jobs...</span>
+              </div>
+            ) : jobsForDate.length === 0 ? (
+              <div className="text-center py-8 text-gray-500">
+                No jobs found for this date
+              </div>
+            ) : (
+              <div className="overflow-x-auto">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Job Number</TableHead>
+                      <TableHead>Customer</TableHead>
+                      <TableHead>Service</TableHead>
+                      <TableHead className="text-right">Bill Amount</TableHead>
+                      <TableHead className="text-right">Commission %</TableHead>
+                      <TableHead className="text-right">Commission Amount</TableHead>
+                      <TableHead className="text-center">Actions</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {jobsForDate.map((job) => (
+                      <TableRow key={job.id}>
+                        <TableCell className="font-mono text-sm">{job.job_number}</TableCell>
+                        <TableCell>
+                          <div>
+                            <div className="font-medium">{job.customer?.full_name || 'N/A'}</div>
+                            {job.customer?.phone && (
+                              <div className="text-xs text-gray-500">{job.customer.phone}</div>
+                            )}
+                          </div>
+                        </TableCell>
+                        <TableCell>
+                          <div className="text-sm">
+                            <div>{job.service_type} - {job.service_sub_type}</div>
+                          </div>
+                        </TableCell>
+                        <TableCell className="text-right font-semibold">
+                          ₹{job.bill_amount.toFixed(2)}
+                        </TableCell>
+                        <TableCell className="text-right">
+                          {editingJobCommission?.jobId === job.id ? (
+                            <div className="flex items-center gap-2 justify-end">
+                              <Input
+                                type="number"
+                                min="0"
+                                max="100"
+                                step="0.01"
+                                value={editingJobCommission.commissionPercentage}
+                                onChange={(e) => {
+                                  const value = parseFloat(e.target.value) || 0;
+                                  // Clamp value between 0 and 100
+                                  const clampedValue = Math.max(0, Math.min(100, value));
+                                  // Round to 2 decimal places
+                                  const roundedValue = Math.round(clampedValue * 100) / 100;
+                                  setEditingJobCommission({
+                                    jobId: job.id,
+                                    commissionPercentage: roundedValue
+                                  });
+                                }}
+                                className="w-20 h-8 text-sm"
+                                autoFocus
+                              />
+                              <span className="text-sm">%</span>
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                onClick={() => handleUpdateJobCommission(job.id, editingJobCommission.commissionPercentage)}
+                                className="h-8 px-2"
+                              >
+                                <Check className="w-3 h-3" />
+                              </Button>
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                onClick={() => setEditingJobCommission(null)}
+                                className="h-8 px-2"
+                              >
+                                <X className="w-3 h-3" />
+                              </Button>
+                            </div>
+                          ) : (
+                            <div className="flex items-center gap-2 justify-end">
+                              <span className={`font-medium ${job.commission_percentage > 50 ? 'text-red-600' : ''}`}>
+                                {job.commission_percentage.toFixed(2)}%
+                                {job.commission_percentage > 50 && (
+                                  <span className="ml-1 text-xs text-red-500" title="High commission percentage - please verify">
+                                    ⚠️
+                                  </span>
+                                )}
+                              </span>
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                onClick={() => setEditingJobCommission({
+                                  jobId: job.id,
+                                  commissionPercentage: job.commission_percentage
+                                })}
+                                className="h-6 w-6 p-0"
+                                title="Edit commission"
+                              >
+                                <Pencil className="w-3 h-3" />
+                              </Button>
+                            </div>
+                          )}
+                        </TableCell>
+                        <TableCell className="text-right font-semibold text-green-600">
+                          ₹{job.commission_amount.toFixed(2)}
+                        </TableCell>
+                        <TableCell className="text-center">
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => {
+                              if (editingJobCommission?.jobId === job.id) {
+                                setEditingJobCommission(null);
+                              } else {
+                                setEditingJobCommission({
+                                  jobId: job.id,
+                                  commissionPercentage: job.commission_percentage
+                                });
+                              }
+                            }}
+                            className="h-8"
+                          >
+                            {editingJobCommission?.jobId === job.id ? (
+                              <>
+                                <X className="w-3 h-3 mr-1" />
+                                Cancel
+                              </>
+                            ) : (
+                              <>
+                                <Pencil className="w-3 h-3 mr-1" />
+                                Edit
+                              </>
+                            )}
+                          </Button>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
+            )}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => {
+              setJobDetailsDialogOpen(false);
+              setSelectedDateForJobs(null);
+              setJobsForDate([]);
+              setEditingJobCommission(null);
+            }}>
+              Close
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       {/* Add/Edit Advance Dialog */}
       <Dialog open={advanceDialogOpen} onOpenChange={setAdvanceDialogOpen}>
         <DialogContent className="sm:max-w-md">
@@ -2236,6 +2693,160 @@ const TechnicianPayments = () => {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* Technician Analytics Section */}
+      {salaryBreakdowns.length > 0 && (
+        <div className="mt-8 space-y-6">
+          <Card>
+            <CardHeader>
+              <div className="flex items-center justify-between">
+                <div>
+                  <CardTitle className="flex items-center gap-2">
+                    <BarChart3 className="w-5 h-5" />
+                    Technician Performance Analytics
+                  </CardTitle>
+                  <CardDescription>
+                    Earnings, performance metrics, and trends for all technicians
+                  </CardDescription>
+                </div>
+                <div className="flex items-center gap-4">
+                  <div className="flex items-center gap-2">
+                    <Label htmlFor="analytics-period" className="text-sm">Period:</Label>
+                    <Select value={selectedPeriod} onValueChange={(value: 'current' | 'pastMonth') => setSelectedPeriod(value)}>
+                      <SelectTrigger id="analytics-period" className="w-[140px]">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="current">Current Period</SelectItem>
+                        <SelectItem value="pastMonth">Past Month</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  {selectedPeriod === 'pastMonth' && (
+                    <div className="flex items-center gap-2">
+                      <Label htmlFor="analytics-month-select" className="text-sm">Month:</Label>
+                      <Input
+                        id="analytics-month-select"
+                        type="month"
+                        value={selectedPastMonth}
+                        onChange={(e) => setSelectedPastMonth(e.target.value)}
+                        className="w-[160px]"
+                      />
+                    </div>
+                  )}
+                </div>
+              </div>
+              {commissionPeriod && (
+                <div className="mt-2 text-sm text-gray-500">
+                  Analytics Period: {(() => {
+                    const startDay = commissionPeriod.start.getDate();
+                    const endDay = commissionPeriod.end.getDate();
+                    const month = commissionPeriod.start.toLocaleDateString('en-IN', { month: 'long', year: 'numeric' });
+                    
+                    const nextMonth = new Date(commissionPeriod.end);
+                    nextMonth.setMonth(nextMonth.getMonth() + 1);
+                    nextMonth.setDate(10);
+                    const paymentDate = nextMonth.toLocaleDateString('en-IN', { day: 'numeric', month: 'long', year: 'numeric' });
+                    
+                    const getDaySuffix = (day: number) => {
+                      if (day === 1 || day === 21 || day === 31) return 'st';
+                      if (day === 2 || day === 22) return 'nd';
+                      if (day === 3 || day === 23) return 'rd';
+                      return 'th';
+                    };
+                    
+                    return `${startDay}${getDaySuffix(startDay)} to ${endDay}${getDaySuffix(endDay)} of ${month} (Paid on ${paymentDate})`;
+                  })()}
+                </div>
+              )}
+            </CardHeader>
+            <CardContent>
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                {salaryBreakdowns.map((breakdown) => {
+                  // Calculate performance metrics for the selected period
+                  const periodPayments = breakdown.payments.filter(p => {
+                    if (!commissionPeriod) return true;
+                    const paymentDate = new Date((p as any).created_at || (p as any).payment_date || '');
+                    if (isNaN(paymentDate.getTime())) return false;
+                    return paymentDate >= commissionPeriod.start && paymentDate <= commissionPeriod.end;
+                  });
+                  
+                  const totalJobs = periodPayments.length;
+                  const totalEarnings = periodPayments.reduce((sum, p) => sum + (p.commission_amount || 0), 0) + 
+                                       breakdown.totalExtraCommission - 
+                                       breakdown.totalExpenses - 
+                                       breakdown.totalAdvances - 
+                                       breakdown.holidayDeduction + 
+                                       breakdown.adjustedBaseSalary;
+                  const avgCommissionPerJob = totalJobs > 0 ? periodPayments.reduce((sum, p) => sum + (p.commission_amount || 0), 0) / totalJobs : 0;
+                  const totalBillAmount = periodPayments.reduce((sum, p) => sum + (p.bill_amount || 0), 0);
+
+                  return (
+                    <Card key={breakdown.technicianId} className="overflow-hidden">
+                      <CardHeader className="pb-3">
+                        <CardTitle className="text-lg">{breakdown.technicianName}</CardTitle>
+                        <CardDescription>{breakdown.employeeId}</CardDescription>
+                      </CardHeader>
+                      <CardContent className="space-y-4">
+                        {/* Key Metrics */}
+                        <div className="grid grid-cols-2 gap-4">
+                          <div className="p-3 bg-blue-50 rounded-lg">
+                            <div className="text-xs text-gray-600 mb-1">Total Earnings</div>
+                            <div className="text-lg font-bold text-blue-700">
+                              ₹{totalEarnings.toFixed(2)}
+                            </div>
+                          </div>
+                          <div className="p-3 bg-green-50 rounded-lg">
+                            <div className="text-xs text-gray-600 mb-1">Total Jobs</div>
+                            <div className="text-lg font-bold text-green-700">
+                              {totalJobs}
+                            </div>
+                          </div>
+                          <div className="p-3 bg-purple-50 rounded-lg">
+                            <div className="text-xs text-gray-600 mb-1">Avg/Job</div>
+                            <div className="text-lg font-bold text-purple-700">
+                              ₹{avgCommissionPerJob.toFixed(2)}
+                            </div>
+                          </div>
+                          <div className="p-3 bg-orange-50 rounded-lg">
+                            <div className="text-xs text-gray-600 mb-1">Total Billing</div>
+                            <div className="text-lg font-bold text-orange-700">
+                              ₹{totalBillAmount.toFixed(2)}
+                            </div>
+                          </div>
+                        </div>
+
+
+                        {/* Performance Indicators */}
+                        <div className="pt-2 border-t">
+                          <div className="flex items-center justify-between text-sm">
+                            <span className="text-gray-600">Commission Rate</span>
+                            <span className="font-medium">
+                              {totalBillAmount > 0 
+                                ? ((breakdown.totalCommission / totalBillAmount) * 100).toFixed(1)
+                                : '0'}%
+                            </span>
+                          </div>
+                          <div className="flex items-center justify-between text-sm mt-2">
+                            <span className="text-gray-600">Base Salary</span>
+                            <span className="font-medium">₹{breakdown.adjustedBaseSalary.toFixed(2)}</span>
+                          </div>
+                          <div className="flex items-center justify-between text-sm mt-2">
+                            <span className="text-gray-600">Deductions</span>
+                            <span className="font-medium text-red-600">
+                              -₹{(breakdown.totalExpenses + breakdown.totalAdvances + breakdown.holidayDeduction).toFixed(2)}
+                            </span>
+                          </div>
+                        </div>
+                      </CardContent>
+                    </Card>
+                  );
+                })}
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+      )}
     </div>
   );
 };

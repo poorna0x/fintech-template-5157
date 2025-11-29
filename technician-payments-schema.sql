@@ -107,5 +107,6 @@ CREATE POLICY "Allow authenticated users to insert technician_payments"
 DROP POLICY IF EXISTS "Allow authenticated users to update technician_payments" ON technician_payments;
 CREATE POLICY "Allow authenticated users to update technician_payments" 
     ON technician_payments FOR UPDATE 
-    USING (auth.role() = 'authenticated');
+    USING (auth.role() = 'authenticated')
+    WITH CHECK (auth.role() = 'authenticated');
 
