@@ -67,7 +67,6 @@ import { getCachedQrCodes, cacheQrCodes, shouldUseCache, CommonQrCode } from '@/
 import { openInGoogleMaps, extractCoordinates, formatAddressForDisplay } from '@/lib/maps';
 import FollowUpModal from '@/components/FollowUpModal';
 import { sendNotification, createJobAssignedNotification, createJobCompletedNotification, createJobCancelledNotification, createJobAssignmentRequestNotification } from '@/lib/notifications';
-import { calculateTechnicianDistances, TechnicianDistance } from '@/lib/distance';
 import BillModal from './BillModal';
 import AMCModal from './AMCModal';
 import QuotationModal from './QuotationModal';
@@ -542,9 +541,6 @@ const AdminDashboard = () => {
   const [jobToReassign, setJobToReassign] = useState<Job | null>(null);
   const [reassignDialogOpen, setReassignDialogOpen] = useState(false);
   const [selectedTechnicianForReassign, setSelectedTechnicianForReassign] = useState<string>('');
-  const [reassignAssignmentType, setReassignAssignmentType] = useState<'direct' | 'distance'>('direct');
-  const [reassignTechnicianDistances, setReassignTechnicianDistances] = useState<TechnicianDistance[]>([]);
-  const [loadingReassignDistances, setLoadingReassignDistances] = useState(false);
   const [jobToEdit, setJobToEdit] = useState<Job | null>(null);
   const [editJobDialogOpen, setEditJobDialogOpen] = useState(false);
   const [photoToDelete, setPhotoToDelete] = useState<{jobId: string, photoIndex: number, photoUrl: string} | null>(null);
@@ -559,9 +555,6 @@ const AdminDashboard = () => {
   const [assignJobDialogOpen, setAssignJobDialogOpen] = useState(false);
   const [jobToAssign, setJobToAssign] = useState<Job | null>(null);
   const [selectedTechnicianId, setSelectedTechnicianId] = useState('');
-  const [assignmentType, setAssignmentType] = useState<'direct' | 'distance'>('direct');
-  const [technicianDistances, setTechnicianDistances] = useState<TechnicianDistance[]>([]);
-  const [loadingDistances, setLoadingDistances] = useState(false);
 
   useEffect(() => {
     registerAdminPWA();
@@ -710,12 +703,10 @@ const AdminDashboard = () => {
     updatedAt: customer.updated_at
   });
 
-  // Reset assignment type when dialog closes
+  // Reset selected technician when dialog closes
   useEffect(() => {
     if (!assignJobDialogOpen) {
-      setAssignmentType('direct');
       setSelectedTechnicianId('');
-      setTechnicianDistances([]);
     }
   }, [assignJobDialogOpen]);
 
@@ -4384,68 +4375,10 @@ const AdminDashboard = () => {
   const handleAssignJob = async (job: Job) => {
     setJobToAssign(job);
     setSelectedTechnicianId('');
-    setAssignmentType('direct');
-    setTechnicianDistances([]);
     setAssignJobDialogOpen(true);
 
-    // Reload technicians to get latest location data
+    // Reload technicians to get latest data
     await reloadTechnicians();
-
-    // Don't calculate distances automatically - user will click button to calculate
-  };
-
-  // Calculate distances from job location to all technicians
-  const calculateDistancesForJob = async (job: Job) => {
-    // Get job location
-    const jobLocation = (job.serviceLocation as any) || (job.customer as any)?.location;
-    
-    if (!jobLocation?.latitude || !jobLocation?.longitude) {
-      console.warn('⚠️ Job location not available for distance calculation');
-      return;
-    }
-
-    const apiKey = import.meta.env.VITE_GOOGLE_MAPS_API_KEY;
-    if (!apiKey) {
-      console.warn('⚠️ Google Maps API key not configured');
-      toast.warning('Google Maps API key not configured. Distance calculation disabled.');
-      return;
-    }
-
-    // Log technicians with their locations
-    console.log('🔍 Calculating distances for job:', {
-      jobLocation: { lat: jobLocation.latitude, lng: jobLocation.longitude },
-      technicians: technicians.map(t => ({
-        name: t.fullName,
-        id: t.id,
-        hasCurrentLocation: !!t.currentLocation,
-        hasCurrent_location: !!(t as any).current_location,
-        currentLocation: t.currentLocation,
-        current_location: (t as any).current_location,
-        status: t.status,
-        // Check raw data
-        rawTech: t
-      }))
-    });
-
-    setLoadingDistances(true);
-    try {
-      const distances = await calculateTechnicianDistances(
-        {
-          latitude: jobLocation.latitude,
-          longitude: jobLocation.longitude,
-        },
-        technicians,
-        apiKey
-      );
-
-      console.log('📏 Distance calculation results:', distances);
-      setTechnicianDistances(distances);
-    } catch (error) {
-      console.error('❌ Error calculating distances:', error);
-      toast.error('Failed to calculate distances. You can still assign manually.');
-    } finally {
-      setLoadingDistances(false);
-    }
   };
 
   const handleSaveJobAssignment = async () => {
@@ -4517,44 +4450,6 @@ const AdminDashboard = () => {
     }
   };
 
-  // Calculate distances for reassign dialog
-  const calculateDistancesForReassign = async (job: Job) => {
-    // Get job location
-    const jobLocation = (job.serviceLocation as any) || (job.customer as any)?.location;
-    
-    if (!jobLocation?.latitude || !jobLocation?.longitude) {
-      console.warn('⚠️ Job location not available for distance calculation');
-      return;
-    }
-
-    const apiKey = import.meta.env.VITE_GOOGLE_MAPS_API_KEY;
-    if (!apiKey) {
-      console.warn('⚠️ Google Maps API key not configured');
-      toast.warning('Google Maps API key not configured. Distance calculation disabled.');
-      return;
-    }
-
-    setLoadingReassignDistances(true);
-    try {
-      const distances = await calculateTechnicianDistances(
-        {
-          latitude: jobLocation.latitude,
-          longitude: jobLocation.longitude,
-        },
-        technicians,
-        apiKey
-      );
-
-      console.log('📏 Distance calculation results for reassign:', distances);
-      setReassignTechnicianDistances(distances);
-    } catch (error) {
-      console.error('❌ Error calculating distances:', error);
-      toast.error('Failed to calculate distances. You can still assign manually.');
-    } finally {
-      setLoadingReassignDistances(false);
-    }
-  };
-
   // Handle job status update
   const handleReassignJob = async (job: Job) => {
     setJobToReassign(job);
@@ -4565,8 +4460,6 @@ const AdminDashboard = () => {
       (job as any).assignedTechnician?.id ||
       '';
     setSelectedTechnicianForReassign(technicianId);
-    setReassignAssignmentType('direct');
-    setReassignTechnicianDistances([]);
     // Load technicians when dialog opens
     await reloadTechnicians();
     setReassignDialogOpen(true);
@@ -7462,19 +7355,7 @@ const AdminDashboard = () => {
         job={jobToAssign}
         technicians={technicians}
         selectedTechnicianId={selectedTechnicianId}
-        assignmentType={assignmentType}
-        technicianDistances={technicianDistances}
-        loadingDistances={loadingDistances}
         onTechnicianSelect={setSelectedTechnicianId}
-        onAssignmentTypeChange={(type) => {
-          setAssignmentType(type);
-          // Don't calculate distances automatically - user must click the button
-        }}
-        onCalculateDistances={async () => {
-          if (jobToAssign) {
-            await calculateDistancesForJob(jobToAssign);
-          }
-        }}
         onReloadTechnicians={reloadTechnicians}
         onSave={handleSaveJobAssignment}
         onCancel={() => {
@@ -7675,28 +7556,14 @@ const AdminDashboard = () => {
         job={jobToReassign}
         technicians={technicians}
         selectedTechnicianId={selectedTechnicianForReassign}
-        assignmentType={reassignAssignmentType}
-        technicianDistances={reassignTechnicianDistances}
-        loadingDistances={loadingReassignDistances}
         onTechnicianSelect={setSelectedTechnicianForReassign}
-        onAssignmentTypeChange={(type) => {
-          setReassignAssignmentType(type);
-          // Don't calculate distances automatically - user must click Refresh Distances button
-                  }}
-        onCalculateDistances={async () => {
-                      if (jobToReassign) {
-                        await calculateDistancesForReassign(jobToReassign);
-                      }
-                    }}
         onReloadTechnicians={reloadTechnicians}
         onSave={handleReassignSubmit}
         onCancel={() => {
-                setReassignDialogOpen(false);
-                setJobToReassign(null);
-                setSelectedTechnicianForReassign('');
-                setReassignAssignmentType('direct');
-                setReassignTechnicianDistances([]);
-              }}
+          setReassignDialogOpen(false);
+          setJobToReassign(null);
+          setSelectedTechnicianForReassign('');
+        }}
       />
       
       {/* Legacy Reassign Job Dialog - REMOVED - Now using ReassignJobDialog component */}

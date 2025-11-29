@@ -299,6 +299,9 @@ const TechnicianDashboard = () => {
   const [isResponding, setIsResponding] = useState(false);
   const [currentLocation, setCurrentLocation] = useState<{lat: number, lng: number} | null>(null);
   const [distances, setDistances] = useState<{[jobId: string]: number}>({});
+  const [locationError, setLocationError] = useState<string | null>(null);
+  const [locationErrorType, setLocationErrorType] = useState<'permission' | 'upload' | 'location' | 'other' | null>(null);
+  const [locationPermissionDenied, setLocationPermissionDenied] = useState(false);
 
   // Follow-up functionality state
   const [followUpModalOpen, setFollowUpModalOpen] = useState(false);
@@ -1224,12 +1227,21 @@ const TechnicianDashboard = () => {
     const locationTrackingEnabled = localStorage.getItem('technician_location_tracking_enabled') !== 'false';
     if (!locationTrackingEnabled) {
       console.log('Location tracking is disabled in settings');
+      setLocationError(null);
+      setLocationErrorType(null);
       return;
     }
 
+    setLocationError(null);
+    setLocationErrorType(null);
+    setLocationPermissionDenied(false);
+
     if (!navigator.geolocation) {
       console.error('Geolocation not supported');
-      toast.error('Location services not supported. Distance calculations will not be available.');
+      const errorMsg = 'Location services not supported. Distance calculations will not be available.';
+      setLocationError(errorMsg);
+      setLocationErrorType('other');
+      toast.error(errorMsg);
       return;
     }
 
@@ -1240,7 +1252,10 @@ const TechnicianDashboard = () => {
     
     if (!isSecure) {
       console.error('Location access requires HTTPS');
-      toast.error('Location access requires HTTPS. Please use a secure connection.');
+      const errorMsg = 'Location access requires HTTPS. Please use a secure connection.';
+      setLocationError(errorMsg);
+      setLocationErrorType('other');
+      toast.error(errorMsg);
       return;
     }
 
@@ -1250,6 +1265,17 @@ const TechnicianDashboard = () => {
       if ('permissions' in navigator) {
         const result = await navigator.permissions.query({ name: 'geolocation' as PermissionName });
         permissionStatus = result.state;
+        // Listen for permission changes
+        result.onchange = () => {
+          if (result.state === 'granted') {
+            setLocationPermissionDenied(false);
+            setLocationError(null);
+            setLocationErrorType(null);
+          } else if (result.state === 'denied') {
+            setLocationPermissionDenied(true);
+            setLocationErrorType('permission');
+          }
+        };
       }
     } catch (e) {
       // Permissions API not supported or failed
@@ -1258,7 +1284,11 @@ const TechnicianDashboard = () => {
 
     if (permissionStatus === 'denied') {
       console.error('Location permission denied');
-      toast.error('Location permission denied. Please enable location access in your browser settings.');
+      const errorMsg = 'Location permission denied. Click "Request Permission Again" to try again.';
+      setLocationError(errorMsg);
+      setLocationErrorType('permission');
+      setLocationPermissionDenied(true);
+      toast.error(errorMsg, { duration: 8000 });
       return;
     }
 
@@ -1288,38 +1318,56 @@ const TechnicianDashboard = () => {
 
             if (error) {
               console.error('Error updating technician location:', error);
-              toast.error(`Failed to update location: ${error.message}`);
+              const errorMsg = `Location captured but failed to upload to server. Please check your internet connection and try again. Error: ${error.message}`;
+              setLocationError(errorMsg);
+              setLocationErrorType('upload');
+              toast.error(errorMsg, { duration: 8000 });
             } else {
               console.log('✅ Technician location and status updated successfully:', {
                 location: locationData,
                 updatedData: data
               });
+              setLocationError(null);
+              setLocationErrorType(null);
               // Location updated silently
             }
           } catch (error) {
             console.error('Error updating technician location:', error);
-            const errorMsg = error instanceof Error ? error.message : 'Unknown error';
-            toast.error(`Failed to update location: ${errorMsg}`);
+            const errorMsg = `Location captured but failed to upload to server. Please check your internet connection and try again. Error: ${error instanceof Error ? error.message : 'Unknown error'}`;
+            setLocationError(errorMsg);
+            setLocationErrorType('upload');
+            toast.error(errorMsg, { duration: 8000 });
           }
         }
       },
       (error) => {
         console.error('Error getting location:', error);
         let errorMsg = 'Unable to get your location. Distance calculations will not be available.';
+        let errorTypeValue: 'permission' | 'upload' | 'location' | 'other' = 'location';
         
         switch (error.code) {
           case error.PERMISSION_DENIED:
-            errorMsg = 'Location permission denied. Please enable location access in your browser settings.';
+            errorMsg = 'Location permission denied. Click "Request Permission Again" to try again.';
+            errorTypeValue = 'permission';
+            setLocationPermissionDenied(true);
             break;
           case error.POSITION_UNAVAILABLE:
             errorMsg = 'Location information unavailable. Make sure GPS is enabled and try again.';
+            errorTypeValue = 'location';
             break;
           case error.TIMEOUT:
             errorMsg = 'Location request timed out. Please try again.';
+            errorTypeValue = 'location';
+            break;
+          default:
+            errorMsg = `An unknown error occurred (code: ${error.code}). Please try again.`;
+            errorTypeValue = 'other';
             break;
         }
         
-        toast.error(errorMsg);
+        setLocationError(errorMsg);
+        setLocationErrorType(errorTypeValue);
+        toast.error(errorMsg, { duration: 8000 });
       },
       {
         enableHighAccuracy: true,
@@ -3207,6 +3255,56 @@ const TechnicianDashboard = () => {
           </div>
         </header>
       </div>
+
+      {/* Location Error Banner */}
+      {locationError && (
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-4">
+          <Card className="border-red-200 bg-red-50 dark:bg-red-900/20 dark:border-red-800">
+            <CardContent className="p-4">
+              <div className="flex items-start gap-3">
+                <AlertCircle className="w-5 h-5 text-red-600 dark:text-red-400 shrink-0 mt-0.5" />
+                <div className="flex-1">
+                  <p className="text-red-800 dark:text-red-200 font-medium mb-1">Location Error:</p>
+                  <p className="text-red-600 dark:text-red-300 text-sm mb-3">{locationError}</p>
+                  <div className="flex flex-wrap gap-2">
+                    {locationErrorType === 'permission' && (
+                      <Button
+                        onClick={() => {
+                          setLocationError(null);
+                          setLocationErrorType(null);
+                          setLocationPermissionDenied(false);
+                          getCurrentLocation();
+                        }}
+                        size="sm"
+                        variant="outline"
+                        className="border-red-300 text-red-700 hover:bg-red-100 dark:border-red-700 dark:text-red-400 dark:hover:bg-red-900/30"
+                      >
+                        <RotateCcw className="w-4 h-4 mr-2" />
+                        Request Permission Again
+                      </Button>
+                    )}
+                    {(locationErrorType === 'upload' || locationErrorType === 'location') && (
+                      <Button
+                        onClick={() => {
+                          setLocationError(null);
+                          setLocationErrorType(null);
+                          getCurrentLocation();
+                        }}
+                        size="sm"
+                        variant="outline"
+                        className="border-red-300 text-red-700 hover:bg-red-100 dark:border-red-700 dark:text-red-400 dark:hover:bg-red-900/30"
+                      >
+                        <RefreshCw className="w-4 h-4 mr-2" />
+                        Try Again
+                      </Button>
+                    )}
+                  </div>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+      )}
 
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 pb-24" style={{ touchAction: 'auto', WebkitOverflowScrolling: 'touch', overscrollBehaviorY: 'auto' }}>
 

@@ -998,6 +998,34 @@ const Settings = () => {
                           <span className="font-medium shrink-0">Phone:</span>
                           <span className="truncate">{technician.phone}</span>
                           </div>
+                          {/* Last Location */}
+                          {technician.currentLocation && technician.currentLocation.latitude && technician.currentLocation.longitude ? (
+                            <div className="flex items-start gap-2">
+                              <MapPin className="w-3 h-3 sm:w-4 sm:h-4 text-blue-600 shrink-0 mt-0.5" />
+                              <div className="flex-1 min-w-0">
+                                <button
+                                  onClick={() => {
+                                    const url = `https://www.google.com/maps?q=${technician.currentLocation?.latitude},${technician.currentLocation?.longitude}`;
+                                    window.open(url, '_blank');
+                                  }}
+                                  className="text-blue-600 hover:text-blue-700 hover:underline truncate block text-left"
+                                  title="Click to open in Google Maps"
+                                >
+                                  {technician.currentLocation.latitude.toFixed(6)}, {technician.currentLocation.longitude.toFixed(6)}
+                                </button>
+                                {technician.currentLocation.lastUpdated && (
+                                  <p className="text-xs text-gray-500 mt-0.5">
+                                    Last updated: {new Date(technician.currentLocation.lastUpdated).toLocaleString()}
+                                  </p>
+                                )}
+                              </div>
+                            </div>
+                          ) : (
+                            <div className="flex items-center gap-2 text-gray-400">
+                              <MapPin className="w-3 h-3 sm:w-4 sm:h-4 shrink-0" />
+                              <span className="text-xs">No location data</span>
+                            </div>
+                          )}
                         </div>
 
                         {/* ID Card Link */}
