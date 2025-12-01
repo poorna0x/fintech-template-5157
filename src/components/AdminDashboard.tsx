@@ -4349,6 +4349,60 @@ const AdminDashboard = () => {
     }
   };
 
+  const handleUnassignJob = async (job: Job) => {
+    try {
+      const { error } = await db.jobs.update(job.id, {
+        assigned_technician_id: null,
+        assigned_date: null,
+        status: 'PENDING'
+      });
+
+      if (error) {
+        toast.error('Failed to unassign job');
+        return;
+      }
+
+      // Update local state
+      setJobs(prev => prev.map(j => 
+        j.id === job.id 
+          ? { 
+              ...j, 
+              assigned_technician_id: null,
+              assignedTechnicianId: null,
+              assigned_date: null,
+              assignedDate: null,
+              status: 'PENDING' as const
+            }
+          : j
+      ));
+
+      // Update customer jobs state
+      setCustomerJobs(prev => {
+        const updated = { ...prev };
+        Object.keys(updated).forEach(customerId => {
+          updated[customerId] = updated[customerId].map(j => 
+            j.id === job.id 
+              ? { 
+                  ...j, 
+                  assigned_technician_id: null,
+                  assignedTechnicianId: null,
+                  assigned_date: null,
+                  assignedDate: null,
+                  status: 'PENDING' as any
+                }
+              : j
+          );
+        });
+        return updated;
+      });
+
+      toast.success('Technician unassigned successfully. Job status set to PENDING.');
+    } catch (error) {
+      console.error('Error unassigning job:', error);
+      toast.error('Failed to unassign job');
+    }
+  };
+
   const handleEditJob = (job: Job) => {
     setJobToEdit(job);
     setEditJobDialogOpen(true);
@@ -6850,12 +6904,21 @@ const AdminDashboard = () => {
                                           job.status === 'IN_PROGRESS';
                                         
                                         return hasAssignedTechnician ? (
-                                          <DropdownMenuItem 
-                                            onClick={() => handleReassignJob(job)}
-                                          >
-                                            <User className="mr-2 h-4 w-4" />
-                                            Reassign Technician
-                                          </DropdownMenuItem>
+                                          <>
+                                            <DropdownMenuItem 
+                                              onClick={() => handleReassignJob(job)}
+                                            >
+                                              <User className="mr-2 h-4 w-4" />
+                                              Reassign Technician
+                                            </DropdownMenuItem>
+                                            <DropdownMenuItem 
+                                              onClick={() => handleUnassignJob(job)}
+                                              className="text-orange-600"
+                                            >
+                                              <X className="mr-2 h-4 w-4" />
+                                              Unassign Technician
+                                            </DropdownMenuItem>
+                                          </>
                                         ) : null;
                                       })()}
                                       <DropdownMenuItem 
