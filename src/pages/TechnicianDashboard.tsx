@@ -270,6 +270,7 @@ const TechnicianDashboard = () => {
   const lastActiveTimeRef = useRef<Date>(new Date()); // Track when app was last active
   const lastJobIdsRef = useRef<Set<string>>(new Set()); // Track job IDs from last active session
   const hasJobsRef = useRef<boolean>(false); // Track if we have loaded jobs at least once
+  const shouldPreserveOrderRef = useRef<boolean>(false); // Track if we should preserve job order (true when updating status, false when loading from DB)
   // Load seenJobs from localStorage on mount
   const [seenJobs, setSeenJobs] = useState<Set<string>>(() => {
     try {
@@ -515,6 +516,8 @@ const TechnicianDashboard = () => {
         statusBreakdown: statusCounts
       });
       
+      // Mark that we should sort (loading from database)
+      shouldPreserveOrderRef.current = false;
       setJobs(allJobs);
       hasJobsRef.current = true; // Mark that we've loaded jobs at least once
       
@@ -1101,18 +1104,21 @@ const TechnicianDashboard = () => {
                 if (!error && fullJob) {
                   const jobStatus = (fullJob as any).status || fullJob.status;
                   
+                  // Preserve order when updating from realtime (don't re-sort)
+                  shouldPreserveOrderRef.current = true;
+                  
                   // Update in jobs list
                   setJobs(prev => {
                     const index = prev.findIndex(j => j.id === fullJob.id);
                     if (index >= 0) {
-                      // Update existing job
+                      // Update existing job in place
                       const updated = [...prev];
                       updated[index] = fullJob;
                       return updated;
                     } else {
-                      // Job not in list yet, add it if it's in an active status
+                      // Job not in list yet, add it at end to preserve order
                       if (['PENDING', 'ASSIGNED', 'EN_ROUTE', 'IN_PROGRESS'].includes(jobStatus)) {
-                        return [fullJob, ...prev];
+                        return [...prev, fullJob];
                       }
                       return prev;
                     }
@@ -1683,7 +1689,9 @@ const TechnicianDashboard = () => {
     }
 
     // Sort jobs: Follow-up jobs scheduled for today first, then NEW jobs, then IN_PROGRESS/EN_ROUTE, then others
-    filtered.sort((a, b) => {
+    // Only sort if we loaded from database (not when updating status in place)
+    if (!shouldPreserveOrderRef.current) {
+      filtered.sort((a, b) => {
       const statusA = (a as any).status || a.status;
       const statusB = (b as any).status || b.status;
       
@@ -1740,7 +1748,11 @@ const TechnicianDashboard = () => {
       const createdA = new Date((a as any).created_at || a.createdAt || 0).getTime();
       const createdB = new Date((b as any).created_at || b.createdAt || 0).getTime();
       return createdB - createdA;
-    });
+      });
+    }
+    
+    // Reset the flag after processing
+    shouldPreserveOrderRef.current = false;
 
     console.log(`🎯 Filtered jobs for display (filter: ${statusFilter}): ${filtered.length} jobs`, {
       totalJobs: jobs.length,
@@ -1931,7 +1943,8 @@ const TechnicianDashboard = () => {
         throw new Error(error.message);
       }
 
-      // Update local state
+      // Update local state - preserve order (don't re-sort)
+      shouldPreserveOrderRef.current = true;
       setJobs(prev => {
         const exists = prev.some(j => j.id === job.id);
         if (exists) {
@@ -1989,7 +2002,8 @@ const TechnicianDashboard = () => {
         throw new Error(error.message);
       }
 
-      // Update local state
+      // Update local state - preserve order (don't re-sort)
+      shouldPreserveOrderRef.current = true;
       setJobs(prev => prev.map(j => 
         j.id === job.id 
           ? { ...j, status: 'IN_PROGRESS' as any, start_time: new Date().toISOString() }
@@ -2766,7 +2780,8 @@ const TechnicianDashboard = () => {
           }
         }
 
-        // Update local state
+        // Update local state - preserve order (don't re-sort)
+        shouldPreserveOrderRef.current = true;
         setJobs(prev => prev.map(job => 
           job.id === selectedJobForComplete.id ? { 
                 ...job, 
