@@ -30,19 +30,15 @@ const SendMessageDialog: React.FC<SendMessageDialogProps> = ({
   
   const whatsappMessage = `Dear ${customerName},
 
-Thank you for choosing Hydrogen RO! 💧
-
 ✅ Your service has been completed successfully.
 💰 Amount of ₹${amount} has been collected.
 
 For any queries or support, please contact us:
-📞 Phone: +91-8884944288, +91-9886944288
+📞 Phone: 8884944288
 📧 Email: info@hydrogenro.com
 🌐 Website: https://hydrogenro.com
 
-📱 For future bookings, you can book directly on https://hydrogenro.com/book for ease and convenience.
-
-Thank you for your trust in Hydrogen RO! 🙏`;
+📱 For future bookings, you can book directly on https://hydrogenro.com/book for ease and convenience.`;
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>

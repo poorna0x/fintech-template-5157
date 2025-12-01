@@ -7724,6 +7724,67 @@ const AdminDashboard = () => {
                   if (error) {
                     toast.error('Failed to update job: ' + error.message);
                   } else {
+                    // Update technician_payments if job has an assigned technician
+                    const technicianId = (selectedCompletedJob as any).assigned_technician_id;
+                    if (technicianId && amount > 0) {
+                      try {
+                        // Check if technician_payment record exists
+                        const { data: existingPayment, error: paymentCheckError } = await supabase
+                          .from('technician_payments')
+                          .select('id, commission_percentage')
+                          .eq('job_id', selectedCompletedJob.id)
+                          .single();
+
+                        if (paymentCheckError && paymentCheckError.code !== 'PGRST116') {
+                          // Error other than "not found" - log but don't fail
+                          console.error('Error checking payment record:', paymentCheckError);
+                        } else if (existingPayment) {
+                          // Update existing payment record
+                          const commissionPercentage = existingPayment.commission_percentage || 10;
+                          const newCommissionAmount = amount * (commissionPercentage / 100);
+                          
+                          const { error: paymentUpdateError } = await supabase
+                            .from('technician_payments')
+                            .update({
+                              bill_amount: Math.round(amount * 100) / 100,
+                              commission_amount: Math.round(newCommissionAmount * 100) / 100,
+                              updated_at: new Date().toISOString()
+                            })
+                            .eq('id', existingPayment.id);
+
+                          if (paymentUpdateError) {
+                            console.error('Error updating payment record:', paymentUpdateError);
+                            toast.warning('Job updated but payment record update failed');
+                          }
+                        } else {
+                          // Create new payment record if job is completed and has technician
+                          if ((selectedCompletedJob as any).status === 'COMPLETED') {
+                            const commissionPercentage = 10; // Default 10%
+                            const commissionAmount = amount * (commissionPercentage / 100);
+                            
+                            const { error: paymentCreateError } = await supabase
+                              .from('technician_payments')
+                              .insert({
+                                technician_id: technicianId,
+                                job_id: selectedCompletedJob.id,
+                                bill_amount: Math.round(amount * 100) / 100,
+                                commission_percentage: commissionPercentage,
+                                commission_amount: Math.round(commissionAmount * 100) / 100,
+                                payment_status: 'PENDING'
+                              });
+
+                            if (paymentCreateError) {
+                              console.error('Error creating payment record:', paymentCreateError);
+                              toast.warning('Job updated but payment record creation failed');
+                            }
+                          }
+                        }
+                      } catch (paymentError: any) {
+                        console.error('Error updating technician payments:', paymentError);
+                        // Don't fail the whole operation, just log the error
+                      }
+                    }
+                    
                     toast.success('Job updated successfully');
                     setEditCompletedJobDialogOpen(false);
                     // Reload jobs
