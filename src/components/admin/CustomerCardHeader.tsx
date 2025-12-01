@@ -22,6 +22,7 @@ interface CustomerCardHeaderProps {
   onSetSelectedCustomerForReport: (customer: Customer) => void;
   onSetCustomerReportDialogOpen: (open: boolean) => void;
   onSetMoreOptionsDialogOpen: (updater: (prev: Record<string, boolean>) => Record<string, boolean>) => void;
+  onViewAMCInfo?: (customer: Customer) => void;
 }
 
 export const CustomerCardHeader: React.FC<CustomerCardHeaderProps> = ({
@@ -40,6 +41,7 @@ export const CustomerCardHeader: React.FC<CustomerCardHeaderProps> = ({
   onSetSelectedCustomerForReport,
   onSetCustomerReportDialogOpen,
   onSetMoreOptionsDialogOpen,
+  onViewAMCInfo,
 }) => {
   return (
     <div className="bg-gray-50 p-4 border-b border-gray-200">
@@ -203,6 +205,22 @@ export const CustomerCardHeader: React.FC<CustomerCardHeaderProps> = ({
                     <div className="text-xs text-muted-foreground">Create a tax invoice with GST for this customer</div>
                   </div>
                 </Button>
+                {customerAMCStatus[customer.id] && onViewAMCInfo && (
+                  <Button 
+                    variant="outline"
+                    className="w-full justify-start h-auto py-3 px-4 text-green-700 hover:text-green-800 hover:bg-green-50"
+                    onClick={() => {
+                      onSetMoreOptionsDialogOpen(prev => ({ ...prev, [customer.id]: false }));
+                      onViewAMCInfo(customer);
+                    }}
+                  >
+                    <Star className="mr-3 h-5 w-5" />
+                    <div className="text-left">
+                      <div className="font-medium">AMC Info</div>
+                      <div className="text-xs text-muted-foreground">View active AMC contract details</div>
+                    </div>
+                  </Button>
+                )}
               </div>
             </DialogContent>
           </Dialog>
@@ -311,6 +329,15 @@ export const CustomerCardHeader: React.FC<CustomerCardHeaderProps> = ({
                 <Receipt className="mr-2 h-4 w-4" />
                 Generate Tax Invoice
               </DropdownMenuItem>
+              {customerAMCStatus[customer.id] && onViewAMCInfo && (
+                <DropdownMenuItem 
+                  onClick={() => onViewAMCInfo(customer)}
+                  className="text-green-700 focus:text-green-800 focus:bg-green-50"
+                >
+                  <Star className="mr-2 h-4 w-4" />
+                  AMC Info
+                </DropdownMenuItem>
+              )}
             </DropdownMenuContent>
           </DropdownMenu>
         </div>
