@@ -6495,8 +6495,58 @@ const AdminDashboard = () => {
                         
                         const amcInfo = requirements.find((r: any) => r?.amc_info)?.amc_info || null;
                         const qrPhotos = requirements.find((r: any) => r?.qr_photos)?.qr_photos || null;
-                        const billPhotos = requirements.find((r: any) => r?.bill_photos)?.bill_photos || [];
-                        const paymentScreenshot = qrPhotos?.payment_screenshot || null;
+                        
+                        // Extract payment screenshot from qr_photos (primary source)
+                        let paymentScreenshot = qrPhotos?.payment_screenshot || null;
+                        
+                        // Extract all photos from after_photos field (includes both bill photos and payment screenshot)
+                        const afterPhotosExtracted = extractPhotoUrls(afterPhotos);
+                        
+                        // Also get bill photos from requirements (for backward compatibility)
+                        const billPhotosFromRequirements = extractPhotoUrls(
+                          requirements.find((r: any) => r?.bill_photos)?.bill_photos || []
+                        );
+                        
+                        // Combine all photos: from after_photos (primary) + from requirements.bill_photos (fallback)
+                        const allPhotosFromAfter = afterPhotosExtracted;
+                        const allPhotosFromRequirements = billPhotosFromRequirements;
+                        
+                        // Use after_photos as primary source (it contains all photos including payment screenshot)
+                        // If after_photos is empty, fallback to requirements.bill_photos
+                        let billPhotos: string[] = [];
+                        
+                        if (allPhotosFromAfter.length > 0) {
+                          // If we have a payment screenshot from qr_photos, exclude it from bill photos
+                          if (paymentScreenshot) {
+                            billPhotos = allPhotosFromAfter.filter(url => url !== paymentScreenshot);
+                          } else {
+                            // If no payment screenshot in qr_photos, all photos in after_photos are bill photos
+                            billPhotos = allPhotosFromAfter;
+                          }
+                        } else {
+                          // Fallback to requirements.bill_photos if after_photos is empty
+                          billPhotos = allPhotosFromRequirements;
+                        }
+                        
+                        // If payment screenshot is not in qr_photos but we have after_photos, 
+                        // and the count suggests there's a payment screenshot, try to identify it
+                        if (!paymentScreenshot && afterPhotosExtracted.length > billPhotosFromRequirements.length && qrPhotos) {
+                          // The extra photo in after_photos is likely the payment screenshot
+                          const potentialPaymentScreenshot = afterPhotosExtracted.find(url => !billPhotosFromRequirements.includes(url));
+                          if (potentialPaymentScreenshot) {
+                            paymentScreenshot = potentialPaymentScreenshot;
+                            // Remove it from bill photos
+                            billPhotos = billPhotos.filter(url => url !== paymentScreenshot);
+                          }
+                        }
+                        
+                        console.log('📸 AdminDashboard photo extraction:', {
+                          afterPhotosExtracted,
+                          billPhotosFromRequirements,
+                          paymentScreenshot,
+                          billPhotos,
+                          qrPhotos: qrPhotos ? 'exists' : 'null'
+                        });
                         
                         return (
                           <div key={job.id}>
