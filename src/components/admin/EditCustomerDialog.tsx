@@ -177,7 +177,6 @@ const EditCustomerDialog: React.FC<EditCustomerDialogProps> = ({
   const [showBrandSuggestions, setShowBrandSuggestions] = useState(false);
   const [showModelSuggestions, setShowModelSuggestions] = useState(false);
   const locationManuallyEditedRef = useRef(false);
-  const autoSaveTimerRef = useRef<NodeJS.Timeout | null>(null);
   const lastSavedFormDataRef = useRef<string>('');
   const hasUnsavedChangesRef = useRef(false);
 
@@ -308,118 +307,6 @@ const EditCustomerDialog: React.FC<EditCustomerDialogProps> = ({
     }
   }, [customer, open]);
 
-  // Auto-save after 5 seconds of inactivity
-  useEffect(() => {
-    if (!customer || !open || isUpdating) return;
-
-    const currentFormDataString = JSON.stringify(editFormData);
-    const hasChanges = currentFormDataString !== lastSavedFormDataRef.current;
-
-    if (!hasChanges) {
-      if (autoSaveTimerRef.current) {
-        clearTimeout(autoSaveTimerRef.current);
-        autoSaveTimerRef.current = null;
-      }
-      hasUnsavedChangesRef.current = false;
-      return;
-    }
-
-    hasUnsavedChangesRef.current = true;
-
-    if (autoSaveTimerRef.current) {
-      clearTimeout(autoSaveTimerRef.current);
-    }
-
-    autoSaveTimerRef.current = setTimeout(async () => {
-      if (hasUnsavedChangesRef.current && customer && !isUpdating) {
-        try {
-          const updatedAddress = {
-            street: editFormData.address.street,
-            area: editFormData.address.area,
-            city: editFormData.address.city,
-            state: editFormData.address.state,
-            pincode: editFormData.address.pincode
-          };
-
-          const updatedLocation: any = {
-            latitude: editFormData.location.latitude || 0,
-            longitude: editFormData.location.longitude || 0,
-            formattedAddress: editFormData.address.street || editFormData.location.formattedAddress || '',
-          };
-          
-          if (editFormData.google_location && editFormData.google_location.trim()) {
-            updatedLocation.googleLocation = editFormData.google_location;
-          } else if ((editFormData.location as any)?.googleLocation) {
-            updatedLocation.googleLocation = (editFormData.location as any).googleLocation;
-          }
-
-          const brands: string[] = [];
-          const models: string[] = [];
-          
-          editFormData.service_types.forEach((serviceType: string) => {
-            const equipment = editFormData.equipment[serviceType];
-            if (equipment) {
-              brands.push(equipment.brand?.trim() || '');
-              models.push(equipment.model?.trim() || '');
-            } else {
-              brands.push('');
-              models.push('');
-            }
-          });
-
-          const { data: updatedCustomerFromDb, error } = await db.customers.update(customer.id, {
-            full_name: editFormData.full_name,
-            phone: editFormData.phone,
-            alternate_phone: editFormData.alternate_phone,
-            email: editFormData.email,
-            service_type: mapServiceTypesToDbValue(editFormData.service_types),
-            brand: brands.join(', '),
-            model: models.join(', '),
-            preferred_language: (editFormData.native_language || 'ENGLISH') as 'ENGLISH' | 'HINDI' | 'KANNADA' | 'TAMIL' | 'TELUGU',
-            preferred_time_slot: (customer as any).preferred_time_slot || customer.preferredTimeSlot || 'MORNING',
-            status: editFormData.status as 'ACTIVE' | 'INACTIVE' | 'BLOCKED',
-            notes: editFormData.notes,
-            visible_address: editFormData.visible_address ? editFormData.visible_address.trim() : '',
-            custom_time: editFormData.custom_time || null,
-            has_prefilter: editFormData.has_prefilter,
-            address: updatedAddress,
-            location: updatedLocation
-          });
-
-          if (error) {
-            throw new Error(error.message);
-          }
-
-          if (updatedCustomerFromDb) {
-            const transformedCustomer = transformCustomerData(updatedCustomerFromDb);
-            onCustomerUpdated(transformedCustomer);
-          }
-
-          lastSavedFormDataRef.current = JSON.stringify(editFormData);
-          hasUnsavedChangesRef.current = false;
-          
-          if (!open) {
-            onOpenChange(false);
-          }
-          
-          toast.success('Customer auto-saved successfully!');
-        } catch (error) {
-          const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
-          console.error('Error auto-saving customer:', error);
-          toast.error(`Auto-save failed: ${errorMessage}`);
-        }
-      }
-      
-      autoSaveTimerRef.current = null;
-    }, 5000);
-
-    return () => {
-      if (autoSaveTimerRef.current) {
-        clearTimeout(autoSaveTimerRef.current);
-        autoSaveTimerRef.current = null;
-      }
-    };
-  }, [editFormData, customer, isUpdating, open, onCustomerUpdated, onOpenChange]);
 
   const handleEditFormChange = (field: string, value: string | string[] | boolean | null) => {
     setEditFormData(prev => ({
@@ -955,10 +842,6 @@ const EditCustomerDialog: React.FC<EditCustomerDialogProps> = ({
       
       lastSavedFormDataRef.current = JSON.stringify(editFormData);
       hasUnsavedChangesRef.current = false;
-      if (autoSaveTimerRef.current) {
-        clearTimeout(autoSaveTimerRef.current);
-        autoSaveTimerRef.current = null;
-      }
       
       toast.success('Customer updated successfully!');
       onOpenChange(false);
@@ -971,15 +854,111 @@ const EditCustomerDialog: React.FC<EditCustomerDialogProps> = ({
     }
   };
 
+  // Track changes in form data
+  useEffect(() => {
+    if (!customer || !open) return;
+    
+    const currentFormDataString = JSON.stringify(editFormData);
+    const hasChanges = currentFormDataString !== lastSavedFormDataRef.current;
+    hasUnsavedChangesRef.current = hasChanges;
+  }, [editFormData, customer, open]);
+
+  // Function to auto-save customer (called on dialog close)
+  const autoSaveCustomer = async () => {
+    if (!customer || isUpdating || !hasUnsavedChangesRef.current) return;
+
+    try {
+      const updatedAddress = {
+        street: editFormData.address.street,
+        area: editFormData.address.area,
+        city: editFormData.address.city,
+        state: editFormData.address.state,
+        pincode: editFormData.address.pincode
+      };
+
+      const updatedLocation: any = {
+        latitude: editFormData.location.latitude || 0,
+        longitude: editFormData.location.longitude || 0,
+        formattedAddress: editFormData.address.street || editFormData.location.formattedAddress || '',
+      };
+      
+      if (editFormData.google_location && editFormData.google_location.trim()) {
+        updatedLocation.googleLocation = editFormData.google_location;
+      } else if ((editFormData.location as any)?.googleLocation) {
+        updatedLocation.googleLocation = (editFormData.location as any).googleLocation;
+      }
+
+      const brands: string[] = [];
+      const models: string[] = [];
+      
+      editFormData.service_types.forEach((serviceType: string) => {
+        const equipment = editFormData.equipment[serviceType];
+        if (equipment) {
+          brands.push(equipment.brand?.trim() || '');
+          models.push(equipment.model?.trim() || '');
+        } else {
+          brands.push('');
+          models.push('');
+        }
+      });
+
+      const { data: updatedCustomerFromDb, error } = await db.customers.update(customer.id, {
+        full_name: editFormData.full_name,
+        phone: editFormData.phone,
+        alternate_phone: editFormData.alternate_phone,
+        email: editFormData.email,
+        service_type: mapServiceTypesToDbValue(editFormData.service_types),
+        brand: brands.join(', '),
+        model: models.join(', '),
+        preferred_language: (editFormData.native_language || 'ENGLISH') as 'ENGLISH' | 'HINDI' | 'KANNADA' | 'TAMIL' | 'TELUGU',
+        preferred_time_slot: (customer as any).preferred_time_slot || customer.preferredTimeSlot || 'MORNING',
+        status: editFormData.status as 'ACTIVE' | 'INACTIVE' | 'BLOCKED',
+        notes: editFormData.notes,
+        visible_address: editFormData.visible_address ? editFormData.visible_address.trim() : '',
+        custom_time: editFormData.custom_time || null,
+        has_prefilter: editFormData.has_prefilter,
+        address: updatedAddress,
+        location: updatedLocation
+      });
+
+      if (error) {
+        throw new Error(error.message);
+      }
+
+      if (updatedCustomerFromDb) {
+        const transformedCustomer = transformCustomerData(updatedCustomerFromDb);
+        onCustomerUpdated(transformedCustomer);
+      }
+
+      lastSavedFormDataRef.current = JSON.stringify(editFormData);
+      hasUnsavedChangesRef.current = false;
+      
+      toast.success('Customer auto-saved successfully!');
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
+      console.error('Error auto-saving customer:', error);
+      toast.error(`Auto-save failed: ${errorMessage}`);
+    }
+  };
+
+  const handleDialogOpenChange = async (isOpen: boolean) => {
+    // If closing and there are unsaved changes, save first
+    if (!isOpen && customer && hasUnsavedChangesRef.current) {
+      await autoSaveCustomer();
+    }
+    // Then proceed with the normal close
+    onOpenChange(isOpen);
+  };
+
   if (!customer) return null;
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
+    <Dialog open={open} onOpenChange={handleDialogOpenChange}>
       <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>Edit Customer</DialogTitle>
           <DialogDescription>
-            Update customer information for {(customer as any)?.customer_id} - {(customer as any)?.full_name}
+            Update customer information for {customer?.customerId || (customer as any)?.customer_id || 'Customer'} - {customer?.fullName || (customer as any)?.full_name || ''}
           </DialogDescription>
         </DialogHeader>
         

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -35,6 +35,10 @@ const EditJobDialog: React.FC<EditJobDialogProps> = ({
   job,
   onJobUpdated
 }) => {
+  const [isClosing, setIsClosing] = useState(false);
+  const [forceOpen, setForceOpen] = useState(true);
+  const allowCloseRef = useRef(false);
+  const initialFormDataRef = useRef<EditJobFormData | null>(null);
   const [editJobFormData, setEditJobFormData] = useState<EditJobFormData>({
     serviceType: 'RO',
     serviceSubType: 'Installation',
@@ -114,7 +118,7 @@ const EditJobDialog: React.FC<EditJobDialogProps> = ({
         costAgreed = estimatedCost.toString();
       }
 
-      setEditJobFormData({
+      const formData = {
         serviceType: (job.service_type || job.serviceType || 'RO') as 'RO' | 'SOFTENER',
         serviceSubType: isCustomSubType ? 'Custom' : serviceSubType,
         serviceSubTypeCustom: isCustomSubType ? serviceSubType : '',
@@ -125,9 +129,39 @@ const EditJobDialog: React.FC<EditJobDialogProps> = ({
         lead_source: leadSource,
         lead_source_custom: leadSourceCustom,
         cost_agreed: costAgreed
-      });
+      };
+      setEditJobFormData(formData);
+      // Store initial form data to detect changes
+      initialFormDataRef.current = formData;
     }
   }, [job, open]);
+
+  // Reset close flag when dialog opens
+  useEffect(() => {
+    if (open) {
+      allowCloseRef.current = false;
+      setIsClosing(false);
+      setForceOpen(true);
+    }
+  }, [open]);
+
+  // Check if there are unsaved changes
+  const hasUnsavedChanges = () => {
+    if (!initialFormDataRef.current) return false;
+    const initial = initialFormDataRef.current;
+    return (
+      initial.serviceType !== editJobFormData.serviceType ||
+      initial.serviceSubType !== editJobFormData.serviceSubType ||
+      initial.serviceSubTypeCustom !== editJobFormData.serviceSubTypeCustom ||
+      initial.description !== editJobFormData.description ||
+      initial.scheduledDate !== editJobFormData.scheduledDate ||
+      initial.scheduledTimeSlot !== editJobFormData.scheduledTimeSlot ||
+      initial.scheduledTimeCustom !== editJobFormData.scheduledTimeCustom ||
+      initial.lead_source !== editJobFormData.lead_source ||
+      initial.lead_source_custom !== editJobFormData.lead_source_custom ||
+      initial.cost_agreed !== editJobFormData.cost_agreed
+    );
+  };
 
   const handleSubmit = async () => {
     if (!job) return;
@@ -210,19 +244,107 @@ const EditJobDialog: React.FC<EditJobDialogProps> = ({
       }
 
       onJobUpdated(updatedJob);
-      toast.success('Job updated successfully');
-      onOpenChange(false);
+      
+      // Update initial form data ref after successful save
+      initialFormDataRef.current = { ...editJobFormData };
+      
+      // Only close if we're in the process of closing (user clicked Update or Cancel button)
+      if (isClosing && allowCloseRef.current) {
+        toast.success('Job updated successfully');
+        allowCloseRef.current = false;
+        setIsClosing(false);
+        setForceOpen(false);
+        onOpenChange(false);
+      } else {
+        // Silent save (from Cancel button with unsaved changes)
+        toast.success('Changes saved');
+        // After saving, close the dialog
+        setForceOpen(false);
+        onOpenChange(false);
+      }
     } catch (error) {
       console.error('Error updating job:', error);
       toast.error('Failed to update job');
+      // Don't close on error
+      setIsClosing(false);
     }
   };
 
   if (!job) return null;
 
+  const handleDialogOpenChange = (isOpen: boolean) => {
+    // Only allow closing if explicitly requested (via Cancel or Update button)
+    // Completely prevent accidental closing from clicking outside or ESC
+    if (!isOpen) {
+      // User is trying to close - only allow if we explicitly set allowCloseRef
+      if (allowCloseRef.current) {
+        allowCloseRef.current = false;
+        setIsClosing(false);
+        setForceOpen(false);
+        onOpenChange(false);
+      } else {
+        // Prevent closing - force the dialog to stay open
+        // Don't call onOpenChange(false) and ensure open prop stays true
+        setForceOpen(true);
+        // Don't propagate the close event to parent
+        // The dialog will stay open because we're not calling onOpenChange(false)
+        return;
+      }
+      return;
+    }
+    // Dialog is opening - allow it and reset flags
+    setIsClosing(false);
+    allowCloseRef.current = false;
+    setForceOpen(true);
+    if (isOpen) {
+      onOpenChange(true);
+    }
+  };
+
+  const handleCancel = async () => {
+    // Check if there are unsaved changes
+    if (hasUnsavedChanges()) {
+      // Save changes before closing
+      allowCloseRef.current = true;
+      setIsClosing(true);
+      setForceOpen(false);
+      await handleSubmit();
+    } else {
+      // No changes, just close
+      allowCloseRef.current = true;
+      setIsClosing(true);
+      setForceOpen(false);
+      onOpenChange(false);
+    }
+  };
+
+  const handleUpdate = () => {
+    allowCloseRef.current = true;
+    setIsClosing(true);
+    handleSubmit();
+  };
+
+  // Use forceOpen to ensure dialog stays open unless explicitly closed
+  // If parent sets open to false, respect it. Otherwise, use forceOpen to control
+  const dialogOpen = open ? forceOpen : false;
+  
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+    <Dialog open={dialogOpen} onOpenChange={handleDialogOpenChange} modal={true}>
+      <DialogContent 
+        className="max-w-2xl max-h-[90vh] overflow-y-auto [&>button]:hidden"
+        onPointerDownOutside={(e) => {
+          // Prevent closing when clicking outside - user must use Cancel button
+          e.preventDefault();
+        }}
+        onInteractOutside={(e) => {
+          // Prevent closing when clicking outside - user must use Cancel button
+          e.preventDefault();
+        }}
+        onEscapeKeyDown={(e) => {
+          // Prevent closing on ESC key - user must use Cancel button
+          e.preventDefault();
+        }}
+      >
         <DialogHeader>
           <DialogTitle>Edit Job</DialogTitle>
           <DialogDescription>
@@ -230,7 +352,10 @@ const EditJobDialog: React.FC<EditJobDialogProps> = ({
           </DialogDescription>
         </DialogHeader>
         
-        <div className="space-y-4">
+        <form onSubmit={(e) => {
+          e.preventDefault(); // Prevent form auto-submission
+          handleUpdate();
+        }} className="space-y-4">
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
               <Label htmlFor="edit-service-type">Service Type</Label>
@@ -374,13 +499,13 @@ const EditJobDialog: React.FC<EditJobDialogProps> = ({
             />
             <p className="text-xs text-gray-500 mt-1">Enter a single amount or a range (e.g., 400-500)</p>
           </div>
-        </div>
+        </form>
 
         <DialogFooter>
-          <Button variant="outline" onClick={() => onOpenChange(false)}>
+          <Button type="button" variant="outline" onClick={handleCancel}>
             Cancel
           </Button>
-          <Button onClick={handleSubmit}>
+          <Button type="button" onClick={handleUpdate}>
             Update Job
           </Button>
         </DialogFooter>
