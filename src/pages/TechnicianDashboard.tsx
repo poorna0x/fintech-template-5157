@@ -2751,6 +2751,39 @@ const TechnicianDashboard = () => {
           screenshotLength: paymentScreenshot?.length || 0
         });
         
+        // Always add payment screenshot to after_photos if uploaded (regardless of payment mode)
+        // This ensures payment screenshots are always saved and displayed
+        if (isPaymentScreenshotUploaded) {
+          // Check if payment screenshot is already in allAfterPhotos (avoid duplicates)
+          const isAlreadyIncluded = allAfterPhotos.some(url => {
+            if (!url || !paymentScreenshot) return false;
+            // Normalize URLs for comparison (remove query params, fragments)
+            const normalizedUrl1 = url.split('?')[0].split('#')[0].trim().toLowerCase();
+            const normalizedUrl2 = paymentScreenshot.split('?')[0].split('#')[0].trim().toLowerCase();
+            return normalizedUrl1 === normalizedUrl2;
+          });
+          
+          if (!isAlreadyIncluded) {
+            allAfterPhotos.push(paymentScreenshot);
+            console.log('✅ Added payment screenshot to after_photos:', paymentScreenshot);
+          } else {
+            console.log('ℹ️ Payment screenshot already in after_photos, skipping duplicate');
+          }
+          console.log('✅ Total photos in after_photos:', allAfterPhotos.length, allAfterPhotos);
+        } else {
+          console.warn('⚠️ Payment screenshot not uploaded or invalid:', paymentScreenshot);
+          // In PWA mode, if payment screenshot exists but validation failed, log more details
+          if (isPWA && paymentScreenshot) {
+            console.warn('⚠️ PWA mode: Payment screenshot exists but failed validation:', {
+              value: paymentScreenshot,
+              type: typeof paymentScreenshot,
+              startsWithHttp: paymentScreenshot.startsWith('http'),
+              includesCloudinary: paymentScreenshot.includes('cloudinary')
+            });
+          }
+        }
+        
+        // Add qr_photos to requirements only for ONLINE payments
         if (paymentMode === 'ONLINE') {
           const qrPhotos: any = {
             qr_code_type: qrCodeType,
@@ -2761,38 +2794,11 @@ const TechnicianDashboard = () => {
           };
           requirements.push({ qr_photos: qrPhotos });
           console.log('✅ Added qr_photos to requirements:', qrPhotos);
-          
-          // Add payment screenshot to after_photos array so it shows in completed photos
-          // Double-check in PWA mode to ensure it's included
-          if (isPaymentScreenshotUploaded) {
-            // Check if payment screenshot is already in allAfterPhotos (avoid duplicates)
-            const isAlreadyIncluded = allAfterPhotos.some(url => {
-              if (!url || !paymentScreenshot) return false;
-              // Normalize URLs for comparison (remove query params, fragments)
-              const normalizedUrl1 = url.split('?')[0].split('#')[0].trim().toLowerCase();
-              const normalizedUrl2 = paymentScreenshot.split('?')[0].split('#')[0].trim().toLowerCase();
-              return normalizedUrl1 === normalizedUrl2;
-            });
-            
-            if (!isAlreadyIncluded) {
-              allAfterPhotos.push(paymentScreenshot);
-              console.log('✅ Added payment screenshot to after_photos:', paymentScreenshot);
-            } else {
-              console.log('ℹ️ Payment screenshot already in after_photos, skipping duplicate');
-            }
-            console.log('✅ Total photos in after_photos:', allAfterPhotos.length, allAfterPhotos);
-          } else {
-            console.warn('⚠️ Payment screenshot not uploaded or invalid:', paymentScreenshot);
-            // In PWA mode, if payment screenshot exists but validation failed, log more details
-            if (isPWA && paymentScreenshot) {
-              console.warn('⚠️ PWA mode: Payment screenshot exists but failed validation:', {
-                value: paymentScreenshot,
-                type: typeof paymentScreenshot,
-                startsWithHttp: paymentScreenshot.startsWith('http'),
-                includesCloudinary: paymentScreenshot.includes('cloudinary')
-              });
-            }
-          }
+        } else if (isPaymentScreenshotUploaded) {
+          // For CASH payments, still save payment screenshot in requirements for easy access
+          // Store it in a payment_photos array in requirements
+          requirements.push({ payment_photos: [paymentScreenshot] });
+          console.log('✅ Added payment screenshot to requirements for CASH payment:', paymentScreenshot);
         }
         
         // Update after_photos field with all photos (bill photos + payment screenshot)
