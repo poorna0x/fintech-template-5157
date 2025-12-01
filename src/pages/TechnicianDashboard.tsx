@@ -1417,9 +1417,9 @@ const TechnicianDashboard = () => {
         toast.error(errorMsg, { duration: 8000 });
       },
       {
-        enableHighAccuracy: true,
-        timeout: 15000, // Increased timeout for better reliability
-        maximumAge: 300000 // 5 minutes
+        enableHighAccuracy: false, // Set to false for faster response (less accurate but more reliable)
+        timeout: 30000, // Increased to 30 seconds for better reliability on slow networks
+        maximumAge: 60000 // 1 minute - use cached location if available and recent
       }
     );
   }, [user?.technicianId]);
@@ -2604,9 +2604,12 @@ const TechnicianDashboard = () => {
     
     try {
       // STEP 1: Ensure all photos are uploaded to Cloudinary (must be URLs, not local files)
+      console.log('📸 All bill photos before filtering:', billPhotos);
       const uploadedBillPhotos = billPhotos.filter(url => 
         url && typeof url === 'string' && (url.startsWith('http://') || url.startsWith('https://'))
       );
+      console.log('📸 Uploaded bill photos (http/https URLs):', uploadedBillPhotos);
+      console.log('📸 Uploaded bill photos count:', uploadedBillPhotos.length);
       
       // Check if there are any non-uploaded photos
       const nonUploadedPhotos = billPhotos.filter(url => 
@@ -2614,16 +2617,40 @@ const TechnicianDashboard = () => {
       );
       
       if (nonUploadedPhotos.length > 0) {
+        console.warn('⚠️ Non-uploaded photos detected:', nonUploadedPhotos);
         toast.error(`Please wait for ${nonUploadedPhotos.length} photo(s) to finish uploading before completing the job.`);
         setIsSubmittingJobCompletion(false);
         return;
       }
       
       // Check payment screenshot if ONLINE payment
-      if (paymentMode === 'ONLINE' && paymentScreenshot && !paymentScreenshot.startsWith('http://') && !paymentScreenshot.startsWith('https://')) {
-        toast.error('Please wait for payment screenshot to finish uploading before completing the job.');
-        setIsSubmittingJobCompletion(false);
-        return;
+      console.log('📸 Payment screenshot check:', {
+        paymentScreenshot,
+        paymentMode,
+        isString: typeof paymentScreenshot === 'string',
+        length: paymentScreenshot?.length || 0,
+        startsWithHttp: paymentScreenshot?.startsWith('http://') || paymentScreenshot?.startsWith('https://'),
+        includesCloudinary: paymentScreenshot?.includes('cloudinary.com')
+      });
+      
+      if (paymentMode === 'ONLINE' && paymentScreenshot) {
+        // Check if payment screenshot is a valid uploaded URL (http/https or Cloudinary URL)
+        const isValidUrl = paymentScreenshot && typeof paymentScreenshot === 'string' && (
+          paymentScreenshot.startsWith('http://') || 
+          paymentScreenshot.startsWith('https://') ||
+          paymentScreenshot.includes('cloudinary.com')
+        );
+        
+        if (!isValidUrl) {
+          console.warn('⚠️ Payment screenshot not uploaded yet or invalid format:', paymentScreenshot);
+          toast.error('Please wait for payment screenshot to finish uploading before completing the job.');
+          setIsSubmittingJobCompletion(false);
+          return;
+        } else {
+          console.log('✅ Payment screenshot is uploaded and valid:', paymentScreenshot);
+        }
+      } else if (paymentMode === 'ONLINE' && !paymentScreenshot) {
+        console.log('ℹ️ Payment mode is ONLINE but no payment screenshot provided (optional)');
       }
 
       // STEP 2: Get QR code details
@@ -2702,20 +2729,69 @@ const TechnicianDashboard = () => {
         // Collect all photos for after_photos array (bill photos + payment screenshot)
         const allAfterPhotos: string[] = [...uploadedBillPhotos];
         
+        // Check if payment screenshot is uploaded (handle both primary and secondary Cloudinary accounts)
+        // Also handle PWA apps where URLs might be formatted differently
+        const isPaymentScreenshotUploaded = paymentScreenshot && typeof paymentScreenshot === 'string' && (
+          paymentScreenshot.startsWith('http://') || 
+          paymentScreenshot.startsWith('https://') ||
+          paymentScreenshot.includes('cloudinary.com') || // Cloudinary URLs
+          paymentScreenshot.includes('res.cloudinary.com') // Full Cloudinary URLs
+        );
+        
+        // Check if running in PWA mode
+        const isPWA = window.matchMedia('(display-mode: standalone)').matches || 
+                     (window.navigator as any).standalone === true ||
+                     document.referrer.includes('android-app://');
+        
+        console.log('📸 Payment screenshot check:', {
+          paymentScreenshot,
+          isUploaded: isPaymentScreenshotUploaded,
+          paymentMode,
+          isPWA,
+          screenshotLength: paymentScreenshot?.length || 0
+        });
+        
         if (paymentMode === 'ONLINE') {
           const qrPhotos: any = {
             qr_code_type: qrCodeType,
             selected_qr_code_id: selectedQrCodeId,
-            payment_screenshot: paymentScreenshot && paymentScreenshot.startsWith('http') ? paymentScreenshot : null,
+            payment_screenshot: isPaymentScreenshotUploaded ? paymentScreenshot : null,
             selected_qr_code_url: selectedQrCodeUrl,
             selected_qr_code_name: selectedQrCodeName,
           };
           requirements.push({ qr_photos: qrPhotos });
+          console.log('✅ Added qr_photos to requirements:', qrPhotos);
           
           // Add payment screenshot to after_photos array so it shows in completed photos
-          if (paymentScreenshot && paymentScreenshot.startsWith('http')) {
-            allAfterPhotos.push(paymentScreenshot);
-            console.log('✅ Added payment screenshot to after_photos:', paymentScreenshot);
+          // Double-check in PWA mode to ensure it's included
+          if (isPaymentScreenshotUploaded) {
+            // Check if payment screenshot is already in allAfterPhotos (avoid duplicates)
+            const isAlreadyIncluded = allAfterPhotos.some(url => {
+              if (!url || !paymentScreenshot) return false;
+              // Normalize URLs for comparison (remove query params, fragments)
+              const normalizedUrl1 = url.split('?')[0].split('#')[0].trim().toLowerCase();
+              const normalizedUrl2 = paymentScreenshot.split('?')[0].split('#')[0].trim().toLowerCase();
+              return normalizedUrl1 === normalizedUrl2;
+            });
+            
+            if (!isAlreadyIncluded) {
+              allAfterPhotos.push(paymentScreenshot);
+              console.log('✅ Added payment screenshot to after_photos:', paymentScreenshot);
+            } else {
+              console.log('ℹ️ Payment screenshot already in after_photos, skipping duplicate');
+            }
+            console.log('✅ Total photos in after_photos:', allAfterPhotos.length, allAfterPhotos);
+          } else {
+            console.warn('⚠️ Payment screenshot not uploaded or invalid:', paymentScreenshot);
+            // In PWA mode, if payment screenshot exists but validation failed, log more details
+            if (isPWA && paymentScreenshot) {
+              console.warn('⚠️ PWA mode: Payment screenshot exists but failed validation:', {
+                value: paymentScreenshot,
+                type: typeof paymentScreenshot,
+                startsWithHttp: paymentScreenshot.startsWith('http'),
+                includesCloudinary: paymentScreenshot.includes('cloudinary')
+              });
+            }
           }
         }
         
@@ -2723,6 +2799,11 @@ const TechnicianDashboard = () => {
         if (allAfterPhotos.length > 0) {
           updateData.after_photos = allAfterPhotos;
           console.log('✅ Added all photos to after_photos:', allAfterPhotos);
+          console.log('✅ Total photos count:', allAfterPhotos.length);
+          console.log('✅ Bill photos count:', uploadedBillPhotos.length);
+          console.log('✅ Payment screenshot included:', isPaymentScreenshotUploaded ? 'Yes' : 'No');
+        } else {
+          console.warn('⚠️ No photos to add to after_photos');
         }
 
         // Add AMC info for reference (technician provides this, admin will create official AMC)
@@ -2771,8 +2852,10 @@ const TechnicianDashboard = () => {
         
         
         // Job completed successfully!
-        if (uploadedBillPhotos.length > 0) {
-          toast.success(`Job completed successfully with ${uploadedBillPhotos.length} photo(s)!`, {
+        // Count all photos: bill photos + payment screenshot
+        const totalPhotosCount = uploadedBillPhotos.length + (paymentScreenshot && paymentScreenshot.startsWith('http') ? 1 : 0);
+        if (totalPhotosCount > 0) {
+          toast.success(`Job completed successfully with ${totalPhotosCount} photo(s)!`, {
             duration: 3000,
           });
         } else {
