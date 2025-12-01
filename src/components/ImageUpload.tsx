@@ -219,18 +219,46 @@ const ImageUpload: React.FC<ImageUploadProps> = ({
   };
 
   const openCameraDialog = async () => {
-    // Try getUserMedia API first (more reliable on Android devices like iQOO)
-    if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
+    // Check if getUserMedia is available (with fallback for older browsers)
+    const getUserMedia = navigator.mediaDevices?.getUserMedia || 
+                        (navigator as any).getUserMedia || 
+                        (navigator as any).webkitGetUserMedia || 
+                        (navigator as any).mozGetUserMedia;
+    
+    if (getUserMedia) {
       try {
-        const stream = await navigator.mediaDevices.getUserMedia({ 
-          video: { facingMode: 'environment' } // Back camera
-        });
+        // Request camera access with multiple constraint options for better device compatibility
+        let stream: MediaStream;
+        try {
+          // Try with ideal constraints first (back camera preferred)
+          stream = await navigator.mediaDevices.getUserMedia({ 
+            video: { 
+              facingMode: { ideal: 'environment' }, // Back camera preferred
+              width: { ideal: 1920 },
+              height: { ideal: 1080 }
+            } 
+          });
+        } catch (error) {
+          // Fallback to simpler constraints if ideal fails
+          try {
+            stream = await navigator.mediaDevices.getUserMedia({ 
+              video: { facingMode: 'environment' }
+            });
+          } catch (fallbackError) {
+            // Last resort: try any camera
+            stream = await navigator.mediaDevices.getUserMedia({ 
+              video: true 
+            });
+          }
+        }
         
         // Create video element for preview
         const video = document.createElement('video');
         video.srcObject = stream;
         video.autoplay = true;
         video.playsInline = true;
+        video.muted = true; // Required for autoplay on some devices
+        video.setAttribute('playsinline', 'true'); // iOS Safari compatibility
         video.style.width = '100%';
         video.style.maxWidth = '100%';
         video.style.height = 'auto';
@@ -373,6 +401,16 @@ const ImageUpload: React.FC<ImageUploadProps> = ({
         
       } catch (error: any) {
         console.warn('getUserMedia failed, falling back to file input:', error);
+        
+        // Provide more specific error messages
+        if (error?.name === 'NotAllowedError' || error?.name === 'PermissionDeniedError') {
+          toast.error('Camera permission denied. Please allow camera access in your browser settings.');
+        } else if (error?.name === 'NotFoundError' || error?.name === 'DevicesNotFoundError') {
+          toast.error('No camera found on this device.');
+        } else {
+          toast.error('Camera access failed. Using file input instead...');
+        }
+        
         // Fallback to file input with capture attribute
         cameraInputRef.current?.click();
       }
@@ -521,6 +559,8 @@ const ImageUpload: React.FC<ImageUploadProps> = ({
         capture="environment"
         onChange={handleCameraCapture}
         className="hidden"
+        // Additional attributes for better mobile compatibility
+        multiple={false}
       />
 
       {/* Uploaded Images Grid */}

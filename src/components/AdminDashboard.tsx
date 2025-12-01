@@ -3736,22 +3736,60 @@ const AdminDashboard = () => {
     if (!selectedCustomerForPhotos) return;
     
     try {
-      // Check if getUserMedia is available
-      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-        toast.error('Camera access is not available in this browser');
+      // Check if getUserMedia is available (with fallback for older browsers)
+      const getUserMedia = navigator.mediaDevices?.getUserMedia || 
+                          (navigator as any).getUserMedia || 
+                          (navigator as any).webkitGetUserMedia || 
+                          (navigator as any).mozGetUserMedia;
+      
+      if (!getUserMedia) {
+        // Fallback to file input with capture attribute
+        const input = document.createElement('input');
+        input.type = 'file';
+        input.accept = 'image/*';
+        input.capture = 'environment';
+        input.onchange = (e) => {
+          const files = (e.target as HTMLInputElement).files;
+          if (files && files.length > 0) {
+            handlePhotoUpload(files);
+          }
+        };
+        input.click();
         return;
       }
 
-      // Request camera access
-      const stream = await navigator.mediaDevices.getUserMedia({ 
-        video: { facingMode: 'environment' } // Use back camera on mobile
-      });
+      // Request camera access with multiple constraint options for better device compatibility
+      let stream: MediaStream;
+      try {
+        // Try with ideal constraints first (back camera preferred)
+        stream = await navigator.mediaDevices.getUserMedia({ 
+          video: { 
+            facingMode: { ideal: 'environment' }, // Back camera preferred
+            width: { ideal: 1920 },
+            height: { ideal: 1080 }
+          } 
+        });
+      } catch (error) {
+        // Fallback to simpler constraints if ideal fails
+        try {
+          stream = await navigator.mediaDevices.getUserMedia({ 
+            video: { facingMode: 'environment' }
+          });
+        } catch (fallbackError) {
+          // Last resort: try any camera
+          stream = await navigator.mediaDevices.getUserMedia({ 
+            video: true 
+          });
+        }
+      }
 
       // Create video element to show camera preview
       const video = document.createElement('video');
       video.srcObject = stream;
       video.autoplay = true;
       video.playsInline = true;
+      video.muted = true; // Required for autoplay on some devices
+      video.setAttribute('playsinline', 'true'); // iOS Safari compatibility
       video.style.width = '100%';
       video.style.height = '100%';
       video.style.objectFit = 'cover';
@@ -3811,25 +3849,67 @@ const AdminDashboard = () => {
         document.body.removeChild(cameraDialog);
       };
 
+      // Wait for video to be ready before allowing capture
+      video.onloadedmetadata = () => {
+        captureButton.disabled = false;
+      };
+      
+      captureButton.disabled = true; // Disable until video is ready
+      
       captureButton.onclick = () => {
-        // Create canvas to capture the photo
-        const canvas = document.createElement('canvas');
-        canvas.width = video.videoWidth;
-        canvas.height = video.videoHeight;
-        const ctx = canvas.getContext('2d');
-        if (ctx) {
-          ctx.drawImage(video, 0, 0);
+        try {
+          // Check if video is ready
+          if (!video.videoWidth || !video.videoHeight) {
+            toast.error('Camera not ready. Please wait a moment and try again.');
+            return;
+          }
+          
+          // Create canvas to capture the photo
+          const canvas = document.createElement('canvas');
+          canvas.width = video.videoWidth;
+          canvas.height = video.videoHeight;
+          const ctx = canvas.getContext('2d');
+          
+          if (!ctx) {
+            toast.error('Failed to capture photo. Please try again.');
+            closeCamera();
+            return;
+          }
+          
+          try {
+            ctx.drawImage(video, 0, 0);
+          } catch (drawError) {
+            console.error('Error drawing video to canvas:', drawError);
+            toast.error('Failed to capture photo. Please try again.');
+            closeCamera();
+            return;
+          }
+          
           canvas.toBlob((blob) => {
-            if (blob) {
+            if (!blob) {
+              toast.error('Failed to process photo. Please try again.');
+              closeCamera();
+              return;
+            }
+            
+            try {
               // Convert blob to File
               const file = new File([blob], `camera-photo-${Date.now()}.jpg`, { type: 'image/jpeg' });
               // Create a DataTransfer object to get a proper FileList
               const dataTransfer = new DataTransfer();
               dataTransfer.items.add(file);
               handlePhotoUpload(dataTransfer.files);
+              closeCamera();
+            } catch (fileError) {
+              console.error('Error creating file:', fileError);
+              toast.error('Failed to process photo. Please try again.');
+              closeCamera();
             }
-            closeCamera();
           }, 'image/jpeg', 0.9);
+        } catch (error: any) {
+          console.error('Error capturing photo:', error);
+          toast.error(`Failed to capture photo: ${error?.message || 'Unknown error'}`);
+          closeCamera();
         }
       };
 
@@ -3841,9 +3921,41 @@ const AdminDashboard = () => {
       cameraDialog.appendChild(buttonContainer);
       document.body.appendChild(cameraDialog);
 
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error accessing camera:', error);
-      toast.error('Failed to access camera. Please check permissions.');
+      
+      // Provide more specific error messages
+      if (error?.name === 'NotAllowedError' || error?.name === 'PermissionDeniedError') {
+        toast.error('Camera permission denied. Please allow camera access in your browser settings.');
+      } else if (error?.name === 'NotFoundError' || error?.name === 'DevicesNotFoundError') {
+        toast.error('No camera found on this device.');
+        // Fallback to file input
+        const input = document.createElement('input');
+        input.type = 'file';
+        input.accept = 'image/*';
+        input.capture = 'environment';
+        input.onchange = (e) => {
+          const files = (e.target as HTMLInputElement).files;
+          if (files && files.length > 0) {
+            handlePhotoUpload(files);
+          }
+        };
+        input.click();
+      } else {
+        toast.error('Failed to access camera. Trying file input instead...');
+        // Fallback to file input with capture attribute
+        const input = document.createElement('input');
+        input.type = 'file';
+        input.accept = 'image/*';
+        input.capture = 'environment';
+        input.onchange = (e) => {
+          const files = (e.target as HTMLInputElement).files;
+          if (files && files.length > 0) {
+            handlePhotoUpload(files);
+          }
+        };
+        input.click();
+      }
     }
   };
 
