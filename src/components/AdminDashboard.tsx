@@ -2836,10 +2836,9 @@ const AdminDashboard = () => {
   const handleNewJob = (customer: Customer) => {
     setSelectedCustomerForJob(customer);
     
-    // Get tomorrow's date
-    const tomorrow = new Date();
-    tomorrow.setDate(tomorrow.getDate() + 1);
-    const tomorrowDateString = tomorrow.toISOString().split('T')[0];
+    // Get today's date
+    const today = new Date();
+    const todayDateString = today.toISOString().split('T')[0];
     
     // Get current time
     const now = new Date();
@@ -2876,7 +2875,7 @@ const AdminDashboard = () => {
       service_sub_type_custom: '',
       brand: customerBrand || 'Not specified',
       model: customerModel || 'Not specified',
-      scheduled_date: tomorrowDateString, // Set to tomorrow by default
+      scheduled_date: todayDateString, // Set to today by default
       scheduled_time_slot: 'MORNING' as 'MORNING' | 'AFTERNOON' | 'EVENING' | 'CUSTOM', // Set to morning by default
       scheduled_time_custom: currentTime, // Set to current time by default
       description: '',

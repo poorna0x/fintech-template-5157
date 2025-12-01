@@ -124,13 +124,17 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
     
     switch (step) {
       case 1:
-        if (addFormData.phone && addFormData.phone.trim()) {
+        // Phone number is required
+        if (!addFormData.phone || !addFormData.phone.trim()) {
+          errors.phone = 'Phone number is required';
+        } else {
           const phoneValidation = validatePhoneNumber(addFormData.phone);
           if (!phoneValidation.isValid) {
             errors.phone = phoneValidation.error || 'Invalid phone number';
           }
         }
         
+        // Alternate phone is optional but must be valid if provided
         if (addFormData.alternate_phone && addFormData.alternate_phone.trim()) {
           const alternatePhoneValidation = validatePhoneNumber(addFormData.alternate_phone);
           if (!alternatePhoneValidation.isValid) {
@@ -290,12 +294,32 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
   };
 
   const handleGoogleMapsNavigation = () => {
-    if (addFormData.address.trim()) {
+    // First check if google_location is provided (Google Maps link)
+    if (addFormData.google_location && addFormData.google_location.trim()) {
+      const googleLocation = addFormData.google_location.trim();
+      // Check if it's already a Google Maps URL
+      if (googleLocation.includes('google.com/maps') || googleLocation.includes('maps.app.goo.gl')) {
+        window.open(googleLocation, '_blank', 'noopener,noreferrer');
+        return;
+      }
+      // If it looks like coordinates (lat,lng format)
+      const coordMatch = googleLocation.match(/(-?\d+\.?\d*),\s*(-?\d+\.?\d*)/);
+      if (coordMatch) {
+        const lat = coordMatch[1];
+        const lng = coordMatch[2];
+        const googleMapsUrl = `https://www.google.com/maps/place/${lat},${lng}`;
+        window.open(googleMapsUrl, '_blank', 'noopener,noreferrer');
+        return;
+      }
+    }
+    
+    // Fallback to address search
+    if (addFormData.address && addFormData.address.trim()) {
       const encodedAddress = encodeURIComponent(addFormData.address);
       const googleMapsUrl = `https://www.google.com/maps/search/?api=1&query=${encodedAddress}`;
       window.open(googleMapsUrl, '_blank', 'noopener,noreferrer');
     } else {
-      toast.error('Please enter an address first');
+      toast.error('Please enter an address or Google Maps location first');
     }
   };
 
@@ -536,13 +560,14 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div className="space-y-2">
-                  <Label htmlFor="add_phone" className="text-sm font-medium">Primary Phone</Label>
+                  <Label htmlFor="add_phone" className="text-sm font-medium">Primary Phone *</Label>
                   <Input
                     id="add_phone"
                     value={addFormData.phone}
                     onChange={(e) => handlePhoneChange(e.target.value)}
                     placeholder="Enter 10-digit phone number"
                     className={`text-sm ${formErrors.phone ? 'border-red-500' : ''}`}
+                    required
                   />
                   {formErrors?.phone && (
                     <p className="text-xs text-red-500">{formErrors.phone}</p>
@@ -612,7 +637,7 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
                     type="button"
                     variant="outline"
                     onClick={handleGoogleMapsNavigation}
-                    disabled={!addFormData.address.trim()}
+                    disabled={!addFormData.address.trim() && !addFormData.google_location.trim()}
                     className="flex items-center gap-2 whitespace-nowrap"
                   >
                     <MapPin className="w-4 h-4" />
@@ -620,7 +645,7 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
                   </Button>
                 </div>
                 <p className="text-xs text-gray-500">
-                  Enter the address above, then click "Open in Maps" to navigate to the location
+                  Enter the address above or paste a Google Maps link, then click "Open in Maps" to navigate to the location
                 </p>
               </div>
             </div>
@@ -798,11 +823,10 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
                       checked={shouldCreateJob === true}
                       onChange={() => {
                         setShouldCreateJob(true);
-                        const tomorrow = new Date();
-                        tomorrow.setDate(tomorrow.getDate() + 1);
+                        const today = new Date();
                         setStep5JobData(prev => ({
                           ...prev,
-                          scheduled_date: tomorrow.toISOString().split('T')[0],
+                          scheduled_date: today.toISOString().split('T')[0],
                           service_type: addFormData.service_types[0] === 'SOFTENER' ? 'SOFTENER' : 'RO'
                         }));
                       }}
