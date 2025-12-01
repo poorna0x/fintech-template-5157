@@ -294,7 +294,7 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
   };
 
   const handleGoogleMapsNavigation = () => {
-    // First check if google_location is provided (Google Maps link)
+    // Only open link from Google Maps Location field - don't use address field
     if (addFormData.google_location && addFormData.google_location.trim()) {
       const googleLocation = addFormData.google_location.trim();
       // Check if it's already a Google Maps URL
@@ -313,14 +313,8 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
       }
     }
     
-    // Fallback to address search
-    if (addFormData.address && addFormData.address.trim()) {
-      const encodedAddress = encodeURIComponent(addFormData.address);
-      const googleMapsUrl = `https://www.google.com/maps/search/?api=1&query=${encodedAddress}`;
-      window.open(googleMapsUrl, '_blank', 'noopener,noreferrer');
-    } else {
-      toast.error('Please enter an address or Google Maps location first');
-    }
+    // If no valid Google Maps location, show error
+    toast.error('Please enter a Google Maps link or coordinates in the "Google Maps Location" field');
   };
 
   const handleCreateCustomer = async () => {
@@ -366,6 +360,60 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
     try {
       const extractedLocation = extractLocationFromAddressString(addFormData.address);
       
+      // Extract coordinates from Google Maps link if provided
+      let latitude = 0;
+      let longitude = 0;
+      let googleLocation: string | null = null;
+      let coordinatesExtracted = false;
+      
+      if (addFormData.google_location && addFormData.google_location.trim()) {
+        const googleLocationInput = addFormData.google_location.trim();
+        
+        // Check if it's already a Google Maps URL
+        if (googleLocationInput.includes('google.com/maps') || googleLocationInput.includes('maps.app.goo.gl')) {
+          googleLocation = googleLocationInput;
+          
+          // Try to extract coordinates from the URL
+          // Format 1: https://www.google.com/maps/place/12.9716,77.5946
+          const placeMatch = googleLocationInput.match(/\/place\/([0-9.-]+),([0-9.-]+)/);
+          if (placeMatch) {
+            latitude = parseFloat(placeMatch[1]);
+            longitude = parseFloat(placeMatch[2]);
+            coordinatesExtracted = true;
+          } else {
+            // Format 2: https://www.google.com/maps/@12.9716,77.5946,15z
+            const atMatch = googleLocationInput.match(/@([0-9.-]+),([0-9.-]+)/);
+            if (atMatch) {
+              latitude = parseFloat(atMatch[1]);
+              longitude = parseFloat(atMatch[2]);
+              coordinatesExtracted = true;
+            } else {
+              // Format 3: https://maps.google.com/maps?q=12.9716,77.5946
+              const queryMatch = googleLocationInput.match(/[?&]q=([0-9.-]+),([0-9.-]+)/);
+              if (queryMatch) {
+                latitude = parseFloat(queryMatch[1]);
+                longitude = parseFloat(queryMatch[2]);
+                coordinatesExtracted = true;
+              }
+            }
+          }
+        } else {
+          // If it looks like coordinates (lat,lng format)
+          const coordMatch = googleLocationInput.match(/(-?\d+\.?\d*),\s*(-?\d+\.?\d*)/);
+          if (coordMatch) {
+            latitude = parseFloat(coordMatch[1]);
+            longitude = parseFloat(coordMatch[2]);
+            coordinatesExtracted = true;
+            googleLocation = `https://www.google.com/maps/place/${latitude},${longitude}`;
+          }
+        }
+      }
+      
+      // If we extracted coordinates but don't have a Google Maps link, generate one
+      if (coordinatesExtracted && !googleLocation && latitude !== 0 && longitude !== 0) {
+        googleLocation = `https://www.google.com/maps/place/${latitude},${longitude}`;
+      }
+      
       const customerData = {
         customer_id: '',
         full_name: addFormData.full_name,
@@ -380,9 +428,10 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
           pincode: ''
         },
         location: {
-          latitude: 12.9716,
-          longitude: 77.5946,
-          formattedAddress: addFormData.address
+          latitude: latitude,
+          longitude: longitude,
+          formattedAddress: addFormData.address,
+          googleLocation: googleLocation
         },
         visible_address: extractedLocation ? extractedLocation.substring(0, 20) : '',
         service_type: (() => {
@@ -637,7 +686,7 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
                     type="button"
                     variant="outline"
                     onClick={handleGoogleMapsNavigation}
-                    disabled={!addFormData.address.trim() && !addFormData.google_location.trim()}
+                    disabled={!addFormData.google_location.trim()}
                     className="flex items-center gap-2 whitespace-nowrap"
                   >
                     <MapPin className="w-4 h-4" />
@@ -645,7 +694,7 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
                   </Button>
                 </div>
                 <p className="text-xs text-gray-500">
-                  Enter the address above or paste a Google Maps link, then click "Open in Maps" to navigate to the location
+                  Paste a Google Maps link or coordinates (e.g., 12.9716,77.5946), then click "Open in Maps" to navigate
                 </p>
               </div>
             </div>
