@@ -455,6 +455,11 @@ function handleMobilePrint(billData: PDFBillData, action: 'print' | 'pdf'): void
         printStyles.parentNode.removeChild(printStyles);
       }
       
+      const additionalPrintStyles = document.getElementById('mobile-print-additional-styles');
+      if (additionalPrintStyles && additionalPrintStyles.parentNode) {
+        additionalPrintStyles.parentNode.removeChild(additionalPrintStyles);
+      }
+      
       const additionalStyles = document.getElementById('mobile-pdf-format-fix');
       if (additionalStyles && additionalStyles.parentNode) {
         additionalStyles.parentNode.removeChild(additionalStyles);
@@ -484,18 +489,35 @@ function handleMobilePrint(billData: PDFBillData, action: 'print' | 'pdf'): void
   };
   
   try {
-    // Create the bill content
-    const billContent = createBillContent(billData);
-    console.log('Mobile bill content generated:', billContent.substring(0, 200) + '...');
+    // Generate full HTML document (like AMC generator)
+    const fullHTML = generateBillHTML(billData);
+    
+    // Parse the HTML to extract body content and styles
+    const tempDiv = document.createElement('div');
+    tempDiv.innerHTML = fullHTML;
+    
+    // Extract styles from head
+    const styleMatch = fullHTML.match(/<style[^>]*>([\s\S]*?)<\/style>/i);
+    const styles = styleMatch ? styleMatch[1] : '';
+    
+    // Extract body content - find everything between <body> and </body>
+    const bodyMatch = fullHTML.match(/<body[^>]*>([\s\S]*?)<\/body>/i);
+    const bodyContent = bodyMatch ? bodyMatch[1] : '';
+    
+    // Inject styles into head
+    const styleElement = document.createElement('style');
+    styleElement.id = 'mobile-print-styles';
+    styleElement.textContent = styles;
+    document.head.appendChild(styleElement);
     
     // COMPLETELY REPLACE body HTML with bill document content (like desktop does with new window)
     // This ensures ONLY the bill content is visible when print dialog opens
-    document.body.innerHTML = billContent;
+    document.body.innerHTML = bodyContent;
     document.title = `Bill - ${billData.billNumber}`;
     
-    // Add mobile-optimized print styles
+    // Add additional mobile-optimized print styles
     const printStyles = document.createElement('style');
-    printStyles.id = 'mobile-print-styles';
+    printStyles.id = 'mobile-print-additional-styles';
     printStyles.textContent = `
       @import url('https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&display=swap');
       
@@ -689,12 +711,18 @@ function handleMobilePrint(billData: PDFBillData, action: 'print' | 'pdf'): void
       
       .terms-list {
         margin: 0;
-        padding-left: 5px;
+        padding-left: 20px;
+        padding-right: 0;
+        width: 100%;
+        box-sizing: border-box;
       }
       
       .terms-list li {
         margin-bottom: 8px;
         list-style-type: disc;
+        padding-right: 0;
+        word-wrap: break-word;
+        overflow-wrap: break-word;
       }
       
       .signature-seal {
@@ -780,11 +808,28 @@ function handleMobilePrint(billData: PDFBillData, action: 'print' | 'pdf'): void
         .notes-section {
           width: 100% !important;
           margin: 15px 0 0 0 !important;
+          padding-right: 0 !important;
+        }
+        
+        .terms-list {
+          padding-left: 20px !important;
+          padding-right: 0 !important;
+          margin-right: 0 !important;
+          width: 100% !important;
+          box-sizing: border-box !important;
+        }
+        
+        .terms-list li {
+          padding-right: 0 !important;
+          margin-right: 0 !important;
+          word-wrap: break-word !important;
+          overflow-wrap: break-word !important;
         }
         
         .footer {
           width: 100% !important;
           margin: 15px 0 0 0 !important;
+          padding-right: 0 !important;
         }
         
         @page {
@@ -868,7 +913,7 @@ function handleMobilePrint(billData: PDFBillData, action: 'print' | 'pdf'): void
       }
     `;
     
-    // Add styles to document
+    // Add additional styles to document
     document.head.appendChild(printStyles);
     
     // Add additional mobile-specific optimizations
@@ -1324,12 +1369,18 @@ function generateBillHTML(data: PDFBillData): string {
         
         .terms-list {
           margin: 0;
-          padding-left: 5px;
+          padding-left: 20px;
+          padding-right: 0;
+          width: 100%;
+          box-sizing: border-box;
         }
         
         .terms-list li {
           margin-bottom: 8px;
           list-style-type: disc;
+          padding-right: 0;
+          word-wrap: break-word;
+          overflow-wrap: break-word;
         }
         
         .signatures {
