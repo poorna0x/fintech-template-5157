@@ -1303,6 +1303,13 @@ const TechnicianDashboard = () => {
         console.log('Current location:', location);
 
         // Update technician location and set status to AVAILABLE in database
+        // Double-check location tracking is still enabled before saving to DB
+        const locationTrackingEnabled = localStorage.getItem('technician_location_tracking_enabled') !== 'false';
+        if (!locationTrackingEnabled) {
+          console.log('Location tracking disabled - skipping database update');
+          return;
+        }
+
         if (user?.technicianId) {
           try {
             const locationData = {

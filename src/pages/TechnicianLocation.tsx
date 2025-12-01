@@ -128,6 +128,13 @@ const TechnicianLocation = () => {
         setMapCenter({ lat: locationData.latitude, lng: locationData.longitude });
         
         // Update location in database if user is logged in
+        // Double-check location tracking is still enabled before saving to DB
+        const locationTrackingEnabled = localStorage.getItem('technician_location_tracking_enabled') !== 'false';
+        if (!locationTrackingEnabled) {
+          console.log('Location tracking disabled - skipping database update');
+          return;
+        }
+
         if (user?.technicianId) {
           try {
             const locationUpdateData = {
