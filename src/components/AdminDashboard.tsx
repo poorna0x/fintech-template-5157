@@ -1275,6 +1275,47 @@ const AdminDashboard = () => {
     };
   }, [isInitialLoad, isPollingEnabled, lastCheckedJobId, jobs, playNotificationSound]);
 
+  // Realtime subscription for job completion - play sound when technician finishes a job
+  useEffect(() => {
+    if (isInitialLoad) return;
+
+    console.log('🔔 Setting up realtime subscription for job completions...');
+
+    const channel = supabase
+      .channel('job-completion-notifications')
+      .on(
+        'postgres_changes',
+        {
+          event: 'UPDATE',
+          schema: 'public',
+          table: 'jobs'
+        },
+        (payload) => {
+          // Check if this is a status change to COMPLETED (not just an update to an already completed job)
+          const oldStatus = payload.old?.status;
+          const newStatus = payload.new?.status;
+          
+          if (oldStatus !== 'COMPLETED' && newStatus === 'COMPLETED') {
+            console.log('✅ Job completed detected via realtime:', {
+              jobId: payload.new?.id,
+              oldStatus,
+              newStatus
+            });
+            console.log('🎵 Playing notification sound for job completion');
+            playNotificationSound();
+          }
+        }
+      )
+      .subscribe((status) => {
+        console.log('📡 Realtime subscription status:', status);
+      });
+
+    return () => {
+      console.log('🔕 Cleaning up realtime subscription');
+      supabase.removeChannel(channel);
+    };
+  }, [isInitialLoad, playNotificationSound]);
+
   const handleDeleteCustomer = async () => {
     if (!customerToDelete) return;
     
