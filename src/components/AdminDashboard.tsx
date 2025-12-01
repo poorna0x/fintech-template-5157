@@ -4533,8 +4533,6 @@ const AdminDashboard = () => {
       setReassignDialogOpen(false);
       setJobToReassign(null);
       setSelectedTechnicianForReassign('');
-      setReassignAssignmentType('direct');
-      setReassignTechnicianDistances([]);
       
       // Reload jobs to ensure consistency
       await loadFilteredJobs(statusFilter, currentPage);
@@ -6705,24 +6703,6 @@ const AdminDashboard = () => {
                         // Check for payment_photos in requirements
                         const paymentPhotosReq = requirements.find((r: any) => r?.payment_photos);
                         const paymentPhotosFromReq = paymentPhotosReq?.payment_photos || [];
-                        
-                        console.log('📸 AdminDashboard photo extraction:', {
-                          jobId: job.id,
-                          jobNumber: (job as any).job_number || job.jobNumber,
-                          paymentMethod: (job as any).payment_method || job.payment_method,
-                          afterPhotosExtracted,
-                          afterPhotosCount: afterPhotosExtracted.length,
-                          billPhotosFromRequirements,
-                          billPhotosFromRequirementsCount: billPhotosFromRequirements.length,
-                          paymentScreenshot,
-                          paymentScreenshotSource: qrPhotos?.payment_screenshot ? 'qr_photos' : paymentPhotosFromReq.length > 0 ? 'payment_photos' : 'after_photos',
-                          billPhotosCount: billPhotos.length,
-                          qrPhotos: qrPhotos ? 'exists' : 'null',
-                          qrPhotosPaymentScreenshot: qrPhotos?.payment_screenshot || 'not found',
-                          paymentPhotosFromRequirements: paymentPhotosFromReq,
-                          hasPaymentScreenshot: !!paymentScreenshot,
-                          totalPhotosForDisplay: billPhotos.length + (paymentScreenshot ? 1 : 0)
-                        });
                         
                         return (
                           <div key={job.id}>
