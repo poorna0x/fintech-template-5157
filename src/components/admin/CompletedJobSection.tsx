@@ -130,7 +130,19 @@ export const CompletedJobSection: React.FC<CompletedJobSectionProps> = ({
                 }}
                 className="ml-2 text-blue-600 hover:underline break-all cursor-pointer"
               >
-                View {paymentScreenshot && billPhotos && billPhotos.length > 0 ? `${billPhotos.length + 1} Photos` : paymentScreenshot ? 'Payment Screenshot' : `Bill Photos (${billPhotos.length})`}
+                {(() => {
+                  const billCount = billPhotos && Array.isArray(billPhotos) ? billPhotos.length : 0;
+                  const hasPayment = !!paymentScreenshot;
+                  const totalCount = billCount + (hasPayment ? 1 : 0);
+                  
+                  if (hasPayment && billCount > 0) {
+                    return `View Payment Photo & Bill Photos (${totalCount})`;
+                  } else if (hasPayment) {
+                    return 'View Payment Photo';
+                  } else {
+                    return `View Bill Photos (${billCount})`;
+                  }
+                })()}
               </button>
             </div>
           ) : null}

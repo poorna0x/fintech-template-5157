@@ -6523,36 +6523,53 @@ const AdminDashboard = () => {
                         // If after_photos is empty, fallback to requirements.bill_photos
                         let billPhotos: string[] = [];
                         
+                        // Helper function to normalize URLs for comparison
+                        const normalizeUrl = (url: string) => url.split('?')[0].split('#')[0].trim().toLowerCase();
+                        
                         if (afterPhotosExtracted.length > 0) {
                           // If we have a payment screenshot from qr_photos, exclude it from bill photos
                           if (paymentScreenshot) {
-                            // Normalize URLs for comparison (remove query params, fragments)
-                            const normalizeUrl = (url: string) => url.split('?')[0].split('#')[0].trim().toLowerCase();
                             const normalizedPaymentScreenshot = normalizeUrl(paymentScreenshot);
                             
                             billPhotos = afterPhotosExtracted.filter(url => {
-                              const normalizedUrl = url.split('?')[0].split('#')[0].trim().toLowerCase();
+                              const normalizedUrl = normalizeUrl(url);
                               return normalizedUrl !== normalizedPaymentScreenshot;
                             });
                           } else {
-                            // If no payment screenshot in qr_photos, all photos in after_photos are bill photos
-                            billPhotos = afterPhotosExtracted;
+                            // If no payment screenshot in qr_photos, try to find it in after_photos
+                            // Check if payment method suggests there should be a payment screenshot
+                            const paymentMethod = (job as any).payment_method || job.payment_method || null;
+                            const isOnlinePayment = paymentMethod === 'ONLINE' || paymentMethod === 'UPI' || paymentMethod === 'CARD' || paymentMethod === 'BANK_TRANSFER';
+                            
+                            // If we have more photos in after_photos than in bill_photos requirements, 
+                            // the extra photo(s) might be payment screenshot(s)
+                            if (afterPhotosExtracted.length > billPhotosFromRequirements.length) {
+                              // Find photos that are not in billPhotosFromRequirements - these are likely payment screenshots
+                              const potentialPaymentScreenshots = afterPhotosExtracted.filter(url => {
+                                const normalizedUrl = normalizeUrl(url);
+                                return !billPhotosFromRequirements.some(billUrl => normalizeUrl(billUrl) === normalizedUrl);
+                              });
+                              
+                              // If we found potential payment screenshots and payment method is online, use the first one
+                              if (potentialPaymentScreenshots.length > 0 && isOnlinePayment) {
+                                paymentScreenshot = potentialPaymentScreenshots[0];
+                                // Remove payment screenshot(s) from bill photos
+                                billPhotos = afterPhotosExtracted.filter(url => {
+                                  const normalizedUrl = normalizeUrl(url);
+                                  return !potentialPaymentScreenshots.some(ps => normalizeUrl(ps) === normalizedUrl);
+                                });
+                              } else {
+                                // If payment method is not online or we can't identify, treat all as bill photos
+                                billPhotos = afterPhotosExtracted;
+                              }
+                            } else {
+                              // Same count or fewer - all photos are bill photos
+                              billPhotos = afterPhotosExtracted;
+                            }
                           }
                         } else {
                           // Fallback to requirements.bill_photos if after_photos is empty
                           billPhotos = billPhotosFromRequirements;
-                        }
-                        
-                        // If payment screenshot is not in qr_photos but we have after_photos, 
-                        // and the count suggests there's a payment screenshot, try to identify it
-                        if (!paymentScreenshot && afterPhotosExtracted.length > billPhotosFromRequirements.length && qrPhotos) {
-                          // The extra photo in after_photos is likely the payment screenshot
-                          const potentialPaymentScreenshot = afterPhotosExtracted.find(url => !billPhotosFromRequirements.includes(url));
-                          if (potentialPaymentScreenshot) {
-                            paymentScreenshot = potentialPaymentScreenshot;
-                            // Remove it from bill photos
-                            billPhotos = billPhotos.filter(url => url !== paymentScreenshot);
-                          }
                         }
                         
                         // Final validation: ensure payment screenshot is a valid URL
@@ -6562,12 +6579,19 @@ const AdminDashboard = () => {
                         }
                         
                         console.log('📸 AdminDashboard photo extraction:', {
+                          jobId: job.id,
+                          jobNumber: (job as any).job_number || job.jobNumber,
+                          paymentMethod: (job as any).payment_method || job.payment_method,
                           afterPhotosExtracted,
+                          afterPhotosCount: afterPhotosExtracted.length,
                           billPhotosFromRequirements,
+                          billPhotosFromRequirementsCount: billPhotosFromRequirements.length,
                           paymentScreenshot,
                           billPhotosCount: billPhotos.length,
                           qrPhotos: qrPhotos ? 'exists' : 'null',
-                          hasPaymentScreenshot: !!paymentScreenshot
+                          qrPhotosPaymentScreenshot: qrPhotos?.payment_screenshot || 'not found',
+                          hasPaymentScreenshot: !!paymentScreenshot,
+                          totalPhotosForDisplay: billPhotos.length + (paymentScreenshot ? 1 : 0)
                         });
                         
                         return (
