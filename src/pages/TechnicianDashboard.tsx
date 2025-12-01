@@ -427,10 +427,6 @@ const TechnicianDashboard = () => {
   const [technicianVisibleQrCodes, setTechnicianVisibleQrCodes] = useState<string[]>([]); // Current technician's visibility settings
   const [paymentScreenshot, setPaymentScreenshot] = useState<string>('');
   const [isSubmittingJobCompletion, setIsSubmittingJobCompletion] = useState(false);
-  // Location confirmation dialog state
-  const [locationConfirmDialogOpen, setLocationConfirmDialogOpen] = useState(false);
-  const [locationConfirmStep, setLocationConfirmStep] = useState<'correct' | 'at_location'>('correct');
-  const [completedJobForLocationCheck, setCompletedJobForLocationCheck] = useState<Job | null>(null);
 
   // Phone popup state
   const [phonePopupOpen, setPhonePopupOpen] = useState(false);
@@ -2803,18 +2799,6 @@ const TechnicianDashboard = () => {
         // Job completed - dialog will close automatically
         setCompleteDialogOpen(false);
         
-        // Store the completed job for location check
-        // Always show the dialog - we'll check location inside the dialog handlers
-        const jobWithLocation = { ...selectedJobForComplete };
-        setCompletedJobForLocationCheck(jobWithLocation);
-        
-        // Show location confirmation dialog after a small delay to ensure dialog state is set
-        setTimeout(() => {
-          setLocationConfirmStep('correct');
-          setLocationConfirmDialogOpen(true);
-          console.log('✅ Location confirmation dialog opened for job:', jobWithLocation.id);
-        }, 300);
-        
         // Reset form state
         setSelectedJobForComplete(null);
         setCompletionNotes('');
@@ -2844,77 +2828,6 @@ const TechnicianDashboard = () => {
     }
   };
 
-  // Handle location confirmation dialog
-  const handleLocationCorrect = async () => {
-    // Location is correct, just close the dialog
-    setLocationConfirmDialogOpen(false);
-    setCompletedJobForLocationCheck(null);
-    setLocationConfirmStep('correct');
-  };
-
-  const handleLocationIncorrect = () => {
-    // Location is incorrect, ask if technician is at customer location
-    setLocationConfirmStep('at_location');
-  };
-
-  const handleAtCustomerLocation = async () => {
-    if (!completedJobForLocationCheck || !user?.technicianId) {
-      setLocationConfirmDialogOpen(false);
-      setCompletedJobForLocationCheck(null);
-      setLocationConfirmStep('correct');
-      return;
-    }
-
-    // Get customer location from the completed job - check both serviceLocation and customer.location
-    const serviceLocation = completedJobForLocationCheck.serviceLocation as any;
-    const customerLocation = (completedJobForLocationCheck.customer as any)?.location;
-    const location = serviceLocation || customerLocation;
-    
-    console.log('📍 Updating technician location:', {
-      hasServiceLocation: !!serviceLocation,
-      hasCustomerLocation: !!customerLocation,
-      location,
-      hasLatLng: !!(location?.latitude && location?.longitude)
-    });
-    
-    if (location?.latitude && location?.longitude) {
-      try {
-        const locationData = {
-          latitude: location.latitude,
-          longitude: location.longitude,
-          lastUpdated: new Date().toISOString(),
-        };
-
-        const { error } = await db.technicians.update(user.technicianId, {
-          current_location: locationData,
-        });
-
-        if (error) {
-          console.error('Error updating technician location:', error);
-          toast.error('Failed to update location. Please try again.');
-        } else {
-          toast.success('Location updated successfully');
-        }
-      } catch (error) {
-        console.error('Error updating technician location:', error);
-        toast.error('Failed to update location. Please try again.');
-      }
-    } else {
-      toast.error('Customer location not available');
-    }
-
-    // Close dialog
-    setLocationConfirmDialogOpen(false);
-    setCompletedJobForLocationCheck(null);
-    setLocationConfirmStep('correct');
-  };
-
-  const handleNotAtCustomerLocation = () => {
-    // Skip location update, just close the dialog
-    setLocationConfirmDialogOpen(false);
-    setCompletedJobForLocationCheck(null);
-    setLocationConfirmStep('correct');
-  };
 
   // Helper function to handle phone click
   const handlePhoneClick = (customer: any) => {
@@ -5897,78 +5810,6 @@ const TechnicianDashboard = () => {
           </DialogContent>
         </Dialog>
 
-        {/* Location Confirmation Dialog */}
-        <AlertDialog open={locationConfirmDialogOpen} onOpenChange={(open) => {
-          if (!open) {
-            setLocationConfirmDialogOpen(false);
-            setCompletedJobForLocationCheck(null);
-            setLocationConfirmStep('correct');
-          }
-        }}>
-          <AlertDialogContent>
-            <AlertDialogHeader>
-              <AlertDialogTitle>
-                {locationConfirmStep === 'correct' ? 'Customer Location Check' : 'Update Your Location'}
-              </AlertDialogTitle>
-              <AlertDialogDescription>
-                {locationConfirmStep === 'correct' 
-                  ? 'Is the customer location correct?'
-                  : 'Are you currently at the customer location? If yes, we will update your current location to match the customer location.'}
-              </AlertDialogDescription>
-            </AlertDialogHeader>
-            {locationConfirmStep === 'correct' && (
-              <div className="bg-gray-50 p-3 rounded-lg text-sm">
-                <p><strong>Customer:</strong> {(completedJobForLocationCheck?.customer as any)?.full_name || 'Unknown'}</p>
-                {(() => {
-                  const serviceLocation = completedJobForLocationCheck?.serviceLocation as any;
-                  const customerLocation = (completedJobForLocationCheck?.customer as any)?.location;
-                  const location = serviceLocation || customerLocation;
-                  
-                  if (location) {
-                    return (
-                      <p className="mt-1">
-                        <strong>Location:</strong> {
-                          location?.formattedAddress || 
-                          (location?.latitude && location?.longitude 
-                            ? `Lat: ${location.latitude}, Lng: ${location.longitude}`
-                            : 'Location data available')
-                        }
-                      </p>
-                    );
-                  }
-                  return null;
-                })()}
-              </div>
-            )}
-            <AlertDialogFooter>
-              {locationConfirmStep === 'correct' ? (
-                <>
-                  <AlertDialogCancel onClick={handleLocationIncorrect}>
-                    No
-                  </AlertDialogCancel>
-                  <AlertDialogAction
-                    onClick={handleLocationCorrect}
-                    className="bg-blue-600 hover:bg-blue-700"
-                  >
-                    Yes, Correct
-                  </AlertDialogAction>
-                </>
-              ) : (
-                <>
-                  <AlertDialogCancel onClick={handleNotAtCustomerLocation}>
-                    No, Skip
-                  </AlertDialogCancel>
-                  <AlertDialogAction
-                    onClick={handleAtCustomerLocation}
-                    className="bg-blue-600 hover:bg-blue-700"
-                  >
-                    Yes, Update Location
-                  </AlertDialogAction>
-                </>
-              )}
-            </AlertDialogFooter>
-          </AlertDialogContent>
-        </AlertDialog>
 
         {/* Photos Dialog */}
         <Dialog open={photosDialogOpen} onOpenChange={setPhotosDialogOpen}>
