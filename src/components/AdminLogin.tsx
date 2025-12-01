@@ -66,33 +66,6 @@ const AdminLogin = () => {
     };
   }, []);
 
-  // Auto-verify captcha in development mode when accessed from local network
-  useEffect(() => {
-    if (import.meta.env.DEV) {
-      // Check if accessing from local network IP (192.168.x.x, 10.x.x.x, 172.16-31.x.x)
-      const isLocalNetwork = /^(192\.168\.|10\.|172\.(1[6-9]|2[0-9]|3[01])\.)/.test(window.location.hostname);
-      if (isLocalNetwork) {
-        // Auto-verify for local network access in development - set immediately
-        console.log('[AdminLogin] Auto-verifying captcha for local network access');
-        setIsCaptchaVerified(true);
-        setShowSecurityStep(false);
-      }
-    }
-    
-    // Fallback: If ALTCHA takes too long (5 seconds), auto-verify for local network
-    const timeout = setTimeout(() => {
-      if (import.meta.env.DEV && !isCaptchaVerified) {
-        const isLocalNetwork = /^(192\.168\.|10\.|172\.(1[6-9]|2[0-9]|3[01])\.)/.test(window.location.hostname);
-        if (isLocalNetwork) {
-          console.log('[AdminLogin] Captcha timeout - auto-verifying for local network');
-          setIsCaptchaVerified(true);
-          setShowSecurityStep(false);
-        }
-      }
-    }, 5000);
-    
-    return () => clearTimeout(timeout);
-  }, [isCaptchaVerified]);
 
   // Extract login logic to be called automatically after verification
   const performLogin = async () => {
@@ -244,16 +217,14 @@ const AdminLogin = () => {
                 </div>
               </div>
 
-              {/* Hidden ALTCHA widget - runs verification in background (skip for local network in dev) */}
-              {import.meta.env.DEV && /^(192\.168\.|10\.|172\.(1[6-9]|2[0-9]|3[01])\.)/.test(window.location.hostname) ? null : (
-                <div className="hidden">
-                  <AltchaWidget
-                    onVerify={handleVerify}
-                    autoStart={true}
-                    hidden={true}
-                  />
-                </div>
-              )}
+              {/* Hidden ALTCHA widget - runs verification in background */}
+              <div className="hidden">
+                <AltchaWidget
+                  onVerify={handleVerify}
+                  autoStart={true}
+                  hidden={true}
+                />
+              </div>
 
               {/* Fallback: Show security widget if auto-verification failed or took too long */}
               {showSecurityStep && !isCaptchaVerified && (
