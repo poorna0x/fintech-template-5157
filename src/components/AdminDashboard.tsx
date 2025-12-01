@@ -237,7 +237,7 @@ const AdminDashboard = () => {
     priority: 'MEDIUM' as 'LOW' | 'MEDIUM' | 'HIGH' | 'URGENT',
     assigned_technician_id: '',
     cost_agreed: '',
-    lead_source: 'Website',
+    lead_source: '',
     lead_source_custom: '',
     photos: [] as string[]
   });
@@ -445,7 +445,7 @@ const AdminDashboard = () => {
     scheduled_time_slot: 'MORNING' as 'MORNING' | 'AFTERNOON' | 'EVENING' | 'CUSTOM',
     scheduled_time_custom: '',
     description: '',
-    lead_source: 'Direct call',
+    lead_source: '',
     lead_source_custom: '',
     priority: 'MEDIUM' as 'LOW' | 'MEDIUM' | 'HIGH' | 'URGENT'
   });

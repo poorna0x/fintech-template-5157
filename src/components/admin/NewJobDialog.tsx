@@ -66,7 +66,7 @@ const NewJobDialog: React.FC<NewJobDialogProps> = ({
     priority: 'MEDIUM',
     assigned_technician_id: '',
     cost_agreed: '',
-    lead_source: 'Website',
+    lead_source: '',
     lead_source_custom: '',
     photos: []
   });
@@ -87,7 +87,7 @@ const NewJobDialog: React.FC<NewJobDialogProps> = ({
       priority: 'MEDIUM',
       assigned_technician_id: '',
       cost_agreed: '',
-      lead_source: 'Website',
+      lead_source: '',
       lead_source_custom: '',
       photos: []
     });
@@ -374,10 +374,13 @@ const NewJobDialog: React.FC<NewJobDialogProps> = ({
                     className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 appearance-none bg-white"
                   >
                     <option value="Installation">Installation</option>
+                    <option value="Reinstallation">Reinstallation</option>
                     <option value="Repair">Repair</option>
                     <option value="Maintenance">Maintenance</option>
                     <option value="Replacement">Replacement</option>
                     <option value="Inspection">Inspection</option>
+                    <option value="Return Complaint">Return Complaint</option>
+                    <option value="AMC Service">AMC Service</option>
                     <option value="Other">Other</option>
                   </select>
                   {newJobFormData.service_sub_type === 'Other' && (
@@ -600,6 +603,7 @@ const NewJobDialog: React.FC<NewJobDialogProps> = ({
                   required
                   className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 appearance-none bg-white"
                 >
+                  <option value="">Select lead source</option>
                   <option value="Website">Website</option>
                   <option value="Direct call">Direct call</option>
                   <option value="RO care india">RO care india</option>

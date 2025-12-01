@@ -47,7 +47,7 @@ const EditJobDialog: React.FC<EditJobDialogProps> = ({
     scheduledDate: '',
     scheduledTimeSlot: 'MORNING',
     scheduledTimeCustom: '',
-    lead_source: 'Direct call',
+    lead_source: '',
     lead_source_custom: '',
     cost_agreed: ''
   });
@@ -56,7 +56,7 @@ const EditJobDialog: React.FC<EditJobDialogProps> = ({
     if (job && open) {
       // Determine if service sub type is custom
       const serviceSubType = job.service_sub_type || job.serviceSubType || 'Installation';
-      const isCustomSubType = !['Installation', 'Reinstallation', 'Service', 'Repair', 'Other'].includes(serviceSubType);
+      const isCustomSubType = !['Installation', 'Reinstallation', 'Service', 'Repair', 'Return Complaint', 'AMC Service', 'Other'].includes(serviceSubType);
       
       // Determine if time slot is custom
       const timeSlot = job.scheduled_time_slot || job.scheduledTimeSlot || 'MORNING';
@@ -77,7 +77,7 @@ const EditJobDialog: React.FC<EditJobDialogProps> = ({
       }
       
       // Extract lead_source and cost_range from requirements
-      let leadSource = 'Direct call';
+      let leadSource = '';
       let leadSourceCustom = '';
       let costAgreed = '';
       try {
@@ -165,6 +165,19 @@ const EditJobDialog: React.FC<EditJobDialogProps> = ({
 
   const handleSubmit = async () => {
     if (!job) return;
+
+    // Validate lead source
+    if (!editJobFormData.lead_source || editJobFormData.lead_source.trim() === '') {
+      toast.error('Please select a lead source');
+      setIsClosing(false);
+      return;
+    }
+    
+    if (editJobFormData.lead_source === 'Other' && (!editJobFormData.lead_source_custom || editJobFormData.lead_source_custom.trim() === '')) {
+      toast.error('Please enter a custom lead source');
+      setIsClosing(false);
+      return;
+    }
 
     try {
       // Convert time picker value to readable format for custom time
@@ -387,6 +400,8 @@ const EditJobDialog: React.FC<EditJobDialogProps> = ({
                   <SelectItem value="Reinstallation">Reinstallation</SelectItem>
                   <SelectItem value="Service">Service</SelectItem>
                   <SelectItem value="Repair">Repair</SelectItem>
+                  <SelectItem value="Return Complaint">Return Complaint</SelectItem>
+                  <SelectItem value="AMC Service">AMC Service</SelectItem>
                   <SelectItem value="Other">Other</SelectItem>
                   <SelectItem value="Custom">Custom</SelectItem>
                 </SelectContent>
@@ -452,10 +467,11 @@ const EditJobDialog: React.FC<EditJobDialogProps> = ({
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
-              <Label htmlFor="edit-lead-source">Lead Source</Label>
+              <Label htmlFor="edit-lead-source">Lead Source *</Label>
               <Select 
-                value={editJobFormData.lead_source} 
+                value={editJobFormData.lead_source || ''} 
                 onValueChange={(value) => setEditJobFormData(prev => ({ ...prev, lead_source: value }))}
+                required
               >
                 <SelectTrigger>
                   <SelectValue placeholder="Select lead source" />

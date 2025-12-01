@@ -1,6 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
 import { db } from '@/lib/supabase';
 import { toast } from 'sonner';
 import {
@@ -13,7 +16,8 @@ import {
   TrendingUp,
   Award,
   AlertCircle,
-  Calendar
+  Calendar,
+  Filter
 } from 'lucide-react';
 
 interface AnalyticsData {
@@ -42,17 +46,78 @@ interface AnalyticsData {
   dailyStats?: Array<{ date: string; jobs: number; revenue: number }>;
 }
 
+type PeriodOption = '7d' | '30d' | '3m' | '6m' | '1y' | 'all' | 'custom';
+
 const Analytics = () => {
   const [analytics, setAnalytics] = useState<AnalyticsData | null>(null);
   const [loading, setLoading] = useState(true);
+  const [period, setPeriod] = useState<PeriodOption>('30d');
+  const [customStartDate, setCustomStartDate] = useState<string>('');
+  const [customEndDate, setCustomEndDate] = useState<string>('');
 
   useEffect(() => {
     loadAnalytics();
-  }, []);
+  }, [period, customStartDate, customEndDate]);
+
+  const getDateRange = (): { startDate: Date | null; endDate: Date | null } => {
+    const endDate = new Date();
+    endDate.setHours(23, 59, 59, 999); // End of today
+    
+    if (period === 'all') {
+      return { startDate: null, endDate: null };
+    }
+    
+    if (period === 'custom') {
+      if (!customStartDate || !customEndDate) {
+        return { startDate: null, endDate: null };
+      }
+      const start = new Date(customStartDate);
+      start.setHours(0, 0, 0, 0);
+      const end = new Date(customEndDate);
+      end.setHours(23, 59, 59, 999);
+      return { startDate: start, endDate: end };
+    }
+    
+    const startDate = new Date();
+    switch (period) {
+      case '7d':
+        startDate.setDate(startDate.getDate() - 7);
+        break;
+      case '30d':
+        startDate.setDate(startDate.getDate() - 30);
+        break;
+      case '3m':
+        startDate.setMonth(startDate.getMonth() - 3);
+        break;
+      case '6m':
+        startDate.setMonth(startDate.getMonth() - 6);
+        break;
+      case '1y':
+        startDate.setFullYear(startDate.getFullYear() - 1);
+        break;
+    }
+    startDate.setHours(0, 0, 0, 0);
+    
+    return { startDate, endDate };
+  };
+
+  const isDateInRange = (date: string | null | undefined, startDate: Date | null, endDate: Date | null): boolean => {
+    if (!date) return false;
+    if (!startDate || !endDate) return true; // All time
+    
+    try {
+      const jobDate = new Date(date);
+      return jobDate >= startDate && jobDate <= endDate;
+    } catch (e) {
+      return false;
+    }
+  };
 
   const loadAnalytics = async () => {
     try {
       setLoading(true);
+      const { startDate, endDate } = getDateRange();
+      
       const { data: baseData, error } = await db.stats.getAnalytics();
       
       if (error) {
@@ -69,11 +134,66 @@ const Analytics = () => {
         return;
       }
       
-      const jobs = Array.isArray(jobsData) ? jobsData : [];
-      const completedJobs = jobs.filter((j: any) => j && j.status === 'COMPLETED');
+      let jobs = Array.isArray(jobsData) ? jobsData : [];
+      
+      // Filter jobs by date range
+      if (startDate && endDate) {
+        jobs = jobs.filter((j: any) => {
+          if (!j) return false;
+          const jobDate = j.created_at || j.createdAt;
+          return isDateInRange(jobDate, startDate, endDate);
+        });
+      }
+      
+      // Filter completed jobs and apply date range to completion date
+      let completedJobs = jobs.filter((j: any) => j && j.status === 'COMPLETED');
+      if (startDate && endDate) {
+        completedJobs = completedJobs.filter((j: any) => {
+          const completedDate = j.completed_at || j.end_time || j.completedAt;
+          return isDateInRange(completedDate, startDate, endDate);
+        });
+      }
       
       // Lead Source Breakdown
-      const leadSourceMap: Record<string, { count: number; amount: number }> = {};
+      const leadSourceMap: Record<string, { count: number; amount: number; displayName: string }> = {};
+      const leadSourceNameCounts: Record<string, Record<string, number>> = {}; // Track name variations
+      
+      // Canonical name mapping for known lead sources (normalized key -> canonical display name)
+      // Keys are normalized (lowercase, no spaces, no special chars) for matching
+      const canonicalNames: Record<string, string> = {
+        'website': 'Website',
+        'directcall': 'Direct call',
+        'rocareindia': 'RO care india',
+        'hometriangle': 'Home Triangle',
+        'localramu': 'Local Ramu',
+        'unknown': 'Unknown',
+        'other': 'Other'
+      };
+      
+      // Helper function to normalize lead source for comparison
+      const normalizeLeadSource = (source: string): string => {
+        if (!source) return 'unknown';
+        // Trim, lowercase, remove all spaces and special characters for comparison
+        return source.trim()
+          .toLowerCase()
+          .replace(/\s+/g, '') // Remove all spaces
+          .replace(/[^\w]/g, '') // Remove special characters
+          .trim();
+      };
+      
+      // Helper function to get canonical name
+      const getCanonicalName = (normalizedKey: string, originalSource: string): string => {
+        // Try exact match in canonical names
+        if (canonicalNames[normalizedKey]) {
+          return canonicalNames[normalizedKey];
+        }
+        // Return original with proper capitalization (first letter uppercase for each word)
+        const words = originalSource.trim().split(/\s+/);
+        return words.map(word => 
+          word.charAt(0).toUpperCase() + word.slice(1).toLowerCase()
+        ).join(' ');
+      };
+      
       completedJobs.forEach((job: any) => {
         if (!job) return;
         try {
@@ -89,14 +209,47 @@ const Analytics = () => {
             leadSource = requirements.lead_source || 'Unknown';
           }
           
-          const amount = Number(job.payment_amount || job.actual_cost || 0);
-          if (!leadSourceMap[leadSource]) {
-            leadSourceMap[leadSource] = { count: 0, amount: 0 };
+          // Normalize for comparison (trim, lowercase, normalize spaces)
+          const trimmedSource = leadSource.trim() || 'Unknown';
+          const normalizedKey = normalizeLeadSource(trimmedSource);
+          
+          // Track name variations to find the most common one
+          if (!leadSourceNameCounts[normalizedKey]) {
+            leadSourceNameCounts[normalizedKey] = {};
           }
-          leadSourceMap[leadSource].count += 1;
-          leadSourceMap[leadSource].amount += amount;
+          if (!leadSourceNameCounts[normalizedKey][trimmedSource]) {
+            leadSourceNameCounts[normalizedKey][trimmedSource] = 0;
+          }
+          leadSourceNameCounts[normalizedKey][trimmedSource] += 1;
+          
+          const amount = Number(job.payment_amount || job.actual_cost || 0);
+          if (!leadSourceMap[normalizedKey]) {
+            // Use canonical name if available, otherwise use trimmed source
+            const canonicalName = getCanonicalName(normalizedKey, trimmedSource);
+            leadSourceMap[normalizedKey] = { count: 0, amount: 0, displayName: canonicalName };
+          }
+          leadSourceMap[normalizedKey].count += 1;
+          leadSourceMap[normalizedKey].amount += amount;
         } catch (e) {
           // Skip invalid requirements
+        }
+      });
+      
+      // Update display names to use canonical names or most common variation
+      Object.keys(leadSourceMap).forEach(normalizedKey => {
+        const nameVariations = leadSourceNameCounts[normalizedKey];
+        if (nameVariations && Object.keys(nameVariations).length > 0) {
+          // Find the most common variation
+          const mostCommonName = Object.entries(nameVariations)
+            .sort((a, b) => b[1] - a[1])[0]?.[0] || leadSourceMap[normalizedKey].displayName;
+          
+          // Use canonical name if available, otherwise use most common variation
+          const canonicalName = getCanonicalName(normalizedKey, mostCommonName);
+          leadSourceMap[normalizedKey].displayName = canonicalName;
+        } else {
+          // Use canonical name if available
+          const canonicalName = getCanonicalName(normalizedKey, leadSourceMap[normalizedKey].displayName);
+          leadSourceMap[normalizedKey].displayName = canonicalName;
         }
       });
       
@@ -146,10 +299,8 @@ const Analytics = () => {
         averageCompletionTime = totalHours / jobsWithTime.length;
       }
       
-      // Daily Stats (last 30 days)
+      // Daily Stats (filtered by selected period)
       const dailyStatsMap: Record<string, { jobs: number; revenue: number }> = {};
-      const thirtyDaysAgo = new Date();
-      thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
       
       completedJobs.forEach((job: any) => {
         if (!job) return;
@@ -158,12 +309,24 @@ const Analytics = () => {
           try {
             const date = new Date(completedDate).toISOString().split('T')[0];
             const jobDate = new Date(completedDate);
-            if (!isNaN(jobDate.getTime()) && jobDate >= thirtyDaysAgo) {
-              if (!dailyStatsMap[date]) {
-                dailyStatsMap[date] = { jobs: 0, revenue: 0 };
+            if (!isNaN(jobDate.getTime())) {
+              // If date range is set, check if date is in range
+              if (startDate && endDate) {
+                if (jobDate >= startDate && jobDate <= endDate) {
+                  if (!dailyStatsMap[date]) {
+                    dailyStatsMap[date] = { jobs: 0, revenue: 0 };
+                  }
+                  dailyStatsMap[date].jobs += 1;
+                  dailyStatsMap[date].revenue += Number(job.payment_amount || job.actual_cost || 0);
+                }
+              } else {
+                // All time - include all dates
+                if (!dailyStatsMap[date]) {
+                  dailyStatsMap[date] = { jobs: 0, revenue: 0 };
+                }
+                dailyStatsMap[date].jobs += 1;
+                dailyStatsMap[date].revenue += Number(job.payment_amount || job.actual_cost || 0);
               }
-              dailyStatsMap[date].jobs += 1;
-              dailyStatsMap[date].revenue += Number(job.payment_amount || job.actual_cost || 0);
             }
           } catch (e) {
             // Skip invalid dates
@@ -179,7 +342,7 @@ const Analytics = () => {
       setAnalytics({
         ...baseData,
         leadSourceBreakdown: Object.entries(leadSourceMap)
-          .map(([leadType, stats]) => ({ leadType, ...stats }))
+          .map(([_, stats]) => ({ leadType: stats.displayName, count: stats.count, amount: stats.amount }))
           .sort((a, b) => b.amount - a.amount),
         serviceTypeBreakdown: Object.entries(serviceTypeMap)
           .map(([serviceType, stats]) => ({ serviceType, ...stats }))
@@ -218,12 +381,77 @@ const Analytics = () => {
     );
   }
 
+  const getPeriodLabel = (): string => {
+    switch (period) {
+      case '7d': return 'Last 7 Days';
+      case '30d': return 'Last 30 Days';
+      case '3m': return 'Last 3 Months';
+      case '6m': return 'Last 6 Months';
+      case '1y': return 'Last Year';
+      case 'all': return 'All Time';
+      case 'custom': return 'Custom Range';
+      default: return 'Last 30 Days';
+    }
+  };
+
   return (
     <div className="space-y-6">
-      <div>
-        <h2 className="text-2xl font-bold text-gray-900 mb-2">Analytics Dashboard</h2>
-        <p className="text-gray-600">Comprehensive performance metrics and insights</p>
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+        <div>
+          <h2 className="text-2xl font-bold text-gray-900 mb-2">Analytics Dashboard</h2>
+          <p className="text-gray-600">Comprehensive performance metrics and insights</p>
+        </div>
+        
+        <div className="flex flex-col sm:flex-row gap-3">
+          <div className="flex items-center gap-2">
+            <Filter className="w-4 h-4 text-gray-500" />
+            <Label htmlFor="period-select" className="text-sm font-medium text-gray-700 whitespace-nowrap">
+              Period:
+            </Label>
+            <Select value={period} onValueChange={(value) => setPeriod(value as PeriodOption)}>
+              <SelectTrigger id="period-select" className="w-[180px]">
+                <SelectValue placeholder="Select period" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="7d">Last 7 Days</SelectItem>
+                <SelectItem value="30d">Last 30 Days</SelectItem>
+                <SelectItem value="3m">Last 3 Months</SelectItem>
+                <SelectItem value="6m">Last 6 Months</SelectItem>
+                <SelectItem value="1y">Last Year</SelectItem>
+                <SelectItem value="all">All Time</SelectItem>
+                <SelectItem value="custom">Custom Range</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+          
+          {period === 'custom' && (
+            <div className="flex items-center gap-2">
+              <Input
+                type="date"
+                value={customStartDate}
+                onChange={(e) => setCustomStartDate(e.target.value)}
+                className="w-[150px]"
+                placeholder="Start date"
+              />
+              <span className="text-gray-500">to</span>
+              <Input
+                type="date"
+                value={customEndDate}
+                onChange={(e) => setCustomEndDate(e.target.value)}
+                className="w-[150px]"
+                placeholder="End date"
+                max={new Date().toISOString().split('T')[0]}
+              />
+            </div>
+          )}
+        </div>
       </div>
+      
+      {period === 'custom' && (!customStartDate || !customEndDate) && (
+        <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-3 text-sm text-yellow-800">
+          Please select both start and end dates to view custom range analytics.
+        </div>
+      )}
 
       {/* Key Metrics */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
@@ -576,12 +804,12 @@ const Analytics = () => {
             <CardHeader>
               <CardTitle className="text-sm font-medium text-gray-600 flex items-center gap-2">
                 <Calendar className="w-4 h-4" />
-                Last 7 Days Summary
+                Daily Summary ({getPeriodLabel()})
               </CardTitle>
             </CardHeader>
             <CardContent>
-              <div className="space-y-2">
-                {analytics.dailyStats.slice(-7).map((day, index) => (
+              <div className="space-y-2 max-h-[400px] overflow-y-auto">
+                {analytics.dailyStats.map((day, index) => (
                   <div key={index} className="flex items-center justify-between text-sm">
                     <span className="text-gray-600">
                       {new Date(day.date).toLocaleDateString('en-IN', { 

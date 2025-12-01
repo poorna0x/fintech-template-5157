@@ -54,7 +54,7 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
     scheduled_time_slot: 'MORNING' as 'MORNING' | 'AFTERNOON' | 'EVENING' | 'CUSTOM',
     scheduled_time_custom: '',
     description: '',
-    lead_source: 'Direct call',
+    lead_source: '',
     lead_source_custom: '',
     priority: 'MEDIUM' as 'LOW' | 'MEDIUM' | 'HIGH' | 'URGENT'
   });
@@ -472,7 +472,7 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
         scheduled_time_slot: 'MORNING' as 'MORNING' | 'AFTERNOON' | 'EVENING' | 'CUSTOM',
         scheduled_time_custom: '',
         description: '',
-        lead_source: 'Direct call',
+        lead_source: '',
         lead_source_custom: '',
         priority: 'MEDIUM' as 'LOW' | 'MEDIUM' | 'HIGH' | 'URGENT'
       });
@@ -868,6 +868,8 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
                           <SelectItem value="Installation">Installation</SelectItem>
                           <SelectItem value="Reinstallation">Reinstallation</SelectItem>
                           <SelectItem value="Service">Service</SelectItem>
+                          <SelectItem value="Return Complaint">Return Complaint</SelectItem>
+                          <SelectItem value="AMC Service">AMC Service</SelectItem>
                           <SelectItem value="Custom">Custom</SelectItem>
                         </SelectContent>
                       </Select>
@@ -930,17 +932,18 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
                     )}
 
                     <div className="space-y-2">
-                      <Label htmlFor="step5_lead_source">Lead Source</Label>
+                      <Label htmlFor="step5_lead_source">Lead Source *</Label>
                       <Select
-                        value={step5JobData.lead_source}
+                        value={step5JobData.lead_source || ''}
                         onValueChange={(value) => setStep5JobData(prev => ({ 
                           ...prev, 
                           lead_source: value === 'Other' ? 'Other' : value,
                           lead_source_custom: value === 'Other' ? prev.lead_source_custom : ''
                         }))}
+                        required
                       >
                         <SelectTrigger>
-                          <SelectValue />
+                          <SelectValue placeholder="Select lead source" />
                         </SelectTrigger>
                         <SelectContent>
                           <SelectItem value="Website">Website</SelectItem>
