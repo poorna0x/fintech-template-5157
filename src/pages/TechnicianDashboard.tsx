@@ -6390,8 +6390,79 @@ const TechnicianDashboard = () => {
                         
                         const amcInfo = requirements.find((r: any) => r?.amc_info)?.amc_info || null;
                         const qrPhotos = requirements.find((r: any) => r?.qr_photos)?.qr_photos || null;
-                        const billPhotos = requirements.find((r: any) => r?.bill_photos)?.bill_photos || [];
-                        const paymentScreenshot = qrPhotos?.payment_screenshot || null;
+                        
+                        // Get payment screenshot from qr_photos (primary source)
+                        let paymentScreenshot: string | null = null;
+                        if (qrPhotos?.payment_screenshot) {
+                          const extractedUrls = extractPhotoUrls([qrPhotos.payment_screenshot]);
+                          paymentScreenshot = extractedUrls.length > 0 ? extractedUrls[0] : null;
+                          console.log('📸 Payment screenshot from qr_photos:', paymentScreenshot);
+                        }
+                        
+                        // Get all photos from after_photos field (contains both bill photos + payment screenshot)
+                        const afterPhotos = Array.isArray((job as any).after_photos || job.afterPhotos) 
+                          ? ((job as any).after_photos || job.afterPhotos) 
+                          : [];
+                        const extractedAfterPhotos = extractPhotoUrls(afterPhotos);
+                        console.log('📸 All photos from after_photos:', extractedAfterPhotos);
+                        
+                        // Get bill photos from requirements.bill_photos (fallback)
+                        let billPhotosFromReq = requirements.find((r: any) => r?.bill_photos)?.bill_photos || [];
+                        const extractedBillPhotosFromReq = extractPhotoUrls(billPhotosFromReq);
+                        
+                        // Determine bill photos: use after_photos (which includes payment screenshot) but exclude payment screenshot if we found it
+                        let billPhotos: string[] = [];
+                        
+                        if (extractedAfterPhotos.length > 0) {
+                          // after_photos contains both bill photos and payment screenshot
+                          if (paymentScreenshot) {
+                            // Filter out payment screenshot from after_photos to get just bill photos
+                            billPhotos = extractedAfterPhotos.filter(url => {
+                              // Compare URLs (handle both full URLs and normalized URLs)
+                              const normalizedUrl1 = url.trim().toLowerCase();
+                              const normalizedUrl2 = paymentScreenshot!.trim().toLowerCase();
+                              return normalizedUrl1 !== normalizedUrl2;
+                            });
+                            console.log('📸 Filtered bill photos (excluded payment screenshot):', billPhotos);
+                          } else {
+                            // Payment screenshot not found in qr_photos, but might be in after_photos
+                            // Use all after_photos as bill photos (payment screenshot will be shown if found later)
+                            billPhotos = extractedAfterPhotos;
+                          }
+                        } else {
+                          // No after_photos, use bill_photos from requirements
+                          billPhotos = extractedBillPhotosFromReq;
+                        }
+                        
+                        // If payment screenshot not in qr_photos but payment method is ONLINE and we have after_photos,
+                        // the payment screenshot should be in after_photos (we added it there)
+                        // Try to find it by comparing with bill_photos from requirements
+                        if (!paymentScreenshot && (paymentMethod === 'ONLINE' || paymentMethod === 'UPI' || paymentMethod === 'CARD' || paymentMethod === 'BANK_TRANSFER')) {
+                          if (extractedAfterPhotos.length > extractedBillPhotosFromReq.length) {
+                            // There's at least one extra photo in after_photos - likely the payment screenshot
+                            // Find the photo that's not in bill_photos from requirements
+                            const paymentScreenshotCandidate = extractedAfterPhotos.find(url => 
+                              !extractedBillPhotosFromReq.some(billUrl => {
+                                const normalized1 = url.trim().toLowerCase();
+                                const normalized2 = billUrl.trim().toLowerCase();
+                                return normalized1 === normalized2;
+                              })
+                            );
+                            if (paymentScreenshotCandidate) {
+                              paymentScreenshot = paymentScreenshotCandidate;
+                              // Remove it from bill photos
+                              billPhotos = billPhotos.filter(url => {
+                                const normalized1 = url.trim().toLowerCase();
+                                const normalized2 = paymentScreenshot!.trim().toLowerCase();
+                                return normalized1 !== normalized2;
+                              });
+                              console.log('📸 Found payment screenshot in after_photos:', paymentScreenshot);
+                            }
+                          }
+                        }
+                        
+                        console.log('📸 Final bill photos count:', billPhotos.length);
+                        console.log('📸 Final payment screenshot:', paymentScreenshot);
                         
                         return (
                           <div key={job.id} className="border border-gray-200 rounded-lg p-4 bg-white">
