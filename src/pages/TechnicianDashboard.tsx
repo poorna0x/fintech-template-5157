@@ -1223,15 +1223,29 @@ const TechnicianDashboard = () => {
 
   // Get current location and update in database
   const getCurrentLocation = useCallback(async () => {
+    console.log('📍 [TechnicianDashboard] getCurrentLocation called');
+    
     // Check if location tracking is enabled - block ALL updates when disabled
     const locationTrackingEnabled = localStorage.getItem('technician_location_tracking_enabled') !== 'false';
+    const settingValue = localStorage.getItem('technician_location_tracking_enabled');
+    console.log('📍 [TechnicianDashboard] Location tracking setting check:', {
+      settingValue,
+      locationTrackingEnabled,
+      willProceed: locationTrackingEnabled
+    });
+    
     if (!locationTrackingEnabled) {
-      console.log('Location tracking is disabled in settings - all location updates blocked');
+      console.log('🚫 [TechnicianDashboard] Location tracking is DISABLED - BLOCKING all location operations');
+      console.log('🚫 [TechnicianDashboard] - Geolocation API call: BLOCKED');
+      console.log('🚫 [TechnicianDashboard] - Database update: BLOCKED');
+      console.log('🚫 [TechnicianDashboard] - Status update to AVAILABLE: BLOCKED');
       setLocationError('Location tracking is disabled in settings. Please enable it in Settings to update your location.');
       setLocationErrorType('other');
       toast.error('Location tracking is disabled. Enable it in Settings to update your location.');
       return;
     }
+    
+    console.log('✅ [TechnicianDashboard] Location tracking is ENABLED - proceeding with location update');
 
     setLocationError(null);
     setLocationErrorType(null);
@@ -1293,22 +1307,39 @@ const TechnicianDashboard = () => {
       return;
     }
 
+    console.log('🌐 [TechnicianDashboard] Calling navigator.geolocation.getCurrentPosition...');
     navigator.geolocation.getCurrentPosition(
       async (position) => {
+        console.log('✅ [TechnicianDashboard] Geolocation API returned position:', {
+          latitude: position.coords.latitude,
+          longitude: position.coords.longitude,
+          accuracy: position.coords.accuracy
+        });
+        
         const location = {
           lat: position.coords.latitude,
           lng: position.coords.longitude
         };
         setCurrentLocation(location);
-        console.log('Current location:', location);
+        console.log('📍 [TechnicianDashboard] Current location set in state:', location);
 
         // Update technician location and set status to AVAILABLE in database
         // Double-check location tracking is still enabled before saving to DB
         const locationTrackingEnabled = localStorage.getItem('technician_location_tracking_enabled') !== 'false';
+        const settingValue = localStorage.getItem('technician_location_tracking_enabled');
+        console.log('💾 [TechnicianDashboard] Before database update - checking setting again:', {
+          settingValue,
+          locationTrackingEnabled
+        });
+        
         if (!locationTrackingEnabled) {
-          console.log('Location tracking disabled - skipping database update');
+          console.log('🚫 [TechnicianDashboard] Location tracking DISABLED - BLOCKING database update');
+          console.log('🚫 [TechnicianDashboard] - current_location field: NOT SAVED');
+          console.log('🚫 [TechnicianDashboard] - status field: NOT UPDATED to AVAILABLE');
           return;
         }
+        
+        console.log('✅ [TechnicianDashboard] Location tracking still ENABLED - proceeding with database update');
 
         if (user?.technicianId) {
           try {
@@ -1319,21 +1350,23 @@ const TechnicianDashboard = () => {
               accuracy: position.coords.accuracy || null
             };
 
+            console.log('💾 [TechnicianDashboard] Updating database with location data:', locationData);
             const { error, data } = await db.technicians.update(user.technicianId, {
               current_location: locationData,
               status: 'AVAILABLE' // Automatically set to AVAILABLE when location is updated
             });
 
             if (error) {
-              console.error('Error updating technician location:', error);
+              console.error('❌ [TechnicianDashboard] Error updating technician location in database:', error);
               const errorMsg = `Location captured but failed to upload to server. Please check your internet connection and try again. Error: ${error.message}`;
               setLocationError(errorMsg);
               setLocationErrorType('upload');
               toast.error(errorMsg, { duration: 8000 });
             } else {
-              console.log('✅ Technician location and status updated successfully:', {
+              console.log('✅ [TechnicianDashboard] Technician location and status updated successfully in database:', {
                 location: locationData,
-                updatedData: data
+                updatedData: data,
+                fieldsUpdated: ['current_location', 'status']
               });
               setLocationError(null);
               setLocationErrorType(null);
@@ -1480,35 +1513,70 @@ const TechnicianDashboard = () => {
 
   // Periodic location update (every 5 minutes) - ONLY when app is open and visible
   useEffect(() => {
-    if (!user?.technicianId) return;
-
-    // Check if location tracking is enabled
-    const locationTrackingEnabled = localStorage.getItem('technician_location_tracking_enabled') !== 'false';
-    if (!locationTrackingEnabled) {
-      console.log('Location tracking is disabled - skipping periodic updates');
+    if (!user?.technicianId) {
+      console.log('⏭️ [TechnicianDashboard] Periodic location update: No technician ID, skipping');
       return;
     }
 
+    // Check if location tracking is enabled
+    const locationTrackingEnabled = localStorage.getItem('technician_location_tracking_enabled') !== 'false';
+    const settingValue = localStorage.getItem('technician_location_tracking_enabled');
+    console.log('⏰ [TechnicianDashboard] Periodic location update check:', {
+      settingValue,
+      locationTrackingEnabled,
+      willSetupInterval: locationTrackingEnabled
+    });
+    
+    if (!locationTrackingEnabled) {
+      console.log('🚫 [TechnicianDashboard] Location tracking is DISABLED - skipping periodic location updates');
+      console.log('🚫 [TechnicianDashboard] - No automatic updates on mount');
+      console.log('🚫 [TechnicianDashboard] - No 5-minute interval updates');
+      console.log('🚫 [TechnicianDashboard] - No visibility change updates');
+      return;
+    }
+    
+    console.log('✅ [TechnicianDashboard] Location tracking ENABLED - setting up periodic updates');
+
     // Update location immediately on mount (only if page is visible)
     if (!document.hidden) {
+      console.log('🔄 [TechnicianDashboard] Page visible on mount - triggering initial location update');
       getCurrentLocation();
+    } else {
+      console.log('⏸️ [TechnicianDashboard] Page hidden on mount - skipping initial location update');
     }
 
     // Then update every 5 minutes - ONLY if page is visible
     const locationInterval = setInterval(() => {
       // Check again if tracking is still enabled
       const stillEnabled = localStorage.getItem('technician_location_tracking_enabled') !== 'false';
+      console.log('⏰ [TechnicianDashboard] 5-minute interval check:', {
+        stillEnabled,
+        pageVisible: !document.hidden,
+        willUpdate: stillEnabled && !document.hidden
+      });
+      
       if (stillEnabled && !document.hidden) {
+        console.log('🔄 [TechnicianDashboard] 5-minute interval - triggering location update');
         getCurrentLocation();
+      } else if (!stillEnabled) {
+        console.log('🚫 [TechnicianDashboard] Location tracking was disabled - stopping interval updates');
       }
     }, 5 * 60 * 1000); // 5 minutes
 
     // Also listen for visibility changes to update when app becomes visible again
     const handleVisibilityChange = () => {
       const stillEnabled = localStorage.getItem('technician_location_tracking_enabled') !== 'false';
+      console.log('👁️ [TechnicianDashboard] Visibility change:', {
+        hidden: document.hidden,
+        stillEnabled,
+        willUpdate: !document.hidden && user?.technicianId && stillEnabled
+      });
+      
       if (!document.hidden && user?.technicianId && stillEnabled) {
-        // Update location when app becomes visible again
+        console.log('🔄 [TechnicianDashboard] Page became visible - triggering location update');
         getCurrentLocation();
+      } else if (!stillEnabled) {
+        console.log('🚫 [TechnicianDashboard] Location tracking disabled - skipping visibility update');
       }
     };
 
@@ -1526,9 +1594,18 @@ const TechnicianDashboard = () => {
     // Listen for custom event (when setting is toggled in same window)
     const handleLocationTrackingChanged = (e: CustomEvent) => {
       const isEnabled = e.detail?.enabled !== false;
+      console.log('🔔 [TechnicianDashboard] Location tracking setting changed:', {
+        enabled: isEnabled,
+        pageVisible: !document.hidden,
+        hasTechnicianId: !!user?.technicianId,
+        willUpdate: isEnabled && !document.hidden && user?.technicianId
+      });
+      
       if (isEnabled && !document.hidden && user?.technicianId) {
-        console.log('Location tracking enabled - requesting location update');
+        console.log('✅ [TechnicianDashboard] Location tracking ENABLED - requesting location update');
         getCurrentLocation();
+      } else if (!isEnabled) {
+        console.log('🚫 [TechnicianDashboard] Location tracking DISABLED - no updates will be made');
       }
     };
 
