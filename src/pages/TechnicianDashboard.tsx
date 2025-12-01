@@ -1241,7 +1241,7 @@ const TechnicianDashboard = () => {
       console.log('🚫 [TechnicianDashboard] - Status update to AVAILABLE: BLOCKED');
       setLocationError('Location tracking is disabled in settings. Please enable it in Settings to update your location.');
       setLocationErrorType('other');
-      toast.error('Location tracking is disabled. Enable it in Settings to update your location.');
+      toast.error('🚫 Location tracking is disabled. Enable it in Settings to update your location.');
       return;
     }
     

@@ -54,7 +54,7 @@ const TechnicianLocation = () => {
       if (!autoUpdate) {
         setError('Location tracking is disabled in settings. Please enable it in Settings to update your location.');
         setErrorType('other');
-        toast.error('Location tracking is disabled. Enable it in Settings to update your location.');
+        toast.error('🚫 Location tracking is disabled. Enable it in Settings to update your location.');
       }
       setIsLoading(false);
       return;

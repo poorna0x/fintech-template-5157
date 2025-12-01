@@ -100,7 +100,7 @@ const Settings = () => {
     window.dispatchEvent(new CustomEvent('locationTrackingChanged', {
       detail: { enabled }
     }));
-    toast.success(enabled ? 'Location tracking enabled for all technicians' : 'Location tracking disabled for all technicians');
+    toast.success(enabled ? '✅ Location tracking enabled - technicians\' locations will be automatically updated' : '🚫 Location tracking disabled - all location updates are now blocked');
   };
 
   // Transform technician data from database format to frontend format
