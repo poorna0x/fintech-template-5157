@@ -6,7 +6,7 @@ import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Plus, Trash2, Download, Edit, X, FileText } from 'lucide-react';
+import { Plus, Trash2, Download, Edit, X, FileText, Save } from 'lucide-react';
 import { toast } from 'sonner';
 import { Bill, BillItem, CompanyInfo, Customer } from '@/types';
 
@@ -55,6 +55,7 @@ function numberToWords(num: number): string {
 interface TaxInvoiceGeneratorProps {
   customer?: Customer;
   onPrint?: (bill: Bill, action?: 'print' | 'pdf') => void;
+  onTaxInvoiceSaved?: () => void;
 }
 
 const defaultCompanyInfo: CompanyInfo = {
@@ -95,7 +96,7 @@ const defaultTaxInvoiceItems: BillItem[] = [
   }
 ];
 
-export default function TaxInvoiceGenerator({ customer, onPrint }: TaxInvoiceGeneratorProps) {
+export default function TaxInvoiceGenerator({ customer, onPrint, onTaxInvoiceSaved }: TaxInvoiceGeneratorProps) {
   // Safe customer data extraction
   const customerName = customer?.fullName || (customer as any)?.full_name || 'Customer Name';
   const customerPhone = typeof customer?.phone === 'string' ? customer.phone : (customer as any)?.phone || '';
@@ -197,6 +198,7 @@ export default function TaxInvoiceGenerator({ customer, onPrint }: TaxInvoiceGen
   const [eWayBillNo, setEWayBillNo] = useState('');
   const [transportMode, setTransportMode] = useState('');
   const [vehicleNo, setVehicleNo] = useState('');
+  const [isSaving, setIsSaving] = useState(false);
   const [roundOff, setRoundOff] = useState(true);
   const [customerGstRequired, setCustomerGstRequired] = useState(false);
   const [invoiceType, setInvoiceType] = useState<'B2B' | 'B2C'>('B2C'); // B2B = Business to Business, B2C = Business to Consumer
@@ -418,6 +420,154 @@ export default function TaxInvoiceGenerator({ customer, onPrint }: TaxInvoiceGen
   const termsList = terms.split('\n').filter(line => line.trim());
   const notesList = notes;
 
+  // Function to save invoice to database
+  const handleSaveToDatabase = async () => {
+    if (!customer) {
+      toast.error('Please select a customer first');
+      return;
+    }
+
+    if (!billNumber.trim()) {
+      toast.error('Please enter an invoice number');
+      return;
+    }
+
+    // Validate B2B invoice requires customer GST
+    if (invoiceType === 'B2B' && !editableCustomer.gst) {
+      toast.error('Customer GSTIN is mandatory for B2B invoices. Please enter customer GST number.');
+      return;
+    }
+
+    setIsSaving(true);
+
+    try {
+      // Check authentication status (for better error messages)
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) {
+        console.log('No authentication session found, attempting anonymous insert');
+      }
+
+      // Check if invoice number already exists and fetch new one if needed
+      try {
+        const { exists: invoiceExists, error: checkError } = await db.taxInvoices.checkInvoiceNumberExists(billNumber);
+        if (checkError) {
+          console.warn('Could not check for duplicate invoice number:', checkError);
+          // Continue anyway - the insert will fail if duplicate
+        } else if (invoiceExists) {
+          // Invoice number was taken - fetch a new one automatically
+          console.log(`Invoice number ${billNumber} already exists, fetching new number...`);
+          const newInvoiceNumber = await getNextInvoiceNumberForSave();
+          setBillNumber(newInvoiceNumber);
+          toast.info(`Invoice number updated to ${newInvoiceNumber} (previous number was already used)`);
+          // Continue with the new number
+        }
+      } catch (checkErr) {
+        console.warn('Error checking duplicate invoice number:', checkErr);
+        // Continue anyway
+      }
+
+      // Ensure customer_address is a valid JSONB object (not empty)
+      const customerAddress = editableCustomer.address && Object.keys(editableCustomer.address).length > 0
+        ? editableCustomer.address
+        : {
+            street: '',
+            area: '',
+            city: '',
+            state: '',
+            pincode: ''
+          };
+
+      // Ensure notes is an array
+      const notesArray = Array.isArray(notes) ? notes : [];
+
+      const { data: savedInvoice, error: saveError } = await db.taxInvoices.create({
+        invoice_number: billNumber,
+        invoice_date: billDate,
+        invoice_type: invoiceType,
+        customer_id: customer.id || null,
+        customer_name: editableCustomer.name || 'Unknown Customer',
+        customer_address: customerAddress,
+        customer_phone: editableCustomer.phone || null,
+        customer_email: editableCustomer.email || null,
+        customer_gstin: editableCustomer.gst || null,
+        company_info: company,
+        items: items,
+        place_of_supply: placeOfSupply || 'Karnataka',
+        place_of_supply_code: placeOfSupplyCode || '29',
+        is_intra_state: isIntraState,
+        reverse_charge: reverseCharge || false,
+        e_way_bill_no: eWayBillNo || null,
+        transport_mode: transportMode || null,
+        vehicle_no: vehicleNo || null,
+        subtotal: subtotal || 0,
+        total_discount: totalDiscount || 0,
+        service_charge: serviceCharge || 0,
+        total_tax: totalTax || 0,
+        cgst: taxSplit.cgst || 0,
+        sgst: taxSplit.sgst || 0,
+        igst: taxSplit.igst || 0,
+        round_off: finalRoundOff || 0,
+        total_amount: totalAmount || 0,
+        gst_breakup: gstBreakup || {},
+        invoice_details: {
+          invoiceType,
+          poNumber: showPONumber ? poNumber : null,
+          poNumberRequired,
+          paymentDueDate,
+          deliveryAddress: showDeliveryAddress ? deliveryAddress : null,
+          totalDiscount
+        },
+        bank_details: bankDetails || {},
+        notes: notesArray,
+        terms: terms || '',
+        validity_note: validityNote || null,
+        service_type: customerServiceType || 'RO'
+      });
+      
+      if (saveError) {
+        console.error('Database save error details:', {
+          error: saveError,
+          message: saveError.message,
+          details: saveError.details,
+          hint: saveError.hint,
+          code: saveError.code
+        });
+        throw new Error(saveError.message || saveError.details || 'Failed to save invoice to database');
+      }
+      
+      // Also save to localStorage as backup with month/year pattern
+      const now = new Date();
+      const year = now.getFullYear();
+      const month = String(now.getMonth() + 1).padStart(2, '0');
+      const storageKey = `lastTaxInvoiceNumber_${year}_${month}`;
+      localStorage.setItem(storageKey, billNumber);
+      
+      // Fetch next invoice number for the next invoice (only after successful save)
+      const nextInvoiceNumber = await getNextInvoiceNumberForSave();
+      setBillNumber(nextInvoiceNumber);
+      
+      // Trigger a custom event to refresh GST invoices page if open
+      window.dispatchEvent(new CustomEvent('taxInvoiceCreated'));
+      
+      toast.success('Invoice saved to database successfully', {
+        description: `Invoice ${billNumber} has been saved with all details.`
+      });
+
+      // Notify parent to refresh if needed
+      if (onTaxInvoiceSaved) {
+        onTaxInvoiceSaved();
+      }
+    } catch (error: any) {
+      console.error('Error saving invoice to database:', error);
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      toast.error('Failed to save invoice to database', {
+        description: errorMessage || 'Please try again or contact support.'
+      });
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
   const handlePrint = async (action: 'print' | 'pdf' = 'print') => {
     if (!customer) {
       toast.error('Please select a customer first');
@@ -494,125 +644,8 @@ export default function TaxInvoiceGenerator({ customer, onPrint }: TaxInvoiceGen
       totalDiscount
     };
 
-    // Save invoice to database
-    try {
-      // Check authentication status (for better error messages)
-      const { data: { session } } = await supabase.auth.getSession();
-      if (!session) {
-        console.log('No authentication session found, attempting anonymous insert');
-      }
-
-      // Check if invoice number already exists and fetch new one if needed
-      try {
-        const { exists: invoiceExists, error: checkError } = await db.taxInvoices.checkInvoiceNumberExists(billNumber);
-        if (checkError) {
-          console.warn('Could not check for duplicate invoice number:', checkError);
-          // Continue anyway - the insert will fail if duplicate
-        } else if (invoiceExists) {
-          // Invoice number was taken - fetch a new one automatically
-          console.log(`Invoice number ${billNumber} already exists, fetching new number...`);
-          const newInvoiceNumber = await getNextInvoiceNumberForSave();
-          setBillNumber(newInvoiceNumber);
-          toast.info(`Invoice number updated to ${newInvoiceNumber} (previous number was already used)`);
-          // Continue with the new number
-        }
-      } catch (checkErr) {
-        console.warn('Error checking duplicate invoice number:', checkErr);
-        // Continue anyway
-      }
-
-      // Ensure customer_address is a valid JSONB object (not empty)
-      const customerAddress = editableCustomer.address && Object.keys(editableCustomer.address).length > 0
-        ? editableCustomer.address
-        : {
-            street: '',
-            area: '',
-            city: '',
-            state: '',
-            pincode: ''
-          };
-
-      // Ensure notes is an array
-      const notesArray = Array.isArray(notes) ? notes : [];
-
-      const { data: savedInvoice, error: saveError } = await db.taxInvoices.create({
-        invoice_number: billNumber,
-        invoice_date: billDate,
-        invoice_type: invoiceType,
-        customer_id: customer.id || null,
-        customer_name: editableCustomer.name || 'Unknown Customer',
-        customer_address: customerAddress,
-        customer_phone: editableCustomer.phone || null,
-        customer_email: editableCustomer.email || null,
-        customer_gstin: editableCustomer.gst || null,
-        company_info: company,
-        items: items,
-        place_of_supply: placeOfSupply || 'Karnataka',
-        place_of_supply_code: placeOfSupplyCode || '29',
-        is_intra_state: isIntraState,
-        reverse_charge: reverseCharge || false,
-        e_way_bill_no: eWayBillNo || null,
-        transport_mode: transportMode || null,
-        vehicle_no: vehicleNo || null,
-        subtotal: subtotal || 0,
-        total_discount: totalDiscount || 0,
-        service_charge: serviceCharge || 0,
-        total_tax: totalTax || 0,
-        cgst: taxSplit.cgst || 0,
-        sgst: taxSplit.sgst || 0,
-        igst: taxSplit.igst || 0,
-        round_off: finalRoundOff || 0,
-        total_amount: totalAmount || 0,
-        gst_breakup: gstBreakup || {},
-        invoice_details: (bill as any).invoiceDetails || {},
-        bank_details: bankDetails || {},
-        notes: notesArray,
-        terms: terms || '',
-        validity_note: validityNote || null,
-        service_type: customerServiceType || 'RO'
-      });
-      
-      if (saveError) {
-        console.error('Database save error details:', {
-          error: saveError,
-          message: saveError.message,
-          details: saveError.details,
-          hint: saveError.hint,
-          code: saveError.code
-        });
-        throw new Error(saveError.message || saveError.details || 'Failed to save invoice to database');
-      }
-      
-      // Also save to localStorage as backup with month/year pattern
-      const now = new Date();
-      const year = now.getFullYear();
-      const month = String(now.getMonth() + 1).padStart(2, '0');
-      const storageKey = `lastTaxInvoiceNumber_${year}_${month}`;
-      localStorage.setItem(storageKey, billNumber);
-      
-      // Fetch next invoice number for the next invoice (only after successful save)
-      const nextInvoiceNumber = await getNextInvoiceNumberForSave();
-      setBillNumber(nextInvoiceNumber);
-      
-      // Trigger a custom event to refresh GST invoices page if open
-      window.dispatchEvent(new CustomEvent('taxInvoiceCreated'));
-      
-      toast.success('Invoice saved to database');
-    } catch (error) {
-      console.error('Failed to save invoice to database:', error);
-      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-      // Still allow printing even if database save fails
-      // Save to localStorage as fallback
-      const now = new Date();
-      const year = now.getFullYear();
-      const month = String(now.getMonth() + 1).padStart(2, '0');
-      const storageKey = `lastTaxInvoiceNumber_${year}_${month}`;
-      localStorage.setItem(storageKey, billNumber);
-      toast.error(`Invoice saved locally (database save failed: ${errorMessage})`, {
-        duration: 5000
-      });
-    }
-
+    // Don't save to database automatically - user must explicitly click "Save to Database" button
+    // This allows generating/previewing invoice without creating a record in the database
     onPrint?.(bill, action);
   };
 
@@ -620,8 +653,16 @@ export default function TaxInvoiceGenerator({ customer, onPrint }: TaxInvoiceGen
     <div className="max-w-4xl mx-auto p-3 sm:p-4 md:p-6 space-y-3 sm:space-y-4 md:space-y-6">
       <div className="flex flex-col gap-3 sm:gap-4">
         <h1 className="text-xl sm:text-2xl md:text-3xl font-bold text-gray-900 text-center sm:text-left">Generate Tax Invoice</h1>
-        <div className="flex justify-center sm:justify-end">
-          <Button onClick={() => handlePrint('print')} className="bg-green-600 hover:bg-green-700 w-full sm:w-auto min-w-[140px]">
+        <div className="flex flex-col sm:flex-row gap-2 justify-center sm:justify-end">
+          <Button 
+            onClick={handleSaveToDatabase}
+            className="w-full sm:w-auto bg-green-600 hover:bg-green-700 min-w-[140px]"
+            disabled={!billNumber.trim() || isSaving || !customer}
+          >
+            <Save className="w-4 h-4 mr-2" />
+            {isSaving ? 'Saving...' : 'Save to Database'}
+          </Button>
+          <Button onClick={() => handlePrint('print')} className="bg-blue-600 hover:bg-blue-700 w-full sm:w-auto min-w-[140px]">
             <Download className="w-4 h-4 mr-2" />
             Download Tax Invoice
           </Button>
