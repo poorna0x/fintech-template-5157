@@ -47,7 +47,18 @@ export interface PDFBillData {
   hideGstInHeader?: boolean;
 }
 
+// Global flag to prevent multiple print operations
+let isPrinting = false;
+
 export function generateBillPDF(billData: PDFBillData, action: 'print' | 'pdf' = 'print'): void {
+  // Prevent multiple print operations
+  if (isPrinting) {
+    console.warn('Print operation already in progress');
+    return;
+  }
+  
+  isPrinting = true;
+  
   try {
     // Check if it's a mobile device
     const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
@@ -399,7 +410,10 @@ export function generateBillPDF(billData: PDFBillData, action: 'print' | 'pdf' =
         
         // Close the print window after printing
     setTimeout(() => {
-          printWindow.close();
+          if (printWindow && !printWindow.closed) {
+            printWindow.close();
+          }
+          isPrinting = false; // Reset flag after successful printing
     }, 1000);
       }, 100);
     };
@@ -407,17 +421,18 @@ export function generateBillPDF(billData: PDFBillData, action: 'print' | 'pdf' =
   } catch (error) {
     console.error('Error generating bill PDF:', error);
     alert('Error generating bill. Please try again.');
+    isPrinting = false; // Reset flag on error
   }
 }
 
 function handleMobilePrint(billData: PDFBillData, action: 'print' | 'pdf'): void {
   // Store original content for restoration
-  const originalBody = document.body.innerHTML;
+  const originalBodyHTML = document.body.innerHTML;
   const originalTitle = document.title;
+  const reactRootId = document.getElementById('root')?.id || 'root';
   
   // Store references to cleanup
   let afterPrintHandler: (() => void) | null = null;
-  let isPrinting = true;
   
   const cleanup = () => {
     try {
@@ -426,7 +441,7 @@ function handleMobilePrint(billData: PDFBillData, action: 'print' | 'pdf'): void
         window.removeEventListener('afterprint', afterPrintHandler);
       }
       
-      // Only cleanup if still printing (prevent duplicate cleanups)
+      // Only cleanup if still printing (prevent multiple cleanups)
       if (!isPrinting) {
         return;
       }
@@ -449,7 +464,7 @@ function handleMobilePrint(billData: PDFBillData, action: 'print' | 'pdf'): void
       document.title = originalTitle;
       
       // Restore original body HTML
-      document.body.innerHTML = originalBody;
+      document.body.innerHTML = originalBodyHTML;
       
       // Force page reload to fully restore React state
       // This is the most reliable way on mobile
@@ -501,19 +516,25 @@ function handleMobilePrint(billData: PDFBillData, action: 'print' | 'pdf'): void
         -webkit-text-size-adjust: 100%;
         -webkit-font-smoothing: antialiased;
         -moz-osx-font-smoothing: grayscale;
+        width: 100%;
+        max-width: 100%;
+        overflow-x: hidden;
+        position: relative;
       }
       
       .bill-container {
         width: 100%;
         max-width: 100%;
-        margin: 0;
+        margin: 0 auto;
         background: white;
-        padding: 20px 1px 20px 1px;
+        padding: 15px 10px;
         border: 2px solid #000;
         box-sizing: border-box;
         border-radius: 12px;
         -webkit-print-color-adjust: exact;
         print-color-adjust: exact;
+        overflow: hidden;
+        position: relative;
       }
       
       .header {
@@ -544,14 +565,18 @@ function handleMobilePrint(billData: PDFBillData, action: 'print' | 'pdf'): void
       
       .bill-info {
         display: flex;
-        justify-content: space-between;
+        flex-direction: column;
         margin-bottom: 15px;
         gap: 15px;
-        padding: 0 5px;
+        padding: 0;
+        width: 100%;
+        box-sizing: border-box;
       }
       
       .bill-to, .bill-details {
+        width: 100%;
         flex: 1;
+        box-sizing: border-box;
       }
       
       .section-title {
@@ -569,20 +594,24 @@ function handleMobilePrint(billData: PDFBillData, action: 'print' | 'pdf'): void
       }
       
       .items-table {
-        width: calc(100% - 30px);
+        width: 100%;
+        max-width: 100%;
         border-collapse: collapse;
-        margin: 0 15px 15px 15px;
-        font-size: 10px;
+        margin: 0 0 15px 0;
+        font-size: 9px;
         table-layout: fixed;
+        box-sizing: border-box;
       }
       
       .items-table th {
         background-color: #f8fafc;
         color: #374151;
         font-weight: bold;
-        padding: 8px 4px;
+        padding: 6px 3px;
         text-align: center;
         border: 1px solid #d1d5db;
+        word-wrap: break-word;
+        overflow-wrap: break-word;
       }
       
       .items-table th:nth-child(1) { width: 50%; }
@@ -591,12 +620,14 @@ function handleMobilePrint(billData: PDFBillData, action: 'print' | 'pdf'): void
       .items-table th:nth-child(4) { width: 15%; }
       
       .items-table td {
-        padding: 8px 4px;
+        padding: 6px 3px;
         border: 1px solid #d1d5db;
         vertical-align: middle;
         text-align: center;
         word-wrap: break-word;
+        overflow-wrap: break-word;
         overflow: hidden;
+        text-overflow: ellipsis;
       }
       
       .items-table tr:nth-child(even) {
@@ -612,9 +643,9 @@ function handleMobilePrint(billData: PDFBillData, action: 'print' | 'pdf'): void
       }
       
       .summary {
-        margin: 15px 15px 0 15px;
+        margin: 15px 0 0 0;
         text-align: right;
-        width: calc(100% - 30px);
+        width: 100%;
         box-sizing: border-box;
       }
       
@@ -636,9 +667,11 @@ function handleMobilePrint(billData: PDFBillData, action: 'print' | 'pdf'): void
       }
       
       .notes-section {
-        margin: 15px 5px 0 5px;
+        margin: 15px 0 0 0;
         padding-top: 10px;
         border-top: 1px solid #e5e7eb;
+        width: 100%;
+        box-sizing: border-box;
       }
       
       .notes-title {
@@ -679,12 +712,14 @@ function handleMobilePrint(billData: PDFBillData, action: 'print' | 'pdf'): void
       }
       
       .footer {
-        margin: 15px 15px 0 15px;
+        margin: 15px 0 0 0;
         padding: 10px 0;
         border-top: 1px solid #e5e7eb;
         text-align: center;
         font-size: 10px;
         color: #6b7280;
+        width: 100%;
+        box-sizing: border-box;
       }
       
       @media print {
@@ -696,30 +731,60 @@ function handleMobilePrint(billData: PDFBillData, action: 'print' | 'pdf'): void
         
         body {
           margin: 0 !important;
-          padding: 15mm !important;
+          padding: 0 !important;
           font-size: 12pt !important;
           line-height: 1.4 !important;
           -webkit-font-smoothing: antialiased !important;
           -moz-osx-font-smoothing: grayscale !important;
-          width: 210mm !important;
-          min-height: 297mm !important;
-          max-width: 210mm !important;
+          width: 100% !important;
+          max-width: 100% !important;
+          overflow-x: hidden !important;
         }
         
         .bill-container {
           width: 100% !important;
           max-width: 100% !important;
-          margin: 0 !important;
-          padding: 0 !important;
-          border: none !important;
+          margin: 0 auto !important;
+          padding: 15px 10px !important;
+          border: 2px solid #000 !important;
           box-shadow: none !important;
           background: white !important;
           box-sizing: border-box !important;
           -webkit-print-color-adjust: exact !important;
           print-color-adjust: exact !important;
-          width: 210mm !important;
-          min-height: 297mm !important;
-          max-width: 210mm !important;
+          overflow: hidden !important;
+        }
+        
+        .bill-info {
+          flex-direction: column !important;
+          padding: 0 !important;
+          width: 100% !important;
+        }
+        
+        .bill-to, .bill-details {
+          width: 100% !important;
+        }
+        
+        .items-table {
+          width: 100% !important;
+          max-width: 100% !important;
+          margin: 0 0 15px 0 !important;
+          font-size: 9px !important;
+        }
+        
+        .summary {
+          width: 100% !important;
+          margin: 15px 0 0 0 !important;
+        }
+        
+        .notes-section {
+          width: 100% !important;
+          margin: 15px 0 0 0 !important;
+        }
+        
+        .footer {
+          width: 100% !important;
+          margin: 15px 0 0 0 !important;
         }
         
         @page {
@@ -812,22 +877,25 @@ function handleMobilePrint(billData: PDFBillData, action: 'print' | 'pdf'): void
     additionalStyles.textContent = `
       @media print {
         @page {
-          size: 210mm 297mm !important;
+          size: A4 !important;
           margin: 20mm 8mm 20mm 8mm !important;
         }
         
         body {
-          width: 210mm !important;
-          height: 297mm !important;
-          max-width: 210mm !important;
-          max-height: 297mm !important;
+          width: 100% !important;
+          max-width: 100% !important;
+          overflow-x: hidden !important;
+          padding: 0 !important;
+          margin: 0 !important;
         }
         
         .bill-container {
-          width: 210mm !important;
-          height: 297mm !important;
-          max-width: 210mm !important;
-          max-height: 297mm !important;
+          width: 100% !important;
+          max-width: 100% !important;
+          margin: 0 auto !important;
+          padding: 15px 10px !important;
+          box-sizing: border-box !important;
+          overflow: hidden !important;
         }
       }
     `;
@@ -943,6 +1011,8 @@ function handleMobilePrint(billData: PDFBillData, action: 'print' | 'pdf'): void
   } catch (error) {
     console.error('Error generating mobile bill PDF:', error);
     alert('Error generating bill. Please try again.');
+    cleanup();
+    isPrinting = false;
   }
 }
 
