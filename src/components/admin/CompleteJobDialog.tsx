@@ -23,6 +23,15 @@ interface CompleteJobDialogProps {
   onJobCompleted: () => void;
 }
 
+// Helper function to get today's date in local timezone (YYYY-MM-DD format)
+const getTodayLocalDate = () => {
+  const today = new Date();
+  const year = today.getFullYear();
+  const month = String(today.getMonth() + 1).padStart(2, '0');
+  const day = String(today.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+};
+
 export const CompleteJobDialog: React.FC<CompleteJobDialogProps> = ({
   open,
   onOpenChange,
@@ -83,7 +92,7 @@ export const CompleteJobDialog: React.FC<CompleteJobDialogProps> = ({
       setCompleteJobStep(1);
       setBillAmount('');
       setBillPhotos([]);
-      const today = new Date().toISOString().split('T')[0];
+      const today = getTodayLocalDate();
       setAmcDateGiven(today);
       setAmcYears(1);
       calculateAMCEndDate(today, 1);
@@ -111,7 +120,7 @@ export const CompleteJobDialog: React.FC<CompleteJobDialogProps> = ({
     setCompleteJobStep(1);
     setBillAmount('');
     setBillPhotos([]);
-    const today = new Date().toISOString().split('T')[0];
+    const today = getTodayLocalDate();
     setAmcDateGiven(today);
     setAmcEndDate('');
     setAmcYears(1);
@@ -560,7 +569,7 @@ export const CompleteJobDialog: React.FC<CompleteJobDialogProps> = ({
                     onChange={(e) => {
                       setHasAMC(e.target.checked);
                       if (e.target.checked) {
-                        const today = new Date().toISOString().split('T')[0];
+                        const today = getTodayLocalDate();
                         setAmcDateGiven(today);
                         setAmcYears(1);
                         calculateAMCEndDate(today, 1);
@@ -586,7 +595,7 @@ export const CompleteJobDialog: React.FC<CompleteJobDialogProps> = ({
                           }
                         }}
                         className="mt-1"
-                        max={new Date().toISOString().split('T')[0]}
+                        max={getTodayLocalDate()}
                       />
                     </div>
                     <div>

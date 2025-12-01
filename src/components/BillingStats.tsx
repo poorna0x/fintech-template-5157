@@ -41,20 +41,20 @@ interface LeadTypeBilling {
 
 type DateFilter = 'today' | 'last30days' | 'year' | 'all' | 'range';
 
+// Helper function to get today's date in local timezone (YYYY-MM-DD format)
+const getTodayLocalDate = () => {
+  const today = new Date();
+  const year = today.getFullYear();
+  const month = String(today.getMonth() + 1).padStart(2, '0');
+  const day = String(today.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+};
+
 const BillingStats = () => {
   const [dateFilter, setDateFilter] = useState<DateFilter>('today');
-  const [selectedDate, setSelectedDate] = useState(() => {
-    const today = new Date();
-    return today.toISOString().split('T')[0];
-  });
-  const [startDate, setStartDate] = useState(() => {
-    const today = new Date();
-    return today.toISOString().split('T')[0];
-  });
-  const [endDate, setEndDate] = useState(() => {
-    const today = new Date();
-    return today.toISOString().split('T')[0];
-  });
+  const [selectedDate, setSelectedDate] = useState(() => getTodayLocalDate());
+  const [startDate, setStartDate] = useState(() => getTodayLocalDate());
+  const [endDate, setEndDate] = useState(() => getTodayLocalDate());
   const [qrCodeBilling, setQrCodeBilling] = useState<QRCodeBilling[]>([]);
   const [technicianBilling, setTechnicianBilling] = useState<TechnicianBilling[]>([]);
   const [leadTypeBilling, setLeadTypeBilling] = useState<LeadTypeBilling[]>([]);

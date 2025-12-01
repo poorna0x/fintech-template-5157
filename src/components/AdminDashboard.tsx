@@ -522,15 +522,22 @@ const AdminDashboard = () => {
   const [pageSize] = useState<number>(20);
   const [totalPages, setTotalPages] = useState<number>(0);
   const [totalCount, setTotalCount] = useState<number>(0);
+  // Helper function to get today's date in local timezone (YYYY-MM-DD format)
+  const getTodayLocalDate = () => {
+    const today = new Date();
+    const year = today.getFullYear();
+    const month = String(today.getMonth() + 1).padStart(2, '0');
+    const day = String(today.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+  };
+
   // Date filter for denied jobs (default to today)
   const [deniedDateFilter, setDeniedDateFilter] = useState<string>(() => {
-    const today = new Date();
-    return today.toISOString().split('T')[0]; // Format: YYYY-MM-DD
+    return getTodayLocalDate();
   });
   // Date filter for completed jobs (default to today)
   const [completedDateFilter, setCompletedDateFilter] = useState<string>(() => {
-    const today = new Date();
-    return today.toISOString().split('T')[0]; // Format: YYYY-MM-DD
+    return getTodayLocalDate();
   });
   // Job counts for stats cards (loaded separately)
   const [jobCounts, setJobCounts] = useState<{ongoing: number; followup: number; denied: number; completed: number}>({
@@ -2881,9 +2888,8 @@ const AdminDashboard = () => {
   const handleNewJob = (customer: Customer) => {
     setSelectedCustomerForJob(customer);
     
-    // Get today's date
-    const today = new Date();
-    const todayDateString = today.toISOString().split('T')[0];
+    // Get today's date in local timezone
+    const todayDateString = getTodayLocalDate();
     
     // Get current time
     const now = new Date();
@@ -3652,7 +3658,7 @@ const AdminDashboard = () => {
               service_sub_type: 'Photo Upload',
               brand: 'N/A',
               model: 'N/A',
-              scheduled_date: new Date().toISOString().split('T')[0],
+              scheduled_date: getTodayLocalDate(),
               scheduled_time_slot: 'MORNING' as const,
               estimated_duration: 0,
               service_address: customer.address,
@@ -4651,7 +4657,7 @@ const AdminDashboard = () => {
   const handleMoveToOngoing = (job: Job) => {
     // Set default values to current date and time
     const now = new Date();
-    const today = now.toISOString().split('T')[0];
+    const today = getTodayLocalDate();
     const currentHour = now.getHours();
     
     // Determine time slot based on current time
@@ -5836,7 +5842,7 @@ const AdminDashboard = () => {
   tomorrow.setDate(tomorrow.getDate() + 1);
   const todayStart = today.toISOString();
   const todayEnd = tomorrow.toISOString();
-  const todayDateStr = today.toISOString().split('T')[0];
+  const todayDateStr = getTodayLocalDate();
 
   const pendingJobs = jobs.filter(job => {
     if (job.status !== 'PENDING') return false;
@@ -6268,16 +6274,15 @@ const AdminDashboard = () => {
               onChange={(e) => setDeniedDateFilter(e.target.value)}
               className="max-w-[200px]"
             />
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => {
-                const today = new Date();
-                setDeniedDateFilter(today.toISOString().split('T')[0]);
-              }}
-            >
-              Today
-            </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => {
+                  setDeniedDateFilter(getTodayLocalDate());
+                }}
+              >
+                Today
+              </Button>
           </div>
         )}
 
@@ -6299,8 +6304,7 @@ const AdminDashboard = () => {
                 variant="outline"
                 size="sm"
                 onClick={() => {
-                  const today = new Date();
-                  setCompletedDateFilter(today.toISOString().split('T')[0]);
+                  setCompletedDateFilter(getTodayLocalDate());
                 }}
               >
                 Today

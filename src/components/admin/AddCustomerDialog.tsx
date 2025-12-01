@@ -872,10 +872,15 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
                       checked={shouldCreateJob === true}
                       onChange={() => {
                         setShouldCreateJob(true);
+                        // Get today's date in local timezone
                         const today = new Date();
+                        const year = today.getFullYear();
+                        const month = String(today.getMonth() + 1).padStart(2, '0');
+                        const day = String(today.getDate()).padStart(2, '0');
+                        const todayDateString = `${year}-${month}-${day}`;
                         setStep5JobData(prev => ({
                           ...prev,
-                          scheduled_date: today.toISOString().split('T')[0],
+                          scheduled_date: todayDateString,
                           service_type: addFormData.service_types[0] === 'SOFTENER' ? 'SOFTENER' : 'RO'
                         }));
                       }}

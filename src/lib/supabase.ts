@@ -384,13 +384,23 @@ export const db = {
     async getCounts() {
       try {
         // Get today's date range (start and end of today) for today-specific counts
+        // Use local timezone date, then convert to UTC for database comparison
         const today = new Date();
-        today.setHours(0, 0, 0, 0);
-        const tomorrow = new Date(today);
-        tomorrow.setDate(tomorrow.getDate() + 1);
+        const year = today.getFullYear();
+        const month = today.getMonth();
+        const day = today.getDate();
         
-        const todayStart = today.toISOString();
-        const todayEnd = tomorrow.toISOString();
+        // Create date objects in local timezone (start and end of today)
+        const localStartOfDay = new Date(year, month, day, 0, 0, 0, 0);
+        const localEndOfDay = new Date(year, month, day, 23, 59, 59, 999);
+        
+        // Convert to UTC timestamps for database comparison
+        const timezoneOffsetMs = localStartOfDay.getTimezoneOffset() * 60000;
+        const todayStartUTC = new Date(localStartOfDay.getTime() + timezoneOffsetMs);
+        const todayEndUTC = new Date(localEndOfDay.getTime() + timezoneOffsetMs);
+        
+        const todayStart = todayStartUTC.toISOString();
+        const todayEnd = todayEndUTC.toISOString();
         
         // Count jobs in parallel for better performance
         const [ongoingResult, followupResult, deniedResult, completedResult] = await Promise.all([
@@ -412,6 +422,7 @@ export const db = {
             .gte('denied_at', todayStart)
             .lt('denied_at', todayEnd),
           // Completed: Only TODAY's jobs with status COMPLETED (using completed_at field)
+          // Use lt instead of lte since todayEnd is start of next day
           supabase
             .from('jobs')
             .select('id', { count: 'exact', head: true })
@@ -474,10 +485,23 @@ export const db = {
       
       // If date filter is provided, filter by date based on status
       if (dateFilter) {
-        const startOfDay = new Date(dateFilter);
-        startOfDay.setHours(0, 0, 0, 0);
-        const endOfDay = new Date(dateFilter);
-        endOfDay.setHours(23, 59, 59, 999);
+        // Parse date filter (format: YYYY-MM-DD) and create date range
+        // Filter by date portion in local timezone (what the user sees)
+        // Since timestamps are stored in UTC, we need to convert local date range to UTC
+        const [year, month, day] = dateFilter.split('-').map(Number);
+        
+        // Create date objects in local timezone (start and end of selected day)
+        const localStartOfDay = new Date(year, month - 1, day, 0, 0, 0, 0);
+        const localEndOfDay = new Date(year, month - 1, day, 23, 59, 59, 999);
+        
+        // Convert to UTC timestamps for database comparison
+        // getTimezoneOffset() returns offset in minutes from UTC to local
+        // For IST (UTC+5:30), getTimezoneOffset() returns -330 (negative because ahead of UTC)
+        // To convert local to UTC: UTC = local + (offset in ms)
+        // Since offset is negative for timezones ahead of UTC, this effectively subtracts
+        const timezoneOffsetMs = localStartOfDay.getTimezoneOffset() * 60000;
+        const startOfDay = new Date(localStartOfDay.getTime() + timezoneOffsetMs);
+        const endOfDay = new Date(localEndOfDay.getTime() + timezoneOffsetMs);
         
         if (statuses.includes('DENIED')) {
           // Filter DENIED jobs by denied_at date
@@ -486,13 +510,15 @@ export const db = {
             query = query.or(`and(status.eq.DENIED,denied_at.gte.${startOfDay.toISOString()},denied_at.lte.${endOfDay.toISOString()}),status.eq.CANCELLED`);
           } else {
             // Only DENIED jobs, filter by date
+            // endOfDay is start of next day, so use lt (less than) instead of lte
             query = query
               .eq('status', 'DENIED')
               .gte('denied_at', startOfDay.toISOString())
-              .lte('denied_at', endOfDay.toISOString());
+              .lt('denied_at', endOfDay.toISOString());
           }
         } else if (statuses.includes('COMPLETED')) {
           // Filter COMPLETED jobs by completed_at date
+          // Filter by date portion in local timezone (what user sees)
           query = query
             .eq('status', 'COMPLETED')
             .gte('completed_at', startOfDay.toISOString())

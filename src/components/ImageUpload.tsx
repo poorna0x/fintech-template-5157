@@ -218,8 +218,126 @@ const ImageUpload: React.FC<ImageUploadProps> = ({
     fileInputRef.current?.click();
   };
 
-  const openCameraDialog = () => {
-    cameraInputRef.current?.click();
+  const openCameraDialog = async () => {
+    // Try getUserMedia API first (more reliable on Android devices like iQOO)
+    if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({ 
+          video: { facingMode: 'environment' } // Back camera
+        });
+        
+        // Create video element for preview
+        const video = document.createElement('video');
+        video.srcObject = stream;
+        video.autoplay = true;
+        video.playsInline = true;
+        video.style.width = '100%';
+        video.style.maxWidth = '100%';
+        video.style.height = 'auto';
+        video.style.borderRadius = '8px';
+        
+        // Create modal overlay
+        const modal = document.createElement('div');
+        modal.style.position = 'fixed';
+        modal.style.top = '0';
+        modal.style.left = '0';
+        modal.style.width = '100%';
+        modal.style.height = '100%';
+        modal.style.backgroundColor = 'rgba(0, 0, 0, 0.95)';
+        modal.style.zIndex = '9999';
+        modal.style.display = 'flex';
+        modal.style.flexDirection = 'column';
+        modal.style.alignItems = 'center';
+        modal.style.justifyContent = 'center';
+        modal.style.gap = '20px';
+        modal.style.padding = '20px';
+        
+        // Video container
+        const videoContainer = document.createElement('div');
+        videoContainer.style.width = '100%';
+        videoContainer.style.maxWidth = '500px';
+        videoContainer.style.position = 'relative';
+        videoContainer.appendChild(video);
+        
+        // Button container
+        const buttonContainer = document.createElement('div');
+        buttonContainer.style.display = 'flex';
+        buttonContainer.style.gap = '10px';
+        
+        // Capture button
+        const captureBtn = document.createElement('button');
+        captureBtn.textContent = 'Capture Photo';
+        captureBtn.style.padding = '12px 24px';
+        captureBtn.style.backgroundColor = '#3b82f6';
+        captureBtn.style.color = 'white';
+        captureBtn.style.border = 'none';
+        captureBtn.style.borderRadius = '8px';
+        captureBtn.style.cursor = 'pointer';
+        captureBtn.style.fontSize = '16px';
+        captureBtn.style.fontWeight = '600';
+        
+        // Cancel button
+        const cancelBtn = document.createElement('button');
+        cancelBtn.textContent = 'Cancel';
+        cancelBtn.style.padding = '12px 24px';
+        cancelBtn.style.backgroundColor = '#6b7280';
+        cancelBtn.style.color = 'white';
+        cancelBtn.style.border = 'none';
+        cancelBtn.style.borderRadius = '8px';
+        cancelBtn.style.cursor = 'pointer';
+        cancelBtn.style.fontSize = '16px';
+        
+        const cleanup = () => {
+          stream.getTracks().forEach(track => track.stop());
+          document.body.removeChild(modal);
+        };
+        
+        captureBtn.onclick = () => {
+          // Create canvas to capture the photo
+          const canvas = document.createElement('canvas');
+          canvas.width = video.videoWidth;
+          canvas.height = video.videoHeight;
+          const ctx = canvas.getContext('2d');
+          if (ctx) {
+            ctx.drawImage(video, 0, 0);
+            canvas.toBlob((blob) => {
+              if (blob) {
+                const file = new File([blob], `camera-photo-${Date.now()}.jpg`, { type: 'image/jpeg' });
+                // Create a DataTransfer object to simulate file input
+                const dataTransfer = new DataTransfer();
+                dataTransfer.items.add(file);
+                handleFileSelect(dataTransfer.files);
+              }
+            }, 'image/jpeg', 0.9);
+          }
+          cleanup();
+        };
+        
+        cancelBtn.onclick = cleanup;
+        
+        buttonContainer.appendChild(captureBtn);
+        buttonContainer.appendChild(cancelBtn);
+        
+        modal.appendChild(videoContainer);
+        modal.appendChild(buttonContainer);
+        document.body.appendChild(modal);
+        
+        // Stop stream and remove modal when clicking outside
+        modal.onclick = (e) => {
+          if (e.target === modal) {
+            cleanup();
+          }
+        };
+        
+      } catch (error: any) {
+        console.warn('getUserMedia failed, falling back to file input:', error);
+        // Fallback to file input with capture attribute
+        cameraInputRef.current?.click();
+      }
+    } else {
+      // Fallback to file input with capture attribute
+      cameraInputRef.current?.click();
+    }
   };
 
   // Drag and drop handlers
@@ -353,6 +471,7 @@ const ImageUpload: React.FC<ImageUploadProps> = ({
         className="hidden"
       />
       
+      {/* Camera input with multiple capture attribute variations for better device compatibility */}
       <input
         ref={cameraInputRef}
         type="file"
