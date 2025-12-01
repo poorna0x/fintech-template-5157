@@ -6496,8 +6496,20 @@ const AdminDashboard = () => {
                         const amcInfo = requirements.find((r: any) => r?.amc_info)?.amc_info || null;
                         const qrPhotos = requirements.find((r: any) => r?.qr_photos)?.qr_photos || null;
                         
-                        // Extract payment screenshot from qr_photos (primary source)
-                        let paymentScreenshot = qrPhotos?.payment_screenshot || null;
+                        // Extract payment screenshot from qr_photos (primary source - handles secondary Cloudinary account)
+                        // Payment screenshot can be a string URL or an object with secure_url
+                        let paymentScreenshot: string | null = null;
+                        if (qrPhotos?.payment_screenshot) {
+                          if (typeof qrPhotos.payment_screenshot === 'string') {
+                            paymentScreenshot = qrPhotos.payment_screenshot.trim();
+                          } else if (qrPhotos.payment_screenshot && typeof qrPhotos.payment_screenshot === 'object' && qrPhotos.payment_screenshot.secure_url) {
+                            paymentScreenshot = qrPhotos.payment_screenshot.secure_url.trim();
+                          }
+                          // Validate it's a valid URL (handles both primary and secondary Cloudinary accounts)
+                          if (paymentScreenshot && !paymentScreenshot.startsWith('http://') && !paymentScreenshot.startsWith('https://')) {
+                            paymentScreenshot = null; // Invalid format
+                          }
+                        }
                         
                         // Extract all photos from after_photos field (includes both bill photos and payment screenshot)
                         const afterPhotosExtracted = extractPhotoUrls(afterPhotos);
@@ -6507,25 +6519,28 @@ const AdminDashboard = () => {
                           requirements.find((r: any) => r?.bill_photos)?.bill_photos || []
                         );
                         
-                        // Combine all photos: from after_photos (primary) + from requirements.bill_photos (fallback)
-                        const allPhotosFromAfter = afterPhotosExtracted;
-                        const allPhotosFromRequirements = billPhotosFromRequirements;
-                        
                         // Use after_photos as primary source (it contains all photos including payment screenshot)
                         // If after_photos is empty, fallback to requirements.bill_photos
                         let billPhotos: string[] = [];
                         
-                        if (allPhotosFromAfter.length > 0) {
+                        if (afterPhotosExtracted.length > 0) {
                           // If we have a payment screenshot from qr_photos, exclude it from bill photos
                           if (paymentScreenshot) {
-                            billPhotos = allPhotosFromAfter.filter(url => url !== paymentScreenshot);
+                            // Normalize URLs for comparison (remove query params, fragments)
+                            const normalizeUrl = (url: string) => url.split('?')[0].split('#')[0].trim().toLowerCase();
+                            const normalizedPaymentScreenshot = normalizeUrl(paymentScreenshot);
+                            
+                            billPhotos = afterPhotosExtracted.filter(url => {
+                              const normalizedUrl = url.split('?')[0].split('#')[0].trim().toLowerCase();
+                              return normalizedUrl !== normalizedPaymentScreenshot;
+                            });
                           } else {
                             // If no payment screenshot in qr_photos, all photos in after_photos are bill photos
-                            billPhotos = allPhotosFromAfter;
+                            billPhotos = afterPhotosExtracted;
                           }
                         } else {
                           // Fallback to requirements.bill_photos if after_photos is empty
-                          billPhotos = allPhotosFromRequirements;
+                          billPhotos = billPhotosFromRequirements;
                         }
                         
                         // If payment screenshot is not in qr_photos but we have after_photos, 
@@ -6540,12 +6555,19 @@ const AdminDashboard = () => {
                           }
                         }
                         
+                        // Final validation: ensure payment screenshot is a valid URL
+                        if (paymentScreenshot && (!paymentScreenshot.startsWith('http://') && !paymentScreenshot.startsWith('https://'))) {
+                          console.warn('⚠️ Invalid payment screenshot URL format:', paymentScreenshot);
+                          paymentScreenshot = null;
+                        }
+                        
                         console.log('📸 AdminDashboard photo extraction:', {
                           afterPhotosExtracted,
                           billPhotosFromRequirements,
                           paymentScreenshot,
-                          billPhotos,
-                          qrPhotos: qrPhotos ? 'exists' : 'null'
+                          billPhotosCount: billPhotos.length,
+                          qrPhotos: qrPhotos ? 'exists' : 'null',
+                          hasPaymentScreenshot: !!paymentScreenshot
                         });
                         
                         return (
