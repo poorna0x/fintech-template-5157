@@ -1984,25 +1984,67 @@ const Booking: React.FC = () => {
                                 document.body.removeChild(modal);
                               };
                               
+                              // Wait for video to be ready before allowing capture
+                              video.onloadedmetadata = () => {
+                                captureBtn.disabled = false;
+                              };
+                              
+                              captureBtn.disabled = true; // Disable until video is ready
+                              
                               captureBtn.onclick = () => {
-                                // Create canvas to capture the photo
-                                const canvas = document.createElement('canvas');
-                                canvas.width = video.videoWidth;
-                                canvas.height = video.videoHeight;
-                                const ctx = canvas.getContext('2d');
-                                if (ctx) {
-                                  ctx.drawImage(video, 0, 0);
+                                try {
+                                  // Check if video is ready
+                                  if (!video.videoWidth || !video.videoHeight) {
+                                    toast.error('Camera not ready. Please wait a moment and try again.');
+                                    return;
+                                  }
+                                  
+                                  // Create canvas to capture the photo
+                                  const canvas = document.createElement('canvas');
+                                  canvas.width = video.videoWidth;
+                                  canvas.height = video.videoHeight;
+                                  const ctx = canvas.getContext('2d');
+                                  
+                                  if (!ctx) {
+                                    toast.error('Failed to capture photo. Please try again.');
+                                    cleanup();
+                                    return;
+                                  }
+                                  
+                                  try {
+                                    ctx.drawImage(video, 0, 0);
+                                  } catch (drawError) {
+                                    console.error('Error drawing video to canvas:', drawError);
+                                    toast.error('Failed to capture photo. Please try again.');
+                                    cleanup();
+                                    return;
+                                  }
+                                  
                                   canvas.toBlob((blob) => {
-                                    if (blob) {
+                                    if (!blob) {
+                                      toast.error('Failed to process photo. Please try again.');
+                                      cleanup();
+                                      return;
+                                    }
+                                    
+                                    try {
                                       const file = new File([blob], `camera-photo-${Date.now()}.jpg`, { type: 'image/jpeg' });
                                       // Create a DataTransfer object to simulate file input
                                       const dataTransfer = new DataTransfer();
                                       dataTransfer.items.add(file);
                                       processFiles(Array.from(dataTransfer.files));
+                                      cleanup();
+                                    } catch (fileError) {
+                                      console.error('Error creating file:', fileError);
+                                      toast.error('Failed to process photo. Please try again.');
+                                      cleanup();
                                     }
                                   }, 'image/jpeg', 0.9);
+                                } catch (error: any) {
+                                  console.error('Error capturing photo:', error);
+                                  toast.error(`Failed to capture photo: ${error?.message || 'Unknown error'}`);
+                                  cleanup();
                                 }
-                                cleanup();
                               };
                               
                               cancelBtn.onclick = cleanup;

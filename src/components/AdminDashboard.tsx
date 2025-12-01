@@ -4405,7 +4405,8 @@ const AdminDashboard = () => {
       });
 
       if (error) {
-        toast.error('Failed to reassign job');
+        console.error('Reassign job error:', error);
+        toast.error(`Failed to reassign job: ${error.message || 'Unknown error'}`);
         return;
       }
 
@@ -4422,8 +4423,12 @@ const AdminDashboard = () => {
       setSelectedTechnicianForReassign('');
       setReassignAssignmentType('direct');
       setReassignTechnicianDistances([]);
-    } catch (error) {
-      toast.error('Failed to reassign job');
+      
+      // Reload jobs to ensure consistency
+      await loadFilteredJobs(statusFilter, currentPage);
+    } catch (error: any) {
+      console.error('Reassign job exception:', error);
+      toast.error(`Failed to reassign job: ${error?.message || 'Unknown error'}`);
     }
   };
 

@@ -2699,6 +2699,9 @@ const TechnicianDashboard = () => {
           console.log('✅ Added bill photos to requirements:', uploadedBillPhotos);
         }
 
+        // Collect all photos for after_photos array (bill photos + payment screenshot)
+        const allAfterPhotos: string[] = [...uploadedBillPhotos];
+        
         if (paymentMode === 'ONLINE') {
           const qrPhotos: any = {
             qr_code_type: qrCodeType,
@@ -2708,6 +2711,18 @@ const TechnicianDashboard = () => {
             selected_qr_code_name: selectedQrCodeName,
           };
           requirements.push({ qr_photos: qrPhotos });
+          
+          // Add payment screenshot to after_photos array so it shows in completed photos
+          if (paymentScreenshot && paymentScreenshot.startsWith('http')) {
+            allAfterPhotos.push(paymentScreenshot);
+            console.log('✅ Added payment screenshot to after_photos:', paymentScreenshot);
+          }
+        }
+        
+        // Update after_photos field with all photos (bill photos + payment screenshot)
+        if (allAfterPhotos.length > 0) {
+          updateData.after_photos = allAfterPhotos;
+          console.log('✅ Added all photos to after_photos:', allAfterPhotos);
         }
 
         // Add AMC info for reference (technician provides this, admin will create official AMC)
