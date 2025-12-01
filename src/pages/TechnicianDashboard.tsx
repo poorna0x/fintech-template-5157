@@ -1223,12 +1223,13 @@ const TechnicianDashboard = () => {
 
   // Get current location and update in database
   const getCurrentLocation = useCallback(async () => {
-    // Check if location tracking is enabled
+    // Check if location tracking is enabled - block ALL updates when disabled
     const locationTrackingEnabled = localStorage.getItem('technician_location_tracking_enabled') !== 'false';
     if (!locationTrackingEnabled) {
-      console.log('Location tracking is disabled in settings');
-      setLocationError(null);
-      setLocationErrorType(null);
+      console.log('Location tracking is disabled in settings - all location updates blocked');
+      setLocationError('Location tracking is disabled in settings. Please enable it in Settings to update your location.');
+      setLocationErrorType('other');
+      toast.error('Location tracking is disabled. Enable it in Settings to update your location.');
       return;
     }
 
@@ -1474,6 +1475,13 @@ const TechnicianDashboard = () => {
   useEffect(() => {
     if (!user?.technicianId) return;
 
+    // Check if location tracking is enabled
+    const locationTrackingEnabled = localStorage.getItem('technician_location_tracking_enabled') !== 'false';
+    if (!locationTrackingEnabled) {
+      console.log('Location tracking is disabled - skipping periodic updates');
+      return;
+    }
+
     // Update location immediately on mount (only if page is visible)
     if (!document.hidden) {
       getCurrentLocation();
@@ -1481,25 +1489,51 @@ const TechnicianDashboard = () => {
 
     // Then update every 5 minutes - ONLY if page is visible
     const locationInterval = setInterval(() => {
-      // Only update location if the page is visible (app is open and active)
-      if (!document.hidden) {
+      // Check again if tracking is still enabled
+      const stillEnabled = localStorage.getItem('technician_location_tracking_enabled') !== 'false';
+      if (stillEnabled && !document.hidden) {
         getCurrentLocation();
       }
     }, 5 * 60 * 1000); // 5 minutes
 
     // Also listen for visibility changes to update when app becomes visible again
     const handleVisibilityChange = () => {
-      if (!document.hidden && user?.technicianId) {
+      const stillEnabled = localStorage.getItem('technician_location_tracking_enabled') !== 'false';
+      if (!document.hidden && user?.technicianId && stillEnabled) {
         // Update location when app becomes visible again
         getCurrentLocation();
       }
     };
 
+    // Listen for storage changes (when setting is toggled in Settings page - cross-tab)
+    const handleStorageChange = (e: StorageEvent) => {
+      if (e.key === 'technician_location_tracking_enabled') {
+        const isEnabled = e.newValue !== 'false';
+        if (isEnabled && !document.hidden && user?.technicianId) {
+          console.log('Location tracking enabled - requesting location update');
+          getCurrentLocation();
+        }
+      }
+    };
+
+    // Listen for custom event (when setting is toggled in same window)
+    const handleLocationTrackingChanged = (e: CustomEvent) => {
+      const isEnabled = e.detail?.enabled !== false;
+      if (isEnabled && !document.hidden && user?.technicianId) {
+        console.log('Location tracking enabled - requesting location update');
+        getCurrentLocation();
+      }
+    };
+
     document.addEventListener('visibilitychange', handleVisibilityChange);
+    window.addEventListener('storage', handleStorageChange);
+    window.addEventListener('locationTrackingChanged', handleLocationTrackingChanged as EventListener);
 
     return () => {
       clearInterval(locationInterval);
       document.removeEventListener('visibilitychange', handleVisibilityChange);
+      window.removeEventListener('storage', handleStorageChange);
+      window.removeEventListener('locationTrackingChanged', handleLocationTrackingChanged as EventListener);
     };
   }, [user?.technicianId, getCurrentLocation]);
 

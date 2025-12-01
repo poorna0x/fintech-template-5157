@@ -397,7 +397,7 @@ const AssignJobDialog: React.FC<AssignJobDialogProps> = ({
                   ) : (
                     <>
                       <Navigation className="w-3 h-3 mr-1" />
-                      Sort by Distance
+                      Assign by Distance
                     </>
                   )}
                 </Button>

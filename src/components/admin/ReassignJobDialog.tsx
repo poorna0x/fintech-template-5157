@@ -404,7 +404,7 @@ const ReassignJobDialog: React.FC<ReassignJobDialogProps> = ({
                   ) : (
                     <>
                       <Navigation className="w-3 h-3 mr-1" />
-                      Sort by Distance
+                      Reassign by Distance
                     </>
                   )}
                 </Button>

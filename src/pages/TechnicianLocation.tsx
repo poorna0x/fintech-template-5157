@@ -36,10 +36,16 @@ const TechnicianLocation = () => {
   const [permissionDenied, setPermissionDenied] = useState(false);
 
   const getCurrentLocation = useCallback(async (autoUpdate: boolean = false) => {
-    // Check if location tracking is enabled
+    // Check if location tracking is enabled - block ALL updates when disabled
     const locationTrackingEnabled = localStorage.getItem('technician_location_tracking_enabled') !== 'false';
-    if (!locationTrackingEnabled && autoUpdate) {
-      console.log('Location tracking is disabled');
+    if (!locationTrackingEnabled) {
+      console.log('Location tracking is disabled in settings - all location updates blocked');
+      if (!autoUpdate) {
+        setError('Location tracking is disabled in settings. Please enable it in Settings to update your location.');
+        setErrorType('other');
+        toast.error('Location tracking is disabled. Enable it in Settings to update your location.');
+      }
+      setIsLoading(false);
       return;
     }
 
@@ -224,6 +230,13 @@ const TechnicianLocation = () => {
 
   // Auto-update location on page load/refresh
   useEffect(() => {
+    // Check if location tracking is enabled
+    const locationTrackingEnabled = localStorage.getItem('technician_location_tracking_enabled') !== 'false';
+    if (!locationTrackingEnabled) {
+      console.log('Location tracking is disabled - skipping auto-updates');
+      return;
+    }
+
     // Wait a bit before first update to ensure page is fully loaded
     const initialDelay = setTimeout(() => {
       getCurrentLocation(true); // Auto-update mode
@@ -232,9 +245,26 @@ const TechnicianLocation = () => {
     // Also update when page becomes visible (e.g., when switching back to tab)
     const handleVisibilityChange = () => {
       if (!document.hidden) {
-        // Only update if it's been more than 1 minute since last attempt
-        const timeSinceLastUpdate = Date.now() - lastUpdateAttemptRef.current;
-        if (timeSinceLastUpdate > 60000) { // 1 minute
+        // Check if tracking is still enabled
+        const stillEnabled = localStorage.getItem('technician_location_tracking_enabled') !== 'false';
+        if (stillEnabled) {
+          // Only update if it's been more than 1 minute since last attempt
+          const timeSinceLastUpdate = Date.now() - lastUpdateAttemptRef.current;
+          if (timeSinceLastUpdate > 60000) { // 1 minute
+            setTimeout(() => {
+              getCurrentLocation(true);
+            }, 500);
+          }
+        }
+      }
+    };
+
+    // Listen for storage changes (when setting is toggled in Settings page - cross-tab)
+    const handleStorageChange = (e: StorageEvent) => {
+      if (e.key === 'technician_location_tracking_enabled') {
+        const isEnabled = e.newValue !== 'false';
+        if (isEnabled && !document.hidden) {
+          console.log('Location tracking enabled - requesting location update');
           setTimeout(() => {
             getCurrentLocation(true);
           }, 500);
@@ -242,11 +272,25 @@ const TechnicianLocation = () => {
       }
     };
 
+    // Listen for custom event (when setting is toggled in same window)
+    const handleLocationTrackingChanged = (e: CustomEvent) => {
+      const isEnabled = e.detail?.enabled !== false;
+      if (isEnabled && !document.hidden) {
+        console.log('Location tracking enabled - requesting location update');
+        setTimeout(() => {
+          getCurrentLocation(true);
+        }, 500);
+      }
+    };
+
     document.addEventListener('visibilitychange', handleVisibilityChange);
+    window.addEventListener('storage', handleStorageChange);
+    window.addEventListener('locationTrackingChanged', handleLocationTrackingChanged as EventListener);
 
     // Update on page refresh (beforeunload won't work, but we can use pageshow)
     const handlePageShow = (e: PageTransitionEvent) => {
-      if (e.persisted || performance.navigation.type === 1) {
+      const stillEnabled = localStorage.getItem('technician_location_tracking_enabled') !== 'false';
+      if (stillEnabled && (e.persisted || performance.navigation.type === 1)) {
         // Page was loaded from cache or refreshed
         setTimeout(() => {
           getCurrentLocation(true);
@@ -259,6 +303,8 @@ const TechnicianLocation = () => {
     return () => {
       clearTimeout(initialDelay);
       document.removeEventListener('visibilitychange', handleVisibilityChange);
+      window.removeEventListener('storage', handleStorageChange);
+      window.removeEventListener('locationTrackingChanged', handleLocationTrackingChanged as EventListener);
       window.removeEventListener('pageshow', handlePageShow);
     };
   }, [getCurrentLocation]); // Include getCurrentLocation in dependencies

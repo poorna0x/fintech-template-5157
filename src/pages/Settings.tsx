@@ -96,6 +96,10 @@ const Settings = () => {
   const handleLocationTrackingToggle = (enabled: boolean) => {
     setLocationTrackingEnabled(enabled);
     localStorage.setItem('technician_location_tracking_enabled', enabled.toString());
+    // Dispatch custom event so other tabs/pages can react immediately
+    window.dispatchEvent(new CustomEvent('locationTrackingChanged', {
+      detail: { enabled }
+    }));
     toast.success(enabled ? 'Location tracking enabled for all technicians' : 'Location tracking disabled for all technicians');
   };
 
