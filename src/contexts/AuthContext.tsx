@@ -46,12 +46,12 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   useEffect(() => {
     // Check for existing session on app load with timeout
     const checkSession = async () => {
-      // Set a timeout to prevent infinite loading
+      // Set a timeout to prevent infinite loading - REDUCED for faster login page display
       const timeoutId = setTimeout(() => {
         console.warn('[Auth] Session check timeout - proceeding without session');
         setLoading(false);
         setInitialized(true);
-      }, 10000); // 10 second timeout
+      }, 5000); // Reduced to 5 seconds for faster login page display
 
       try {
         // First check custom auth session (for technicians) - this is synchronous
@@ -65,10 +65,10 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
           return;
         }
 
-        // Then check Supabase auth session (for admins) with timeout
+        // Then check Supabase auth session (for admins) with timeout - REDUCED
         const sessionPromise = supabase.auth.getSession();
         const timeoutPromise = new Promise<{ data: { session: null } }>((_, reject) => 
-          setTimeout(() => reject(new Error('Session check timeout')), 8000)
+          setTimeout(() => reject(new Error('Session check timeout')), 3000) // Reduced to 3 seconds
         );
 
         const result = await Promise.race([sessionPromise, timeoutPromise]);
