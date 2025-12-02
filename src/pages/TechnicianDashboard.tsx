@@ -452,25 +452,45 @@ const TechnicianDashboard = () => {
       }
       console.time('loadAssignedJobs'); // Performance timing
       
-      // Add timeout for mobile networks
+      // Use proper timeout handling - only timeout if request actually takes too long
+      let timeoutId: NodeJS.Timeout | null = null;
       const jobsPromise = db.jobs.getByTechnicianId(user.technicianId);
-      const timeoutPromise = new Promise<{ data: null, error: Error }>((_, reject) => 
-        setTimeout(() => reject(new Error('Request timeout')), 20000) // 20 second timeout for mobile
-      );
       
-      const { data, error } = await Promise.race([jobsPromise, timeoutPromise]);
-      console.timeEnd('loadAssignedJobs'); // Performance timing
+      const timeoutPromise = new Promise<{ data: null, error: Error }>((_, reject) => {
+        timeoutId = setTimeout(() => {
+          reject(new Error('Request timeout'));
+        }, 20000); // 20 second timeout for mobile
+      });
       
-      if (error) {
-        console.error('Error loading assigned jobs:', error);
-        // Retry on network errors (up to 2 retries)
-        if (retryCount < 2 && (error.message.includes('fetch') || error.message.includes('network') || error.message.includes('Failed to fetch') || error.message.includes('timeout'))) {
-          console.log(`Retrying loadAssignedJobs (attempt ${retryCount + 1}/2)...`);
-          await new Promise(resolve => setTimeout(resolve, 1000 * (retryCount + 1))); // Exponential backoff
-          return loadAssignedJobs(retryCount + 1);
+      try {
+        const result = await Promise.race([jobsPromise, timeoutPromise]);
+        // Clear timeout if request completed successfully
+        if (timeoutId) clearTimeout(timeoutId);
+        
+        const { data, error } = result;
+        console.timeEnd('loadAssignedJobs'); // Performance timing
+        
+        if (error) {
+          console.error('Error loading assigned jobs:', error);
+          // Retry on network errors (up to 2 retries)
+          if (retryCount < 2 && (error.message.includes('fetch') || error.message.includes('network') || error.message.includes('Failed to fetch') || error.message.includes('timeout'))) {
+            console.log(`Retrying loadAssignedJobs (attempt ${retryCount + 1}/2)...`);
+            await new Promise(resolve => setTimeout(resolve, 1000 * (retryCount + 1))); // Exponential backoff
+            return loadAssignedJobs(retryCount + 1);
+          }
+          throw new Error(error.message);
         }
-        throw new Error(error.message);
-      }
+        
+        // Use the data from the result
+        const jobsData = (result as any).data || data;
+        const jobsError = (result as any).error || error;
+        
+        if (jobsError) {
+          throw new Error(jobsError.message || 'Failed to load jobs');
+        }
+        
+        // Continue with jobsData...
+        const data = jobsData;
 
       // All jobs go to regular jobs list (ASSIGNED jobs will show with blue border in the list)
       const allJobs: Job[] = [];
