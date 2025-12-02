@@ -241,14 +241,22 @@ const AltchaWidget: React.FC<AltchaWidgetProps> = ({
         const controller = new AbortController();
         const timeoutId = setTimeout(() => controller.abort(), 15000); // 15 second timeout
         
-        const response = await fetch(apiUrl, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ payload }),
-          signal: controller.signal,
-        });
-        
-        clearTimeout(timeoutId);
+        let response: Response;
+        try {
+          response = await fetch(apiUrl, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ payload }),
+            signal: controller.signal,
+          });
+          clearTimeout(timeoutId);
+        } catch (fetchError: any) {
+          clearTimeout(timeoutId);
+          if (fetchError.name === 'AbortError') {
+            throw new Error('Verification timeout - please check your connection and try again');
+          }
+          throw fetchError;
+        }
         
         if (!response.ok) {
           const errorData = await response.json().catch(() => ({}));
