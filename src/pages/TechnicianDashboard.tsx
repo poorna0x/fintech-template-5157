@@ -2896,16 +2896,43 @@ const TechnicianDashboard = () => {
         }
 
         // Update customer prefilter status if provided
-        if (customerHasPrefilter !== null && selectedJobForComplete.customer) {
-          const customerId = (selectedJobForComplete.customer as any).id || selectedJobForComplete.customer.id;
+        if (customerHasPrefilter !== null) {
+          // Get customer ID from job - try multiple possible fields
+          const customerId = 
+            selectedJobForComplete.customer_id || 
+            (selectedJobForComplete as any).customer_id ||
+            (selectedJobForComplete.customer as any)?.id || 
+            selectedJobForComplete.customer?.id ||
+            selectedJobForComplete.customerId;
+          
           if (customerId) {
             try {
-              await db.customers.update(customerId, {
+              console.log('🔄 Updating customer prefilter status:', {
+                customerId,
+                hasPrefilter: customerHasPrefilter
+              });
+              
+              const { data, error } = await db.customers.update(customerId, {
                 has_prefilter: customerHasPrefilter
               });
+              
+              if (error) {
+                console.error('❌ Failed to update customer prefilter status:', error);
+                toast.error('Failed to update customer prefilter status');
+              } else {
+                console.log('✅ Customer prefilter status updated successfully:', data);
+              }
             } catch (error) {
-              console.warn('Failed to update customer prefilter status:', error);
+              console.error('❌ Error updating customer prefilter status:', error);
+              toast.error('Failed to update customer prefilter status');
             }
+          } else {
+            console.warn('⚠️ Cannot update customer prefilter: customer ID not found in job', {
+              jobId: selectedJobForComplete.id,
+              customer: selectedJobForComplete.customer,
+              customer_id: selectedJobForComplete.customer_id,
+              customerId: selectedJobForComplete.customerId
+            });
           }
         }
 
