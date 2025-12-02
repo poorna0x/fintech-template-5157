@@ -191,41 +191,52 @@ const EditCustomerDialog: React.FC<EditCustomerDialogProps> = ({
     ).slice(0, 12);
   }, [editFormData?.visible_address]);
 
-  // Initialize form when customer changes
+  // Initialize form when customer changes - fetch fresh data from database
   useEffect(() => {
     if (customer && open) {
-      const serviceTypes = parseDbServiceType(customer.service_type || '');
-      const equipment: {[serviceType: string]: {brand: string, model: string}} = {};
-      
-      if (serviceTypes.length > 0) {
-        const brands = (customer.brand || '').split(',').map((s: string) => s.trim());
-        const models = (customer.model || '').split(',').map((s: string) => s.trim());
-        
-        serviceTypes.forEach((serviceType: string, index: number) => {
-          const brandValue = brands[index] || '';
-          const modelValue = models[index] || '';
-          equipment[serviceType] = {
-            brand: brandValue === 'Not specified' || brandValue.toLowerCase() === 'not specified' ? '' : brandValue,
-            model: modelValue === 'Not specified' || modelValue.toLowerCase() === 'not specified' ? '' : modelValue
-          };
-        });
-      }
-      
-      setEditFormData({
-        full_name: customer.full_name || customer.fullName || '',
-        phone: customer.phone || '',
-        alternate_phone: customer.alternate_phone || customer.alternatePhone || '',
-        email: customer.email || '',
-        service_types: serviceTypes,
-        equipment: equipment,
-        behavior: customer.behavior || '',
-        native_language: customer.preferredLanguage || '',
-        status: customer.status || '',
-        notes: customer.notes || '',
-        has_prefilter: (customer as any).has_prefilter ?? null,
+      // Fetch fresh customer data from database to ensure we have latest prefilter status
+      const fetchFreshCustomerData = async () => {
+        try {
+          const { data: freshCustomer, error } = await db.customers.getById(customer.id);
+          if (error) {
+            console.warn('Failed to fetch fresh customer data, using prop data:', error);
+          }
+          
+          // Use fresh customer data if available, otherwise fall back to prop
+          const customerToUse = freshCustomer || customer;
+          
+          const serviceTypes = parseDbServiceType(customerToUse.service_type || '');
+          const equipment: {[serviceType: string]: {brand: string, model: string}} = {};
+          
+          if (serviceTypes.length > 0) {
+            const brands = (customerToUse.brand || '').split(',').map((s: string) => s.trim());
+            const models = (customerToUse.model || '').split(',').map((s: string) => s.trim());
+            
+            serviceTypes.forEach((serviceType: string, index: number) => {
+              const brandValue = brands[index] || '';
+              const modelValue = models[index] || '';
+              equipment[serviceType] = {
+                brand: brandValue === 'Not specified' || brandValue.toLowerCase() === 'not specified' ? '' : brandValue,
+                model: modelValue === 'Not specified' || modelValue.toLowerCase() === 'not specified' ? '' : modelValue
+              };
+            });
+          }
+          
+          setEditFormData({
+            full_name: customerToUse.full_name || customerToUse.fullName || '',
+            phone: customerToUse.phone || '',
+            alternate_phone: customerToUse.alternate_phone || customerToUse.alternatePhone || '',
+            email: customerToUse.email || '',
+            service_types: serviceTypes,
+            equipment: equipment,
+            behavior: customerToUse.behavior || '',
+            native_language: customerToUse.preferredLanguage || '',
+            status: customerToUse.status || '',
+            notes: customerToUse.notes || '',
+            has_prefilter: (customerToUse as any).has_prefilter ?? null,
         google_location: (() => {
-          if ((customer.location as any)?.googleLocation) {
-            const googleLoc = (customer.location as any).googleLocation;
+          if ((customerToUse.location as any)?.googleLocation) {
+            const googleLoc = (customerToUse.location as any).googleLocation;
             if (googleLoc && typeof googleLoc === 'string' && 
                 (googleLoc.includes('google.com/maps') || googleLoc.includes('maps.app.goo.gl') || googleLoc.includes('goo.gl/maps')) &&
                 !googleLoc.includes('localhost') && 
@@ -233,61 +244,61 @@ const EditCustomerDialog: React.FC<EditCustomerDialogProps> = ({
               return googleLoc;
             }
           }
-          if (customer.location?.latitude && customer.location?.longitude && 
-              customer.location.latitude !== 0 && customer.location.longitude !== 0) {
-            return `https://www.google.com/maps/place/${customer.location.latitude},${customer.location.longitude}`;
+          if (customerToUse.location?.latitude && customerToUse.location?.longitude && 
+              customerToUse.location.latitude !== 0 && customerToUse.location.longitude !== 0) {
+            return `https://www.google.com/maps/place/${customerToUse.location.latitude},${customerToUse.location.longitude}`;
           }
-          if (customer.location?.formattedAddress && 
-              typeof customer.location.formattedAddress === 'string' &&
-              (customer.location.formattedAddress.includes('google.com/maps') || customer.location.formattedAddress.includes('maps.app.goo.gl')) &&
-              !customer.location.formattedAddress.includes('localhost') &&
-              !customer.location.formattedAddress.includes('127.0.0.1')) {
-            return customer.location.formattedAddress;
+          if (customerToUse.location?.formattedAddress && 
+              typeof customerToUse.location.formattedAddress === 'string' &&
+              (customerToUse.location.formattedAddress.includes('google.com/maps') || customerToUse.location.formattedAddress.includes('maps.app.goo.gl')) &&
+              !customerToUse.location.formattedAddress.includes('localhost') &&
+              !customerToUse.location.formattedAddress.includes('127.0.0.1')) {
+            return customerToUse.location.formattedAddress;
           }
           return '';
         })(),
-        visible_address: (customer as any).visible_address || (customer.address as any)?.visible_address || '',
-        custom_time: customer.customTime || (customer as any).custom_time || '',
+        visible_address: (customerToUse as any).visible_address || (customerToUse.address as any)?.visible_address || '',
+        custom_time: customerToUse.customTime || (customerToUse as any).custom_time || '',
         address: {
           street: (() => {
-            const existingStreet = customer.address?.street || '';
+            const existingStreet = customerToUse.address?.street || '';
             if (existingStreet.includes(',') || existingStreet.length > 30) {
               return existingStreet;
             }
             const joined = [
-              customer.address?.street,
-              customer.address?.area,
-              customer.address?.city,
-              customer.address?.state,
-              customer.address?.pincode
+              customerToUse.address?.street,
+              customerToUse.address?.area,
+              customerToUse.address?.city,
+              customerToUse.address?.state,
+              customerToUse.address?.pincode
             ].filter(Boolean).join(', ');
             return joined || existingStreet || '';
           })(),
-          area: customer.address?.area || '',
-          city: customer.address?.city || '',
-          state: customer.address?.state || '',
-          pincode: customer.address?.pincode || ''
+          area: customerToUse.address?.area || '',
+          city: customerToUse.address?.city || '',
+          state: customerToUse.address?.state || '',
+          pincode: customerToUse.address?.pincode || ''
         },
         location: {
-          latitude: customer.location?.latitude || 0,
-          longitude: customer.location?.longitude || 0,
-          formattedAddress: customer.location?.formattedAddress || ''
+          latitude: customerToUse.location?.latitude || 0,
+          longitude: customerToUse.location?.longitude || 0,
+          formattedAddress: customerToUse.location?.formattedAddress || ''
         },
-        service_cost: customer.serviceCost || 0,
-        cost_agreed: customer.costAgreed || false
+        service_cost: customerToUse.serviceCost || 0,
+        cost_agreed: customerToUse.costAgreed || false
       });
       
       lastSavedFormDataRef.current = JSON.stringify({
-        full_name: customer.full_name || customer.fullName || '',
-        phone: customer.phone || '',
-        alternate_phone: customer.alternate_phone || customer.alternatePhone || '',
-        email: customer.email || '',
+        full_name: customerToUse.full_name || customerToUse.fullName || '',
+        phone: customerToUse.phone || '',
+        alternate_phone: customerToUse.alternate_phone || customerToUse.alternatePhone || '',
+        email: customerToUse.email || '',
         service_types: serviceTypes,
         equipment: equipment,
-        behavior: customer.behavior || '',
-        native_language: customer.preferredLanguage || '',
-        status: customer.status || '',
-        notes: customer.notes || '',
+        behavior: customerToUse.behavior || '',
+        native_language: customerToUse.preferredLanguage || '',
+        status: customerToUse.status || '',
+        notes: customerToUse.notes || '',
         google_location: (() => {
           if ((customer.location as any)?.googleLocation) {
             const googleLoc = (customer.location as any).googleLocation;
