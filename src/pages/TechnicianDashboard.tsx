@@ -2936,7 +2936,7 @@ const TechnicianDashboard = () => {
                   hasPrefilter: customerHasPrefilter,
                   updatedData: data
                 });
-                toast.success('Customer prefilter status updated');
+                // Success - no toast needed, update happens silently
               }
             } catch (error: any) {
               console.error('❌ Error updating customer prefilter status:', {
