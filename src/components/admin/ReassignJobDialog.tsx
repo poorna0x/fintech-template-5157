@@ -390,28 +390,27 @@ const ReassignJobDialog: React.FC<ReassignJobDialogProps> = ({
           <div className="space-y-3">
             <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
               <Label htmlFor="technician-select" className="text-sm sm:text-base">Select Technician</Label>
-              {jobLocation && (
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  onClick={calculateDistances}
-                  disabled={isCalculatingDistances}
-                  className="text-xs w-full sm:w-auto"
-                >
-                  {isCalculatingDistances ? (
-                    <>
-                      <Loader2 className="w-3 h-3 mr-1 animate-spin" />
-                      Calculating...
-                    </>
-                  ) : (
-                    <>
-                      <Navigation className="w-3 h-3 mr-1" />
-                      Reassign by Distance
-                    </>
-                  )}
-                </Button>
-              )}
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={calculateDistances}
+                disabled={isCalculatingDistances || !jobLocation}
+                className="text-xs w-full sm:w-auto"
+                title={!jobLocation ? "Job location not available" : "Calculate distances from job location"}
+              >
+                {isCalculatingDistances ? (
+                  <>
+                    <Loader2 className="w-3 h-3 mr-1 animate-spin" />
+                    Calculating...
+                  </>
+                ) : (
+                  <>
+                    <Navigation className="w-3 h-3 mr-1" />
+                    Reassign by Distance
+                  </>
+                )}
+              </Button>
             </div>
             <Select value={selectedTechnicianId} onValueChange={onTechnicianSelect}>
               <SelectTrigger className="w-full border border-gray-300 focus:border-blue-500 focus:ring-0 focus:ring-offset-0">

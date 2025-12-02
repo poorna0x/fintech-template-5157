@@ -222,13 +222,16 @@ const AssignJobDialog: React.FC<AssignJobDialogProps> = ({
     }
   }, [job, technicians, open, ensureGoogleMapsLoaded]);
 
-  // Reset distances when dialog opens/closes
+  // Reset distances when dialog opens/closes and auto-calculate when opening
   useEffect(() => {
     if (!open) {
       setTechniciansWithDistances([]);
       setIsCalculatingDistances(false);
+    } else if (open && job) {
+      // Auto-calculate distances when dialog opens
+      calculateDistances();
     }
-  }, [open]);
+  }, [open, job, calculateDistances]);
 
   // Early return after all hooks
   if (!job) return null;
@@ -380,28 +383,27 @@ const AssignJobDialog: React.FC<AssignJobDialogProps> = ({
           <div className="space-y-3">
             <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
               <Label htmlFor="technician-select" className="text-sm sm:text-base">Select Technician</Label>
-              {jobLocation && (
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  onClick={calculateDistances}
-                  disabled={isCalculatingDistances}
-                  className="text-xs w-full sm:w-auto"
-                >
-                  {isCalculatingDistances ? (
-                    <>
-                      <Loader2 className="w-3 h-3 mr-1 animate-spin" />
-                      Calculating...
-                    </>
-                  ) : (
-                    <>
-                      <Navigation className="w-3 h-3 mr-1" />
-                      Assign by Distance
-                    </>
-                  )}
-                </Button>
-              )}
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={calculateDistances}
+                disabled={isCalculatingDistances || !jobLocation}
+                className="text-xs w-full sm:w-auto"
+                title={!jobLocation ? "Job location not available" : "Calculate distances from job location"}
+              >
+                {isCalculatingDistances ? (
+                  <>
+                    <Loader2 className="w-3 h-3 mr-1 animate-spin" />
+                    Calculating...
+                  </>
+                ) : (
+                  <>
+                    <Navigation className="w-3 h-3 mr-1" />
+                    Assign by Distance
+                  </>
+                )}
+              </Button>
             </div>
             <Select value={selectedTechnicianId} onValueChange={onTechnicianSelect}>
               <SelectTrigger className="w-full border border-gray-300 focus:border-blue-500 focus:ring-0 focus:ring-offset-0">
