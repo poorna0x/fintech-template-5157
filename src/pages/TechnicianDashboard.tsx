@@ -2897,19 +2897,24 @@ const TechnicianDashboard = () => {
 
         // Update customer prefilter status if provided
         if (customerHasPrefilter !== null) {
-          // Get customer ID from job - try multiple possible fields
+          // Get customer UUID from job - prioritize customer.id (UUID) over customer_id
+          // customer.id is the UUID primary key, customer_id in job is also UUID foreign key
           const customerId = 
-            selectedJobForComplete.customer_id || 
-            (selectedJobForComplete as any).customer_id ||
-            (selectedJobForComplete.customer as any)?.id || 
-            selectedJobForComplete.customer?.id ||
-            selectedJobForComplete.customerId;
+            (selectedJobForComplete.customer as any)?.id ||  // UUID from joined customer object (most reliable)
+            selectedJobForComplete.customer?.id ||           // UUID from customer object
+            selectedJobForComplete.customer_id ||            // UUID foreign key in job table
+            (selectedJobForComplete as any).customer_id ||   // Alternative field name
+            selectedJobForComplete.customerId;              // Fallback
           
           if (customerId) {
             try {
               console.log('🔄 Updating customer prefilter status:', {
                 customerId,
-                hasPrefilter: customerHasPrefilter
+                hasPrefilter: customerHasPrefilter,
+                jobId: selectedJobForComplete.id,
+                customerObject: selectedJobForComplete.customer ? 'present' : 'missing',
+                customerIdFromCustomer: (selectedJobForComplete.customer as any)?.id,
+                customerIdFromJob: selectedJobForComplete.customer_id
               });
               
               const { data, error } = await db.customers.update(customerId, {
@@ -2917,22 +2922,45 @@ const TechnicianDashboard = () => {
               });
               
               if (error) {
-                console.error('❌ Failed to update customer prefilter status:', error);
-                toast.error('Failed to update customer prefilter status');
+                console.error('❌ Failed to update customer prefilter status:', {
+                  error,
+                  customerId,
+                  hasPrefilter: customerHasPrefilter,
+                  errorMessage: error.message,
+                  errorCode: error.code
+                });
+                toast.error(`Failed to update customer prefilter status: ${error.message || 'Unknown error'}`);
               } else {
-                console.log('✅ Customer prefilter status updated successfully:', data);
+                console.log('✅ Customer prefilter status updated successfully:', {
+                  customerId,
+                  hasPrefilter: customerHasPrefilter,
+                  updatedData: data
+                });
+                toast.success('Customer prefilter status updated');
               }
-            } catch (error) {
-              console.error('❌ Error updating customer prefilter status:', error);
-              toast.error('Failed to update customer prefilter status');
+            } catch (error: any) {
+              console.error('❌ Error updating customer prefilter status:', {
+                error,
+                customerId,
+                hasPrefilter: customerHasPrefilter,
+                errorMessage: error?.message,
+                errorStack: error?.stack
+              });
+              toast.error(`Failed to update customer prefilter status: ${error?.message || 'Unknown error'}`);
             }
           } else {
-            console.warn('⚠️ Cannot update customer prefilter: customer ID not found in job', {
+            console.warn('⚠️ Cannot update customer prefilter: customer UUID not found in job', {
               jobId: selectedJobForComplete.id,
-              customer: selectedJobForComplete.customer,
+              jobNumber: (selectedJobForComplete as any).job_number || selectedJobForComplete.jobNumber,
+              customer: selectedJobForComplete.customer ? {
+                id: (selectedJobForComplete.customer as any)?.id,
+                customer_id: (selectedJobForComplete.customer as any)?.customer_id,
+                fullName: selectedJobForComplete.customer.fullName || (selectedJobForComplete.customer as any)?.full_name
+              } : 'missing',
               customer_id: selectedJobForComplete.customer_id,
               customerId: selectedJobForComplete.customerId
             });
+            toast.warning('Could not update customer prefilter: customer ID not found');
           }
         }
 
