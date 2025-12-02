@@ -221,16 +221,14 @@ const ReassignJobDialog: React.FC<ReassignJobDialogProps> = ({
     }
   }, [job, technicians, open, ensureGoogleMapsLoaded]);
 
-  // Reset distances when dialog opens/closes and auto-calculate when opening
+  // Reset distances when dialog opens/closes (don't auto-calculate)
   useEffect(() => {
     if (!open) {
       setTechniciansWithDistances([]);
       setIsCalculatingDistances(false);
-    } else if (open && job) {
-      // Auto-calculate distances when dialog opens
-      calculateDistances();
     }
-  }, [open, job, calculateDistances]);
+    // Don't auto-calculate distances - only calculate when user clicks "Reassign by Distance" button
+  }, [open]);
 
   // Calculate job location after all hooks (for UI display)
   const jobLocation = job ? (() => {

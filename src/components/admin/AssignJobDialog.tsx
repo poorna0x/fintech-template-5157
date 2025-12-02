@@ -222,16 +222,14 @@ const AssignJobDialog: React.FC<AssignJobDialogProps> = ({
     }
   }, [job, technicians, open, ensureGoogleMapsLoaded]);
 
-  // Reset distances when dialog opens/closes and auto-calculate when opening
+  // Reset distances when dialog opens/closes (don't auto-calculate)
   useEffect(() => {
     if (!open) {
       setTechniciansWithDistances([]);
       setIsCalculatingDistances(false);
-    } else if (open && job) {
-      // Auto-calculate distances when dialog opens
-      calculateDistances();
     }
-  }, [open, job, calculateDistances]);
+    // Don't auto-calculate distances - only calculate when user clicks "Assign by Distance" button
+  }, [open]);
 
   // Early return after all hooks
   if (!job) return null;
