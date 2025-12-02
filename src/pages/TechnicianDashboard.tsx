@@ -1829,10 +1829,8 @@ const TechnicianDashboard = () => {
       }
     } catch (error) {
       console.error('Error loading assignment requests:', error);
-      // Only show error toast if it's a critical error, not transient network issues
-      if (error instanceof Error && !error.message.includes('fetch') && !error.message.includes('network')) {
-      toast.error('Failed to load assignment requests');
-      }
+      // Don't show toast messages - errors are logged to console for debugging
+      // Assignment requests will retry automatically on next refresh
     } finally {
       setAssignmentRequestsLoading(false);
     }
