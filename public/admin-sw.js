@@ -52,12 +52,53 @@ self.addEventListener('fetch', (event) => {
   const adminPaths = ['/admin', '/settings'];
   const isAdminPath = adminPaths.some((path) => url.pathname.startsWith(path));
 
+  // NEVER cache API requests - always fetch from network
+  const isAPIRequest = 
+    url.pathname.includes('/api/') ||
+    url.hostname.includes('supabase.co') ||
+    url.hostname.includes('cloudinary.com') ||
+    url.hostname.includes('cashfree.com') ||
+    url.hostname.includes('bigdatacloud.net') ||
+    url.hostname.includes('api-bdc.io') ||
+    url.hostname.includes('nominatim.openstreetmap.org') ||
+    url.hostname.includes('maps.googleapis.com') ||
+    request.headers.get('X-Requested-With') === 'XMLHttpRequest';
+
+  // For API requests, always fetch from network with timeout
+  if (isAPIRequest) {
+    event.respondWith(
+      Promise.race([
+        fetch(request),
+        new Promise((_, reject) => 
+          setTimeout(() => reject(new Error('Request timeout')), 30000)
+        )
+      ]).catch((error) => {
+        console.error('[Admin PWA] API request failed:', error);
+        // Return error response instead of hanging
+        return new Response(JSON.stringify({ error: 'Network request failed' }), {
+          status: 503,
+          statusText: 'Service Unavailable',
+          headers: { 'Content-Type': 'application/json' }
+        });
+      })
+    );
+    return;
+  }
+
   if (request.mode === 'navigate' && isSameOrigin) {
     event.respondWith(
-      fetch(request)
+      Promise.race([
+        fetch(request),
+        new Promise((_, reject) => 
+          setTimeout(() => reject(new Error('Request timeout')), 10000)
+        )
+      ])
         .then((response) => {
-          const copy = response.clone();
-          caches.open(RUNTIME_CACHE).then((cache) => cache.put(request, copy));
+          // Only cache successful HTML responses
+          if (response.ok && response.headers.get('content-type')?.includes('text/html')) {
+            const copy = response.clone();
+            caches.open(RUNTIME_CACHE).then((cache) => cache.put(request, copy));
+          }
           return response;
         })
         .catch(async () => {
@@ -79,17 +120,24 @@ self.addEventListener('fetch', (event) => {
 
   if (isSameOrigin && isAdminPath) {
     event.respondWith(
-      caches.match(request).then((cached) => {
-        const fetchPromise = fetch(request)
-          .then((response) => {
+      Promise.race([
+        fetch(request),
+        new Promise((_, reject) => 
+          setTimeout(() => reject(new Error('Request timeout')), 10000)
+        )
+      ])
+        .then((response) => {
+          // Only cache successful responses
+          if (response.ok) {
             const copy = response.clone();
             caches.open(RUNTIME_CACHE).then((cache) => cache.put(request, copy));
-            return response;
-          })
-          .catch(() => cached);
-
-        return cached || fetchPromise;
-      })
+          }
+          return response;
+        })
+        .catch(async () => {
+          const cached = await caches.match(request);
+          return cached || Response.error();
+        })
     );
   }
 });

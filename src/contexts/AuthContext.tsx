@@ -44,20 +44,38 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   const [initialized, setInitialized] = useState(false);
 
   useEffect(() => {
-    // Check for existing session on app load
+    // Check for existing session on app load with timeout
     const checkSession = async () => {
+      // Set a timeout to prevent infinite loading
+      const timeoutId = setTimeout(() => {
+        console.warn('[Auth] Session check timeout - proceeding without session');
+        setLoading(false);
+        setInitialized(true);
+      }, 10000); // 10 second timeout
+
       try {
-        // First check custom auth session (for technicians)
+        // First check custom auth session (for technicians) - this is synchronous
         const customSession = getAuthSession();
         if (customSession) {
+          clearTimeout(timeoutId);
           setUser(customSession);
           setLoading(false);
           technicianSessionRef.current = true;
+          setInitialized(true);
           return;
         }
 
-        // Then check Supabase auth session (for admins)
-        const { data: { session } } = await supabase.auth.getSession();
+        // Then check Supabase auth session (for admins) with timeout
+        const sessionPromise = supabase.auth.getSession();
+        const timeoutPromise = new Promise<{ data: { session: null } }>((_, reject) => 
+          setTimeout(() => reject(new Error('Session check timeout')), 8000)
+        );
+
+        const result = await Promise.race([sessionPromise, timeoutPromise]);
+        const { data: { session } } = result;
+        
+        clearTimeout(timeoutId);
+        
         if (session?.user) {
           const userRole = session.user.user_metadata?.role || session.user.app_metadata?.role || 'admin';
           setUser({
@@ -69,11 +87,14 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
           technicianSessionRef.current = false;
         }
       } catch (error) {
+        clearTimeout(timeoutId);
         // Log errors in development for debugging
         if (import.meta.env.DEV) {
           console.error('Auth session check error:', error);
         }
+        // Don't block app loading on auth errors - user can still use the app
       } finally {
+        clearTimeout(timeoutId);
         setLoading(false);
         setInitialized(true);
       }

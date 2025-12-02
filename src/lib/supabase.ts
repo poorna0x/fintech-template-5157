@@ -68,16 +68,31 @@ export const supabase = createClient<Database>(buildTimeUrl, buildTimeKey, {
       //   });
       // }
       
+      // Add timeout to prevent hanging requests in PWA
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 30000); // 30 second timeout
+
       return fetch(url, {
         ...options,
         headers: headers,
-      }).catch((error) => {
-        // Log fetch errors for debugging
-        if (import.meta.env.DEV) {
-          console.error('[Supabase Fetch Error]', error);
-        }
-        throw error;
-      });
+        signal: controller.signal,
+      })
+        .then((response) => {
+          clearTimeout(timeoutId);
+          return response;
+        })
+        .catch((error) => {
+          clearTimeout(timeoutId);
+          // Log fetch errors for debugging
+          if (import.meta.env.DEV) {
+            console.error('[Supabase Fetch Error]', error);
+          }
+          // If it's an abort error (timeout), provide a more helpful message
+          if (error.name === 'AbortError') {
+            throw new Error('Request timeout - please check your internet connection');
+          }
+          throw error;
+        });
     },
   },
 });
