@@ -22,8 +22,9 @@ const TechnicianLogin = () => {
   const [captchaStartTime] = useState(Date.now());
   const [captchaTimeout, setCaptchaTimeout] = useState<NodeJS.Timeout | null>(null);
 
-  const { login } = useAuth();
+  const { login, loading: authLoading } = useAuth();
   const navigate = useNavigate();
+  
   useEffect(() => {
     registerTechnicianPWA();
     
@@ -32,6 +33,9 @@ const TechnicianLogin = () => {
       disablePWA();
     };
   }, []);
+
+  // Don't block login page rendering - it should show immediately
+  // The auth loading state should not prevent login page from displaying
 
   // Add noindex meta tag to prevent search engine indexing
   useEffect(() => {

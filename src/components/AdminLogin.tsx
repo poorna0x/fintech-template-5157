@@ -24,6 +24,9 @@ const AdminLogin = () => {
 
   const navigate = useNavigate();
 
+  // Don't block login page rendering - it should show immediately
+  // The auth loading state should not prevent login page from displaying
+
   // Force light/white theme for admin login page
   useEffect(() => {
     // Remove dark mode classes to ensure white theme

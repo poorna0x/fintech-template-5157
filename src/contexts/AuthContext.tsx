@@ -328,7 +328,9 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
 
   const value: AuthContextType = {
     user,
-    loading: loading || !initialized,
+    // Don't block login pages - they should render immediately
+    // Only show loading for protected routes that need user data
+    loading: loading && initialized === false, // Only loading if not initialized yet
     login,
     logout,
     isAdmin: user?.role === 'admin',
