@@ -165,18 +165,24 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
           technicianSessionRef.current = storedSession.role === 'technician';
         } else if (user && user.role === 'technician') {
           // If we had a technician session but it's now missing from localStorage,
-          // try to restore it (iOS PWA might have cleared it temporarily)
-          // This shouldn't happen, but if it does, we'll detect it
-          console.warn('Technician session missing from localStorage, but user state exists');
+          // it was likely cleared by logout - clear user state
+          console.log('Technician session cleared from localStorage, clearing user state');
+          setUser(null);
+          technicianSessionRef.current = false;
         }
       } catch (error) {
         console.error('Error restoring session from storage:', error);
       }
     };
 
-    // Attempt to restore immediately if user is missing post-initialization
+    // Only attempt to restore if user is missing AND we're initialized
+    // Don't restore if we're on login page (user should be null there)
     if (initialized && !user) {
-      restoreSessionFromStorage();
+      // Check if we're on a login page - if so, don't restore
+      const isLoginPage = window.location.pathname.includes('/login');
+      if (!isLoginPage) {
+        restoreSessionFromStorage();
+      }
     }
 
     // Listen for storage events (cross-tab sync)
@@ -311,18 +317,48 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
 
   const logout = async (): Promise<void> => {
     try {
-      // Clear custom auth session (for technicians)
+      // Clear custom auth session (for technicians) - do this first
       clearAuthSession();
       technicianSessionRef.current = false;
+      setUser(null); // Clear user state immediately
+      setLoading(false); // Stop loading state
+      setInitialized(true); // Mark as initialized so login page can render
       
-      // Sign out from Supabase auth (for admins)
-      await supabase.auth.signOut();
+      // Sign out from Supabase auth (for admins) with timeout
+      const signOutPromise = supabase.auth.signOut();
+      const timeoutPromise = new Promise((_, reject) => 
+        setTimeout(() => reject(new Error('Sign out timeout')), 5000)
+      );
       
-      setUser(null);
+      try {
+        await Promise.race([signOutPromise, timeoutPromise]);
+      } catch (error) {
+        // Even if signOut fails, we've already cleared local state
+        console.warn('Supabase signOut timeout or error (non-critical):', error);
+      }
+      
+      // Clear any Supabase session storage
+      try {
+        localStorage.removeItem('sb-' + (supabase as any).supabaseUrl?.split('//')[1]?.split('.')[0] + '-auth-token');
+        // Also clear any other Supabase storage keys
+        Object.keys(localStorage).forEach(key => {
+          if (key.startsWith('sb-') && key.includes('auth')) {
+            localStorage.removeItem(key);
+          }
+        });
+      } catch (storageError) {
+        console.warn('Error clearing Supabase storage:', storageError);
+      }
+      
       toast.success('Logged out successfully');
     } catch (error) {
       console.error('Logout error:', error);
-      toast.error('Logout failed');
+      // Even on error, clear local state
+      clearAuthSession();
+      setUser(null);
+      setLoading(false);
+      setInitialized(true);
+      toast.error('Logged out (some cleanup may have failed)');
     }
   };
 

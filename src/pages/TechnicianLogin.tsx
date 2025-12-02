@@ -10,6 +10,8 @@ import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Wrench, Eye, EyeOff, Droplets } from 'lucide-react';
 import AltchaWidget from '@/components/AltchaWidget';
 import { registerTechnicianPWA, disablePWA } from '@/lib/pwa';
+import { clearAuthSession } from '@/lib/auth';
+import { supabase } from '@/lib/supabase';
 
 const TechnicianLogin = () => {
   const [email, setEmail] = useState('');
@@ -22,17 +24,35 @@ const TechnicianLogin = () => {
   const [captchaStartTime] = useState(Date.now());
   const [captchaTimeout, setCaptchaTimeout] = useState<NodeJS.Timeout | null>(null);
 
-  const { login, loading: authLoading } = useAuth();
+  const { login, loading: authLoading, user } = useAuth();
   const navigate = useNavigate();
   
   useEffect(() => {
     registerTechnicianPWA();
     
+    // PWA fix: Clear any stale auth state when login page loads
+    // This ensures clean state after logout
+    if (user) {
+      console.log('[Login] User still exists after logout, clearing...');
+      // Force clear - user shouldn't be here on login page
+      clearAuthSession();
+      // Clear Supabase session too
+      supabase.auth.signOut().catch(() => {});
+    }
+    
+    // Reset ALTCHA state on mount (important after logout)
+    setIsCaptchaVerified(false);
+    setShowSecurityStep(false);
+    if (captchaTimeout) {
+      clearTimeout(captchaTimeout);
+      setCaptchaTimeout(null);
+    }
+    
     // Cleanup: disable PWA when component unmounts
     return () => {
       disablePWA();
     };
-  }, []);
+  }, []); // Only run on mount
 
   // Don't block login page rendering - it should show immediately
   // The auth loading state should not prevent login page from displaying

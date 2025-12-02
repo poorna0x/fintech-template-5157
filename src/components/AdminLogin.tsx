@@ -27,14 +27,38 @@ const AdminLogin = () => {
   // Don't block login page rendering - it should show immediately
   // The auth loading state should not prevent login page from displaying
 
+  useEffect(() => {
+    registerAdminPWA();
+    
+    // PWA fix: Clear any stale auth state when login page loads
+    // This ensures clean state after logout
+    const checkAndClearSession = async () => {
+      try {
+        const { data: { session } } = await supabase.auth.getSession();
+        if (session) {
+          console.log('[Login] Stale session found after logout, clearing...');
+          await supabase.auth.signOut();
+        }
+      } catch (error) {
+        console.warn('Error checking session on login page:', error);
+      }
+    };
+    
+    // Reset ALTCHA state on mount (important after logout)
+    setIsCaptchaVerified(false);
+    setShowSecurityStep(false);
+    if (captchaTimeout) {
+      clearTimeout(captchaTimeout);
+      setCaptchaTimeout(null);
+    }
+    
+    checkAndClearSession();
+  }, []); // Only run on mount
+
   // Force light/white theme for admin login page
   useEffect(() => {
     // Remove dark mode classes to ensure white theme
     document.documentElement.classList.remove('dark-mode', 'dark');
-  }, []);
-
-  useEffect(() => {
-    registerAdminPWA();
   }, []);
 
   // Add noindex meta tag to prevent search engine indexing
