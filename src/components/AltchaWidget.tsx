@@ -237,11 +237,18 @@ const AltchaWidget: React.FC<AltchaWidgetProps> = ({
         setIsLoading(true);
         setError(null);
         
+        // Add timeout to prevent hanging in PWA
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 15000); // 15 second timeout
+        
         const response = await fetch(apiUrl, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ payload }),
+          signal: controller.signal,
         });
+        
+        clearTimeout(timeoutId);
         
         if (!response.ok) {
           const errorData = await response.json().catch(() => ({}));
@@ -286,14 +293,23 @@ const AltchaWidget: React.FC<AltchaWidgetProps> = ({
       } catch (error: any) {
         console.error('Server verification error:', error);
         setIsLoading(false);
-        const errorMessage = error.message || 'Verification failed. Please try again.';
-        setError(errorMessage);
-        onVerifyRef.current(false);
         
-        // If it's a rate limit or expired challenge error, suggest refreshing
-        if (errorMessage.includes('Too many requests') || errorMessage.includes('expired')) {
-          // The error message already tells the user what to do
-          console.log('Rate limit or expiration error detected - user should wait or refresh');
+        // Handle timeout/abort errors
+        if (error.name === 'AbortError' || error.message?.includes('timeout')) {
+          const errorMessage = 'Verification timeout - please check your connection and try again';
+          setError(errorMessage);
+          onVerifyRef.current(false);
+          console.warn('[ALTCHA] Verification timeout - network may be slow or unavailable');
+        } else {
+          const errorMessage = error.message || 'Verification failed. Please try again.';
+          setError(errorMessage);
+          onVerifyRef.current(false);
+          
+          // If it's a rate limit or expired challenge error, suggest refreshing
+          if (errorMessage.includes('Too many requests') || errorMessage.includes('expired')) {
+            // The error message already tells the user what to do
+            console.log('Rate limit or expiration error detected - user should wait or refresh');
+          }
         }
       } finally {
         isVerifyingRef.current = false;

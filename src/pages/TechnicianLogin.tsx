@@ -20,6 +20,7 @@ const TechnicianLogin = () => {
   const [isCaptchaVerified, setIsCaptchaVerified] = useState(false);
   const [showSecurityStep, setShowSecurityStep] = useState(false);
   const [captchaStartTime] = useState(Date.now());
+  const [captchaTimeout, setCaptchaTimeout] = useState<NodeJS.Timeout | null>(null);
 
   const { login } = useAuth();
   const navigate = useNavigate();
@@ -116,21 +117,38 @@ const TechnicianLogin = () => {
   // Check if security step should be shown (fallback if auto-verification fails)
   useEffect(() => {
     if (!isCaptchaVerified) {
-      const timeSinceStart = Date.now() - captchaStartTime;
-      // Show security step if more than 3 seconds have passed without verification
-      if (timeSinceStart > 3000) {
+      // Set timeout to show security step if verification doesn't complete in 5 seconds
+      const timeout = setTimeout(() => {
+        console.log('[Login] ALTCHA verification timeout - showing security step');
         setShowSecurityStep(true);
-      }
+      }, 5000); // 5 seconds timeout for PWA
+      
+      setCaptchaTimeout(timeout);
+      
+      // Cleanup timeout on unmount or when verified
+      return () => {
+        clearTimeout(timeout);
+      };
     } else if (isCaptchaVerified) {
       setShowSecurityStep(false); // Hide if verified
+      if (captchaTimeout) {
+        clearTimeout(captchaTimeout);
+        setCaptchaTimeout(null);
+      }
     }
-  }, [isCaptchaVerified, captchaStartTime]);
+  }, [isCaptchaVerified]);
 
   // Track verification status
   const handleVerify = (isValid: boolean) => {
+    console.log('[Login] ALTCHA verification result:', isValid);
     setIsCaptchaVerified(isValid);
     if (isValid) {
       setShowSecurityStep(false);
+      // Clear timeout if verification succeeds
+      if (captchaTimeout) {
+        clearTimeout(captchaTimeout);
+        setCaptchaTimeout(null);
+      }
     }
   };
 
