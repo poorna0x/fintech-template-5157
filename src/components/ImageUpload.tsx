@@ -51,7 +51,34 @@ const ImageUpload: React.FC<ImageUploadProps> = ({
   const handleFileSelect = async (files: FileList | null) => {
     if (!files || files.length === 0) return;
 
-    const fileArray = Array.from(files);
+    // iOS PWA fix: Filter out directory entries and invalid files
+    const fileArray = Array.from(files).filter(file => {
+      // iOS sometimes includes directory entries - filter them out
+      if (file.type === '' && file.size === 0 && file.name === '') {
+        return false;
+      }
+      // Ensure it's actually a file
+      if (!(file instanceof File)) {
+        return false;
+      }
+      // iOS PWA: Sometimes files have no type but are valid images - check by extension
+      if (!file.type && file.name) {
+        const ext = file.name.toLowerCase().split('.').pop();
+        const imageExts = ['jpg', 'jpeg', 'png', 'gif', 'webp', 'heic', 'heif'];
+        if (ext && imageExts.includes(ext)) {
+          return true; // Valid image file even without type
+        }
+        return false;
+      }
+      return true;
+    });
+
+    if (fileArray.length === 0) {
+      // iOS PWA: Sometimes file selection doesn't work properly
+      toast.error('No valid files selected. Please try again.');
+      return;
+    }
+
     const remainingSlots = maxImages - uploadedImages.length;
     const filesToUpload = fileArray.slice(0, remainingSlots);
 
@@ -74,8 +101,18 @@ const ImageUpload: React.FC<ImageUploadProps> = ({
         // Update progress
         setUploadProgress(prev => ({ ...prev, [fileId]: 0 }));
 
-        // Validate file
-        const validation = validateImageFile(file);
+        // Validate file - iOS PWA: Handle files without type by checking extension
+        let validation = validateImageFile(file);
+        if (!validation.valid && !file.type && file.name) {
+          // iOS PWA: Sometimes files don't have type but are valid images
+          const ext = file.name.toLowerCase().split('.').pop();
+          const imageExts = ['jpg', 'jpeg', 'png', 'gif', 'webp', 'heic', 'heif'];
+          if (ext && imageExts.includes(ext)) {
+            // Valid image file - override validation
+            validation = { valid: true };
+          }
+        }
+        
         if (!validation.valid) {
           toast.error(`Image: ${validation.error}`);
           continue;
@@ -203,9 +240,24 @@ const ImageUpload: React.FC<ImageUploadProps> = ({
   };
 
   const handleFileInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    handleFileSelect(e.target.files);
-    // Reset input value to allow selecting the same file again
-    e.target.value = '';
+    // iOS PWA: Sometimes files array is empty even when files were selected
+    // Wait a bit and try again if needed
+    const files = e.target.files;
+    if (!files || files.length === 0) {
+      // iOS PWA: Sometimes the file input doesn't work on first try
+      setTimeout(() => {
+        if (e.target.files && e.target.files.length > 0) {
+          handleFileSelect(e.target.files);
+        }
+      }, 100);
+      return;
+    }
+    
+    handleFileSelect(files);
+    // Reset input value - iOS PWA: Use setTimeout to ensure it works
+    setTimeout(() => {
+      e.target.value = '';
+    }, 100);
   };
 
   const handleCameraCapture = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -402,17 +454,19 @@ const ImageUpload: React.FC<ImageUploadProps> = ({
       } catch (error: any) {
         console.warn('getUserMedia failed, falling back to file input:', error);
         
-        // Provide more specific error messages
-        if (error?.name === 'NotAllowedError' || error?.name === 'PermissionDeniedError') {
-          toast.error('Camera permission denied. Please allow camera access in your browser settings.');
-        } else if (error?.name === 'NotFoundError' || error?.name === 'DevicesNotFoundError') {
-          toast.error('No camera found on this device.');
-        } else {
-          toast.error('Camera access failed. Using file input instead...');
+        // Don't show error if we can fallback - just silently use file input
+        // The file input will work and photos will upload successfully
+        // Only show error if it's a critical issue that prevents fallback
+        if (error?.name === 'NotFoundError' || error?.name === 'DevicesNotFoundError') {
+          // No camera found - this is informational, not an error since file input works
+          console.log('No camera found, using file input instead');
         }
         
-        // Fallback to file input with capture attribute
-        cameraInputRef.current?.click();
+        // Fallback to file input with capture attribute (this works even if camera permission denied)
+        // iOS PWA: Use a small delay to ensure the click event is properly handled
+        setTimeout(() => {
+          cameraInputRef.current?.click();
+        }, 100);
       }
     } else {
       // Fallback to file input with capture attribute
@@ -545,22 +599,26 @@ const ImageUpload: React.FC<ImageUploadProps> = ({
       <input
         ref={fileInputRef}
         type="file"
-        accept="image/*"
-        multiple
+        accept="image/*,image/jpeg,image/jpg,image/png,image/gif,image/webp,image/heic,image/heif"
+        multiple={maxImages > 1}
         onChange={handleFileInputChange}
         className="hidden"
+        // iOS PWA: Prevent webkitdirectory which can cause issues
+        {...({ webkitdirectory: false } as any)}
       />
       
       {/* Camera input with multiple capture attribute variations for better device compatibility */}
       <input
         ref={cameraInputRef}
         type="file"
-        accept="image/*"
+        accept="image/*,image/jpeg,image/jpg,image/png,image/gif,image/webp,image/heic,image/heif"
         capture="environment"
         onChange={handleCameraCapture}
         className="hidden"
         // Additional attributes for better mobile compatibility
         multiple={false}
+        // iOS PWA: Ensure webkitdirectory is not set
+        {...({ webkitdirectory: false } as any)}
       />
 
       {/* Uploaded Images Grid */}

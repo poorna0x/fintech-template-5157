@@ -451,12 +451,22 @@ export const cloudinaryService = new CloudinaryService();
 // Utility functions for image handling
 export const validateImageFile = (file: File): { valid: boolean; error?: string } => {
   const maxSize = 10 * 1024 * 1024; // 10MB (will be compressed to ~500KB-1MB)
-  const allowedTypes = ['image/jpeg', 'image/jpg', 'image/png', 'image/webp'];
+  const allowedTypes = ['image/jpeg', 'image/jpg', 'image/png', 'image/webp', 'image/heic', 'image/heif'];
+  
+  // iOS PWA: Sometimes files don't have type but are valid images - check by extension
+  let isValidType = allowedTypes.includes(file.type);
+  if (!isValidType && file.name) {
+    const ext = file.name.toLowerCase().split('.').pop();
+    const imageExts = ['jpg', 'jpeg', 'png', 'gif', 'webp', 'heic', 'heif'];
+    if (ext && imageExts.includes(ext)) {
+      isValidType = true; // Valid image file even without type
+    }
+  }
 
-  if (!allowedTypes.includes(file.type)) {
+  if (!isValidType) {
     return {
       valid: false,
-      error: 'Please upload a valid image file (JPEG, PNG, or WebP)',
+      error: 'Please upload a valid image file (JPEG, PNG, WebP, or HEIC)',
     };
   }
 
@@ -472,72 +482,106 @@ export const validateImageFile = (file: File): { valid: boolean; error?: string 
 
 export const compressImage = (file: File, maxWidth: number = 1280, quality: number = 0.6, useWebP: boolean = true): Promise<File> => {
   return new Promise((resolve, reject) => {
+    // iOS PWA: HEIC/HEIF files can't be loaded into Image element directly
+    // Cloudinary can handle HEIC files natively, so upload as-is for HEIC
+    const isHeic = file.type === 'image/heic' || file.type === 'image/heif' || 
+                   file.name.toLowerCase().endsWith('.heic') || 
+                   file.name.toLowerCase().endsWith('.heif');
+    
+    if (isHeic) {
+      // For HEIC files, upload directly to Cloudinary (it handles conversion)
+      // Cloudinary will automatically convert HEIC to a web-compatible format
+      resolve(file);
+      return;
+    }
+
     const canvas = document.createElement('canvas');
     const ctx = canvas.getContext('2d');
     const img = new Image();
 
+    // iOS PWA: Use createObjectURL with revoke after loading
+    const objectUrl = URL.createObjectURL(file);
+    
+    // iOS PWA: Set crossOrigin to handle CORS issues (but only for blob URLs, not needed)
+    // img.crossOrigin = 'anonymous'; // Not needed for blob URLs
+
     img.onload = () => {
-      // Calculate new dimensions while maintaining aspect ratio
-      let { width, height } = img;
-      if (width > maxWidth) {
-        height = (height * maxWidth) / width;
-        width = maxWidth;
-      }
+      try {
+        // Calculate new dimensions while maintaining aspect ratio
+        let { width, height } = img;
+        if (width > maxWidth) {
+          height = (height * maxWidth) / width;
+          width = maxWidth;
+        }
 
-      // Ensure dimensions are even numbers (better compression)
-      width = Math.floor(width / 2) * 2;
-      height = Math.floor(height / 2) * 2;
+        // Ensure dimensions are even numbers (better compression)
+        width = Math.floor(width / 2) * 2;
+        height = Math.floor(height / 2) * 2;
 
-      canvas.width = width;
-      canvas.height = height;
+        canvas.width = width;
+        canvas.height = height;
 
-      // Use high-quality image rendering
-      if (ctx) {
-        ctx.imageSmoothingEnabled = true;
-        ctx.imageSmoothingQuality = 'high';
-      }
+        // Use high-quality image rendering
+        if (ctx) {
+          ctx.imageSmoothingEnabled = true;
+          ctx.imageSmoothingQuality = 'high';
+        }
 
-      // Draw and compress
-      ctx?.drawImage(img, 0, 0, width, height);
-      
-      // Try WebP first for better compression, fallback to JPEG if not supported
-      const tryCompress = (format: string, outputQuality: number, isFallback: boolean = false) => {
-        canvas.toBlob(
-          (blob) => {
-            if (blob) {
-              // Generate filename with appropriate extension
-              const ext = format === 'image/webp' ? '.webp' : '.jpg';
-              const fileName = file.name.replace(/\.[^/.]+$/, '') + ext;
-              const compressedFile = new File([blob], fileName, {
-                type: format,
-                lastModified: Date.now(),
-              });
-              resolve(compressedFile);
-            } else if (!isFallback && useWebP && format === 'image/webp') {
-              // WebP failed, try JPEG as fallback
-              tryCompress('image/jpeg', quality, true);
-            } else {
-              reject(new Error('Failed to compress image'));
-            }
-          },
-          format,
-          outputQuality
-        );
-      };
-      
-      // Try WebP first if enabled (better compression)
-      if (useWebP) {
-        // WebP typically needs slightly higher quality for same visual result
-        const webpQuality = Math.min(quality + 0.1, 0.9);
-        tryCompress('image/webp', webpQuality);
-      } else {
-        // Use original format or JPEG
-        const outputFormat = file.type || 'image/jpeg';
-        tryCompress(outputFormat, quality);
+        // Draw and compress
+        ctx?.drawImage(img, 0, 0, width, height);
+        
+        // Try WebP first for better compression, fallback to JPEG if not supported
+        const tryCompress = (format: string, outputQuality: number, isFallback: boolean = false) => {
+          canvas.toBlob(
+            (blob) => {
+              URL.revokeObjectURL(objectUrl); // Clean up
+              if (blob) {
+                // Generate filename with appropriate extension
+                const ext = format === 'image/webp' ? '.webp' : '.jpg';
+                const fileName = file.name.replace(/\.[^/.]+$/, '') + ext;
+                const compressedFile = new File([blob], fileName, {
+                  type: format,
+                  lastModified: Date.now(),
+                });
+                resolve(compressedFile);
+              } else if (!isFallback && useWebP && format === 'image/webp') {
+                // WebP failed, try JPEG as fallback
+                tryCompress('image/jpeg', quality, true);
+              } else {
+                reject(new Error('Failed to compress image'));
+              }
+            },
+            format,
+            outputQuality
+          );
+        };
+        
+        // Try WebP first if enabled (better compression)
+        if (useWebP) {
+          // WebP typically needs slightly higher quality for same visual result
+          const webpQuality = Math.min(quality + 0.1, 0.9);
+          tryCompress('image/webp', webpQuality);
+        } else {
+          // Use original format or JPEG
+          const outputFormat = file.type || 'image/jpeg';
+          tryCompress(outputFormat, quality);
+        }
+      } catch (error) {
+        URL.revokeObjectURL(objectUrl); // Clean up on error
+        // iOS PWA: If compression fails, upload as-is
+        console.warn('Compression failed, uploading as-is:', error);
+        resolve(file);
       }
     };
 
-    img.onerror = () => reject(new Error('Failed to load image'));
-    img.src = URL.createObjectURL(file);
+    img.onerror = () => {
+      URL.revokeObjectURL(objectUrl); // Clean up
+      // iOS PWA: If image fails to load, it might be a valid file but browser can't display it
+      // Try to upload as-is (Cloudinary might handle it)
+      console.warn('Image failed to load, uploading as-is');
+      resolve(file);
+    };
+    
+    img.src = objectUrl;
   });
 };
