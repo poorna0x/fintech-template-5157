@@ -300,8 +300,8 @@ const EditCustomerDialog: React.FC<EditCustomerDialogProps> = ({
         status: customerToUse.status || '',
         notes: customerToUse.notes || '',
         google_location: (() => {
-          if ((customer.location as any)?.googleLocation) {
-            const googleLoc = (customer.location as any).googleLocation;
+          if ((customerToUse.location as any)?.googleLocation) {
+            const googleLoc = (customerToUse.location as any).googleLocation;
             if (googleLoc && typeof googleLoc === 'string' && 
                 (googleLoc.includes('google.com/maps') || googleLoc.includes('maps.app.goo.gl')) &&
                 !googleLoc.includes('localhost')) {
@@ -310,9 +310,16 @@ const EditCustomerDialog: React.FC<EditCustomerDialogProps> = ({
           }
           return '';
         })(),
-        visible_address: (customer as any).visible_address || (customer.address as any)?.visible_address || '',
-        custom_time: customer.customTime || (customer as any).custom_time || ''
+        visible_address: (customerToUse as any).visible_address || (customerToUse.address as any)?.visible_address || '',
+        custom_time: customerToUse.customTime || (customerToUse as any).custom_time || ''
       });
+        } catch (error) {
+          console.error('Error fetching fresh customer data:', error);
+          // Fall back to using prop data if fetch fails
+        }
+      };
+      
+      fetchFreshCustomerData();
       hasUnsavedChangesRef.current = false;
       locationManuallyEditedRef.current = false;
     }
