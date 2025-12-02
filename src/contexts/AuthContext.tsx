@@ -137,6 +137,8 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         const techSession = getAuthSession();
         if (!techSession) {
           setUser(null);
+          setLoading(false);
+          setInitialized(true); // Mark as initialized so login page can render
         }
       }
       // Don't clear user on TOKEN_REFRESHED - technicians don't use Supabase tokens
