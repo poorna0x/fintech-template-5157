@@ -560,12 +560,8 @@ const TechnicianDashboard = () => {
       lastJobIdsRef.current = new Set(allJobs.map(j => j.id));
     } catch (error) {
       console.error('Error loading assigned jobs:', error);
-      // Only show error toast if it's a critical error, not transient network issues
-      if (error instanceof Error && !error.message.includes('fetch') && !error.message.includes('network') && !error.message.includes('timeout')) {
-        toast.error('Failed to load assigned jobs');
-      } else if (error instanceof Error && error.message.includes('timeout')) {
-        toast.error('Loading jobs is taking longer than expected. Please check your connection.');
-      }
+      // Don't show toast messages for timeout/network issues - these are transient and will retry automatically
+      // Only log to console for debugging
     } finally {
       setJobsLoading(false);
     }
