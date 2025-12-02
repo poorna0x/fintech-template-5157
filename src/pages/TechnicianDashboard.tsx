@@ -536,18 +536,13 @@ const TechnicianDashboard = () => {
           try {
             const customerIds = data.map((job: any) => job.customer_id || (job.customer as any)?.id).filter(Boolean);
             if (customerIds.length > 0) {
-              // Add timeout for AMC query too
-              const amcPromise = supabase
+              // AMC query - Supabase already has 30s timeout, no need for additional Promise.race
+              // This prevents false timeout errors on fast networks
+              const { data: amcContracts } = await supabase
                 .from('amc_contracts')
                 .select('customer_id, status')
                 .in('customer_id', customerIds)
                 .eq('status', 'ACTIVE');
-              
-              const amcTimeoutPromise = new Promise<{ data: null }>((_, reject) => 
-                setTimeout(() => reject(new Error('AMC query timeout')), 10000) // 10 second timeout
-              );
-              
-              const { data: amcContracts } = await Promise.race([amcPromise, amcTimeoutPromise]) as any;
               
               const amcStatusMap: Record<string, boolean> = {};
               if (amcContracts) {
