@@ -318,6 +318,7 @@ export const db = {
     },
     
     async getByTechnicianId(technicianId: string) {
+      // Optimized query for mobile - only fetch essential fields
       const { data, error } = await supabase
         .from('jobs')
         .select(`
@@ -335,16 +336,8 @@ export const db = {
             service_type,
             brand,
             model,
-            installation_date,
-            warranty_expiry,
-            status,
-            customer_since,
-            last_service_date,
-            notes,
             preferred_time_slot,
-            preferred_language,
-            created_at,
-            updated_at
+            preferred_language
           ),
           assigned_technician:technicians!assigned_technician_id(
             id,
@@ -355,7 +348,8 @@ export const db = {
           )
         `)
         .eq('assigned_technician_id', technicianId)
-        .order('created_at', { ascending: false });
+        .order('created_at', { ascending: false })
+        .limit(100); // Limit to 100 jobs for mobile performance
       
       return { data, error };
     },

@@ -451,33 +451,20 @@ const TechnicianDashboard = () => {
         setJobsLoading(true);
       }
       console.time('loadAssignedJobs'); // Performance timing
-      const { data, error } = await db.jobs.getByTechnicianId(user.technicianId);
-      console.timeEnd('loadAssignedJobs'); // Performance timing
       
-      // Load AMC status for customers in these jobs
-      if (data && data.length > 0) {
-        const customerIds = data.map((job: any) => job.customer_id || (job.customer as any)?.id).filter(Boolean);
-        if (customerIds.length > 0) {
-          const { data: amcContracts } = await supabase
-            .from('amc_contracts')
-            .select('customer_id, status')
-            .in('customer_id', customerIds)
-            .eq('status', 'ACTIVE');
-          
-          const amcStatusMap: Record<string, boolean> = {};
-          if (amcContracts) {
-            amcContracts.forEach((amc: any) => {
-              amcStatusMap[amc.customer_id] = true;
-            });
-          }
-          setCustomerAMCStatus(amcStatusMap);
-        }
-      }
+      // Add timeout for mobile networks
+      const jobsPromise = db.jobs.getByTechnicianId(user.technicianId);
+      const timeoutPromise = new Promise<{ data: null, error: Error }>((_, reject) => 
+        setTimeout(() => reject(new Error('Request timeout')), 20000) // 20 second timeout for mobile
+      );
+      
+      const { data, error } = await Promise.race([jobsPromise, timeoutPromise]);
+      console.timeEnd('loadAssignedJobs'); // Performance timing
       
       if (error) {
         console.error('Error loading assigned jobs:', error);
         // Retry on network errors (up to 2 retries)
-        if (retryCount < 2 && (error.message.includes('fetch') || error.message.includes('network') || error.message.includes('Failed to fetch'))) {
+        if (retryCount < 2 && (error.message.includes('fetch') || error.message.includes('network') || error.message.includes('Failed to fetch') || error.message.includes('timeout'))) {
           console.log(`Retrying loadAssignedJobs (attempt ${retryCount + 1}/2)...`);
           await new Promise(resolve => setTimeout(resolve, 1000 * (retryCount + 1))); // Exponential backoff
           return loadAssignedJobs(retryCount + 1);
@@ -520,6 +507,42 @@ const TechnicianDashboard = () => {
       shouldPreserveOrderRef.current = false;
       setJobs(allJobs);
       hasJobsRef.current = true; // Mark that we've loaded jobs at least once
+      setJobsLoading(false); // Show jobs immediately, don't wait for AMC
+      
+      // Load AMC status in background (non-blocking) - defer for mobile performance
+      if (data && data.length > 0) {
+        // Use setTimeout to defer AMC loading - don't block UI
+        setTimeout(async () => {
+          try {
+            const customerIds = data.map((job: any) => job.customer_id || (job.customer as any)?.id).filter(Boolean);
+            if (customerIds.length > 0) {
+              // Add timeout for AMC query too
+              const amcPromise = supabase
+                .from('amc_contracts')
+                .select('customer_id, status')
+                .in('customer_id', customerIds)
+                .eq('status', 'ACTIVE');
+              
+              const amcTimeoutPromise = new Promise<{ data: null }>((_, reject) => 
+                setTimeout(() => reject(new Error('AMC query timeout')), 10000) // 10 second timeout
+              );
+              
+              const { data: amcContracts } = await Promise.race([amcPromise, amcTimeoutPromise]) as any;
+              
+              const amcStatusMap: Record<string, boolean> = {};
+              if (amcContracts) {
+                amcContracts.forEach((amc: any) => {
+                  amcStatusMap[amc.customer_id] = true;
+                });
+              }
+              setCustomerAMCStatus(amcStatusMap);
+            }
+          } catch (amcError) {
+            // Silently fail AMC loading - it's not critical for displaying jobs
+            console.warn('Failed to load AMC status (non-critical):', amcError);
+          }
+        }, 100); // Defer by 100ms to let jobs render first
+      }
       
       // Check for new jobs when app becomes active (only if we have previous job IDs to compare)
       if (lastJobIdsRef.current.size > 0) {
@@ -538,8 +561,10 @@ const TechnicianDashboard = () => {
     } catch (error) {
       console.error('Error loading assigned jobs:', error);
       // Only show error toast if it's a critical error, not transient network issues
-      if (error instanceof Error && !error.message.includes('fetch') && !error.message.includes('network')) {
+      if (error instanceof Error && !error.message.includes('fetch') && !error.message.includes('network') && !error.message.includes('timeout')) {
         toast.error('Failed to load assigned jobs');
+      } else if (error instanceof Error && error.message.includes('timeout')) {
+        toast.error('Loading jobs is taking longer than expected. Please check your connection.');
       }
     } finally {
       setJobsLoading(false);
