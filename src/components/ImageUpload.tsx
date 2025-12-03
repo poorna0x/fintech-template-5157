@@ -1,4 +1,4 @@
-import React, { useState, useRef, useCallback } from 'react';
+import React, { useState, useRef, useCallback, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Upload, Camera, X, Loader2, Image as ImageIcon, FileImage, Trash2 } from 'lucide-react';
@@ -20,6 +20,10 @@ interface ImageUploadProps {
   aggressiveCompression?: boolean; // For documents/bills that don't need high quality
   // Use secondary Cloudinary account for optimized/temporary images
   useSecondaryAccount?: boolean;
+  // Initial images to display (useful when navigating back to step)
+  initialImages?: string[];
+  // Callback to track upload state
+  onUploadStateChange?: (isUploading: boolean) => void;
 }
 
 interface UploadedImage {
@@ -40,14 +44,70 @@ const ImageUpload: React.FC<ImageUploadProps> = ({
   quality,
   aggressiveCompression = false,
   useSecondaryAccount = false,
+  initialImages = [],
+  onUploadStateChange,
 }) => {
-  const [uploadedImages, setUploadedImages] = useState<UploadedImage[]>([]);
+  const [uploadedImages, setUploadedImages] = useState<UploadedImage[]>(() => {
+    // Initialize with initialImages if provided
+    if (initialImages && initialImages.length > 0) {
+      return initialImages.map((url, index) => ({
+        id: `img_${Date.now()}_${index}`,
+        url,
+        publicId: '', // Will be empty for initial images
+        name: `Image ${index + 1}`,
+      }));
+    }
+    return [];
+  });
   const [isUploading, setIsUploading] = useState(false);
   const [isDragOver, setIsDragOver] = useState(false);
   const [uploadProgress, setUploadProgress] = useState<{ [key: string]: number }>({});
   const fileInputRef = useRef<HTMLInputElement>(null);
   const cameraInputRef = useRef<HTMLInputElement>(null);
   const dropZoneRef = useRef<HTMLDivElement>(null);
+
+  // Sync with initialImages prop (useful when navigating back to step)
+  // Use a ref to track previous initialImages to avoid unnecessary updates
+  const prevInitialImagesRef = useRef<string[]>([]);
+  
+  useEffect(() => {
+    const prevUrls = prevInitialImagesRef.current.sort().join(',');
+    const currentUrls = (initialImages || []).sort().join(',');
+    
+    // Only sync if initialImages actually changed
+    if (prevUrls !== currentUrls) {
+      if (initialImages && initialImages.length > 0) {
+        // Check if we need to sync with current state
+        const existingUrls = uploadedImages.map(img => img.url).sort().join(',');
+        
+        if (existingUrls !== currentUrls) {
+          // Rebuild uploadedImages from initialImages
+          const syncedImages = initialImages.map((url, index) => ({
+            id: `img_${Date.now()}_${index}_${url.slice(-10)}`, // Unique ID based on URL
+            url,
+            publicId: '',
+            name: `Image ${index + 1}`,
+          }));
+          setUploadedImages(syncedImages);
+        }
+      } else {
+        // Clear if initialImages is empty
+        if (uploadedImages.length > 0) {
+          setUploadedImages([]);
+        }
+      }
+      
+      prevInitialImagesRef.current = [...(initialImages || [])];
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [initialImages]);
+
+  // Notify parent of upload state changes
+  useEffect(() => {
+    if (onUploadStateChange) {
+      onUploadStateChange(isUploading);
+    }
+  }, [isUploading, onUploadStateChange]);
 
   const handleFileSelect = async (files: FileList | null) => {
     if (!files || files.length === 0) return;
@@ -88,8 +148,12 @@ const ImageUpload: React.FC<ImageUploadProps> = ({
       return;
     }
 
-    setIsUploading(true);
-    setUploadProgress({});
+      setIsUploading(true);
+      setUploadProgress({});
+      // Notify parent immediately
+      if (onUploadStateChange) {
+        onUploadStateChange(true);
+      }
 
     try {
       // Process and upload images one by one for better progress tracking
@@ -245,6 +309,10 @@ const ImageUpload: React.FC<ImageUploadProps> = ({
     } finally {
       setIsUploading(false);
       setUploadProgress({});
+      // Notify parent that upload is complete
+      if (onUploadStateChange) {
+        onUploadStateChange(false);
+      }
     }
   };
 
@@ -643,6 +711,13 @@ const ImageUpload: React.FC<ImageUploadProps> = ({
         onDragOver={handleDragOver}
         onDragLeave={handleDragLeave}
         onDrop={handleDrop}
+        onTouchStart={(e) => {
+          // Allow scrolling to work properly on mobile
+          // Don't prevent default for touch events unless actually dragging
+        }}
+        style={{
+          touchAction: 'manipulation', // Allow scrolling but prevent double-tap zoom
+        }}
         className={`
           relative border-2 border-dashed rounded-lg p-4 sm:p-8 text-center transition-all duration-200
           ${isDragOver 

@@ -405,6 +405,7 @@ const TechnicianDashboard = () => {
   const [selectedJobForComplete, setSelectedJobForComplete] = useState<Job | null>(null);
   const [completionNotes, setCompletionNotes] = useState('');
   const [completeJobStep, setCompleteJobStep] = useState<1 | 2 | 3 | 4 | 5 | 6>(1);
+  const completeJobScrollRef = useRef<HTMLDivElement>(null);
   const [billAmount, setBillAmount] = useState<string>('');
   const [billPhotos, setBillPhotos] = useState<string[]>([]);
   const [paymentPhotos, setPaymentPhotos] = useState<string[]>([]);
@@ -427,6 +428,8 @@ const TechnicianDashboard = () => {
   const [technicianVisibleQrCodes, setTechnicianVisibleQrCodes] = useState<string[]>([]); // Current technician's visibility settings
   const [paymentScreenshot, setPaymentScreenshot] = useState<string>('');
   const [isSubmittingJobCompletion, setIsSubmittingJobCompletion] = useState(false);
+  const [isBillPhotosUploading, setIsBillPhotosUploading] = useState(false);
+  const [isPaymentScreenshotUploading, setIsPaymentScreenshotUploading] = useState(false);
 
   // Phone popup state
   const [phonePopupOpen, setPhonePopupOpen] = useState(false);
@@ -589,6 +592,18 @@ const TechnicianDashboard = () => {
       setHasAMC(null);
     }
   }, [completeJobStep]);
+
+  // Scroll to top when step changes (fixes iOS scrolling issue)
+  useEffect(() => {
+    if (completeDialogOpen && completeJobScrollRef.current) {
+      // Small delay to ensure DOM is updated
+      setTimeout(() => {
+        if (completeJobScrollRef.current) {
+          completeJobScrollRef.current.scrollTop = 0;
+        }
+      }, 100);
+    }
+  }, [completeJobStep, completeDialogOpen]);
 
   // Load QR codes function (extracted so it can be called manually)
   const loadQrCodes = useCallback(async () => {
@@ -5232,8 +5247,18 @@ const TechnicianDashboard = () => {
               </DialogDescription>
             </DialogHeader>
             
-            {/* Scrollable Content */}
-            <div className="flex-1 overflow-y-auto px-6 py-4">
+            {/* Scrollable Content - iOS Safari fix for scrolling */}
+            <div 
+              id="complete-job-scroll-container"
+              className="flex-1 overflow-y-auto px-6 py-4"
+              style={{
+                WebkitOverflowScrolling: 'touch',
+                touchAction: 'pan-y',
+                overscrollBehavior: 'contain',
+                minHeight: 0, // Important for flex children to allow shrinking
+                position: 'relative', // Ensure proper stacking context
+              }}
+            >
               {selectedJobForComplete && (
                 <div className="p-3 bg-gray-50 rounded-lg mb-4">
                   <div className="text-sm font-medium text-gray-900">
@@ -5396,6 +5421,8 @@ const TechnicianDashboard = () => {
                       onImagesChange={(images) => {
                         setBillPhotos(images);
                       }}
+                      initialImages={billPhotos}
+                      onUploadStateChange={setIsBillPhotosUploading}
                       maxImages={5}
                       folder="bills"
                       title=""
@@ -5773,6 +5800,8 @@ const TechnicianDashboard = () => {
                           onImagesChange={(images) => {
                             setPaymentScreenshot(images[0] || '');
                           }}
+                          initialImages={paymentScreenshot ? [paymentScreenshot] : []}
+                          onUploadStateChange={setIsPaymentScreenshotUploading}
                           maxImages={1}
                           folder="payment-receipts"
                           title=""
@@ -5916,14 +5945,20 @@ const TechnicianDashboard = () => {
                 className="bg-black hover:bg-gray-800 !text-white font-semibold"
                 disabled={
                   isSubmittingJobCompletion ||
+                  isBillPhotosUploading ||
+                  isPaymentScreenshotUploading ||
                   (completeJobStep === 4 && !paymentMode) || 
                   (completeJobStep === 4 && paymentMode === 'ONLINE' && !selectedQrCodeId)
                 }
               >
-                {isSubmittingJobCompletion ? (
+                {isSubmittingJobCompletion || isBillPhotosUploading || isPaymentScreenshotUploading ? (
                   <>
                     <RefreshCw className="w-4 h-4 mr-2 animate-spin" />
-                    {completeJobStep === 6 ? 'Submitting...' : 'Saving...'}
+                    {isBillPhotosUploading || isPaymentScreenshotUploading 
+                      ? 'Uploading images...' 
+                      : completeJobStep === 6 
+                        ? 'Submitting...' 
+                        : 'Saving...'}
                   </>
                 ) : (
                   completeJobStep === 6 ? 'Complete Job' : 'Next'
