@@ -46,7 +46,8 @@ const CustomerPhotoGalleryDialog: React.FC<CustomerPhotoGalleryDialogProps> = ({
   if (!customer) return null;
 
   const customerId = customer.customer_id || customer.customerId || '';
-  const photos = customerPhotos[customerId] || [];
+  // Sort photos to show latest first (reverse array)
+  const photos = [...(customerPhotos[customerId] || [])].reverse();
   const uploadingCount = Object.keys(uploadingThumbnails).length;
   const hasPhotos = photos.length > 0 || uploadingCount > 0;
 

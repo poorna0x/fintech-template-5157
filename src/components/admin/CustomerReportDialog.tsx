@@ -55,10 +55,23 @@ const CustomerReportDialog: React.FC<CustomerReportDialogProps> = ({
 
   if (!customer) return null;
 
-  const completedJobs = customerReportJobs.filter(job => {
-    const jobStatus = (job as any).status || job.status;
-    return jobStatus === 'COMPLETED';
-  });
+  const completedJobs = customerReportJobs
+    .filter(job => {
+      const jobStatus = (job as any).status || job.status;
+      return jobStatus === 'COMPLETED';
+    })
+    .sort((a, b) => {
+      // Sort by completion date - latest completed job first
+      const aCompletedAt = (a as any).completed_at || (a as any).end_time || a.completedAt || a.endTime || null;
+      const bCompletedAt = (b as any).completed_at || (b as any).end_time || b.completedAt || b.endTime || null;
+      
+      if (!aCompletedAt && !bCompletedAt) return 0;
+      if (!aCompletedAt) return 1; // Put jobs without completion date at end
+      if (!bCompletedAt) return -1;
+      
+      // Sort descending (newest first)
+      return new Date(bCompletedAt).getTime() - new Date(aCompletedAt).getTime();
+    });
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -221,11 +234,11 @@ const CustomerReportDialog: React.FC<CustomerReportDialogProps> = ({
                           </div>
                         )}
                         
-                        {((paymentMethod === 'ONLINE' || paymentMethod === 'UPI' || paymentMethod === 'CARD' || paymentMethod === 'BANK_TRANSFER') && paymentScreenshot) || (billPhotos && Array.isArray(billPhotos) && billPhotos.length > 0) ? (
+                        {paymentScreenshot || (billPhotos && Array.isArray(billPhotos) && billPhotos.length > 0) ? (
                           <div className="mt-3 pt-3 border-t border-gray-200">
                             <div className="font-medium text-gray-900 mb-3">Payment & Bill Documents</div>
                             <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-                              {(paymentMethod === 'ONLINE' || paymentMethod === 'UPI' || paymentMethod === 'CARD' || paymentMethod === 'BANK_TRANSFER') && paymentScreenshot && (
+                              {paymentScreenshot && (
                                 <div 
                                   className="relative group cursor-pointer rounded-lg overflow-hidden border-2 border-blue-300 hover:border-blue-500 transition-all"
                                   onClick={() => {

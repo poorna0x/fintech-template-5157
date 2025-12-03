@@ -3469,7 +3469,14 @@ const AdminDashboard = () => {
       if (jobs && jobs.length > 0) {
         console.log(`Loading photos from ${jobs.length} job(s) for customer ${customerId}`);
         
-        jobs.forEach((job, index) => {
+        // Sort jobs by date (newest first) so photos from newer jobs are added first
+        const sortedJobs = [...jobs].sort((a, b) => {
+          const aDate = new Date((a as any).completed_at || (a as any).end_time || (a as any).created_at || a.createdAt || 0).getTime();
+          const bDate = new Date((b as any).completed_at || (b as any).end_time || (b as any).created_at || b.createdAt || 0).getTime();
+          return bDate - aDate; // Newest first
+        });
+        
+        sortedJobs.forEach((job, index) => {
           // Add photos from before_photos field
           const jobBeforePhotos = Array.isArray(job.before_photos || job.beforePhotos) 
             ? (job.before_photos || job.beforePhotos) 
@@ -3562,8 +3569,9 @@ const AdminDashboard = () => {
         });
       }
       
-      // Convert Set to Array
-      const uniquePhotos = Array.from(photoSet);
+      // Convert Set to Array and reverse to show latest photos first
+      // Note: Since we're using a Set, order isn't guaranteed, but reversing helps
+      const uniquePhotos = Array.from(photoSet).reverse();
       console.log(`📸 Total unique photos found for customer: ${uniquePhotos.length}`);
       
       // Log photo sources for debugging
