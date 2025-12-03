@@ -8330,9 +8330,14 @@ const AdminDashboard = () => {
                     requirements: JSON.stringify(requirements)
                   };
                   
-                  // Only update completed_at if it's been explicitly set/changed
+                  // Only update completed_at and end_time if it's been explicitly set/changed
+                  // IMPORTANT: Both fields are used for salary calculations:
+                  // - completed_at: General completion timestamp
+                  // - end_time: Used by TechnicianPayments component to filter jobs by month for salary calculations
+                  // Updating both ensures the job appears in the correct month's salary when completion date is changed
                   if (completedAt) {
                     updateData.completed_at = completedAt;
+                    updateData.end_time = completedAt; // Update end_time so salary calculations use the new date
                   }
 
                   const { error } = await db.jobs.update(selectedCompletedJob.id, updateData);
