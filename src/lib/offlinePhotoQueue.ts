@@ -72,6 +72,7 @@ export const getQueuedPhotos = (): QueuedPhoto[] => {
 
 /**
  * Save a photo to the queue
+ * Improved error handling and retry logic for mobile devices
  */
 export const queuePhoto = async (
   file: File,
@@ -85,42 +86,129 @@ export const queuePhoto = async (
     photoType?: 'bill' | 'before' | 'after' | 'payment' | 'other';
   } = {}
 ): Promise<string> => {
-  try {
-    // Convert file to base64
-    const fileData = await fileToDataURL(file);
-    
-    const queuedPhoto: QueuedPhoto = {
-      id: `photo_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
-      fileData,
-      fileName: file.name,
-      folder,
-      maxWidth: options.maxWidth,
-      quality: options.quality,
-      aggressiveCompression: options.aggressiveCompression,
-      useSecondaryAccount: options.useSecondaryAccount,
-      timestamp: Date.now(),
-      retryCount: 0,
-      jobId: options.jobId,
-      photoType: options.photoType || 'other',
-    };
+  // Retry logic for localStorage issues (common on mobile devices)
+  const maxRetries = 5; // Increased retries
+  let lastError: Error | null = null;
+  
+  for (let attempt = 0; attempt < maxRetries; attempt++) {
+    try {
+      // Convert file to base64 with timeout
+      // Use longer timeout for large files on slow devices
+      const fileData = await Promise.race([
+        fileToDataURL(file),
+        new Promise<string>((_, reject) => 
+          setTimeout(() => reject(new Error('File conversion timeout')), 30000) // Increased timeout
+        )
+      ]) as string;
+      
+      const queuedPhoto: QueuedPhoto = {
+        id: `photo_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+        fileData,
+        fileName: file.name,
+        folder,
+        maxWidth: options.maxWidth,
+        quality: options.quality,
+        aggressiveCompression: options.aggressiveCompression,
+        useSecondaryAccount: options.useSecondaryAccount,
+        timestamp: Date.now(),
+        retryCount: 0,
+        jobId: options.jobId,
+        photoType: options.photoType || 'other',
+      };
 
-    const existingQueue = getQueuedPhotos();
-    
-    // Limit queue size - remove oldest if exceeded
-    if (existingQueue.length >= MAX_QUEUE_SIZE) {
-      existingQueue.sort((a, b) => a.timestamp - b.timestamp);
-      existingQueue.shift(); // Remove oldest
+      const existingQueue = getQueuedPhotos();
+      
+      // Limit queue size - remove oldest if exceeded
+      if (existingQueue.length >= MAX_QUEUE_SIZE) {
+        existingQueue.sort((a, b) => a.timestamp - b.timestamp);
+        existingQueue.shift(); // Remove oldest
+      }
+
+      existingQueue.push(queuedPhoto);
+      
+      // Try to save to localStorage with retry
+      try {
+        // Stringify with error handling
+        let queueString: string;
+        try {
+          queueString = JSON.stringify(existingQueue);
+        } catch (stringifyError) {
+          throw new Error('Failed to serialize photo data. The file may be too large.');
+        }
+        
+        // Check if string is too large for localStorage
+        if (queueString.length > 5 * 1024 * 1024) { // 5MB limit check
+          console.warn('Queue data too large, removing oldest entries...');
+          // Remove oldest 20% of entries
+          existingQueue.sort((a, b) => a.timestamp - b.timestamp);
+          const removeCount = Math.floor(existingQueue.length * 0.2);
+          existingQueue.splice(0, removeCount);
+          queueString = JSON.stringify(existingQueue);
+        }
+        
+        localStorage.setItem(QUEUE_STORAGE_KEY, queueString);
+        console.log('📸 Photo queued for offline upload:', queuedPhoto.id);
+        return queuedPhoto.id;
+      } catch (storageError: any) {
+        // localStorage might be full - try to clear old entries
+        if (storageError.name === 'QuotaExceededError' || storageError.code === 22) {
+          console.warn('localStorage full, clearing old entries...');
+          // Remove oldest entries (more aggressively)
+          existingQueue.sort((a, b) => a.timestamp - b.timestamp);
+          // Remove oldest 20% or at least 5 entries
+          const removeCount = Math.max(5, Math.floor(existingQueue.length * 0.2));
+          existingQueue.splice(0, removeCount);
+          
+          try {
+            const queueString = JSON.stringify(existingQueue);
+            localStorage.setItem(QUEUE_STORAGE_KEY, queueString);
+            console.log('📸 Photo queued after clearing old entries:', queuedPhoto.id);
+            return queuedPhoto.id;
+          } catch (retryError: any) {
+            lastError = retryError;
+            // If still failing, try to save just this one photo (emergency fallback)
+            if (attempt === maxRetries - 1) {
+              try {
+                const singlePhotoQueue = [queuedPhoto];
+                localStorage.setItem(QUEUE_STORAGE_KEY, JSON.stringify(singlePhotoQueue));
+                console.log('📸 Photo queued as single entry (emergency):', queuedPhoto.id);
+                return queuedPhoto.id;
+              } catch (finalError) {
+                // Can't save at all
+                throw new Error('Unable to save photo. Storage is full. Please free up space.');
+              }
+            }
+            // Wait before retry with exponential backoff
+            await new Promise(resolve => setTimeout(resolve, 200 * (attempt + 1)));
+            continue;
+          }
+        }
+        lastError = storageError;
+        // Wait before retry with exponential backoff
+        if (attempt < maxRetries - 1) {
+          await new Promise(resolve => setTimeout(resolve, 200 * (attempt + 1)));
+          continue;
+        }
+        throw storageError;
+      }
+    } catch (error) {
+      lastError = error as Error;
+      if (attempt < maxRetries - 1) {
+        // Wait before retry with exponential backoff
+        await new Promise(resolve => setTimeout(resolve, 200 * (attempt + 1)));
+        continue;
+      }
+      console.error('Error queueing photo after retries:', error);
+      // Don't throw - return a temporary ID so upload can proceed
+      // The photo might still upload successfully even if localStorage save fails
+      console.warn('⚠️ Could not save to localStorage, but continuing with upload attempt');
+      return `temp_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
     }
-
-    existingQueue.push(queuedPhoto);
-    localStorage.setItem(QUEUE_STORAGE_KEY, JSON.stringify(existingQueue));
-    
-    console.log('📸 Photo queued for offline upload:', queuedPhoto.id);
-    return queuedPhoto.id;
-  } catch (error) {
-    console.error('Error queueing photo:', error);
-    throw error;
   }
+  
+  // Final fallback - return temp ID so upload can still proceed
+  console.warn('⚠️ Could not save to localStorage after all retries, but continuing with upload');
+  return `temp_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
 };
 
 /**

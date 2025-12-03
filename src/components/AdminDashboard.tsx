@@ -64,6 +64,7 @@ import { registerAdminPWA, disablePWA } from '@/lib/pwa';
 import { Customer, Job, Technician } from '@/types';
 import { cloudinaryService, compressImage } from '@/lib/cloudinary';
 import { toast } from 'sonner';
+import { isIOS, isPWA, shouldUseFileInputFallback, requestCameraAccess, createVideoElement, checkCameraPermission } from '@/lib/cameraUtils';
 import { getCachedQrCodes, cacheQrCodes, shouldUseCache, CommonQrCode } from '@/lib/qrCodeManager';
 import { openInGoogleMaps, extractCoordinates, formatAddressForDisplay } from '@/lib/maps';
 import FollowUpModal from '@/components/FollowUpModal';
@@ -3736,6 +3737,25 @@ const AdminDashboard = () => {
     if (!selectedCustomerForPhotos) return;
     
     try {
+      // iOS and mobile PWA: Use file input fallback for better reliability
+      if (shouldUseFileInputFallback()) {
+        console.log('Using file input fallback for mobile/PWA');
+        const input = document.createElement('input');
+        input.type = 'file';
+        input.accept = 'image/*';
+        input.capture = 'environment';
+        input.onchange = (e) => {
+          const files = (e.target as HTMLInputElement).files;
+          if (files && files.length > 0) {
+            handlePhotoUpload(files);
+          }
+        };
+        setTimeout(() => {
+          input.click();
+        }, 100);
+        return;
+      }
+
       // Check if getUserMedia is available (with fallback for older browsers)
       const getUserMedia = navigator.mediaDevices?.getUserMedia || 
                           (navigator as any).getUserMedia || 
@@ -3754,45 +3774,24 @@ const AdminDashboard = () => {
             handlePhotoUpload(files);
           }
         };
-        input.click();
+        setTimeout(() => {
+          input.click();
+        }, 100);
         return;
       }
 
-      // Request camera access with multiple constraint options for better device compatibility
-      let stream: MediaStream;
-      try {
-        // Try with ideal constraints first (back camera preferred)
-        stream = await navigator.mediaDevices.getUserMedia({ 
-          video: { 
-            facingMode: { ideal: 'environment' }, // Back camera preferred
-            width: { ideal: 1920 },
-            height: { ideal: 1080 }
-          } 
-        });
-      } catch (error) {
-        // Fallback to simpler constraints if ideal fails
-        try {
-          stream = await navigator.mediaDevices.getUserMedia({ 
-            video: { facingMode: 'environment' }
-          });
-        } catch (fallbackError) {
-          // Last resort: try any camera
-          stream = await navigator.mediaDevices.getUserMedia({ 
-            video: true 
-          });
-        }
+      // Don't check permission first - just try getUserMedia
+      // Permission API is unreliable, especially on mobile
+
+      // Request camera access with proper error handling
+      const stream = await requestCameraAccess();
+      if (!stream) {
+        throw new Error('Failed to access camera');
       }
 
-      // Create video element to show camera preview
-      const video = document.createElement('video');
+      // Create optimized video element for iOS/mobile
+      const video = createVideoElement();
       video.srcObject = stream;
-      video.autoplay = true;
-      video.playsInline = true;
-      video.muted = true; // Required for autoplay on some devices
-      video.setAttribute('playsinline', 'true'); // iOS Safari compatibility
-      video.style.width = '100%';
-      video.style.height = '100%';
-      video.style.objectFit = 'cover';
 
       // Create a dialog/modal for camera preview
       const cameraDialog = document.createElement('div');
@@ -3801,16 +3800,17 @@ const AdminDashboard = () => {
       cameraDialog.style.left = '0';
       cameraDialog.style.width = '100%';
       cameraDialog.style.height = '100%';
-      cameraDialog.style.backgroundColor = 'rgba(0, 0, 0, 0.9)';
+      cameraDialog.style.backgroundColor = 'rgba(0, 0, 0, 0.95)';
       cameraDialog.style.zIndex = '9999';
       cameraDialog.style.display = 'flex';
       cameraDialog.style.flexDirection = 'column';
       cameraDialog.style.alignItems = 'center';
       cameraDialog.style.justifyContent = 'center';
       cameraDialog.style.gap = '20px';
+      cameraDialog.style.padding = '20px';
 
       const videoContainer = document.createElement('div');
-      videoContainer.style.width = '90%';
+      videoContainer.style.width = '100%';
       videoContainer.style.maxWidth = '600px';
       videoContainer.style.aspectRatio = '4/3';
       videoContainer.style.backgroundColor = 'black';
@@ -3833,6 +3833,7 @@ const AdminDashboard = () => {
       captureButton.style.cursor = 'pointer';
       captureButton.style.fontSize = '16px';
       captureButton.style.fontWeight = '600';
+      captureButton.style.transition = 'opacity 0.2s';
 
       const cancelButton = document.createElement('button');
       cancelButton.textContent = 'Cancel';
@@ -3844,51 +3845,124 @@ const AdminDashboard = () => {
       cancelButton.style.cursor = 'pointer';
       cancelButton.style.fontSize = '16px';
 
+      let streamActive = true;
       const closeCamera = () => {
-        stream.getTracks().forEach(track => track.stop());
-        document.body.removeChild(cameraDialog);
+        if (!streamActive) return;
+        streamActive = false;
+        
+        // Stop all tracks
+        try {
+          stream.getTracks().forEach(track => {
+            track.stop();
+          });
+        } catch (e) {
+          console.warn('Error stopping stream tracks:', e);
+        }
+        
+        // Clear video srcObject
+        try {
+          if (video.srcObject) {
+            video.srcObject = null;
+          }
+        } catch (e) {
+          console.warn('Error clearing video srcObject:', e);
+        }
+        
+        // Remove modal
+        try {
+          if (cameraDialog.parentNode) {
+            document.body.removeChild(cameraDialog);
+          }
+        } catch (e) {
+          console.warn('Error removing modal:', e);
+        }
       };
 
       // Wait for video to be ready before allowing capture
-      video.onloadedmetadata = () => {
-        captureButton.disabled = false;
+      // iOS needs more time to initialize
+      let videoReady = false;
+      let readyCheckTimeout: NodeJS.Timeout | null = null;
+      
+      const enableCapture = () => {
+        if (!streamActive) return;
+        
+        if (video.videoWidth > 0 && video.videoHeight > 0) {
+          videoReady = true;
+          captureButton.disabled = false;
+          captureButton.style.opacity = '1';
+          if (readyCheckTimeout) {
+            clearTimeout(readyCheckTimeout);
+            readyCheckTimeout = null;
+          }
+        }
       };
       
+      // Multiple event listeners for better compatibility
+      video.onloadedmetadata = enableCapture;
+      video.onloadeddata = enableCapture;
+      video.oncanplay = enableCapture;
+      video.onplaying = enableCapture;
+      
+      // Also check after delays (iOS sometimes needs this)
+      readyCheckTimeout = setTimeout(() => {
+        if (!videoReady && streamActive) {
+          enableCapture();
+        }
+      }, 500);
+      
+      setTimeout(() => {
+        if (!videoReady && streamActive && video.videoWidth > 0 && video.videoHeight > 0) {
+          enableCapture();
+        }
+      }, 1000);
+      
       captureButton.disabled = true; // Disable until video is ready
+      captureButton.style.opacity = '0.5';
       
       captureButton.onclick = () => {
+        if (!streamActive) return;
+        
         try {
           // Check if video is ready
-          if (!video.videoWidth || !video.videoHeight) {
+          if (!video.videoWidth || !video.videoHeight || !videoReady) {
             toast.error('Camera not ready. Please wait a moment and try again.');
             return;
           }
+          
+          // Disable button during capture to prevent double-clicks
+          captureButton.disabled = true;
+          captureButton.style.opacity = '0.5';
           
           // Create canvas to capture the photo
           const canvas = document.createElement('canvas');
           canvas.width = video.videoWidth;
           canvas.height = video.videoHeight;
-          const ctx = canvas.getContext('2d');
+          const ctx = canvas.getContext('2d', { willReadFrequently: false });
           
           if (!ctx) {
             toast.error('Failed to capture photo. Please try again.');
-            closeCamera();
+            captureButton.disabled = false;
+            captureButton.style.opacity = '1';
             return;
           }
           
           try {
-            ctx.drawImage(video, 0, 0);
+            ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
           } catch (drawError) {
             console.error('Error drawing video to canvas:', drawError);
             toast.error('Failed to capture photo. Please try again.');
-            closeCamera();
+            captureButton.disabled = false;
+            captureButton.style.opacity = '1';
             return;
           }
           
           canvas.toBlob((blob) => {
+            if (!streamActive) return;
+            
             if (!blob) {
               toast.error('Failed to process photo. Please try again.');
-              closeCamera();
+              captureButton.disabled = false;
+              captureButton.style.opacity = '1';
               return;
             }
             
@@ -3898,17 +3972,25 @@ const AdminDashboard = () => {
               // Create a DataTransfer object to get a proper FileList
               const dataTransfer = new DataTransfer();
               dataTransfer.items.add(file);
-              handlePhotoUpload(dataTransfer.files);
+              
+              // Clean up camera before processing file
               closeCamera();
+              
+              // Process the file
+              handlePhotoUpload(dataTransfer.files);
             } catch (fileError) {
               console.error('Error creating file:', fileError);
               toast.error('Failed to process photo. Please try again.');
+              captureButton.disabled = false;
+              captureButton.style.opacity = '1';
               closeCamera();
             }
           }, 'image/jpeg', 0.9);
         } catch (error: any) {
           console.error('Error capturing photo:', error);
           toast.error(`Failed to capture photo: ${error?.message || 'Unknown error'}`);
+          captureButton.disabled = false;
+          captureButton.style.opacity = '1';
           closeCamera();
         }
       };
@@ -3920,42 +4002,47 @@ const AdminDashboard = () => {
       cameraDialog.appendChild(videoContainer);
       cameraDialog.appendChild(buttonContainer);
       document.body.appendChild(cameraDialog);
+      
+      // Stop stream and remove modal when clicking outside
+      cameraDialog.onclick = (e) => {
+        if (e.target === cameraDialog) {
+          closeCamera();
+        }
+      };
+      
+      // Cleanup on page unload
+      const unloadHandler = () => closeCamera();
+      window.addEventListener('beforeunload', unloadHandler);
+      cameraDialog.addEventListener('remove', () => {
+        window.removeEventListener('beforeunload', unloadHandler);
+      });
 
     } catch (error: any) {
       console.error('Error accessing camera:', error);
       
-      // Provide more specific error messages
+      // Provide more specific error messages but always fallback
       if (error?.name === 'NotAllowedError' || error?.name === 'PermissionDeniedError') {
-        toast.error('Camera permission denied. Please allow camera access in your browser settings.');
+        toast.error('Camera permission denied. Using file picker instead.');
       } else if (error?.name === 'NotFoundError' || error?.name === 'DevicesNotFoundError') {
-        toast.error('No camera found on this device.');
-        // Fallback to file input
-        const input = document.createElement('input');
-        input.type = 'file';
-        input.accept = 'image/*';
-        input.capture = 'environment';
-        input.onchange = (e) => {
-          const files = (e.target as HTMLInputElement).files;
-          if (files && files.length > 0) {
-            handlePhotoUpload(files);
-          }
-        };
-        input.click();
+        console.log('No camera found, using file input instead');
       } else {
-        toast.error('Failed to access camera. Trying file input instead...');
-        // Fallback to file input with capture attribute
-        const input = document.createElement('input');
-        input.type = 'file';
-        input.accept = 'image/*';
-        input.capture = 'environment';
-        input.onchange = (e) => {
-          const files = (e.target as HTMLInputElement).files;
-          if (files && files.length > 0) {
-            handlePhotoUpload(files);
-          }
-        };
-        input.click();
+        console.log('Camera access failed, using file input instead');
       }
+      
+      // Always fallback to file input with capture attribute
+      const input = document.createElement('input');
+      input.type = 'file';
+      input.accept = 'image/*';
+      input.capture = 'environment';
+      input.onchange = (e) => {
+        const files = (e.target as HTMLInputElement).files;
+        if (files && files.length > 0) {
+          handlePhotoUpload(files);
+        }
+      };
+      setTimeout(() => {
+        input.click();
+      }, 100);
     }
   };
 

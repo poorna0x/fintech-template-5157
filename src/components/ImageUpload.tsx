@@ -5,6 +5,7 @@ import { Upload, Camera, X, Loader2, Image as ImageIcon, FileImage, Trash2 } fro
 import { toast } from 'sonner';
 import { cloudinaryService, validateImageFile, compressImage } from '@/lib/cloudinary';
 import { queuePhoto, isOnline, removeQueuedPhoto, getQueuedPhotosCount } from '@/lib/offlinePhotoQueue';
+import { isIOS, isPWA, shouldUseFileInputFallback, requestCameraAccess, createVideoElement, checkCameraPermission } from '@/lib/cameraUtils';
 
 interface ImageUploadProps {
   onImagesChange: (images: string[]) => void;
@@ -150,6 +151,7 @@ const ImageUpload: React.FC<ImageUploadProps> = ({
           }
 
           // Save to localStorage FIRST (before any upload attempt)
+          // Retry logic is built into queuePhoto, but we'll handle it gracefully here too
           let queuedPhotoId: string | null = null;
           try {
             queuedPhotoId = await queuePhoto(file, folder, {
@@ -158,11 +160,24 @@ const ImageUpload: React.FC<ImageUploadProps> = ({
               aggressiveCompression,
               useSecondaryAccount,
             });
-            console.log('✅ Photo saved to local storage:', file.name);
-          } catch (saveError) {
-            console.error('Failed to save photo to localStorage:', saveError);
-            toast.error('Failed to save image. Please try again.');
-            continue; // Skip this file if we can't save it
+            
+            // Only log success if we got a real ID (not temp)
+            if (queuedPhotoId && !queuedPhotoId.startsWith('temp_')) {
+              console.log('✅ Photo saved to local storage:', file.name);
+            } else {
+              console.warn('⚠️ Photo not saved to localStorage (temp ID), but continuing with upload');
+            }
+          } catch (saveError: any) {
+            console.error('Failed to save photo to localStorage after retries:', saveError);
+            // Don't show error immediately - the photo might still work
+            // Only show error if it's a critical issue
+            if (saveError?.message?.includes('QuotaExceededError') || saveError?.code === 22 || saveError?.message?.includes('full')) {
+              toast.error('Storage full. Please free up space and try again.');
+            } else {
+              // Continue anyway - the upload might still work
+              console.warn('Photo not saved to queue, but continuing with upload attempt');
+            }
+            // Continue with upload - don't block
           }
 
           setUploadProgress(prev => ({ ...prev, [fileId]: 10 }));
@@ -261,9 +276,26 @@ const ImageUpload: React.FC<ImageUploadProps> = ({
   };
 
   const handleCameraCapture = (e: React.ChangeEvent<HTMLInputElement>) => {
-    handleFileSelect(e.target.files);
-    // Reset input value
-    e.target.value = '';
+    const files = e.target.files;
+    if (!files || files.length === 0) {
+      // iOS PWA: Sometimes files are empty on first try
+      setTimeout(() => {
+        if (e.target.files && e.target.files.length > 0) {
+          handleFileSelect(e.target.files);
+        }
+      }, 200);
+      // Reset input value
+      setTimeout(() => {
+        e.target.value = '';
+      }, 100);
+      return;
+    }
+    
+    handleFileSelect(files);
+    // Reset input value - use setTimeout for iOS compatibility
+    setTimeout(() => {
+      e.target.value = '';
+    }, 100);
   };
 
   const openFileDialog = () => {
@@ -271,206 +303,290 @@ const ImageUpload: React.FC<ImageUploadProps> = ({
   };
 
   const openCameraDialog = async () => {
+    // iOS and mobile PWA: Use file input fallback for better reliability
+    if (shouldUseFileInputFallback()) {
+      console.log('Using file input fallback for mobile/PWA');
+      setTimeout(() => {
+        cameraInputRef.current?.click();
+      }, 100);
+      return;
+    }
+
     // Check if getUserMedia is available (with fallback for older browsers)
     const getUserMedia = navigator.mediaDevices?.getUserMedia || 
                         (navigator as any).getUserMedia || 
                         (navigator as any).webkitGetUserMedia || 
                         (navigator as any).mozGetUserMedia;
     
-    if (getUserMedia) {
-      try {
-        // Request camera access with multiple constraint options for better device compatibility
-        let stream: MediaStream;
+    if (!getUserMedia) {
+      // Fallback to file input with capture attribute
+      setTimeout(() => {
+        cameraInputRef.current?.click();
+      }, 100);
+      return;
+    }
+
+    try {
+      // Don't check permission first - just try getUserMedia
+      // Permission API is unreliable, especially on mobile
+      
+      // Request camera access with proper error handling
+      const stream = await requestCameraAccess();
+      if (!stream) {
+        throw new Error('Failed to access camera');
+      }
+      
+      // Create optimized video element for iOS/mobile
+      const video = createVideoElement();
+      video.srcObject = stream;
+      
+      // Create modal overlay
+      const modal = document.createElement('div');
+      modal.style.position = 'fixed';
+      modal.style.top = '0';
+      modal.style.left = '0';
+      modal.style.width = '100%';
+      modal.style.height = '100%';
+      modal.style.backgroundColor = 'rgba(0, 0, 0, 0.95)';
+      modal.style.zIndex = '9999';
+      modal.style.display = 'flex';
+      modal.style.flexDirection = 'column';
+      modal.style.alignItems = 'center';
+      modal.style.justifyContent = 'center';
+      modal.style.gap = '20px';
+      modal.style.padding = '20px';
+      
+      // Video container
+      const videoContainer = document.createElement('div');
+      videoContainer.style.width = '100%';
+      videoContainer.style.maxWidth = '500px';
+      videoContainer.style.aspectRatio = '4/3';
+      videoContainer.style.position = 'relative';
+      videoContainer.style.backgroundColor = 'black';
+      videoContainer.style.borderRadius = '8px';
+      videoContainer.style.overflow = 'hidden';
+      videoContainer.appendChild(video);
+      
+      // Button container
+      const buttonContainer = document.createElement('div');
+      buttonContainer.style.display = 'flex';
+      buttonContainer.style.gap = '10px';
+      
+      // Capture button
+      const captureBtn = document.createElement('button');
+      captureBtn.textContent = 'Capture Photo';
+      captureBtn.style.padding = '12px 24px';
+      captureBtn.style.backgroundColor = '#3b82f6';
+      captureBtn.style.color = 'white';
+      captureBtn.style.border = 'none';
+      captureBtn.style.borderRadius = '8px';
+      captureBtn.style.cursor = 'pointer';
+      captureBtn.style.fontSize = '16px';
+      captureBtn.style.fontWeight = '600';
+      captureBtn.style.transition = 'opacity 0.2s';
+      
+      // Cancel button
+      const cancelBtn = document.createElement('button');
+      cancelBtn.textContent = 'Cancel';
+      cancelBtn.style.padding = '12px 24px';
+      cancelBtn.style.backgroundColor = '#6b7280';
+      cancelBtn.style.color = 'white';
+      cancelBtn.style.border = 'none';
+      cancelBtn.style.borderRadius = '8px';
+      cancelBtn.style.cursor = 'pointer';
+      cancelBtn.style.fontSize = '16px';
+      
+      let streamActive = true;
+      const cleanup = () => {
+        if (!streamActive) return;
+        streamActive = false;
+        
+        // Stop all tracks
         try {
-          // Try with ideal constraints first (back camera preferred)
-          stream = await navigator.mediaDevices.getUserMedia({ 
-            video: { 
-              facingMode: { ideal: 'environment' }, // Back camera preferred
-              width: { ideal: 1920 },
-              height: { ideal: 1080 }
-            } 
+          stream.getTracks().forEach(track => {
+            track.stop();
           });
-        } catch (error) {
-          // Fallback to simpler constraints if ideal fails
-          try {
-            stream = await navigator.mediaDevices.getUserMedia({ 
-              video: { facingMode: 'environment' }
-            });
-          } catch (fallbackError) {
-            // Last resort: try any camera
-            stream = await navigator.mediaDevices.getUserMedia({ 
-              video: true 
-            });
-          }
+        } catch (e) {
+          console.warn('Error stopping stream tracks:', e);
         }
         
-        // Create video element for preview
-        const video = document.createElement('video');
-        video.srcObject = stream;
-        video.autoplay = true;
-        video.playsInline = true;
-        video.muted = true; // Required for autoplay on some devices
-        video.setAttribute('playsinline', 'true'); // iOS Safari compatibility
-        video.style.width = '100%';
-        video.style.maxWidth = '100%';
-        video.style.height = 'auto';
-        video.style.borderRadius = '8px';
+        // Clear video srcObject
+        try {
+          if (video.srcObject) {
+            video.srcObject = null;
+          }
+        } catch (e) {
+          console.warn('Error clearing video srcObject:', e);
+        }
         
-        // Create modal overlay
-        const modal = document.createElement('div');
-        modal.style.position = 'fixed';
-        modal.style.top = '0';
-        modal.style.left = '0';
-        modal.style.width = '100%';
-        modal.style.height = '100%';
-        modal.style.backgroundColor = 'rgba(0, 0, 0, 0.95)';
-        modal.style.zIndex = '9999';
-        modal.style.display = 'flex';
-        modal.style.flexDirection = 'column';
-        modal.style.alignItems = 'center';
-        modal.style.justifyContent = 'center';
-        modal.style.gap = '20px';
-        modal.style.padding = '20px';
+        // Remove modal
+        try {
+          if (modal.parentNode) {
+            document.body.removeChild(modal);
+          }
+        } catch (e) {
+          console.warn('Error removing modal:', e);
+        }
+      };
+      
+      // Wait for video to be ready before allowing capture
+      // iOS needs more time to initialize
+      let videoReady = false;
+      let readyCheckTimeout: NodeJS.Timeout | null = null;
+      
+      const enableCapture = () => {
+        if (!streamActive) return;
         
-        // Video container
-        const videoContainer = document.createElement('div');
-        videoContainer.style.width = '100%';
-        videoContainer.style.maxWidth = '500px';
-        videoContainer.style.position = 'relative';
-        videoContainer.appendChild(video);
-        
-        // Button container
-        const buttonContainer = document.createElement('div');
-        buttonContainer.style.display = 'flex';
-        buttonContainer.style.gap = '10px';
-        
-        // Capture button
-        const captureBtn = document.createElement('button');
-        captureBtn.textContent = 'Capture Photo';
-        captureBtn.style.padding = '12px 24px';
-        captureBtn.style.backgroundColor = '#3b82f6';
-        captureBtn.style.color = 'white';
-        captureBtn.style.border = 'none';
-        captureBtn.style.borderRadius = '8px';
-        captureBtn.style.cursor = 'pointer';
-        captureBtn.style.fontSize = '16px';
-        captureBtn.style.fontWeight = '600';
-        
-        // Cancel button
-        const cancelBtn = document.createElement('button');
-        cancelBtn.textContent = 'Cancel';
-        cancelBtn.style.padding = '12px 24px';
-        cancelBtn.style.backgroundColor = '#6b7280';
-        cancelBtn.style.color = 'white';
-        cancelBtn.style.border = 'none';
-        cancelBtn.style.borderRadius = '8px';
-        cancelBtn.style.cursor = 'pointer';
-        cancelBtn.style.fontSize = '16px';
-        
-        const cleanup = () => {
-          stream.getTracks().forEach(track => track.stop());
-          document.body.removeChild(modal);
-        };
-        
-        // Wait for video to be ready before allowing capture
-        video.onloadedmetadata = () => {
+        if (video.videoWidth > 0 && video.videoHeight > 0) {
+          videoReady = true;
           captureBtn.disabled = false;
-        };
+          captureBtn.style.opacity = '1';
+          if (readyCheckTimeout) {
+            clearTimeout(readyCheckTimeout);
+            readyCheckTimeout = null;
+          }
+        }
+      };
+      
+      // Multiple event listeners for better compatibility
+      video.onloadedmetadata = enableCapture;
+      video.onloadeddata = enableCapture;
+      video.oncanplay = enableCapture;
+      video.onplaying = enableCapture;
+      
+      // Also check after delays (iOS sometimes needs this)
+      readyCheckTimeout = setTimeout(() => {
+        if (!videoReady && streamActive) {
+          enableCapture();
+        }
+      }, 500);
+      
+      setTimeout(() => {
+        if (!videoReady && streamActive && video.videoWidth > 0 && video.videoHeight > 0) {
+          enableCapture();
+        }
+      }, 1000);
+      
+      captureBtn.disabled = true; // Disable until video is ready
+      captureBtn.style.opacity = '0.5';
+      
+      captureBtn.onclick = () => {
+        if (!streamActive) return;
         
-        captureBtn.disabled = true; // Disable until video is ready
-        
-        captureBtn.onclick = () => {
+        try {
+          // Check if video is ready
+          if (!video.videoWidth || !video.videoHeight || !videoReady) {
+            toast.error('Camera not ready. Please wait a moment and try again.');
+            return;
+          }
+          
+          // Disable button during capture to prevent double-clicks
+          captureBtn.disabled = true;
+          captureBtn.style.opacity = '0.5';
+          
+          // Create canvas to capture the photo
+          const canvas = document.createElement('canvas');
+          canvas.width = video.videoWidth;
+          canvas.height = video.videoHeight;
+          const ctx = canvas.getContext('2d', { willReadFrequently: false });
+          
+          if (!ctx) {
+            toast.error('Failed to capture photo. Please try again.');
+            captureBtn.disabled = false;
+            captureBtn.style.opacity = '1';
+            return;
+          }
+          
           try {
-            // Check if video is ready
-            if (!video.videoWidth || !video.videoHeight) {
-              toast.error('Camera not ready. Please wait a moment and try again.');
-              return;
-            }
+            // Draw video frame to canvas
+            ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+          } catch (drawError) {
+            console.error('Error drawing video to canvas:', drawError);
+            toast.error('Failed to capture photo. Please try again.');
+            captureBtn.disabled = false;
+            captureBtn.style.opacity = '1';
+            return;
+          }
+          
+          // Convert canvas to blob
+          canvas.toBlob((blob) => {
+            if (!streamActive) return;
             
-            // Create canvas to capture the photo
-            const canvas = document.createElement('canvas');
-            canvas.width = video.videoWidth;
-            canvas.height = video.videoHeight;
-            const ctx = canvas.getContext('2d');
-            
-            if (!ctx) {
-              toast.error('Failed to capture photo. Please try again.');
-              cleanup();
+            if (!blob) {
+              toast.error('Failed to process photo. Please try again.');
+              captureBtn.disabled = false;
+              captureBtn.style.opacity = '1';
               return;
             }
             
             try {
-              ctx.drawImage(video, 0, 0);
-            } catch (drawError) {
-              console.error('Error drawing video to canvas:', drawError);
-              toast.error('Failed to capture photo. Please try again.');
-              cleanup();
-              return;
-            }
-            
-            canvas.toBlob((blob) => {
-              if (!blob) {
-                toast.error('Failed to process photo. Please try again.');
-                cleanup();
-                return;
-              }
+              const file = new File([blob], `camera-photo-${Date.now()}.jpg`, { type: 'image/jpeg' });
+              // Create a DataTransfer object to simulate file input
+              const dataTransfer = new DataTransfer();
+              dataTransfer.items.add(file);
               
-              try {
-                const file = new File([blob], `camera-photo-${Date.now()}.jpg`, { type: 'image/jpeg' });
-                // Create a DataTransfer object to simulate file input
-                const dataTransfer = new DataTransfer();
-                dataTransfer.items.add(file);
-                handleFileSelect(dataTransfer.files);
-                cleanup();
-              } catch (fileError) {
-                console.error('Error creating file:', fileError);
-                toast.error('Failed to process photo. Please try again.');
-                cleanup();
-              }
-            }, 'image/jpeg', 0.9);
-          } catch (error: any) {
-            console.error('Error capturing photo:', error);
-            toast.error(`Failed to capture photo: ${error?.message || 'Unknown error'}`);
-            cleanup();
-          }
-        };
-        
-        cancelBtn.onclick = cleanup;
-        
-        buttonContainer.appendChild(captureBtn);
-        buttonContainer.appendChild(cancelBtn);
-        
-        modal.appendChild(videoContainer);
-        modal.appendChild(buttonContainer);
-        document.body.appendChild(modal);
-        
-        // Stop stream and remove modal when clicking outside
-        modal.onclick = (e) => {
-          if (e.target === modal) {
-            cleanup();
-          }
-        };
-        
-      } catch (error: any) {
-        console.warn('getUserMedia failed, falling back to file input:', error);
-        
-        // Don't show error if we can fallback - just silently use file input
-        // The file input will work and photos will upload successfully
-        // Only show error if it's a critical issue that prevents fallback
-        if (error?.name === 'NotFoundError' || error?.name === 'DevicesNotFoundError') {
-          // No camera found - this is informational, not an error since file input works
-          console.log('No camera found, using file input instead');
+              // Clean up camera before processing file
+              cleanup();
+              
+              // Process the file
+              handleFileSelect(dataTransfer.files);
+            } catch (fileError) {
+              console.error('Error creating file:', fileError);
+              toast.error('Failed to process photo. Please try again.');
+              captureBtn.disabled = false;
+              captureBtn.style.opacity = '1';
+              cleanup();
+            }
+          }, 'image/jpeg', 0.9);
+        } catch (error: any) {
+          console.error('Error capturing photo:', error);
+          toast.error(`Failed to capture photo: ${error?.message || 'Unknown error'}`);
+          captureBtn.disabled = false;
+          captureBtn.style.opacity = '1';
+          cleanup();
         }
-        
-        // Fallback to file input with capture attribute (this works even if camera permission denied)
-        // iOS PWA: Use a small delay to ensure the click event is properly handled
-        setTimeout(() => {
-          cameraInputRef.current?.click();
-        }, 100);
+      };
+      
+      cancelBtn.onclick = cleanup;
+      
+      buttonContainer.appendChild(captureBtn);
+      buttonContainer.appendChild(cancelBtn);
+      
+      modal.appendChild(videoContainer);
+      modal.appendChild(buttonContainer);
+      document.body.appendChild(modal);
+      
+      // Stop stream and remove modal when clicking outside
+      modal.onclick = (e) => {
+        if (e.target === modal) {
+          cleanup();
+        }
+      };
+      
+      // Cleanup on page unload
+      const unloadHandler = () => cleanup();
+      window.addEventListener('beforeunload', unloadHandler);
+      modal.addEventListener('remove', () => {
+        window.removeEventListener('beforeunload', unloadHandler);
+      });
+      
+    } catch (error: any) {
+      console.warn('getUserMedia failed, falling back to file input:', error);
+      
+      // Provide specific error messages but always fallback
+      if (error?.name === 'NotAllowedError' || error?.name === 'PermissionDeniedError') {
+        toast.error('Camera permission denied. Using file picker instead.');
+      } else if (error?.name === 'NotFoundError' || error?.name === 'DevicesNotFoundError') {
+        console.log('No camera found, using file input instead');
+      } else {
+        console.log('Camera access failed, using file input instead');
       }
-    } else {
-      // Fallback to file input with capture attribute
-      cameraInputRef.current?.click();
+      
+      // Always fallback to file input with capture attribute
+      // This works even if camera permission is denied
+      setTimeout(() => {
+        cameraInputRef.current?.click();
+      }, 100);
     }
   };
 

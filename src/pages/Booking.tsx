@@ -14,6 +14,7 @@ import { ChevronLeft, ChevronRight, MapPin, Camera, Upload, Check, Phone, Mail, 
 import { db } from '@/lib/supabase';
 import { cloudinaryService, compressImage } from '@/lib/cloudinary';
 import { emailService } from '@/lib/email';
+import { isIOS, isPWA, shouldUseFileInputFallback, requestCameraAccess, createVideoElement } from '@/lib/cameraUtils';
 import { generateJobNumber } from '@/lib/supabase';
 import AltchaWidget from '@/components/AltchaWidget';
 import HoneypotField from '@/components/HoneypotField';
@@ -1911,166 +1912,190 @@ const Booking: React.FC = () => {
                         type="button"
                         variant="outline"
                         onClick={async () => {
-                          // Try getUserMedia API first (more reliable on Android devices like iQOO)
-                          if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
-                            try {
-                              const stream = await navigator.mediaDevices.getUserMedia({ 
-                                video: { facingMode: 'environment' } // Back camera
-                              });
+                          // iOS and mobile PWA: Use file input fallback for better reliability
+                          if (shouldUseFileInputFallback()) {
+                            setTimeout(() => {
+                              cameraInputRef.current?.click();
+                            }, 100);
+                            return;
+                          }
+
+                          try {
+                            // Request camera access with proper error handling
+                            const stream = await requestCameraAccess();
+                            if (!stream) {
+                              throw new Error('Failed to access camera');
+                            }
+                            
+                            // Create optimized video element
+                            const video = createVideoElement();
+                            video.srcObject = stream;
+                            
+                            // Create modal overlay
+                            const modal = document.createElement('div');
+                            modal.style.position = 'fixed';
+                            modal.style.top = '0';
+                            modal.style.left = '0';
+                            modal.style.width = '100%';
+                            modal.style.height = '100%';
+                            modal.style.backgroundColor = 'rgba(0, 0, 0, 0.95)';
+                            modal.style.zIndex = '9999';
+                            modal.style.display = 'flex';
+                            modal.style.flexDirection = 'column';
+                            modal.style.alignItems = 'center';
+                            modal.style.justifyContent = 'center';
+                            modal.style.gap = '20px';
+                            modal.style.padding = '20px';
+                            
+                            // Video container
+                            const videoContainer = document.createElement('div');
+                            videoContainer.style.width = '100%';
+                            videoContainer.style.maxWidth = '500px';
+                            videoContainer.style.aspectRatio = '4/3';
+                            videoContainer.style.position = 'relative';
+                            videoContainer.style.backgroundColor = 'black';
+                            videoContainer.style.borderRadius = '8px';
+                            videoContainer.style.overflow = 'hidden';
+                            videoContainer.appendChild(video);
+                            
+                            // Button container
+                            const buttonContainer = document.createElement('div');
+                            buttonContainer.style.display = 'flex';
+                            buttonContainer.style.gap = '10px';
+                            
+                            // Capture button
+                            const captureBtn = document.createElement('button');
+                            captureBtn.textContent = 'Capture Photo';
+                            captureBtn.style.padding = '12px 24px';
+                            captureBtn.style.backgroundColor = '#3b82f6';
+                            captureBtn.style.color = 'white';
+                            captureBtn.style.border = 'none';
+                            captureBtn.style.borderRadius = '8px';
+                            captureBtn.style.cursor = 'pointer';
+                            captureBtn.style.fontSize = '16px';
+                            captureBtn.style.fontWeight = '600';
+                            
+                            // Cancel button
+                            const cancelBtn = document.createElement('button');
+                            cancelBtn.textContent = 'Cancel';
+                            cancelBtn.style.padding = '12px 24px';
+                            cancelBtn.style.backgroundColor = '#6b7280';
+                            cancelBtn.style.color = 'white';
+                            cancelBtn.style.border = 'none';
+                            cancelBtn.style.borderRadius = '8px';
+                            cancelBtn.style.cursor = 'pointer';
+                            cancelBtn.style.fontSize = '16px';
+                            
+                            let streamActive = true;
+                            const cleanup = () => {
+                              if (!streamActive) return;
+                              streamActive = false;
                               
-                              // Create video element for preview
-                              const video = document.createElement('video');
-                              video.srcObject = stream;
-                              video.autoplay = true;
-                              video.playsInline = true;
-                              video.style.width = '100%';
-                              video.style.maxWidth = '100%';
-                              video.style.height = 'auto';
-                              video.style.borderRadius = '8px';
-                              
-                              // Create modal overlay
-                              const modal = document.createElement('div');
-                              modal.style.position = 'fixed';
-                              modal.style.top = '0';
-                              modal.style.left = '0';
-                              modal.style.width = '100%';
-                              modal.style.height = '100%';
-                              modal.style.backgroundColor = 'rgba(0, 0, 0, 0.95)';
-                              modal.style.zIndex = '9999';
-                              modal.style.display = 'flex';
-                              modal.style.flexDirection = 'column';
-                              modal.style.alignItems = 'center';
-                              modal.style.justifyContent = 'center';
-                              modal.style.gap = '20px';
-                              modal.style.padding = '20px';
-                              
-                              // Video container
-                              const videoContainer = document.createElement('div');
-                              videoContainer.style.width = '100%';
-                              videoContainer.style.maxWidth = '500px';
-                              videoContainer.style.position = 'relative';
-                              videoContainer.appendChild(video);
-                              
-                              // Button container
-                              const buttonContainer = document.createElement('div');
-                              buttonContainer.style.display = 'flex';
-                              buttonContainer.style.gap = '10px';
-                              
-                              // Capture button
-                              const captureBtn = document.createElement('button');
-                              captureBtn.textContent = 'Capture Photo';
-                              captureBtn.style.padding = '12px 24px';
-                              captureBtn.style.backgroundColor = '#3b82f6';
-                              captureBtn.style.color = 'white';
-                              captureBtn.style.border = 'none';
-                              captureBtn.style.borderRadius = '8px';
-                              captureBtn.style.cursor = 'pointer';
-                              captureBtn.style.fontSize = '16px';
-                              captureBtn.style.fontWeight = '600';
-                              
-                              // Cancel button
-                              const cancelBtn = document.createElement('button');
-                              cancelBtn.textContent = 'Cancel';
-                              cancelBtn.style.padding = '12px 24px';
-                              cancelBtn.style.backgroundColor = '#6b7280';
-                              cancelBtn.style.color = 'white';
-                              cancelBtn.style.border = 'none';
-                              cancelBtn.style.borderRadius = '8px';
-                              cancelBtn.style.cursor = 'pointer';
-                              cancelBtn.style.fontSize = '16px';
-                              
-                              const cleanup = () => {
+                              try {
                                 stream.getTracks().forEach(track => track.stop());
-                                document.body.removeChild(modal);
-                              };
+                              } catch (e) {
+                                console.warn('Error stopping stream:', e);
+                              }
                               
-                              // Wait for video to be ready before allowing capture
-                              video.onloadedmetadata = () => {
+                              try {
+                                if (video.srcObject) {
+                                  video.srcObject = null;
+                                }
+                              } catch (e) {
+                                console.warn('Error clearing video:', e);
+                              }
+                              
+                              try {
+                                if (modal.parentNode) {
+                                  document.body.removeChild(modal);
+                                }
+                              } catch (e) {
+                                console.warn('Error removing modal:', e);
+                              }
+                            };
+                            
+                            // Wait for video to be ready
+                            let videoReady = false;
+                            const enableCapture = () => {
+                              if (streamActive && video.videoWidth > 0 && video.videoHeight > 0) {
+                                videoReady = true;
                                 captureBtn.disabled = false;
-                              };
+                              }
+                            };
+                            
+                            video.onloadedmetadata = enableCapture;
+                            video.onloadeddata = enableCapture;
+                            video.oncanplay = enableCapture;
+                            
+                            setTimeout(() => {
+                              if (!videoReady && streamActive) {
+                                enableCapture();
+                              }
+                            }, 500);
+                            
+                            captureBtn.disabled = true;
+                            
+                            captureBtn.onclick = () => {
+                              if (!streamActive || !videoReady || !video.videoWidth || !video.videoHeight) {
+                                toast.error('Camera not ready. Please wait a moment.');
+                                return;
+                              }
                               
-                              captureBtn.disabled = true; // Disable until video is ready
-                              
-                              captureBtn.onclick = () => {
-                                try {
-                                  // Check if video is ready
-                                  if (!video.videoWidth || !video.videoHeight) {
-                                    toast.error('Camera not ready. Please wait a moment and try again.');
-                                    return;
-                                  }
-                                  
-                                  // Create canvas to capture the photo
-                                  const canvas = document.createElement('canvas');
-                                  canvas.width = video.videoWidth;
-                                  canvas.height = video.videoHeight;
-                                  const ctx = canvas.getContext('2d');
-                                  
-                                  if (!ctx) {
-                                    toast.error('Failed to capture photo. Please try again.');
-                                    cleanup();
-                                    return;
-                                  }
+                              try {
+                                const canvas = document.createElement('canvas');
+                                canvas.width = video.videoWidth;
+                                canvas.height = video.videoHeight;
+                                const ctx = canvas.getContext('2d', { willReadFrequently: false });
+                                
+                                if (!ctx) {
+                                  toast.error('Failed to capture photo.');
+                                  return;
+                                }
+                                
+                                ctx.drawImage(video, 0, 0);
+                                
+                                canvas.toBlob((blob) => {
+                                  if (!blob || !streamActive) return;
                                   
                                   try {
-                                    ctx.drawImage(video, 0, 0);
-                                  } catch (drawError) {
-                                    console.error('Error drawing video to canvas:', drawError);
-                                    toast.error('Failed to capture photo. Please try again.');
+                                    const file = new File([blob], `camera-photo-${Date.now()}.jpg`, { type: 'image/jpeg' });
+                                    const dataTransfer = new DataTransfer();
+                                    dataTransfer.items.add(file);
                                     cleanup();
-                                    return;
+                                    processFiles(Array.from(dataTransfer.files));
+                                  } catch (fileError) {
+                                    console.error('Error creating file:', fileError);
+                                    toast.error('Failed to process photo.');
+                                    cleanup();
                                   }
-                                  
-                                  canvas.toBlob((blob) => {
-                                    if (!blob) {
-                                      toast.error('Failed to process photo. Please try again.');
-                                      cleanup();
-                                      return;
-                                    }
-                                    
-                                    try {
-                                      const file = new File([blob], `camera-photo-${Date.now()}.jpg`, { type: 'image/jpeg' });
-                                      // Create a DataTransfer object to simulate file input
-                                      const dataTransfer = new DataTransfer();
-                                      dataTransfer.items.add(file);
-                                      processFiles(Array.from(dataTransfer.files));
-                                      cleanup();
-                                    } catch (fileError) {
-                                      console.error('Error creating file:', fileError);
-                                      toast.error('Failed to process photo. Please try again.');
-                                      cleanup();
-                                    }
-                                  }, 'image/jpeg', 0.9);
-                                } catch (error: any) {
-                                  console.error('Error capturing photo:', error);
-                                  toast.error(`Failed to capture photo: ${error?.message || 'Unknown error'}`);
-                                  cleanup();
-                                }
-                              };
-                              
-                              cancelBtn.onclick = cleanup;
-                              
-                              buttonContainer.appendChild(captureBtn);
-                              buttonContainer.appendChild(cancelBtn);
-                              
-                              modal.appendChild(videoContainer);
-                              modal.appendChild(buttonContainer);
-                              document.body.appendChild(modal);
-                              
-                              // Stop stream and remove modal when clicking outside
-                              modal.onclick = (e) => {
-                                if (e.target === modal) {
-                                  cleanup();
-                                }
-                              };
-                              
-                            } catch (error: any) {
-                              console.warn('getUserMedia failed, falling back to file input:', error);
-                              // Fallback to file input with capture attribute
+                                }, 'image/jpeg', 0.9);
+                              } catch (error: any) {
+                                console.error('Error capturing photo:', error);
+                                toast.error('Failed to capture photo.');
+                                cleanup();
+                              }
+                            };
+                            
+                            cancelBtn.onclick = cleanup;
+                            
+                            buttonContainer.appendChild(captureBtn);
+                            buttonContainer.appendChild(cancelBtn);
+                            
+                            modal.appendChild(videoContainer);
+                            modal.appendChild(buttonContainer);
+                            document.body.appendChild(modal);
+                            
+                            modal.onclick = (e) => {
+                              if (e.target === modal) {
+                                cleanup();
+                              }
+                            };
+                            
+                          } catch (error: any) {
+                            console.warn('Camera access failed, using file input:', error);
+                            setTimeout(() => {
                               cameraInputRef.current?.click();
-                            }
-                          } else {
-                            // Fallback to file input with capture attribute
-                            cameraInputRef.current?.click();
+                            }, 100);
                           }
                         }}
                         size="sm"
