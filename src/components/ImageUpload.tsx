@@ -580,29 +580,14 @@ const ImageUpload: React.FC<ImageUploadProps> = ({
       } catch (error: any) {
         console.warn('getUserMedia failed, falling back to file input:', error);
         
-      // Chrome on Android often has stricter permission requirements
-      // File input with capture attribute is more reliable, so don't show error
-      const isChromeOnAndroid = isChrome() && /Android/.test(navigator.userAgent);
-      
-      // Provide specific error messages but only for non-Chrome browsers
-      // Chrome will silently fallback to file input which works better
-      if (!isChromeOnAndroid) {
-        if (error?.name === 'NotAllowedError' || error?.name === 'PermissionDeniedError') {
-          toast.error('Camera permission denied. Using file picker instead.');
-        } else if (error?.name === 'NotFoundError' || error?.name === 'DevicesNotFoundError') {
-          console.log('No camera found, using file input instead');
-        } else {
-          console.log('Camera access failed, using file input instead');
-        }
-      } else {
-        // Chrome on Android: Silent fallback, no error message
-        // File input with capture works better in Chrome
-        console.log('Chrome on Android detected - using file input fallback');
-      }
+      // Silently fallback to file input with capture attribute
+      // File input works reliably across all browsers and doesn't need explicit permissions
+      // No need to show error message - the fallback will work seamlessly
+      console.log('Camera access failed, silently using file input with capture fallback');
         
       // Always fallback to file input with capture attribute
       // This works even if camera permission is denied
-      // File input is more reliable on Chrome Android
+      // File input is more reliable on Chrome Android and other mobile browsers
         setTimeout(() => {
           cameraInputRef.current?.click();
         }, 100);
