@@ -453,44 +453,21 @@ const TechnicianDashboard = () => {
       console.time('loadAssignedJobs'); // Performance timing
       
       // Use proper timeout handling - only timeout if request actually takes too long
-      let timeoutId: NodeJS.Timeout | null = null;
-      const jobsPromise = db.jobs.getByTechnicianId(user.technicianId);
+      // The Supabase client already has a 30s timeout, so we don't need an additional timeout here
+      // Just let the request complete naturally - if it's fast, it will be fast; if it's slow, Supabase will timeout
+      const { data, error } = await db.jobs.getByTechnicianId(user.technicianId);
+      console.timeEnd('loadAssignedJobs'); // Performance timing
       
-      const timeoutPromise = new Promise<{ data: null, error: Error }>((_, reject) => {
-        timeoutId = setTimeout(() => {
-          reject(new Error('Request timeout'));
-        }, 20000); // 20 second timeout for mobile
-      });
-      
-      try {
-        const result = await Promise.race([jobsPromise, timeoutPromise]);
-        // Clear timeout if request completed successfully
-        if (timeoutId) clearTimeout(timeoutId);
-        
-        const { data, error } = result;
-        console.timeEnd('loadAssignedJobs'); // Performance timing
-        
-        if (error) {
-          console.error('Error loading assigned jobs:', error);
-          // Retry on network errors (up to 2 retries)
-          if (retryCount < 2 && (error.message.includes('fetch') || error.message.includes('network') || error.message.includes('Failed to fetch') || error.message.includes('timeout'))) {
-            console.log(`Retrying loadAssignedJobs (attempt ${retryCount + 1}/2)...`);
-            await new Promise(resolve => setTimeout(resolve, 1000 * (retryCount + 1))); // Exponential backoff
-            return loadAssignedJobs(retryCount + 1);
-          }
-          throw new Error(error.message);
+      if (error) {
+        console.error('Error loading assigned jobs:', error);
+        // Retry on network errors (up to 2 retries)
+        if (retryCount < 2 && (error.message.includes('fetch') || error.message.includes('network') || error.message.includes('Failed to fetch') || error.message.includes('timeout') || error.message.includes('AbortError'))) {
+          console.log(`Retrying loadAssignedJobs (attempt ${retryCount + 1}/2)...`);
+          await new Promise(resolve => setTimeout(resolve, 1000 * (retryCount + 1))); // Exponential backoff
+          return loadAssignedJobs(retryCount + 1);
         }
-        
-        // Use the data from the result
-        const jobsData = (result as any).data || data;
-        const jobsError = (result as any).error || error;
-        
-        if (jobsError) {
-          throw new Error(jobsError.message || 'Failed to load jobs');
-        }
-        
-        // Continue with jobsData...
-        const data = jobsData;
+        throw new Error(error.message);
+      }
 
       // All jobs go to regular jobs list (ASSIGNED jobs will show with blue border in the list)
       const allJobs: Job[] = [];
@@ -603,6 +580,7 @@ const TechnicianDashboard = () => {
       loadAssignedJobs();
       loadAssignmentRequests();
     }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user?.technicianId, loadAssignedJobs]);
 
   // Always show AMC question first when entering step 3
