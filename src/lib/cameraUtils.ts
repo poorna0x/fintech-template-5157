@@ -9,6 +9,20 @@ export const isIOS = (): boolean => {
 };
 
 /**
+ * Check if browser is Chrome (including Chrome Dev, Chrome Beta, etc.)
+ */
+export const isChrome = (): boolean => {
+  return /Chrome/.test(navigator.userAgent) && !/Edg|OPR|Safari/.test(navigator.userAgent.replace(/Chrome/g, ''));
+};
+
+/**
+ * Check if browser is Firefox
+ */
+export const isFirefox = (): boolean => {
+  return /Firefox/.test(navigator.userAgent);
+};
+
+/**
  * Check if running in PWA
  */
 export const isPWA = (): boolean => {
@@ -121,6 +135,7 @@ export const createVideoElement = (): HTMLVideoElement => {
  * Should use file input fallback instead of getUserMedia
  * iOS PWAs often work better with file input
  * Also use fallback for Android browsers that have getUserMedia issues
+ * Chrome on Android has stricter camera permission requirements
  */
 export const shouldUseFileInputFallback = (): boolean => {
   // On iOS, especially in PWA, file input with capture attribute is more reliable
@@ -132,6 +147,12 @@ export const shouldUseFileInputFallback = (): boolean => {
   
   // For Android PWAs, also prefer file input as it's more consistent
   if (isPWA() && /Android/.test(navigator.userAgent)) {
+    return true;
+  }
+  
+  // Chrome on Android can have strict permission requirements
+  // File input with capture attribute works more reliably
+  if (isChrome() && /Android/.test(navigator.userAgent)) {
     return true;
   }
   

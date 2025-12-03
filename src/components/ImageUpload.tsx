@@ -5,7 +5,7 @@ import { Upload, Camera, X, Loader2, Image as ImageIcon, FileImage, Trash2 } fro
 import { toast } from 'sonner';
 import { cloudinaryService, validateImageFile, compressImage } from '@/lib/cloudinary';
 import { queuePhoto, isOnline, removeQueuedPhoto, getQueuedPhotosCount } from '@/lib/offlinePhotoQueue';
-import { isIOS, isPWA, shouldUseFileInputFallback, requestCameraAccess, createVideoElement, checkCameraPermission } from '@/lib/cameraUtils';
+import { isIOS, isPWA, isChrome, shouldUseFileInputFallback, requestCameraAccess, createVideoElement, checkCameraPermission } from '@/lib/cameraUtils';
 
 interface ImageUploadProps {
   onImagesChange: (images: string[]) => void;
@@ -303,12 +303,19 @@ const ImageUpload: React.FC<ImageUploadProps> = ({
   };
 
   const openCameraDialog = async () => {
-    // iOS and mobile PWA: Use file input fallback for better reliability
+    // iOS, Android PWA, and Chrome on Android: Use file input with capture attribute
+    // This opens the camera directly instead of file picker
+    // File input with capture="environment" is more reliable than getUserMedia on mobile
     if (shouldUseFileInputFallback()) {
-      console.log('Using file input fallback for mobile/PWA');
-      setTimeout(() => {
-        cameraInputRef.current?.click();
-      }, 100);
+      console.log('Using file input with camera capture for mobile/PWA/Chrome');
+      // Ensure input is reset and properly configured
+      if (cameraInputRef.current) {
+        cameraInputRef.current.value = ''; // Reset input
+        // Click will trigger the camera directly due to capture="environment" attribute
+        setTimeout(() => {
+          cameraInputRef.current?.click();
+        }, 100);
+      }
       return;
     }
 
@@ -573,7 +580,13 @@ const ImageUpload: React.FC<ImageUploadProps> = ({
       } catch (error: any) {
         console.warn('getUserMedia failed, falling back to file input:', error);
         
-      // Provide specific error messages but always fallback
+      // Chrome on Android often has stricter permission requirements
+      // File input with capture attribute is more reliable, so don't show error
+      const isChromeOnAndroid = isChrome() && /Android/.test(navigator.userAgent);
+      
+      // Provide specific error messages but only for non-Chrome browsers
+      // Chrome will silently fallback to file input which works better
+      if (!isChromeOnAndroid) {
         if (error?.name === 'NotAllowedError' || error?.name === 'PermissionDeniedError') {
           toast.error('Camera permission denied. Using file picker instead.');
         } else if (error?.name === 'NotFoundError' || error?.name === 'DevicesNotFoundError') {
@@ -581,9 +594,15 @@ const ImageUpload: React.FC<ImageUploadProps> = ({
         } else {
           console.log('Camera access failed, using file input instead');
         }
+      } else {
+        // Chrome on Android: Silent fallback, no error message
+        // File input with capture works better in Chrome
+        console.log('Chrome on Android detected - using file input fallback');
+      }
         
       // Always fallback to file input with capture attribute
       // This works even if camera permission is denied
+      // File input is more reliable on Chrome Android
         setTimeout(() => {
           cameraInputRef.current?.click();
         }, 100);
@@ -723,7 +742,7 @@ const ImageUpload: React.FC<ImageUploadProps> = ({
         {...({ webkitdirectory: false } as any)}
       />
       
-      {/* Camera input with multiple capture attribute variations for better device compatibility */}
+      {/* Camera input with capture attribute - opens camera directly on mobile devices */}
       <input
         ref={cameraInputRef}
         type="file"
@@ -735,6 +754,9 @@ const ImageUpload: React.FC<ImageUploadProps> = ({
         multiple={false}
         // iOS PWA: Ensure webkitdirectory is not set
         {...({ webkitdirectory: false } as any)}
+        // Additional capture attributes for better compatibility across browsers
+        {...({ 'x-capture': 'environment' } as any)}
+        {...({ 'webkit-capture': 'environment' } as any)}
       />
 
       {/* Uploaded Images Grid */}
