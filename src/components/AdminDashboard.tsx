@@ -8434,15 +8434,25 @@ const AdminDashboard = () => {
                     completedAt = dateOnly.toISOString();
                   }
                   
+                  // If completed_by is changed to a technician, also update assigned_technician_id
+                  const newCompletedBy = completedJobEditData.completedBy || 'admin';
+                  const oldAssignedTechnicianId = (selectedCompletedJob as any).assigned_technician_id;
+                  
                   const updateData: any = {
                     actual_cost: amount,
                     payment_amount: amount,
                     payment_method: completedJobEditData.paymentMethod || 'CASH',
                     payment_status: amount > 0 ? 'PAID' : 'PENDING',
                     completion_notes: completedJobEditData.completionNotes || '',
-                    completed_by: completedJobEditData.completedBy || 'admin',
+                    completed_by: newCompletedBy,
                     requirements: JSON.stringify(requirements)
                   };
+                  
+                  // If completed_by is a technician ID (not 'admin'), update assigned_technician_id
+                  // This ensures salary, payment, and attendance records are linked to the correct technician
+                  if (newCompletedBy && newCompletedBy !== 'admin' && newCompletedBy !== 'Admin') {
+                    updateData.assigned_technician_id = newCompletedBy;
+                  }
                   
                   // Only update completed_at and end_time if it's been explicitly set/changed
                   // IMPORTANT: Both fields are used for salary calculations:
@@ -8459,14 +8469,17 @@ const AdminDashboard = () => {
                   if (error) {
                     toast.error('Failed to update job: ' + error.message);
                   } else {
-                    // Update technician_payments if job has an assigned technician
-                    const technicianId = (selectedCompletedJob as any).assigned_technician_id;
-                    if (technicianId && amount > 0) {
+                    // Handle technician_payments updates when completed_by or assigned_technician_id changes
+                    const newTechnicianId = updateData.assigned_technician_id || oldAssignedTechnicianId;
+                    const technicianChanged = newTechnicianId !== oldAssignedTechnicianId;
+                    
+                    // Update technician_payments if job has an assigned technician or if technician changed
+                    if (newTechnicianId && (amount > 0 || technicianChanged)) {
                       try {
                         // Check if technician_payment record exists
                         const { data: existingPayment, error: paymentCheckError } = await supabase
                           .from('technician_payments')
-                          .select('id, commission_percentage')
+                          .select('id, technician_id, commission_percentage')
                           .eq('job_id', selectedCompletedJob.id)
                           .single();
 
@@ -8478,29 +8491,39 @@ const AdminDashboard = () => {
                           const commissionPercentage = existingPayment.commission_percentage || 10;
                           const newCommissionAmount = amount * (commissionPercentage / 100);
                           
+                          const updatePaymentData: any = {
+                            bill_amount: Math.round(amount * 100) / 100,
+                            commission_amount: Math.round(newCommissionAmount * 100) / 100,
+                            updated_at: new Date().toISOString()
+                          };
+                          
+                          // If technician changed, update technician_id in payment record
+                          // This ensures salary, commission, and attendance are attributed to the new technician
+                          if (technicianChanged) {
+                            updatePaymentData.technician_id = newTechnicianId;
+                          }
+                          
                           const { error: paymentUpdateError } = await supabase
                             .from('technician_payments')
-                            .update({
-                              bill_amount: Math.round(amount * 100) / 100,
-                              commission_amount: Math.round(newCommissionAmount * 100) / 100,
-                              updated_at: new Date().toISOString()
-                            })
+                            .update(updatePaymentData)
                             .eq('id', existingPayment.id);
 
                           if (paymentUpdateError) {
                             console.error('Error updating payment record:', paymentUpdateError);
                             toast.warning('Job updated but payment record update failed');
+                          } else if (technicianChanged) {
+                            toast.success('Job, technician assignment, and payment records updated successfully');
                           }
                         } else {
                           // Create new payment record if job is completed and has technician
-                          if ((selectedCompletedJob as any).status === 'COMPLETED') {
+                          if ((selectedCompletedJob as any).status === 'COMPLETED' && newTechnicianId) {
                             const commissionPercentage = 10; // Default 10%
                             const commissionAmount = amount * (commissionPercentage / 100);
                             
                             const { error: paymentCreateError } = await supabase
                               .from('technician_payments')
                               .insert({
-                                technician_id: technicianId,
+                                technician_id: newTechnicianId,
                                 job_id: selectedCompletedJob.id,
                                 bill_amount: Math.round(amount * 100) / 100,
                                 commission_percentage: commissionPercentage,
@@ -8511,6 +8534,8 @@ const AdminDashboard = () => {
                             if (paymentCreateError) {
                               console.error('Error creating payment record:', paymentCreateError);
                               toast.warning('Job updated but payment record creation failed');
+                            } else if (technicianChanged) {
+                              toast.success('Job, technician assignment, and payment records updated successfully');
                             }
                           }
                         }
@@ -8518,9 +8543,40 @@ const AdminDashboard = () => {
                         console.error('Error updating technician payments:', paymentError);
                         // Don't fail the whole operation, just log the error
                       }
+                    } else if (technicianChanged && newTechnicianId) {
+                      // Even if amount is 0, if technician changed, update payment record technician_id
+                      // This ensures attendance records are correctly attributed
+                      try {
+                        const { data: existingPayment, error: paymentCheckError } = await supabase
+                          .from('technician_payments')
+                          .select('id, technician_id')
+                          .eq('job_id', selectedCompletedJob.id)
+                          .single();
+
+                        if (existingPayment) {
+                          // Update technician_id even if amount is 0
+                          const { error: paymentUpdateError } = await supabase
+                            .from('technician_payments')
+                            .update({
+                              technician_id: newTechnicianId,
+                              updated_at: new Date().toISOString()
+                            })
+                            .eq('id', existingPayment.id);
+
+                          if (paymentUpdateError) {
+                            console.error('Error updating payment record technician:', paymentUpdateError);
+                          } else {
+                            toast.success('Job and technician assignment updated successfully');
+                          }
+                        }
+                      } catch (paymentError: any) {
+                        console.error('Error updating technician payment:', paymentError);
+                      }
                     }
                     
-                    toast.success('Job updated successfully');
+                    if (!technicianChanged) {
+                      toast.success('Job updated successfully');
+                    }
                     setEditCompletedJobDialogOpen(false);
                     // Reload jobs
                     await loadFilteredJobs(statusFilter, currentPage);

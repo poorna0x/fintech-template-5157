@@ -1869,10 +1869,14 @@ export const db = {
 
     async getBillingByDate(date: string) {
       // Get jobs completed on a specific date
-      const startDate = new Date(date);
-      startDate.setHours(0, 0, 0, 0);
-      const endDate = new Date(date);
-      endDate.setHours(23, 59, 59, 999);
+      // Parse date string (format: YYYY-MM-DD) and create date range in local timezone
+      const [year, month, day] = date.split('-').map(Number);
+      const localStartOfDay = new Date(year, month - 1, day, 0, 0, 0, 0);
+      const localStartOfNextDay = new Date(year, month - 1, day + 1, 0, 0, 0, 0);
+      
+      // Use Date objects directly - they automatically convert to UTC when calling toISOString()
+      const startDate = localStartOfDay;
+      const endDate = localStartOfNextDay;
       
       const { data, error } = await supabase
         .from('jobs')
@@ -1899,7 +1903,7 @@ export const db = {
         `)
         .eq('status', 'COMPLETED')
         .gte('completed_at', startDate.toISOString())
-        .lte('completed_at', endDate.toISOString())
+        .lt('completed_at', endDate.toISOString())
         .not('payment_amount', 'is', null);
       
       return { data, error };
@@ -1928,13 +1932,15 @@ export const db = {
       
       // Filter by date if provided
       if (date) {
-        const startDate = new Date(date);
-        startDate.setHours(0, 0, 0, 0);
-        const endDate = new Date(date);
-        endDate.setHours(23, 59, 59, 999);
+        // Parse date string (format: YYYY-MM-DD) and create date range in local timezone
+        const [year, month, day] = date.split('-').map(Number);
+        const localStartOfDay = new Date(year, month - 1, day, 0, 0, 0, 0);
+        const localStartOfNextDay = new Date(year, month - 1, day + 1, 0, 0, 0, 0);
+        
+        // Use Date objects directly - they automatically convert to UTC when calling toISOString()
         query = query
-          .gte('completed_at', startDate.toISOString())
-          .lte('completed_at', endDate.toISOString());
+          .gte('completed_at', localStartOfDay.toISOString())
+          .lt('completed_at', localStartOfNextDay.toISOString());
       }
       
       const { data, error } = await query;
