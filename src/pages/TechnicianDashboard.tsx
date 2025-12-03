@@ -4950,7 +4950,11 @@ const TechnicianDashboard = () => {
             <div className="py-4">
               <div className="text-center">
                 <div className="text-3xl font-bold text-gray-900 mb-2">
-                  ₹{parseFloat(billAmount || '0').toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                  ₹{(() => {
+                    const amount = parseFloat(billAmount || '0');
+                    const formatted = amount.toLocaleString('en-IN', { minimumFractionDigits: 0, maximumFractionDigits: 2 });
+                    return formatted.replace(/\.00$/, '');
+                  })()}
                 </div>
                 <div className="text-sm text-gray-500">
                   {selectedJobForComplete && (
@@ -5359,7 +5363,11 @@ const TechnicianDashboard = () => {
                     />
                     {billAmount && parseFloat(billAmount) > 0 && (
                       <p className="text-sm text-gray-600 mt-2">
-                        Bill Amount: ₹{parseFloat(billAmount).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                        Bill Amount: ₹{(() => {
+                          const amount = parseFloat(billAmount || '0');
+                          const formatted = amount.toLocaleString('en-IN', { minimumFractionDigits: 0, maximumFractionDigits: 2 });
+                          return formatted.replace(/\.00$/, '');
+                        })()}
                       </p>
                     )}
                   </div>

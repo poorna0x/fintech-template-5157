@@ -54,9 +54,9 @@ export const requestCameraAccess = async (): Promise<MediaStream | null> => {
 
   // Don't check permission first - permission API is unreliable
   // Just try getUserMedia and handle errors appropriately
-  
-  // Try with ideal constraints first (back camera preferred)
-  try {
+
+    // Try with ideal constraints first (back camera preferred)
+    try {
     // Use modern API if available
     if (navigator.mediaDevices?.getUserMedia) {
       return await navigator.mediaDevices.getUserMedia({ 
@@ -69,21 +69,21 @@ export const requestCameraAccess = async (): Promise<MediaStream | null> => {
     }
     // Fallback for older browsers
     return await getUserMedia({ video: { facingMode: 'environment' } });
-  } catch (error: any) {
-    // Fallback to simpler constraints if ideal fails
-    try {
+    } catch (error: any) {
+      // Fallback to simpler constraints if ideal fails
+      try {
       if (navigator.mediaDevices?.getUserMedia) {
         return await navigator.mediaDevices.getUserMedia({ 
           video: { facingMode: 'environment' }
         });
       }
       return await getUserMedia({ video: { facingMode: 'environment' } });
-    } catch (fallbackError: any) {
+      } catch (fallbackError: any) {
       // Last resort: try any camera with minimal constraints
       try {
         if (navigator.mediaDevices?.getUserMedia) {
           return await navigator.mediaDevices.getUserMedia({ video: true });
-        }
+      }
         return await getUserMedia({ video: true });
       } catch (finalError: any) {
         console.error('Error requesting camera access:', finalError);

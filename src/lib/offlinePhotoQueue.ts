@@ -180,8 +180,8 @@ export const queuePhoto = async (
             }
             // Wait before retry with exponential backoff
             await new Promise(resolve => setTimeout(resolve, 200 * (attempt + 1)));
-            continue;
-          }
+              continue;
+            }
         }
         lastError = storageError;
         // Wait before retry with exponential backoff

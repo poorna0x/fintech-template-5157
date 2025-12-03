@@ -1929,65 +1929,65 @@ const Booking: React.FC = () => {
                             
                             // Create optimized video element
                             const video = createVideoElement();
-                            video.srcObject = stream;
-                            
-                            // Create modal overlay
-                            const modal = document.createElement('div');
-                            modal.style.position = 'fixed';
-                            modal.style.top = '0';
-                            modal.style.left = '0';
-                            modal.style.width = '100%';
-                            modal.style.height = '100%';
-                            modal.style.backgroundColor = 'rgba(0, 0, 0, 0.95)';
-                            modal.style.zIndex = '9999';
-                            modal.style.display = 'flex';
-                            modal.style.flexDirection = 'column';
-                            modal.style.alignItems = 'center';
-                            modal.style.justifyContent = 'center';
-                            modal.style.gap = '20px';
-                            modal.style.padding = '20px';
-                            
-                            // Video container
-                            const videoContainer = document.createElement('div');
-                            videoContainer.style.width = '100%';
-                            videoContainer.style.maxWidth = '500px';
+                              video.srcObject = stream;
+                              
+                              // Create modal overlay
+                              const modal = document.createElement('div');
+                              modal.style.position = 'fixed';
+                              modal.style.top = '0';
+                              modal.style.left = '0';
+                              modal.style.width = '100%';
+                              modal.style.height = '100%';
+                              modal.style.backgroundColor = 'rgba(0, 0, 0, 0.95)';
+                              modal.style.zIndex = '9999';
+                              modal.style.display = 'flex';
+                              modal.style.flexDirection = 'column';
+                              modal.style.alignItems = 'center';
+                              modal.style.justifyContent = 'center';
+                              modal.style.gap = '20px';
+                              modal.style.padding = '20px';
+                              
+                              // Video container
+                              const videoContainer = document.createElement('div');
+                              videoContainer.style.width = '100%';
+                              videoContainer.style.maxWidth = '500px';
                             videoContainer.style.aspectRatio = '4/3';
-                            videoContainer.style.position = 'relative';
+                              videoContainer.style.position = 'relative';
                             videoContainer.style.backgroundColor = 'black';
                             videoContainer.style.borderRadius = '8px';
                             videoContainer.style.overflow = 'hidden';
-                            videoContainer.appendChild(video);
-                            
-                            // Button container
-                            const buttonContainer = document.createElement('div');
-                            buttonContainer.style.display = 'flex';
-                            buttonContainer.style.gap = '10px';
-                            
-                            // Capture button
-                            const captureBtn = document.createElement('button');
-                            captureBtn.textContent = 'Capture Photo';
-                            captureBtn.style.padding = '12px 24px';
-                            captureBtn.style.backgroundColor = '#3b82f6';
-                            captureBtn.style.color = 'white';
-                            captureBtn.style.border = 'none';
-                            captureBtn.style.borderRadius = '8px';
-                            captureBtn.style.cursor = 'pointer';
-                            captureBtn.style.fontSize = '16px';
-                            captureBtn.style.fontWeight = '600';
-                            
-                            // Cancel button
-                            const cancelBtn = document.createElement('button');
-                            cancelBtn.textContent = 'Cancel';
-                            cancelBtn.style.padding = '12px 24px';
-                            cancelBtn.style.backgroundColor = '#6b7280';
-                            cancelBtn.style.color = 'white';
-                            cancelBtn.style.border = 'none';
-                            cancelBtn.style.borderRadius = '8px';
-                            cancelBtn.style.cursor = 'pointer';
-                            cancelBtn.style.fontSize = '16px';
-                            
+                              videoContainer.appendChild(video);
+                              
+                              // Button container
+                              const buttonContainer = document.createElement('div');
+                              buttonContainer.style.display = 'flex';
+                              buttonContainer.style.gap = '10px';
+                              
+                              // Capture button
+                              const captureBtn = document.createElement('button');
+                              captureBtn.textContent = 'Capture Photo';
+                              captureBtn.style.padding = '12px 24px';
+                              captureBtn.style.backgroundColor = '#3b82f6';
+                              captureBtn.style.color = 'white';
+                              captureBtn.style.border = 'none';
+                              captureBtn.style.borderRadius = '8px';
+                              captureBtn.style.cursor = 'pointer';
+                              captureBtn.style.fontSize = '16px';
+                              captureBtn.style.fontWeight = '600';
+                              
+                              // Cancel button
+                              const cancelBtn = document.createElement('button');
+                              cancelBtn.textContent = 'Cancel';
+                              cancelBtn.style.padding = '12px 24px';
+                              cancelBtn.style.backgroundColor = '#6b7280';
+                              cancelBtn.style.color = 'white';
+                              cancelBtn.style.border = 'none';
+                              cancelBtn.style.borderRadius = '8px';
+                              cancelBtn.style.cursor = 'pointer';
+                              cancelBtn.style.fontSize = '16px';
+                              
                             let streamActive = true;
-                            const cleanup = () => {
+                              const cleanup = () => {
                               if (!streamActive) return;
                               streamActive = false;
                               
@@ -2007,13 +2007,13 @@ const Booking: React.FC = () => {
                               
                               try {
                                 if (modal.parentNode) {
-                                  document.body.removeChild(modal);
+                                document.body.removeChild(modal);
                                 }
                               } catch (e) {
                                 console.warn('Error removing modal:', e);
                               }
-                            };
-                            
+                              };
+                              
                             // Wait for video to be ready
                             let videoReady = false;
                             const enableCapture = () => {
@@ -2032,66 +2032,66 @@ const Booking: React.FC = () => {
                                 enableCapture();
                               }
                             }, 500);
-                            
+                              
                             captureBtn.disabled = true;
-                            
-                            captureBtn.onclick = () => {
+                              
+                              captureBtn.onclick = () => {
                               if (!streamActive || !videoReady || !video.videoWidth || !video.videoHeight) {
                                 toast.error('Camera not ready. Please wait a moment.');
-                                return;
-                              }
-                              
-                              try {
-                                const canvas = document.createElement('canvas');
-                                canvas.width = video.videoWidth;
-                                canvas.height = video.videoHeight;
-                                const ctx = canvas.getContext('2d', { willReadFrequently: false });
-                                
-                                if (!ctx) {
-                                  toast.error('Failed to capture photo.');
-                                  return;
-                                }
-                                
-                                ctx.drawImage(video, 0, 0);
-                                
-                                canvas.toBlob((blob) => {
-                                  if (!blob || !streamActive) return;
-                                  
-                                  try {
-                                    const file = new File([blob], `camera-photo-${Date.now()}.jpg`, { type: 'image/jpeg' });
-                                    const dataTransfer = new DataTransfer();
-                                    dataTransfer.items.add(file);
-                                    cleanup();
-                                    processFiles(Array.from(dataTransfer.files));
-                                  } catch (fileError) {
-                                    console.error('Error creating file:', fileError);
-                                    toast.error('Failed to process photo.');
-                                    cleanup();
+                                    return;
                                   }
-                                }, 'image/jpeg', 0.9);
-                              } catch (error: any) {
-                                console.error('Error capturing photo:', error);
+                                  
+                              try {
+                                  const canvas = document.createElement('canvas');
+                                  canvas.width = video.videoWidth;
+                                  canvas.height = video.videoHeight;
+                                const ctx = canvas.getContext('2d', { willReadFrequently: false });
+                                  
+                                  if (!ctx) {
+                                  toast.error('Failed to capture photo.');
+                                    return;
+                                  }
+                                  
+                                    ctx.drawImage(video, 0, 0);
+                                  
+                                  canvas.toBlob((blob) => {
+                                  if (!blob || !streamActive) return;
+                                    
+                                    try {
+                                      const file = new File([blob], `camera-photo-${Date.now()}.jpg`, { type: 'image/jpeg' });
+                                      const dataTransfer = new DataTransfer();
+                                      dataTransfer.items.add(file);
+                                      cleanup();
+                                    processFiles(Array.from(dataTransfer.files));
+                                    } catch (fileError) {
+                                      console.error('Error creating file:', fileError);
+                                    toast.error('Failed to process photo.');
+                                      cleanup();
+                                    }
+                                  }, 'image/jpeg', 0.9);
+                                } catch (error: any) {
+                                  console.error('Error capturing photo:', error);
                                 toast.error('Failed to capture photo.');
-                                cleanup();
-                              }
-                            };
-                            
-                            cancelBtn.onclick = cleanup;
-                            
-                            buttonContainer.appendChild(captureBtn);
-                            buttonContainer.appendChild(cancelBtn);
-                            
-                            modal.appendChild(videoContainer);
-                            modal.appendChild(buttonContainer);
-                            document.body.appendChild(modal);
-                            
-                            modal.onclick = (e) => {
-                              if (e.target === modal) {
-                                cleanup();
-                              }
-                            };
-                            
-                          } catch (error: any) {
+                                  cleanup();
+                                }
+                              };
+                              
+                              cancelBtn.onclick = cleanup;
+                              
+                              buttonContainer.appendChild(captureBtn);
+                              buttonContainer.appendChild(cancelBtn);
+                              
+                              modal.appendChild(videoContainer);
+                              modal.appendChild(buttonContainer);
+                              document.body.appendChild(modal);
+                              
+                              modal.onclick = (e) => {
+                                if (e.target === modal) {
+                                  cleanup();
+                                }
+                              };
+                              
+                            } catch (error: any) {
                             console.warn('Camera access failed, using file input:', error);
                             setTimeout(() => {
                               cameraInputRef.current?.click();

@@ -1134,6 +1134,94 @@ const AdminDashboard = () => {
     }
   }, [completedDateFilter, statusFilter, loadFilteredJobs, isInitialLoad]);
 
+  // Load customer history function - defined early for use in useEffect
+  const loadCustomerHistory = useCallback(async (customerId: string) => {
+    try {
+      // Get customer by customer_id to get UUID
+      const { data: customer, error: customerError } = await db.customers.getByCustomerId(customerId);
+      
+      if (customerError || !customer) {
+        toast.error('Customer not found');
+        return;
+      }
+
+      // Fetch all jobs for this customer from database
+      const { data: customerJobs, error: jobsError } = await db.jobs.getByCustomerId(customer.id);
+      
+      if (jobsError) {
+        toast.error('Failed to load service history');
+        return;
+      }
+
+      // Enrich jobs with technician information
+      const enrichedJobs = customerJobs?.map(job => {
+        const technicianId = job.assigned_technician_id || job.assignedTechnicianId;
+        const technician = technicianId ? technicians.find(t => t.id === technicianId) : null;
+        
+        return {
+          ...job,
+          jobNumber: job.job_number || job.jobNumber,
+          serviceType: job.service_type || job.serviceType,
+          serviceSubType: job.service_sub_type || job.serviceSubType,
+          scheduledDate: job.scheduled_date || job.scheduledDate,
+          scheduledTimeSlot: job.scheduled_time_slot || job.scheduledTimeSlot,
+          assignedTechnician: technician ? {
+            id: technician.id,
+            fullName: technician.fullName,
+            phone: technician.phone
+          } : null,
+          completedAt: job.completedAt || job.completed_at,
+          createdAt: job.createdAt || job.created_at,
+          updatedAt: job.updatedAt || job.updated_at
+        };
+      }) || [];
+
+      // Sort by date (newest first)
+      enrichedJobs.sort((a, b) => {
+        const dateA = new Date(a.completedAt || a.scheduledDate || a.createdAt || 0).getTime();
+        const dateB = new Date(b.completedAt || b.scheduledDate || b.createdAt || 0).getTime();
+        return dateB - dateA;
+      });
+
+      setCustomerHistory(prev => ({
+        ...prev,
+        [customerId]: enrichedJobs
+      }));
+    } catch (error) {
+      console.error('Error loading customer history:', error);
+      toast.error('Failed to load service history');
+    }
+  }, [technicians]);
+
+  // Load all jobs for customers when COMPLETED filter is active
+  // This is for the Service History dialog, NOT for the customer card grouping
+  // The customer card grouping uses paginated jobs directly
+  useEffect(() => {
+    if (statusFilter !== 'COMPLETED' || isInitialLoad || jobs.length === 0) return;
+    
+    // Extract unique customers from the paginated completed jobs
+    // Only load history if not already loaded (for Service History dialog)
+    const customerIds = new Set<string>();
+    jobs.forEach(job => {
+      const customer = (job as any).customer || job.customer;
+      if (customer) {
+        const customerIdStr = (customer as any).customer_id || customer.customerId;
+        // Only load if not already in history (for Service History dialog use)
+        if (customerIdStr && !customerHistory[customerIdStr]) {
+          customerIds.add(customerIdStr);
+        }
+      }
+    });
+    
+    // Load history for all customers who don't have it loaded yet
+    // This is used by the Service History dialog, not the customer card grouping
+    if (customerIds.size > 0) {
+      customerIds.forEach(customerId => {
+        loadCustomerHistory(customerId);
+      });
+    }
+  }, [statusFilter, jobs, customerHistory, isInitialLoad, loadCustomerHistory]);
+
   // Reload jobs when page changes (for paginated views)
   useEffect(() => {
     if (statusFilter === 'COMPLETED' || statusFilter === 'CANCELLED' || statusFilter === 'RESCHEDULED') {
@@ -4055,63 +4143,6 @@ const AdminDashboard = () => {
     await loadCustomerHistory(customerId);
   };
 
-  const loadCustomerHistory = async (customerId: string) => {
-    try {
-      // Get customer by customer_id to get UUID
-      const { data: customer, error: customerError } = await db.customers.getByCustomerId(customerId);
-      
-      if (customerError || !customer) {
-        toast.error('Customer not found');
-        return;
-      }
-
-      // Fetch all jobs for this customer from database
-      const { data: customerJobs, error: jobsError } = await db.jobs.getByCustomerId(customer.id);
-      
-      if (jobsError) {
-        toast.error('Failed to load service history');
-        return;
-      }
-
-      // Enrich jobs with technician information
-      const enrichedJobs = customerJobs?.map(job => {
-        const technicianId = job.assigned_technician_id || job.assignedTechnicianId;
-        const technician = technicianId ? technicians.find(t => t.id === technicianId) : null;
-        
-        return {
-          ...job,
-          jobNumber: job.job_number || job.jobNumber,
-          serviceType: job.service_type || job.serviceType,
-          serviceSubType: job.service_sub_type || job.serviceSubType,
-          scheduledDate: job.scheduled_date || job.scheduledDate,
-          scheduledTimeSlot: job.scheduled_time_slot || job.scheduledTimeSlot,
-          assignedTechnician: technician ? {
-            id: technician.id,
-            fullName: technician.fullName,
-            phone: technician.phone
-          } : null,
-          completedAt: job.completedAt || job.completed_at,
-          createdAt: job.createdAt || job.created_at,
-          updatedAt: job.updatedAt || job.updated_at
-        };
-      }) || [];
-
-      // Sort by date (newest first)
-      enrichedJobs.sort((a, b) => {
-        const dateA = new Date(a.completedAt || a.scheduledDate || a.createdAt || 0).getTime();
-        const dateB = new Date(b.completedAt || b.scheduledDate || b.createdAt || 0).getTime();
-        return dateB - dateA;
-      });
-
-      setCustomerHistory(prev => ({
-        ...prev,
-        [customerId]: enrichedJobs
-      }));
-    } catch (error) {
-      console.error('Error loading customer history:', error);
-      toast.error('Failed to load service history');
-    }
-  };
 
   const handleAddFormChange = (field: string, value: string | string[]) => {
       setAddFormData(prev => ({
@@ -5922,29 +5953,80 @@ const AdminDashboard = () => {
     // For COMPLETED and CANCELLED, use jobs directly since they're paginated
     if (statusFilter === 'COMPLETED' || statusFilter === 'CANCELLED') {
       // Group loaded jobs by customer
-      const customerMap = new Map<string, { customer: Customer; allJobs: Job[] }>();
+      const customerMap = new Map<string, { customer: Customer; todayJobs: Job[] }>();
       
+      // First, collect all customers who have jobs for the selected date
+      // Note: jobs array is paginated, so if there are multiple pages, 
+      // we only see customers from the current page. This is intentional for performance.
       jobs.forEach(job => {
         const customer = (job as any).customer || job.customer;
-        if (!customer) return;
+        if (!customer) {
+          // Debug: Log jobs without customer relationship
+          if (import.meta.env.DEV) {
+            console.warn('Job missing customer relationship:', {
+              jobId: job.id,
+              jobNumber: job.job_number || job.jobNumber,
+              hasCustomerField: !!(job as any).customer || !!job.customer,
+              status: job.status,
+              completedAt: (job as any).completed_at || job.completedAt,
+              endTime: (job as any).end_time || job.endTime
+            });
+          }
+          return;
+        }
         
         const customerId = customer.id;
+        if (!customerId) {
+          if (import.meta.env.DEV) {
+            console.warn('Customer missing ID:', customer);
+          }
+          return;
+        }
+        
         if (!customerMap.has(customerId)) {
           customerMap.set(customerId, {
             customer: transformCustomerData(customer),
-            allJobs: []
+            todayJobs: []
           });
         }
-        customerMap.get(customerId)!.allJobs.push(job);
+        customerMap.get(customerId)!.todayJobs.push(job);
       });
       
-      return Array.from(customerMap.values()).map(({ customer, allJobs }) => ({
-        customer,
-        allJobs,
-        upcomingJobs: allJobs.filter(job => ['PENDING', 'ASSIGNED', 'IN_PROGRESS'].includes(job.status)),
-        completedJobs: allJobs.filter(job => job.status === 'COMPLETED'),
-        cancelledJobs: allJobs.filter(job => job.status === 'CANCELLED' || job.status === 'DENIED')
-      }));
+      // Debug logging for COMPLETED filter
+      if (import.meta.env.DEV && statusFilter === 'COMPLETED') {
+        console.log('Completed jobs filter - customer grouping:', {
+          totalJobs: jobs.length,
+          uniqueCustomers: customerMap.size,
+          dateFilter: completedDateFilter,
+          currentPage,
+          totalPages,
+          totalCount,
+          customers: Array.from(customerMap.entries()).map(([id, { customer, todayJobs }]) => ({
+            customerId: id,
+            customer_id: (customer as any).customer_id || customer.customerId,
+            name: customer.fullName || (customer as any).full_name,
+            jobCount: todayJobs.length,
+            jobNumbers: todayJobs.map(j => j.job_number || j.jobNumber)
+          }))
+        });
+      }
+      
+      // For each customer, use the jobs from the paginated query for the selected date
+      // Don't use customerHistory here as it might contain jobs from other dates
+      // The database query already filtered by date, so todayJobs contains the correct filtered jobs
+      return Array.from(customerMap.values()).map(({ customer, todayJobs }) => {
+        // For COMPLETED filter with date selection, use only the paginated jobs for that date
+        // This ensures we show only customers who have jobs on the selected date
+        const allJobs = todayJobs;
+        
+        return {
+          customer,
+          allJobs, // Use only jobs from the paginated query (filtered by date)
+          upcomingJobs: allJobs.filter(job => ['PENDING', 'ASSIGNED', 'EN_ROUTE', 'IN_PROGRESS'].includes(job.status)),
+          completedJobs: allJobs.filter(job => job.status === 'COMPLETED'),
+          cancelledJobs: allJobs.filter(job => job.status === 'CANCELLED' || job.status === 'DENIED')
+        };
+      });
     }
     
     let filteredCustomers = customersWithJobs;
@@ -6534,9 +6616,15 @@ const AdminDashboard = () => {
                 : statusFilter === 'RESCHEDULED'
                 ? `Showing ${displayedCustomers.length} customers with follow-up jobs`                                                                          
                 : statusFilter === 'CANCELLED'
-                ? `Showing ${displayedCustomers.length} customers with denied jobs for ${new Date(deniedDateFilter).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}`                                                                             
+                ? (() => {
+                    const pageInfo = totalPages > 1 ? ` (page ${currentPage}/${totalPages}, ${totalCount} total jobs)` : '';
+                    return `Showing ${displayedCustomers.length} customer${displayedCustomers.length !== 1 ? 's' : ''} with denied jobs for ${new Date(deniedDateFilter).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}${pageInfo}`;
+                  })()                                                                             
                 : statusFilter === 'COMPLETED'
-                ? `Showing ${displayedCustomers.length} customers with completed jobs for ${new Date(completedDateFilter).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}`                                                                             
+                ? (() => {
+                    const pageInfo = totalPages > 1 ? ` (page ${currentPage}/${totalPages}, ${totalCount} total jobs)` : '';
+                    return `Showing ${displayedCustomers.length} customer${displayedCustomers.length !== 1 ? 's' : ''} with completed jobs for ${new Date(completedDateFilter).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}${pageInfo}`;
+                  })()                                                                             
                 : `Showing ${displayedCustomers.length} customers with ${statusFilter.toLowerCase().replace('_', ' ')} jobs`                                    
               }
             </p>
@@ -6613,8 +6701,34 @@ const AdminDashboard = () => {
                           // Show denied jobs (DENIED status)
                           jobsToShow = allJobs.filter(job => job.status === 'DENIED');
                         } else if (statusFilter === 'COMPLETED') {
-                          // Show all completed jobs - no filtering by message sent status
-                          jobsToShow = completedJobs;
+                          // Show only completed jobs that were completed on the selected date
+                          // Filter by completedDateFilter (format: YYYY-MM-DD)
+                          // Database already filtered by date, but we need to filter again for customer history
+                          // Compare in local timezone to match what user sees
+                          const [filterYear, filterMonth, filterDay] = completedDateFilter.split('-').map(Number);
+                          const filterDateLocal = new Date(filterYear, filterMonth - 1, filterDay);
+                          
+                          jobsToShow = completedJobs.filter(job => {
+                            const completedAt = job.completed_at || job.completedAt;
+                            const endTime = (job as any).end_time || job.endTime;
+                            const completionDate = completedAt || endTime;
+                            
+                            if (!completionDate) return false;
+                            
+                            // Parse the completion date (stored as UTC ISO string in database)
+                            const completionDateObj = new Date(completionDate);
+                            
+                            // Compare dates in local timezone (what user sees)
+                            // Convert UTC timestamp to local date for comparison
+                            const completionYear = completionDateObj.getFullYear();
+                            const completionMonth = completionDateObj.getMonth() + 1;
+                            const completionDay = completionDateObj.getDate();
+                            
+                            // Compare year, month, day in local timezone
+                            return completionYear === filterYear && 
+                                   completionMonth === filterMonth && 
+                                   completionDay === filterDay;
+                          });
                         } else {
                           jobsToShow = allJobs.filter(job => job.status === statusFilter);                                                                      
                         }

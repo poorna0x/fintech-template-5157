@@ -400,16 +400,15 @@ export const db = {
         const day = today.getDate();
         
         // Create date objects in local timezone (start and end of today)
+        // new Date(year, month, day, hour, min, sec) creates a date at that LOCAL time
+        // When converted to ISO string, it automatically converts to UTC
         const localStartOfDay = new Date(year, month, day, 0, 0, 0, 0);
-        const localEndOfDay = new Date(year, month, day, 23, 59, 59, 999);
+        const localStartOfNextDay = new Date(year, month, day + 1, 0, 0, 0, 0);
         
-        // Convert to UTC timestamps for database comparison
-        const timezoneOffsetMs = localStartOfDay.getTimezoneOffset() * 60000;
-        const todayStartUTC = new Date(localStartOfDay.getTime() + timezoneOffsetMs);
-        const todayEndUTC = new Date(localEndOfDay.getTime() + timezoneOffsetMs);
-        
-        const todayStart = todayStartUTC.toISOString();
-        const todayEnd = todayEndUTC.toISOString();
+        // The Date objects already represent the correct moment in time
+        // When converted to ISO string, they will be in UTC
+        const todayStart = localStartOfDay.toISOString();
+        const todayStartNextDay = localStartOfNextDay.toISOString();
         
         // Count jobs in parallel for better performance
         const [ongoingResult, followupResult, deniedResult, completedResult] = await Promise.all([
@@ -429,15 +428,15 @@ export const db = {
             .select('id', { count: 'exact', head: true })
             .in('status', ['DENIED', 'CANCELLED'])
             .gte('denied_at', todayStart)
-            .lt('denied_at', todayEnd),
-          // Completed: Only TODAY's jobs with status COMPLETED (using completed_at field)
-          // Use lt instead of lte since todayEnd is start of next day
+            .lt('denied_at', todayStartNextDay),
+          // Completed: Only TODAY's jobs with status COMPLETED (using completed_at OR end_time field)
+          // Check both completed_at and end_time fields - use whichever is set
+          // Format: (completed_at >= start AND completed_at < nextDay) OR (end_time >= start AND end_time < nextDay)
           supabase
             .from('jobs')
             .select('id', { count: 'exact', head: true })
             .eq('status', 'COMPLETED')
-            .gte('completed_at', todayStart)
-            .lt('completed_at', todayEnd)
+            .or(`and(completed_at.gte.${todayStart},completed_at.lt.${todayStartNextDay}),and(end_time.gte.${todayStart},end_time.lt.${todayStartNextDay})`)
         ]);
         
         return {
@@ -501,38 +500,58 @@ export const db = {
         const [year, month, day] = dateFilter.split('-').map(Number);
         
         // Create date objects in local timezone (start and end of selected day)
+        // new Date(year, month, day, hour, min, sec) creates a date at that LOCAL time
+        // For IST: Dec 3, 2025 00:00:00 IST = Dec 2, 2025 18:30:00 UTC
         const localStartOfDay = new Date(year, month - 1, day, 0, 0, 0, 0);
-        const localEndOfDay = new Date(year, month - 1, day, 23, 59, 59, 999);
+        const localStartOfNextDay = new Date(year, month - 1, day + 1, 0, 0, 0, 0);
         
-        // Convert to UTC timestamps for database comparison
-        // getTimezoneOffset() returns offset in minutes from UTC to local
-        // For IST (UTC+5:30), getTimezoneOffset() returns -330 (negative because ahead of UTC)
-        // To convert local to UTC: UTC = local + (offset in ms)
-        // Since offset is negative for timezones ahead of UTC, this effectively subtracts
-        const timezoneOffsetMs = localStartOfDay.getTimezoneOffset() * 60000;
-        const startOfDay = new Date(localStartOfDay.getTime() + timezoneOffsetMs);
-        const endOfDay = new Date(localEndOfDay.getTime() + timezoneOffsetMs);
+        // The Date objects already represent the correct moment in time
+        // When converted to ISO string, they will be in UTC
+        // For IST (UTC+5:30): Dec 3, 2025 00:00:00 IST.toISOString() = "2025-12-02T18:30:00.000Z"
+        // So we can use the Date objects directly
+        const startOfDay = localStartOfDay;
+        const startOfNextDay = localStartOfNextDay;
         
         if (statuses.includes('DENIED')) {
           // Filter DENIED jobs by denied_at date
           // Filter: DENIED jobs with denied_at in date range, OR CANCELLED jobs (show all cancelled regardless of date)
           if (statuses.includes('CANCELLED')) {
-            query = query.or(`and(status.eq.DENIED,denied_at.gte.${startOfDay.toISOString()},denied_at.lte.${endOfDay.toISOString()}),status.eq.CANCELLED`);
+            query = query.or(`and(status.eq.DENIED,denied_at.gte.${startOfDay.toISOString()},denied_at.lt.${startOfNextDay.toISOString()}),status.eq.CANCELLED`);
           } else {
             // Only DENIED jobs, filter by date
-            // endOfDay is start of next day, so use lt (less than) instead of lte
+            // Use start of next day with lt (less than) for reliability
             query = query
               .eq('status', 'DENIED')
               .gte('denied_at', startOfDay.toISOString())
-              .lt('denied_at', endOfDay.toISOString());
+              .lt('denied_at', startOfNextDay.toISOString());
           }
         } else if (statuses.includes('COMPLETED')) {
-          // Filter COMPLETED jobs by completed_at date
+          // Filter COMPLETED jobs by completed_at or end_time date
+          // Some jobs might have end_time set but not completed_at (or vice versa)
           // Filter by date portion in local timezone (what user sees)
+          const startISO = startOfDay.toISOString();
+          const nextDayISO = startOfNextDay.toISOString(); // Use start of next day with .lt() for reliability
+          
+          // Debug logging in development
+          if (import.meta.env.DEV && dateFilter) {
+            console.log('Completed jobs date filter:', {
+              dateFilter,
+              startISO,
+              nextDayISO,
+              localStartOfDay: localStartOfDay.toISOString(),
+              localStartOfNextDay: localStartOfNextDay.toISOString(),
+              timezoneOffset: localStartOfDay.getTimezoneOffset()
+            });
+          }
+          
+          // Check both completed_at and end_time using OR condition
+          // PostgREST OR syntax: condition1,condition2
+          // We want jobs where either completed_at OR end_time is in the date range
+          // Use .lt() with start of next day to ensure we capture all jobs within the day
+          // Simplified: Just check if either field is in the date range (nulls will be excluded by .gte/.lt)
           query = query
             .eq('status', 'COMPLETED')
-            .gte('completed_at', startOfDay.toISOString())
-            .lte('completed_at', endOfDay.toISOString());
+            .or(`and(completed_at.gte.${startISO},completed_at.lt.${nextDayISO}),and(end_time.gte.${startISO},end_time.lt.${nextDayISO})`);
         } else {
           // No date filter for this status, use normal status filter
           query = query.in('status', statuses);
