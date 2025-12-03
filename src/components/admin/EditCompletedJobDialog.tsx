@@ -180,6 +180,69 @@ const EditCompletedJobDialog: React.FC<EditCompletedJobDialogProps> = ({
               </SelectContent>
             </Select>
           </div>
+
+          {/* Completion Date */}
+          <div className="border-t pt-4">
+            <Label htmlFor="edit-completion-date" className="text-base font-semibold">Completion Date & Time</Label>
+            <div className="grid grid-cols-2 gap-3 mt-2">
+              <div>
+                <Label htmlFor="edit-completion-date" className="text-sm">Date</Label>
+                <Input
+                  id="edit-completion-date"
+                  type="date"
+                  value={editData.completedDate || ''}
+                  onChange={(e) => {
+                    const dateValue = e.target.value;
+                    // If time is already set, preserve it
+                    const existingCompletedAt = editData.completedAt ? new Date(editData.completedAt) : new Date();
+                    if (dateValue) {
+                      const newDate = new Date(dateValue);
+                      newDate.setHours(existingCompletedAt.getHours());
+                      newDate.setMinutes(existingCompletedAt.getMinutes());
+                      newDate.setSeconds(existingCompletedAt.getSeconds());
+                      const timeStr = editData.completedTime || existingCompletedAt.toTimeString().slice(0, 5);
+                      onEditDataChange({ 
+                        ...editData, 
+                        completedDate: dateValue,
+                        completedTime: timeStr,
+                        completedAt: newDate.toISOString()
+                      });
+                    } else {
+                      onEditDataChange({ ...editData, completedDate: '', completedAt: null });
+                    }
+                  }}
+                />
+              </div>
+              <div>
+                <Label htmlFor="edit-completion-time" className="text-sm">Time</Label>
+                <Input
+                  id="edit-completion-time"
+                  type="time"
+                  value={editData.completedTime || ''}
+                  onChange={(e) => {
+                    const timeValue = e.target.value;
+                    // If date is already set, preserve it, otherwise use today
+                    const existingDate = editData.completedDate || new Date().toISOString().split('T')[0];
+                    const existingCompletedAt = editData.completedAt ? new Date(editData.completedAt) : new Date();
+                    
+                    if (timeValue) {
+                      const [hours, minutes] = timeValue.split(':');
+                      const newDate = new Date(`${existingDate}T${hours}:${minutes}:00`);
+                      onEditDataChange({ 
+                        ...editData, 
+                        completedTime: timeValue,
+                        completedDate: existingDate,
+                        completedAt: newDate.toISOString()
+                      });
+                    } else {
+                      onEditDataChange({ ...editData, completedTime: '', completedAt: null });
+                    }
+                  }}
+                />
+              </div>
+            </div>
+            <p className="text-xs text-gray-500 mt-1">Leave empty to keep the original completion date</p>
+          </div>
         </div>
 
         <DialogFooter>

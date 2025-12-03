@@ -228,8 +228,8 @@ export const CompletedJobSection: React.FC<CompletedJobSectionProps> = ({
           
           {/* Completed At */}
           {formattedCompletedAt && (
-            <div className="text-xs text-gray-500 mt-1 break-words">
-              Completed on {formattedCompletedAt}
+            <div className="text-xs text-gray-500 mt-1 break-words flex items-center gap-2">
+              <span>Completed on {formattedCompletedAt}</span>
             </div>
           )}
           
@@ -250,6 +250,10 @@ export const CompletedJobSection: React.FC<CompletedJobSectionProps> = ({
             variant="outline"
             onClick={() => {
               setSelectedCompletedJob(job);
+              const completedAt = (job as any).completed_at || job.completedAt;
+              const completedDate = completedAt ? new Date(completedAt).toISOString().split('T')[0] : '';
+              const completedTime = completedAt ? new Date(completedAt).toTimeString().slice(0, 5) : '';
+              
               const editData: any = {
                 amount: actualCost || paymentAmount || '',
                 paymentMethod: paymentMethod || 'CASH',
@@ -257,6 +261,9 @@ export const CompletedJobSection: React.FC<CompletedJobSectionProps> = ({
                 amcInfo: amcInfo || null,
                 completionNotes: completionNotes || '',
                 completedBy: (job as any).completed_by || job.completedBy || '',
+                completedAt: completedAt || null,
+                completedDate: completedDate,
+                completedTime: completedTime,
               };
               setCompletedJobEditData(editData);
               setEditCompletedJobDialogOpen(true);

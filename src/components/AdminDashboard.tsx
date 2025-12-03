@@ -8304,6 +8304,22 @@ const AdminDashboard = () => {
 
                   // Prepare update data
                   const amount = parseFloat(completedJobEditData.amount) || 0;
+                  
+                  // Handle completion date
+                  let completedAt = null;
+                  if (completedJobEditData.completedAt) {
+                    // Use the ISO string if it's already set
+                    completedAt = completedJobEditData.completedAt;
+                  } else if (completedJobEditData.completedDate && completedJobEditData.completedTime) {
+                    // Combine date and time if provided separately
+                    const combinedDateTime = new Date(`${completedJobEditData.completedDate}T${completedJobEditData.completedTime}`);
+                    completedAt = combinedDateTime.toISOString();
+                  } else if (completedJobEditData.completedDate) {
+                    // If only date is provided, use noon of that date
+                    const dateOnly = new Date(`${completedJobEditData.completedDate}T12:00:00`);
+                    completedAt = dateOnly.toISOString();
+                  }
+                  
                   const updateData: any = {
                     actual_cost: amount,
                     payment_amount: amount,
@@ -8313,6 +8329,11 @@ const AdminDashboard = () => {
                     completed_by: completedJobEditData.completedBy || 'admin',
                     requirements: JSON.stringify(requirements)
                   };
+                  
+                  // Only update completed_at if it's been explicitly set/changed
+                  if (completedAt) {
+                    updateData.completed_at = completedAt;
+                  }
 
                   const { error } = await db.jobs.update(selectedCompletedJob.id, updateData);
                   
