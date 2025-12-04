@@ -323,6 +323,36 @@ export function generateQuotationPDF(quotationData: PDFQuotationData, action: 'p
             line-height: 1.5;
           }
           
+          .signatures {
+            margin-top: 40px;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+          }
+          
+          .signature-box {
+            text-align: center;
+            padding-top: 15px;
+          }
+          
+          .signature-label {
+            font-weight: bold;
+            color: #000000;
+            margin-bottom: 5px;
+          }
+          
+          .signature-seal {
+            width: 120px;
+            height: 120px;
+            margin: 20px auto 10px auto;
+            display: block;
+          }
+          
+          .signature-date {
+            font-size: 12px;
+            color: #6b7280;
+          }
+          
           .footer {
             margin: 15px 15px 0 15px;
             padding: 10px 0;
@@ -701,6 +731,37 @@ function handleMobilePrint(quotationData: PDFQuotationData, action: 'print' | 'p
         line-height: 1.4;
       }
       
+      .signatures {
+        margin-top: 30px;
+        display: flex;
+        justify-content: center;
+        align-items: center;
+      }
+      
+      .signature-box {
+        text-align: center;
+        padding-top: 12px;
+      }
+      
+      .signature-label {
+        font-weight: bold;
+        color: #000000;
+        margin-bottom: 5px;
+        font-size: 12px;
+      }
+      
+      .signature-seal {
+        width: 100px;
+        height: 100px;
+        margin: 15px auto 8px auto;
+        display: block;
+      }
+      
+      .signature-date {
+        font-size: 11px;
+        color: #6b7280;
+      }
+      
       .footer {
         margin: 10px 10px 0 10px;
         padding: 8px 0;
@@ -1022,6 +1083,20 @@ function createQuotationContent(data: PDFQuotationData): string {
         </div>
       ` : ''}
       
+      <!-- Signatures -->
+      <div class="signatures">
+        <div class="signature-box">
+          <div class="signature-label">Authorized Signatory</div>
+          <div style="font-size: 12px; color: #6b7280; margin-bottom: 5px;">M/s Hydrogen RO</div>
+          <img src="/HydrogenROSeal.webp" alt="Hydrogen RO Seal" class="signature-seal" />
+          <div class="signature-date">Date: ${new Date().toLocaleDateString('en-IN', { 
+            day: '2-digit', 
+            month: '2-digit', 
+            year: 'numeric' 
+          })}</div>
+        </div>
+      </div>
+      
       <!-- Footer -->
       <div class="footer">
         <p>Thank you for considering our services!</p>
@@ -1231,6 +1306,36 @@ function generateQuotationHTML(data: PDFQuotationData): string {
           color: #b45309;
         }
         
+        .signatures {
+          margin-top: 40px;
+          display: flex;
+          justify-content: center;
+          align-items: center;
+        }
+        
+        .signature-box {
+          text-align: center;
+          padding-top: 15px;
+        }
+        
+        .signature-label {
+          font-weight: bold;
+          color: #000000;
+          margin-bottom: 5px;
+        }
+        
+        .signature-seal {
+          width: 120px;
+          height: 120px;
+          margin: 20px auto 10px auto;
+          display: block;
+        }
+        
+        .signature-date {
+          font-size: 12px;
+          color: #6b7280;
+        }
+        
         .footer {
           margin: 15px 15px 0 15px;
           padding: 10px 0;
@@ -1436,6 +1541,20 @@ function generateQuotationHTML(data: PDFQuotationData): string {
             ${data.bankDetails.note ? `<div class="bank-note">${sanitizeForTemplate(data.bankDetails.note)}</div>` : ''}
           </div>
         ` : ''}
+        
+        <!-- Signatures -->
+        <div class="signatures">
+          <div class="signature-box">
+            <div class="signature-label">Authorized Signatory</div>
+            <div style="font-size: 12px; color: #6b7280; margin-bottom: 5px;">M/s Hydrogen RO</div>
+            <img src="/HydrogenROSeal.webp" alt="Hydrogen RO Seal" class="signature-seal" />
+            <div class="signature-date">Date: ${new Date().toLocaleDateString('en-IN', { 
+              day: '2-digit', 
+              month: '2-digit', 
+              year: 'numeric' 
+            })}</div>
+          </div>
+        </div>
         
         <!-- Footer -->
         <div class="footer">
