@@ -5927,6 +5927,22 @@ const AdminDashboard = () => {
   });
 
 
+    // Helper function to get completion date for a job
+  const getJobCompletionDate = (job: Job): number => {
+    const completedAt = (job as any).completed_at || job.completedAt;
+    const endTime = (job as any).end_time || job.endTime;
+    const completionDate = completedAt || endTime;
+    if (completionDate) {
+      return new Date(completionDate).getTime();
+    }
+    // Fallback to scheduled date or created date if no completion date
+    const scheduledDate = (job as any).scheduled_date || job.scheduledDate;
+    if (scheduledDate) {
+      return new Date(scheduledDate).getTime();
+    }
+    return new Date(job.createdAt).getTime();
+  };
+
     // Group all customers with their jobs (no filtering by status)
   const customersWithJobs = customers.map(customer => {
     const customerJobs = jobs
@@ -5945,11 +5961,20 @@ const AdminDashboard = () => {
         return bDate - aDate; // Most recent first
       });
     
+    // Sort completed jobs by completion date (latest first)
+    const completedJobs = customerJobs
+      .filter(job => job.status === 'COMPLETED')
+      .sort((a, b) => {
+        const aCompletionDate = getJobCompletionDate(a);
+        const bCompletionDate = getJobCompletionDate(b);
+        return bCompletionDate - aCompletionDate; // Latest completed first
+      });
+    
     return {
       customer,
       allJobs: customerJobs,
       upcomingJobs: customerJobs.filter(job => ['PENDING', 'ASSIGNED', 'EN_ROUTE', 'IN_PROGRESS'].includes(job.status)),                                                    
-      completedJobs: customerJobs.filter(job => job.status === 'COMPLETED'),
+      completedJobs: completedJobs,
       cancelledJobs: customerJobs.filter(job => job.status === 'CANCELLED')
     };
   });
@@ -6022,19 +6047,39 @@ const AdminDashboard = () => {
       // For each customer, use the jobs from the paginated query for the selected date
       // Don't use customerHistory here as it might contain jobs from other dates
       // The database query already filtered by date, so todayJobs contains the correct filtered jobs
-      return Array.from(customerMap.values()).map(({ customer, todayJobs }) => {
-        // For COMPLETED filter with date selection, use only the paginated jobs for that date
-        // This ensures we show only customers who have jobs on the selected date
-        const allJobs = todayJobs;
-        
-        return {
-          customer,
-          allJobs, // Use only jobs from the paginated query (filtered by date)
-          upcomingJobs: allJobs.filter(job => ['PENDING', 'ASSIGNED', 'EN_ROUTE', 'IN_PROGRESS'].includes(job.status)),
-          completedJobs: allJobs.filter(job => job.status === 'COMPLETED'),
-          cancelledJobs: allJobs.filter(job => job.status === 'CANCELLED' || job.status === 'DENIED')
-        };
-      });
+      return Array.from(customerMap.values())
+        .map(({ customer, todayJobs }) => {
+          // For COMPLETED filter with date selection, use only the paginated jobs for that date
+          // This ensures we show only customers who have jobs on the selected date
+          const allJobs = todayJobs;
+          
+          // Sort completed jobs by completion date (latest first)
+          const completedJobs = allJobs
+            .filter(job => job.status === 'COMPLETED')
+            .sort((a, b) => {
+              const aCompletionDate = getJobCompletionDate(a);
+              const bCompletionDate = getJobCompletionDate(b);
+              return bCompletionDate - aCompletionDate; // Latest completed first
+            });
+          
+          return {
+            customer,
+            allJobs, // Use only jobs from the paginated query (filtered by date)
+            upcomingJobs: allJobs.filter(job => ['PENDING', 'ASSIGNED', 'EN_ROUTE', 'IN_PROGRESS'].includes(job.status)),
+            completedJobs: completedJobs,
+            cancelledJobs: allJobs.filter(job => job.status === 'CANCELLED' || job.status === 'DENIED')
+          };
+        })
+        .sort((a, b) => {
+          // Sort customers by their most recent completed job date (latest first)
+          const aMostRecentCompleted = a.completedJobs.length > 0 
+            ? getJobCompletionDate(a.completedJobs[0]) 
+            : 0;
+          const bMostRecentCompleted = b.completedJobs.length > 0 
+            ? getJobCompletionDate(b.completedJobs[0]) 
+            : 0;
+          return bMostRecentCompleted - aMostRecentCompleted;
+        });
     }
     
     let filteredCustomers = customersWithJobs;
@@ -6064,13 +6109,24 @@ const AdminDashboard = () => {
           }
           customerMap.get(customerId)!.allJobs.push(job);
         });
-        return Array.from(customerMap.values()).map(({ customer, allJobs }) => ({
-          customer,
-          allJobs,
-          upcomingJobs: allJobs.filter(job => ['PENDING', 'ASSIGNED', 'EN_ROUTE', 'IN_PROGRESS'].includes(job.status)),
-          completedJobs: allJobs.filter(job => job.status === 'COMPLETED'),
-          cancelledJobs: allJobs.filter(job => job.status === 'CANCELLED' || job.status === 'DENIED')
-        }));
+        return Array.from(customerMap.values()).map(({ customer, allJobs }) => {
+          // Sort completed jobs by completion date (latest first)
+          const completedJobs = allJobs
+            .filter(job => job.status === 'COMPLETED')
+            .sort((a, b) => {
+              const aCompletionDate = getJobCompletionDate(a);
+              const bCompletionDate = getJobCompletionDate(b);
+              return bCompletionDate - aCompletionDate; // Latest completed first
+            });
+          
+          return {
+            customer,
+            allJobs,
+            upcomingJobs: allJobs.filter(job => ['PENDING', 'ASSIGNED', 'EN_ROUTE', 'IN_PROGRESS'].includes(job.status)),
+            completedJobs: completedJobs,
+            cancelledJobs: allJobs.filter(job => job.status === 'CANCELLED' || job.status === 'DENIED')
+          };
+        });
       }
       // Filter for follow-up jobs (FOLLOW_UP and RESCHEDULED status)
       filteredCustomers = customersWithJobs.filter(({ allJobs }) => 
@@ -6092,12 +6148,27 @@ const AdminDashboard = () => {
   };
 
   const displayedCustomers = !searchTerm.trim()
-    ? getFilteredCustomers()
-        .sort((a, b) => {
+    ? (() => {
+        const filtered = getFilteredCustomers();
+        // For COMPLETED filter, sort by most recent completed job date (latest first)
+        if (statusFilter === 'COMPLETED') {
+          return filtered.sort((a, b) => {
+            const aMostRecentCompleted = a.completedJobs.length > 0 
+              ? getJobCompletionDate(a.completedJobs[0]) 
+              : 0;
+            const bMostRecentCompleted = b.completedJobs.length > 0 
+              ? getJobCompletionDate(b.completedJobs[0]) 
+              : 0;
+            return bMostRecentCompleted - aMostRecentCompleted;
+          });
+        }
+        // For other filters, sort by customer creation date
+        return filtered.sort((a, b) => {
           const aDate = new Date(a.customer.createdAt).getTime();
           const bDate = new Date(b.customer.createdAt).getTime();
           return bDate - aDate;
-        })
+        });
+      })()
     : filteredCustomers.map((customer: Customer) => {
         // Find the customer in customersWithJobs to get their jobs
         const customerWithJobs = customersWithJobs.find(cwj => cwj.customer.id === customer.id);
@@ -6110,6 +6181,17 @@ const AdminDashboard = () => {
           cancelledJobs: []
         };
       }).sort((a, b) => {
+        // For COMPLETED filter, sort by most recent completed job date (latest first)
+        if (statusFilter === 'COMPLETED') {
+          const aMostRecentCompleted = a.completedJobs.length > 0 
+            ? getJobCompletionDate(a.completedJobs[0]) 
+            : 0;
+          const bMostRecentCompleted = b.completedJobs.length > 0 
+            ? getJobCompletionDate(b.completedJobs[0]) 
+            : 0;
+          return bMostRecentCompleted - aMostRecentCompleted;
+        }
+        // For other filters, sort by customer creation date
         const aDate = new Date(a.customer.createdAt).getTime();
         const bDate = new Date(b.customer.createdAt).getTime();
         return bDate - aDate;
@@ -6716,27 +6798,34 @@ const AdminDashboard = () => {
                           const [filterYear, filterMonth, filterDay] = completedDateFilter.split('-').map(Number);
                           const filterDateLocal = new Date(filterYear, filterMonth - 1, filterDay);
                           
-                          jobsToShow = completedJobs.filter(job => {
-                            const completedAt = job.completed_at || job.completedAt;
-                            const endTime = (job as any).end_time || job.endTime;
-                            const completionDate = completedAt || endTime;
-                            
-                            if (!completionDate) return false;
-                            
-                            // Parse the completion date (stored as UTC ISO string in database)
-                            const completionDateObj = new Date(completionDate);
-                            
-                            // Compare dates in local timezone (what user sees)
-                            // Convert UTC timestamp to local date for comparison
-                            const completionYear = completionDateObj.getFullYear();
-                            const completionMonth = completionDateObj.getMonth() + 1;
-                            const completionDay = completionDateObj.getDate();
-                            
-                            // Compare year, month, day in local timezone
-                            return completionYear === filterYear && 
-                                   completionMonth === filterMonth && 
-                                   completionDay === filterDay;
-                          });
+                          jobsToShow = completedJobs
+                            .filter(job => {
+                              const completedAt = job.completed_at || job.completedAt;
+                              const endTime = (job as any).end_time || job.endTime;
+                              const completionDate = completedAt || endTime;
+                              
+                              if (!completionDate) return false;
+                              
+                              // Parse the completion date (stored as UTC ISO string in database)
+                              const completionDateObj = new Date(completionDate);
+                              
+                              // Compare dates in local timezone (what user sees)
+                              // Convert UTC timestamp to local date for comparison
+                              const completionYear = completionDateObj.getFullYear();
+                              const completionMonth = completionDateObj.getMonth() + 1;
+                              const completionDay = completionDateObj.getDate();
+                              
+                              // Compare year, month, day in local timezone
+                              return completionYear === filterYear && 
+                                     completionMonth === filterMonth && 
+                                     completionDay === filterDay;
+                            })
+                            .sort((a, b) => {
+                              // Sort by completion date (latest first)
+                              const aCompletionDate = getJobCompletionDate(a);
+                              const bCompletionDate = getJobCompletionDate(b);
+                              return bCompletionDate - aCompletionDate;
+                            });
                         } else {
                           jobsToShow = allJobs.filter(job => job.status === statusFilter);                                                                      
                         }
