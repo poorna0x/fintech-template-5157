@@ -1447,8 +1447,8 @@ const TechnicianDashboard = () => {
       },
       {
         enableHighAccuracy: false, // Set to false for faster response (less accurate but more reliable)
-        timeout: 30000, // Increased to 30 seconds for better reliability on slow networks
-        maximumAge: 60000 // 1 minute - use cached location if available and recent
+        timeout: 60000, // Increased to 60 seconds for mobile/PWA - GPS can take longer on mobile devices
+        maximumAge: 300000 // 5 minutes - use cached location if available (helps with timeout issues)
       }
     );
   }, [user?.technicianId]);

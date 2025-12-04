@@ -262,9 +262,9 @@ const TechnicianLocation = () => {
         lastUpdateAttemptRef.current = Date.now();
       },
       {
-        enableHighAccuracy: true,
-        timeout: 15000, // Increased timeout for better reliability
-        maximumAge: 0,
+        enableHighAccuracy: false, // Set to false for faster response - GPS can be very slow on mobile/PWA
+        timeout: 60000, // Increased to 60 seconds for mobile/PWA - GPS can take longer on mobile devices
+        maximumAge: 300000, // 5 minutes - use cached location if available (helps with timeout issues)
       }
     );
   }, [user?.technicianId]);
