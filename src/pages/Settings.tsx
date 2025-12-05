@@ -1019,7 +1019,15 @@ const Settings = () => {
                                 </button>
                                 {technician.currentLocation.lastUpdated && (
                                   <p className="text-xs text-gray-500 mt-0.5">
-                                    Last updated: {new Date(technician.currentLocation.lastUpdated).toLocaleString()}
+                                    Last updated: {new Date(technician.currentLocation.lastUpdated).toLocaleString('en-IN', {
+                                      day: '2-digit',
+                                      month: '2-digit',
+                                      year: 'numeric',
+                                      hour: '2-digit',
+                                      minute: '2-digit',
+                                      second: '2-digit',
+                                      hour12: true
+                                    })}
                                   </p>
                                 )}
                               </div>
