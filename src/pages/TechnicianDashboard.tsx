@@ -3064,6 +3064,42 @@ const TechnicianDashboard = () => {
     return uniquePhotos;
   };
 
+  // Extract URLs from Cloudinary objects or use as-is if already strings
+  // Handles both primary and secondary Cloudinary accounts (both use res.cloudinary.com)
+  const extractPhotoUrls = (photos: any[]): string[] => {
+    if (!Array.isArray(photos)) return [];
+    return photos.map(photo => {
+      if (typeof photo === 'string' && photo.trim() !== '') {
+        // Handle string URLs (from both Cloudinary accounts)
+        const trimmed = photo.trim();
+        // Accept any valid URL (http/https) - works for both Cloudinary accounts
+        // Both primary and secondary accounts use res.cloudinary.com domain
+        if (trimmed.startsWith('http://') || trimmed.startsWith('https://')) {
+          return trimmed;
+        }
+        return null;
+      } else if (photo && typeof photo === 'object') {
+        // Handle Cloudinary response objects from both accounts
+        if (photo.secure_url && typeof photo.secure_url === 'string') {
+          return photo.secure_url.trim();
+        } else if (photo.url && typeof photo.url === 'string') {
+          return photo.url.trim();
+        }
+        // Also check for nested objects that might contain URLs
+        if (photo.public_id && typeof photo.public_id === 'string') {
+          // This is a Cloudinary object, but we need the URL
+          // Skip for now - we should have secure_url or url
+        }
+      }
+      return null;
+    }).filter((url): url is string => {
+      // Filter out null/empty and ensure it's a valid URL
+      // Accept all Cloudinary URLs (both accounts use res.cloudinary.com)
+      // Also accept any other valid image URLs
+      return url !== null && url !== '' && (url.startsWith('http://') || url.startsWith('https://'));
+    });
+  };
+
   // Helper function to get all photos for a customer from all their jobs
   const getAllCustomerPhotos = async (customerId: string): Promise<string[]> => {
     try {
@@ -3091,64 +3127,61 @@ const TechnicianDashboard = () => {
         return [];
       }
       
-      // Extract URLs from Cloudinary objects or use as-is if already strings
-      // Handles both primary and secondary Cloudinary accounts (both use res.cloudinary.com)
-      const extractPhotoUrls = (photos: any[]): string[] => {
-        if (!Array.isArray(photos)) return [];
-        return photos.map(photo => {
-          if (typeof photo === 'string' && photo.trim() !== '') {
-            // Handle string URLs (from both Cloudinary accounts)
-            const trimmed = photo.trim();
-            // Accept any valid URL (http/https) - works for both Cloudinary accounts
-            // Both primary and secondary accounts use res.cloudinary.com domain
-            if (trimmed.startsWith('http://') || trimmed.startsWith('https://')) {
-              return trimmed;
-            }
-            return null;
-          } else if (photo && typeof photo === 'object') {
-            // Handle Cloudinary response objects from both accounts
-            if (photo.secure_url && typeof photo.secure_url === 'string') {
-              return photo.secure_url.trim();
-            } else if (photo.url && typeof photo.url === 'string') {
-              return photo.url.trim();
-            }
-            // Also check for nested objects that might contain URLs
-            if (photo.public_id && typeof photo.public_id === 'string') {
-              // This is a Cloudinary object, but we need the URL
-              // Skip for now - we should have secure_url or url
-            }
-          }
-          return null;
-        }).filter((url): url is string => {
-          // Filter out null/empty and ensure it's a valid URL
-          // Accept all Cloudinary URLs (both accounts use res.cloudinary.com)
-          // Also accept any other valid image URLs
-          return url !== null && url !== '' && (url.startsWith('http://') || url.startsWith('https://'));
-        });
-      };
+      // Use Map to track photo URLs with their job dates for sorting (latest first)
+      const photoMap = new Map<string, number>(); // URL -> timestamp
       
-      const photoSet = new Set<string>(); // Use Set to avoid duplicates
+      // Sort jobs by completion/creation date (latest first) to prioritize newer photos
+      const sortedJobs = [...(customerJobs || [])].sort((a, b) => {
+        const dateA = (a as any).completed_at || a.completedAt || a.created_at || a.createdAt || '';
+        const dateB = (b as any).completed_at || b.completedAt || b.created_at || b.createdAt || '';
+        if (!dateA && !dateB) return 0;
+        if (!dateA) return 1;
+        if (!dateB) return -1;
+        return new Date(dateB).getTime() - new Date(dateA).getTime();
+      });
       
-      if (customerJobs && Array.isArray(customerJobs)) {
-        customerJobs.forEach((job: any) => {
+      if (sortedJobs && Array.isArray(sortedJobs)) {
+        sortedJobs.forEach((job: any) => {
+          // Get job timestamp for sorting (prefer completed_at, fallback to created_at)
+          const jobTimestamp = (job as any).completed_at || job.completedAt 
+            ? new Date((job as any).completed_at || job.completedAt).getTime()
+            : (job.created_at || job.createdAt 
+              ? new Date(job.created_at || job.createdAt).getTime()
+              : Date.now());
+          
           // Get photos from before_photos field
           const jobBeforePhotos = Array.isArray(job.before_photos || job.beforePhotos) 
             ? (job.before_photos || job.beforePhotos) 
             : [];
           const extractedBeforePhotos = extractPhotoUrls(jobBeforePhotos);
-          extractedBeforePhotos.forEach(url => photoSet.add(url));
+          extractedBeforePhotos.forEach(url => {
+            // Only add if not already present, or if this job is newer (higher timestamp)
+            if (!photoMap.has(url) || photoMap.get(url)! < jobTimestamp) {
+              photoMap.set(url, jobTimestamp);
+            }
+          });
           
           // Get photos from after_photos field
           const jobAfterPhotos = Array.isArray(job.after_photos || job.afterPhotos) 
             ? (job.after_photos || job.afterPhotos) 
             : [];
           const extractedAfterPhotos = extractPhotoUrls(jobAfterPhotos);
-          extractedAfterPhotos.forEach(url => photoSet.add(url));
+          extractedAfterPhotos.forEach(url => {
+            // Only add if not already present, or if this job is newer (higher timestamp)
+            if (!photoMap.has(url) || photoMap.get(url)! < jobTimestamp) {
+              photoMap.set(url, jobTimestamp);
+            }
+          });
           
           // Also check if there are photos in the images field
           const jobImages = Array.isArray(job.images) ? job.images : [];
           const extractedImages = extractPhotoUrls(jobImages);
-          extractedImages.forEach(url => photoSet.add(url));
+          extractedImages.forEach(url => {
+            // Only add if not already present, or if this job is newer (higher timestamp)
+            if (!photoMap.has(url) || photoMap.get(url)! < jobTimestamp) {
+              photoMap.set(url, jobTimestamp);
+            }
+          });
           
           // Get photos from job requirements (bill photos, payment photos)
           if (job.requirements) {
@@ -3162,25 +3195,41 @@ const TechnicianDashboard = () => {
                   if (req.bill_photos && Array.isArray(req.bill_photos)) {
                     req.bill_photos.forEach((photo: any) => {
                       const photoUrls = extractPhotoUrls([photo]);
-                      photoUrls.forEach(url => photoSet.add(url));
+                      photoUrls.forEach(url => {
+                        if (!photoMap.has(url) || photoMap.get(url)! < jobTimestamp) {
+                          photoMap.set(url, jobTimestamp);
+                        }
+                      });
                     });
                   }
                   if (req.payment_photos && Array.isArray(req.payment_photos)) {
                     req.payment_photos.forEach((photo: any) => {
                       const photoUrls = extractPhotoUrls([photo]);
-                      photoUrls.forEach(url => photoSet.add(url));
+                      photoUrls.forEach(url => {
+                        if (!photoMap.has(url) || photoMap.get(url)! < jobTimestamp) {
+                          photoMap.set(url, jobTimestamp);
+                        }
+                      });
                     });
                   }
                   // Also check qr_photos for payment screenshots (from secondary account)
                   if (req.qr_photos && typeof req.qr_photos === 'object') {
                     if (req.qr_photos.payment_screenshot) {
                       const screenshotUrls = extractPhotoUrls([req.qr_photos.payment_screenshot]);
-                      screenshotUrls.forEach(url => photoSet.add(url));
+                      screenshotUrls.forEach(url => {
+                        if (!photoMap.has(url) || photoMap.get(url)! < jobTimestamp) {
+                          photoMap.set(url, jobTimestamp);
+                        }
+                      });
                     }
                     if (req.qr_photos.selected_qr_code_url) {
                       // QR code image URL (if stored)
                       const qrUrls = extractPhotoUrls([req.qr_photos.selected_qr_code_url]);
-                      qrUrls.forEach(url => photoSet.add(url));
+                      qrUrls.forEach(url => {
+                        if (!photoMap.has(url) || photoMap.get(url)! < jobTimestamp) {
+                          photoMap.set(url, jobTimestamp);
+                        }
+                      });
                     }
                   }
                 });
@@ -3188,25 +3237,41 @@ const TechnicianDashboard = () => {
                 if (requirements.bill_photos && Array.isArray(requirements.bill_photos)) {
                   requirements.bill_photos.forEach((photo: any) => {
                     const photoUrls = extractPhotoUrls([photo]);
-                    photoUrls.forEach(url => photoSet.add(url));
+                    photoUrls.forEach(url => {
+                      if (!photoMap.has(url) || photoMap.get(url)! < jobTimestamp) {
+                        photoMap.set(url, jobTimestamp);
+                      }
+                    });
                   });
                 }
                 if (requirements.payment_photos && Array.isArray(requirements.payment_photos)) {
                   requirements.payment_photos.forEach((photo: any) => {
                     const photoUrls = extractPhotoUrls([photo]);
-                    photoUrls.forEach(url => photoSet.add(url));
+                    photoUrls.forEach(url => {
+                      if (!photoMap.has(url) || photoMap.get(url)! < jobTimestamp) {
+                        photoMap.set(url, jobTimestamp);
+                      }
+                    });
                   });
                 }
                 // Also check qr_photos for payment screenshots (from secondary account)
                 if (requirements.qr_photos && typeof requirements.qr_photos === 'object') {
                   if (requirements.qr_photos.payment_screenshot) {
                     const screenshotUrls = extractPhotoUrls([requirements.qr_photos.payment_screenshot]);
-                    screenshotUrls.forEach(url => photoSet.add(url));
+                    screenshotUrls.forEach(url => {
+                      if (!photoMap.has(url) || photoMap.get(url)! < jobTimestamp) {
+                        photoMap.set(url, jobTimestamp);
+                      }
+                    });
                   }
                   if (requirements.qr_photos.selected_qr_code_url) {
                     // QR code image URL (if stored)
                     const qrUrls = extractPhotoUrls([requirements.qr_photos.selected_qr_code_url]);
-                    qrUrls.forEach(url => photoSet.add(url));
+                    qrUrls.forEach(url => {
+                      if (!photoMap.has(url) || photoMap.get(url)! < jobTimestamp) {
+                        photoMap.set(url, jobTimestamp);
+                      }
+                    });
                   }
                 }
               }
@@ -3218,8 +3283,10 @@ const TechnicianDashboard = () => {
         });
       }
       
-      // Convert Set to Array
-      const uniquePhotos = Array.from(photoSet);
+      // Convert Map to Array and sort by timestamp (latest first)
+      const uniquePhotos = Array.from(photoMap.entries())
+        .sort((a, b) => b[1] - a[1]) // Sort by timestamp descending (latest first)
+        .map(([url]) => url); // Extract just the URLs
       console.log(`📸 Total unique photos found for customer: ${uniquePhotos.length}`);
       
       // Log photo sources for debugging
@@ -6508,10 +6575,20 @@ const TechnicianDashboard = () => {
           
           {selectedCustomerForReport && (() => {
             // Use fetched customer report jobs (filtered to completed)
-            const completedJobs = customerReportJobs.filter(job => {
-              const jobStatus = (job as any).status || job.status;
-              return jobStatus === 'COMPLETED';
-            });
+            const completedJobs = customerReportJobs
+              .filter(job => {
+                const jobStatus = (job as any).status || job.status;
+                return jobStatus === 'COMPLETED';
+              })
+              .sort((a, b) => {
+                // Sort by completed_at date, latest first
+                const dateA = (a as any).completed_at || a.completedAt || a.created_at || a.createdAt || '';
+                const dateB = (b as any).completed_at || b.completedAt || b.created_at || b.createdAt || '';
+                if (!dateA && !dateB) return 0;
+                if (!dateA) return 1;
+                if (!dateB) return -1;
+                return new Date(dateB).getTime() - new Date(dateA).getTime();
+              });
             
             return (
               <div className="space-y-6 py-4">
