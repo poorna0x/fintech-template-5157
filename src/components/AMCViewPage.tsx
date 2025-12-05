@@ -10,7 +10,6 @@ import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, 
 import { Checkbox } from '@/components/ui/checkbox';
 import { 
   Search, 
-  Download, 
   Eye, 
   Calendar,
   User,
@@ -27,8 +26,6 @@ import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { db } from '@/lib/supabase';
 import { toast } from 'sonner';
-import { generateAMCPDF } from '@/lib/amc-pdf-generator';
-import { Bill } from '@/types';
 import AdminHeader from './AdminHeader';
 
 interface AMCRecord {
@@ -48,6 +45,7 @@ interface AMCRecord {
   years: number;
   includesPrefilter: boolean;
   additionalNotes?: string;
+  amount?: number | string;
   createdAt: string;
   completedAt?: string;
   completedBy?: string;
@@ -99,20 +97,38 @@ const AMCViewPage: React.FC<AMCViewPageProps> = ({ onBack }) => {
           // Parse additional_info if it's a JSON string
           let metadata: any = {};
           let additionalNotes = '';
+          let amcAmount: number | string | undefined = undefined;
           if (amc.additional_info) {
             try {
               if (typeof amc.additional_info === 'string') {
                 metadata = JSON.parse(amc.additional_info);
                 // Extract description and notes from metadata
                 additionalNotes = metadata.description || metadata.notes || '';
+                // Extract amount from metadata - check all possible field names (same as AdminDashboard)
+                const agreedAmount = metadata.agreed_amount || metadata.agreed || null;
+                const amcCost = metadata.amc_cost || null;
+                const totalAmount = metadata.total_amount || null;
+                const amount = metadata.amount || metadata.agreement_amount || metadata.amcAmount || null;
+                // Prioritize: agreed_amount > amc_cost/total_amount > amount/agreement_amount/amcAmount > direct field
+                amcAmount = agreedAmount || amcCost || totalAmount || amount || (amc as any).amount || undefined;
               } else {
                 metadata = amc.additional_info;
                 additionalNotes = metadata.description || metadata.notes || '';
+                // Extract amount from metadata - check all possible field names
+                const agreedAmount = metadata.agreed_amount || metadata.agreed || null;
+                const amcCost = metadata.amc_cost || null;
+                const totalAmount = metadata.total_amount || null;
+                const amount = metadata.amount || metadata.agreement_amount || metadata.amcAmount || null;
+                // Prioritize: agreed_amount > amc_cost/total_amount > amount/agreement_amount/amcAmount > direct field
+                amcAmount = agreedAmount || amcCost || totalAmount || amount || (amc as any).amount || undefined;
             }
           } catch (e) {
               // If parsing fails, treat as plain text
               additionalNotes = amc.additional_info;
             }
+          } else {
+            // If no additional_info, check for direct amount field
+            amcAmount = (amc as any).amount || undefined;
           }
 
           // Get job number from metadata (agreement_number) or use AMC ID
@@ -135,6 +151,7 @@ const AMCViewPage: React.FC<AMCViewPageProps> = ({ onBack }) => {
             years: amc.years,
             includesPrefilter: amc.includes_prefilter,
             additionalNotes: additionalNotes,
+            amount: amcAmount,
             createdAt: amc.created_at,
             completedAt: null,
             completedBy: null,
@@ -308,55 +325,6 @@ const AMCViewPage: React.FC<AMCViewPageProps> = ({ onBack }) => {
     }
   };
 
-  const handleDownloadAMC = async (amc: AMCRecord) => {
-    try {
-      // Create a Bill object from AMC record for PDF generation
-      const bill: Bill = {
-        id: amc.jobId,
-        billNumber: `AMC-${amc.jobNumber}`,
-        billDate: amc.dateGiven,
-        company: {
-          name: "Authorised Service Franchise",
-          address: "Ground Floor, 13, 4th Main Road, Next To Jain Temple,Seshadripuram, Kumara Park West",
-          city: "Bengaluru",
-          state: "Karnataka",
-          pincode: "560020",
-          phone: "9886944288 & 8884944288",
-          email: "mail@hydrogenro.com",
-          gstNumber: "29LIJPS5140P1Z6",
-          panNumber: "LIJPS5140P",
-          website: "hydrogenro.com"
-        },
-        customer: {
-          id: amc.customerId,
-          name: amc.customerName,
-          address: typeof amc.customerAddress === 'string' ? amc.customerAddress : 
-            `${amc.customerAddress?.street || ''}, ${amc.customerAddress?.area || ''}`,
-          city: amc.customerAddress?.city || '',
-          state: amc.customerAddress?.state || '',
-          pincode: amc.customerAddress?.pincode || '',
-          phone: amc.customerPhone,
-          email: amc.customerEmail,
-        },
-        items: [],
-        subtotal: 0,
-        totalTax: 0,
-        totalAmount: 0,
-        paymentStatus: 'PAID',
-        validity: `${amc.years} ${amc.years === 1 ? 'year' : 'years'}`,
-        createdAt: amc.createdAt,
-        updatedAt: amc.createdAt,
-        serviceType: amc.serviceType as 'RO' | 'SOFTENER',
-        jobId: amc.jobId,
-      };
-
-      generateAMCPDF(bill);
-      toast.success('AMC PDF generated successfully');
-    } catch (error) {
-      console.error('Error generating AMC PDF:', error);
-      toast.error('Failed to generate AMC PDF');
-    }
-  };
 
   if (loading) {
     return (
@@ -531,14 +499,6 @@ const AMCViewPage: React.FC<AMCViewPageProps> = ({ onBack }) => {
                               <Button
                                 variant="ghost"
                                 size="sm"
-                                onClick={() => handleDownloadAMC(amc)}
-                                title="Download PDF"
-                              >
-                                <Download className="w-4 h-4" />
-                              </Button>
-                              <Button
-                                variant="ghost"
-                                size="sm"
                                 onClick={() => handleDeleteAMC(amc)}
                                 title="Delete"
                                 className="text-red-600 hover:text-red-700 hover:bg-red-50"
@@ -627,6 +587,16 @@ const AMCViewPage: React.FC<AMCViewPageProps> = ({ onBack }) => {
                       {getAMCStatus(selectedAMC.endDate) === 'ACTIVE' ? 'Active' : 'Expired'}
                     </Badge>
                   </div>
+                  {selectedAMC.amount && (
+                    <div>
+                      <Label className="text-xs text-gray-500">AMC Amount</Label>
+                      <p className="font-medium text-lg text-blue-600 font-semibold">
+                        ₹{typeof selectedAMC.amount === 'number' 
+                          ? selectedAMC.amount.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+                          : parseFloat(selectedAMC.amount.toString()).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                      </p>
+                    </div>
+                  )}
                 </div>
                 {typeof selectedAMC.customerAddress === 'object' && (
                   <div>
@@ -639,17 +609,13 @@ const AMCViewPage: React.FC<AMCViewPageProps> = ({ onBack }) => {
                 )}
                 {selectedAMC.additionalNotes && (
                   <div>
-                    <Label className="text-xs text-gray-500">Description / Summary</Label>
-                    <p className="font-medium whitespace-pre-wrap mt-1 p-3 bg-gray-50 rounded-md">
+                    <Label className="text-xs text-gray-500 font-semibold">AMC Summary</Label>
+                    <p className="font-medium whitespace-pre-wrap mt-1 p-3 bg-gray-50 rounded-md border border-gray-200">
                       {selectedAMC.additionalNotes}
                     </p>
                   </div>
                 )}
-                <div className="flex gap-2 pt-4">
-                  <Button onClick={() => handleDownloadAMC(selectedAMC)} className="flex-1">
-                    <Download className="w-4 h-4 mr-2" />
-                    Download AMC PDF
-                  </Button>
+                <div className="flex justify-end pt-4">
                   <Button variant="outline" onClick={() => setViewDialogOpen(false)}>
                     Close
                   </Button>

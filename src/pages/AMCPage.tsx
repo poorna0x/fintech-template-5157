@@ -348,18 +348,21 @@ export default function AMCPage() {
                           </span>
                         </div>
                         {(() => {
-                          // Parse additional_info to extract description
+                          // Parse additional_info to extract description and amount
                           let description = '';
                           let additionalInfo = '';
+                          let amcAmount: number | string | undefined = undefined;
                           if (amc.additional_info) {
                             try {
                               if (typeof amc.additional_info === 'string') {
                                 const parsed = JSON.parse(amc.additional_info);
                                 description = parsed.description || parsed.notes || '';
                                 additionalInfo = parsed.notes || '';
+                                amcAmount = parsed.amount || parsed.agreement_amount || parsed.amcAmount || undefined;
                               } else {
                                 description = amc.additional_info.description || amc.additional_info.notes || '';
                                 additionalInfo = amc.additional_info.notes || '';
+                                amcAmount = amc.additional_info.amount || amc.additional_info.agreement_amount || amc.additional_info.amcAmount || undefined;
                               }
                             } catch (e) {
                               // If not JSON, treat as plain text
@@ -369,9 +372,19 @@ export default function AMCPage() {
                           
                           return (
                             <>
+                              {amcAmount && (
+                                <div className="text-sm text-gray-600">
+                                  <span className="font-medium">AMC Amount:</span>
+                                  <p className="mt-1 text-blue-600 font-semibold text-base">
+                                    ₹{typeof amcAmount === 'number' 
+                                      ? amcAmount.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+                                      : parseFloat(amcAmount.toString()).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                  </p>
+                                </div>
+                              )}
                               {description && (
                                 <div className="text-sm text-gray-600">
-                                  <span className="font-medium">Description / Summary:</span>
+                                  <span className="font-medium">AMC Summary:</span>
                                   <p className="mt-1 text-gray-800 bg-gray-50 p-2 rounded min-h-[2rem] whitespace-pre-wrap">
                                     {description}
                                   </p>
@@ -379,7 +392,7 @@ export default function AMCPage() {
                               )}
                               {!description && (
                         <div className="text-sm text-gray-600">
-                          <span className="font-medium">Additional Info:</span>
+                          <span className="font-medium">AMC Summary:</span>
                           <p className="mt-1 text-gray-800 bg-gray-50 p-2 rounded min-h-[2rem]">
                                     {additionalInfo || <span className="text-gray-400 italic">No additional information</span>}
                           </p>
