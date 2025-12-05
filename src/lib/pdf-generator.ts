@@ -1167,7 +1167,7 @@ function createBillContent(data: PDFBillData): string {
           <div class="signature-label" style="text-align: center;">Authorized Signatory</div>
           <div style="font-size: 12px; color: #6b7280; margin-bottom: 5px; text-align: center;">M/s Hydrogen RO</div>
           <img src="/HydrogenROSeal.webp" alt="Hydrogen RO Seal" class="signature-seal" />
-          <div class="signature-date" style="text-align: center;">Date: ${new Date().toLocaleDateString('en-IN', { 
+          <div class="signature-date" style="text-align: center;">Date: ${new Date(data.billDate).toLocaleDateString('en-IN', { 
             day: '2-digit', 
             month: '2-digit', 
             year: 'numeric' 
@@ -1655,7 +1655,7 @@ function generateBillHTML(data: PDFBillData): string {
             <div class="signature-label" style="text-align: center;">Authorized Signatory</div>
             <div style="font-size: 12px; color: #6b7280; margin-bottom: 5px; text-align: center;">M/s Hydrogen RO</div>
             <img src="/HydrogenROSeal.webp" alt="Hydrogen RO Seal" class="signature-seal" />
-            <div class="signature-date" style="text-align: center;">Date: ${new Date().toLocaleDateString('en-IN', { 
+            <div class="signature-date" style="text-align: center;">Date: ${new Date(data.billDate).toLocaleDateString('en-IN', { 
               day: '2-digit', 
               month: '2-digit', 
               year: 'numeric' 

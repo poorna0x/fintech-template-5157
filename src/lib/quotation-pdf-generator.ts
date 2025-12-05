@@ -1089,7 +1089,7 @@ function createQuotationContent(data: PDFQuotationData): string {
           <div class="signature-label">Authorized Signatory</div>
           <div style="font-size: 12px; color: #6b7280; margin-bottom: 5px;">M/s Hydrogen RO</div>
           <img src="/HydrogenROSeal.webp" alt="Hydrogen RO Seal" class="signature-seal" />
-          <div class="signature-date">Date: ${new Date().toLocaleDateString('en-IN', { 
+          <div class="signature-date">Date: ${new Date(data.billDate).toLocaleDateString('en-IN', { 
             day: '2-digit', 
             month: '2-digit', 
             year: 'numeric' 
@@ -1548,7 +1548,7 @@ function generateQuotationHTML(data: PDFQuotationData): string {
             <div class="signature-label">Authorized Signatory</div>
             <div style="font-size: 12px; color: #6b7280; margin-bottom: 5px;">M/s Hydrogen RO</div>
             <img src="/HydrogenROSeal.webp" alt="Hydrogen RO Seal" class="signature-seal" />
-            <div class="signature-date">Date: ${new Date().toLocaleDateString('en-IN', { 
+            <div class="signature-date">Date: ${new Date(data.billDate).toLocaleDateString('en-IN', { 
               day: '2-digit', 
               month: '2-digit', 
               year: 'numeric' 
