@@ -2625,7 +2625,7 @@ const TechnicianDashboard = () => {
         customerHasPrefilter,
         currentStep: 6,
       });
-      // Proceed to submit
+      // Proceed to submit - button is already disabled while uploads are in progress
     }
     setIsSubmittingJobCompletion(true);
     
@@ -5945,17 +5945,17 @@ const TechnicianDashboard = () => {
                 className="bg-black hover:bg-gray-800 !text-white font-semibold"
                 disabled={
                   isSubmittingJobCompletion ||
-                  isBillPhotosUploading ||
-                  isPaymentScreenshotUploading ||
+                  // Only check upload states on final step (step 6) - allow proceeding on steps 2 and 5
+                  (completeJobStep === 6 && (isBillPhotosUploading || isPaymentScreenshotUploading)) ||
                   (completeJobStep === 4 && !paymentMode) || 
                   (completeJobStep === 4 && paymentMode === 'ONLINE' && !selectedQrCodeId)
                 }
               >
-                {isSubmittingJobCompletion || isBillPhotosUploading || isPaymentScreenshotUploading ? (
+                {isSubmittingJobCompletion || (completeJobStep === 6 && (isBillPhotosUploading || isPaymentScreenshotUploading)) ? (
                   <>
                     <RefreshCw className="w-4 h-4 mr-2 animate-spin" />
-                    {isBillPhotosUploading || isPaymentScreenshotUploading 
-                      ? 'Uploading images...' 
+                    {completeJobStep === 6 && (isBillPhotosUploading || isPaymentScreenshotUploading)
+                      ? 'Waiting for uploads...' 
                       : completeJobStep === 6 
                         ? 'Submitting...' 
                         : 'Saving...'}
