@@ -260,16 +260,15 @@ export function generateTaxInvoicePDF(billData: PDFTaxInvoiceData, action: 'prin
             border: 1px solid #d1d5db;
           }
           
-          .items-table th:nth-child(1) { width: 20%; } /* Description */
-          .items-table th:nth-child(2) { width: 7%; } /* HSN/SAC */
+          .items-table th:nth-child(1) { width: 18%; } /* Description */
+          .items-table th:nth-child(2) { width: 12%; } /* HSN/SAC */
           .items-table th:nth-child(3) { width: 7%; } /* Qty */
-          .items-table th:nth-child(4) { width: 10%; } /* Unit Price */
-          .items-table th:nth-child(5) { width: 10%; } /* Base Amount */
-          .items-table th:nth-child(6) { width: 8%; } /* Discount */
-          .items-table th:nth-child(7) { width: 10%; } /* Taxable Value */
-          .items-table th:nth-child(8) { width: 6%; } /* GST Rate */
-          .items-table th:nth-child(9) { width: 10%; } /* GST Amount */
-          .items-table th:nth-child(10) { width: 12%; } /* Total */
+          .items-table th:nth-child(4) { width: 11%; } /* Unit Price */
+          .items-table th:nth-child(5) { width: 11%; } /* Base Amount */
+          .items-table th:nth-child(6) { width: 11%; } /* Taxable Value */
+          .items-table th:nth-child(7) { width: 7%; } /* GST Rate */
+          .items-table th:nth-child(8) { width: 11%; } /* GST Amount */
+          .items-table th:nth-child(9) { width: 12%; } /* Total */
           
           .items-table td {
             padding: 8px 4px;
@@ -762,7 +761,6 @@ function createTaxInvoiceContent(data: PDFTaxInvoiceData): string {
             <th>Qty</th>
             <th>Unit Price</th>
             <th>Base Amount</th>
-            <th>Discount</th>
             <th>Taxable Value</th>
             <th>GST Rate</th>
             <th>GST Amount</th>
@@ -781,7 +779,6 @@ function createTaxInvoiceContent(data: PDFTaxInvoiceData): string {
               <td>${item.quantity}</td>
               <td>₹${item.unitPrice.toLocaleString()}</td>
               <td>₹${baseAmount.toLocaleString()}</td>
-              <td>${discount > 0 ? `₹${discount.toLocaleString()}` : '-'}</td>
               <td>₹${taxableValue.toLocaleString()}</td>
               <td>${item.taxRate}%</td>
               <td>₹${item.taxAmount.toLocaleString()}</td>
@@ -1049,16 +1046,15 @@ function generateTaxInvoiceHTML(data: PDFTaxInvoiceData): string {
           border: 1px solid #d1d5db;
         }
         
-        .items-table th:nth-child(1) { width: 20%; }
-        .items-table th:nth-child(2) { width: 7%; }
+        .items-table th:nth-child(1) { width: 18%; }
+        .items-table th:nth-child(2) { width: 12%; }
         .items-table th:nth-child(3) { width: 7%; }
-        .items-table th:nth-child(4) { width: 10%; }
-        .items-table th:nth-child(5) { width: 10%; }
-        .items-table th:nth-child(6) { width: 8%; }
-        .items-table th:nth-child(7) { width: 10%; }
-        .items-table th:nth-child(8) { width: 6%; }
-        .items-table th:nth-child(9) { width: 10%; }
-        .items-table th:nth-child(10) { width: 12%; }
+        .items-table th:nth-child(4) { width: 11%; }
+        .items-table th:nth-child(5) { width: 11%; }
+        .items-table th:nth-child(6) { width: 11%; }
+        .items-table th:nth-child(7) { width: 7%; }
+        .items-table th:nth-child(8) { width: 11%; }
+        .items-table th:nth-child(9) { width: 12%; }
         
         .items-table td {
           padding: 8px 4px;
@@ -1347,16 +1343,15 @@ export function generateCombinedTaxInvoicePDF(
             border: 1px solid #d1d5db;
           }
           
-          .items-table th:nth-child(1) { width: 20%; }
-          .items-table th:nth-child(2) { width: 7%; }
+          .items-table th:nth-child(1) { width: 18%; }
+          .items-table th:nth-child(2) { width: 12%; }
           .items-table th:nth-child(3) { width: 7%; }
-          .items-table th:nth-child(4) { width: 10%; }
-          .items-table th:nth-child(5) { width: 10%; }
-          .items-table th:nth-child(6) { width: 8%; }
-          .items-table th:nth-child(7) { width: 10%; }
-          .items-table th:nth-child(8) { width: 6%; }
-          .items-table th:nth-child(9) { width: 10%; }
-          .items-table th:nth-child(10) { width: 12%; }
+          .items-table th:nth-child(4) { width: 11%; }
+          .items-table th:nth-child(5) { width: 11%; }
+          .items-table th:nth-child(6) { width: 11%; }
+          .items-table th:nth-child(7) { width: 7%; }
+          .items-table th:nth-child(8) { width: 11%; }
+          .items-table th:nth-child(9) { width: 12%; }
           
           .items-table td {
             padding: 8px 4px;
