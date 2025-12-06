@@ -432,11 +432,11 @@ const ReassignJobDialog: React.FC<ReassignJobDialogProps> = ({
                           <div className="flex items-center justify-between w-full gap-2">
                             <span className="truncate flex-1 min-w-0">{technician.fullName || 'Unknown Technician'}</span>
                             {techWithDist.distance && techWithDist.distance !== 'N/A' && (
-                              <div className="flex items-center gap-1 text-xs text-gray-600 shrink-0">
+                              <div className="flex items-center gap-1 text-xs text-current opacity-70 shrink-0">
                                 <Navigation className="w-3 h-3" />
                                 <span>{techWithDist.distance}</span>
                                 {techWithDist.duration && techWithDist.duration !== 'N/A' && (
-                                  <span className="text-gray-500">• {techWithDist.duration}</span>
+                                  <span className="opacity-100">• {techWithDist.duration}</span>
                                 )}
                               </div>
                             )}
