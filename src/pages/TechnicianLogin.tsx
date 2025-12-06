@@ -8,6 +8,7 @@ import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Wrench, Eye, EyeOff, Droplets } from 'lucide-react';
+import { toast } from 'sonner';
 import AltchaWidget from '@/components/AltchaWidget';
 import { registerTechnicianPWA, disablePWA } from '@/lib/pwa';
 import { clearAuthSession } from '@/lib/auth';
@@ -102,22 +103,39 @@ const TechnicianLogin = () => {
     setError('');
 
     try {
-      const success = await login(email, password);
+      // Detect Chrome mobile for timeout handling
+      const isChromeMobile = typeof window !== 'undefined' && 
+        /Chrome/i.test(navigator.userAgent) && 
+        /Mobile|Android/i.test(navigator.userAgent);
+      
+      // Add timeout wrapper for Chrome mobile
+      const loginPromise = login(email, password);
+      const timeoutPromise = new Promise<boolean>((_, reject) => 
+        setTimeout(() => reject(new Error('Login timeout')), isChromeMobile ? 15000 : 30000)
+      );
+      
+      const success = await Promise.race([loginPromise, timeoutPromise]) as boolean;
       
       if (success) {
         console.log('Login successful, navigating to technician dashboard...');
-        // Small delay to ensure state is updated
+        // Small delay to ensure state is updated (reduced for Chrome mobile)
         setTimeout(() => {
           console.log('Navigating to /technician');
           navigate('/technician', { replace: true });
-        }, 100);
+        }, isChromeMobile ? 50 : 100);
       } else {
         console.log('Login failed - success was false');
         setError('Login failed. Please try again.');
       }
-    } catch (err) {
+    } catch (err: any) {
       console.error('Login error:', err);
-      setError('Login failed. Please try again.');
+      if (err?.message?.includes('timeout')) {
+        setError('Connection timeout. Please check your internet connection and try again.');
+        toast.error('Connection timeout. Please check your network.');
+      } else {
+        setError('Login failed. Please try again.');
+        toast.error('Login failed. Please try again.');
+      }
     } finally {
       setIsLoading(false);
     }

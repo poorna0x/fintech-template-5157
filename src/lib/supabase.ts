@@ -24,11 +24,21 @@ if (typeof window !== 'undefined' && (!supabaseUrl || !supabaseAnonKey)) {
   console.error('[Supabase Config] Please set VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY in your environment variables.');
 }
 
-// Create Supabase client with better error handling for local development
+// Chrome-compatible storage adapter
+import { chromeStorage } from './storage';
+
+// Create a storage adapter compatible with Supabase's expected interface
+const supabaseStorageAdapter = typeof window !== 'undefined' ? {
+  getItem: (key: string) => chromeStorage.getItem(key),
+  setItem: (key: string, value: string) => chromeStorage.setItem(key, value),
+  removeItem: (key: string) => chromeStorage.removeItem(key),
+} : undefined;
+
+// Create Supabase client with better error handling for local development and Chrome mobile
 export const supabase = createClient<Database>(buildTimeUrl, buildTimeKey, {
   auth: {
-    // Use localStorage for session persistence (works across HTTP/HTTPS)
-    storage: typeof window !== 'undefined' ? window.localStorage : undefined,
+    // Use Chrome-compatible storage adapter for session persistence
+    storage: supabaseStorageAdapter,
     autoRefreshToken: true,
     persistSession: true,
     detectSessionInUrl: true,

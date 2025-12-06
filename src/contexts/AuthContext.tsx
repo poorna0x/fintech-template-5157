@@ -1,7 +1,7 @@
 import React, { createContext, useContext, useState, useEffect, useRef, ReactNode } from 'react';
 import { toast } from 'sonner';
 import { supabase } from '@/lib/supabase';
-import { authenticateUser, setAuthSession, getAuthSession, clearAuthSession, isTechnicianEmail } from '@/lib/auth';
+import { authenticateUser, setAuthSession, getAuthSession, clearAuthSession, isTechnicianEmail, type AuthUser } from '@/lib/auth';
 import type { User as SupabaseUser } from '@supabase/supabase-js';
 
 export interface User {
@@ -44,17 +44,26 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   const [initialized, setInitialized] = useState(false);
 
   useEffect(() => {
-    // Check for existing session on app load with timeout
+    // Detect Chrome mobile for aggressive timeouts
+    const isChromeMobile = typeof window !== 'undefined' && 
+      /Chrome/i.test(navigator.userAgent) && 
+      /Mobile|Android/i.test(navigator.userAgent);
+    
+    // Aggressive timeout for Chrome mobile (1 second), normal for others (2 seconds)
+    const sessionTimeout = isChromeMobile ? 1000 : 2000;
+    const overallTimeout = isChromeMobile ? 1500 : 3000;
+
+    // Check for existing session on app load with aggressive timeout for Chrome mobile
     const checkSession = async () => {
-      // Set a timeout to prevent infinite loading - REDUCED for faster login page display
+      // Set a timeout to prevent infinite loading - VERY AGGRESSIVE for Chrome mobile
       const timeoutId = setTimeout(() => {
         console.warn('[Auth] Session check timeout - proceeding without session');
         setLoading(false);
         setInitialized(true);
-      }, 5000); // Reduced to 5 seconds for faster login page display
+      }, overallTimeout);
 
       try {
-        // First check custom auth session (for technicians) - this is synchronous
+        // First check custom auth session (for technicians) - this is synchronous and fast
         const customSession = getAuthSession();
         if (customSession) {
           clearTimeout(timeoutId);
@@ -65,10 +74,10 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
           return;
         }
 
-        // Then check Supabase auth session (for admins) with timeout - REDUCED
+        // Then check Supabase auth session (for admins) with aggressive timeout for Chrome mobile
         const sessionPromise = supabase.auth.getSession();
         const timeoutPromise = new Promise<{ data: { session: null } }>((_, reject) => 
-          setTimeout(() => reject(new Error('Session check timeout')), 3000) // Reduced to 3 seconds
+          setTimeout(() => reject(new Error('Session check timeout')), sessionTimeout)
         );
 
         const result = await Promise.race([sessionPromise, timeoutPromise]);
@@ -88,8 +97,8 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         }
       } catch (error) {
         clearTimeout(timeoutId);
-        // Log errors in development for debugging
-        if (import.meta.env.DEV) {
+        // Don't log timeout errors in production - they're expected on Chrome mobile
+        if (import.meta.env.DEV && !(error instanceof Error && error.message.includes('timeout'))) {
           console.error('Auth session check error:', error);
         }
         // Don't block app loading on auth errors - user can still use the app
@@ -245,8 +254,20 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     try {
       setLoading(true);
       
+      // Detect Chrome mobile for timeout handling
+      const isChromeMobile = typeof window !== 'undefined' && 
+        /Chrome/i.test(navigator.userAgent) && 
+        /Mobile|Android/i.test(navigator.userAgent);
+      
+      // Add timeout wrapper for Chrome mobile
+      const authPromise = authenticateUser(email, password);
+      const timeoutPromise = new Promise<AuthUser | null>((_, reject) => 
+        setTimeout(() => reject(new Error('Authentication timeout')), isChromeMobile ? 10000 : 20000)
+      );
+      
       // First try custom authentication (for technicians)
-      const customUser = await authenticateUser(email, password);
+      const customUser = await Promise.race([authPromise, timeoutPromise]);
+      
       if (customUser) {
         console.log('Technician authentication successful:', customUser);
         

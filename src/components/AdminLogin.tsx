@@ -105,26 +105,71 @@ const AdminLogin = () => {
     setError('');
 
     try {
-      const { data, error } = await supabase.auth.signInWithPassword({
-        email: email,
-        password: password,
-      });
+      // Detect Chrome mobile for timeout handling
+      const isChromeMobile = typeof window !== 'undefined' && 
+        /Chrome/i.test(navigator.userAgent) && 
+        /Mobile|Android/i.test(navigator.userAgent);
+      
+      // Add timeout for Chrome mobile (15 seconds) vs normal (30 seconds)
+      const loginTimeout = isChromeMobile ? 15000 : 30000;
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), loginTimeout);
 
-      if (error) {
-        setError(error.message);
-        toast.error('Login failed. Please check your credentials.');
-        return;
-      }
+      try {
+        const { data, error } = await supabase.auth.signInWithPassword({
+          email: email,
+          password: password,
+        });
 
-      if (data.user) {
-        // Any authenticated user can access admin dashboard
-        toast.success('Welcome back, Admin!');
-        navigate('/admin');
+        clearTimeout(timeoutId);
+
+        if (error) {
+          // Handle specific error types for better UX
+          if (error.message.includes('Invalid login credentials')) {
+            setError('Invalid email or password. Please check your credentials.');
+            toast.error('Invalid email or password.');
+          } else if (error.message.includes('timeout') || error.message.includes('network')) {
+            setError('Connection timeout. Please check your internet connection and try again.');
+            toast.error('Connection timeout. Please check your network.');
+          } else {
+            setError(error.message);
+            toast.error('Login failed. Please try again.');
+          }
+          return;
+        }
+
+        if (data.user) {
+          // Force session refresh for Chrome mobile
+          if (isChromeMobile) {
+            try {
+              await supabase.auth.getSession();
+            } catch (sessionError) {
+              console.warn('[AdminLogin] Session refresh warning:', sessionError);
+            }
+          }
+          
+          // Any authenticated user can access admin dashboard
+          toast.success('Welcome back, Admin!');
+          navigate('/admin', { replace: true });
+        }
+      } catch (abortError: any) {
+        clearTimeout(timeoutId);
+        if (abortError.name === 'AbortError') {
+          setError('Connection timeout. Please check your internet connection and try again.');
+          toast.error('Connection timeout. Please check your network.');
+        } else {
+          throw abortError;
+        }
       }
-    } catch (err) {
+    } catch (err: any) {
       console.error('Login error:', err);
-      setError('Login failed. Please try again.');
-      toast.error('Login failed. Please try again.');
+      if (err?.message?.includes('timeout') || err?.message?.includes('network')) {
+        setError('Connection timeout. Please check your internet connection and try again.');
+        toast.error('Connection timeout. Please check your network.');
+      } else {
+        setError('Login failed. Please try again.');
+        toast.error('Login failed. Please try again.');
+      }
     } finally {
       setIsLoading(false);
     }

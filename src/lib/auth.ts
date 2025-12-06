@@ -1,6 +1,7 @@
 // Technician authentication system using database credentials
 // Note: Admin authentication is handled by Supabase Auth (see AdminLogin.tsx)
 import { supabase } from './supabase';
+import { chromeStorage } from './storage';
 
 export interface AuthUser {
   id: string;
@@ -208,11 +209,13 @@ export const isTechnicianEmail = async (email: string): Promise<boolean> => {
   }
 };
 
-// Simple session storage
+// Simple session storage with Chrome-compatible fallback
+import { chromeStorage } from './storage';
+
 export const setAuthSession = (user: AuthUser) => {
   try {
     const userString = JSON.stringify(user);
-    localStorage.setItem('auth_user', userString);
+    chromeStorage.setItem('auth_user', userString);
     console.log('Session saved successfully');
   } catch (error) {
     console.error('💥 Error saving session:', error);
@@ -221,7 +224,7 @@ export const setAuthSession = (user: AuthUser) => {
 
 export const getAuthSession = (): AuthUser | null => {
   try {
-    const userData = localStorage.getItem('auth_user');
+    const userData = chromeStorage.getItem('auth_user');
     
     if (!userData) {
       return null;
@@ -245,7 +248,7 @@ export const getAuthSession = (): AuthUser | null => {
 
 export const clearAuthSession = () => {
   try {
-    localStorage.removeItem('auth_user');
+    chromeStorage.removeItem('auth_user');
     console.log('Session cleared');
   } catch (error) {
     console.error('Error clearing session:', error);
