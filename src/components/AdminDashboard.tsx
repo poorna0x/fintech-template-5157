@@ -262,6 +262,7 @@ const AdminDashboard = () => {
   const [customerHistory, setCustomerHistory] = useState<{[customerId: string]: Job[]}>({});
   const [selectedPhoto, setSelectedPhoto] = useState<{url: string, index: number, total: number} | null>(null);
   const [selectedBillPhotos, setSelectedBillPhotos] = useState<string[] | null>(null); // Track bill photos array for navigation
+  const [selectedCustomerPhotos, setSelectedCustomerPhotos] = useState<string[] | null>(null); // Track customer photos array for navigation
   const [isCompressingImage, setIsCompressingImage] = useState(false);
   
   // Brand and model suggestions state
@@ -5649,6 +5650,17 @@ const AdminDashboard = () => {
       return;
     }
     
+    // Use selectedCustomerPhotos if available (for customer photos)
+    if (selectedCustomerPhotos && selectedCustomerPhotos.length > 0) {
+      const newIndex = selectedPhoto.index > 0 ? selectedPhoto.index - 1 : selectedCustomerPhotos.length - 1;
+      setSelectedPhoto({ 
+        url: selectedCustomerPhotos[newIndex], 
+        index: newIndex, 
+        total: selectedCustomerPhotos.length 
+      });
+      return;
+    }
+    
     // Fallback to selectedJobPhotos
     if (selectedJobPhotos && selectedJobPhotos.photos) {
       const newIndex = selectedPhoto.index > 0 ? selectedPhoto.index - 1 : selectedJobPhotos.photos.length - 1;
@@ -5671,6 +5683,17 @@ const AdminDashboard = () => {
         url: selectedBillPhotos[newIndex], 
         index: newIndex, 
         total: selectedBillPhotos.length 
+      });
+      return;
+    }
+    
+    // Use selectedCustomerPhotos if available (for customer photos)
+    if (selectedCustomerPhotos && selectedCustomerPhotos.length > 0) {
+      const newIndex = selectedPhoto.index < selectedCustomerPhotos.length - 1 ? selectedPhoto.index + 1 : 0;
+      setSelectedPhoto({ 
+        url: selectedCustomerPhotos[newIndex], 
+        index: newIndex, 
+        total: selectedCustomerPhotos.length 
       });
       return;
     }
@@ -8118,6 +8141,7 @@ const AdminDashboard = () => {
           setPhotoViewerOpen(false);
           setSelectedPhoto(null);
           setSelectedBillPhotos(null);
+          setSelectedCustomerPhotos(null);
         }}
       />
 
@@ -8186,7 +8210,13 @@ const AdminDashboard = () => {
         onDragLeave={handleDragLeave}
         onDrop={handleDrop}
         onPhotoClick={(photo, index, total) => {
+          const customerId = selectedCustomerForPhotos?.customer_id || selectedCustomerForPhotos?.customerId || '';
+          const photos = customerPhotos[customerId] || [];
+          // Reverse photos to match the display order (latest first)
+          const reversedPhotos = [...photos].reverse();
+          setSelectedCustomerPhotos(reversedPhotos);
           setSelectedPhoto({ url: photo, index, total });
+          setPhotoViewerOpen(true);
         }}
         onDeletePhoto={(photoUrl, photoIndex) => {
           setCustomerPhotoToDelete({ photoUrl, photoIndex });
