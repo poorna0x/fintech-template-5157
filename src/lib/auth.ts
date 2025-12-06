@@ -195,32 +195,36 @@ export const authenticateUser = async (email: string, password: string): Promise
           throw new Error('Password verification failed - service unavailable');
         }
       } else {
-        // Password is still in plaintext (legacy) - migrate to hashed
-        // For now, we'll still allow comparison but log a warning
-        console.warn('⚠️ WARNING: Password stored in plaintext. Please run migration script to hash passwords.');
+        // Password is plaintext - compare directly (NOT RECOMMENDED for production)
+        console.log('[auth.ts] ⚠️ Password is plaintext (not hashed) - comparing directly');
         if (technician.password === password) {
-          console.log('Technician authentication successful (legacy plaintext)');
-        return {
-          id: technician.id,
-          email: technician.email,
-          role: 'technician',
-          technicianId: technician.id,
-          fullName: technician.full_name
-        };
-      } else {
-        console.log('Password mismatch');
+          console.log('[auth.ts] ✅ Password match (plaintext) - technician authenticated');
+          const authUser = {
+            id: technician.id,
+            email: technician.email,
+            role: 'technician' as const,
+            technicianId: technician.id,
+            fullName: technician.full_name
+          };
+          console.log('[auth.ts] Returning auth user:', { id: authUser.id, email: authUser.email, role: authUser.role });
+          return authUser;
+        } else {
+          console.log('[auth.ts] ❌ Password mismatch (plaintext)');
           return null;
         }
       }
-    } else {
-      console.log('No technician found with email:', email);
     }
-
+    
+    console.log('[auth.ts] ❌ No technician data to process - returning null');
     return null;
-  } catch (error) {
-    console.error('Authentication error:', error);
+  } catch (error: any) {
+    console.error('[auth.ts] ❌ Authentication exception caught');
+    console.error('[auth.ts] Error name:', error?.name);
+    console.error('[auth.ts] Error message:', error?.message);
+    console.error('[auth.ts] Error stack:', error?.stack);
     // If technician was found but verification failed, throw error to prevent Supabase auth fallback
     if (technicianFound) {
+      console.error('[auth.ts] ⚠️ Technician found but verification failed - re-throwing to prevent Supabase fallback');
       throw error; // Re-throw to prevent fallback to Supabase auth
     }
     return null;
