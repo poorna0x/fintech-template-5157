@@ -1,5 +1,6 @@
 import { createClient } from '@supabase/supabase-js';
 import { Database } from '@/types';
+import { chromeStorage } from './storage';
 
 // Supabase configuration
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
@@ -23,9 +24,6 @@ if (typeof window !== 'undefined' && (!supabaseUrl || !supabaseAnonKey)) {
   console.error('[Supabase Config] Anon Key:', supabaseAnonKey ? '✓ Set' : '✗ Missing');
   console.error('[Supabase Config] Please set VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY in your environment variables.');
 }
-
-// Chrome-compatible storage adapter
-import { chromeStorage } from './storage';
 
 // Create a storage adapter compatible with Supabase's expected interface
 const supabaseStorageAdapter = typeof window !== 'undefined' ? {
