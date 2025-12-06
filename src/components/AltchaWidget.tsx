@@ -110,10 +110,12 @@ const AltchaWidget: React.FC<AltchaWidgetProps> = ({
       try {
           console.log('[ALTCHA] Configuring widget with API URL:', apiUrl);
           // Configure widget programmatically - match official ALTCHA styling
-          // IMPORTANT: Both challengeurl and verifyurl are required for ALTCHA to work
+          // NOTE: We handle verification manually via events, so we don't set verifyurl
+          // The widget will fire 'verified' event when client-side verification completes
           widgetElement.configure({
             challengeurl: `${apiUrl}?complexity=${getComplexity()}`,
-            verifyurl: apiUrl, // Verification endpoint (POST request)
+            // Don't set verifyurl - we handle verification manually via events
+            // This prevents the widget from getting stuck waiting for a response
             auto: autoStart ? 'onload' : 'off',
             workers: Math.min(navigator.hardwareConcurrency || 4, 8),
             hidefooter: false, // Show footer with custom text
@@ -390,6 +392,10 @@ const AltchaWidget: React.FC<AltchaWidgetProps> = ({
       // Cleanup MutationObserver
       if (logoObserver) {
         logoObserver.disconnect();
+      }
+      // Cleanup verifying timeout
+      if (verifyingTimeoutRef.current) {
+        clearTimeout(verifyingTimeoutRef.current);
       }
     };
   }, [autoStart, difficultyLevel]); // Removed onVerify and onAutoSubmit from dependencies
