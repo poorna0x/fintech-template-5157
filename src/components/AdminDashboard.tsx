@@ -57,7 +57,8 @@ import {
   ArrowRight,
   X,
   LogOut,
-  RefreshCw
+  RefreshCw,
+  Navigation
 } from 'lucide-react';
 import { db, supabase } from '@/lib/supabase';
 import { registerAdminPWA, disablePWA } from '@/lib/pwa';
@@ -276,6 +277,18 @@ const AdminDashboard = () => {
   const [lastCheckedJobId, setLastCheckedJobId] = useState<string | null>(null);
   const [isPollingEnabled, setIsPollingEnabled] = useState(true);
   const audioContextRef = React.useRef<AudioContext | null>(null);
+  
+  // Distance measurement dialog state
+  const [distanceMeasurementDialogOpen, setDistanceMeasurementDialogOpen] = useState(false);
+  const [selectedJobForDistance, setSelectedJobForDistance] = useState<Job | null>(null);
+  const [technicianDistances, setTechnicianDistances] = useState<Array<{
+    technician: Technician;
+    distance: string;
+    duration: string;
+    hasLocation: boolean;
+    isCalculating: boolean;
+  }>>([]);
+  const [isCalculatingDistances, setIsCalculatingDistances] = useState(false);
   
   // Brand and model data - Comprehensive list of popular RO and Softener brands in India
   const brandData = {
@@ -4729,6 +4742,185 @@ const AdminDashboard = () => {
 
   // handleEditJobSubmit moved to EditJobDialog component
 
+  // Handle measure distance for a job - OPTIMIZED: Uses batch API call for all technicians
+  const handleMeasureDistance = async (job: Job) => {
+    setSelectedJobForDistance(job);
+    
+    // Get job location
+    const jobLocation = job.serviceLocation || (job as any).service_location;
+    if (!jobLocation || !jobLocation.latitude || !jobLocation.longitude) {
+      toast.error('Job location not available');
+      return;
+    }
+
+    const jobCoords = { lat: jobLocation.latitude, lng: jobLocation.longitude };
+
+    // Filter technicians with valid locations and create mapping
+    const techniciansWithLocation = technicians
+      .map((technician, index) => ({
+        technician,
+        index,
+        location: technician.currentLocation
+      }))
+      .filter(item => item.location && item.location.latitude && item.location.longitude);
+
+    // Initialize distances array with all technicians
+    const initialDistances = technicians.map(technician => {
+      const techLocation = technician.currentLocation;
+      const hasLocation = !!(techLocation && techLocation.latitude && techLocation.longitude);
+      
+      return {
+        technician,
+        distance: '',
+        duration: '',
+        hasLocation,
+        isCalculating: hasLocation
+      };
+    });
+
+    setTechnicianDistances(initialDistances);
+    setDistanceMeasurementDialogOpen(true);
+    setIsCalculatingDistances(true);
+
+    // OPTIMIZED: Calculate all distances in ONE batch API call instead of individual calls
+    try {
+      await ensureGoogleMapsLoaded();
+      
+      if (!(window as any).google?.maps?.DistanceMatrixService) {
+        throw new Error('DistanceMatrixService not available');
+      }
+
+      if (techniciansWithLocation.length === 0) {
+        setIsCalculatingDistances(false);
+        return;
+      }
+
+      const distanceMatrix = new (window as any).google.maps.DistanceMatrixService();
+      
+      // Prepare origins (all technician locations) and destination (job location)
+      const origins = techniciansWithLocation.map(item => ({
+        lat: Number(item.location!.latitude),
+        lng: Number(item.location!.longitude)
+      }));
+      
+      const destination = { lat: Number(jobCoords.lat), lng: Number(jobCoords.lng) };
+
+      // Single batch API call for all technicians
+      // Using DRIVING mode (works for bikes, scooters, and cars)
+      // Note: Distance Matrix API provides road distance, not straight-line distance
+      // Accuracy: Typically within 5-10% of actual travel distance
+      distanceMatrix.getDistanceMatrix(
+        {
+          origins: origins,
+          destinations: [destination],
+          travelMode: (window as any).google.maps.TravelMode.DRIVING,
+          unitSystem: (window as any).google.maps.UnitSystem.METRIC,
+          // Optional: Add departureTime for traffic-aware routing (requires billing)
+          // departureTime: new Date(),
+        },
+        (response: any, status: any) => {
+          setIsCalculatingDistances(false);
+          
+          if (status === (window as any).google.maps.DistanceMatrixStatus.OK && response) {
+            // Update distances with batch results
+            setTechnicianDistances(prev => {
+              const updated = [...prev];
+              
+              techniciansWithLocation.forEach((item, batchIndex) => {
+                const result = response.rows[batchIndex]?.elements[0];
+                
+                if (result && result.status === window.google.maps.DistanceMatrixElementStatus.OK) {
+                  let distanceText = result.distance.text;
+                  if (result.distance.value < 1000) {
+                    distanceText = `${(result.distance.value / 1000).toFixed(2)} km`;
+                  }
+                  const durationText = result.duration?.text || '';
+                  
+                  updated[item.index] = {
+                    ...updated[item.index],
+                    distance: distanceText,
+                    duration: durationText,
+                    isCalculating: false
+                  };
+                } else {
+                  // Try fallback to BICYCLING mode for failed results
+                  const tryBicycling = () => {
+                    const bicyclingMatrix = new (window as any).google.maps.DistanceMatrixService();
+                    bicyclingMatrix.getDistanceMatrix(
+                      {
+                        origins: [origins[batchIndex]],
+                        destinations: [destination],
+                        travelMode: (window as any).google.maps.TravelMode.BICYCLING,
+                        unitSystem: (window as any).google.maps.UnitSystem.METRIC,
+                      },
+                      (bikeResponse: any, bikeStatus: any) => {
+                        if (bikeStatus === (window as any).google.maps.DistanceMatrixStatus.OK && bikeResponse) {
+                          const bikeResult = bikeResponse.rows[0]?.elements[0];
+                          if (bikeResult && bikeResult.status === window.google.maps.DistanceMatrixElementStatus.OK) {
+                            let distanceText = bikeResult.distance.text;
+                            if (bikeResult.distance.value < 1000) {
+                              distanceText = `${(bikeResult.distance.value / 1000).toFixed(2)} km`;
+                            }
+                            const durationText = bikeResult.duration?.text || '';
+                            
+                            setTechnicianDistances(prevState => {
+                              const newUpdated = [...prevState];
+                              newUpdated[item.index] = {
+                                ...newUpdated[item.index],
+                                distance: distanceText,
+                                duration: durationText,
+                                isCalculating: false
+                              };
+                              return newUpdated;
+                            });
+                          }
+                        }
+                      }
+                    );
+                  };
+                  
+                  // Only try bicycling for ZERO_RESULTS, not for other errors
+                  if (result?.status === window.google.maps.DistanceMatrixElementStatus.ZERO_RESULTS) {
+                    tryBicycling();
+                  } else {
+                    updated[item.index] = {
+                      ...updated[item.index],
+                      isCalculating: false
+                    };
+                  }
+                }
+              });
+              
+              // Sort by distance (technicians with valid distances first, then by distance value)
+              updated.sort((a, b) => {
+                if (!a.hasLocation && !b.hasLocation) return 0;
+                if (!a.hasLocation) return 1;
+                if (!b.hasLocation) return -1;
+                if (!a.distance && !b.distance) return 0;
+                if (!a.distance) return 1;
+                if (!b.distance) return -1;
+                
+                // Extract numeric value from distance string (e.g., "5.2 km" -> 5.2)
+                const aValue = parseFloat(a.distance.replace(/[^\d.]/g, '')) || Infinity;
+                const bValue = parseFloat(b.distance.replace(/[^\d.]/g, '')) || Infinity;
+                return aValue - bValue;
+              });
+              
+              return updated;
+            });
+          } else {
+            setIsCalculatingDistances(false);
+            toast.error(`Distance calculation failed: ${status}`);
+          }
+        }
+      );
+    } catch (error) {
+      console.error('Error calculating distances:', error);
+      setIsCalculatingDistances(false);
+      toast.error(`Failed to calculate distances: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
+  };
+
   const handleJobStatusUpdate = async (jobId: string, newStatus: string) => {
     try {
       const { error } = await db.jobs.update(jobId, { status: newStatus as 'PENDING' | 'ASSIGNED' | 'EN_ROUTE' | 'IN_PROGRESS' | 'COMPLETED' | 'CANCELLED' | 'RESCHEDULED' });
@@ -7508,6 +7700,12 @@ const AdminDashboard = () => {
                                         ) : null;
                                       })()}
                                       <DropdownMenuItem 
+                                        onClick={() => handleMeasureDistance(job)}
+                                      >
+                                        <Navigation className="mr-2 h-4 w-4" />
+                                        Measure Distance
+                                      </DropdownMenuItem>
+                                      <DropdownMenuItem 
                                         onClick={() => {
                                           setJobToDelete(job);
                                           setDeleteJobDialogOpen(true);
@@ -8799,6 +8997,109 @@ const AdminDashboard = () => {
 
           <DialogFooter>
             <Button variant="outline" onClick={() => setRecentAccountsDialogOpen(false)}>
+              Close
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Distance Measurement Dialog */}
+      <Dialog open={distanceMeasurementDialogOpen} onOpenChange={setDistanceMeasurementDialogOpen}>
+        <DialogContent className="sm:max-w-2xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Navigation className="h-5 w-5" />
+              Measure Distance to Job Location
+            </DialogTitle>
+            <DialogDescription>
+              {selectedJobForDistance && (
+                <div className="mt-2">
+                  <p className="font-medium">Job: {selectedJobForDistance.jobNumber || (selectedJobForDistance as any).job_number}</p>
+                  {selectedJobForDistance.serviceLocation && (
+                    <p className="text-sm text-gray-500 mt-1">
+                      Location: {selectedJobForDistance.serviceLocation.latitude?.toFixed(6)}, {selectedJobForDistance.serviceLocation.longitude?.toFixed(6)}
+                    </p>
+                  )}
+                </div>
+              )}
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="mt-4">
+            {isCalculatingDistances ? (
+              <div className="flex items-center justify-center py-8">
+                <RefreshCw className="h-6 w-6 animate-spin text-blue-600 mr-2" />
+                <span className="text-gray-600">Calculating distances...</span>
+              </div>
+            ) : technicianDistances.length === 0 ? (
+              <div className="text-center py-8 text-gray-500">
+                No technicians found
+              </div>
+            ) : (
+              <div className="space-y-2">
+                <div className="grid grid-cols-1 gap-2">
+                  {technicianDistances.map((item, index) => (
+                    <div
+                      key={item.technician.id}
+                      className={`p-4 border rounded-lg ${
+                        item.hasLocation && item.distance
+                          ? 'border-gray-200 hover:border-blue-300 bg-white'
+                          : 'border-gray-100 bg-gray-50'
+                      }`}
+                    >
+                      <div className="flex items-start justify-between">
+                        <div className="flex-1 min-w-0">
+                          <h4 className="font-semibold text-gray-900 truncate">
+                            {item.technician.fullName}
+                          </h4>
+                          <p className="text-sm text-gray-500 mt-1">
+                            {item.technician.employeeId}
+                          </p>
+                          {item.hasLocation ? (
+                            <div className="mt-2 flex items-center gap-4">
+                              {item.isCalculating ? (
+                                <div className="flex items-center gap-2 text-sm text-gray-500">
+                                  <RefreshCw className="h-4 w-4 animate-spin" />
+                                  Calculating...
+                                </div>
+                              ) : item.distance ? (
+                                <>
+                                  <div className="flex items-center gap-2">
+                                    <MapPin className="h-4 w-4 text-blue-600" />
+                                    <span className="font-medium text-gray-900">
+                                      {item.distance}
+                                    </span>
+                                  </div>
+                                  {item.duration && (
+                                    <div className="flex items-center gap-2 text-sm text-gray-600">
+                                      <Clock className="h-4 w-4" />
+                                      {item.duration}
+                                    </div>
+                                  )}
+                                </>
+                              ) : (
+                                <span className="text-sm text-gray-500">
+                                  Distance calculation failed
+                                </span>
+                              )}
+                            </div>
+                          ) : (
+                            <div className="mt-2 text-sm text-gray-400 flex items-center gap-2">
+                              <MapPin className="h-4 w-4" />
+                              No location data available
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setDistanceMeasurementDialogOpen(false)}>
               Close
             </Button>
           </DialogFooter>
