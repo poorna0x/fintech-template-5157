@@ -189,12 +189,13 @@ export const db = {
     },
 
     async delete(id: string) {
-      const { error } = await supabase
+      const { data, error } = await supabase
         .from('customers')
         .delete()
-        .eq('id', id);
+        .eq('id', id)
+        .select(); // Select to verify deletion
       
-      return { error };
+      return { data, error };
     }
   },
   

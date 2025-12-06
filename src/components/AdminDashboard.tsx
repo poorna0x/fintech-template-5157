@@ -1429,19 +1429,60 @@ const AdminDashboard = () => {
     if (!customerToDelete) return;
     
     try {
-      const { error } = await db.customers.delete(customerToDelete.id);
+      const { error, data } = await db.customers.delete(customerToDelete.id);
       
       if (error) {
-        throw new Error(error.message);
+        console.error('Delete customer error details:', {
+          error,
+          customerId: customerToDelete.id,
+          customer_id: customerToDelete.customer_id || customerToDelete.customerId,
+          errorCode: error.code,
+          errorMessage: error.message,
+          errorDetails: error.details,
+          errorHint: error.hint
+        });
+        throw new Error(error.message || 'Failed to delete customer. Check RLS policies.');
+      }
+      
+      // Verify deletion succeeded
+      if (data === null || data === undefined) {
+        // Check if customer still exists
+        const { data: verifyData } = await db.customers.getById(customerToDelete.id);
+        if (verifyData) {
+          throw new Error('Customer deletion failed - customer still exists. Check RLS policies.');
+        }
       }
       
       toast.success(`Customer ${customerToDelete.customer_id || customerToDelete.customerId} deleted successfully`);
       
       // Remove from local state
       setCustomers(customers.filter(c => c.id !== customerToDelete.id));
+      
+      // Also remove jobs for this customer from local state
+      // (Database should cascade delete, but we'll also clean up local state)
+      setJobs(prevJobs => prevJobs.filter(job => {
+        const jobCustomerId = (job as any).customer_id || job.customerId;
+        return jobCustomerId !== customerToDelete.id;
+      }));
+      
+      // Clear customer jobs cache
+      setCustomerJobs(prev => {
+        const updated = { ...prev };
+        delete updated[customerToDelete.id];
+        return updated;
+      });
+      
       setDeleteDialogOpen(false);
       setCustomerToDelete(null);
-      loadDashboardData();
+      
+      // Reload dashboard data to ensure consistency
+      await loadDashboardData();
+      
+      // Also reload filtered jobs if we're viewing a filtered view
+      // This ensures jobs for deleted customers are removed from the view
+      if (statusFilter === 'COMPLETED' || statusFilter === 'CANCELLED') {
+        await loadFilteredJobs(statusFilter, currentPage);
+      }
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
       console.error('Error deleting customer:', error);
@@ -6183,6 +6224,9 @@ const AdminDashboard = () => {
       // First, collect all customers who have jobs for the selected date
       // Note: jobs array is paginated, so if there are multiple pages, 
       // we only see customers from the current page. This is intentional for performance.
+      // Also filter out customers that have been deleted (verify customer still exists)
+      const existingCustomerIds = new Set(customers.map(c => c.id));
+      
       jobs.forEach(job => {
         const customer = (job as any).customer || job.customer;
         if (!customer) {
@@ -6206,6 +6250,20 @@ const AdminDashboard = () => {
             console.warn('Customer missing ID:', customer);
           }
           return;
+        }
+        
+        // IMPORTANT: Filter out customers that have been deleted
+        // If customer was deleted, their ID won't be in the customers array
+        if (!existingCustomerIds.has(customerId)) {
+          if (import.meta.env.DEV) {
+            console.warn('Skipping job with deleted customer:', {
+              jobId: job.id,
+              jobNumber: job.job_number || job.jobNumber,
+              customerId: customerId,
+              customerName: customer.full_name || customer.fullName
+            });
+          }
+          return; // Skip jobs for deleted customers
         }
         
         if (!customerMap.has(customerId)) {
@@ -6289,10 +6347,26 @@ const AdminDashboard = () => {
       // For RESCHEDULED, use jobs if loaded via pagination, otherwise filter customersWithJobs
       if (jobs.length > 0 && jobs.some(j => ['FOLLOW_UP', 'RESCHEDULED'].includes(j.status))) {
         const customerMap = new Map<string, { customer: Customer; allJobs: Job[] }>();
+        // Filter out customers that have been deleted (verify customer still exists)
+        const existingCustomerIds = new Set(customers.map(c => c.id));
+        
         jobs.forEach(job => {
           const customer = (job as any).customer || job.customer;
           if (!customer) return;
           const customerId = customer.id;
+          
+          // IMPORTANT: Filter out customers that have been deleted
+          if (!existingCustomerIds.has(customerId)) {
+            if (import.meta.env.DEV) {
+              console.warn('Skipping RESCHEDULED job with deleted customer:', {
+                jobId: job.id,
+                jobNumber: job.job_number || job.jobNumber,
+                customerId: customerId
+              });
+            }
+            return; // Skip jobs for deleted customers
+          }
+          
           if (!customerMap.has(customerId)) {
             customerMap.set(customerId, {
               customer: transformCustomerData(customer),

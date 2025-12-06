@@ -764,12 +764,49 @@ const EditCustomerDialog: React.FC<EditCustomerDialogProps> = ({
 
     setIsDeleting(true);
     try {
-      const { error } = await db.customers.delete(customer.id);
+      console.log('Attempting to delete customer:', {
+        id: customer.id,
+        customer_id: (customer as any)?.customer_id || customer.customerId,
+        name: (customer as any)?.full_name || customer.fullName
+      });
+
+      const { error, data } = await db.customers.delete(customer.id);
+
+      console.log('Delete response:', { error, data });
 
       if (error) {
-        throw new Error(error.message);
+        console.error('Delete customer error details:', {
+          error,
+          errorObject: JSON.stringify(error, null, 2),
+          customerId: customer.id,
+          customer_id: (customer as any)?.customer_id || customer.customerId,
+          errorCode: error.code,
+          errorMessage: error.message,
+          errorDetails: error.details,
+          errorHint: error.hint
+        });
+        
+        // Check if it's an RLS policy error
+        if (error.code === '42501' || error.message?.includes('permission') || error.message?.includes('policy')) {
+          throw new Error(`Permission denied (Error Code: ${error.code}). The DELETE policy exists but you may not be authenticated. Please check your login status.`);
+        }
+        
+        // Check for foreign key constraint errors
+        if (error.code === '23503' || error.message?.includes('foreign key') || error.message?.includes('constraint')) {
+          throw new Error(`Cannot delete customer: ${error.message}. There may be related records preventing deletion.`);
+        }
+        
+        throw new Error(`Delete failed: ${error.message || 'Unknown error'} (Code: ${error.code || 'N/A'})`);
       }
 
+      // Verify deletion succeeded
+      // If delete returned data (deleted row), deletion was successful
+      // No need to verify by querying - the 406 error happens because row doesn't exist (expected)
+      if (data && Array.isArray(data) && data.length > 0) {
+        console.log('Customer successfully deleted:', data[0]);
+      } else {
+        console.log('Customer deletion completed (no data returned, which is normal)');
+      }
       toast.success(`Customer ${(customer as any)?.customer_id || customer.customerId} deleted successfully`);
       
       if (onCustomerDeleted) {
@@ -781,7 +818,7 @@ const EditCustomerDialog: React.FC<EditCustomerDialogProps> = ({
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
       console.error('Error deleting customer:', error);
-      toast.error(`Failed to delete customer: ${errorMessage}`);
+      toast.error(`Failed to delete customer: ${errorMessage}`, { duration: 10000 });
     } finally {
       setIsDeleting(false);
     }
@@ -1300,38 +1337,40 @@ const EditCustomerDialog: React.FC<EditCustomerDialogProps> = ({
           </div>
         </div>
 
-        <DialogFooter className="flex justify-between">
+        <DialogFooter className="flex flex-col sm:flex-row gap-2 sm:justify-between">
           <Button 
             variant="destructive" 
             onClick={() => setDeleteDialogOpen(true)}
             disabled={isUpdating || isDeleting}
-            className="mr-auto"
+            className="w-full sm:w-auto"
           >
             <Trash2 className="w-4 h-4 mr-2" />
             Delete Customer
           </Button>
-          <div className="flex gap-2">
-          <Button 
-            variant="outline" 
-            onClick={() => onOpenChange(false)}
+          <div className="flex flex-col sm:flex-row gap-2 w-full sm:w-auto">
+            <Button 
+              variant="outline" 
+              onClick={() => onOpenChange(false)}
               disabled={isUpdating || isDeleting}
-          >
-            Cancel
-          </Button>
-          <Button 
-            onClick={handleUpdateCustomer}
+              className="w-full sm:w-auto"
+            >
+              Cancel
+            </Button>
+            <Button 
+              variant="default"
+              onClick={handleUpdateCustomer}
               disabled={isUpdating || isDeleting}
-            className="bg-blue-600 hover:bg-blue-700"
-          >
-            {isUpdating ? (
-              <div className="flex items-center gap-2">
-                <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
-                Updating...
-              </div>
-            ) : (
-              'Update Customer'
-            )}
-          </Button>
+              className="w-full sm:w-auto"
+            >
+              {isUpdating ? (
+                <div className="flex items-center gap-2">
+                  <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                  Updating...
+                </div>
+              ) : (
+                'Update Customer'
+              )}
+            </Button>
           </div>
         </DialogFooter>
       </DialogContent>
