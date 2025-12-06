@@ -291,6 +291,125 @@ const AdminDashboard = () => {
   }>>([]);
   const [isCalculatingDistances, setIsCalculatingDistances] = useState(false);
   
+  // Authentication state hooks - MUST be declared before any conditional returns
+  const [maxWaitReached, setMaxWaitReached] = useState(false);
+  const [waitingForAuth, setWaitingForAuth] = useState(false);
+  
+  // Authentication effects - MUST be declared before any conditional returns
+  useEffect(() => {
+    if (authLoading) {
+      // Reset maxWaitReached when auth starts loading
+      setMaxWaitReached(false);
+      const maxWaitTimeout = setTimeout(() => {
+        console.warn('[AdminDashboard] Maximum wait time reached, proceeding anyway');
+        setMaxWaitReached(true);
+      }, 2000); // Maximum 2 seconds wait (reduced from 3)
+      return () => clearTimeout(maxWaitTimeout);
+    } else {
+      // Auth finished loading - reset maxWaitReached
+      setMaxWaitReached(false);
+    }
+  }, [authLoading]);
+
+  // Listen for auth state changes directly from Supabase
+  useEffect(() => {
+    // If user becomes available, stop waiting immediately
+    if (user) {
+      setWaitingForAuth(false);
+      return;
+    }
+
+    // If auth is still loading, don't check session yet
+    if (authLoading) {
+      setWaitingForAuth(false);
+      return;
+    }
+
+    // User is null and auth is not loading - check if session exists
+    let attempts = 0;
+    const maxAttempts = 10; // 1 second max (10 * 100ms) - faster response
+    let intervalId: NodeJS.Timeout | null = null;
+    let isCleanedUp = false;
+    
+    const checkSession = async () => {
+      // Don't check if user became available or component unmounted
+      if (user || isCleanedUp) {
+        if (intervalId) clearInterval(intervalId);
+        return;
+      }
+
+      attempts++;
+      
+      try {
+        const { data: { session } } = await supabase.auth.getSession();
+        if (session?.user) {
+          // Session exists - wait for AuthContext to update
+          setWaitingForAuth(true);
+          console.log('✅ [AdminDashboard] Session found, waiting for AuthContext update...');
+          
+          // Stop checking after max attempts - AuthContext should have updated by then
+          if (attempts >= maxAttempts) {
+            if (intervalId) clearInterval(intervalId);
+            setWaitingForAuth(false);
+            console.warn('[AdminDashboard] Max attempts reached but user state not updated');
+          }
+        } else if (attempts >= maxAttempts) {
+          // No session after max attempts - show login
+          if (intervalId) clearInterval(intervalId);
+          setWaitingForAuth(false);
+        }
+      } catch (error) {
+        console.error('Error checking session:', error);
+        if (attempts >= maxAttempts) {
+          if (intervalId) clearInterval(intervalId);
+          setWaitingForAuth(false);
+        }
+      }
+    };
+    
+    // Start checking immediately, then every 100ms
+    checkSession();
+    intervalId = setInterval(checkSession, 100);
+    
+    // Safety timeout - always stop after 1.5 seconds
+    const safetyTimeout = setTimeout(() => {
+      if (intervalId) clearInterval(intervalId);
+      setWaitingForAuth(false);
+      console.warn('[AdminDashboard] Safety timeout reached, stopping auth check');
+    }, 1500);
+    
+    return () => {
+      isCleanedUp = true;
+      if (intervalId) clearInterval(intervalId);
+      clearTimeout(safetyTimeout);
+    };
+  }, [user, authLoading]);
+
+  // Additional effect: Listen to Supabase auth state changes directly
+  useEffect(() => {
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+      console.log('[AdminDashboard] Auth state changed:', event, session?.user?.email);
+      
+      if (event === 'SIGNED_IN' && session?.user) {
+        // User just signed in - stop waiting immediately and force re-check
+        setWaitingForAuth(false);
+        console.log('✅ [AdminDashboard] SIGNED_IN event detected');
+        // The user state should update from AuthContext, which will trigger re-render
+      } else if (event === 'SIGNED_OUT') {
+        // User signed out - stop waiting
+        setWaitingForAuth(false);
+      } else if (event === 'TOKEN_REFRESHED' && session?.user) {
+        // Token refreshed - ensure user state is updated
+        setWaitingForAuth(false);
+        console.log('✅ [AdminDashboard] TOKEN_REFRESHED event detected');
+      }
+    });
+
+    return () => {
+      subscription.unsubscribe();
+    };
+  }, []);
+  
   // Brand and model data - Comprehensive list of popular RO and Softener brands in India
   const brandData = {
     'K': ['Kent'],
@@ -6551,8 +6670,9 @@ const AdminDashboard = () => {
     return deniedDate >= today && deniedDate < tomorrow;
   });
 
-  // Show login form if not authenticated
-  if (authLoading) {
+  // Authentication checks - these can be conditional returns since all hooks are declared above
+  // Show loading only if auth is loading AND we haven't exceeded max wait time
+  if (authLoading && !maxWaitReached) {
     return (
       <div className="flex items-center justify-center min-h-screen bg-gray-50">
         <div className="text-center">
@@ -6567,8 +6687,25 @@ const AdminDashboard = () => {
     );
   }
 
-  if (!user) {
+  // If auth finished loading but no user and not waiting, show login
+  if (!user && !authLoading && !waitingForAuth) {
     return <AdminLogin />;
+  }
+
+  // Show loading while waiting for auth state to update after login
+  if (!user && !authLoading && waitingForAuth) {
+    return (
+      <div className="flex items-center justify-center min-h-screen bg-gray-50">
+        <div className="text-center">
+          <div className="flex items-center justify-center space-x-1 mb-4">
+            <div className="w-3 h-3 bg-black rounded-full animate-bounce" style={{ animationDelay: '0ms' }}></div>
+            <div className="w-3 h-3 bg-black rounded-full animate-bounce" style={{ animationDelay: '150ms' }}></div>
+            <div className="w-3 h-3 bg-black rounded-full animate-bounce" style={{ animationDelay: '300ms' }}></div>
+          </div>
+          <p className="text-gray-600">Completing login...</p>
+        </div>
+      </div>
+    );
   }
 
   if (loading) {
