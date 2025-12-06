@@ -4907,14 +4907,103 @@ const AdminDashboard = () => {
   const handleMeasureDistance = async (job: Job) => {
     setSelectedJobForDistance(job);
     
-    // Get job location
+    console.log('🔍 [AdminDashboard] handleMeasureDistance called for job:', {
+      jobId: job.id,
+      jobNumber: job.jobNumber || (job as any).job_number
+    });
+    
+    // Get job location and customer location (prefer customer location as it's more up-to-date)
     const jobLocation = job.serviceLocation || (job as any).service_location;
-    if (!jobLocation || !jobLocation.latitude || !jobLocation.longitude) {
-      toast.error('Job location not available');
+    const customer = (job.customer as any) || job.customer;
+    const customerLocation = customer?.location || {};
+    
+    console.log('📍 [AdminDashboard] Location data:', {
+      jobLocation: {
+        hasServiceLocation: !!jobLocation,
+        latitude: jobLocation?.latitude,
+        longitude: jobLocation?.longitude,
+        googleLocation: jobLocation?.googleLocation || jobLocation?.google_location,
+        googleLocationType: typeof (jobLocation?.googleLocation || jobLocation?.google_location),
+        fullJobLocation: jobLocation
+      },
+      customerLocation: {
+        hasCustomer: !!customer,
+        hasCustomerLocation: !!customerLocation,
+        latitude: customerLocation?.latitude,
+        longitude: customerLocation?.longitude,
+        googleLocation: customerLocation?.googleLocation || customerLocation?.google_location,
+        googleLocationType: typeof (customerLocation?.googleLocation || customerLocation?.google_location),
+        fullCustomerLocation: customerLocation
+      },
+      customerId: customer?.id || job.customerId || (job as any).customer_id
+    });
+    
+    // Try to get coordinates from latitude/longitude first (prefer customer location)
+    let jobCoords: { lat: number; lng: number } | null = null;
+    
+    // Priority 1: Customer location with direct coordinates
+    if (customerLocation?.latitude && customerLocation?.longitude && 
+        customerLocation.latitude !== 0 && customerLocation.longitude !== 0) {
+      jobCoords = { lat: customerLocation.latitude, lng: customerLocation.longitude };
+      console.log('✅ [AdminDashboard] Using customer direct coordinates:', jobCoords);
+    }
+    // Priority 2: Customer location with googleLocation (check for null/undefined/empty string)
+    else if (customerLocation?.googleLocation || customerLocation?.google_location) {
+      const googleLocation = customerLocation.googleLocation || customerLocation.google_location;
+      console.log('🔗 [AdminDashboard] Attempting to extract from customer googleLocation:', googleLocation?.substring(0, 150));
+      
+      if (googleLocation && typeof googleLocation === 'string' && googleLocation.trim() !== '') {
+        const extractedCoords = extractCoordinatesFromGoogleMapsLink(googleLocation);
+        console.log('📍 [AdminDashboard] Customer extraction result:', extractedCoords);
+        
+        if (extractedCoords) {
+          jobCoords = { lat: extractedCoords.latitude, lng: extractedCoords.longitude };
+          console.log('✅ [AdminDashboard] Successfully extracted coordinates from customer:', jobCoords);
+        } else {
+          console.warn('⚠️ [AdminDashboard] Failed to extract coordinates from customer URL');
+        }
+      } else {
+        console.warn('⚠️ [AdminDashboard] Customer googleLocation is not a valid string:', typeof googleLocation, googleLocation);
+      }
+    }
+    // Priority 3: Job service location with direct coordinates
+    else if (jobLocation?.latitude && jobLocation?.longitude && 
+        jobLocation.latitude !== 0 && jobLocation.longitude !== 0) {
+      jobCoords = { lat: jobLocation.latitude, lng: jobLocation.longitude };
+      console.log('✅ [AdminDashboard] Using job service direct coordinates:', jobCoords);
+    }
+    // Priority 4: Job service location with googleLocation (check for null/undefined/empty string)
+    else if (jobLocation?.googleLocation || jobLocation?.google_location) {
+      const googleLocation = jobLocation.googleLocation || jobLocation.google_location;
+      console.log('🔗 [AdminDashboard] Attempting to extract from job service googleLocation:', googleLocation?.substring(0, 150));
+      
+      if (googleLocation && typeof googleLocation === 'string' && googleLocation.trim() !== '') {
+        const extractedCoords = extractCoordinatesFromGoogleMapsLink(googleLocation);
+        console.log('📍 [AdminDashboard] Job service extraction result:', extractedCoords);
+        
+        if (extractedCoords) {
+          jobCoords = { lat: extractedCoords.latitude, lng: extractedCoords.longitude };
+          console.log('✅ [AdminDashboard] Successfully extracted coordinates from job service:', jobCoords);
+        } else {
+          console.warn('⚠️ [AdminDashboard] Failed to extract coordinates from job service URL');
+        }
+      } else {
+        console.warn('⚠️ [AdminDashboard] Job service googleLocation is not a valid string:', typeof googleLocation, googleLocation);
+      }
+    } else {
+      console.warn('⚠️ [AdminDashboard] No location data found in jobLocation or customerLocation:', {
+        jobLocation,
+        customerLocation
+      });
+    }
+    
+    if (!jobCoords) {
+      console.error('❌ [AdminDashboard] No coordinates available for distance measurement');
+      toast.error('Job location not available. Please ensure the job has valid coordinates or a Google Maps link.');
       return;
     }
-
-    const jobCoords = { lat: jobLocation.latitude, lng: jobLocation.longitude };
+    
+    console.log('✅ [AdminDashboard] Proceeding with distance calculation using:', jobCoords);
 
     // Filter technicians with valid locations and create mapping
     const techniciansWithLocation = technicians
