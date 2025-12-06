@@ -15,64 +15,82 @@ export interface AuthUser {
 let technicianFound = false;
 
 export const authenticateUser = async (email: string, password: string): Promise<AuthUser | null> => {
+  console.log('[auth.ts] 🔐 authenticateUser() called');
+  console.log('[auth.ts] Email:', email);
+  console.log('[auth.ts] Password length:', password.length);
+  
   try {
-    console.log('Authenticating technician:', email);
+    console.log('[auth.ts] Authenticating technician:', email);
     technicianFound = false; // Reset flag
     
     // Authenticate technician (admin auth is handled by Supabase Auth)
     
     // First, let's check if the technicians table has the required columns
+    console.log('[auth.ts] Querying technicians table...');
     const { data: technician, error } = await supabase
       .from('technicians')
       .select('id, full_name, email, password, account_status')
       .eq('email', email.toLowerCase())
       .single();
 
-    console.log('Technician query result:', { technician: technician ? { ...technician, password: '***' } : null, error });
+    console.log('[auth.ts] Technician query result received');
+    console.log('[auth.ts] Technician found:', technician ? { id: technician.id, email: technician.email, full_name: technician.full_name, account_status: technician.account_status, has_password: !!technician.password } : null);
+    console.log('[auth.ts] Query error:', error);
     
     // If technician not found, return null (don't try Supabase auth - that's for admins only)
     if (error) {
-      console.error('Database error:', error);
+      console.error('[auth.ts] ❌ Database error:', error);
+      console.error('[auth.ts] Error code:', error.code);
+      console.error('[auth.ts] Error message:', error.message);
+      console.error('[auth.ts] Error details:', error.details);
+      console.error('[auth.ts] Error hint:', error.hint);
+      
       // If the error is about missing columns, let's try without them
       if (error.message.includes('password') || error.message.includes('account_status')) {
-        console.log('Trying without password/account_status columns...');
+        console.log('[auth.ts] ⚠️ Missing password/account_status columns, trying without them...');
         const { data: techWithoutAuth, error: techError } = await supabase
           .from('technicians')
           .select('id, full_name, email')
           .eq('email', email.toLowerCase())
           .single();
         
+        console.log('[auth.ts] Query without auth columns result:', { techWithoutAuth, techError });
+        
         if (techWithoutAuth && !techError) {
-          console.log('Found technician but missing auth columns. Please run the SQL scripts to add password and account_status fields.');
+          console.log('[auth.ts] ❌ Found technician but missing auth columns. Please run the SQL scripts to add password and account_status fields.');
           return null;
         }
       }
       // If technician not found in database, return null (don't try Supabase auth)
-      console.log('Technician not found in database - returning null (will not try Supabase auth)');
+      console.log('[auth.ts] ❌ Technician not found in database - returning null (will not try Supabase auth)');
       return null;
     }
     
     // If no technician found, return null (don't try Supabase auth)
     if (!technician) {
-      console.log('No technician found with this email - returning null');
+      console.log('[auth.ts] ❌ No technician found with this email - returning null');
       technicianFound = false;
       return null;
     }
     
     // Mark that we found a technician
     technicianFound = true;
+    console.log('[auth.ts] ✅ Technician found in database');
     
     if (technician) {
       // Check if password and account_status exist
       if (!technician.password) {
-        console.log('Technician found but no password set');
+        console.log('[auth.ts] ❌ Technician found but no password set');
         return null;
       }
       
+      console.log('[auth.ts] Checking account status:', technician.account_status);
       if (technician.account_status !== 'ACTIVE') {
-        console.log('Technician account is not active:', technician.account_status);
+        console.log('[auth.ts] ❌ Technician account is not active:', technician.account_status);
         return null;
       }
+      
+      console.log('[auth.ts] ✅ Account is active, proceeding with password verification...');
       
       // SECURE: Use server-side password verification instead of plaintext comparison
       // Check if password is already hashed (bcrypt hashes start with $2a$, $2b$, or $2y$)
@@ -100,7 +118,10 @@ export const authenticateUser = async (email: string, password: string): Promise
         }
         
         try {
-          console.log('Calling password verification API:', apiUrl);
+          console.log('[auth.ts] 🔐 Password is hashed, calling verification API...');
+          console.log('[auth.ts] API URL:', apiUrl);
+          console.log('[auth.ts] Request body:', { password_length: password.length, hashed_password_length: technician.password.length });
+          
           const verifyResponse = await fetch(apiUrl, {
             method: 'POST',
             headers: {
@@ -112,50 +133,61 @@ export const authenticateUser = async (email: string, password: string): Promise
             }),
           });
 
-          console.log('Verification response status:', verifyResponse.status);
+          console.log('[auth.ts] Verification response received');
+          console.log('[auth.ts] Response status:', verifyResponse.status);
+          console.log('[auth.ts] Response ok:', verifyResponse.ok);
           
           if (!verifyResponse.ok) {
-            console.error('Password verification API error:', verifyResponse.status, verifyResponse.statusText);
+            console.error('[auth.ts] ❌ Password verification API error');
+            console.error('[auth.ts] Status:', verifyResponse.status);
+            console.error('[auth.ts] Status text:', verifyResponse.statusText);
             const errorText = await verifyResponse.text();
-            console.error('Error details:', errorText);
+            console.error('[auth.ts] Error response body:', errorText);
             // If verification API is unavailable (404 or network error), show helpful error
             if (verifyResponse.status === 404 || verifyResponse.status === 0) {
-              console.error('❌ Password verification API not found or unreachable.');
-              console.error('⚠️ Make sure dev server is running: npm run dev:server');
-              console.error(`⚠️ API URL attempted: ${apiUrl}`);
+              console.error('[auth.ts] ❌ Password verification API not found or unreachable.');
+              console.error('[auth.ts] ⚠️ Make sure dev server is running: npm run dev:server');
+              console.error('[auth.ts] ⚠️ API URL attempted:', apiUrl);
               throw new Error('Password verification service unavailable. Please ensure the development server is running on port 8888.');
             }
             return null;
           }
 
           const verifyResult = await verifyResponse.json();
-          console.log('Verification result:', verifyResult);
+          console.log('[auth.ts] Verification result:', verifyResult);
+          console.log('[auth.ts] Verified:', verifyResult.verified);
           
           if (verifyResult.verified) {
-        console.log('Technician authentication successful');
-            return {
+            console.log('[auth.ts] ✅ Password verification successful - technician authenticated');
+            const authUser = {
               id: technician.id,
               email: technician.email,
-              role: 'technician',
+              role: 'technician' as const,
               technicianId: technician.id,
               fullName: technician.full_name
             };
+            console.log('[auth.ts] Returning auth user:', { id: authUser.id, email: authUser.email, role: authUser.role });
+            return authUser;
           } else {
-            console.log('Password mismatch:', verifyResult.error || 'Unknown error');
+            console.log('[auth.ts] ❌ Password verification failed');
+            console.log('[auth.ts] Error from API:', verifyResult.error || 'Unknown error');
             return null;
           }
         } catch (verifyError: any) {
-          console.error('Password verification error:', verifyError);
-          console.error('Error details:', verifyError.message);
+          console.error('[auth.ts] ❌ Password verification exception caught');
+          console.error('[auth.ts] Error name:', verifyError?.name);
+          console.error('[auth.ts] Error message:', verifyError?.message);
+          console.error('[auth.ts] Error stack:', verifyError?.stack);
           // If verification API fails, we cannot verify hashed passwords
           // DO NOT fallback to plaintext - this would be a security issue
           // Since technician was found, we should NOT try Supabase auth
-          console.error('❌ Cannot verify password - verification API unavailable');
-          console.error('⚠️ Make sure dev server is running: npm run dev:server');
-          console.error(`⚠️ API URL attempted: ${apiUrl}`);
+          console.error('[auth.ts] ❌ Cannot verify password - verification API unavailable');
+          console.error('[auth.ts] ⚠️ Make sure dev server is running: npm run dev:server');
+          console.error('[auth.ts] ⚠️ API URL attempted:', apiUrl);
           
           // Check if it's a network error (CORS, connection refused, etc.)
           if (verifyError.message?.includes('Failed to fetch') || verifyError.message?.includes('NetworkError') || verifyError.name === 'TypeError') {
+            console.error('[auth.ts] ❌ Network error detected - cannot connect to verification service');
             throw new Error('Cannot connect to password verification service. Please ensure the development server is running on port 8888 and accessible from your network.');
           }
           

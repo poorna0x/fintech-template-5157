@@ -27,6 +27,13 @@ const TechnicianLogin = () => {
 
   const { login, loading: authLoading, user } = useAuth();
   const navigate = useNavigate();
+  const userRef = React.useRef(user); // Track user state for role checking
+  
+  // Update ref when user changes
+  useEffect(() => {
+    userRef.current = user;
+    console.log('[TechnicianLogin] User state updated:', user ? { id: user.id, email: user.email, role: user.role } : null);
+  }, [user]);
   
   useEffect(() => {
     registerTechnicianPWA();
@@ -95,7 +102,13 @@ const TechnicianLogin = () => {
 
   // Extract login logic to be called automatically after verification
   const performLogin = async () => {
+    console.log('[TechnicianLogin] 🔐 Starting login process...');
+    console.log('[TechnicianLogin] Email:', email);
+    console.log('[TechnicianLogin] Password length:', password.length);
+    console.log('[TechnicianLogin] CAPTCHA verified:', isCaptchaVerified);
+    
     if (!email || !password) {
+      console.warn('[TechnicianLogin] ⚠️ Missing email or password');
       return; // Don't auto-login if fields are empty
     }
 
@@ -108,29 +121,41 @@ const TechnicianLogin = () => {
         /Chrome/i.test(navigator.userAgent) && 
         /Mobile|Android/i.test(navigator.userAgent);
       
+      console.log('[TechnicianLogin] Browser:', isChromeMobile ? 'Chrome Mobile' : 'Other');
+      console.log('[TechnicianLogin] Timeout:', isChromeMobile ? '15s' : '30s');
+      
       // Add timeout wrapper for Chrome mobile
+      console.log('[TechnicianLogin] Calling login() from AuthContext...');
       const loginPromise = login(email, password);
       const timeoutPromise = new Promise<boolean>((_, reject) => 
         setTimeout(() => reject(new Error('Login timeout')), isChromeMobile ? 15000 : 30000)
       );
       
+      console.log('[TechnicianLogin] Waiting for login response...');
       const success = await Promise.race([loginPromise, timeoutPromise]) as boolean;
+      console.log('[TechnicianLogin] Login response received. Success:', success);
       
       if (success) {
+        console.log('[TechnicianLogin] ✅ Login reported success, checking user role...');
         // IMPORTANT: Check if user is actually a technician before navigating
         // Wait a bit for AuthContext to update user state
-        await new Promise(resolve => setTimeout(resolve, isChromeMobile ? 150 : 300));
+        const waitTime = isChromeMobile ? 150 : 300;
+        console.log('[TechnicianLogin] Waiting', waitTime, 'ms for AuthContext to update...');
+        await new Promise(resolve => setTimeout(resolve, waitTime));
         
         // Check user role from AuthContext - use ref to get latest value
         const currentUser = userRef.current;
-        console.log('[TechnicianLogin] Login success, checking user role:', currentUser?.role);
+        console.log('[TechnicianLogin] Current user from ref:', currentUser ? { id: currentUser.id, email: currentUser.email, role: currentUser.role } : null);
+        console.log('[TechnicianLogin] Current user from hook:', user ? { id: user.id, email: user.email, role: user.role } : null);
         
         if (currentUser && currentUser.role === 'technician') {
-          console.log('✅ Technician login successful, navigating to technician dashboard...');
+          console.log('[TechnicianLogin] ✅ Technician login successful, navigating to technician dashboard...');
           navigate('/technician', { replace: true });
         } else {
           // User logged in but is not a technician (probably admin logged in)
-          console.warn('⚠️ Login succeeded but user is not a technician (role:', currentUser?.role, '), redirecting to admin...');
+          console.warn('[TechnicianLogin] ⚠️ Login succeeded but user is not a technician');
+          console.warn('[TechnicianLogin] User role:', currentUser?.role);
+          console.warn('[TechnicianLogin] User object:', currentUser);
           setError('This account is not a technician account. Redirecting to admin dashboard...');
           toast.error('This account is not a technician account.');
           // Redirect to admin dashboard
@@ -139,19 +164,26 @@ const TechnicianLogin = () => {
           }, 1500);
         }
       } else {
-        console.log('❌ Login failed - success was false');
+        console.error('[TechnicianLogin] ❌ Login failed - success was false');
+        console.error('[TechnicianLogin] This means login() returned false');
         setError('Login failed. Please check your credentials.');
       }
     } catch (err: any) {
-      console.error('Login error:', err);
+      console.error('[TechnicianLogin] ❌ Login exception caught:', err);
+      console.error('[TechnicianLogin] Error name:', err?.name);
+      console.error('[TechnicianLogin] Error message:', err?.message);
+      console.error('[TechnicianLogin] Error stack:', err?.stack);
       if (err?.message?.includes('timeout')) {
+        console.error('[TechnicianLogin] ⏱️ Login timeout detected');
         setError('Connection timeout. Please check your internet connection and try again.');
         toast.error('Connection timeout. Please check your network.');
       } else {
+        console.error('[TechnicianLogin] ❌ Generic login error');
         setError('Login failed. Please try again.');
         toast.error('Login failed. Please try again.');
       }
     } finally {
+      console.log('[TechnicianLogin] Login process finished, setting isLoading to false');
       setIsLoading(false);
     }
   };
