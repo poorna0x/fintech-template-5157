@@ -288,6 +288,7 @@ const AltchaWidget: React.FC<AltchaWidgetProps> = ({
         const result = await response.json();
         
         if (result.verified) {
+          console.log('[ALTCHA] ✅ Server verification successful!');
           setIsLoading(false);
           setError(null);
           onVerifyRef.current(true, payload);
@@ -298,6 +299,7 @@ const AltchaWidget: React.FC<AltchaWidgetProps> = ({
             }, 300);
           }
         } else {
+          console.error('[ALTCHA] ❌ Server verification failed:', result.error);
           setIsLoading(false);
           setError(result.error || 'Verification failed. Please try again.');
           onVerifyRef.current(false);
