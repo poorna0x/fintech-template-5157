@@ -358,6 +358,39 @@ const AltchaWidget: React.FC<AltchaWidgetProps> = ({
         console.log('[ALTCHA] Verification in progress...');
         setIsLoading(true);
         setError(null);
+        
+        // Clear any existing timeout
+        if (verifyingTimeoutRef.current) {
+          clearTimeout(verifyingTimeoutRef.current);
+        }
+        
+        // Add timeout to prevent infinite "verifying" state (20 seconds)
+        verifyingTimeoutRef.current = setTimeout(() => {
+          console.warn('[ALTCHA] ⚠️ Verification taking too long (20s), checking widget state...');
+          // Try to get widget state and reset if stuck
+          try {
+            const widgetState = (widget as any).getState?.();
+            console.log('[ALTCHA] Widget state after timeout:', widgetState);
+            if (widgetState === 'verifying' || isLoading) {
+              console.warn('[ALTCHA] Widget stuck in verifying state, resetting...');
+              setIsLoading(false);
+              setError('Verification timed out. Please refresh the page and try again.');
+              onVerifyRef.current(false);
+              // Try to reset widget
+              try {
+                (widget as any).reset?.();
+              } catch (resetErr) {
+                console.warn('[ALTCHA] Could not reset widget:', resetErr);
+              }
+            }
+          } catch (err) {
+            console.warn('[ALTCHA] Could not get widget state:', err);
+            // Still reset if we can't check state
+            setIsLoading(false);
+            setError('Verification timed out. Please refresh the page.');
+            onVerifyRef.current(false);
+          }
+        }, 20000); // 20 second timeout
       } else if (state === 'unverified') {
         console.log('[ALTCHA] Not verified');
         setIsLoading(false);
