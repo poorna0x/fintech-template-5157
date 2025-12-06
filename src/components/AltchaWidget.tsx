@@ -48,6 +48,7 @@ const AltchaWidget: React.FC<AltchaWidgetProps> = ({
   const isConfiguredRef = useRef(false); // Track if widget has been configured
   const onVerifyRef = useRef(onVerify); // Store latest onVerify callback
   const onAutoSubmitRef = useRef(onAutoSubmit); // Store latest onAutoSubmit callback
+  const verifyingTimeoutRef = useRef<NodeJS.Timeout | null>(null); // Track verifying timeout
 
   // Calculate complexity based on difficulty (similar to our custom implementation)
   // Lower base complexity for faster verification (1-2 seconds typical)
