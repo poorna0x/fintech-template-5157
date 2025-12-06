@@ -246,8 +246,6 @@ export const isTechnicianEmail = async (email: string): Promise<boolean> => {
 };
 
 // Simple session storage with Chrome-compatible fallback
-import { chromeStorage } from './storage';
-
 export const setAuthSession = (user: AuthUser) => {
   try {
     const userString = JSON.stringify(user);
