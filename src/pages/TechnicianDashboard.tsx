@@ -1309,7 +1309,8 @@ const TechnicianDashboard = () => {
       return;
     }
 
-    // Check permission status
+    // Check permission status for UI purposes only (don't block - Permissions API is unreliable)
+    // On iOS and some browsers, Permissions API doesn't work correctly, so we always try getCurrentPosition
     let permissionStatus = 'unknown';
     try {
       if ('permissions' in navigator) {
@@ -1328,19 +1329,13 @@ const TechnicianDashboard = () => {
         };
       }
     } catch (e) {
-      // Permissions API not supported or failed
-      console.log('Permissions API not available');
+      // Permissions API not supported or failed - this is common on iOS and some browsers
+      console.log('Permissions API not available or unreliable - will try getCurrentPosition directly');
     }
 
-    if (permissionStatus === 'denied') {
-      console.error('Location permission denied');
-      const errorMsg = 'Location permission denied. Click "Request Permission Again" to try again.';
-      setLocationError(errorMsg);
-      setLocationErrorType('permission');
-      setLocationPermissionDenied(true);
-      toast.error(errorMsg, { duration: 8000 });
-      return;
-    }
+    // Don't block based on permission check - let getCurrentPosition handle it naturally
+    // The Permissions API can return incorrect states, especially on mobile browsers
+    // Only use it for informational purposes, not to prevent the geolocation call
 
     console.log('🌐 [TechnicianDashboard] Calling navigator.geolocation.getCurrentPosition...');
     navigator.geolocation.getCurrentPosition(

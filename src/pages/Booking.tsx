@@ -899,19 +899,14 @@ const Booking: React.FC = () => {
         return;
       }
 
-      // Check permission status
+      // Check permission status for informational purposes only
+      // Don't block based on permission check - Permissions API is unreliable across browsers
+      // Let getCurrentPosition handle permission prompts naturally
       const permissionStatus = await checkLocationPermission();
-      
-      if (permissionStatus === 'denied') {
-        toast.error('Location permission denied. Please enable location access in your browser settings and refresh the page.');
-        setFormData(prev => ({ 
-          ...prev, 
-          address: 'Location permission denied. Please enable location access and try again, or enter your address manually.'
-        }));
-        loadingRef.current = false;
-        setIsLoadingLocation(false);
-        return;
-      }
+      // Note: We don't block here even if permissionStatus is 'denied' because:
+      // 1. Permissions API can be unreliable (especially on iOS and mobile Chrome)
+      // 2. getCurrentPosition will handle permission errors gracefully
+      // 3. User might have granted permission but API still shows 'denied'
 
       // Try with mobile-optimized settings first
       let position: GeolocationPosition;

@@ -7,6 +7,7 @@ import { toast } from 'sonner';
 import DraggableMap from '@/components/DraggableMap';
 import { useAuth } from '@/contexts/AuthContext';
 import { db } from '@/lib/supabase';
+import { isIOS } from '@/lib/cameraUtils';
 
 interface LocationData {
   latitude: number;
@@ -94,7 +95,9 @@ const TechnicianLocation = () => {
       return;
     }
 
-    // Check permission status
+    // Check permission status for UI purposes only (don't block - Permissions API is unreliable)
+    // On iOS and some browsers (including Chrome), Permissions API doesn't work correctly
+    // We always try getCurrentPosition and let it handle permission prompts naturally
     let permissionStatus = 'unknown';
     try {
       if ('permissions' in navigator) {
@@ -113,21 +116,13 @@ const TechnicianLocation = () => {
         };
       }
     } catch (e) {
-      // Permissions API not supported or failed
-      console.log('Permissions API not available');
+      // Permissions API not supported or failed - this is common on iOS and some browsers
+      console.log('Permissions API not available or unreliable - will try getCurrentPosition directly');
     }
 
-    if (permissionStatus === 'denied') {
-      const errorMsg = 'Location permission denied. Click "Request Permission Again" to try again.';
-      setError(errorMsg);
-      setErrorType('permission');
-      setPermissionDenied(true);
-      if (!autoUpdate) {
-        toast.error(errorMsg, { duration: 8000 });
-      }
-      setIsLoading(false);
-      return;
-    }
+    // Don't block based on permission check - let getCurrentPosition handle it naturally
+    // The Permissions API can return incorrect states, especially on mobile browsers and iOS
+    // Only use it for informational purposes, not to prevent the geolocation call
 
     console.log('🌐 [TechnicianLocation] Calling navigator.geolocation.getCurrentPosition...');
     navigator.geolocation.getCurrentPosition(
