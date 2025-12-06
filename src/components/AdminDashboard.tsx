@@ -5020,52 +5020,59 @@ const AdminDashboard = () => {
     
     console.log('✅ [AdminDashboard] Proceeding with distance calculation using:', jobCoords);
 
-    // Get assigned technician ID
+    // Get assigned technician ID - only process assigned technician
     const assignedTechnicianId = (job as any).assigned_technician_id || job.assignedTechnicianId || null;
+    
+    if (!assignedTechnicianId) {
+      toast.error('No technician assigned to this job.');
+      return;
+    }
 
-    // Filter technicians with valid locations and create mapping
-    const techniciansWithLocation = technicians
-      .map((technician, index) => ({
-        technician,
-        index,
-        location: technician.currentLocation
-      }))
-      .filter(item => item.location && item.location.latitude && item.location.longitude);
+    // Find the assigned technician
+    const assignedTechnician = technicians.find(t => t.id === assignedTechnicianId);
+    
+    if (!assignedTechnician) {
+      toast.error('Assigned technician not found.');
+      return;
+    }
 
-    // Initialize distances array with all technicians
-    const initialDistances = technicians.map(technician => {
-      const techLocation = technician.currentLocation;
-      const hasLocation = !!(techLocation && techLocation.latitude && techLocation.longitude);
-      const isAssigned = technician.id === assignedTechnicianId;
-      
-      // Format last updated time in 12-hour format
-      let lastUpdatedFormatted: string | undefined;
-      if (techLocation?.lastUpdated) {
-        try {
-          lastUpdatedFormatted = formatTime12Hour(techLocation.lastUpdated);
-        } catch (e) {
-          console.warn('Failed to format lastUpdated time:', e);
-        }
+    // Check if assigned technician has location data
+    const techLocation = assignedTechnician.currentLocation;
+    const hasLocation = !!(techLocation && techLocation.latitude && techLocation.longitude);
+    
+    if (!hasLocation) {
+      toast.error('Assigned technician does not have location data available.');
+      return;
+    }
+
+    // Format last updated time in 12-hour format
+    let lastUpdatedFormatted: string | undefined;
+    if (techLocation?.lastUpdated) {
+      try {
+        lastUpdatedFormatted = formatTime12Hour(techLocation.lastUpdated);
+      } catch (e) {
+        console.warn('Failed to format lastUpdated time:', e);
       }
-      
-      return {
-        technician,
-        distance: '',
-        duration: '',
-        durationValue: undefined,
-        estimatedArrival: undefined,
-        lastUpdated: lastUpdatedFormatted,
-        hasLocation,
-        isCalculating: hasLocation,
-        isAssigned
-      };
-    });
+    }
+
+    // Initialize distances array with only assigned technician
+    const initialDistances = [{
+      technician: assignedTechnician,
+      distance: '',
+      duration: '',
+      durationValue: undefined,
+      estimatedArrival: undefined,
+      lastUpdated: lastUpdatedFormatted,
+      hasLocation: true,
+      isCalculating: true,
+      isAssigned: true
+    }];
 
     setTechnicianDistances(initialDistances);
     setDistanceMeasurementDialogOpen(true);
     setIsCalculatingDistances(true);
 
-    // OPTIMIZED: Calculate all distances in ONE batch API call instead of individual calls
+    // Calculate distance for assigned technician only
     try {
       await ensureGoogleMapsLoaded();
       
@@ -5073,28 +5080,23 @@ const AdminDashboard = () => {
         throw new Error('DistanceMatrixService not available');
       }
 
-      if (techniciansWithLocation.length === 0) {
-        setIsCalculatingDistances(false);
-        return;
-      }
-
       const distanceMatrix = new (window as any).google.maps.DistanceMatrixService();
       
-      // Prepare origins (all technician locations) and destination (job location)
-      const origins = techniciansWithLocation.map(item => ({
-        lat: Number(item.location!.latitude),
-        lng: Number(item.location!.longitude)
-      }));
+      // Prepare origin (assigned technician location) and destination (job location)
+      const origin = {
+        lat: Number(techLocation!.latitude),
+        lng: Number(techLocation!.longitude)
+      };
       
       const destination = { lat: Number(jobCoords.lat), lng: Number(jobCoords.lng) };
 
-      // Single batch API call for all technicians
+      // Calculate distance for assigned technician only
       // Using DRIVING mode (works for bikes, scooters, and cars)
       // Note: Distance Matrix API provides road distance, not straight-line distance
       // Accuracy: Typically within 5-10% of actual travel distance
       distanceMatrix.getDistanceMatrix(
         {
-          origins: origins,
+          origins: [origin],
           destinations: [destination],
           travelMode: (window as any).google.maps.TravelMode.DRIVING,
           unitSystem: (window as any).google.maps.UnitSystem.METRIC,
@@ -5105,130 +5107,126 @@ const AdminDashboard = () => {
           setIsCalculatingDistances(false);
           
           if (status === (window as any).google.maps.DistanceMatrixStatus.OK && response) {
-            // Update distances with batch results
-            setTechnicianDistances(prev => {
-              const updated = [...prev];
+            const result = response.rows[0]?.elements[0];
+            
+            if (result && result.status === window.google.maps.DistanceMatrixElementStatus.OK) {
+              let distanceText = result.distance.text;
+              if (result.distance.value < 1000) {
+                distanceText = `${(result.distance.value / 1000).toFixed(2)} km`;
+              }
+              const durationText = result.duration?.text || '';
+              const durationValue = result.duration?.value || 0; // Duration in seconds
               
-              techniciansWithLocation.forEach((item, batchIndex) => {
-                const result = response.rows[batchIndex]?.elements[0];
-                
-                if (result && result.status === window.google.maps.DistanceMatrixElementStatus.OK) {
-                  let distanceText = result.distance.text;
-                  if (result.distance.value < 1000) {
-                    distanceText = `${(result.distance.value / 1000).toFixed(2)} km`;
-                  }
-                  const durationText = result.duration?.text || '';
-                  const durationValue = result.duration?.value || 0; // Duration in seconds
-                  
-                  // Calculate estimated arrival for assigned technician
-                  let estimatedArrival: string | undefined;
-                  const techItem = updated[item.index];
-                  if (techItem.isAssigned && techItem.technician.currentLocation?.lastUpdated && durationValue > 0) {
-                    try {
-                      const lastUpdatedDate = new Date(techItem.technician.currentLocation.lastUpdated);
-                      const arrivalDate = new Date(lastUpdatedDate.getTime() + durationValue * 1000);
-                      estimatedArrival = formatTime12Hour(arrivalDate);
-                    } catch (e) {
-                      console.warn('Failed to calculate estimated arrival:', e);
-                    }
-                  }
-                  
-                  updated[item.index] = {
-                    ...updated[item.index],
-                    distance: distanceText,
-                    duration: durationText,
-                    durationValue: durationValue,
-                    estimatedArrival: estimatedArrival,
-                    isCalculating: false
-                  };
-                } else {
-                  // Try fallback to BICYCLING mode for failed results
-                  const tryBicycling = () => {
-                    const bicyclingMatrix = new (window as any).google.maps.DistanceMatrixService();
-                    bicyclingMatrix.getDistanceMatrix(
-                      {
-                        origins: [origins[batchIndex]],
-                        destinations: [destination],
-                        travelMode: (window as any).google.maps.TravelMode.BICYCLING,
-                        unitSystem: (window as any).google.maps.UnitSystem.METRIC,
-                      },
-                      (bikeResponse: any, bikeStatus: any) => {
-                        if (bikeStatus === (window as any).google.maps.DistanceMatrixStatus.OK && bikeResponse) {
-                          const bikeResult = bikeResponse.rows[0]?.elements[0];
-                          if (bikeResult && bikeResult.status === window.google.maps.DistanceMatrixElementStatus.OK) {
-                            let distanceText = bikeResult.distance.text;
-                            if (bikeResult.distance.value < 1000) {
-                              distanceText = `${(bikeResult.distance.value / 1000).toFixed(2)} km`;
-                            }
-                            const durationText = bikeResult.duration?.text || '';
-                            const durationValue = bikeResult.duration?.value || 0;
-                            
-                            setTechnicianDistances(prevState => {
-                              const newUpdated = [...prevState];
-                              const techItem = newUpdated[item.index];
-                              
-                              // Calculate estimated arrival for assigned technician
-                              let estimatedArrival: string | undefined;
-                              if (techItem.isAssigned && techItem.technician.currentLocation?.lastUpdated && durationValue > 0) {
-                                try {
-                                  const lastUpdatedDate = new Date(techItem.technician.currentLocation.lastUpdated);
-                                  const arrivalDate = new Date(lastUpdatedDate.getTime() + durationValue * 1000);
-                                  estimatedArrival = formatTime12Hour(arrivalDate);
-                                } catch (e) {
-                                  console.warn('Failed to calculate estimated arrival:', e);
-                                }
-                              }
-                              
-                              newUpdated[item.index] = {
-                                ...newUpdated[item.index],
-                                distance: distanceText,
-                                duration: durationText,
-                                durationValue: durationValue,
-                                estimatedArrival: estimatedArrival,
-                                isCalculating: false
-                              };
-                              return newUpdated;
-                            });
+              // Calculate estimated arrival for assigned technician
+              let estimatedArrival: string | undefined;
+              if (techLocation?.lastUpdated && durationValue > 0) {
+                try {
+                  const lastUpdatedDate = new Date(techLocation.lastUpdated);
+                  const arrivalDate = new Date(lastUpdatedDate.getTime() + durationValue * 1000);
+                  estimatedArrival = formatTime12Hour(arrivalDate);
+                } catch (e) {
+                  console.warn('Failed to calculate estimated arrival:', e);
+                }
+              }
+              
+              setTechnicianDistances([{
+                technician: assignedTechnician,
+                distance: distanceText,
+                duration: durationText,
+                durationValue: durationValue,
+                estimatedArrival: estimatedArrival,
+                lastUpdated: lastUpdatedFormatted,
+                hasLocation: true,
+                isCalculating: false,
+                isAssigned: true
+              }]);
+            } else {
+              // Try fallback to BICYCLING mode for failed results
+              if (result?.status === window.google.maps.DistanceMatrixElementStatus.ZERO_RESULTS) {
+                const bicyclingMatrix = new (window as any).google.maps.DistanceMatrixService();
+                bicyclingMatrix.getDistanceMatrix(
+                  {
+                    origins: [origin],
+                    destinations: [destination],
+                    travelMode: (window as any).google.maps.TravelMode.BICYCLING,
+                    unitSystem: (window as any).google.maps.UnitSystem.METRIC,
+                  },
+                  (bikeResponse: any, bikeStatus: any) => {
+                    if (bikeStatus === (window as any).google.maps.DistanceMatrixStatus.OK && bikeResponse) {
+                      const bikeResult = bikeResponse.rows[0]?.elements[0];
+                      if (bikeResult && bikeResult.status === window.google.maps.DistanceMatrixElementStatus.OK) {
+                        let distanceText = bikeResult.distance.text;
+                        if (bikeResult.distance.value < 1000) {
+                          distanceText = `${(bikeResult.distance.value / 1000).toFixed(2)} km`;
+                        }
+                        const durationText = bikeResult.duration?.text || '';
+                        const durationValue = bikeResult.duration?.value || 0;
+                        
+                        // Calculate estimated arrival for assigned technician
+                        let estimatedArrival: string | undefined;
+                        if (techLocation?.lastUpdated && durationValue > 0) {
+                          try {
+                            const lastUpdatedDate = new Date(techLocation.lastUpdated);
+                            const arrivalDate = new Date(lastUpdatedDate.getTime() + durationValue * 1000);
+                            estimatedArrival = formatTime12Hour(arrivalDate);
+                          } catch (e) {
+                            console.warn('Failed to calculate estimated arrival:', e);
                           }
                         }
+                        
+                        setTechnicianDistances([{
+                          technician: assignedTechnician,
+                          distance: distanceText,
+                          duration: durationText,
+                          durationValue: durationValue,
+                          estimatedArrival: estimatedArrival,
+                          lastUpdated: lastUpdatedFormatted,
+                          hasLocation: true,
+                          isCalculating: false,
+                          isAssigned: true
+                        }]);
+                      } else {
+                        setTechnicianDistances([{
+                          technician: assignedTechnician,
+                          distance: '',
+                          duration: '',
+                          durationValue: undefined,
+                          estimatedArrival: undefined,
+                          lastUpdated: lastUpdatedFormatted,
+                          hasLocation: true,
+                          isCalculating: false,
+                          isAssigned: true
+                        }]);
                       }
-                    );
-                  };
-                  
-                  // Only try bicycling for ZERO_RESULTS, not for other errors
-                  if (result?.status === window.google.maps.DistanceMatrixElementStatus.ZERO_RESULTS) {
-                    tryBicycling();
-                  } else {
-                    updated[item.index] = {
-                      ...updated[item.index],
-                      isCalculating: false
-                    };
+                    } else {
+                      setTechnicianDistances([{
+                        technician: assignedTechnician,
+                        distance: '',
+                        duration: '',
+                        durationValue: undefined,
+                        estimatedArrival: undefined,
+                        lastUpdated: lastUpdatedFormatted,
+                        hasLocation: true,
+                        isCalculating: false,
+                        isAssigned: true
+                      }]);
+                    }
                   }
-                }
-              });
-              
-              // Sort: assigned technician first, then by distance
-              updated.sort((a, b) => {
-                // Assigned technician always comes first
-                if (a.isAssigned && !b.isAssigned) return -1;
-                if (!a.isAssigned && b.isAssigned) return 1;
-                
-                // If both or neither are assigned, sort by distance
-                if (!a.hasLocation && !b.hasLocation) return 0;
-                if (!a.hasLocation) return 1;
-                if (!b.hasLocation) return -1;
-                if (!a.distance && !b.distance) return 0;
-                if (!a.distance) return 1;
-                if (!b.distance) return -1;
-                
-                // Extract numeric value from distance string (e.g., "5.2 km" -> 5.2)
-                const aValue = parseFloat(a.distance.replace(/[^\d.]/g, '')) || Infinity;
-                const bValue = parseFloat(b.distance.replace(/[^\d.]/g, '')) || Infinity;
-                return aValue - bValue;
-              });
-              
-              return updated;
-            });
+                );
+              } else {
+                setTechnicianDistances([{
+                  technician: assignedTechnician,
+                  distance: '',
+                  duration: '',
+                  durationValue: undefined,
+                  estimatedArrival: undefined,
+                  lastUpdated: lastUpdatedFormatted,
+                  hasLocation: true,
+                  isCalculating: false,
+                  isAssigned: true
+                }]);
+              }
+            }
           } else {
             setIsCalculatingDistances(false);
             toast.error(`Distance calculation failed: ${status}`);
@@ -8093,12 +8091,19 @@ const AdminDashboard = () => {
                                           </>
                                         ) : null;
                                       })()}
-                                      <DropdownMenuItem 
-                                        onClick={() => handleMeasureDistance(job)}
-                                      >
-                                        <Navigation className="mr-2 h-4 w-4" />
-                                        Measure Distance
-                                      </DropdownMenuItem>
+                                      {(() => {
+                                        // Only show Measure Distance if job is assigned to a technician
+                                        const assignedTechnicianId = (job as any).assigned_technician_id || (job as any).assignedTechnicianId;
+                                        
+                                        return assignedTechnicianId ? (
+                                          <DropdownMenuItem 
+                                            onClick={() => handleMeasureDistance(job)}
+                                          >
+                                            <Navigation className="mr-2 h-4 w-4" />
+                                            Measure Distance
+                                          </DropdownMenuItem>
+                                        ) : null;
+                                      })()}
                                       <DropdownMenuItem 
                                         onClick={() => {
                                           setJobToDelete(job);
