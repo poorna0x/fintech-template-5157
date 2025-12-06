@@ -108,9 +108,12 @@ const AltchaWidget: React.FC<AltchaWidgetProps> = ({
       
       // Configure immediately to prevent logo flash
       try {
+          console.log('[ALTCHA] Configuring widget with API URL:', apiUrl);
           // Configure widget programmatically - match official ALTCHA styling
+          // IMPORTANT: Both challengeurl and verifyurl are required for ALTCHA to work
           widgetElement.configure({
             challengeurl: `${apiUrl}?complexity=${getComplexity()}`,
+            verifyurl: apiUrl, // Verification endpoint (POST request)
             auto: autoStart ? 'onload' : 'off',
             workers: Math.min(navigator.hardwareConcurrency || 4, 8),
             hidefooter: false, // Show footer with custom text
@@ -119,8 +122,9 @@ const AltchaWidget: React.FC<AltchaWidgetProps> = ({
               footer: 'Protected by HydrogenRO' // Customize footer text
             }
           });
+          console.log('[ALTCHA] Widget configured successfully');
       } catch (err) {
-        console.error('Widget configuration error:', err);
+        console.error('[ALTCHA] Widget configuration error:', err);
         setError('Failed to configure verification');
         onVerifyRef.current(false);
         isConfiguredRef.current = false; // Allow retry on error
@@ -329,21 +333,28 @@ const AltchaWidget: React.FC<AltchaWidgetProps> = ({
       const state = e.detail?.state;
       const payload = e.detail?.payload;
 
+      console.log('[ALTCHA] State change:', state, payload ? 'has payload' : 'no payload');
+
       if (state === 'verified' && payload) {
         // Widget verified client-side, now verify with server
+        console.log('[ALTCHA] Client-side verification complete, verifying with server...');
         verifyWithServer(payload);
       } else if (state === 'error') {
+        console.error('[ALTCHA] Widget error:', e.detail?.error);
         setIsLoading(false);
         setError(e.detail?.error || 'Verification failed. Please try again.');
         onVerifyRef.current(false);
       } else if (state === 'expired') {
+        console.warn('[ALTCHA] Verification expired');
         setIsLoading(false);
         setError('Verification expired. Please try again.');
         onVerifyRef.current(false);
       } else if (state === 'verifying') {
+        console.log('[ALTCHA] Verification in progress...');
         setIsLoading(true);
         setError(null);
       } else if (state === 'unverified') {
+        console.log('[ALTCHA] Not verified');
         setIsLoading(false);
         onVerifyRef.current(false);
       }

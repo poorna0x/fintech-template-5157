@@ -301,6 +301,18 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       }
       
       // If not a technician, try Supabase auth (for admins only)
+      // BUT: Only do this if we're not on the technician login page
+      // Check the current path to determine context
+      const isTechnicianLoginPage = typeof window !== 'undefined' && 
+        window.location.pathname.includes('/technician/login');
+      
+      if (isTechnicianLoginPage) {
+        // On technician login page - don't try admin auth
+        console.log('On technician login page - not trying Supabase auth for admin');
+        toast.error('Invalid credentials. Please check your email and password.');
+        return false;
+      }
+      
       console.log('Not a technician email, trying Supabase auth for admin...');
       
       const { data, error } = await supabase.auth.signInWithPassword({

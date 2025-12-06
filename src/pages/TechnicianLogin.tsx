@@ -117,15 +117,30 @@ const TechnicianLogin = () => {
       const success = await Promise.race([loginPromise, timeoutPromise]) as boolean;
       
       if (success) {
-        console.log('Login successful, navigating to technician dashboard...');
-        // Small delay to ensure state is updated (reduced for Chrome mobile)
-        setTimeout(() => {
-          console.log('Navigating to /technician');
+        // IMPORTANT: Check if user is actually a technician before navigating
+        // Wait a bit for AuthContext to update user state
+        await new Promise(resolve => setTimeout(resolve, isChromeMobile ? 150 : 300));
+        
+        // Check user role from AuthContext - use ref to get latest value
+        const currentUser = userRef.current;
+        console.log('[TechnicianLogin] Login success, checking user role:', currentUser?.role);
+        
+        if (currentUser && currentUser.role === 'technician') {
+          console.log('✅ Technician login successful, navigating to technician dashboard...');
           navigate('/technician', { replace: true });
-        }, isChromeMobile ? 50 : 100);
+        } else {
+          // User logged in but is not a technician (probably admin logged in)
+          console.warn('⚠️ Login succeeded but user is not a technician (role:', currentUser?.role, '), redirecting to admin...');
+          setError('This account is not a technician account. Redirecting to admin dashboard...');
+          toast.error('This account is not a technician account.');
+          // Redirect to admin dashboard
+          setTimeout(() => {
+            navigate('/admin', { replace: true });
+          }, 1500);
+        }
       } else {
-        console.log('Login failed - success was false');
-        setError('Login failed. Please try again.');
+        console.log('❌ Login failed - success was false');
+        setError('Login failed. Please check your credentials.');
       }
     } catch (err: any) {
       console.error('Login error:', err);
