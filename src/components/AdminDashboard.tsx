@@ -286,11 +286,12 @@ const AdminDashboard = () => {
     technician: Technician;
     distance: string;
     duration: string;
+    durationValue?: number; // Duration in seconds for calculation
+    estimatedArrival?: string; // Estimated arrival time in 12-hour format
+    lastUpdated?: string; // Last updated time in 12-hour format
     hasLocation: boolean;
     isCalculating: boolean;
-    isAssigned?: boolean; // Mark if this technician is assigned to the job
-    estimatedArrivalTime?: string; // Estimated arrival time for assigned technician
-    lastUpdatedTime?: string; // Formatted last updated time
+    isAssigned?: boolean; // Whether this technician is assigned to the job
   }>>([]);
   const [isCalculatingDistances, setIsCalculatingDistances] = useState(false);
   
@@ -4906,6 +4907,17 @@ const AdminDashboard = () => {
 
   // handleEditJobSubmit moved to EditJobDialog component
 
+  // Helper function to format time in 12-hour format
+  const formatTime12Hour = (date: Date | string): string => {
+    const d = typeof date === 'string' ? new Date(date) : date;
+    const hours = d.getHours();
+    const minutes = d.getMinutes();
+    const ampm = hours >= 12 ? 'PM' : 'AM';
+    const displayHours = hours % 12 || 12;
+    const displayMinutes = minutes.toString().padStart(2, '0');
+    return `${displayHours}:${displayMinutes} ${ampm}`;
+  };
+
   // Handle measure distance for a job - OPTIMIZED: Uses batch API call for all technicians
   const handleMeasureDistance = async (job: Job) => {
     setSelectedJobForDistance(job);
@@ -5008,6 +5020,9 @@ const AdminDashboard = () => {
     
     console.log('✅ [AdminDashboard] Proceeding with distance calculation using:', jobCoords);
 
+    // Get assigned technician ID
+    const assignedTechnicianId = (job as any).assigned_technician_id || job.assignedTechnicianId || null;
+
     // Filter technicians with valid locations and create mapping
     const techniciansWithLocation = technicians
       .map((technician, index) => ({
@@ -5017,101 +5032,33 @@ const AdminDashboard = () => {
       }))
       .filter(item => item.location && item.location.latitude && item.location.longitude);
 
-    // Get assigned technician ID
-    const assignedTechnicianId = job.assigned_technician_id || job.assignedTechnicianId || (job as any).assignedTechnician?.id;
-    
-    // Helper function to format last updated time
-    const formatLastUpdated = (lastUpdated: string | undefined): string => {
-      if (!lastUpdated) return 'Never updated';
-      
-      try {
-        const updatedTime = new Date(lastUpdated);
-        const now = new Date();
-        const diffMs = now.getTime() - updatedTime.getTime();
-        const diffMins = Math.floor(diffMs / 60000);
-        const diffHours = Math.floor(diffMs / 3600000);
-        const diffDays = Math.floor(diffMs / 86400000);
-        
-        if (diffMins < 1) return 'Just now';
-        if (diffMins < 60) return `Updated ${diffMins} ${diffMins === 1 ? 'minute' : 'minutes'} ago`;
-        if (diffHours < 24) return `Updated ${diffHours} ${diffHours === 1 ? 'hour' : 'hours'} ago`;
-        if (diffDays < 7) return `Updated ${diffDays} ${diffDays === 1 ? 'day' : 'days'} ago`;
-        
-        // For older updates, show the actual date/time
-        return `Last updated: ${updatedTime.toLocaleString('en-IN', { 
-          day: 'numeric', 
-          month: 'short', 
-          hour: '2-digit', 
-          minute: '2-digit' 
-        })}`;
-      } catch (error) {
-        return 'Unknown';
-      }
-    };
-    
-    // Helper function to parse duration and calculate estimated arrival time
-    const calculateEstimatedArrival = (duration: string, lastUpdated: string | undefined): string | undefined => {
-      if (!duration || !lastUpdated) return undefined;
-      
-      try {
-        // Parse duration string (e.g., "15 mins", "1 hour 30 mins", "45 min")
-        let totalMinutes = 0;
-        
-        // Extract hours
-        const hourMatch = duration.match(/(\d+)\s*(?:hour|hr|h)/i);
-        if (hourMatch) {
-          totalMinutes += parseInt(hourMatch[1]) * 60;
-        }
-        
-        // Extract minutes
-        const minMatch = duration.match(/(\d+)\s*(?:min|minute|minutes)/i);
-        if (minMatch) {
-          totalMinutes += parseInt(minMatch[1]);
-        }
-        
-        if (totalMinutes === 0) return undefined;
-        
-        // Calculate arrival time
-        const lastUpdatedTime = new Date(lastUpdated);
-        const arrivalTime = new Date(lastUpdatedTime.getTime() + totalMinutes * 60000);
-        
-        // Format as "Will arrive at X:XX PM" or "ETA: X:XX PM"
-        const timeStr = arrivalTime.toLocaleTimeString('en-IN', { 
-          hour: '2-digit', 
-          minute: '2-digit',
-          hour12: true 
-        });
-        
-        return `Will arrive at ${timeStr}`;
-      } catch (error) {
-        console.error('Error calculating estimated arrival:', error);
-        return undefined;
-      }
-    };
-    
     // Initialize distances array with all technicians
     const initialDistances = technicians.map(technician => {
       const techLocation = technician.currentLocation;
       const hasLocation = !!(techLocation && techLocation.latitude && techLocation.longitude);
-      const isAssigned = assignedTechnicianId === technician.id;
-      const lastUpdatedTime = formatLastUpdated(techLocation?.lastUpdated);
+      const isAssigned = technician.id === assignedTechnicianId;
+      
+      // Format last updated time in 12-hour format
+      let lastUpdatedFormatted: string | undefined;
+      if (techLocation?.lastUpdated) {
+        try {
+          lastUpdatedFormatted = formatTime12Hour(techLocation.lastUpdated);
+        } catch (e) {
+          console.warn('Failed to format lastUpdated time:', e);
+        }
+      }
       
       return {
         technician,
         distance: '',
         duration: '',
+        durationValue: undefined,
+        estimatedArrival: undefined,
+        lastUpdated: lastUpdatedFormatted,
         hasLocation,
         isCalculating: hasLocation,
-        isAssigned,
-        lastUpdatedTime
+        isAssigned
       };
-    });
-    
-    // Sort: assigned technician first, then others
-    initialDistances.sort((a, b) => {
-      if (a.isAssigned && !b.isAssigned) return -1;
-      if (!a.isAssigned && b.isAssigned) return 1;
-      return 0;
     });
 
     setTechnicianDistances(initialDistances);
@@ -5171,19 +5118,28 @@ const AdminDashboard = () => {
                     distanceText = `${(result.distance.value / 1000).toFixed(2)} km`;
                   }
                   const durationText = result.duration?.text || '';
+                  const durationValue = result.duration?.value || 0; // Duration in seconds
                   
-                  // Calculate estimated arrival time for assigned technician
-                  const techLocation = updated[item.index].technician.currentLocation;
-                  const estimatedArrival = updated[item.index].isAssigned 
-                    ? calculateEstimatedArrival(durationText, techLocation?.lastUpdated)
-                    : undefined;
+                  // Calculate estimated arrival for assigned technician
+                  let estimatedArrival: string | undefined;
+                  const techItem = updated[item.index];
+                  if (techItem.isAssigned && techItem.technician.currentLocation?.lastUpdated && durationValue > 0) {
+                    try {
+                      const lastUpdatedDate = new Date(techItem.technician.currentLocation.lastUpdated);
+                      const arrivalDate = new Date(lastUpdatedDate.getTime() + durationValue * 1000);
+                      estimatedArrival = formatTime12Hour(arrivalDate);
+                    } catch (e) {
+                      console.warn('Failed to calculate estimated arrival:', e);
+                    }
+                  }
                   
                   updated[item.index] = {
                     ...updated[item.index],
                     distance: distanceText,
                     duration: durationText,
-                    isCalculating: false,
-                    estimatedArrivalTime: estimatedArrival
+                    durationValue: durationValue,
+                    estimatedArrival: estimatedArrival,
+                    isCalculating: false
                   };
                 } else {
                   // Try fallback to BICYCLING mode for failed results
@@ -5205,22 +5161,31 @@ const AdminDashboard = () => {
                               distanceText = `${(bikeResult.distance.value / 1000).toFixed(2)} km`;
                             }
                             const durationText = bikeResult.duration?.text || '';
+                            const durationValue = bikeResult.duration?.value || 0;
                             
                             setTechnicianDistances(prevState => {
                               const newUpdated = [...prevState];
+                              const techItem = newUpdated[item.index];
                               
-                              // Calculate estimated arrival time for assigned technician
-                              const techLocation = newUpdated[item.index].technician.currentLocation;
-                              const estimatedArrival = newUpdated[item.index].isAssigned 
-                                ? calculateEstimatedArrival(durationText, techLocation?.lastUpdated)
-                                : undefined;
+                              // Calculate estimated arrival for assigned technician
+                              let estimatedArrival: string | undefined;
+                              if (techItem.isAssigned && techItem.technician.currentLocation?.lastUpdated && durationValue > 0) {
+                                try {
+                                  const lastUpdatedDate = new Date(techItem.technician.currentLocation.lastUpdated);
+                                  const arrivalDate = new Date(lastUpdatedDate.getTime() + durationValue * 1000);
+                                  estimatedArrival = formatTime12Hour(arrivalDate);
+                                } catch (e) {
+                                  console.warn('Failed to calculate estimated arrival:', e);
+                                }
+                              }
                               
                               newUpdated[item.index] = {
                                 ...newUpdated[item.index],
                                 distance: distanceText,
                                 duration: durationText,
-                                isCalculating: false,
-                                estimatedArrivalTime: estimatedArrival
+                                durationValue: durationValue,
+                                estimatedArrival: estimatedArrival,
+                                isCalculating: false
                               };
                               return newUpdated;
                             });
@@ -5242,8 +5207,13 @@ const AdminDashboard = () => {
                 }
               });
               
-              // Sort by distance (technicians with valid distances first, then by distance value)
+              // Sort: assigned technician first, then by distance
               updated.sort((a, b) => {
+                // Assigned technician always comes first
+                if (a.isAssigned && !b.isAssigned) return -1;
+                if (!a.isAssigned && b.isAssigned) return 1;
+                
+                // If both or neither are assigned, sort by distance
                 if (!a.hasLocation && !b.hasLocation) return 0;
                 if (!a.hasLocation) return 1;
                 if (!b.hasLocation) return -1;
@@ -9472,9 +9442,9 @@ const AdminDashboard = () => {
                   {technicianDistances.map((item, index) => (
                     <div
                       key={item.technician.id}
-                      className={`p-4 border rounded-lg transition-all ${
+                      className={`p-4 border rounded-lg ${
                         item.isAssigned
-                          ? 'border-blue-500 bg-blue-50 hover:bg-blue-100 shadow-md'
+                          ? 'border-blue-500 bg-blue-50 hover:bg-blue-100'
                           : item.hasLocation && item.distance
                           ? 'border-gray-200 hover:border-blue-300 bg-white'
                           : 'border-gray-100 bg-gray-50'
@@ -9483,7 +9453,9 @@ const AdminDashboard = () => {
                       <div className="flex items-start justify-between">
                         <div className="flex-1 min-w-0">
                           <div className="flex items-center gap-2">
-                            <h4 className="font-semibold text-gray-900 truncate">
+                            <h4 className={`font-semibold truncate ${
+                              item.isAssigned ? 'text-blue-900' : 'text-gray-900'
+                            }`}>
                               {item.technician.fullName}
                             </h4>
                             {item.isAssigned && (
@@ -9492,60 +9464,71 @@ const AdminDashboard = () => {
                               </Badge>
                             )}
                           </div>
-                          <p className="text-sm text-gray-500 mt-1">
+                          <p className={`text-sm mt-1 ${
+                            item.isAssigned ? 'text-blue-700' : 'text-gray-500'
+                          }`}>
                             {item.technician.employeeId}
                           </p>
-                          
-                          {/* Last updated time for all technicians */}
-                          {item.lastUpdatedTime && (
-                            <div className="mt-1 text-xs text-gray-500 flex items-center gap-1">
-                              <Clock className="h-3 w-3" />
-                              {item.lastUpdatedTime}
-                            </div>
-                          )}
-                          
                           {item.hasLocation ? (
-                            <div className="mt-2 flex flex-col gap-2">
+                            <div className="mt-2 space-y-2">
                               {item.isCalculating ? (
                                 <div className="flex items-center gap-2 text-sm text-gray-500">
                                   <RefreshCw className="h-4 w-4 animate-spin" />
                                   Calculating...
                                 </div>
                               ) : item.distance ? (
-                                <>
-                                  <div className="flex items-center gap-4 flex-wrap">
-                                    <div className="flex items-center gap-2">
-                                      <MapPin className="h-4 w-4 text-blue-600" />
-                                      <span className="font-medium text-gray-900">
-                                        {item.distance}
-                                      </span>
-                                    </div>
-                                    {item.duration && (
-                                      <div className="flex items-center gap-2 text-sm text-gray-600">
-                                        <Clock className="h-4 w-4" />
-                                        {item.duration}
-                                      </div>
-                                    )}
+                                <div className="flex flex-wrap items-center gap-4">
+                                  <div className="flex items-center gap-2">
+                                    <MapPin className="h-4 w-4 text-blue-600" />
+                                    <span className={`font-medium ${
+                                      item.isAssigned ? 'text-blue-900' : 'text-gray-900'
+                                    }`}>
+                                      {item.distance}
+                                    </span>
                                   </div>
-                                  
-                                  {/* Estimated arrival time for assigned technician only */}
-                                  {item.isAssigned && item.estimatedArrivalTime && (
-                                    <div className="flex items-center gap-2 text-sm font-medium text-blue-700 bg-blue-100 px-2 py-1 rounded">
-                                      <Navigation className="h-4 w-4" />
-                                      {item.estimatedArrivalTime}
+                                  {item.duration && (
+                                    <div className={`flex items-center gap-2 text-sm ${
+                                      item.isAssigned ? 'text-blue-700' : 'text-gray-600'
+                                    }`}>
+                                      <Clock className="h-4 w-4" />
+                                      {item.duration}
                                     </div>
                                   )}
-                                </>
+                                  {item.isAssigned && item.estimatedArrival && (
+                                    <div className="flex items-center gap-2 text-sm font-semibold text-blue-700">
+                                      <Clock className="h-4 w-4" />
+                                      Estimated arrival: {item.estimatedArrival}
+                                    </div>
+                                  )}
+                                </div>
                               ) : (
                                 <span className="text-sm text-gray-500">
                                   Distance calculation failed
                                 </span>
                               )}
+                              {item.lastUpdated && (
+                                <div className={`flex items-center gap-2 text-xs ${
+                                  item.isAssigned ? 'text-blue-600' : 'text-gray-500'
+                                }`}>
+                                  <Clock className="h-3 w-3" />
+                                  Last updated: {item.lastUpdated}
+                                </div>
+                              )}
                             </div>
                           ) : (
-                            <div className="mt-2 text-sm text-gray-400 flex items-center gap-2">
-                              <MapPin className="h-4 w-4" />
-                              No location data available
+                            <div className="mt-2 space-y-2">
+                              <div className="text-sm text-gray-400 flex items-center gap-2">
+                                <MapPin className="h-4 w-4" />
+                                No location data available
+                              </div>
+                              {item.lastUpdated && (
+                                <div className={`flex items-center gap-2 text-xs ${
+                                  item.isAssigned ? 'text-blue-600' : 'text-gray-500'
+                                }`}>
+                                  <Clock className="h-3 w-3" />
+                                  Last updated: {item.lastUpdated}
+                                </div>
+                              )}
                             </div>
                           )}
                         </div>
