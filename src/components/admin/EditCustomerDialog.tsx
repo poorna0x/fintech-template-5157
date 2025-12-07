@@ -866,6 +866,59 @@ const EditCustomerDialog: React.FC<EditCustomerDialogProps> = ({
         throw new Error(error.message);
       }
 
+      // Check if brand or model changed for RO service type
+      const roServiceIndex = editFormData.service_types.indexOf('RO');
+      let roBrandChanged = false;
+      let roModelChanged = false;
+      
+      if (roServiceIndex >= 0) {
+        const roEquipment = editFormData.equipment['RO'];
+        const newBrand = roEquipment?.brand?.trim() || '';
+        const newModel = roEquipment?.model?.trim() || '';
+        
+        // Parse original customer brand/model (comma-separated)
+        const originalBrands = (customer.brand || '').split(',').map((s: string) => s.trim());
+        const originalModels = (customer.model || '').split(',').map((s: string) => s.trim());
+        const originalRoBrand = originalBrands[roServiceIndex] || '';
+        const originalRoModel = originalModels[roServiceIndex] || '';
+        
+        roBrandChanged = newBrand !== originalRoBrand;
+        roModelChanged = newModel !== originalRoModel;
+      }
+
+      // Update all jobs for this customer if RO brand or model changed
+      if ((roBrandChanged || roModelChanged) && roServiceIndex >= 0) {
+        const roEquipment = editFormData.equipment['RO'];
+        const newBrand = roEquipment?.brand?.trim() || '';
+        const newModel = roEquipment?.model?.trim() || '';
+
+        try {
+          // Get all jobs for this customer
+          const { data: customerJobs, error: jobsError } = await db.jobs.getByCustomerId(customer.id);
+          
+          if (!jobsError && customerJobs && customerJobs.length > 0) {
+            // Update all RO jobs for this customer
+            const roJobs = customerJobs.filter((job: any) => job.service_type === 'RO');
+            
+            if (roJobs.length > 0) {
+              const updatePromises = roJobs.map(async (job: any) => {
+                return db.jobs.update(job.id, {
+                  brand: newBrand,
+                  model: newModel
+                });
+              });
+
+              await Promise.all(updatePromises);
+              console.log(`Updated ${updatePromises.length} RO job(s) with new brand/model`);
+            }
+          }
+        } catch (jobsUpdateError) {
+          console.error('Error updating jobs:', jobsUpdateError);
+          // Don't fail the customer update if job update fails, but log it
+          toast.warning('Customer updated, but some jobs may not have been updated');
+        }
+      }
+
       if (updatedCustomerFromDb) {
         const transformedCustomer = transformCustomerData(updatedCustomerFromDb);
         onCustomerUpdated(transformedCustomer);
@@ -876,7 +929,23 @@ const EditCustomerDialog: React.FC<EditCustomerDialogProps> = ({
       lastSavedFormDataRef.current = JSON.stringify(editFormData);
       hasUnsavedChangesRef.current = false;
       
-      toast.success('Customer updated successfully!');
+      // Show success message
+      if ((roBrandChanged || roModelChanged) && roServiceIndex >= 0) {
+        // Get job count for message
+        try {
+          const { data: customerJobs } = await db.jobs.getByCustomerId(customer.id);
+          const roJobsCount = customerJobs?.filter((job: any) => job.service_type === 'RO').length || 0;
+          if (roJobsCount > 0) {
+            toast.success(`Customer and ${roJobsCount} job(s) updated successfully!`);
+          } else {
+            toast.success('Customer updated successfully!');
+          }
+        } catch {
+          toast.success('Customer updated successfully!');
+        }
+      } else {
+        toast.success('Customer updated successfully!');
+      }
       onOpenChange(false);
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
