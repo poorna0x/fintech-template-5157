@@ -18,6 +18,7 @@ import {
   Mail
 } from 'lucide-react';
 import { toast } from 'sonner';
+import { formatPhoneForWhatsApp } from '@/lib/utils';
 
 const PaymentRequest: React.FC = () => {
   const [customerDetails, setCustomerDetails] = useState({
@@ -84,7 +85,8 @@ This link will take you directly to our payment gateway where you can pay ₹15,
 
 Thank you for choosing our services!`;
     
-    const whatsappUrl = `https://wa.me/${customerDetails.phone.replace(/\D/g, '')}?text=${encodeURIComponent(message)}`;
+    const formattedPhone = formatPhoneForWhatsApp(customerDetails.phone);
+    const whatsappUrl = `https://wa.me/${formattedPhone}?text=${encodeURIComponent(message)}`;
     window.open(whatsappUrl, '_blank', 'noopener,noreferrer');
   };
 

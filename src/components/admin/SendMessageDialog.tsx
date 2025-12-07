@@ -4,6 +4,7 @@ import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
 import { WhatsAppIcon } from '@/components/WhatsAppIcon';
 import { Job } from '@/types';
+import { formatPhoneForWhatsApp } from '@/lib/utils';
 
 interface SendMessageDialogProps {
   open: boolean;
@@ -68,7 +69,8 @@ For any queries or support, please contact us:
               variant="default"
               className="w-full bg-green-600 hover:bg-green-700 text-white"
               onClick={async () => {
-                const whatsappUrl = `https://wa.me/${customerPhone.replace(/\D/g, '')}?text=${encodeURIComponent(whatsappMessage)}`;
+                const formattedPhone = formatPhoneForWhatsApp(customerPhone);
+                const whatsappUrl = `https://wa.me/${formattedPhone}?text=${encodeURIComponent(whatsappMessage)}`;
                 window.open(whatsappUrl, '_blank', 'noopener,noreferrer');
                 await onMessageSent(job.id);
               }}

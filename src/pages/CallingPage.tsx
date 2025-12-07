@@ -45,6 +45,7 @@ const WhatsAppIcon = ({ className }: { className?: string }) => (
 import { toast } from 'sonner';
 import { db, supabase } from '@/lib/supabase';
 import { Customer } from '@/types';
+import { formatPhoneForWhatsApp } from '@/lib/utils';
 import CustomerPhotoGalleryDialog from '@/components/admin/CustomerPhotoGalleryDialog';
 import CustomerReportDialog from '@/components/admin/CustomerReportDialog';
 
@@ -430,14 +431,14 @@ const CallingPage = ({ hideHeader = false, onBack }: CallingPageProps = {}) => {
   };
 
   const sendWhatsAppMessage = (customer: CustomerWithHistory, template: string) => {
-    const phoneNumber = customer.phone?.replace(/\D/g, '');
-    if (!phoneNumber) {
+    if (!customer.phone) {
       toast.error('Phone number not available');
       return;
     }
 
+    const formattedPhone = formatPhoneForWhatsApp(customer.phone);
     const message = generateWhatsAppMessage(customer, template);
-    const whatsappUrl = `https://wa.me/${phoneNumber}?text=${encodeURIComponent(message)}`;
+    const whatsappUrl = `https://wa.me/${formattedPhone}?text=${encodeURIComponent(message)}`;
     window.open(whatsappUrl, '_blank', 'noopener,noreferrer');
     
     // Close dialog and open status dialog
