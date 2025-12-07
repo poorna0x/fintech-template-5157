@@ -1,4 +1,5 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
+import { calculateHaversineDistance } from '@/lib/distance';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
@@ -39,6 +40,9 @@ const ReassignJobDialog: React.FC<ReassignJobDialogProps> = ({
 }) => {
   const [techniciansWithDistances, setTechniciansWithDistances] = useState<TechnicianWithDistance[]>([]);
   const [isCalculatingDistances, setIsCalculatingDistances] = useState(false);
+  
+  // Cache for distance calculations (key: "lat1,lng1-lat2,lng2", value: { distance, duration })
+  const distanceCacheRef = useRef<Map<string, { distance: string; duration: string; distanceValue: number }>>(new Map());
 
   // Ensure Google Maps is loaded
   const ensureGoogleMapsLoaded = useCallback((): Promise<void> => {
@@ -136,6 +140,100 @@ const ReassignJobDialog: React.FC<ReassignJobDialogProps> = ({
     setIsCalculatingDistances(true);
 
     try {
+      // Step 1: Use Haversine formula to calculate straight-line distances and filter to top 10 closest
+      const techniciansWithHaversine = techniciansWithLocation.map((tech) => {
+        const location = (tech as any).current_location || tech.currentLocation;
+        const haversineDistance = calculateHaversineDistance(
+          jobLocation.lat,
+          jobLocation.lng,
+          Number(location.latitude),
+          Number(location.longitude)
+        );
+        return {
+          tech,
+          haversineDistance, // in kilometers
+          location: {
+            lat: Number(location.latitude),
+            lng: Number(location.longitude),
+          }
+        };
+      });
+
+      // Sort by Haversine distance and take top 10 for Distance Matrix API call
+      techniciansWithHaversine.sort((a, b) => a.haversineDistance - b.haversineDistance);
+      const topTechnicians = techniciansWithHaversine.slice(0, 10);
+      
+      // Check cache first
+      const destinationsToCalculate: typeof topTechnicians = [];
+      const cachedResults: Map<number, { distance: string; duration: string; distanceValue: number }> = new Map();
+      
+      topTechnicians.forEach((item, index) => {
+        const cacheKey = `${jobLocation.lat},${jobLocation.lng}-${item.location.lat},${item.location.lng}`;
+        const cached = distanceCacheRef.current.get(cacheKey);
+        
+        if (cached) {
+          cachedResults.set(index, cached);
+        } else {
+          destinationsToCalculate.push(item);
+        }
+      });
+
+      // If all results are cached, use cached data
+      if (destinationsToCalculate.length === 0) {
+        const techniciansWithDist: TechnicianWithDistance[] = topTechnicians.map((item, index) => {
+          const cached = cachedResults.get(index);
+          if (cached) {
+            return {
+              ...item.tech,
+              distance: cached.distance,
+              duration: cached.duration,
+              distanceValue: cached.distanceValue,
+              isCalculating: false,
+            };
+          }
+          // Fallback to Haversine distance
+          return {
+            ...item.tech,
+            distance: `${item.haversineDistance.toFixed(1)} km (straight-line)`,
+            duration: 'N/A',
+            distanceValue: item.haversineDistance * 1000, // convert to meters
+            isCalculating: false,
+          };
+        });
+
+        // Add remaining technicians (beyond top 10) with Haversine distances
+        const remainingTechnicians = techniciansWithHaversine.slice(10).map((item) => ({
+          ...item.tech,
+          distance: `${item.haversineDistance.toFixed(1)} km (straight-line)`,
+          duration: 'N/A',
+          distanceValue: item.haversineDistance * 1000,
+          isCalculating: false,
+        }));
+
+        // Add technicians without location
+        const techniciansWithoutLocation = technicians
+          .filter(t => {
+            const location = (t as any).current_location || t.currentLocation;
+            return !location || !location.latitude || !location.longitude || 
+                   location.latitude === 0 || location.longitude === 0;
+          })
+          .map(t => ({ ...t, distance: 'N/A', duration: 'N/A', distanceValue: Infinity }));
+
+        const allTechnicians = [...techniciansWithDist, ...remainingTechnicians, ...techniciansWithoutLocation];
+        allTechnicians.sort((a, b) => {
+          if (a.distanceValue !== undefined && b.distanceValue !== undefined) {
+            return a.distanceValue - b.distanceValue;
+          }
+          if (a.distanceValue !== undefined) return -1;
+          if (b.distanceValue !== undefined) return 1;
+          return (a.fullName || '').localeCompare(b.fullName || '');
+        });
+        setTechniciansWithDistances(allTechnicians);
+        setIsCalculatingDistances(false);
+        return;
+      }
+
+      // Step 2: Call Distance Matrix API only for technicians not in cache
       await ensureGoogleMapsLoaded();
 
       if (!(window as any).google?.maps?.DistanceMatrixService) {
@@ -143,17 +241,9 @@ const ReassignJobDialog: React.FC<ReassignJobDialogProps> = ({
       }
 
       const distanceMatrix = new (window as any).google.maps.DistanceMatrixService();
+      const destinations = destinationsToCalculate.map(item => item.location);
 
-      // Prepare destinations (technician locations)
-      const destinations = techniciansWithLocation.map((tech) => {
-        const location = (tech as any).current_location || tech.currentLocation;
-        return {
-          lat: Number(location.latitude),
-          lng: Number(location.longitude),
-        };
-      });
-
-      // Calculate distances
+      // Calculate distances using Distance Matrix API
       distanceMatrix.getDistanceMatrix(
         {
           origins: [{ lat: jobLocation.lat, lng: jobLocation.lng }],
@@ -163,26 +253,74 @@ const ReassignJobDialog: React.FC<ReassignJobDialogProps> = ({
         },
         (response: any, status: any) => {
           if (status === (window as any).google.maps.DistanceMatrixStatus.OK && response) {
-            const techniciansWithDist: TechnicianWithDistance[] = techniciansWithLocation.map((tech, index) => {
-              const element = response.rows[0]?.elements[index];
+            // Process API results and update cache
+            const apiResults: TechnicianWithDistance[] = destinationsToCalculate.map((item, apiIndex) => {
+              const element = response.rows[0]?.elements[apiIndex];
               if (element?.status === (window as any).google.maps.DistanceMatrixElementStatus.OK) {
+                const distance = element.distance?.text || 'N/A';
+                const duration = element.duration?.text || 'N/A';
+                const distanceValue = element.distance?.value || Infinity;
+                
+                // Cache the result
+                const cacheKey = `${jobLocation.lat},${jobLocation.lng}-${item.location.lat},${item.location.lng}`;
+                distanceCacheRef.current.set(cacheKey, { distance, duration, distanceValue });
+                
                 return {
-                  ...tech,
-                  distance: element.distance?.text || 'N/A',
-                  duration: element.duration?.text || 'N/A',
-                  distanceValue: element.distance?.value || Infinity, // in meters
+                  ...item.tech,
+                  distance,
+                  duration,
+                  distanceValue,
                   isCalculating: false,
                 };
               } else {
+                // Fallback to Haversine if API fails
                 return {
-                  ...tech,
-                  distance: 'N/A',
+                  ...item.tech,
+                  distance: `${item.haversineDistance.toFixed(1)} km (straight-line)`,
                   duration: 'N/A',
-                  distanceValue: Infinity,
+                  distanceValue: item.haversineDistance * 1000,
                   isCalculating: false,
                 };
               }
             });
+
+            // Combine cached results with API results
+            const allTopTechnicians: TechnicianWithDistance[] = topTechnicians.map((item, index) => {
+              const cached = cachedResults.get(index);
+              if (cached) {
+                return {
+                  ...item.tech,
+                  distance: cached.distance,
+                  duration: cached.duration,
+                  distanceValue: cached.distanceValue,
+                  isCalculating: false,
+                };
+              }
+              // Find in API results
+              const apiResult = apiResults.find(r => r.id === item.tech.id);
+              if (apiResult) {
+                return apiResult;
+              }
+              // Fallback to Haversine
+              return {
+                ...item.tech,
+                distance: `${item.haversineDistance.toFixed(1)} km (straight-line)`,
+                duration: 'N/A',
+                distanceValue: item.haversineDistance * 1000,
+                isCalculating: false,
+              };
+            });
+
+            // Add remaining technicians (beyond top 10) with Haversine distances
+            const remainingTechnicians = techniciansWithHaversine.slice(10).map((item) => ({
+              ...item.tech,
+              distance: `${item.haversineDistance.toFixed(1)} km (straight-line)`,
+              duration: 'N/A',
+              distanceValue: item.haversineDistance * 1000,
+              isCalculating: false,
+            }));
+
+            const techniciansWithDist: TechnicianWithDistance[] = [...allTopTechnicians];
 
             // Add technicians without location
             const techniciansWithoutLocation = technicians
@@ -194,7 +332,7 @@ const ReassignJobDialog: React.FC<ReassignJobDialogProps> = ({
               .map(t => ({ ...t, distance: 'N/A', duration: 'N/A', distanceValue: Infinity }));
 
             // Combine and sort by distance
-            const allTechnicians = [...techniciansWithDist, ...techniciansWithoutLocation];
+            const allTechnicians = [...techniciansWithDist, ...remainingTechnicians, ...techniciansWithoutLocation];
             allTechnicians.sort((a, b) => {
               // Sort by distance value (meters), then by name
               if (a.distanceValue !== undefined && b.distanceValue !== undefined) {
@@ -207,9 +345,44 @@ const ReassignJobDialog: React.FC<ReassignJobDialogProps> = ({
 
             setTechniciansWithDistances(allTechnicians);
           } else {
-            // Error calculating distances, just show technicians without sorting
-            setTechniciansWithDistances(technicians.map(t => ({ ...t })));
-            console.error('Distance calculation failed:', status);
+            // Error calculating distances, fallback to Haversine distances
+            const techniciansWithHaversine: TechnicianWithDistance[] = techniciansWithLocation.map((tech) => {
+              const location = (tech as any).current_location || tech.currentLocation;
+              const haversineDistance = calculateHaversineDistance(
+                jobLocation.lat,
+                jobLocation.lng,
+                Number(location.latitude),
+                Number(location.longitude)
+              );
+              return {
+                ...tech,
+                distance: `${haversineDistance.toFixed(1)} km (straight-line)`,
+                duration: 'N/A',
+                distanceValue: haversineDistance * 1000,
+                isCalculating: false,
+              };
+            });
+
+            const techniciansWithoutLocation = technicians
+              .filter(t => {
+                const location = (t as any).current_location || t.currentLocation;
+                return !location || !location.latitude || !location.longitude || 
+                       location.latitude === 0 || location.longitude === 0;
+              })
+              .map(t => ({ ...t, distance: 'N/A', duration: 'N/A', distanceValue: Infinity }));
+
+            const allTechnicians = [...techniciansWithHaversine, ...techniciansWithoutLocation];
+            allTechnicians.sort((a, b) => {
+              if (a.distanceValue !== undefined && b.distanceValue !== undefined) {
+                return a.distanceValue - b.distanceValue;
+              }
+              if (a.distanceValue !== undefined) return -1;
+              if (b.distanceValue !== undefined) return 1;
+              return (a.fullName || '').localeCompare(b.fullName || '');
+            });
+
+            setTechniciansWithDistances(allTechnicians);
+            console.error('Distance Matrix API failed, using Haversine distances:', status);
           }
           setIsCalculatingDistances(false);
         }
