@@ -25,7 +25,10 @@ import {
   QrCode,
   Package,
   MapPin,
-  Download
+  Download,
+  Receipt,
+  FileText,
+  LogOut
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { db, supabase } from '@/lib/supabase';
@@ -35,7 +38,7 @@ import { CommonQrCode, invalidateQrCodesCache } from '@/lib/qrCodeManager';
 import JSZip from 'jszip';
 
 const Settings = () => {
-  const { user, isAdmin } = useAuth();
+  const { user, isAdmin, logout } = useAuth();
   const navigate = useNavigate();
   
 
@@ -1090,6 +1093,52 @@ const Settings = () => {
                   </div>
                 )}
               </div>
+            </CardContent>
+          </Card>
+
+          {/* GST Invoices */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2 text-lg sm:text-xl">
+                <Receipt className="w-5 h-5" />
+                GST Invoices
+              </CardTitle>
+              <CardDescription className="text-sm mt-1">
+                View and manage GST invoices
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="p-4 sm:p-6">
+              <Button
+                variant="outline"
+                className="w-full sm:w-auto"
+                onClick={() => navigate('/admin?view=gst-invoices')}
+              >
+                <Receipt className="w-4 h-4 mr-2" />
+                Open GST Invoices
+              </Button>
+            </CardContent>
+          </Card>
+
+          {/* AMC View */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2 text-lg sm:text-xl">
+                <FileText className="w-5 h-5" />
+                View AMCs
+              </CardTitle>
+              <CardDescription className="text-sm mt-1">
+                View and manage Annual Maintenance Contracts
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="p-4 sm:p-6">
+              <Button
+                variant="outline"
+                className="w-full sm:w-auto"
+                onClick={() => navigate('/admin?view=amc-view')}
+              >
+                <FileText className="w-4 h-4 mr-2" />
+                Open AMC View
+              </Button>
             </CardContent>
           </Card>
 
@@ -2150,6 +2199,31 @@ const Settings = () => {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* Logout Section at Bottom */}
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
+        <Card className="border-red-200">
+          <CardContent className="p-4 sm:p-6">
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+              <div>
+                <h3 className="font-semibold text-gray-900 mb-1">Logout</h3>
+                <p className="text-sm text-gray-600">Sign out of your account</p>
+              </div>
+              <Button
+                variant="outline"
+                size="lg"
+                onClick={async () => {
+                  await logout();
+                }}
+                className="text-red-600 hover:text-red-700 hover:bg-red-50 border-red-300 w-full sm:w-auto"
+              >
+                <LogOut className="w-4 h-4 mr-2" />
+                Logout
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
     </div>
   );
 };

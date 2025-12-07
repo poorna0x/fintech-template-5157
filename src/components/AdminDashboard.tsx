@@ -150,7 +150,6 @@ const AdminDashboard = () => {
   const [selectedCustomerForTaxInvoice, setSelectedCustomerForTaxInvoice] = useState<Customer | null>(null);
   const [showGSTInvoicesPage, setShowGSTInvoicesPage] = useState(false);
   const [showAMCViewPage, setShowAMCViewPage] = useState(false);
-  const [settingsDropdownOpen, setSettingsDropdownOpen] = useState(false);
   const [currentView, setCurrentView] = useState<'dashboard' | 'payments' | 'billing' | 'analytics' | 'calling'>('dashboard');
   const [moreOptionsDialogOpen, setMoreOptionsDialogOpen] = useState<Record<string, boolean>>({});
   const [editFormData, setEditFormData] = useState({
@@ -1227,6 +1226,21 @@ const AdminDashboard = () => {
       setIsInitialLoad(false);
     };
     initialize();
+  }, []);
+
+  // Check URL parameters for navigation from Settings page
+  useEffect(() => {
+    const searchParams = new URLSearchParams(window.location.search);
+    const view = searchParams.get('view');
+    if (view === 'gst-invoices') {
+      setShowGSTInvoicesPage(true);
+      // Clean up URL
+      window.history.replaceState({}, '', '/admin');
+    } else if (view === 'amc-view') {
+      setShowAMCViewPage(true);
+      // Clean up URL
+      window.history.replaceState({}, '', '/admin');
+    }
   }, []);
 
   // Set initial last checked job ID after jobs are loaded
@@ -7015,51 +7029,15 @@ const AdminDashboard = () => {
               {/* All 6 buttons in a 3x2 grid on mobile, flex on desktop */}
               <div className="grid grid-cols-3 gap-2 sm:flex sm:gap-2 w-full sm:w-auto">
                 {/* Row 1: Settings, Recent, Payments */}
-              <DropdownMenu open={settingsDropdownOpen} onOpenChange={setSettingsDropdownOpen}>
-                <DropdownMenuTrigger asChild>
-                  <Button 
-                    variant="outline"
-                      className="flex items-center justify-center gap-2 w-full sm:w-auto sm:px-3"
-                      title="Settings"
-                  >
-                    <Settings className="w-4 h-4" />
-                      <span className="hidden sm:inline">Settings</span>
-                  </Button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent align="end" className="w-56">
-                  <DropdownMenuItem onClick={() => {
-                    setSettingsDropdownOpen(false);
-                    navigate('/settings');
-                  }}>
-                    <Settings className="w-4 h-4 mr-2" />
-                    Settings
-                  </DropdownMenuItem>
-                  <DropdownMenuItem onClick={() => {
-                    setSettingsDropdownOpen(false);
-                    handleShowGSTInvoices();
-                  }}>
-                    <Receipt className="w-4 h-4 mr-2" />
-                    GST Invoices
-                  </DropdownMenuItem>
-                  <DropdownMenuItem onClick={() => {
-                    setSettingsDropdownOpen(false);
-                    handleShowAMCView();
-                  }}>
-                    <FileText className="w-4 h-4 mr-2" />
-                    View AMCs
-                  </DropdownMenuItem>
-                  <DropdownMenuItem 
-                    onClick={async () => {
-                      setSettingsDropdownOpen(false);
-                      await logout();
-                    }}
-                    className="text-red-600 focus:text-red-600"
-                  >
-                    <LogOut className="w-4 h-4 mr-2" />
-                    Logout
-                  </DropdownMenuItem>
-                </DropdownMenuContent>
-              </DropdownMenu>
+              <Button 
+                variant="outline"
+                className="flex items-center justify-center gap-2 w-full sm:w-auto sm:px-3"
+                title="Settings"
+                onClick={() => navigate('/settings')}
+              >
+                <Settings className="w-4 h-4" />
+                <span className="hidden sm:inline">Settings</span>
+              </Button>
               <Button
                 variant="outline"
                   className="flex items-center justify-center gap-2 w-full sm:w-auto sm:px-3"
