@@ -24,13 +24,15 @@ import {
   Phone,
   QrCode,
   Package,
-  MapPin
+  MapPin,
+  Download
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { db, supabase } from '@/lib/supabase';
 import { Technician } from '@/types';
 import ImageUpload from '@/components/ImageUpload';
 import { CommonQrCode, invalidateQrCodesCache } from '@/lib/qrCodeManager';
+import JSZip from 'jszip';
 
 const Settings = () => {
   const { user, isAdmin } = useAuth();
@@ -84,6 +86,9 @@ const Settings = () => {
     const stored = localStorage.getItem('technician_location_tracking_enabled');
     return stored !== null ? stored === 'true' : true; // Default to enabled
   });
+
+  // Download data state
+  const [isDownloading, setIsDownloading] = useState(false);
 
   // Load data on component mount
   useEffect(() => {
@@ -700,6 +705,276 @@ const Settings = () => {
     return `https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${encodedLink}`;
   };
 
+  // Helper function to convert data to CSV
+  const convertToCSV = (data: any[], tableName: string): string => {
+    if (!data || data.length === 0) {
+      return `Table: ${tableName}\nNo data available\n`;
+    }
+
+    // Get all unique keys from all objects
+    const allKeys = new Set<string>();
+    data.forEach(item => {
+      Object.keys(item).forEach(key => allKeys.add(key));
+    });
+
+    const headers = Array.from(allKeys);
+    
+    // Create CSV header
+    const csvHeader = headers.map(header => {
+      // Escape commas and quotes in header
+      const escaped = String(header).replace(/"/g, '""');
+      return `"${escaped}"`;
+    }).join(',');
+
+    // Create CSV rows
+    const csvRows = data.map(item => {
+      return headers.map(header => {
+        const value = item[header];
+        if (value === null || value === undefined) {
+          return '""';
+        }
+        // Convert objects/arrays to JSON string
+        if (typeof value === 'object') {
+          const jsonStr = JSON.stringify(value).replace(/"/g, '""');
+          return `"${jsonStr}"`;
+        }
+        // Escape commas and quotes in value
+        const escaped = String(value).replace(/"/g, '""');
+        return `"${escaped}"`;
+      }).join(',');
+    });
+
+    return [csvHeader, ...csvRows].join('\n');
+  };
+
+  // Helper function to download a file
+  const downloadFile = (content: string, filename: string, mimeType: string = 'text/csv') => {
+    const blob = new Blob([content], { type: mimeType });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = filename;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+  };
+
+  // Function to download all table data
+  const handleDownloadAllData = async () => {
+    setIsDownloading(true);
+
+    try {
+      const timestamp = new Date().toISOString().split('T')[0];
+      const tables: { name: string; data: any[] }[] = [];
+
+      // Fetch all tables
+      const { data: customers, error: customersError } = await db.customers.getAll();
+      if (customersError) {
+        console.error('Error fetching customers:', customersError);
+        toast.error(`Failed to fetch customers: ${customersError.message}`);
+      } else {
+        tables.push({ name: 'customers', data: customers || [] });
+      }
+
+      const { data: jobs, error: jobsError } = await db.jobs.getAll();
+      if (jobsError) {
+        console.error('Error fetching jobs:', jobsError);
+        toast.error(`Failed to fetch jobs: ${jobsError.message}`);
+      } else {
+        tables.push({ name: 'jobs', data: jobs || [] });
+      }
+
+      const { data: technicians, error: techniciansError } = await db.technicians.getAll();
+      if (techniciansError) {
+        console.error('Error fetching technicians:', techniciansError);
+        toast.error(`Failed to fetch technicians: ${techniciansError.message}`);
+      } else {
+        tables.push({ name: 'technicians', data: technicians || [] });
+      }
+
+      const taxInvoicesResult = await db.taxInvoices.getAll(100000, 0);
+      if (taxInvoicesResult.error) {
+        console.error('Error fetching tax invoices:', taxInvoicesResult.error);
+        toast.error(`Failed to fetch tax invoices: ${taxInvoicesResult.error.message}`);
+      } else {
+        tables.push({ name: 'tax_invoices', data: taxInvoicesResult.data || [] });
+      }
+
+      const { data: technicianPayments, error: technicianPaymentsError } = await db.technicianPayments.getAll();
+      if (technicianPaymentsError) {
+        console.error('Error fetching technician payments:', technicianPaymentsError);
+        toast.error(`Failed to fetch technician payments: ${technicianPaymentsError.message}`);
+      } else {
+        tables.push({ name: 'technician_payments', data: technicianPayments || [] });
+      }
+
+      const amcContractsResult = await db.amcContracts.getAll(100000, 0);
+      if (amcContractsResult.error) {
+        console.error('Error fetching AMC contracts:', amcContractsResult.error);
+        toast.error(`Failed to fetch AMC contracts: ${amcContractsResult.error.message}`);
+      } else {
+        tables.push({ name: 'amc_contracts', data: amcContractsResult.data || [] });
+      }
+
+      const { data: commonQrCodes, error: commonQrCodesError } = await db.commonQrCodes.getAll();
+      if (commonQrCodesError) {
+        console.error('Error fetching common QR codes:', commonQrCodesError);
+        toast.error(`Failed to fetch common QR codes: ${commonQrCodesError.message}`);
+      } else {
+        tables.push({ name: 'common_qr_codes', data: commonQrCodes || [] });
+      }
+
+      const { data: productQrCodes, error: productQrCodesError } = await db.productQrCodes.getAll();
+      if (productQrCodesError) {
+        console.error('Error fetching product QR codes:', productQrCodesError);
+        toast.error(`Failed to fetch product QR codes: ${productQrCodesError.message}`);
+      } else {
+        tables.push({ name: 'product_qr_codes', data: productQrCodes || [] });
+      }
+
+      // Fetch additional tables directly from Supabase
+      const { data: jobAssignmentRequests, error: jobAssignmentRequestsError } = await supabase
+        .from('job_assignment_requests')
+        .select('*');
+      if (jobAssignmentRequestsError) {
+        console.error('Error fetching job assignment requests:', jobAssignmentRequestsError);
+        toast.error(`Failed to fetch job assignment requests: ${jobAssignmentRequestsError.message}`);
+      } else {
+        tables.push({ name: 'job_assignment_requests', data: jobAssignmentRequests || [] });
+      }
+
+      const { data: technicianExpenses, error: technicianExpensesError } = await supabase
+        .from('technician_expenses')
+        .select('*');
+      if (technicianExpensesError) {
+        console.error('Error fetching technician expenses:', technicianExpensesError);
+        toast.error(`Failed to fetch technician expenses: ${technicianExpensesError.message}`);
+      } else {
+        tables.push({ name: 'technician_expenses', data: technicianExpenses || [] });
+      }
+
+      const { data: technicianAdvances, error: technicianAdvancesError } = await supabase
+        .from('technician_advances')
+        .select('*');
+      if (technicianAdvancesError) {
+        console.error('Error fetching technician advances:', technicianAdvancesError);
+        toast.error(`Failed to fetch technician advances: ${technicianAdvancesError.message}`);
+      } else {
+        tables.push({ name: 'technician_advances', data: technicianAdvances || [] });
+      }
+
+      const { data: technicianExtraCommissions, error: technicianExtraCommissionsError } = await supabase
+        .from('technician_extra_commissions')
+        .select('*');
+      if (technicianExtraCommissionsError) {
+        console.error('Error fetching technician extra commissions:', technicianExtraCommissionsError);
+        toast.error(`Failed to fetch technician extra commissions: ${technicianExtraCommissionsError.message}`);
+      } else {
+        tables.push({ name: 'technician_extra_commissions', data: technicianExtraCommissions || [] });
+      }
+
+      const { data: technicianHolidays, error: technicianHolidaysError } = await supabase
+        .from('technician_holidays')
+        .select('*');
+      if (technicianHolidaysError) {
+        console.error('Error fetching technician holidays:', technicianHolidaysError);
+        toast.error(`Failed to fetch technician holidays: ${technicianHolidaysError.message}`);
+      } else {
+        tables.push({ name: 'technician_holidays', data: technicianHolidays || [] });
+      }
+
+      const { data: callHistory, error: callHistoryError } = await db.callHistory.getAll();
+      if (callHistoryError) {
+        console.error('Error fetching call history:', callHistoryError);
+        toast.error(`Failed to fetch call history: ${callHistoryError.message}`);
+      } else {
+        tables.push({ name: 'call_history', data: callHistory || [] });
+      }
+
+      const { data: adminUsers, error: adminUsersError } = await supabase
+        .from('admin_users')
+        .select('*');
+      if (adminUsersError) {
+        console.error('Error fetching admin users:', adminUsersError);
+        toast.error(`Failed to fetch admin users: ${adminUsersError.message}`);
+      } else {
+        tables.push({ name: 'admin_users', data: adminUsers || [] });
+      }
+
+      const { data: followUps, error: followUpsError } = await supabase
+        .from('follow_ups')
+        .select('*');
+      if (followUpsError) {
+        console.error('Error fetching follow-ups:', followUpsError);
+        toast.error(`Failed to fetch follow-ups: ${followUpsError.message}`);
+      } else {
+        tables.push({ name: 'follow_ups', data: followUps || [] });
+      }
+
+      const { data: notifications, error: notificationsError } = await supabase
+        .from('notifications')
+        .select('*');
+      if (notificationsError) {
+        console.error('Error fetching notifications:', notificationsError);
+        toast.error(`Failed to fetch notifications: ${notificationsError.message}`);
+      } else {
+        tables.push({ name: 'notifications', data: notifications || [] });
+      }
+
+      const { data: partsInventory, error: partsInventoryError } = await supabase
+        .from('parts_inventory')
+        .select('*');
+      if (partsInventoryError) {
+        console.error('Error fetching parts inventory:', partsInventoryError);
+        toast.error(`Failed to fetch parts inventory: ${partsInventoryError.message}`);
+      } else {
+        tables.push({ name: 'parts_inventory', data: partsInventory || [] });
+      }
+
+      const { data: serviceAreas, error: serviceAreasError } = await supabase
+        .from('service_areas')
+        .select('*');
+      if (serviceAreasError) {
+        console.error('Error fetching service areas:', serviceAreasError);
+        toast.error(`Failed to fetch service areas: ${serviceAreasError.message}`);
+      } else {
+        tables.push({ name: 'service_areas', data: serviceAreas || [] });
+      }
+
+      // Create ZIP file with all CSV files
+      const zip = new JSZip();
+      
+      // Add each table as a CSV file to the ZIP
+      for (const table of tables) {
+        const csvContent = convertToCSV(table.data, table.name);
+        const filename = `${table.name}_${timestamp}.csv`;
+        zip.file(filename, csvContent);
+      }
+
+      // Generate ZIP file
+      const zipBlob = await zip.generateAsync({ type: 'blob' });
+      
+      // Download the ZIP file
+      const zipFilename = `database_export_${timestamp}.zip`;
+      const zipUrl = URL.createObjectURL(zipBlob);
+      const zipLink = document.createElement('a');
+      zipLink.href = zipUrl;
+      zipLink.download = zipFilename;
+      document.body.appendChild(zipLink);
+      zipLink.click();
+      document.body.removeChild(zipLink);
+      URL.revokeObjectURL(zipUrl);
+
+      toast.success(`Successfully downloaded ${tables.length} table(s) in ZIP file: ${zipFilename}`);
+    } catch (error) {
+      console.error('Error downloading data:', error);
+      toast.error('Failed to download data. Please try again.');
+    } finally {
+      setIsDownloading(false);
+    }
+  };
+
 
 
   // Note: Currently allows unauthenticated access, but RLS policies need to be updated
@@ -1109,7 +1384,7 @@ const Settings = () => {
               </CardContent>
             </Card>
 
-          {/* Location Tracking Setting - At Bottom */}
+          {/* Location Tracking Setting */}
           <Card>
             <CardHeader>
               <CardTitle className="flex items-center gap-2 text-lg sm:text-xl">
@@ -1136,6 +1411,63 @@ const Settings = () => {
                   onCheckedChange={handleLocationTrackingToggle}
                   className="ml-6 border-2 border-gray-300 dark:border-gray-600 data-[state=unchecked]:bg-white dark:data-[state=unchecked]:bg-gray-700"
                 />
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Data Export Section - At Bottom */}
+          <Card>
+            <CardHeader>
+              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+                <div>
+                  <CardTitle className="flex items-center gap-2 text-lg sm:text-xl">
+                    <Download className="w-5 h-5" />
+                    Data Export
+                  </CardTitle>
+                  <CardDescription className="text-sm mt-1">
+                    Download all table data as CSV files for backup or analysis
+                  </CardDescription>
+                </div>
+                <Button 
+                  onClick={handleDownloadAllData}
+                  disabled={isDownloading}
+                  className="bg-green-600 hover:bg-green-700 w-full sm:w-auto disabled:opacity-50 disabled:cursor-not-allowed"
+                  size="sm"
+                >
+                  <Download className="w-4 h-4 mr-2" />
+                  {isDownloading ? 'Downloading...' : 'Download All Data'}
+                </Button>
+              </div>
+            </CardHeader>
+            <CardContent className="p-4 sm:p-6">
+              <div className="p-4 bg-blue-50 dark:bg-blue-900/20 rounded-lg border border-blue-200 dark:border-blue-800">
+                <p className="text-sm text-blue-900 dark:text-blue-200 mb-2">
+                  <strong>What will be downloaded:</strong>
+                </p>
+                <ul className="text-sm text-blue-800 dark:text-blue-300 space-y-1 list-disc list-inside">
+                  <li>Admin Users</li>
+                  <li>AMC Contracts</li>
+                  <li>Call History</li>
+                  <li>Common QR Codes</li>
+                  <li>Customers</li>
+                  <li>Follow-ups</li>
+                  <li>Job Assignment Requests</li>
+                  <li>Jobs</li>
+                  <li>Notifications</li>
+                  <li>Parts Inventory</li>
+                  <li>Product QR Codes</li>
+                  <li>Service Areas</li>
+                  <li>Tax Invoices</li>
+                  <li>Technician Advances</li>
+                  <li>Technician Expenses</li>
+                  <li>Technician Extra Commissions</li>
+                  <li>Technician Holidays</li>
+                  <li>Technician Payments</li>
+                  <li>Technicians</li>
+                </ul>
+                <p className="text-xs text-blue-700 dark:text-blue-400 mt-3">
+                  All tables will be downloaded as CSV files in a ZIP archive. Files will be named with the table name and current date.
+                </p>
               </div>
             </CardContent>
           </Card>
