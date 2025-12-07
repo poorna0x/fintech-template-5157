@@ -150,6 +150,7 @@ const AdminDashboard = () => {
   const [selectedCustomerForTaxInvoice, setSelectedCustomerForTaxInvoice] = useState<Customer | null>(null);
   const [showGSTInvoicesPage, setShowGSTInvoicesPage] = useState(false);
   const [showAMCViewPage, setShowAMCViewPage] = useState(false);
+  const [settingsDropdownOpen, setSettingsDropdownOpen] = useState(false);
   const [currentView, setCurrentView] = useState<'dashboard' | 'payments' | 'billing' | 'analytics' | 'calling'>('dashboard');
   const [moreOptionsDialogOpen, setMoreOptionsDialogOpen] = useState<Record<string, boolean>>({});
   const [editFormData, setEditFormData] = useState({
@@ -7014,7 +7015,7 @@ const AdminDashboard = () => {
               {/* All 6 buttons in a 3x2 grid on mobile, flex on desktop */}
               <div className="grid grid-cols-3 gap-2 sm:flex sm:gap-2 w-full sm:w-auto">
                 {/* Row 1: Settings, Recent, Payments */}
-              <DropdownMenu>
+              <DropdownMenu open={settingsDropdownOpen} onOpenChange={setSettingsDropdownOpen}>
                 <DropdownMenuTrigger asChild>
                   <Button 
                     variant="outline"
@@ -7027,21 +7028,29 @@ const AdminDashboard = () => {
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="end" className="w-56">
                   <DropdownMenuItem onClick={() => {
+                    setSettingsDropdownOpen(false);
                     navigate('/settings');
                   }}>
                     <Settings className="w-4 h-4 mr-2" />
                     Settings
                   </DropdownMenuItem>
-                  <DropdownMenuItem onClick={handleShowGSTInvoices}>
+                  <DropdownMenuItem onClick={() => {
+                    setSettingsDropdownOpen(false);
+                    handleShowGSTInvoices();
+                  }}>
                     <Receipt className="w-4 h-4 mr-2" />
                     GST Invoices
                   </DropdownMenuItem>
-                  <DropdownMenuItem onClick={handleShowAMCView}>
+                  <DropdownMenuItem onClick={() => {
+                    setSettingsDropdownOpen(false);
+                    handleShowAMCView();
+                  }}>
                     <FileText className="w-4 h-4 mr-2" />
                     View AMCs
                   </DropdownMenuItem>
                   <DropdownMenuItem 
                     onClick={async () => {
+                      setSettingsDropdownOpen(false);
                       await logout();
                     }}
                     className="text-red-600 focus:text-red-600"
