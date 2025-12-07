@@ -273,30 +273,18 @@ export const CompletedJobSection: React.FC<CompletedJobSectionProps> = ({
             <Edit className="w-3 h-3 mr-1" />
             Edit
           </Button>
-          {!messageSent ? (
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={() => {
-                setSelectedJobForMessage(job);
-                setSendMessageDialogOpen(true);
-              }}
-              className="text-xs flex-1 sm:flex-none"
-            >
-              <WhatsAppIcon className="w-3 h-3 mr-1" />
-              Send Message
-            </Button>
-          ) : (
-            <Button
-              size="sm"
-              variant="outline"
-              disabled
-              className="text-xs opacity-50 flex-1 sm:flex-none"
-            >
-              <WhatsAppIcon className="w-3 h-3 mr-1" />
-              Message Sent
-            </Button>
-          )}
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => {
+              setSelectedJobForMessage(job);
+              setSendMessageDialogOpen(true);
+            }}
+            className="text-xs flex-1 sm:flex-none"
+          >
+            <WhatsAppIcon className="w-3 h-3 mr-1" />
+            {messageSent ? 'Send Again' : 'Send Message'}
+          </Button>
         </div>
       </div>
     </div>
