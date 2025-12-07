@@ -2696,65 +2696,14 @@ const AdminDashboard = () => {
   };
 
   const handleGoogleMapsLinkChange = async (value: string) => {
+    // Only update the google_location field - do NOT extract coordinates or geocode automatically
     setEditFormData(prev => ({
       ...prev,
       google_location: value
     }));
 
-    // Try to extract coordinates from the link (if it's a full URL)
-    if (value.trim()) {
-      const coords = extractCoordinatesFromGoogleMapsLink(value);
-      if (coords) {
-        // Ensure Google Maps is loaded before reverse geocoding
-        const apiKey = import.meta.env.VITE_GOOGLE_MAPS_API_KEY;
-        if (apiKey && (!window.google || !window.google.maps || !window.google.maps.Geocoder)) {
-          // Load Google Maps if not already loaded
-          await loadGoogleMapsScript();
-        }
-
-        // Extract address from coordinates using reverse geocoding
-        const address = await reverseGeocode(coords.latitude, coords.longitude);
-        
-        // Extract location keyword from address
-        const extractedLocation = address ? extractLocationFromAddressString(address) : null;
-        
-        // When fetching a new address, replace the entire address object to avoid duplication
-        // Don't merge with previous address components
-        setEditFormData(prev => ({
-          ...prev,
-          location: {
-            ...prev.location,
-            latitude: coords.latitude,
-            longitude: coords.longitude,
-            formattedAddress: address || prev.location.formattedAddress || ''
-          },
-          address: {
-            street: address || prev.address.street || '',
-            area: '', // Clear individual components when fetching full address
-            city: '',
-            state: '',
-            pincode: ''
-          },
-          visible_address: (!locationManuallyEditedRef.current && extractedLocation) 
-            ? extractedLocation.substring(0, 20) 
-            : prev.visible_address,
-          google_location: value
-        }));
-        
-        if (address) {
-          toast.success(`Address extracted: ${address.substring(0, 50)}${address.length > 50 ? '...' : ''}`);
-          if (extractedLocation && !locationManuallyEditedRef.current) {
-            toast.info(`Location identified: ${extractedLocation}`);
-          }
-        } else {
-        toast.success(`Coordinates extracted: ${coords.latitude}, ${coords.longitude}`);
-        }
-      } else if (value.includes('google.com/maps') || value.includes('maps.app.goo.gl') || value.includes('goo.gl/maps')) {
-        // If it's a Google Maps link (including short URLs) but we couldn't extract coordinates, still save it
-        toast.info('Google Maps link saved. Note: Short links cannot extract address automatically.');
-      }
-    } else {
-      // Clear coordinates if link is cleared
+    if (!value.trim()) {
+      // Clear location data when link is removed
       setEditFormData(prev => ({
         ...prev,
         location: {

@@ -658,7 +658,17 @@ const EditCustomerDialog: React.FC<EditCustomerDialogProps> = ({
       }
 
       const address = await reverseGeocode(coords.latitude, coords.longitude);
-      const extractedLocation = address ? extractLocationFromAddressString(address) : null;
+      
+      // Automatically extract location from address using pre-built data (no API call)
+      // Try extracting from the reverse geocoded address first, then fall back to existing address.street
+      let extractedLocation = null;
+      if (address) {
+        extractedLocation = extractLocationFromAddressString(address);
+      }
+      // If no location found from reverse geocoded address, try extracting from existing address.street
+      if (!extractedLocation && editFormData.address.street) {
+        extractedLocation = extractLocationFromAddressString(editFormData.address.street);
+      }
       
       setEditFormData(prev => ({
         ...prev,
@@ -675,21 +685,30 @@ const EditCustomerDialog: React.FC<EditCustomerDialogProps> = ({
           state: '',
           pincode: ''
         },
-        visible_address: (!locationManuallyEditedRef.current && extractedLocation) 
+        // Always extract and set location automatically (since it uses pre-built data, no API cost)
+        visible_address: extractedLocation 
           ? extractedLocation.substring(0, 20) 
           : prev.visible_address
       }));
+      
+      // Reset the manual edit flag since we're auto-extracting location
+      if (extractedLocation) {
+        locationManuallyEditedRef.current = false;
+      }
       
       toast.dismiss(loadingToast);
       
       if (address) {
         toast.success(`Address fetched: ${address.substring(0, 50)}${address.length > 50 ? '...' : ''}`);
-        if (extractedLocation && !locationManuallyEditedRef.current) {
-          toast.info(`Location identified: ${extractedLocation}`);
+        if (extractedLocation) {
+          toast.info(`Location automatically identified: ${extractedLocation}`);
         }
       } else {
         toast.success(`Coordinates extracted: ${coords.latitude}, ${coords.longitude}`);
         toast.warning('Could not fetch address. Coordinates saved.');
+        if (extractedLocation) {
+          toast.info(`Location extracted from existing address: ${extractedLocation}`);
+        }
       }
     } catch (error) {
       console.error('Error fetching address:', error);
@@ -698,55 +717,14 @@ const EditCustomerDialog: React.FC<EditCustomerDialogProps> = ({
   };
 
   const handleGoogleMapsLinkChange = async (value: string) => {
+    // Only update the google_location field - do NOT extract coordinates or geocode automatically
     setEditFormData(prev => ({
       ...prev,
       google_location: value
     }));
 
-    if (value.trim()) {
-      const coords = extractCoordinatesFromGoogleMapsLink(value);
-      if (coords) {
-        const apiKey = import.meta.env.VITE_GOOGLE_MAPS_API_KEY;
-        if (apiKey && (!window.google || !window.google.maps || !window.google.maps.Geocoder)) {
-          await loadGoogleMapsScript();
-        }
-
-        const address = await reverseGeocode(coords.latitude, coords.longitude);
-        const extractedLocation = address ? extractLocationFromAddressString(address) : null;
-        
-        setEditFormData(prev => ({
-          ...prev,
-          location: {
-            ...prev.location,
-            latitude: coords.latitude,
-            longitude: coords.longitude,
-            formattedAddress: address || prev.location.formattedAddress || ''
-          },
-          address: {
-            street: address || prev.address.street || '',
-            area: '',
-            city: '',
-            state: '',
-            pincode: ''
-          },
-          visible_address: (!locationManuallyEditedRef.current && extractedLocation) 
-            ? extractedLocation.substring(0, 20) 
-            : prev.visible_address,
-          google_location: value
-        }));
-        
-        if (address) {
-          toast.success(`Address extracted: ${address.substring(0, 50)}${address.length > 50 ? '...' : ''}`);
-          if (extractedLocation && !locationManuallyEditedRef.current) {
-            toast.info(`Location identified: ${extractedLocation}`);
-          }
-        } else {
-          toast.success(`Coordinates extracted: ${coords.latitude}, ${coords.longitude}`);
-        }
-      } else if (value.includes('google.com/maps') || value.includes('maps.app.goo.gl') || value.includes('goo.gl/maps')) {
-        toast.info('Google Maps link saved. Note: Short links cannot extract address automatically.');
-      }
-    } else {
+    if (!value.trim()) {
+      // Clear location data when link is removed
       setEditFormData(prev => ({
         ...prev,
         location: {
