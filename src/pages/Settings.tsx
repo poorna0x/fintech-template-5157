@@ -1066,9 +1066,6 @@ const Settings = () => {
                                 <div className="text-xs font-medium text-gray-700 dark:text-gray-300">
                                   View Location
                                 </div>
-                                <div className="text-xs text-gray-500 dark:text-gray-400 font-mono truncate">
-                                  {technician.currentLocation.latitude.toFixed(4)}, {technician.currentLocation.longitude.toFixed(4)}
-                                </div>
                               </div>
                             </button>
                             {lastUpdated && (
@@ -1375,7 +1372,7 @@ const Settings = () => {
                                   className="text-blue-600 hover:text-blue-700 hover:underline truncate block text-left"
                                   title="Click to open in Google Maps"
                                 >
-                                  {technician.currentLocation.latitude.toFixed(6)}, {technician.currentLocation.longitude.toFixed(6)}
+                                  View Location
                                 </button>
                                 {technician.currentLocation.lastUpdated && (
                                   <p className="text-xs text-gray-500 mt-0.5">
