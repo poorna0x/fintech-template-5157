@@ -286,6 +286,7 @@ const AdminDashboard = () => {
     technician: Technician;
     distance: string;
     duration: string;
+    distanceValue?: number; // Distance in meters for comparison
     durationValue?: number; // Duration in seconds for calculation
     estimatedArrival?: string; // Estimated arrival time in 12-hour format
     lastUpdated?: string; // Last updated time in 12-hour format
@@ -5009,6 +5010,7 @@ const AdminDashboard = () => {
       technician: assignedTechnician,
       distance: '',
       duration: '',
+      distanceValue: undefined,
       durationValue: undefined,
       estimatedArrival: undefined,
       lastUpdated: lastUpdatedFormatted,
@@ -5059,16 +5061,17 @@ const AdminDashboard = () => {
             const result = response.rows[0]?.elements[0];
             
             if (result && result.status === window.google.maps.DistanceMatrixElementStatus.OK) {
+              const distanceValue = result.distance.value || 0; // Distance in meters
               let distanceText = result.distance.text;
-              if (result.distance.value < 1000) {
-                distanceText = `${(result.distance.value / 1000).toFixed(2)} km`;
+              if (distanceValue < 1000) {
+                distanceText = `${(distanceValue / 1000).toFixed(2)} km`;
               }
               const durationText = result.duration?.text || '';
               const durationValue = result.duration?.value || 0; // Duration in seconds
               
-              // Calculate estimated arrival for assigned technician
+              // Calculate estimated arrival for assigned technician (only if distance > 1 km)
               let estimatedArrival: string | undefined;
-              if (techLocation?.lastUpdated && durationValue > 0) {
+              if (techLocation?.lastUpdated && durationValue > 0 && distanceValue > 1000) {
                 try {
                   const lastUpdatedDate = new Date(techLocation.lastUpdated);
                   const arrivalDate = new Date(lastUpdatedDate.getTime() + durationValue * 1000);
@@ -5082,6 +5085,7 @@ const AdminDashboard = () => {
                 technician: assignedTechnician,
                 distance: distanceText,
                 duration: durationText,
+                distanceValue: distanceValue,
                 durationValue: durationValue,
                 estimatedArrival: estimatedArrival,
                 lastUpdated: lastUpdatedFormatted,
@@ -5104,16 +5108,17 @@ const AdminDashboard = () => {
                     if (bikeStatus === (window as any).google.maps.DistanceMatrixStatus.OK && bikeResponse) {
                       const bikeResult = bikeResponse.rows[0]?.elements[0];
                       if (bikeResult && bikeResult.status === window.google.maps.DistanceMatrixElementStatus.OK) {
+                        const distanceValue = bikeResult.distance.value || 0; // Distance in meters
                         let distanceText = bikeResult.distance.text;
-                        if (bikeResult.distance.value < 1000) {
-                          distanceText = `${(bikeResult.distance.value / 1000).toFixed(2)} km`;
+                        if (distanceValue < 1000) {
+                          distanceText = `${(distanceValue / 1000).toFixed(2)} km`;
                         }
                         const durationText = bikeResult.duration?.text || '';
                         const durationValue = bikeResult.duration?.value || 0;
                         
-                        // Calculate estimated arrival for assigned technician
+                        // Calculate estimated arrival for assigned technician (only if distance > 1 km)
                         let estimatedArrival: string | undefined;
-                        if (techLocation?.lastUpdated && durationValue > 0) {
+                        if (techLocation?.lastUpdated && durationValue > 0 && distanceValue > 1000) {
                           try {
                             const lastUpdatedDate = new Date(techLocation.lastUpdated);
                             const arrivalDate = new Date(lastUpdatedDate.getTime() + durationValue * 1000);
@@ -5127,6 +5132,7 @@ const AdminDashboard = () => {
                           technician: assignedTechnician,
                           distance: distanceText,
                           duration: durationText,
+                          distanceValue: distanceValue,
                           durationValue: durationValue,
                           estimatedArrival: estimatedArrival,
                           lastUpdated: lastUpdatedFormatted,
@@ -5139,6 +5145,7 @@ const AdminDashboard = () => {
                           technician: assignedTechnician,
                           distance: '',
                           duration: '',
+                          distanceValue: undefined,
                           durationValue: undefined,
                           estimatedArrival: undefined,
                           lastUpdated: lastUpdatedFormatted,
@@ -5152,6 +5159,7 @@ const AdminDashboard = () => {
                         technician: assignedTechnician,
                         distance: '',
                         duration: '',
+                        distanceValue: undefined,
                         durationValue: undefined,
                         estimatedArrival: undefined,
                         lastUpdated: lastUpdatedFormatted,
@@ -5167,6 +5175,7 @@ const AdminDashboard = () => {
                   technician: assignedTechnician,
                   distance: '',
                   duration: '',
+                  distanceValue: undefined,
                   durationValue: undefined,
                   estimatedArrival: undefined,
                   lastUpdated: lastUpdatedFormatted,
@@ -9432,27 +9441,39 @@ const AdminDashboard = () => {
                                 </div>
                               ) : item.distance ? (
                                 <div className="flex flex-wrap items-center gap-4">
-                                  <div className="flex items-center gap-2">
-                                    <MapPin className="h-4 w-4 text-blue-600" />
-                                    <span className={`font-medium ${
-                                      item.isAssigned ? 'text-blue-900' : 'text-gray-900'
-                                    }`}>
-                                      {item.distance}
-                                    </span>
-                                  </div>
-                                  {item.duration && (
-                                    <div className={`flex items-center gap-2 text-sm ${
-                                      item.isAssigned ? 'text-blue-700' : 'text-gray-600'
-                                    }`}>
-                                      <Clock className="h-4 w-4" />
-                                      {item.duration}
+                                  {item.distanceValue !== undefined && item.distanceValue <= 1000 ? (
+                                    // Technician is within 1 km (at customer's location)
+                                    <div className="flex items-center gap-2">
+                                      <MapPin className="h-4 w-4 text-green-600" />
+                                      <span className="font-medium text-green-600">
+                                        Technician is at customer's location
+                                      </span>
                                     </div>
-                                  )}
-                                  {item.isAssigned && item.estimatedArrival && (
-                                    <div className="flex items-center gap-2 text-sm font-semibold text-blue-700">
-                                      <Clock className="h-4 w-4" />
-                                      Estimated arrival: {item.estimatedArrival}
-                                    </div>
+                                  ) : (
+                                    <>
+                                      <div className="flex items-center gap-2">
+                                        <MapPin className="h-4 w-4 text-blue-600" />
+                                        <span className={`font-medium ${
+                                          item.isAssigned ? 'text-blue-900' : 'text-gray-900'
+                                        }`}>
+                                          {item.distance}
+                                        </span>
+                                      </div>
+                                      {item.duration && (
+                                        <div className={`flex items-center gap-2 text-sm ${
+                                          item.isAssigned ? 'text-blue-700' : 'text-gray-600'
+                                        }`}>
+                                          <Clock className="h-4 w-4" />
+                                          {item.duration}
+                                        </div>
+                                      )}
+                                      {item.isAssigned && item.estimatedArrival && (
+                                        <div className="flex items-center gap-2 text-sm font-semibold text-blue-700">
+                                          <Clock className="h-4 w-4" />
+                                          Estimated arrival: {item.estimatedArrival}
+                                        </div>
+                                      )}
+                                    </>
                                   )}
                                 </div>
                               ) : (
