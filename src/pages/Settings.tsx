@@ -1175,16 +1175,6 @@ const Settings = () => {
                           <h3 className="font-semibold text-gray-900 text-sm sm:text-base truncate">{qrCode.name}</h3>
                         </div>
                       </div>
-                      
-                      {qrCode.qrCodeUrl && (
-                        <div className="mb-4 flex justify-center">
-                          <img 
-                            src={qrCode.qrCodeUrl} 
-                            alt={qrCode.name} 
-                            className="w-32 h-32 object-contain border border-gray-200 rounded"
-                          />
-                        </div>
-                      )}
 
                       <div className="flex items-center gap-2">
                         <Button
