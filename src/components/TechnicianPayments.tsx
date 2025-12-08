@@ -188,6 +188,7 @@ const TechnicianPayments = () => {
   const [jobsForDate, setJobsForDate] = useState<any[]>([]);
   const [loadingJobsForDate, setLoadingJobsForDate] = useState(false);
   const [editingJobCommission, setEditingJobCommission] = useState<{jobId: string; commissionPercentage: number} | null>(null);
+  const [editingJobAmount, setEditingJobAmount] = useState<{jobId: string; amount: number} | null>(null);
 
   useEffect(() => {
     loadData();
@@ -1056,6 +1057,116 @@ const TechnicianPayments = () => {
         toast.error('Authentication expired. Please log out and log back in.');
       } else {
         toast.error('Failed to update commission: ' + error.message);
+      }
+    }
+  };
+
+  const handleUpdateJobAmount = async (jobId: string, newAmount: number) => {
+    try {
+      // Validate amount (must be >= 0)
+      if (newAmount < 0) {
+        toast.error('Amount must be greater than or equal to 0');
+        return;
+      }
+      
+      // Round to 2 decimal places to match database precision
+      const roundedAmount = Math.round(newAmount * 100) / 100;
+      
+      // Get the job to find commission percentage
+      const job = jobsForDate.find(j => j.id === jobId);
+      if (!job) {
+        toast.error('Job not found');
+        return;
+      }
+
+      // Update job's actual_cost and payment_amount
+      const { error: jobUpdateError } = await supabase
+        .from('jobs')
+        .update({
+          actual_cost: roundedAmount,
+          payment_amount: roundedAmount,
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', jobId);
+
+      if (jobUpdateError) throw jobUpdateError;
+
+      // Get commission percentage (use existing or default to 10%)
+      const commissionPercentage = job.commission_percentage ?? 10;
+      const newCommissionAmount = roundedAmount * (commissionPercentage / 100);
+
+      // Update or create technician_payment record
+      const { data: existingPayment, error: checkError } = await supabase
+        .from('technician_payments')
+        .select('id')
+        .eq('job_id', jobId)
+        .single();
+
+      if (checkError && checkError.code !== 'PGRST116') { // PGRST116 = no rows returned
+        throw checkError;
+      }
+
+      if (existingPayment) {
+        // Update existing payment
+        const { error: updateError } = await supabase
+          .from('technician_payments')
+          .update({
+            bill_amount: roundedAmount,
+            commission_amount: Math.round(newCommissionAmount * 100) / 100, // Round to 2 decimal places
+            updated_at: new Date().toISOString()
+          })
+          .eq('id', existingPayment.id);
+
+        if (updateError) throw updateError;
+      } else {
+        // Create new payment record
+        if (!selectedDateForJobs) {
+          toast.error('Technician ID not found');
+          return;
+        }
+
+        const { error: insertError } = await supabase
+          .from('technician_payments')
+          .insert({
+            technician_id: selectedDateForJobs.technicianId,
+            job_id: jobId,
+            bill_amount: roundedAmount,
+            commission_percentage: commissionPercentage,
+            commission_amount: Math.round(newCommissionAmount * 100) / 100, // Round to 2 decimal places
+            payment_status: 'PENDING'
+          });
+
+        if (insertError) {
+          // If RLS error, provide helpful message
+          if (insertError.code === '42501' || insertError.message?.includes('row-level security')) {
+            toast.error('Permission denied. Please ensure you are logged in as an admin and have run the RLS policy fix SQL.');
+            console.error('RLS Error - Make sure you have run fix-technician-payments-rls-final.sql in Supabase');
+          }
+          throw insertError;
+        }
+      }
+
+      toast.success(`Job amount updated to ₹${roundedAmount.toFixed(2)}`);
+      
+      // Reload jobs to reflect changes
+      if (selectedDateForJobs) {
+        await loadJobsForDate(selectedDateForJobs.technicianId, selectedDateForJobs.date);
+      }
+      
+      // Reload main data to update totals everywhere
+      await loadData(false);
+      
+      setEditingJobAmount(null);
+    } catch (error: any) {
+      console.error('Error updating job amount:', error);
+      
+      // Provide specific error messages
+      if (error.code === '42501' || error.message?.includes('row-level security')) {
+        toast.error('Permission denied. Please ensure you are logged in as an admin and have run the RLS policy fix SQL in Supabase.');
+      } else if (error.code === 'PGRST301' || error.message?.includes('JWT')) {
+        toast.error('Authentication expired. Please log out and log back in.');
+      } else {
+        toast.error('Failed to update job amount: ' + error.message);
       }
     }
   };
@@ -2439,8 +2550,70 @@ const TechnicianPayments = () => {
                             <div>{job.service_type} - {job.service_sub_type}</div>
                           </div>
                         </TableCell>
-                        <TableCell className="text-right font-semibold">
-                          ₹{job.bill_amount.toFixed(2)}
+                        <TableCell className="text-right">
+                          {editingJobAmount?.jobId === job.id ? (
+                            <div className="flex items-center gap-2 justify-end">
+                              <span className="text-sm">₹</span>
+                              <Input
+                                type="number"
+                                min="0"
+                                step="0.01"
+                                value={editingJobAmount.amount}
+                                onChange={(e) => {
+                                  const value = parseFloat(e.target.value) || 0;
+                                  // Ensure value is >= 0
+                                  const clampedValue = Math.max(0, value);
+                                  // Round to 2 decimal places
+                                  const roundedValue = Math.round(clampedValue * 100) / 100;
+                                  setEditingJobAmount({
+                                    jobId: job.id,
+                                    amount: roundedValue
+                                  });
+                                }}
+                                className="w-24 h-8 text-sm font-semibold"
+                                autoFocus
+                              />
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                onClick={() => handleUpdateJobAmount(job.id, editingJobAmount.amount)}
+                                className="h-8 px-2"
+                              >
+                                <Check className="w-3 h-3" />
+                              </Button>
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                onClick={() => setEditingJobAmount(null)}
+                                className="h-8 px-2"
+                              >
+                                <X className="w-3 h-3" />
+                              </Button>
+                            </div>
+                          ) : (
+                            <div className="flex items-center gap-2 justify-end">
+                              <span className="font-semibold">₹{job.bill_amount.toFixed(2)}</span>
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                onClick={() => {
+                                  // Cancel commission editing if active
+                                  if (editingJobCommission?.jobId === job.id) {
+                                    setEditingJobCommission(null);
+                                  }
+                                  setEditingJobAmount({
+                                    jobId: job.id,
+                                    amount: job.bill_amount
+                                  });
+                                }}
+                                disabled={editingJobCommission?.jobId === job.id}
+                                className="h-6 w-6 p-0"
+                                title="Edit amount"
+                              >
+                                <Pencil className="w-3 h-3" />
+                              </Button>
+                            </div>
+                          )}
                         </TableCell>
                         <TableCell className="text-right">
                           {editingJobCommission?.jobId === job.id ? (
@@ -2496,10 +2669,17 @@ const TechnicianPayments = () => {
                               <Button
                                 size="sm"
                                 variant="ghost"
-                                onClick={() => setEditingJobCommission({
-                                  jobId: job.id,
-                                  commissionPercentage: job.commission_percentage
-                                })}
+                                onClick={() => {
+                                  // Cancel amount editing if active
+                                  if (editingJobAmount?.jobId === job.id) {
+                                    setEditingJobAmount(null);
+                                  }
+                                  setEditingJobCommission({
+                                    jobId: job.id,
+                                    commissionPercentage: job.commission_percentage
+                                  });
+                                }}
+                                disabled={editingJobAmount?.jobId === job.id}
                                 className="h-6 w-6 p-0"
                                 title="Edit commission"
                               >
@@ -2518,7 +2698,10 @@ const TechnicianPayments = () => {
                             onClick={() => {
                               if (editingJobCommission?.jobId === job.id) {
                                 setEditingJobCommission(null);
+                              } else if (editingJobAmount?.jobId === job.id) {
+                                setEditingJobAmount(null);
                               } else {
+                                // Start editing commission by default
                                 setEditingJobCommission({
                                   jobId: job.id,
                                   commissionPercentage: job.commission_percentage
@@ -2527,7 +2710,7 @@ const TechnicianPayments = () => {
                             }}
                             className="h-8"
                           >
-                            {editingJobCommission?.jobId === job.id ? (
+                            {editingJobCommission?.jobId === job.id || editingJobAmount?.jobId === job.id ? (
                               <>
                                 <X className="w-3 h-3 mr-1" />
                                 Cancel
@@ -2553,6 +2736,7 @@ const TechnicianPayments = () => {
               setSelectedDateForJobs(null);
               setJobsForDate([]);
               setEditingJobCommission(null);
+              setEditingJobAmount(null);
             }}>
               Close
             </Button>
