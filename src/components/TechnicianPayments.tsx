@@ -174,11 +174,9 @@ const TechnicianPayments = () => {
   const [editingDailyBreakdown, setEditingDailyBreakdown] = useState<{
     technicianId: string;
     date: string;
-    billAmount: number;
     isAbsent: boolean;
   } | null>(null);
   const [dailyBreakdownFormData, setDailyBreakdownFormData] = useState({
-    billAmount: '',
     isAbsent: false
   });
 
@@ -431,17 +429,35 @@ const TechnicianPayments = () => {
           currentDate.setDate(currentDate.getDate() + 1);
         }
 
-        // Find holidays: dates with no jobs completed (ONLY up to today, not future dates)
+        // Track dates with ANY completed jobs (even with ₹0 bill amount)
+        const datesWithJobs = new Set<string>(); // dates that have any completed jobs
+        const dailyBillingForHolidays = new Map<string, number>(); // date -> total bill amount
+        techCompletedJobs.forEach((job: any) => {
+          const completionDate = job.end_time || job.completed_at;
+          if (completionDate) {
+            const jobDateObj = new Date(completionDate);
+            const jobDate = formatDateString(jobDateObj);
+            datesWithJobs.add(jobDate); // Track that this date has at least one job
+            const billAmount = parseFloat(job.actual_cost || job.payment_amount || 0);
+            dailyBillingForHolidays.set(jobDate, (dailyBillingForHolidays.get(jobDate) || 0) + billAmount);
+          }
+        });
+
+        // Find holidays: dates with NO jobs at all (ONLY up to today, not future dates)
         // BUT exclude dates that have been manually marked as present (have a "present" override)
+        // NOTE: If there are ANY completed jobs on a date (even ₹0), it's considered present
         const autoDetectedHolidays: string[] = [];
         allDates.forEach(date => {
           // Only count holidays for dates up to today (not future dates)
-          if (date <= todayStrForHolidays && !workingDays.has(date)) {
+          const hasJobsOnDate = datesWithJobs.has(date);
+          // Auto-detect as absent ONLY if: there are NO jobs at all on this date
+          // If there are ANY jobs (even ₹0), it's considered present
+          if (date <= todayStrForHolidays && !hasJobsOnDate) {
             // Check if holiday already exists in database
             const existingHoliday = techHolidays.find(h => h.holiday_date.split('T')[0] === date);
             // Only auto-detect as absent if:
             // 1. No manual holiday exists OR the holiday is not a "present override" marker (MARKED_AS_PRESENT)
-            // 2. No jobs were completed on that day
+            // 2. There are NO jobs at all on this date
             // Note: If user manually marks as present (MARKED_AS_PRESENT), we won't auto-detect it
             if (!existingHoliday || existingHoliday.reason !== 'MARKED_AS_PRESENT') {
               autoDetectedHolidays.push(date);
@@ -490,7 +506,7 @@ const TechnicianPayments = () => {
             technician_id: techId,
             holiday_date: date,
             is_manual: false,
-            reason: 'No jobs completed'
+            reason: 'No completed jobs - auto-detected as absent'
           });
         });
         displayHolidays.sort((a, b) => new Date(b.holiday_date).getTime() - new Date(a.holiday_date).getTime());
@@ -527,18 +543,35 @@ const TechnicianPayments = () => {
           .filter(date => date <= todayStr) // Only show dates up to today (exclude future dates)
           .map(date => {
             const billAmount = dailyBilling.get(date) || 0;
-            // Check if there's a present override marker for this date
-            const hasPresentOverride = techHolidays.some(h => 
+            const hasJobsOnDate = datesWithJobs.has(date);
+            
+            // Check for manual overrides
+            const presentOverride = techHolidays.find(h => 
               h.holiday_date.split('T')[0] === date && h.reason === 'MARKED_AS_PRESENT'
             );
-            // Mark as absent if:
-            // 1. It's in the holiday dates (manual or auto-detected, but NOT present override markers)
-            // 2. AND there are no jobs completed on that day (billAmount === 0)
-            // 3. AND the date is today or in the past (not future)
-            // 4. AND there's no present override marker
-            // If there are jobs (billAmount > 0), don't mark as absent even if it's in holiday dates
-            const hasJobs = billAmount > 0;
-            const isAbsent = !hasJobs && !hasPresentOverride && allHolidayDates.has(date) && date <= todayStr;
+            const manualAbsentHoliday = techHolidays.find(h => 
+              h.holiday_date.split('T')[0] === date && 
+              h.reason !== 'MARKED_AS_PRESENT' && 
+              h.is_manual === true
+            );
+            
+            // Determine attendance status with priority:
+            // 1. Present override (MARKED_AS_PRESENT) - FORCE PRESENT
+            // 2. Manual absent holiday - FORCE ABSENT
+            // 3. Auto-detection: absent if no jobs, present if any jobs exist
+            let isAbsent: boolean;
+            if (presentOverride) {
+              // Present override marker exists - FORCE PRESENT
+              isAbsent = false;
+            } else if (manualAbsentHoliday) {
+              // Manual absent holiday exists - FORCE ABSENT
+              isAbsent = true;
+            } else {
+              // Auto-detection: absent only if no jobs at all
+              // If ANY jobs exist (even ₹0), it's present
+              isAbsent = !hasJobsOnDate && allHolidayDates.has(date);
+            }
+            
             return {
               date,
               billAmount,
@@ -1177,222 +1210,16 @@ const TechnicianPayments = () => {
     try {
       const technicianId = editingDailyBreakdown.technicianId;
       const date = editingDailyBreakdown.date;
-      const newBillAmount = parseFloat(dailyBreakdownFormData.billAmount) || 0;
       const newIsAbsent = dailyBreakdownFormData.isAbsent;
       const oldIsAbsent = editingDailyBreakdown.isAbsent;
       let hasChanges = false;
-
-      // Update bill amount if changed
-      if (newBillAmount !== editingDailyBreakdown.billAmount) {
-        // Find jobs completed on this date for this technician
-        // Use date range query for end_time (TIMESTAMP field)
-        const startOfDay = new Date(date);
-        startOfDay.setHours(0, 0, 0, 0);
-        const endOfDay = new Date(date);
-        endOfDay.setHours(23, 59, 59, 999);
-
-        const { data: jobsOnDate, error: jobsError } = await supabase
-          .from('jobs')
-          .select('id, actual_cost, payment_amount')
-          .eq('assigned_technician_id', technicianId)
-          .eq('status', 'COMPLETED')
-          .not('end_time', 'is', null)
-          .gte('end_time', startOfDay.toISOString())
-          .lte('end_time', endOfDay.toISOString());
-
-        if (jobsError) {
-          console.error('Error fetching jobs:', jobsError);
-          throw jobsError;
-        }
-
-        if (jobsOnDate && jobsOnDate.length > 0) {
-          // If multiple jobs exist, update the total bill amount across all jobs
-          // The newBillAmount should be the TOTAL for all jobs on that date
-          // So we'll update each job proportionally OR update the first job with the total
-          // Actually, better approach: Update the first job with the total amount, set others to 0
-          // OR: Distribute evenly, OR: Update first job only
-          // For simplicity, let's update the first job with the total amount
-          
-          if (jobsOnDate.length === 1) {
-            // Single job - update it with the exact amount
-            const jobId = jobsOnDate[0].id;
-            
-            // Update the job's actual_cost and payment_amount
-            const { error: updateError } = await supabase
-              .from('jobs')
-              .update({
-                actual_cost: newBillAmount,
-                payment_amount: newBillAmount
-              })
-              .eq('id', jobId);
-
-            if (updateError) {
-              console.error('Error updating job:', updateError);
-              throw updateError;
-            }
-
-            // Also update the technician_payment record's bill_amount if it exists
-            const { data: existingPayment, error: paymentCheckError } = await supabase
-              .from('technician_payments')
-              .select('id, commission_percentage')
-              .eq('job_id', jobId)
-              .single();
-
-            if (paymentCheckError && paymentCheckError.code !== 'PGRST116') {
-              console.error('Error checking payment record:', paymentCheckError);
-              // Don't throw - continue even if payment record doesn't exist
-            } else if (existingPayment) {
-              // Recalculate commission amount with new bill amount
-              const commissionPercentage = existingPayment.commission_percentage || 10;
-              const newCommissionAmount = newBillAmount * (commissionPercentage / 100);
-              
-              const { error: paymentUpdateError } = await supabase
-                .from('technician_payments')
-                .update({
-                  bill_amount: Math.round(newBillAmount * 100) / 100,
-                  commission_amount: Math.round(newCommissionAmount * 100) / 100,
-                  updated_at: new Date().toISOString()
-                })
-                .eq('id', existingPayment.id);
-
-              if (paymentUpdateError) {
-                console.error('Error updating payment record:', paymentUpdateError);
-                // Don't throw - job update succeeded, payment update is secondary
-              }
-            }
-            
-            toast.success(`Updated bill amount to ₹${newBillAmount.toFixed(2)} for ${new Date(date).toLocaleDateString()}`);
-          } else {
-            // Multiple jobs - update first job with total, set others to 0
-            // Or distribute evenly? Let's update first job with total
-            const { error: updateFirstError } = await supabase
-              .from('jobs')
-              .update({
-                actual_cost: newBillAmount,
-                payment_amount: newBillAmount
-              })
-              .eq('id', jobsOnDate[0].id);
-
-            if (updateFirstError) {
-              console.error('Error updating first job:', updateFirstError);
-              throw updateFirstError;
-            }
-
-            // Set other jobs to 0
-            for (let i = 1; i < jobsOnDate.length; i++) {
-              const { error: updateError } = await supabase
-                .from('jobs')
-                .update({
-                  actual_cost: 0,
-                  payment_amount: 0
-                })
-                .eq('id', jobsOnDate[i].id);
-
-              if (updateError) {
-                console.error('Error updating job:', updateError);
-                // Don't throw, just log - continue with other jobs
-                console.warn(`Failed to update job ${jobsOnDate[i].id}`);
-              }
-            }
-            toast.success(`Updated total bill amount to ₹${newBillAmount.toFixed(2)} for ${new Date(date).toLocaleDateString()} (${jobsOnDate.length} job(s))`);
-          }
-          hasChanges = true;
-        } else if (newBillAmount > 0) {
-          // No jobs exist, but user wants to set a bill amount - create a placeholder job
-          const tech = technicians.find(t => t.id === technicianId);
-          if (!tech) {
-            toast.error('Technician not found');
-            return;
-          }
-
-          // Get first customer for placeholder job
-          const { data: firstCustomer } = await supabase
-            .from('customers')
-            .select('id')
-            .limit(1)
-            .single();
-
-          if (!firstCustomer) {
-            toast.error('Cannot create job: No customers found in system');
-            return;
-          }
-
-          // Create placeholder job with the bill amount
-          const placeholderJob = {
-            job_number: `BILL-${date.replace(/-/g, '')}-${technicianId.substring(0, 8)}`,
-            customer_id: firstCustomer.id,
-            service_type: 'RO' as const,
-            service_sub_type: 'Manual Bill Entry',
-            brand: 'N/A',
-            model: 'N/A',
-            scheduled_date: date,
-            scheduled_time_slot: 'MORNING' as const,
-            estimated_duration: 0,
-            service_address: {},
-            service_location: {},
-            status: 'COMPLETED' as const,
-            priority: 'LOW' as const,
-            description: 'Manual bill entry - no actual job performed',
-            requirements: [],
-            estimated_cost: newBillAmount,
-            actual_cost: newBillAmount,
-            payment_amount: newBillAmount,
-            assigned_technician_id: technicianId,
-            start_time: `${date}T09:00:00`,
-            end_time: `${date}T09:00:00`,
-            payment_status: 'PAID' as const
-          };
-
-          const { data: newJob, error: jobError } = await supabase
-            .from('jobs')
-            .insert(placeholderJob)
-            .select()
-            .single();
-
-          if (jobError) {
-            console.error('Error creating placeholder job:', jobError);
-            toast.error('Failed to create job: ' + jobError.message);
-            return;
-          }
-
-          // Create technician payment record for this job
-          // tech is already declared above
-          const baseSalary = tech?.salary && typeof tech.salary === 'object' && (tech.salary as any).baseSalary
-            ? (tech.salary as any).baseSalary
-            : 8000;
-          const commissionPercentage = 10; // Default 10%
-          const commissionAmount = newBillAmount * (commissionPercentage / 100);
-
-          const { error: paymentError } = await supabase
-            .from('technician_payments')
-            .insert({
-              technician_id: technicianId,
-              job_id: newJob.id,
-              bill_amount: newBillAmount,
-              commission_percentage: commissionPercentage,
-              commission_amount: commissionAmount,
-              payment_status: 'PENDING'
-            });
-
-          if (paymentError) {
-            console.error('Error creating payment record:', paymentError);
-            toast.warning('Job created but payment record failed: ' + paymentError.message);
-          }
-
-          toast.success(`Created job and set bill amount to ₹${newBillAmount.toFixed(2)}`);
-          hasChanges = true;
-        } else {
-          // If setting to 0 and no jobs, that's fine
-          hasChanges = true;
-        }
-      }
 
       // Update present/absent status
       if (newIsAbsent !== oldIsAbsent) {
         // Check if holiday already exists - holiday_date is DATE field, so query by date string
         const { data: existingHolidays, error: holidayCheckError } = await supabase
           .from('technician_holidays')
-          .select('id, is_manual')
+          .select('id, is_manual, reason')
           .eq('technician_id', technicianId)
           .eq('holiday_date', date); // Direct date match for DATE field
 
@@ -1409,8 +1236,28 @@ const TechnicianPayments = () => {
         });
 
         if (newIsAbsent) {
-          // Mark as absent - add holiday if not exists
-          if (!existingHolidays || existingHolidays.length === 0) {
+          // Mark as absent - first remove any present override markers, then add absent holiday
+          let deletedPresentOverrides = 0;
+          let hasAbsentHoliday = false;
+          
+          if (existingHolidays && existingHolidays.length > 0) {
+            // Check if there's a present override marker - delete it first
+            const presentOverride = existingHolidays.find(h => h.reason === 'MARKED_AS_PRESENT');
+            if (presentOverride) {
+              const { error: deleteError } = await db.technicianHolidays.delete(presentOverride.id);
+              if (deleteError) {
+                console.error('Error deleting present override:', deleteError);
+                throw deleteError;
+              }
+              deletedPresentOverrides++;
+            }
+            
+            // Check if there's already an absent holiday (manual or auto-detected)
+            hasAbsentHoliday = existingHolidays.some(h => h.reason !== 'MARKED_AS_PRESENT');
+          }
+          
+          // Create absent holiday if it doesn't exist
+          if (!hasAbsentHoliday) {
             const { error: addHolidayError } = await db.technicianHolidays.create({
               technician_id: technicianId,
               holiday_date: date,
@@ -1422,12 +1269,21 @@ const TechnicianPayments = () => {
               console.error('Error adding holiday:', addHolidayError);
               throw addHolidayError;
             }
-            toast.success('Day marked as absent');
+            if (deletedPresentOverrides > 0) {
+              toast.success('Day marked as absent (removed present override)');
+            } else {
+              toast.success('Day marked as absent');
+            }
             hasChanges = true;
           } else {
-            // Holiday already exists, just confirm
-            toast.info('Day is already marked as absent');
-            hasChanges = true; // Still reload to refresh
+            // Absent holiday already exists
+            if (deletedPresentOverrides > 0) {
+              toast.success('Day marked as absent (removed present override)');
+              hasChanges = true;
+            } else {
+              toast.info('Day is already marked as absent');
+              hasChanges = true; // Still reload to refresh
+            }
           }
         } else {
           // Mark as present - remove ALL holidays (both manual and auto-detected)
@@ -2009,11 +1865,9 @@ const TechnicianPayments = () => {
                                         setEditingDailyBreakdown({
                                           technicianId: breakdown.technicianId,
                                           date: day.date,
-                                          billAmount: day.billAmount,
                                           isAbsent: day.isAbsent
                                         });
                                         setDailyBreakdownFormData({
-                                          billAmount: day.billAmount > 0 ? day.billAmount.toString() : '',
                                           isAbsent: day.isAbsent
                                         });
                                         setDailyBreakdownEditDialogOpen(true);
@@ -2231,26 +2085,13 @@ const TechnicianPayments = () => {
                   return 'th';
                 };
                 const monthName = dateObj.toLocaleDateString('en-IN', { month: 'long', year: 'numeric' });
-                return <>Edit bill amount and status for {dayNum}{getDaySuffix(dayNum)} of {monthName}</>;
+                return <>Mark attendance status for {dayNum}{getDaySuffix(dayNum)} of {monthName}</>;
               })()}
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4 py-4">
             <div>
-              <Label htmlFor="daily-bill-amount">Bill Amount (INR)</Label>
-              <Input
-                id="daily-bill-amount"
-                type="number"
-                min="0"
-                step="0.01"
-                value={dailyBreakdownFormData.billAmount}
-                onChange={(e) => setDailyBreakdownFormData({ ...dailyBreakdownFormData, billAmount: e.target.value })}
-                placeholder="Enter bill amount"
-              />
-              <p className="text-xs text-gray-500 mt-1">Leave empty or 0 if no jobs</p>
-            </div>
-            <div>
-              <Label htmlFor="daily-is-absent">Status</Label>
+              <Label htmlFor="daily-is-absent">Attendance Status</Label>
               <Select
                 value={dailyBreakdownFormData.isAbsent ? 'absent' : 'present'}
                 onValueChange={(value) => setDailyBreakdownFormData({ ...dailyBreakdownFormData, isAbsent: value === 'absent' })}

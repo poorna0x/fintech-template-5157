@@ -69,8 +69,8 @@ export interface Job {
   job_number?: string; // Alternative field name used in database
   
   // Customer Info
-  customerId: string;
-  customer_id?: string; // Alternative field name used in database
+  customerId?: string | null; // Nullable for dummy/manual bill entry jobs
+  customer_id?: string | null; // Alternative field name used in database, nullable for dummy jobs
   customer?: Customer;
   
   // Service Details
