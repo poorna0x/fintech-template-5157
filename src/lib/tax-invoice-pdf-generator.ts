@@ -406,12 +406,6 @@ export function generateTaxInvoicePDF(billData: PDFTaxInvoiceData, action: 'prin
           }
           
           .dsc-signature-box {
-            width: 75mm;
-            height: 22.5mm;
-            min-width: 70mm;
-            max-width: 80mm;
-            min-height: 20mm;
-            max-height: 25mm;
             border: 1px solid #d1d5db;
             background-color: #fafafa;
             margin-bottom: 10px;
@@ -991,7 +985,7 @@ function createTaxInvoiceContent(data: PDFTaxInvoiceData): string {
         <div style="clear: both; margin-top: 30px; padding-top: 20px; border-top: 1px solid #e5e7eb;">
           <div style="display: flex; justify-content: flex-end; margin: 20px 15px;">
             <div class="dsc-signature-section">
-              <div class="dsc-signature-box"></div>
+              <div class="dsc-signature-box" style="width: ${(data as any).dscData.boxWidth || 75}mm; height: ${(data as any).dscData.boxHeight || 22.5}mm;"></div>
               <div class="dsc-signature-info">
                 <div class="dsc-signature-label">${sanitizeForTemplate((data as any).dscData.authorizedSignatory || 'Authorized Signatory')}</div>
                 ${(data as any).dscData.nameDesignation ? `<div class="dsc-name-designation">${sanitizeForTemplate((data as any).dscData.nameDesignation)}</div>` : ''}
@@ -1032,7 +1026,7 @@ function createTaxInvoiceContent(data: PDFTaxInvoiceData): string {
       ${(data as any).pdfOptions?.showDigitallySignedText ? `
         <div style="margin-top: 20px; padding: 15px 10px; text-align: justify; font-size: 10px; color: #374151; border-top: 1px solid #e5e7eb; background-color: #f3f4f6;">
           <p style="margin: 5px 0; font-weight: 600; font-size: 11px; color: #1f2937; text-align: center;">Digitally Signed Invoice</p>
-          <p style="margin: 8px 0; line-height: 1.6; text-align: justify; text-justify: inter-word;">This invoice is authenticated using a Digital Signature Certificate (DSC) and is legally valid under the Information Technology Act, 2000. Any modification or alteration to this document will render the digital signature invalid.</p>
+          <p style="margin: 8px 0; line-height: 1.6; text-align: justify; text-justify: inter-word; word-spacing: 0.1em; letter-spacing: 0.01em;">This invoice is authenticated using a Digital Signature Certificate (DSC) and is legally valid under the Information Technology Act, 2000. Any modification or alteration to this document will render the digital signature invalid.</p>
         </div>
       ` : ''}
       
@@ -1575,12 +1569,6 @@ export function generateCombinedTaxInvoicePDF(
           }
           
           .dsc-signature-box {
-            width: 75mm;
-            height: 22.5mm;
-            min-width: 70mm;
-            max-width: 80mm;
-            min-height: 20mm;
-            max-height: 25mm;
             border: 1px solid #d1d5db;
             background-color: #fafafa;
             margin-bottom: 10px;

@@ -223,6 +223,17 @@ export default function TaxInvoiceGenerator({ customer, onPrint, onTaxInvoiceSav
   const [dscAuthorizedSignatory, setDscAuthorizedSignatory] = useState('Authorized Signatory');
   const [dscNameDesignation, setDscNameDesignation] = useState('Srujan - Proprietor');
   const [dscCompanyName, setDscCompanyName] = useState('Hydrogen RO');
+  const [dscBoxWidth, setDscBoxWidth] = useState(75); // Default width in mm
+  const [dscBoxHeight, setDscBoxHeight] = useState(22.5); // Default height in mm
+  
+  // Auto-deselect "Computer Generated Invoice" when DSC is enabled
+  useEffect(() => {
+    if (useDSC) {
+      setShowComputerGeneratedText(false);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [useDSC]);
+  
   const [poNumber, setPONumber] = useState('');
   const [showPONumber, setShowPONumber] = useState(false);
   const [poNumberRequired, setPONumberRequired] = useState(false); // For government entities
@@ -668,7 +679,9 @@ export default function TaxInvoiceGenerator({ customer, onPrint, onTaxInvoiceSav
         authorizedSignatory: dscAuthorizedSignatory,
         nameDesignation: dscNameDesignation,
         companyName: dscCompanyName,
-        signatureDate: signatureDate || billDate
+        signatureDate: signatureDate || billDate,
+        boxWidth: dscBoxWidth,
+        boxHeight: dscBoxHeight
       };
     }
     
@@ -1593,9 +1606,49 @@ export default function TaxInvoiceGenerator({ customer, onPrint, onTaxInvoiceSav
                       </p>
                     </div>
                     
+                    <div className="mt-4 space-y-3">
+                      <Label className="text-sm font-medium block">
+                        DSC Signature Box Size (mm)
+                      </Label>
+                      <div className="grid grid-cols-2 gap-4">
+                        <div>
+                          <Label htmlFor="dscBoxWidth" className="text-xs text-gray-600 mb-1 block">
+                            Width (mm)
+                          </Label>
+                          <Input
+                            id="dscBoxWidth"
+                            type="number"
+                            min="70"
+                            max="100"
+                            step="1"
+                            value={dscBoxWidth}
+                            onChange={(e) => setDscBoxWidth(Number(e.target.value))}
+                            className="w-full"
+                          />
+                          <p className="text-xs text-gray-500 mt-1">Default: 75mm (Range: 70-100mm)</p>
+                        </div>
+                        <div>
+                          <Label htmlFor="dscBoxHeight" className="text-xs text-gray-600 mb-1 block">
+                            Height (mm)
+                          </Label>
+                          <Input
+                            id="dscBoxHeight"
+                            type="number"
+                            min="20"
+                            max="35"
+                            step="0.5"
+                            value={dscBoxHeight}
+                            onChange={(e) => setDscBoxHeight(Number(e.target.value))}
+                            className="w-full"
+                          />
+                          <p className="text-xs text-gray-500 mt-1">Default: 22.5mm (Range: 20-35mm)</p>
+                        </div>
+                      </div>
+                    </div>
+                    
                     <div className="mt-4 p-4 bg-gray-50 rounded-lg border border-gray-200">
                       <p className="text-xs text-gray-600 mb-2">
-                        <strong>Note:</strong> A placeholder box (70-80mm × 20-25mm) will be created for the DSC signature image. 
+                        <strong>Note:</strong> A placeholder box ({dscBoxWidth}mm × {dscBoxHeight}mm) will be created for the DSC signature image. 
                         You can add the actual DSC signature image later using Adobe or other tools.
                       </p>
                     </div>
