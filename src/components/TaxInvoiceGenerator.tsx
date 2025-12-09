@@ -226,10 +226,11 @@ export default function TaxInvoiceGenerator({ customer, onPrint, onTaxInvoiceSav
   const [dscBoxWidth, setDscBoxWidth] = useState(75); // Default width in mm
   const [dscBoxHeight, setDscBoxHeight] = useState(22.5); // Default height in mm
   
-  // Auto-deselect "Computer Generated Invoice" when DSC is enabled
+  // Auto-deselect "Computer Generated Invoice" and enable "Digitally Signed Invoice" when DSC is enabled
   useEffect(() => {
     if (useDSC) {
       setShowComputerGeneratedText(false);
+      setShowDigitallySignedText(true);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [useDSC]);
