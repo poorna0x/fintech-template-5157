@@ -1024,7 +1024,7 @@ function createTaxInvoiceContent(data: PDFTaxInvoiceData): string {
       
       <!-- Digitally Signed Invoice Disclaimer -->
       ${(data as any).pdfOptions?.showDigitallySignedText ? `
-        <div style="margin-top: 20px; padding: 15px 10px; font-size: 10px; color: #374151; border-top: 1px solid #e5e7eb; background-color: #f3f4f6;">
+        <div style="margin-top: 20px; padding: 15px 10px; font-size: 10px; color: #374151; border-top: 1px solid #e5e7eb; background-color: transparent;">
           <p style="margin: 5px 0; font-weight: 600; font-size: 11px; color: #1f2937; text-align: center;">Digitally Signed Invoice</p>
           <p style="margin: 8px 0; line-height: 1.6; text-align: center; max-width: 100%; margin-left: auto; margin-right: auto;">This invoice is authenticated using a Digital Signature Certificate (DSC) and is legally valid under the Information Technology Act, 2000. Any modification or alteration to this document will render the digital signature invalid.</p>
         </div>
