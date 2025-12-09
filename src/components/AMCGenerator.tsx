@@ -43,6 +43,7 @@ export default function AMCGenerator({ customer, onPrint, onAMCSaved }: AMCGener
   const [customToDate, setCustomToDate] = useState('');
   const [roModel, setRoModel] = useState('');
   const [includesPreSedimentFiltration, setIncludesPreSedimentFiltration] = useState(false);
+  const [showComputerGeneratedText, setShowComputerGeneratedText] = useState(true);
 
   // Generate terms dynamically based on pre-sediment filtration checkbox
   const generateTerms = (includesPreFilter: boolean) => {
@@ -104,7 +105,7 @@ ${notCoveredWithPreFilter}`;
   const [isEditingNotes, setIsEditingNotes] = useState(false);
   const [newNote, setNewNote] = useState('');
   const [isEditingIntro, setIsEditingIntro] = useState(false);
-  const [agreementIntro, setAgreementIntro] = useState('We M/s <strong>Hydrogen RO</strong>, Authorized Service Provider, undertake to maintain your <strong>RO Water Purifier</strong> Unit as detailed below:');
+  const [agreementIntro, setAgreementIntro] = useState('We <strong>Hydrogen RO</strong>, Authorized Service Provider, undertake to maintain your <strong>RO Water Purifier</strong> Unit as detailed below:');
   const [description, setDescription] = useState('');
   const [isSaving, setIsSaving] = useState(false);
 
@@ -390,7 +391,10 @@ ${notCoveredWithPreFilter}`;
     try {
       // Don't save to database automatically - user must explicitly click "Save to Database" button
       // This allows generating/previewing AMC without creating an active contract in the database
-      generateAMCPDF(bill, 'print', { includeDetails: options?.termsOnly ? false : true });
+      generateAMCPDF(bill, 'print', { 
+        includeDetails: options?.termsOnly ? false : true,
+        showComputerGeneratedText: showComputerGeneratedText
+      });
       onPrint?.(bill);
     } catch (error) {
       console.error('Error generating PDF:', error);
@@ -718,6 +722,33 @@ ${notCoveredWithPreFilter}`;
                 {includesPreSedimentFiltration 
                   ? "Pre-sediment filtration will be included in Services Covered section"
                   : "Pre-sediment filtration exclusion will be mentioned in Not Covered section"}
+              </p>
+            </CardContent>
+          </Card>
+
+          {/* Computer Generated Text Option */}
+          <Card>
+            <CardHeader>
+              <CardTitle>Document Options</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="flex items-center space-x-2">
+                <Checkbox
+                  id="showComputerGeneratedText"
+                  checked={showComputerGeneratedText}
+                  onCheckedChange={(checked) => setShowComputerGeneratedText(checked === true)}
+                />
+                <Label
+                  htmlFor="showComputerGeneratedText"
+                  className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 cursor-pointer"
+                >
+                  Show "This is a Computer Generated Invoice. No signature is required. This invoice is valid and legally binding."
+                </Label>
+              </div>
+              <p className="text-xs text-gray-500 mt-2 ml-6">
+                {showComputerGeneratedText 
+                  ? "The computer generated text will be displayed in the footer"
+                  : "The computer generated text will be hidden"}
               </p>
             </CardContent>
           </Card>

@@ -47,6 +47,7 @@ interface AMCPDFData {
 
 interface AMCPDFOptions {
   includeDetails?: boolean;
+  showComputerGeneratedText?: boolean;
 }
 
 function generateAMCHTML(data: AMCPDFData, options?: AMCPDFOptions): string {
@@ -504,7 +505,7 @@ function generateAMCHTML(data: AMCPDFData, options?: AMCPDFOptions): string {
         </div>
       ` : `
         <div class="agreement-intro">
-          <p>We M/s <strong>Hydrogen RO</strong>, Authorized Service Provider, undertake to maintain your <strong>RO Water Purifier</strong> Unit as detailed below:</p>
+          <p>We <strong>Hydrogen RO</strong>, Authorized Service Provider, undertake to maintain your <strong>RO Water Purifier</strong> Unit as detailed below:</p>
         </div>
       `}
 
@@ -772,7 +773,6 @@ function generateAMCHTML(data: AMCPDFData, options?: AMCPDFOptions): string {
       <div class="signatures">
         <div class="signature-box">
           <div class="signature-label">Authorized Signatory</div>
-          <div style="font-size: 12px; color: #6b7280; margin-bottom: 5px;">M/s Hydrogen RO</div>
           <img src="/HydrogenROSeal.webp" alt="Hydrogen RO Seal" class="signature-seal" />
           <div class="signature-date">Date: ${new Date(data.billDate).toLocaleDateString('en-IN', { 
             day: '2-digit', 
@@ -787,7 +787,9 @@ function generateAMCHTML(data: AMCPDFData, options?: AMCPDFOptions): string {
         <div class="footer-logo">
           <span style="color: #2563eb; font-weight: bold;">💧 Hydrogen RO</span>
         </div>
-        <p class="footer-text">This is a computer generated document and does not require a physical signature.</p>
+        ${options?.showComputerGeneratedText !== false ? `
+        <p class="footer-text">This is a Computer Generated Invoice. No signature is required. This invoice is valid and legally binding.</p>
+        ` : ''}
         <p class="footer-text">Generated on: ${new Date().toLocaleDateString('en-IN', { 
           day: '2-digit', 
           month: '2-digit', 

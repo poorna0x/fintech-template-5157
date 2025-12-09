@@ -149,7 +149,6 @@ const AMC = () => {
       pdf.text('AMC AGREEMENT', 105, 35, { align: 'center' });
       
       pdf.setFontSize(10);
-      pdf.text('M/s Hydrogen RO', 105, 45, { align: 'center' });
       pdf.text('Authorized for Service by RO Care India', 105, 50, { align: 'center' });
       pdf.text('Ground Floor, 13, 4th Main Road, Next To Jain Temple, Seshadripuram, Kumara Park West', 105, 55, { align: 'center' });
       pdf.text('Bengaluru, Bengaluru Urban, Karnataka, 560020', 105, 60, { align: 'center' });
@@ -162,7 +161,7 @@ const AMC = () => {
       // Agreement content
       let yPosition = 70;
       pdf.setFontSize(12);
-      pdf.text(`We M/s Hydrogen RO, Authorized for Service by RO Care India, undertake to maintain your ${formData.productName} Unit as detailed below:`, 20, yPosition);
+      pdf.text(`We Hydrogen RO, Authorized for Service by RO Care India, undertake to maintain your ${formData.productName} Unit as detailed below:`, 20, yPosition);
       
       yPosition += 15;
       pdf.setFontSize(11);
@@ -268,7 +267,6 @@ const AMC = () => {
       pdf.setFontSize(10);
       pdf.text('Customer Signature', 20, yPosition);
       pdf.text('Authorized Signatory', 120, yPosition);
-      pdf.text('M/s Hydrogen RO', 120, yPosition + 5);
       
       yPosition += 20;
       pdf.line(20, yPosition, 80, yPosition);
@@ -494,7 +492,6 @@ const AMC = () => {
                         <div className="p-6 text-sm" style={{ fontFamily: 'Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif', lineHeight: '1.6' }}>
                           {/* Company Info */}
                           <div className="border-l-4 border-foreground pl-4 mb-6">
-                            <p className="font-medium text-foreground mb-1">M/s Hydrogen RO</p>
                             <p className="text-muted-foreground text-sm mb-2">Authorized for Service by RO Care India</p>
                             <p className="text-muted-foreground text-sm mb-1">Ground Floor, 13, 4th Main Road, Next To Jain Temple, Seshadripuram, Kumara Park West</p>
                             <p className="text-muted-foreground text-sm mb-3">Bengaluru, Bengaluru Urban, Karnataka, 560020</p>
@@ -507,7 +504,7 @@ const AMC = () => {
                           {/* Agreement Content */}
                           <div className="space-y-6">
                             <p className="text-sm leading-relaxed">
-                              We M/s <strong>Hydrogen RO</strong>, Authorized for Service by RO Care India, undertake to maintain your <strong>{formData.productName || 'Kent RO'}</strong> Unit as detailed below:
+                              We <strong>Hydrogen RO</strong>, Authorized for Service by RO Care India, undertake to maintain your <strong>{formData.productName || 'Kent RO'}</strong> Unit as detailed below:
                             </p>
                             
                             <div className="border-l-2 border-muted-foreground pl-4">
@@ -598,7 +595,6 @@ const AMC = () => {
                                 <div className="text-center">
                                   <div className="border-t border-foreground pt-4">
                                     <p className="font-medium text-foreground mb-1">Authorized Signatory</p>
-                                    <p className="text-muted-foreground text-sm">M/s Hydrogen RO</p>
                                     <div className="mt-4 h-12 border border-border"></div>
                                   </div>
                                 </div>
@@ -654,7 +650,6 @@ const AMC = () => {
               <h2 className="text-2xl font-bold text-gray-800 mb-4">AMC AGREEMENT</h2>
               
               <div className="bg-blue-50 p-4 rounded-lg text-sm">
-                <p className="font-semibold text-blue-800 mb-2">M/s Hydrogen RO</p>
                 <p className="text-blue-700">Authorized for Service by RO Care India</p>
                 <p className="text-gray-700">Ground Floor, 13, 4th Main Road, Next To Jain Temple, Seshadripuram, Kumara Park West</p>
                 <p className="text-gray-700">Bengaluru, Bengaluru Urban, Karnataka, 560020</p>
@@ -673,7 +668,7 @@ const AMC = () => {
             <div className="mb-6">
               <div className="bg-gradient-to-r from-blue-50 to-green-50 p-4 rounded-lg mb-4">
                 <p className="mb-4 text-sm">
-                  We M/s <strong className="text-blue-600">Hydrogen RO</strong>, Authorized for Service by RO Care India, undertake to maintain your <strong className="text-green-600">{formData.productName}</strong> Unit as detailed below:
+                  We <strong className="text-blue-600">Hydrogen RO</strong>, Authorized for Service by RO Care India, undertake to maintain your <strong className="text-green-600">{formData.productName}</strong> Unit as detailed below:
                 </p>
               </div>
               
@@ -790,7 +785,6 @@ const AMC = () => {
                   <div className="text-center">
                     <div className="border-t-2 border-green-600 pt-4">
                       <p className="font-bold text-green-800 text-sm">Authorized Signatory</p>
-                      <p className="text-xs text-gray-600">M/s Hydrogen RO</p>
                       <div className="mt-4 h-16 border border-gray-300 rounded"></div>
                       <p className="text-xs mt-2 text-gray-600">Date: _______________</p>
                     </div>
