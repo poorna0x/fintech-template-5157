@@ -189,6 +189,7 @@ export function generateTaxInvoicePDF(billData: PDFTaxInvoiceData, action: 'prin
             box-sizing: border-box;
             page-break-inside: avoid;
             page-break-after: avoid;
+            position: relative;
           }
           
           .header {
@@ -371,6 +372,11 @@ export function generateTaxInvoicePDF(billData: PDFTaxInvoiceData, action: 'prin
             display: block;
           }
           
+          /* Hide normal signature section when DSC is present */
+          .bill-container:has(.dsc-signature-section) .signatures {
+            display: none !important;
+          }
+          
           @media (max-width: 768px) {
             .signature-seal {
               width: 80px;
@@ -390,6 +396,73 @@ export function generateTaxInvoicePDF(billData: PDFTaxInvoiceData, action: 'prin
           .signature-date {
             font-size: 12px;
             color: #6b7280;
+          }
+          
+          .dsc-signature-section {
+            width: 75mm;
+            max-width: 75mm;
+            text-align: right;
+            margin-left: auto;
+          }
+          
+          .dsc-signature-box {
+            width: 75mm;
+            height: 22.5mm;
+            min-width: 70mm;
+            max-width: 80mm;
+            min-height: 20mm;
+            max-height: 25mm;
+            border: 1px solid #d1d5db;
+            background-color: #fafafa;
+            margin-bottom: 10px;
+            border-radius: 2px;
+            box-sizing: border-box;
+          }
+          
+          .dsc-signature-placeholder {
+            display: none;
+          }
+          
+          .dsc-signature-info {
+            text-align: right;
+            font-size: 11px;
+            line-height: 1.4;
+            color: #374151;
+            border: none;
+            outline: none;
+            padding: 0;
+            margin: 0;
+          }
+          
+          .dsc-signature-label {
+            font-weight: 600;
+            color: #000000;
+            margin-bottom: 3px;
+            font-size: 12px;
+          }
+          
+          .dsc-name-designation {
+            font-weight: 500;
+            color: #1f2937;
+            margin-bottom: 2px;
+          }
+          
+          .dsc-company-name {
+            color: #4b5563;
+            margin-bottom: 5px;
+          }
+          
+          .dsc-signature-date {
+            color: #6b7280;
+            font-size: 10px;
+            margin-bottom: 3px;
+          }
+          
+          .dsc-applied-text {
+            font-size: 9px;
+            color: #6b7280;
+            font-style: italic;
+            margin-top: 5px;
           }
           
           .footer {
@@ -913,17 +986,40 @@ function createTaxInvoiceContent(data: PDFTaxInvoiceData): string {
       ` : ''}
       
       <!-- Signatures -->
-      <div class="signatures">
-        <div class="signature-box">
-          <div class="signature-label" style="text-align: center;">Authorized Signatory</div>
-          <img src="/HydrogenROSeal.webp" alt="Hydrogen RO Seal" class="signature-seal" />
-          <div class="signature-date" style="text-align: center;">Date: ${new Date((data as any).pdfOptions?.signatureDate || data.billDate).toLocaleDateString('en-IN', { 
-            day: '2-digit', 
-            month: '2-digit', 
-            year: 'numeric' 
-          })}</div>
+      ${(data as any).dscData ? `
+        <!-- DSC Signature Section (Right Side) -->
+        <div style="clear: both; margin-top: 30px; padding-top: 20px; border-top: 1px solid #e5e7eb;">
+          <div style="display: flex; justify-content: flex-end; margin: 20px 15px;">
+            <div class="dsc-signature-section">
+              <div class="dsc-signature-box"></div>
+              <div class="dsc-signature-info">
+                <div class="dsc-signature-label">${sanitizeForTemplate((data as any).dscData.authorizedSignatory || 'Authorized Signatory')}</div>
+                ${(data as any).dscData.nameDesignation ? `<div class="dsc-name-designation">${sanitizeForTemplate((data as any).dscData.nameDesignation)}</div>` : ''}
+                ${(data as any).dscData.companyName ? `<div class="dsc-company-name">${sanitizeForTemplate((data as any).dscData.companyName)}</div>` : ''}
+                <div class="dsc-signature-date">Date: ${new Date((data as any).dscData.signatureDate || data.billDate).toLocaleDateString('en-IN', { 
+                  day: '2-digit', 
+                  month: '2-digit', 
+                  year: 'numeric' 
+                })}</div>
+                <div class="dsc-applied-text">(Signature Digitally Applied)</div>
+              </div>
+            </div>
+          </div>
         </div>
-      </div>
+      ` : `
+        <!-- Normal Signature Section (Center) -->
+        <div class="signatures">
+          <div class="signature-box">
+            <div class="signature-label" style="text-align: center;">Authorized Signatory</div>
+            <img src="/HydrogenROSeal.webp" alt="Hydrogen RO Seal" class="signature-seal" />
+            <div class="signature-date" style="text-align: center;">Date: ${new Date((data as any).pdfOptions?.signatureDate || data.billDate).toLocaleDateString('en-IN', { 
+              day: '2-digit', 
+              month: '2-digit', 
+              year: 'numeric' 
+            })}</div>
+          </div>
+        </div>
+      `}
       
       <!-- Computer Generated Disclaimer -->
       ${(data as any).pdfOptions?.showComputerGeneratedText !== false ? `
@@ -932,22 +1028,19 @@ function createTaxInvoiceContent(data: PDFTaxInvoiceData): string {
         </div>
       ` : ''}
       
+      <!-- Digitally Signed Invoice Disclaimer -->
+      ${(data as any).pdfOptions?.showDigitallySignedText ? `
+        <div style="margin-top: 20px; padding: 15px 10px; text-align: justify; font-size: 10px; color: #374151; border-top: 1px solid #e5e7eb; background-color: #f3f4f6;">
+          <p style="margin: 5px 0; font-weight: 600; font-size: 11px; color: #1f2937; text-align: center;">Digitally Signed Invoice</p>
+          <p style="margin: 8px 0; line-height: 1.6; text-align: justify; text-justify: inter-word;">This invoice is authenticated using a Digital Signature Certificate (DSC) and is legally valid under the Information Technology Act, 2000. Any modification or alteration to this document will render the digital signature invalid.</p>
+        </div>
+      ` : ''}
+      
       <!-- Footer -->
       ${(data as any).pdfOptions?.showFooterText !== false ? `
         <div class="footer" style="page-break-after: avoid; margin-bottom: 0; padding-bottom: 0;">
           <p>Thank you for choosing Hydrogenro!</p>
           <p>For any queries, contact us at ${data.company.phone} or ${data.company.email}</p>
-        </div>
-      ` : ''}
-      
-      <!-- Digitally Signed Invoice Disclaimer -->
-      ${(data as any).pdfOptions?.showDigitallySignedText ? `
-        <div style="margin-top: 20px; padding: 15px 10px; text-align: center; font-size: 10px; color: #374151; border-top: 1px solid #e5e7eb; background-color: #f3f4f6;">
-          <p style="margin: 5px 0; font-weight: 600; font-size: 11px; color: #1f2937;">Digitally Signed Invoice</p>
-          <p style="margin: 5px 0; line-height: 1.5;">This invoice is authenticated using a Digital Signature Certificate (DSC)</p>
-          <p style="margin: 5px 0; line-height: 1.5;">and is legally valid under the Information Technology Act, 2000.</p>
-          <p style="margin: 5px 0; line-height: 1.5;">Any modification or alteration to this document will render the</p>
-          <p style="margin: 5px 0; line-height: 1.5;">digital signature invalid.</p>
         </div>
       ` : ''}
     </div>
@@ -989,6 +1082,7 @@ function generateTaxInvoiceHTML(data: PDFTaxInvoiceData): string {
           padding: 0;
           border: 2px solid #000;
           box-sizing: border-box;
+          position: relative;
         }
         
         .header {
@@ -1471,6 +1565,73 @@ export function generateCombinedTaxInvoicePDF(
           .signature-date {
             font-size: 12px;
             color: #6b7280;
+          }
+          
+          .dsc-signature-section {
+            width: 75mm;
+            max-width: 75mm;
+            text-align: right;
+            margin-left: auto;
+          }
+          
+          .dsc-signature-box {
+            width: 75mm;
+            height: 22.5mm;
+            min-width: 70mm;
+            max-width: 80mm;
+            min-height: 20mm;
+            max-height: 25mm;
+            border: 1px solid #d1d5db;
+            background-color: #fafafa;
+            margin-bottom: 10px;
+            border-radius: 2px;
+            box-sizing: border-box;
+          }
+          
+          .dsc-signature-placeholder {
+            display: none;
+          }
+          
+          .dsc-signature-info {
+            text-align: right;
+            font-size: 11px;
+            line-height: 1.4;
+            color: #374151;
+            border: none;
+            outline: none;
+            padding: 0;
+            margin: 0;
+          }
+          
+          .dsc-signature-label {
+            font-weight: 600;
+            color: #000000;
+            margin-bottom: 3px;
+            font-size: 12px;
+          }
+          
+          .dsc-name-designation {
+            font-weight: 500;
+            color: #1f2937;
+            margin-bottom: 2px;
+          }
+          
+          .dsc-company-name {
+            color: #4b5563;
+            margin-bottom: 5px;
+          }
+          
+          .dsc-signature-date {
+            color: #6b7280;
+            font-size: 10px;
+            margin-bottom: 3px;
+          }
+          
+          .dsc-applied-text {
+            font-size: 9px;
+            color: #6b7280;
+            font-style: italic;
+            margin-top: 5px;
           }
           
           .footer {

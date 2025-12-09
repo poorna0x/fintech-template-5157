@@ -217,6 +217,12 @@ export default function TaxInvoiceGenerator({ customer, onPrint, onTaxInvoiceSav
   const [showComputerGeneratedText, setShowComputerGeneratedText] = useState(true);
   const [showFooterText, setShowFooterText] = useState(true);
   const [showDigitallySignedText, setShowDigitallySignedText] = useState(false);
+  
+  // DSC (Digital Signature Certificate) options
+  const [useDSC, setUseDSC] = useState(false);
+  const [dscAuthorizedSignatory, setDscAuthorizedSignatory] = useState('Authorized Signatory');
+  const [dscNameDesignation, setDscNameDesignation] = useState('Srujan - Proprietor');
+  const [dscCompanyName, setDscCompanyName] = useState('Hydrogen RO');
   const [poNumber, setPONumber] = useState('');
   const [showPONumber, setShowPONumber] = useState(false);
   const [poNumberRequired, setPONumberRequired] = useState(false); // For government entities
@@ -655,6 +661,16 @@ export default function TaxInvoiceGenerator({ customer, onPrint, onTaxInvoiceSav
       showDigitallySignedText,
       signatureDate: signatureDate || billDate
     };
+    
+    // Add DSC data if enabled
+    if (useDSC) {
+      (bill as any).dscData = {
+        authorizedSignatory: dscAuthorizedSignatory,
+        nameDesignation: dscNameDesignation,
+        companyName: dscCompanyName,
+        signatureDate: signatureDate || billDate
+      };
+    }
     
     // Add additional invoice details
     (bill as any).invoiceDetails = {
@@ -1497,6 +1513,94 @@ export default function TaxInvoiceGenerator({ customer, onPrint, onTaxInvoiceSav
                     This date will appear below the seal/signature. Defaults to invoice date but can be customized.
                   </p>
                 </div>
+              </CardContent>
+            </Card>
+
+            {/* DSC (Digital Signature Certificate) Options */}
+            <Card>
+              <CardHeader>
+                <CardTitle>Digital Signature Certificate (DSC)</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="flex items-center space-x-2">
+                  <Checkbox
+                    id="useDSC"
+                    checked={useDSC}
+                    onCheckedChange={(checked) => setUseDSC(checked === true)}
+                  />
+                  <Label
+                    htmlFor="useDSC"
+                    className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 cursor-pointer"
+                  >
+                    Use Digital Signature Certificate (DSC)
+                  </Label>
+                </div>
+                <p className="text-xs text-gray-500 ml-6">
+                  When enabled, the normal seal will be replaced with DSC signature section on the right side of the page.
+                </p>
+                
+                {useDSC && (
+                  <div className="space-y-4 mt-4 pl-6 border-l-2 border-blue-200">
+                    <div>
+                      <Label htmlFor="dscAuthorizedSignatory" className="text-sm font-medium mb-2 block">
+                        Authorized Signatory Text <span className="text-green-600">✔ Yes</span> - Shows who is legally responsible
+                      </Label>
+                      <Input
+                        id="dscAuthorizedSignatory"
+                        value={dscAuthorizedSignatory}
+                        onChange={(e) => setDscAuthorizedSignatory(e.target.value)}
+                        placeholder="e.g., Authorized Signatory"
+                      />
+                    </div>
+                    
+                    <div>
+                      <Label htmlFor="dscNameDesignation" className="text-sm font-medium mb-2 block">
+                        Your Name + Designation <span className="text-green-600">✔ Yes</span> - Must match DSC owner
+                      </Label>
+                      <Input
+                        id="dscNameDesignation"
+                        value={dscNameDesignation}
+                        onChange={(e) => setDscNameDesignation(e.target.value)}
+                        placeholder="e.g., Srujan - Proprietor"
+                      />
+                    </div>
+                    
+                    <div>
+                      <Label htmlFor="dscCompanyName" className="text-sm font-medium mb-2 block">
+                        Company Name <span className="text-green-600">✔ Yes</span> - Vendor identity
+                      </Label>
+                      <Input
+                        id="dscCompanyName"
+                        value={dscCompanyName}
+                        onChange={(e) => setDscCompanyName(e.target.value)}
+                        placeholder="e.g., Hydrogen RO"
+                      />
+                    </div>
+                    
+                    <div>
+                      <Label htmlFor="dscSignatureDate" className="text-sm font-medium mb-2 block">
+                        DSC Signature Date
+                      </Label>
+                      <Input
+                        id="dscSignatureDate"
+                        type="date"
+                        value={signatureDate}
+                        onChange={(e) => setSignatureDate(e.target.value)}
+                        className="max-w-xs"
+                      />
+                      <p className="text-xs text-gray-500 mt-2">
+                        Date that will appear in the DSC signature section. Defaults to invoice date.
+                      </p>
+                    </div>
+                    
+                    <div className="mt-4 p-4 bg-gray-50 rounded-lg border border-gray-200">
+                      <p className="text-xs text-gray-600 mb-2">
+                        <strong>Note:</strong> A placeholder box (70-80mm × 20-25mm) will be created for the DSC signature image. 
+                        You can add the actual DSC signature image later using Adobe or other tools.
+                      </p>
+                    </div>
+                  </div>
+                )}
               </CardContent>
             </Card>
 
