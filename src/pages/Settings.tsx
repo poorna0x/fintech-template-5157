@@ -1556,29 +1556,6 @@ const Settings = () => {
               </div>
             </CardContent>
           </Card>
-
-          {/* Vendor Invoice Tracker */}
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2 text-lg sm:text-xl">
-                <FileText className="w-5 h-5" />
-                Vendor Invoice Tracker
-              </CardTitle>
-              <CardDescription className="text-sm mt-1">
-                Create and generate vendor invoice PDFs matching Hydrogen RO invoice design
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="p-4 sm:p-6">
-              <Button
-                variant="outline"
-                className="w-full sm:w-auto"
-                onClick={() => navigate('/vendor-invoice-tracker')}
-              >
-                <FileText className="w-4 h-4 mr-2" />
-                Open Vendor Invoice Tracker
-              </Button>
-            </CardContent>
-          </Card>
                 </div>
       </div>
 
