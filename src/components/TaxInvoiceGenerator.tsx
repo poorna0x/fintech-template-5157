@@ -9,6 +9,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Plus, Trash2, Download, Edit, X, FileText, Save } from 'lucide-react';
 import { toast } from 'sonner';
 import { Bill, BillItem, CompanyInfo, Customer } from '@/types';
+import { Checkbox } from '@/components/ui/checkbox';
 
 // Helper function to convert number to words
 function numberToWords(num: number): string {
@@ -172,7 +173,16 @@ export default function TaxInvoiceGenerator({ customer, onPrint, onTaxInvoiceSav
   // State management
   const [billNumber, setBillNumber] = useState('');
   const [billDate, setBillDate] = useState(new Date().toISOString().split('T')[0]);
+  const [signatureDate, setSignatureDate] = useState('');
   const [company, setCompany] = useState<CompanyInfo>(defaultCompanyInfo);
+  
+  // Initialize signature date with bill date on mount and when bill date changes (if not manually set)
+  useEffect(() => {
+    if (!signatureDate) {
+      setSignatureDate(billDate);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [billDate]);
   const [items, setItems] = useState<BillItem[]>(defaultTaxInvoiceItems);
   const [notes, setNotes] = useState<string[]>([]);
   const [newNote, setNewNote] = useState('');
@@ -203,6 +213,10 @@ export default function TaxInvoiceGenerator({ customer, onPrint, onTaxInvoiceSav
   const [customerGstRequired, setCustomerGstRequired] = useState(false);
   const [invoiceType, setInvoiceType] = useState<'B2B' | 'B2C'>('B2C'); // B2B = Business to Business, B2C = Business to Consumer
   const [bankDetails, setBankDetails] = useState(defaultBankDetails);
+  const [showBankDetails, setShowBankDetails] = useState(false);
+  const [showComputerGeneratedText, setShowComputerGeneratedText] = useState(true);
+  const [showFooterText, setShowFooterText] = useState(true);
+  const [showDigitallySignedText, setShowDigitallySignedText] = useState(false);
   const [poNumber, setPONumber] = useState('');
   const [showPONumber, setShowPONumber] = useState(false);
   const [poNumberRequired, setPONumberRequired] = useState(false); // For government entities
@@ -631,8 +645,16 @@ export default function TaxInvoiceGenerator({ customer, onPrint, onTaxInvoiceSav
       customerGstRequired: invoiceType === 'B2B'
     };
     
-    // Add bank details
-    (bill as any).bankDetails = bankDetails;
+    // Add bank details only if showBankDetails is enabled
+    (bill as any).bankDetails = showBankDetails ? bankDetails : undefined;
+    
+    // Add PDF display options
+    (bill as any).pdfOptions = {
+      showComputerGeneratedText,
+      showFooterText,
+      showDigitallySignedText,
+      signatureDate: signatureDate || billDate
+    };
     
     // Add additional invoice details
     (bill as any).invoiceDetails = {
@@ -991,90 +1013,6 @@ export default function TaxInvoiceGenerator({ customer, onPrint, onTaxInvoiceSav
         </Card>
       </div>
 
-      {/* Bank Details */}
-      <Card>
-        <CardHeader>
-          <CardTitle>Bank Details</CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-3 sm:space-y-4">
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
-            <div>
-              <Label htmlFor="bankName">Bank Name</Label>
-              <Input
-                id="bankName"
-                value={bankDetails.bankName}
-                onChange={(e) => setBankDetails(prev => ({ ...prev, bankName: e.target.value }))}
-                placeholder="Bank Name"
-              />
-            </div>
-            <div>
-              <Label htmlFor="accountNumber">Account Number</Label>
-              <Input
-                id="accountNumber"
-                value={bankDetails.accountNumber}
-                onChange={(e) => setBankDetails(prev => ({ ...prev, accountNumber: e.target.value }))}
-                placeholder="Account Number"
-              />
-            </div>
-            <div>
-              <Label htmlFor="ifscCode">IFSC Code</Label>
-              <Input
-                id="ifscCode"
-                value={bankDetails.ifscCode}
-                onChange={(e) => setBankDetails(prev => ({ ...prev, ifscCode: e.target.value }))}
-                placeholder="IFSC Code"
-              />
-            </div>
-            <div>
-              <Label htmlFor="branchName">Branch Name</Label>
-              <Input
-                id="branchName"
-                value={bankDetails.branchName}
-                onChange={(e) => setBankDetails(prev => ({ ...prev, branchName: e.target.value }))}
-                placeholder="Branch Name"
-              />
-            </div>
-            <div>
-              <Label htmlFor="accountType">Account Type</Label>
-              <Input
-                id="accountType"
-                value={bankDetails.accountType || ''}
-                onChange={(e) => setBankDetails(prev => ({ ...prev, accountType: e.target.value }))}
-                placeholder="Current Account"
-              />
-            </div>
-            <div className="sm:col-span-2">
-              <Label htmlFor="accountHolderName">Account Holder Name</Label>
-              <Input
-                id="accountHolderName"
-                value={bankDetails.accountHolderName}
-                onChange={(e) => setBankDetails(prev => ({ ...prev, accountHolderName: e.target.value }))}
-                placeholder="Account Holder Name"
-              />
-            </div>
-            <div className="sm:col-span-2">
-              <Label htmlFor="upiId">UPI ID (Optional)</Label>
-              <Input
-                id="upiId"
-                value={bankDetails.upiId || ''}
-                onChange={(e) => setBankDetails(prev => ({ ...prev, upiId: e.target.value }))}
-                placeholder="example@okhdfcbank"
-              />
-            </div>
-          </div>
-          <div>
-            <Label htmlFor="bankNote">Payment Note (Optional)</Label>
-            <Textarea
-              id="bankNote"
-              value={bankDetails.note || ''}
-              onChange={(e) => setBankDetails(prev => ({ ...prev, note: e.target.value }))}
-              placeholder="Share payment confirmation once the transfer is complete..."
-              rows={3}
-            />
-          </div>
-        </CardContent>
-      </Card>
-
       {/* Invoice Items */}
       <Card>
         <CardHeader>
@@ -1378,6 +1316,189 @@ export default function TaxInvoiceGenerator({ customer, onPrint, onTaxInvoiceSav
                 </div>
               )}
             </div>
+
+            {/* Bank Details Section */}
+            <Card>
+              <CardHeader>
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 sm:gap-2">
+                  <CardTitle>Bank Details</CardTitle>
+                  <div className="flex items-center space-x-2">
+                    <Checkbox
+                      id="showBankDetails"
+                      checked={showBankDetails}
+                      onCheckedChange={(checked) => setShowBankDetails(checked === true)}
+                    />
+                    <Label
+                      htmlFor="showBankDetails"
+                      className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 cursor-pointer"
+                    >
+                      Show Bank Details in Invoice
+                    </Label>
+                  </div>
+                </div>
+              </CardHeader>
+              <CardContent className="space-y-3 sm:space-y-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
+                  <div>
+                    <Label htmlFor="bankName">Bank Name</Label>
+                    <Input
+                      id="bankName"
+                      value={bankDetails.bankName}
+                      onChange={(e) => setBankDetails(prev => ({ ...prev, bankName: e.target.value }))}
+                      placeholder="Bank Name"
+                    />
+                  </div>
+                  <div>
+                    <Label htmlFor="accountNumber">Account Number</Label>
+                    <Input
+                      id="accountNumber"
+                      value={bankDetails.accountNumber}
+                      onChange={(e) => setBankDetails(prev => ({ ...prev, accountNumber: e.target.value }))}
+                      placeholder="Account Number"
+                    />
+                  </div>
+                  <div>
+                    <Label htmlFor="ifscCode">IFSC Code</Label>
+                    <Input
+                      id="ifscCode"
+                      value={bankDetails.ifscCode}
+                      onChange={(e) => setBankDetails(prev => ({ ...prev, ifscCode: e.target.value }))}
+                      placeholder="IFSC Code"
+                    />
+                  </div>
+                  <div>
+                    <Label htmlFor="branchName">Branch Name</Label>
+                    <Input
+                      id="branchName"
+                      value={bankDetails.branchName}
+                      onChange={(e) => setBankDetails(prev => ({ ...prev, branchName: e.target.value }))}
+                      placeholder="Branch Name"
+                    />
+                  </div>
+                  <div>
+                    <Label htmlFor="accountType">Account Type</Label>
+                    <Input
+                      id="accountType"
+                      value={bankDetails.accountType || ''}
+                      onChange={(e) => setBankDetails(prev => ({ ...prev, accountType: e.target.value }))}
+                      placeholder="Current Account"
+                    />
+                  </div>
+                  <div className="sm:col-span-2">
+                    <Label htmlFor="accountHolderName">Account Holder Name</Label>
+                    <Input
+                      id="accountHolderName"
+                      value={bankDetails.accountHolderName}
+                      onChange={(e) => setBankDetails(prev => ({ ...prev, accountHolderName: e.target.value }))}
+                      placeholder="Account Holder Name"
+                    />
+                  </div>
+                  <div className="sm:col-span-2">
+                    <Label htmlFor="upiId">UPI ID (Optional)</Label>
+                    <Input
+                      id="upiId"
+                      value={bankDetails.upiId || ''}
+                      onChange={(e) => setBankDetails(prev => ({ ...prev, upiId: e.target.value }))}
+                      placeholder="example@okhdfcbank"
+                    />
+                  </div>
+                </div>
+                <div>
+                  <Label htmlFor="bankNote">Payment Note (Optional)</Label>
+                  <Textarea
+                    id="bankNote"
+                    value={bankDetails.note || ''}
+                    onChange={(e) => setBankDetails(prev => ({ ...prev, note: e.target.value }))}
+                    placeholder="Share payment confirmation once the transfer is complete..."
+                    rows={3}
+                  />
+                </div>
+                <p className="text-xs text-gray-500">
+                  Bank details will appear above Terms & Conditions in the invoice PDF when enabled.
+                </p>
+              </CardContent>
+            </Card>
+
+            {/* Document Options */}
+            <Card>
+              <CardHeader>
+                <CardTitle>Document Options</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="flex items-center space-x-2">
+                  <Checkbox
+                    id="showComputerGeneratedText"
+                    checked={showComputerGeneratedText}
+                    onCheckedChange={(checked) => setShowComputerGeneratedText(checked === true)}
+                  />
+                  <Label
+                    htmlFor="showComputerGeneratedText"
+                    className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 cursor-pointer"
+                  >
+                    Show "This is a Computer Generated Invoice. No signature is required. This invoice is valid and legally binding."
+                  </Label>
+                </div>
+                <p className="text-xs text-gray-500 ml-6">
+                  {showComputerGeneratedText 
+                    ? "The computer generated text will be displayed in the invoice"
+                    : "The computer generated text will be hidden"}
+                </p>
+                
+                <div className="flex items-center space-x-2">
+                  <Checkbox
+                    id="showFooterText"
+                    checked={showFooterText}
+                    onCheckedChange={(checked) => setShowFooterText(checked === true)}
+                  />
+                  <Label
+                    htmlFor="showFooterText"
+                    className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 cursor-pointer"
+                  >
+                    Show Footer Text ("Thank you for choosing Hydrogenro!" and contact information)
+                  </Label>
+                </div>
+                <p className="text-xs text-gray-500 ml-6">
+                  {showFooterText 
+                    ? "The footer text will be displayed at the bottom of the invoice"
+                    : "The footer text will be hidden"}
+                </p>
+                
+                <div className="flex items-center space-x-2 mt-4">
+                  <Checkbox
+                    id="showDigitallySignedText"
+                    checked={showDigitallySignedText}
+                    onCheckedChange={(checked) => setShowDigitallySignedText(checked === true)}
+                  />
+                  <Label
+                    htmlFor="showDigitallySignedText"
+                    className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 cursor-pointer"
+                  >
+                    Show "Digitally Signed Invoice" disclaimer at bottom
+                  </Label>
+                </div>
+                <p className="text-xs text-gray-500 ml-6">
+                  {showDigitallySignedText 
+                    ? "The digitally signed invoice disclaimer will be displayed at the bottom"
+                    : "The digitally signed invoice disclaimer will be hidden"}
+                </p>
+                
+                <div className="mt-4 pt-4 border-t">
+                  <Label htmlFor="signatureDate" className="text-sm font-medium mb-2 block">
+                    Signature Date (Below Seal)
+                  </Label>
+                  <Input
+                    id="signatureDate"
+                    type="date"
+                    value={signatureDate}
+                    onChange={(e) => setSignatureDate(e.target.value)}
+                    className="max-w-xs"
+                  />
+                  <p className="text-xs text-gray-500 mt-2">
+                    This date will appear below the seal/signature. Defaults to invoice date but can be customized.
+                  </p>
+                </div>
+              </CardContent>
+            </Card>
 
             {/* Terms & Conditions Section */}
             <div className="space-y-3 sm:space-y-4">

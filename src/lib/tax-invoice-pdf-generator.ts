@@ -874,6 +874,23 @@ function createTaxInvoiceContent(data: PDFTaxInvoiceData): string {
         </div>
       </div>
       
+      <!-- Bank Details (Above Terms & Conditions) -->
+      ${data.bankDetails && Object.keys(data.bankDetails).length > 0 ? `
+        <div class="notes-section">
+          <div class="notes-title">Bank Details:</div>
+          <div class="notes-content" style="font-size: 13px; line-height: 1.8;">
+            ${data.bankDetails.bankName ? `<div><strong>Bank Name:</strong> ${data.bankDetails.bankName}</div>` : ''}
+            ${data.bankDetails.accountNumber ? `<div><strong>Account Number:</strong> ${data.bankDetails.accountNumber}</div>` : ''}
+            ${data.bankDetails.ifscCode ? `<div><strong>IFSC Code:</strong> ${data.bankDetails.ifscCode}</div>` : ''}
+            ${data.bankDetails.branchName ? `<div><strong>Branch:</strong> ${data.bankDetails.branchName}</div>` : ''}
+            ${data.bankDetails.accountHolderName ? `<div><strong>Account Holder:</strong> ${data.bankDetails.accountHolderName}</div>` : ''}
+            ${data.bankDetails.accountType ? `<div><strong>Account Type:</strong> ${data.bankDetails.accountType}</div>` : ''}
+            ${data.bankDetails.upiId ? `<div><strong>UPI ID:</strong> ${data.bankDetails.upiId}</div>` : ''}
+            ${data.bankDetails.note ? `<div><strong>Note:</strong> ${sanitizeForTemplate(data.bankDetails.note)}</div>` : ''}
+          </div>
+        </div>
+      ` : ''}
+      
       <!-- Notes and Terms -->
       ${data.notes || data.terms ? `
         <div class="notes-section">
@@ -900,7 +917,7 @@ function createTaxInvoiceContent(data: PDFTaxInvoiceData): string {
         <div class="signature-box">
           <div class="signature-label" style="text-align: center;">Authorized Signatory</div>
           <img src="/HydrogenROSeal.webp" alt="Hydrogen RO Seal" class="signature-seal" />
-          <div class="signature-date" style="text-align: center;">Date: ${new Date(data.billDate).toLocaleDateString('en-IN', { 
+          <div class="signature-date" style="text-align: center;">Date: ${new Date((data as any).pdfOptions?.signatureDate || data.billDate).toLocaleDateString('en-IN', { 
             day: '2-digit', 
             month: '2-digit', 
             year: 'numeric' 
@@ -908,33 +925,31 @@ function createTaxInvoiceContent(data: PDFTaxInvoiceData): string {
         </div>
       </div>
       
-      <!-- Bank Details -->
-      ${data.bankDetails ? `
-        <div class="notes-section">
-          <div class="notes-title">Bank Details:</div>
-          <div class="notes-content" style="font-size: 13px; line-height: 1.8;">
-            <div><strong>Bank Name:</strong> ${data.bankDetails.bankName || ''}</div>
-            <div><strong>Account Number:</strong> ${data.bankDetails.accountNumber || ''}</div>
-            <div><strong>IFSC Code:</strong> ${data.bankDetails.ifscCode || ''}</div>
-            <div><strong>Branch:</strong> ${data.bankDetails.branchName || ''}</div>
-            <div><strong>Account Holder:</strong> ${data.bankDetails.accountHolderName || ''}</div>
-            ${data.bankDetails.accountType ? `<div><strong>Account Type:</strong> ${data.bankDetails.accountType}</div>` : ''}
-            ${data.bankDetails.upiId ? `<div><strong>UPI ID:</strong> ${data.bankDetails.upiId}</div>` : ''}
-            ${data.bankDetails.note ? `<div><strong>Note:</strong> ${sanitizeForTemplate(data.bankDetails.note)}</div>` : ''}
-          </div>
+      <!-- Computer Generated Disclaimer -->
+      ${(data as any).pdfOptions?.showComputerGeneratedText !== false ? `
+        <div style="margin-top: 30px; padding: 15px 10px; text-align: justify; font-size: 11px; color: #4b5563; border-top: 2px solid #e5e7eb; background-color: #f9fafb;">
+          <p style="margin: 8px 0; font-weight: 600; letter-spacing: normal; word-spacing: normal; text-align: justify; line-height: 1.6;">This is a Computer Generated Invoice. No signature is required. This invoice is valid and legally binding.</p>
         </div>
       ` : ''}
       
-      <!-- Computer Generated Disclaimer -->
-      <div style="margin-top: 30px; padding: 15px 10px; text-align: justify; font-size: 11px; color: #4b5563; border-top: 2px solid #e5e7eb; background-color: #f9fafb;">
-        <p style="margin: 8px 0; font-weight: 600; letter-spacing: normal; word-spacing: normal; text-align: justify; line-height: 1.6;">This is a Computer Generated Invoice. No signature is required. This invoice is valid and legally binding.</p>
-      </div>
-      
       <!-- Footer -->
-      <div class="footer" style="page-break-after: avoid; margin-bottom: 0; padding-bottom: 0;">
-        <p>Thank you for choosing Hydrogenro!</p>
-        <p>For any queries, contact us at ${data.company.phone} or ${data.company.email}</p>
-      </div>
+      ${(data as any).pdfOptions?.showFooterText !== false ? `
+        <div class="footer" style="page-break-after: avoid; margin-bottom: 0; padding-bottom: 0;">
+          <p>Thank you for choosing Hydrogenro!</p>
+          <p>For any queries, contact us at ${data.company.phone} or ${data.company.email}</p>
+        </div>
+      ` : ''}
+      
+      <!-- Digitally Signed Invoice Disclaimer -->
+      ${(data as any).pdfOptions?.showDigitallySignedText ? `
+        <div style="margin-top: 20px; padding: 15px 10px; text-align: center; font-size: 10px; color: #374151; border-top: 1px solid #e5e7eb; background-color: #f3f4f6;">
+          <p style="margin: 5px 0; font-weight: 600; font-size: 11px; color: #1f2937;">Digitally Signed Invoice</p>
+          <p style="margin: 5px 0; line-height: 1.5;">This invoice is authenticated using a Digital Signature Certificate (DSC)</p>
+          <p style="margin: 5px 0; line-height: 1.5;">and is legally valid under the Information Technology Act, 2000.</p>
+          <p style="margin: 5px 0; line-height: 1.5;">Any modification or alteration to this document will render the</p>
+          <p style="margin: 5px 0; line-height: 1.5;">digital signature invalid.</p>
+        </div>
+      ` : ''}
     </div>
   `;
 }

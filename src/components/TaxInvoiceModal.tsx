@@ -35,7 +35,8 @@ export default function TaxInvoiceModal({ isOpen, onClose, customer }: TaxInvoic
       terms: bill.terms,
       gstData: (bill as any).gstData || {},
       invoiceDetails: (bill as any).invoiceDetails || {},
-      bankDetails: (bill as any).bankDetails || {}
+      bankDetails: (bill as any).bankDetails || undefined,
+      pdfOptions: (bill as any).pdfOptions || {}
     };
     
     try {
