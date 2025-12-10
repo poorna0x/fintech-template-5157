@@ -3026,8 +3026,52 @@ const TechnicianDashboard = () => {
 
   // Helper function to handle WhatsApp click
   const handleWhatsAppClick = (phone: string) => {
-    const cleanPhone = phone.replace(/[^0-9]/g, '');
-    const whatsappUrl = `https://wa.me/${cleanPhone}`;
+    if (!phone || phone.trim() === '') {
+      toast.error('Phone number is required');
+      return;
+    }
+    
+    // Remove all non-digit characters
+    let cleaned = phone.replace(/\D/g, '');
+    
+    // Validate phone number length
+    if (cleaned.length < 10) {
+      toast.error('Invalid phone number. Please enter a valid 10-digit phone number.');
+      return;
+    }
+    
+    // Format phone number for WhatsApp
+    // Handle different phone number formats
+    let formattedPhone = '';
+    
+    if (cleaned.length === 12 && cleaned.startsWith('91')) {
+      // Already in correct format: 91XXXXXXXXXX
+      formattedPhone = cleaned;
+    } else if (cleaned.length === 10) {
+      // 10-digit number, prepend country code 91
+      formattedPhone = `91${cleaned}`;
+    } else if (cleaned.length === 11 && cleaned.startsWith('0')) {
+      // 11-digit number starting with 0, remove 0 and prepend 91
+      formattedPhone = `91${cleaned.substring(1)}`;
+    } else if (cleaned.length === 13 && cleaned.startsWith('91')) {
+      // 13-digit number starting with 91, might have extra digit, take first 12
+      formattedPhone = cleaned.substring(0, 12);
+    } else if (cleaned.length >= 10) {
+      // If it's longer than 10 digits, try to extract last 10 digits and prepend 91
+      const last10 = cleaned.substring(cleaned.length - 10);
+      formattedPhone = `91${last10}`;
+    } else {
+      toast.error('Invalid phone number format. Please enter a valid phone number.');
+      return;
+    }
+    
+    // Validate final format (should be 12 digits: 91 + 10 digits)
+    if (formattedPhone.length !== 12 || !formattedPhone.startsWith('91')) {
+      toast.error('Invalid phone number format. Please enter a valid Indian phone number.');
+      return;
+    }
+    
+    const whatsappUrl = `https://wa.me/${formattedPhone}`;
     window.open(whatsappUrl, '_blank', 'noopener,noreferrer');
   };
 
