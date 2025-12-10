@@ -19,7 +19,9 @@ import {
   Edit,
   Trash2,
   Save,
-  RefreshCw
+  RefreshCw,
+  FileSpreadsheet,
+  FileDown
 } from 'lucide-react';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -27,6 +29,7 @@ import { Pagination, PaginationContent, PaginationItem, PaginationLink, Paginati
 import { db } from '@/lib/supabase';
 import { toast } from 'sonner';
 import { generateTaxInvoicePDF, generateCombinedTaxInvoicePDF } from '@/lib/tax-invoice-pdf-generator';
+import { exportGSTInvoicesToCSV, exportGSTInvoicesToExcel } from '@/lib/gst-export';
 import { Bill, CompanyInfo, BillItem } from '@/types';
 
 interface TaxInvoice {
@@ -669,31 +672,172 @@ export default function GSTInvoicesPage() {
     }
   };
 
+  // Get filtered invoices based on current filters
+  const getFilteredInvoicesForExport = (): TaxInvoice[] => {
+    let filtered = [...allInvoices];
+
+    // Filter by type
+    if (filterType !== 'ALL') {
+      filtered = filtered.filter(inv => inv.invoice_type === filterType);
+    }
+
+    // Filter by date
+    if (dateFilter === 'custom' && startDate && endDate) {
+      const start = new Date(startDate);
+      const end = new Date(endDate);
+      end.setHours(23, 59, 59, 999);
+      filtered = filtered.filter(inv => {
+        const invDate = new Date(inv.invoice_date);
+        return invDate >= start && invDate <= end;
+      });
+    } else if (dateFilter === 'month') {
+      filtered = filtered.filter(inv => {
+        const invDate = new Date(inv.invoice_date);
+        return invDate.getMonth() + 1 === selectedMonth && invDate.getFullYear() === selectedYear;
+      });
+    } else if (dateFilter === 'year') {
+      filtered = filtered.filter(inv => {
+        const invDate = new Date(inv.invoice_date);
+        return invDate.getFullYear() === selectedYear;
+      });
+    }
+
+    // Filter by search query
+    if (searchQuery.trim()) {
+      const query = searchQuery.toLowerCase();
+      filtered = filtered.filter(invoice =>
+        invoice.invoice_number.toLowerCase().includes(query) ||
+        invoice.customer_name.toLowerCase().includes(query) ||
+        invoice.customer_phone?.toLowerCase().includes(query) ||
+        invoice.customer_email?.toLowerCase().includes(query) ||
+        invoice.customer_gstin?.toLowerCase().includes(query)
+      );
+    }
+
+    return filtered;
+  };
+
+  // Export to CSV
+  const handleExportToCSV = () => {
+    const invoicesToExport = getFilteredInvoicesForExport();
+    
+    if (invoicesToExport.length === 0) {
+      toast.error('No invoices to export');
+      return;
+    }
+
+    let filename = 'GST_Invoices';
+    if (dateFilter === 'month') {
+      const monthName = new Date(selectedYear, selectedMonth - 1).toLocaleString('default', { month: 'long' });
+      filename = `GST_Invoices_${monthName}_${selectedYear}`;
+    } else if (dateFilter === 'year') {
+      filename = `GST_Invoices_${selectedYear}`;
+    } else if (dateFilter === 'custom' && startDate && endDate) {
+      filename = `GST_Invoices_${startDate}_to_${endDate}`;
+    }
+
+    exportGSTInvoicesToCSV(invoicesToExport, filename);
+    toast.success(`Exported ${invoicesToExport.length} invoices to CSV`);
+  };
+
+  // Export to Excel
+  const handleExportToExcel = () => {
+    const invoicesToExport = getFilteredInvoicesForExport();
+    
+    if (invoicesToExport.length === 0) {
+      toast.error('No invoices to export');
+      return;
+    }
+
+    let filename = 'GST_Invoices';
+    if (dateFilter === 'month') {
+      const monthName = new Date(selectedYear, selectedMonth - 1).toLocaleString('default', { month: 'long' });
+      filename = `GST_Invoices_${monthName}_${selectedYear}`;
+    } else if (dateFilter === 'year') {
+      filename = `GST_Invoices_${selectedYear}`;
+    } else if (dateFilter === 'custom' && startDate && endDate) {
+      filename = `GST_Invoices_${startDate}_to_${endDate}`;
+    }
+
+    exportGSTInvoicesToExcel(invoicesToExport, filename);
+    toast.success(`Exported ${invoicesToExport.length} invoices to Excel`);
+  };
+
+  // Export monthly invoices (all invoices of selected month)
+  const handleExportMonthlyInvoices = (format: 'csv' | 'excel') => {
+    const monthlyInvoices = allInvoices.filter(inv => {
+      const invDate = new Date(inv.invoice_date);
+      return invDate.getMonth() + 1 === selectedMonth && invDate.getFullYear() === selectedYear;
+    });
+
+    if (monthlyInvoices.length === 0) {
+      toast.error(`No invoices found for ${new Date(selectedYear, selectedMonth - 1).toLocaleString('default', { month: 'long' })} ${selectedYear}`);
+      return;
+    }
+
+    const monthName = new Date(selectedYear, selectedMonth - 1).toLocaleString('default', { month: 'long' });
+    const filename = `GST_Invoices_${monthName}_${selectedYear}`;
+
+    if (format === 'csv') {
+      exportGSTInvoicesToCSV(monthlyInvoices, filename);
+      toast.success(`Exported ${monthlyInvoices.length} invoices for ${monthName} ${selectedYear} to CSV`);
+    } else {
+      exportGSTInvoicesToExcel(monthlyInvoices, filename);
+      toast.success(`Exported ${monthlyInvoices.length} invoices for ${monthName} ${selectedYear} to Excel`);
+    }
+  };
+
   return (
     <div className="space-y-6 p-6">
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between flex-wrap gap-4">
         <div>
           <h1 className="text-3xl font-bold">GST Invoices</h1>
           <p className="text-gray-500 mt-1">View and manage all tax invoices</p>
         </div>
-        <Button
-          variant="outline"
-          onClick={() => loadInvoices()}
-          disabled={loading}
-          className="flex items-center gap-2"
-        >
-          {loading ? (
+        <div className="flex gap-2 flex-wrap">
+          {/* Quick Export Buttons */}
+          {getFilteredInvoicesForExport().length > 0 && (
             <>
-              <div className="w-4 h-4 border-2 border-gray-600 border-t-transparent rounded-full animate-spin" />
-              Loading...
-            </>
-          ) : (
-            <>
-              <RefreshCw className="h-4 w-4" />
-              Refresh
+              <Button
+                variant="outline"
+                onClick={handleExportToCSV}
+                className="border-green-600 text-green-700 hover:bg-green-50"
+                size="sm"
+              >
+                <FileDown className="h-4 w-4 mr-2" />
+                Export CSV ({getFilteredInvoicesForExport().length})
+              </Button>
+              <Button
+                variant="outline"
+                onClick={handleExportToExcel}
+                className="border-green-600 text-green-700 hover:bg-green-50"
+                size="sm"
+              >
+                <FileSpreadsheet className="h-4 w-4 mr-2" />
+                Export Excel ({getFilteredInvoicesForExport().length})
+              </Button>
             </>
           )}
-        </Button>
+          <Button
+            variant="outline"
+            onClick={() => loadInvoices()}
+            disabled={loading}
+            className="flex items-center gap-2"
+            size="sm"
+          >
+            {loading ? (
+              <>
+                <div className="w-4 h-4 border-2 border-gray-600 border-t-transparent rounded-full animate-spin" />
+                Loading...
+              </>
+            ) : (
+              <>
+                <RefreshCw className="h-4 w-4" />
+                Refresh
+              </>
+            )}
+          </Button>
+        </div>
       </div>
 
       {/* Filters and Search */}
@@ -854,51 +998,148 @@ export default function GSTInvoicesPage() {
               </div>
             )}
 
-            {/* Download Button */}
+            {/* Download Buttons */}
+            <div className="space-y-3">
+              <div className="flex gap-2 flex-wrap">
+                <Button
+                  onClick={handleBulkDownload}
+                  disabled={
+                    isBulkDownloading ||
+                    (bulkDownloadMode === 'single' && !bulkDownloadDate) ||
+                    (bulkDownloadMode === 'range' && (!bulkDownloadStartDate || !bulkDownloadEndDate))
+                  }
+                  className="bg-blue-600 hover:bg-blue-700"
+                >
+                  {isBulkDownloading ? (
+                    <>
+                      <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin mr-2" />
+                      Downloading...
+                    </>
+                  ) : (
+                    <>
+                      <Download className="h-4 w-4 mr-2" />
+                      Download PDF
+                    </>
+                  )}
+                </Button>
+                
+                {/* CSV Export Button */}
+                <Button
+                  onClick={handleExportToCSV}
+                  variant="outline"
+                  className="border-green-600 text-green-700 hover:bg-green-50"
+                  disabled={
+                    (bulkDownloadMode === 'single' && !bulkDownloadDate) ||
+                    (bulkDownloadMode === 'range' && (!bulkDownloadStartDate || !bulkDownloadEndDate))
+                  }
+                >
+                  <FileDown className="h-4 w-4 mr-2" />
+                  Export CSV
+                </Button>
+                
+                {/* Excel Export Button */}
+                <Button
+                  onClick={handleExportToExcel}
+                  variant="outline"
+                  className="border-green-600 text-green-700 hover:bg-green-50"
+                  disabled={
+                    (bulkDownloadMode === 'single' && !bulkDownloadDate) ||
+                    (bulkDownloadMode === 'range' && (!bulkDownloadStartDate || !bulkDownloadEndDate))
+                  }
+                >
+                  <FileSpreadsheet className="h-4 w-4 mr-2" />
+                  Export Excel
+                </Button>
+                
+                {/* Clear button for range mode */}
+                {bulkDownloadMode === 'range' && (bulkDownloadStartDate || bulkDownloadEndDate) && (
+                  <Button
+                    variant="outline"
+                    onClick={() => {
+                      setBulkDownloadStartDate('');
+                      setBulkDownloadEndDate('');
+                    }}
+                  >
+                    <X className="h-4 w-4 mr-2" />
+                    Clear
+                  </Button>
+                )}
+              </div>
+              
+              <p className="text-xs text-gray-500">
+                {bulkDownloadMode === 'all' 
+                  ? `Downloads ${bulkDownloadInvoiceType === 'ALL' ? 'all invoices (B2B + B2C)' : bulkDownloadInvoiceType === 'B2B' ? 'all B2B invoices' : 'all B2C invoices'} in a single PDF.`
+                  : bulkDownloadMode === 'range'
+                  ? `Downloads ${bulkDownloadInvoiceType === 'ALL' ? 'all invoices (B2B + B2C)' : bulkDownloadInvoiceType === 'B2B' ? 'B2B invoices' : 'B2C invoices'} within the selected date range.`
+                  : `Downloads ${bulkDownloadInvoiceType === 'ALL' ? 'all invoices (B2B + B2C)' : bulkDownloadInvoiceType === 'B2B' ? 'B2B invoices' : 'B2C invoices'} for the selected date.`}
+                <br />
+                <span className="text-green-700 font-semibold">CSV/Excel exports are formatted in GST standard format for easy GST filing.</span>
+              </p>
+            </div>
+          </div>
+
+          {/* Monthly Export Section */}
+          <div className="border-t pt-4 mt-4">
+            <Label className="mb-2 block font-semibold">Monthly Export (GST Filing)</Label>
+            <p className="text-xs text-gray-600 mb-3">
+              Export all invoices for a specific month in GST standard format for easy GST payment and filing.
+            </p>
+            <div className="flex gap-2 items-end mb-3">
+              <div className="flex-1">
+                <Label className="mb-1 block text-xs">Month</Label>
+                <Select value={selectedMonth.toString()} onValueChange={(value) => {
+                  setSelectedMonth(parseInt(value));
+                }}>
+                  <SelectTrigger className="w-full">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {Array.from({ length: 12 }, (_, i) => i + 1).map(month => (
+                      <SelectItem key={month} value={month.toString()}>
+                        {new Date(2000, month - 1).toLocaleString('default', { month: 'long' })}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="flex-1">
+                <Label className="mb-1 block text-xs">Year</Label>
+                <Select value={selectedYear.toString()} onValueChange={(value) => {
+                  setSelectedYear(parseInt(value));
+                }}>
+                  <SelectTrigger className="w-full">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {Array.from({ length: 10 }, (_, i) => new Date().getFullYear() - i).map(year => (
+                      <SelectItem key={year} value={year.toString()}>
+                        {year}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
             <div className="flex gap-2">
               <Button
-                onClick={handleBulkDownload}
-                disabled={
-                  isBulkDownloading ||
-                  (bulkDownloadMode === 'single' && !bulkDownloadDate) ||
-                  (bulkDownloadMode === 'range' && (!bulkDownloadStartDate || !bulkDownloadEndDate))
-                }
-                className="bg-blue-600 hover:bg-blue-700"
+                onClick={() => handleExportMonthlyInvoices('csv')}
+                variant="outline"
+                className="border-green-600 text-green-700 hover:bg-green-50 flex-1"
               >
-                {isBulkDownloading ? (
-                  <>
-                    <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin mr-2" />
-                    Downloading...
-                  </>
-                ) : (
-                  <>
-                    <Download className="h-4 w-4 mr-2" />
-                    Download {bulkDownloadMode === 'all' ? 'All' : bulkDownloadMode === 'range' ? 'Range' : 'Date'}
-                  </>
-                )}
+                <FileDown className="h-4 w-4 mr-2" />
+                Export Month CSV
               </Button>
-              
-              {/* Clear button for range mode */}
-              {bulkDownloadMode === 'range' && (bulkDownloadStartDate || bulkDownloadEndDate) && (
-                <Button
-                  variant="outline"
-                  onClick={() => {
-                    setBulkDownloadStartDate('');
-                    setBulkDownloadEndDate('');
-                  }}
-                >
-                  <X className="h-4 w-4 mr-2" />
-                  Clear
-                </Button>
-              )}
+              <Button
+                onClick={() => handleExportMonthlyInvoices('excel')}
+                variant="outline"
+                className="border-green-600 text-green-700 hover:bg-green-50 flex-1"
+              >
+                <FileSpreadsheet className="h-4 w-4 mr-2" />
+                Export Month Excel
+              </Button>
             </div>
-            
             <p className="text-xs text-gray-500 mt-2">
-              {bulkDownloadMode === 'all' 
-                ? `Downloads ${bulkDownloadInvoiceType === 'ALL' ? 'all invoices (B2B + B2C)' : bulkDownloadInvoiceType === 'B2B' ? 'all B2B invoices' : 'all B2C invoices'} in a single PDF.`
-                : bulkDownloadMode === 'range'
-                ? `Downloads ${bulkDownloadInvoiceType === 'ALL' ? 'all invoices (B2B + B2C)' : bulkDownloadInvoiceType === 'B2B' ? 'B2B invoices' : 'B2C invoices'} within the selected date range in a single PDF.`
-                : `Downloads ${bulkDownloadInvoiceType === 'ALL' ? 'all invoices (B2B + B2C)' : bulkDownloadInvoiceType === 'B2B' ? 'B2B invoices' : 'B2C invoices'} for the selected date in a single PDF.`}
+              Exports all invoices for {new Date(selectedYear, selectedMonth - 1).toLocaleString('default', { month: 'long' })} {selectedYear} in GST standard format.
             </p>
           </div>
 
@@ -1109,7 +1350,7 @@ export default function GSTInvoicesPage() {
                         </div>
                       </TableCell>
                       <TableCell>
-                        <div className="flex gap-2">
+                        <div className="flex gap-2 flex-wrap">
                           <Button
                             size="sm"
                             variant="outline"
@@ -1121,26 +1362,34 @@ export default function GSTInvoicesPage() {
                           <Button
                             size="sm"
                             variant="outline"
-                            onClick={() => handleEditInvoiceNumber(invoice)}
+                            onClick={() => handleRegenerateInvoice(invoice)}
                           >
-                            <Edit className="h-4 w-4 mr-1" />
-                            Edit
+                            <Download className="h-4 w-4 mr-1" />
+                            PDF
                           </Button>
                           <Button
                             size="sm"
                             variant="outline"
-                            onClick={() => handleDeleteInvoice(invoice)}
-                            className="text-red-600 hover:text-red-700"
+                            onClick={() => {
+                              exportGSTInvoicesToCSV([invoice], `Invoice_${invoice.invoice_number}`);
+                              toast.success('Invoice exported to CSV');
+                            }}
+                            className="border-green-600 text-green-700 hover:bg-green-50"
+                            title="Export to CSV"
                           >
-                            <Trash2 className="h-4 w-4 mr-1" />
-                            Delete
+                            <FileDown className="h-4 w-4" />
                           </Button>
                           <Button
                             size="sm"
-                            onClick={() => handleRegenerateInvoice(invoice)}
+                            variant="outline"
+                            onClick={() => {
+                              exportGSTInvoicesToExcel([invoice], `Invoice_${invoice.invoice_number}`);
+                              toast.success('Invoice exported to Excel');
+                            }}
+                            className="border-green-600 text-green-700 hover:bg-green-50"
+                            title="Export to Excel"
                           >
-                            <Download className="h-4 w-4 mr-1" />
-                            Download
+                            <FileSpreadsheet className="h-4 w-4" />
                           </Button>
                         </div>
                       </TableCell>
@@ -1325,12 +1574,34 @@ export default function GSTInvoicesPage() {
                 </div>
               </div>
 
-              <div className="flex gap-2 pt-4 border-t">
-                <Button onClick={() => handleRegenerateInvoice(selectedInvoice)} className="flex-1">
+              <div className="flex gap-2 pt-4 border-t flex-wrap">
+                <Button onClick={() => handleRegenerateInvoice(selectedInvoice)} className="flex-1 min-w-[140px]">
                   <Download className="h-4 w-4 mr-2" />
-                  Download Invoice
+                  Download PDF
                 </Button>
-                <Button variant="outline" onClick={() => setViewModalOpen(false)}>
+                <Button 
+                  onClick={() => {
+                    exportGSTInvoicesToCSV([selectedInvoice], `Invoice_${selectedInvoice.invoice_number}`);
+                    toast.success('Invoice exported to CSV');
+                  }} 
+                  variant="outline"
+                  className="flex-1 min-w-[140px] border-green-600 text-green-700 hover:bg-green-50"
+                >
+                  <FileDown className="h-4 w-4 mr-2" />
+                  Export CSV
+                </Button>
+                <Button 
+                  onClick={() => {
+                    exportGSTInvoicesToExcel([selectedInvoice], `Invoice_${selectedInvoice.invoice_number}`);
+                    toast.success('Invoice exported to Excel');
+                  }} 
+                  variant="outline"
+                  className="flex-1 min-w-[140px] border-green-600 text-green-700 hover:bg-green-50"
+                >
+                  <FileSpreadsheet className="h-4 w-4 mr-2" />
+                  Export Excel
+                </Button>
+                <Button variant="outline" onClick={() => setViewModalOpen(false)} className="min-w-[100px]">
                   Close
                 </Button>
               </div>
