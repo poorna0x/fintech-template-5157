@@ -110,6 +110,7 @@ import AddressDialog from './admin/AddressDialog';
 import DenyJobDialog from './admin/DenyJobDialog';
 import ReassignJobDialog from './admin/ReassignJobDialog';
 import EditCompletedJobDialog from './admin/EditCompletedJobDialog';
+import WhatsAppDialog from './admin/WhatsAppDialog';
 
 declare global {
   interface Window {
@@ -691,6 +692,10 @@ const AdminDashboard = () => {
   const [jobToReassign, setJobToReassign] = useState<Job | null>(null);
   const [reassignDialogOpen, setReassignDialogOpen] = useState(false);
   const [selectedTechnicianForReassign, setSelectedTechnicianForReassign] = useState<string>('');
+  const [whatsappDialogOpen, setWhatsappDialogOpen] = useState(false);
+  const [whatsappTechnician, setWhatsappTechnician] = useState<{name: string, phone: string} | null>(null);
+  const [whatsappServiceSubType, setWhatsappServiceSubType] = useState<string>('');
+  const [whatsappCustomerName, setWhatsappCustomerName] = useState<string>('');
   const [jobToEdit, setJobToEdit] = useState<Job | null>(null);
   const [editJobDialogOpen, setEditJobDialogOpen] = useState(false);
   const [photoToDelete, setPhotoToDelete] = useState<{jobId: string, photoIndex: number, photoUrl: string} | null>(null);
@@ -4720,6 +4725,20 @@ const AdminDashboard = () => {
 
       toast.success('Job assigned successfully');
       setAssignJobDialogOpen(false);
+      
+      // Show WhatsApp dialog
+      if (assignedTechnician && assignedTechnician.phone) {
+        const serviceSubType = (jobToAssign as any).service_sub_type || jobToAssign.serviceSubType || 'Service';
+        const customerName = (jobToAssign.customer as any)?.full_name || (jobToAssign.customer as any)?.fullName || 'Customer';
+        setWhatsappTechnician({
+          name: assignedTechnician.fullName,
+          phone: assignedTechnician.phone
+        });
+        setWhatsappServiceSubType(serviceSubType);
+        setWhatsappCustomerName(customerName);
+        setWhatsappDialogOpen(true);
+      }
+      
       setJobToAssign(null);
       setSelectedTechnicianId('');
 
@@ -4800,6 +4819,21 @@ const AdminDashboard = () => {
 
       toast.success('Job reassigned successfully');
       setReassignDialogOpen(false);
+      
+      // Show WhatsApp dialog
+      const reassignedTechnician = technicians.find(t => t.id === selectedTechnicianForReassign);
+      if (reassignedTechnician && reassignedTechnician.phone) {
+        const serviceSubType = (jobToReassign as any).service_sub_type || jobToReassign.serviceSubType || 'Service';
+        const customerName = (jobToReassign.customer as any)?.full_name || (jobToReassign.customer as any)?.fullName || 'Customer';
+        setWhatsappTechnician({
+          name: reassignedTechnician.fullName,
+          phone: reassignedTechnician.phone
+        });
+        setWhatsappServiceSubType(serviceSubType);
+        setWhatsappCustomerName(customerName);
+        setWhatsappDialogOpen(true);
+      }
+      
       setJobToReassign(null);
       setSelectedTechnicianForReassign('');
       
@@ -9232,6 +9266,18 @@ const AdminDashboard = () => {
                 }
               }}
       />
+
+      {/* WhatsApp Dialog */}
+      {whatsappTechnician && (
+        <WhatsAppDialog
+          open={whatsappDialogOpen}
+          onOpenChange={setWhatsappDialogOpen}
+          technicianName={whatsappTechnician.name}
+          technicianPhone={whatsappTechnician.phone}
+          serviceSubType={whatsappServiceSubType}
+          customerName={whatsappCustomerName}
+        />
+      )}
 
       {/* Send Message Dialog */}
       <SendMessageDialog

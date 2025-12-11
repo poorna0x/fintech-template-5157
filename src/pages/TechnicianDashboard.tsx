@@ -2676,6 +2676,9 @@ const TechnicianDashboard = () => {
       }
 
       // STEP 2: Get QR code details
+      // Note: QR codes are NOT uploaded to Cloudinary - we use the existing URL directly
+      // QR codes are already stored in the database (common_qr_codes table) or technician profiles
+      // If the QR code URL is already a Cloudinary URL, we use it as-is without uploading
       let selectedQrCodeUrl: string | undefined;
       let selectedQrCodeName: string | undefined;
       
@@ -2685,6 +2688,15 @@ const TechnicianDashboard = () => {
         if (selectedQr) {
           selectedQrCodeUrl = selectedQr.qrCodeUrl;
           selectedQrCodeName = selectedQr.name;
+          // Check if QR code URL is already a Cloudinary URL - if so, use it directly (no upload needed)
+          if (selectedQrCodeUrl && (
+            selectedQrCodeUrl.includes('cloudinary.com') || 
+            selectedQrCodeUrl.includes('res.cloudinary.com') ||
+            selectedQrCodeUrl.startsWith('http://') || 
+            selectedQrCodeUrl.startsWith('https://')
+          )) {
+            console.log('✅ QR code URL is already a valid URL (Cloudinary or other), using directly:', selectedQrCodeUrl);
+          }
         }
       } else if (selectedQrCodeId && selectedQrCodeId.startsWith('technician_')) {
         const techId = selectedQrCodeId.replace('technician_', '');
@@ -2692,6 +2704,15 @@ const TechnicianDashboard = () => {
         if (selectedTech && selectedTech.qrCode) {
           selectedQrCodeUrl = selectedTech.qrCode;
           selectedQrCodeName = selectedTech.fullName || 'Technician';
+          // Check if QR code URL is already a Cloudinary URL - if so, use it directly (no upload needed)
+          if (selectedQrCodeUrl && (
+            selectedQrCodeUrl.includes('cloudinary.com') || 
+            selectedQrCodeUrl.includes('res.cloudinary.com') ||
+            selectedQrCodeUrl.startsWith('http://') || 
+            selectedQrCodeUrl.startsWith('https://')
+          )) {
+            console.log('✅ Technician QR code URL is already a valid URL (Cloudinary or other), using directly:', selectedQrCodeUrl);
+          }
         }
       }
 
@@ -2806,16 +2827,30 @@ const TechnicianDashboard = () => {
         }
         
         // Add qr_photos to requirements only for ONLINE payments
+        // IMPORTANT: QR codes are NOT uploaded to Cloudinary - we store the existing URL directly
+        // QR codes are already stored in Cloudinary (in common_qr_codes table or technician profiles)
+        // We just reference the existing URL, no upload happens
         if (paymentMode === 'ONLINE') {
+          // Verify QR code URL is already a valid URL (should be Cloudinary URL from database)
+          if (selectedQrCodeUrl && !(
+            selectedQrCodeUrl.includes('cloudinary.com') || 
+            selectedQrCodeUrl.includes('res.cloudinary.com') ||
+            selectedQrCodeUrl.startsWith('http://') || 
+            selectedQrCodeUrl.startsWith('https://')
+          )) {
+            console.warn('⚠️ QR code URL is not a valid URL format:', selectedQrCodeUrl);
+            // Still proceed, but log a warning
+          }
+          
           const qrPhotos: any = {
             qr_code_type: qrCodeType,
             selected_qr_code_id: selectedQrCodeId,
             payment_screenshot: isPaymentScreenshotUploaded ? paymentScreenshot : null,
-            selected_qr_code_url: selectedQrCodeUrl,
+            selected_qr_code_url: selectedQrCodeUrl, // This is already a Cloudinary URL, no upload needed
             selected_qr_code_name: selectedQrCodeName,
           };
           requirements.push({ qr_photos: qrPhotos });
-          console.log('✅ Added qr_photos to requirements:', qrPhotos);
+          console.log('✅ Added qr_photos to requirements (QR code URL already exists, no upload):', qrPhotos);
         } else if (isPaymentScreenshotUploaded) {
           // For CASH payments, still save payment screenshot in requirements for easy access
           // Store it in a payment_photos array in requirements
@@ -3252,6 +3287,8 @@ const TechnicianDashboard = () => {
                     });
                   }
                   // Also check qr_photos for payment screenshots (from secondary account)
+                  // NOTE: We do NOT add QR code URLs (selected_qr_code_url) to customer photos
+                  // QR codes are already stored in Cloudinary and are just references, not actual job photos
                   if (req.qr_photos && typeof req.qr_photos === 'object') {
                     if (req.qr_photos.payment_screenshot) {
                       const screenshotUrls = extractPhotoUrls([req.qr_photos.payment_screenshot]);
@@ -3261,15 +3298,8 @@ const TechnicianDashboard = () => {
                         }
                       });
                     }
-                    if (req.qr_photos.selected_qr_code_url) {
-                      // QR code image URL (if stored)
-                      const qrUrls = extractPhotoUrls([req.qr_photos.selected_qr_code_url]);
-                      qrUrls.forEach(url => {
-                        if (!photoMap.has(url) || photoMap.get(url)! < jobTimestamp) {
-                          photoMap.set(url, jobTimestamp);
-                        }
-                      });
-                    }
+                    // Do NOT add selected_qr_code_url to photos - QR codes are reference URLs, not job photos
+                    // QR codes are stored separately in qr_photos requirements and shouldn't appear in customer photo gallery
                   }
                 });
               } else if (typeof requirements === 'object' && requirements !== null) {
@@ -3294,6 +3324,8 @@ const TechnicianDashboard = () => {
                   });
                 }
                 // Also check qr_photos for payment screenshots (from secondary account)
+                // NOTE: We do NOT add QR code URLs (selected_qr_code_url) to customer photos
+                // QR codes are already stored in Cloudinary and are just references, not actual job photos
                 if (requirements.qr_photos && typeof requirements.qr_photos === 'object') {
                   if (requirements.qr_photos.payment_screenshot) {
                     const screenshotUrls = extractPhotoUrls([requirements.qr_photos.payment_screenshot]);
@@ -3303,15 +3335,8 @@ const TechnicianDashboard = () => {
                       }
                     });
                   }
-                  if (requirements.qr_photos.selected_qr_code_url) {
-                    // QR code image URL (if stored)
-                    const qrUrls = extractPhotoUrls([requirements.qr_photos.selected_qr_code_url]);
-                    qrUrls.forEach(url => {
-                      if (!photoMap.has(url) || photoMap.get(url)! < jobTimestamp) {
-                        photoMap.set(url, jobTimestamp);
-                      }
-                    });
-                  }
+                  // Do NOT add selected_qr_code_url to photos - QR codes are reference URLs, not job photos
+                  // QR codes are stored separately in qr_photos requirements and shouldn't appear in customer photo gallery
                 }
               }
             } catch (e) {
