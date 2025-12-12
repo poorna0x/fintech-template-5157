@@ -2459,7 +2459,8 @@ const TechnicianDashboard = () => {
 
     // Step 1: Bill Amount - validate and show confirmation
     if (completeJobStep === 1) {
-      if (!billAmount || parseFloat(billAmount) <= 0) {
+      const billAmountNum = parseFloat(billAmount);
+      if (!billAmount || isNaN(billAmountNum) || billAmountNum < 0) {
         toast.error('Please enter a valid bill amount');
         return;
       }
