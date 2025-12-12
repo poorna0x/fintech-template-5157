@@ -4,6 +4,7 @@ import { Customer } from '@/types';
 import { extractCoordinates } from '@/lib/maps';
 import { toast } from 'sonner';
 import { WhatsAppIcon } from '../WhatsAppIcon';
+import { formatPhoneForWhatsApp } from '@/lib/utils';
 
 interface ContactSectionProps {
   customer: Customer;
@@ -81,10 +82,21 @@ export const ContactSection: React.FC<ContactSectionProps> = ({
           <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-3">
             <div className="w-8 h-8 sm:w-10 sm:h-10 bg-gray-100 rounded-lg flex items-center justify-center flex-shrink-0">
               <button
-                onClick={() => toast.info('WhatsApp integration coming soon')}
+                onClick={() => {
+                  const phoneToUse = customer.phone || '';
+                  
+                  if (!phoneToUse) {
+                    toast.error('Phone number not available');
+                    return;
+                  }
+                  
+                  const formattedPhone = formatPhoneForWhatsApp(phoneToUse);
+                  const whatsappUrl = `https://wa.me/${formattedPhone}`;
+                  window.open(whatsappUrl, '_blank', 'noopener,noreferrer');
+                }}
                 className="cursor-pointer"
               >
-                <WhatsAppIcon className="w-4 h-4 sm:w-5 sm:h-5 text-gray-600" />
+                <WhatsAppIcon className="w-4 h-4 sm:w-5 sm:h-5 text-gray-600 hover:text-green-600 transition-colors" />
               </button>
             </div>
             <div className="flex-1 min-w-0">
