@@ -6720,6 +6720,9 @@ const AdminDashboard = () => {
     return filteredCustomers;
   };
 
+  // Get today's date string for filtering followups
+  const todayDateStr = getTodayLocalDate();
+
   const displayedCustomers = !searchTerm.trim()
     ? (() => {
         const filtered = getFilteredCustomers();
@@ -6733,6 +6736,33 @@ const AdminDashboard = () => {
               ? getJobCompletionDate(b.completedJobs[0]) 
               : 0;
             return bMostRecentCompleted - aMostRecentCompleted;
+          });
+        }
+        // For RESCHEDULED filter, sort by today's followups first
+        if (statusFilter === 'RESCHEDULED') {
+          return filtered.sort((a, b) => {
+            // Check if customer has followup jobs scheduled for today
+            const aHasTodayFollowup = a.allJobs.some(job => {
+              if (!['FOLLOW_UP', 'RESCHEDULED'].includes(job.status)) return false;
+              const followUpDate = job.followUpDate || (job as any).follow_up_date;
+              if (!followUpDate) return false;
+              return followUpDate.startsWith(todayDateStr);
+            });
+            const bHasTodayFollowup = b.allJobs.some(job => {
+              if (!['FOLLOW_UP', 'RESCHEDULED'].includes(job.status)) return false;
+              const followUpDate = job.followUpDate || (job as any).follow_up_date;
+              if (!followUpDate) return false;
+              return followUpDate.startsWith(todayDateStr);
+            });
+            
+            // If one has today's followup and the other doesn't, prioritize the one with today's followup
+            if (aHasTodayFollowup && !bHasTodayFollowup) return -1;
+            if (!aHasTodayFollowup && bHasTodayFollowup) return 1;
+            
+            // If both have or both don't have today's followup, sort by customer creation date
+            const aDate = new Date(a.customer.createdAt).getTime();
+            const bDate = new Date(b.customer.createdAt).getTime();
+            return bDate - aDate;
           });
         }
         // For other filters, sort by customer creation date
@@ -6789,7 +6819,6 @@ const AdminDashboard = () => {
   tomorrow.setDate(tomorrow.getDate() + 1);
   const todayStart = today.toISOString();
   const todayEnd = tomorrow.toISOString();
-  const todayDateStr = getTodayLocalDate();
 
   const pendingJobs = jobs.filter(job => {
     if (job.status !== 'PENDING') return false;
@@ -7285,8 +7314,17 @@ const AdminDashboard = () => {
           
           {/* Customer Cards with Jobs */}
           <div className="space-y-6">
-            {displayedCustomers.map(({ customer, allJobs, upcomingJobs, completedJobs, cancelledJobs }) => (
-              <Card key={customer.id} className="bg-white border border-gray-300 hover:border-gray-400 hover:shadow-md transition-all duration-200 overflow-hidden mb-6 rounded-lg group">
+            {displayedCustomers.map(({ customer, allJobs, upcomingJobs, completedJobs, cancelledJobs }) => {
+              // Check if this customer has followup jobs scheduled for today
+              const hasTodayFollowup = statusFilter === 'RESCHEDULED' && allJobs.some(job => {
+                if (!['FOLLOW_UP', 'RESCHEDULED'].includes(job.status)) return false;
+                const followUpDate = job.followUpDate || (job as any).follow_up_date;
+                if (!followUpDate) return false;
+                return followUpDate.startsWith(todayDateStr);
+              });
+              
+              return (
+                <Card key={customer.id} className={`bg-white border ${hasTodayFollowup ? 'border-orange-400 border-2' : 'border-gray-300'} hover:border-gray-400 hover:shadow-md transition-all duration-200 overflow-hidden mb-6 rounded-lg group`}>
                 <CustomerCardHeader
                   customer={customer}
                   customerAMCStatus={customerAMCStatus}
@@ -7411,7 +7449,12 @@ const AdminDashboard = () => {
                         const followUpNotes = (job as any).follow_up_notes || job.followUpNotes || '';
                         const followUpScheduledAt = (job as any).follow_up_scheduled_at || job.followUpScheduledAt || null;
                         const followUpScheduledBy = (job as any).follow_up_scheduled_by || job.followUpScheduledBy || null;
-                        const formattedFollowUpDate = followUpDate ? new Date(followUpDate).toLocaleDateString() : null;
+                        const formattedFollowUpDate = followUpDate ? (() => {
+                          const date = new Date(followUpDate);
+                          const dayName = date.toLocaleDateString('en-US', { weekday: 'long' });
+                          const dateStr = date.toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric' });
+                          return `${dayName}, ${dateStr}`;
+                        })() : null;
                         const formattedFollowUpTime = followUpTime ? (() => {
                           const timeString = String(followUpTime);
                           const [hours, minutes] = timeString.split(':');
@@ -8107,7 +8150,8 @@ const AdminDashboard = () => {
                   )}
                 </div>
               </Card>
-            ))}
+            );
+            })}
           </div>
           
           {/* Pagination Controls - Only show for paginated views */}
