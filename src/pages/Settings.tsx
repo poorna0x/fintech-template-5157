@@ -2375,17 +2375,19 @@ const Settings = () => {
           setTodoToDelete(null);
         }
       }}>
-        <AlertDialogContent className="mx-4 sm:mx-0">
-          <AlertDialogHeader>
-            <AlertDialogTitle>Complete Task</AlertDialogTitle>
-            <AlertDialogDescription>
-              Are you sure you want to complete this task? It will be deleted.
+        <AlertDialogContent className="!w-[calc(100vw-2rem)] !max-w-[calc(100vw-2rem)] sm:!w-full sm:!max-w-lg p-5 sm:p-6">
+          <AlertDialogHeader className="text-left sm:text-center">
+            <AlertDialogTitle className="text-base sm:text-lg font-semibold">
+              Complete Task
+            </AlertDialogTitle>
+            <AlertDialogDescription className="text-sm sm:text-base text-muted-foreground mt-2">
+              Are you sure you want to complete this task? It will be deleted permanently.
             </AlertDialogDescription>
           </AlertDialogHeader>
-          <AlertDialogFooter className="flex-col sm:flex-row gap-2">
+          <AlertDialogFooter className="flex-col-reverse sm:flex-row gap-2 sm:gap-2 mt-4 sm:mt-0">
             <AlertDialogCancel 
               onClick={() => setTodoToDelete(null)}
-              className="w-full sm:w-auto"
+              className="w-full sm:w-auto order-2 sm:order-1 h-10 sm:h-9 text-sm sm:text-sm font-medium"
             >
               Cancel
             </AlertDialogCancel>
@@ -2395,7 +2397,7 @@ const Settings = () => {
                   handleDeleteTodo(todoToDelete);
                 }
               }}
-              className="bg-blue-600 hover:bg-blue-700 w-full sm:w-auto"
+              className="bg-blue-600 hover:bg-blue-700 w-full sm:w-auto order-1 sm:order-2 h-10 sm:h-9 text-sm sm:text-sm font-medium"
             >
               Complete Task
             </AlertDialogAction>
