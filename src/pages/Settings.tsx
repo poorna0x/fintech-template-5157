@@ -1165,6 +1165,62 @@ const Settings = () => {
             </CardContent>
           </Card>
 
+          {/* Todo Tasks */}
+          <Card>
+            <CardHeader>
+              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+                <div>
+                  <CardTitle className="flex items-center gap-2 text-lg sm:text-xl">
+                    <ListTodo className="w-5 h-5" />
+                    Todo Tasks
+                  </CardTitle>
+                  <CardDescription className="text-sm mt-1">
+                    Manage your todo tasks. Check off tasks to complete and delete them.
+                  </CardDescription>
+                </div>
+                <Button 
+                  onClick={handleAddTodo} 
+                  className="bg-blue-600 hover:bg-blue-700 w-full sm:w-auto"
+                  size="sm"
+                >
+                  <Plus className="w-4 h-4 mr-2" />
+                  Add Task
+                </Button>
+              </div>
+            </CardHeader>
+            <CardContent className="p-4 sm:p-6">
+              <div className="space-y-3">
+                {todos.map((todo) => (
+                  <div
+                    key={todo.id}
+                    className="flex items-start gap-3 p-3 rounded-lg border border-gray-200 hover:border-gray-300 hover:bg-gray-50 dark:border-gray-700 dark:hover:bg-gray-800 transition-colors"
+                  >
+                    <Checkbox
+                      id={`todo-${todo.id}`}
+                      checked={false}
+                      onCheckedChange={() => handleTodoCheckboxClick(todo.id)}
+                      className="mt-0.5"
+                    />
+                    <label
+                      htmlFor={`todo-${todo.id}`}
+                      className="flex-1 text-sm sm:text-base text-gray-900 dark:text-gray-100 cursor-pointer"
+                    >
+                      {todo.text}
+                    </label>
+                    <span className="text-xs text-gray-500 dark:text-gray-400 shrink-0">
+                      {new Date(todo.created_at).toLocaleDateString()}
+                    </span>
+                  </div>
+                ))}
+                {todos.length === 0 && (
+                  <div className="text-center py-8 text-gray-500">
+                    No tasks yet. Click "Add Task" to create one.
+                  </div>
+                )}
+              </div>
+            </CardContent>
+          </Card>
+
           {/* GST Invoices */}
           <Card>
             <CardHeader>
@@ -1565,62 +1621,6 @@ const Settings = () => {
                   onCheckedChange={handleLocationTrackingToggle}
                   className="ml-6 border-2 border-gray-300 dark:border-gray-600 data-[state=unchecked]:bg-white dark:data-[state=unchecked]:bg-gray-700"
                 />
-              </div>
-            </CardContent>
-          </Card>
-
-          {/* Todo Tasks */}
-          <Card>
-            <CardHeader>
-              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-                <div>
-                  <CardTitle className="flex items-center gap-2 text-lg sm:text-xl">
-                    <ListTodo className="w-5 h-5" />
-                    Todo Tasks
-                  </CardTitle>
-                  <CardDescription className="text-sm mt-1">
-                    Manage your todo tasks. Check off tasks to complete and delete them.
-                  </CardDescription>
-                </div>
-                <Button 
-                  onClick={handleAddTodo} 
-                  className="bg-blue-600 hover:bg-blue-700 w-full sm:w-auto"
-                  size="sm"
-                >
-                  <Plus className="w-4 h-4 mr-2" />
-                  Add Task
-                </Button>
-              </div>
-            </CardHeader>
-            <CardContent className="p-4 sm:p-6">
-              <div className="space-y-3">
-                {todos.map((todo) => (
-                  <div
-                    key={todo.id}
-                    className="flex items-start gap-3 p-3 rounded-lg border border-gray-200 hover:border-gray-300 hover:bg-gray-50 dark:border-gray-700 dark:hover:bg-gray-800 transition-colors"
-                  >
-                    <Checkbox
-                      id={`todo-${todo.id}`}
-                      checked={false}
-                      onCheckedChange={() => handleTodoCheckboxClick(todo.id)}
-                      className="mt-0.5"
-                    />
-                    <label
-                      htmlFor={`todo-${todo.id}`}
-                      className="flex-1 text-sm sm:text-base text-gray-900 dark:text-gray-100 cursor-pointer"
-                    >
-                      {todo.text}
-                    </label>
-                    <span className="text-xs text-gray-500 dark:text-gray-400 shrink-0">
-                      {new Date(todo.created_at).toLocaleDateString()}
-                    </span>
-                  </div>
-                ))}
-                {todos.length === 0 && (
-                  <div className="text-center py-8 text-gray-500">
-                    No tasks yet. Click "Add Task" to create one.
-                  </div>
-                )}
               </div>
             </CardContent>
           </Card>
