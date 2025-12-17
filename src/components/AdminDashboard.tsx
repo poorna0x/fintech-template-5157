@@ -3876,7 +3876,8 @@ const AdminDashboard = () => {
             });
 
             if (updateError) {
-              toast.warning('Photos uploaded but failed to save to database');
+              console.error('Failed to update job with photos:', updateError);
+              toast.warning(`Photos uploaded but failed to save to database: ${updateError.message || 'Unknown error'}`);
             } else {
               toast.success(`${uploadedPhotos.length} photo(s) uploaded and saved successfully!`);
               // Reload photos to ensure we have the latest from database, but keep existing photos
@@ -3906,20 +3907,21 @@ const AdminDashboard = () => {
               scheduled_date: getTodayLocalDate(),
               scheduled_time_slot: 'MORNING' as const,
               estimated_duration: 0,
-              service_address: customer.address,
-              service_location: customer.location,
+              service_address: customer.address || {},
+              service_location: customer.location || { latitude: 0, longitude: 0, formattedAddress: '' },
               status: 'PENDING' as const,
               priority: 'LOW' as const,
               description: 'Customer photo upload',
               requirements: [],
               estimated_cost: 0,
               payment_status: 'PENDING' as const,
-              beforePhotos: uploadedPhotos,
+              before_photos: uploadedPhotos,
             };
 
             const { error: createError } = await db.jobs.create(jobData as any);
             if (createError) {
-              toast.warning('Photos uploaded but failed to save to database');
+              console.error('Failed to create job for photo upload:', createError);
+              toast.warning(`Photos uploaded but failed to save to database: ${createError.message || 'Unknown error'}`);
             } else {
               toast.success(`${uploadedPhotos.length} photo(s) uploaded and saved successfully!`);
               // Reload photos to ensure we have the latest from database, but keep existing photos
@@ -3939,7 +3941,9 @@ const AdminDashboard = () => {
             }
           }
         } catch (error) {
-          toast.warning('Photos uploaded but failed to save to database');
+          console.error('Error saving photos to database:', error);
+          const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+          toast.warning(`Photos uploaded but failed to save to database: ${errorMessage}`);
         }
       } else {
         toast.error('No valid photos were uploaded');
