@@ -28,7 +28,8 @@ import {
   Download,
   Receipt,
   FileText,
-  LogOut
+  LogOut,
+  ListTodo
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { db, supabase } from '@/lib/supabase';
@@ -93,11 +94,18 @@ const Settings = () => {
   // Download data state
   const [isDownloading, setIsDownloading] = useState(false);
 
+  // Todo management states
+  const [todos, setTodos] = useState<Array<{ id: string; text: string; created_at: string }>>([]);
+  const [addTodoDialogOpen, setAddTodoDialogOpen] = useState(false);
+  const [newTodoText, setNewTodoText] = useState('');
+  const [todoToDelete, setTodoToDelete] = useState<string | null>(null);
+
   // Load data on component mount
   useEffect(() => {
     loadTechnicians();
     loadCommonQrCodes();
     loadProductQrCodes();
+    loadTodos();
   }, []);
 
   // Handle location tracking toggle
@@ -706,6 +714,67 @@ const Settings = () => {
     // Using QR Server API (free, no API key needed)
     const encodedLink = encodeURIComponent(link);
     return `https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${encodedLink}`;
+  };
+
+  // Todo management functions
+  const loadTodos = async () => {
+    try {
+      const { data, error } = await db.adminTodos.getAll();
+      if (error) throw error;
+      
+      if (data) {
+        setTodos(data);
+      } else {
+        setTodos([]);
+      }
+    } catch (error) {
+      console.error('Error loading todos:', error);
+      toast.error('Failed to load todos');
+    }
+  };
+
+  const handleAddTodo = () => {
+    setNewTodoText('');
+    setAddTodoDialogOpen(true);
+  };
+
+  const handleSaveTodo = async () => {
+    try {
+      if (!newTodoText || !newTodoText.trim()) {
+        toast.error('Please enter a task');
+        return;
+      }
+
+      const { error } = await db.adminTodos.create({ text: newTodoText.trim() });
+      if (error) throw error;
+      
+      toast.success('Task added successfully');
+      await loadTodos();
+      setAddTodoDialogOpen(false);
+      setNewTodoText('');
+    } catch (error) {
+      console.error('Error saving todo:', error);
+      toast.error('Failed to add task');
+    }
+  };
+
+  const handleDeleteTodo = async (todoId: string) => {
+    try {
+      const { error } = await db.adminTodos.delete(todoId);
+      if (error) throw error;
+      
+      toast.success('Task completed');
+      await loadTodos();
+      setTodoToDelete(null);
+    } catch (error) {
+      console.error('Error deleting todo:', error);
+      toast.error('Failed to complete task');
+      setTodoToDelete(null);
+    }
+  };
+
+  const handleTodoCheckboxClick = (todoId: string) => {
+    setTodoToDelete(todoId);
   };
 
   // Helper function to convert data to CSV
@@ -1500,6 +1569,62 @@ const Settings = () => {
             </CardContent>
           </Card>
 
+          {/* Todo Tasks */}
+          <Card>
+            <CardHeader>
+              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+                <div>
+                  <CardTitle className="flex items-center gap-2 text-lg sm:text-xl">
+                    <ListTodo className="w-5 h-5" />
+                    Todo Tasks
+                  </CardTitle>
+                  <CardDescription className="text-sm mt-1">
+                    Manage your todo tasks. Check off tasks to complete and delete them.
+                  </CardDescription>
+                </div>
+                <Button 
+                  onClick={handleAddTodo} 
+                  className="bg-blue-600 hover:bg-blue-700 w-full sm:w-auto"
+                  size="sm"
+                >
+                  <Plus className="w-4 h-4 mr-2" />
+                  Add Task
+                </Button>
+              </div>
+            </CardHeader>
+            <CardContent className="p-4 sm:p-6">
+              <div className="space-y-3">
+                {todos.map((todo) => (
+                  <div
+                    key={todo.id}
+                    className="flex items-start gap-3 p-3 rounded-lg border border-gray-200 hover:border-gray-300 hover:bg-gray-50 dark:border-gray-700 dark:hover:bg-gray-800 transition-colors"
+                  >
+                    <Checkbox
+                      id={`todo-${todo.id}`}
+                      checked={false}
+                      onCheckedChange={() => handleTodoCheckboxClick(todo.id)}
+                      className="mt-0.5"
+                    />
+                    <label
+                      htmlFor={`todo-${todo.id}`}
+                      className="flex-1 text-sm sm:text-base text-gray-900 dark:text-gray-100 cursor-pointer"
+                    >
+                      {todo.text}
+                    </label>
+                    <span className="text-xs text-gray-500 dark:text-gray-400 shrink-0">
+                      {new Date(todo.created_at).toLocaleDateString()}
+                    </span>
+                  </div>
+                ))}
+                {todos.length === 0 && (
+                  <div className="text-center py-8 text-gray-500">
+                    No tasks yet. Click "Add Task" to create one.
+                  </div>
+                )}
+              </div>
+            </CardContent>
+          </Card>
+
           {/* Data Export Section - At Bottom */}
           <Card>
             <CardHeader>
@@ -2189,6 +2314,94 @@ const Settings = () => {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* Add Todo Dialog */}
+      <Dialog open={addTodoDialogOpen} onOpenChange={(open) => {
+        if (!open) {
+          setAddTodoDialogOpen(false);
+          setNewTodoText('');
+        }
+      }}>
+        <DialogContent className="sm:max-w-md mx-4">
+          <DialogHeader>
+            <DialogTitle>Add New Task</DialogTitle>
+            <DialogDescription>
+              Enter a new task to add to your todo list
+            </DialogDescription>
+          </DialogHeader>
+          
+          <div className="space-y-4">
+            <div>
+              <Label htmlFor="todoText">Task</Label>
+              <Input
+                id="todoText"
+                value={newTodoText}
+                onChange={(e) => setNewTodoText(e.target.value)}
+                placeholder="Enter task description"
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && newTodoText.trim()) {
+                    handleSaveTodo();
+                  }
+                }}
+              />
+            </div>
+          </div>
+
+          <DialogFooter className="flex flex-col sm:flex-row gap-2 sm:gap-3">
+            <Button
+              variant="outline"
+              onClick={() => {
+                setAddTodoDialogOpen(false);
+                setNewTodoText('');
+              }}
+              className="w-full sm:w-auto"
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={handleSaveTodo}
+              disabled={!newTodoText || !newTodoText.trim()}
+              className="bg-blue-600 hover:bg-blue-700 w-full sm:w-auto"
+            >
+              Add Task
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Delete Todo Confirmation Dialog */}
+      <AlertDialog open={todoToDelete !== null} onOpenChange={(open) => {
+        if (!open) {
+          setTodoToDelete(null);
+        }
+      }}>
+        <AlertDialogContent className="mx-4 sm:mx-0">
+          <AlertDialogHeader>
+            <AlertDialogTitle>Complete Task</AlertDialogTitle>
+            <AlertDialogDescription>
+              Are you sure you want to complete this task? It will be deleted.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter className="flex-col sm:flex-row gap-2">
+            <AlertDialogCancel 
+              onClick={() => setTodoToDelete(null)}
+              className="w-full sm:w-auto"
+            >
+              Cancel
+            </AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => {
+                if (todoToDelete) {
+                  handleDeleteTodo(todoToDelete);
+                }
+              }}
+              className="bg-blue-600 hover:bg-blue-700 w-full sm:w-auto"
+            >
+              Complete Task
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       {/* Logout Section at Bottom */}
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">

@@ -471,6 +471,19 @@ export interface Database {
         Insert: Omit<Bill, 'id' | 'billNumber' | 'createdAt' | 'updatedAt'>;
         Update: Partial<Omit<Bill, 'id' | 'billNumber' | 'createdAt'>>;
       };
+      admin_todos: {
+        Row: {
+          id: string;
+          text: string;
+          created_at: string;
+        };
+        Insert: {
+          text: string;
+        };
+        Update: Partial<{
+          text: string;
+        }>;
+      };
     };
   };
 }

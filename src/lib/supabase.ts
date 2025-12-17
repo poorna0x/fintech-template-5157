@@ -2132,6 +2132,37 @@ export const db = {
       
       return { data, error };
     }
+  },
+
+  // Admin Todos operations
+  adminTodos: {
+    async getAll() {
+      const { data, error } = await supabase
+        .from('admin_todos')
+        .select('*')
+        .order('created_at', { ascending: false });
+      
+      return { data, error };
+    },
+
+    async create(todoData: { text: string }) {
+      const { data, error } = await supabase
+        .from('admin_todos')
+        .insert({ text: todoData.text })
+        .select()
+        .single();
+      
+      return { data, error };
+    },
+
+    async delete(id: string) {
+      const { error } = await supabase
+        .from('admin_todos')
+        .delete()
+        .eq('id', id);
+      
+      return { error };
+    }
   }
 };
 
