@@ -1601,6 +1601,14 @@ export default function GSTInvoicesPage() {
                   <FileSpreadsheet className="h-4 w-4 mr-2" />
                   Export Excel
                 </Button>
+                <Button 
+                  onClick={() => handleDeleteInvoice(selectedInvoice)}
+                  variant="outline"
+                  className="flex-1 min-w-[140px] border-red-600 text-red-600 hover:bg-red-50"
+                >
+                  <Trash2 className="h-4 w-4 mr-2" />
+                  Delete
+                </Button>
                 <Button variant="outline" onClick={() => setViewModalOpen(false)} className="min-w-[100px]">
                   Close
                 </Button>
