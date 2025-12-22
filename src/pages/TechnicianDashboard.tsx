@@ -2454,6 +2454,22 @@ const TechnicianDashboard = () => {
     }
   };
 
+  // Helper functions to determine step flow
+  const isBillAmountZero = (): boolean => {
+    const billAmountNum = parseFloat(billAmount);
+    return billAmount === '' || isNaN(billAmountNum) || billAmountNum === 0;
+  };
+
+  const isSoftenerService = (): boolean => {
+    if (!selectedJobForComplete) return false;
+    const serviceType = (selectedJobForComplete.service_type || selectedJobForComplete.serviceType || '').toUpperCase();
+    const serviceSubType = ((selectedJobForComplete as any).service_sub_type || selectedJobForComplete.serviceSubType || '').toUpperCase();
+    return serviceType === 'SOFTENER' || 
+           serviceSubType.includes('SOFTENER') || 
+           serviceSubType.includes('SOFTNER') || // Handle typo variations
+           serviceType.includes('SOFTENER');
+  };
+
   const handleCompleteJobSubmit = async () => {
     if (!selectedJobForComplete) return;
 
@@ -2475,20 +2491,81 @@ const TechnicianDashboard = () => {
       return;
     }
 
-    // Step 2: Bill Photo (optional) - move to step 3
+    // Step 2: Bill Photo (optional) - move to next step
     if (completeJobStep === 2) {
+      // Check if we should skip AMC step (step 3)
+      const billIsZero = isBillAmountZero();
+      const isSoftener = isSoftenerService();
+      const shouldSkipAMC = billIsZero || isSoftener;
+      
+      // Determine next step:
+      // - If should skip AMC: go directly to step 4 (payment) or step 6 (prefilter/submit)
+      // - If not skipping AMC: go to step 3 (AMC)
+      let nextStep: 3 | 4 | 6 = 3;
+      if (shouldSkipAMC) {
+        if (billIsZero) {
+          // Skip AMC and payment steps, go directly to prefilter (or submit if softener)
+          nextStep = 6;
+        } else {
+          // Skip AMC but go to payment step (step 4)
+          nextStep = 4;
+        }
+      }
+      
       // Save progress before moving to next step
       saveJobCompletionProgress(selectedJobForComplete.id, {
         billPhotos,
         billAmount,
-        currentStep: 3,
+        currentStep: nextStep,
       });
-      setCompleteJobStep(3);
+      
+      // If skipping AMC and bill is zero and softener, set up for direct submission
+      if (shouldSkipAMC && billIsZero && isSoftener) {
+        setHasAMC(false);
+        setCustomerHasPrefilter(null);
+        setCompleteJobStep(6);
+        // Continue to submit logic - don't return here
+      } else {
+        setCompleteJobStep(nextStep);
         return;
       }
+    }
 
-    // Step 3: AMC Information (optional, can skip) - move to step 4
+    // Step 3: AMC Information (optional, can skip) - move to next step
     if (completeJobStep === 3) {
+      // Skip AMC step if bill is zero or service is softener (shouldn't reach here, but safety check)
+      const billIsZeroStep3 = isBillAmountZero();
+      const isSoftenerStep3 = isSoftenerService();
+      if (billIsZeroStep3 || isSoftenerStep3) {
+        // Auto-skip AMC and proceed
+        setHasAMC(false);
+        const nextStep = billIsZeroStep3 ? 6 : 4;
+        saveJobCompletionProgress(selectedJobForComplete.id, {
+          billPhotos,
+          billAmount,
+          paymentMode: billIsZeroStep3 ? '' : (paymentMode as 'CASH' | 'ONLINE' | ''),
+          paymentScreenshot: billIsZeroStep3 ? '' : paymentScreenshot,
+          qrCodeType: billIsZeroStep3 ? '' : qrCodeType,
+          selectedQrCodeId: billIsZeroStep3 ? '' : selectedQrCodeId,
+          customerHasPrefilter: billIsZeroStep3 && isSoftenerStep3 ? null : customerHasPrefilter,
+          hasAMC: false,
+          amcDateGiven: '',
+          amcEndDate: '',
+          amcYears: 0,
+          amcIncludesPrefilter: false,
+          amcAdditionalInfo: '',
+          currentStep: nextStep,
+        });
+        if (billIsZeroStep3 && isSoftenerStep3) {
+          setCustomerHasPrefilter(null);
+          setCompleteJobStep(6);
+          // Continue to submit logic
+        } else {
+          setCompleteJobStep(nextStep);
+          return;
+        }
+      }
+      
       // Only allow proceeding if hasAMC is not null (question has been answered)
       if (hasAMC === null) {
         toast.error('Please answer whether the customer needs AMC or not');
@@ -2498,14 +2575,27 @@ const TechnicianDashboard = () => {
       // If years is 0, treat it as no AMC
       const effectiveHasAMC = hasAMC === true && amcYears > 0;
       
+      // Check if bill amount is zero - if so, skip payment steps (4 and 5)
+      const billIsZeroStep3Continue = isBillAmountZero();
+      
+      // Determine next step:
+      // - If bill is zero: skip to step 6 (prefilter) or submit if softener
+      // - If bill is not zero: go to step 4 (payment mode)
+      let nextStep: 4 | 6 = 4;
+      const billIsZeroStep3Final = billIsZeroStep3Continue;
+      if (billIsZeroStep3Final) {
+        // Skip payment steps, go directly to prefilter (or submit if softener)
+        nextStep = 6;
+      }
+      
       // Save progress (AMC is optional, can skip)
       saveJobCompletionProgress(selectedJobForComplete.id, {
         billPhotos,
         billAmount,
-        paymentMode: paymentMode as 'CASH' | 'ONLINE' | '',
-        paymentScreenshot,
-        qrCodeType,
-        selectedQrCodeId,
+        paymentMode: billIsZeroStep3Final ? '' : (paymentMode as 'CASH' | 'ONLINE' | ''),
+        paymentScreenshot: billIsZeroStep3Final ? '' : paymentScreenshot,
+        qrCodeType: billIsZeroStep3Final ? '' : qrCodeType,
+        selectedQrCodeId: billIsZeroStep3Final ? '' : selectedQrCodeId,
         customerHasPrefilter,
         hasAMC: effectiveHasAMC,
         amcDateGiven: effectiveHasAMC ? amcDateGiven : '',
@@ -2513,18 +2603,59 @@ const TechnicianDashboard = () => {
         amcYears: effectiveHasAMC ? amcYears : 0,
         amcIncludesPrefilter: effectiveHasAMC ? amcIncludesPrefilter : false,
         amcAdditionalInfo: effectiveHasAMC ? amcAdditionalInfo : '',
-        currentStep: 4,
+        currentStep: nextStep,
       });
-      setCompleteJobStep(4);
-      return;
+      
+      // If bill is zero and service is softener, skip prefilter step and submit directly
+      if (billIsZeroStep3Final && isSoftenerService()) {
+        // Set customerHasPrefilter to null (not applicable for softener)
+        setCustomerHasPrefilter(null);
+        // Set step to 6 to trigger submit logic, but skip step 6 UI
+        setCompleteJobStep(6);
+        // Continue to submit logic - don't return here
+      } else {
+        setCompleteJobStep(nextStep);
+        return;
+      }
     }
 
     // Step 4: Payment Mode - validate and move to step 5
     if (completeJobStep === 4) {
+      // Skip payment step if bill amount is zero (shouldn't reach here, but safety check)
+      if (isBillAmountZero()) {
+        // Skip to step 6 (prefilter) or submit if softener
+        const isSoftener = isSoftenerService();
+        saveJobCompletionProgress(selectedJobForComplete.id, {
+          billPhotos,
+          billAmount,
+          paymentMode: '',
+          paymentScreenshot: '',
+          qrCodeType: '',
+          selectedQrCodeId: '',
+          customerHasPrefilter: isSoftener ? null : customerHasPrefilter,
+          hasAMC: false,
+          amcDateGiven: '',
+          amcEndDate: '',
+          amcYears: 0,
+          amcIncludesPrefilter: false,
+          amcAdditionalInfo: '',
+          currentStep: 6,
+        });
+        if (isSoftener) {
+          setCustomerHasPrefilter(null);
+          setCompleteJobStep(6);
+          // Continue to submit logic
+        } else {
+          setCompleteJobStep(6);
+          return;
+        }
+      }
+      
+      // Validate payment mode only if bill amount is not zero
       if (!paymentMode) {
         toast.error('Please select a payment mode');
-      return;
-    }
+        return;
+      }
       // Save progress
       saveJobCompletionProgress(selectedJobForComplete.id, {
         billPhotos,
@@ -2582,7 +2713,7 @@ const TechnicianDashboard = () => {
         return;
     }
 
-    // Step 5: Payment Screenshot (optional) - move to step 6 (Prefilter)
+    // Step 5: Payment Screenshot (optional) - move to step 6 (Prefilter) or submit if softener
     if (completeJobStep === 5) {
       // Save progress
       saveJobCompletionProgress(selectedJobForComplete.id, {
@@ -2599,30 +2730,52 @@ const TechnicianDashboard = () => {
         amcAdditionalInfo,
         currentStep: 6,
       });
-      setCompleteJobStep(6);
-      return;
+      
+      // If service is softener, skip prefilter step and submit directly
+      if (isSoftenerService()) {
+        // Set customerHasPrefilter to null (not applicable for softener)
+        setCustomerHasPrefilter(null);
+        // Set step to 6 to trigger submit logic, but skip step 6 UI
+        setCompleteJobStep(6);
+        // Continue to submit logic - don't return here
+      } else {
+        setCompleteJobStep(6);
+        return;
+      }
     }
 
-    // Step 6: Prefilter - submit the form
+    // Step 6: Prefilter - submit the form (or submit directly if softener service skipped this step)
     if (completeJobStep === 6) {
+      // If softener service, customerHasPrefilter should be null (not applicable)
+      if (isSoftenerService()) {
+        setCustomerHasPrefilter(null);
+      }
+      
+      // Determine payment mode - if bill is zero, payment mode should be empty
+      const finalPaymentMode = isBillAmountZero() ? '' : (paymentMode as 'CASH' | 'ONLINE' | '');
+      const finalPaymentScreenshot = isBillAmountZero() ? '' : paymentScreenshot;
+      const finalQrCodeType = isBillAmountZero() ? '' : qrCodeType;
+      const finalSelectedQrCodeId = isBillAmountZero() ? '' : selectedQrCodeId;
+      
       // Save progress before submitting
       saveJobCompletionProgress(selectedJobForComplete.id, {
         billPhotos,
         billAmount,
-        paymentMode: paymentMode as 'CASH' | 'ONLINE' | '',
-        paymentScreenshot,
-        qrCodeType,
-        selectedQrCodeId,
+        paymentMode: finalPaymentMode,
+        paymentScreenshot: finalPaymentScreenshot,
+        qrCodeType: finalQrCodeType,
+        selectedQrCodeId: finalSelectedQrCodeId,
         amcDateGiven,
         amcEndDate,
         amcYears,
         amcIncludesPrefilter,
         amcAdditionalInfo,
-        customerHasPrefilter,
+        customerHasPrefilter: isSoftenerService() ? null : customerHasPrefilter,
         currentStep: 6,
       });
       // Proceed to submit - button is already disabled while uploads are in progress
     }
+    
     setIsSubmittingJobCompletion(true);
     
     try {
@@ -2721,11 +2874,15 @@ const TechnicianDashboard = () => {
       try {
         // Prepare update data
         let dbPaymentMethod: 'CASH' | 'CARD' | 'UPI' | 'BANK_TRANSFER' | null = null;
-        if (paymentMode === 'CASH') {
-          dbPaymentMethod = 'CASH';
-        } else if (paymentMode === 'ONLINE') {
-          dbPaymentMethod = 'UPI';
+        // Only set payment method if bill amount is not zero
+        if (!isBillAmountZero()) {
+          if (paymentMode === 'CASH') {
+            dbPaymentMethod = 'CASH';
+          } else if (paymentMode === 'ONLINE') {
+            dbPaymentMethod = 'UPI';
+          }
         }
+        // For zero amount bills, payment method can be null or default to CASH
         
         const updateData: any = {
           status: 'COMPLETED',
@@ -2735,7 +2892,7 @@ const TechnicianDashboard = () => {
           completed_at: new Date().toISOString(),
           actual_cost: parseFloat(billAmount) || 0,
           payment_amount: parseFloat(billAmount) || 0,
-          payment_method: dbPaymentMethod || 'CASH',
+          payment_method: dbPaymentMethod || (isBillAmountZero() ? null : 'CASH'),
         };
 
         // Fetch latest job data to ensure we have the most up-to-date requirements
@@ -5373,7 +5530,8 @@ const TechnicianDashboard = () => {
                     {completeJobStep === 3 && 'AMC Information (Optional - Can Skip)'}
                     {completeJobStep === 4 && 'Select payment mode and QR code'}
                     {completeJobStep === 5 && 'Upload payment screenshot (optional)'}
-                    {completeJobStep === 6 && 'Does the customer have a prefilter?'}
+                    {completeJobStep === 6 && !isSoftenerService() && 'Does the customer have a prefilter?'}
+                    {completeJobStep === 6 && isSoftenerService() && 'Complete Job'}
                   </>
                 )}
               </DialogDescription>
@@ -5567,8 +5725,8 @@ const TechnicianDashboard = () => {
                 </div>
               )}
 
-              {/* Step 3: AMC Information (Optional - Can Skip) */}
-              {completeJobStep === 3 && (
+              {/* Step 3: AMC Information (Optional - Can Skip) - only show if bill is not zero and not softener */}
+              {completeJobStep === 3 && !isBillAmountZero() && !isSoftenerService() && (
                 <div className="space-y-4">
                   {hasAMC === null ? (
                     <>
@@ -5756,8 +5914,8 @@ const TechnicianDashboard = () => {
             </div>
               )}
 
-              {/* Step 4: Payment Mode */}
-              {completeJobStep === 4 && (
+              {/* Step 4: Payment Mode - only show if bill amount is not zero */}
+              {completeJobStep === 4 && !isBillAmountZero() && (
                 <div className="space-y-4">
                   <div>
                       <Label htmlFor="payment-mode">Payment Mode *</Label>
@@ -5918,8 +6076,8 @@ const TechnicianDashboard = () => {
                       </div>
                     )}
 
-              {/* Step 5: Payment Screenshot (optional) */}
-              {completeJobStep === 5 && (
+              {/* Step 5: Payment Screenshot (optional) - only show if bill amount is not zero */}
+              {completeJobStep === 5 && !isBillAmountZero() && (
                 <div className="space-y-4">
                   <div>
                         <Label>Payment Screenshot (Optional)</Label>
@@ -5947,8 +6105,15 @@ const TechnicianDashboard = () => {
                   </div>
                 )}
 
-              {/* Step 6: Prefilter Question */}
-              {completeJobStep === 6 && (
+              {/* Step 6: Prefilter Question - only show if not softener service */}
+              {completeJobStep === 6 && isSoftenerService() && (
+                <div className="space-y-4">
+                  <div className="text-center py-8">
+                    <p className="text-gray-600">Completing job...</p>
+                  </div>
+                </div>
+              )}
+              {completeJobStep === 6 && !isSoftenerService() && (
                 <div className="space-y-4">
                   <div className="space-y-3">
                     <Label className="text-base font-semibold">Does the customer have a prefilter?</Label>
@@ -6053,17 +6218,28 @@ const TechnicianDashboard = () => {
                   Skip
                 </Button>
               )}
-              {completeJobStep === 3 && (
+              {/* Skip button for step 3 - only show if step 3 is visible (not skipped) */}
+              {completeJobStep === 3 && !isBillAmountZero() && !isSoftenerService() && (
                 <Button
                   variant="outline"
                   onClick={() => {
-                    // Skip AMC step - move to payment mode
+                    // Skip AMC step - go to payment step (step 4)
+                    // Since we're only showing this button when bill is not zero and not softener,
+                    // we always go to step 4
                     saveJobCompletionProgress(selectedJobForComplete.id, {
                       billPhotos,
                       billAmount,
                       paymentMode: paymentMode as 'CASH' | 'ONLINE' | '',
+                      paymentScreenshot,
                       qrCodeType,
                       selectedQrCodeId,
+                      customerHasPrefilter,
+                      hasAMC: false,
+                      amcDateGiven: '',
+                      amcEndDate: '',
+                      amcYears: 0,
+                      amcIncludesPrefilter: false,
+                      amcAdditionalInfo: '',
                       currentStep: 4,
                     });
                     setCompleteJobStep(4);
@@ -6079,8 +6255,9 @@ const TechnicianDashboard = () => {
                   isSubmittingJobCompletion ||
                   // Only check upload states on final step (step 6) - allow proceeding on steps 2 and 5
                   (completeJobStep === 6 && (isBillPhotosUploading || isPaymentScreenshotUploading)) ||
-                  (completeJobStep === 4 && !paymentMode) || 
-                  (completeJobStep === 4 && paymentMode === 'ONLINE' && !selectedQrCodeId)
+                  // Step 4 validation: only require payment mode if bill amount is not zero
+                  (completeJobStep === 4 && !isBillAmountZero() && !paymentMode) || 
+                  (completeJobStep === 4 && !isBillAmountZero() && paymentMode === 'ONLINE' && !selectedQrCodeId)
                 }
               >
                 {isSubmittingJobCompletion || (completeJobStep === 6 && (isBillPhotosUploading || isPaymentScreenshotUploading)) ? (
@@ -6093,7 +6270,10 @@ const TechnicianDashboard = () => {
                         : 'Saving...'}
                   </>
                 ) : (
-                  completeJobStep === 6 ? 'Complete Job' : 'Next'
+                  // Show "Complete Job" on step 6, or if we're on step 3/5 and skipping to submit
+                  (completeJobStep === 6 || (completeJobStep === 3 && isBillAmountZero() && isSoftenerService()) || (completeJobStep === 5 && isSoftenerService())) 
+                    ? 'Complete Job' 
+                    : 'Next'
                 )}
               </Button>
             </DialogFooter>
@@ -6833,7 +7013,8 @@ const TechnicianDashboard = () => {
                                 </div>
                               )}
                               
-                              {/* Payment Mode */}
+                              {/* Payment Mode - Only show if payment method exists (not null) */}
+                              {/* For zero amount jobs, payment method will be null and this section won't display */}
                               {paymentMethod && (
                                 <div className="flex items-center gap-2">
                                   <span className="text-sm font-medium text-gray-700 w-32">Payment Mode:</span>
