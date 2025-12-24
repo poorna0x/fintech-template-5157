@@ -643,6 +643,8 @@ const AdminDashboard = () => {
   }, [denyReason]);
   const [completeDialogOpen, setCompleteDialogOpen] = useState(false);
   const [selectedJobForComplete, setSelectedJobForComplete] = useState<Job | null>(null);
+  const [technicianSelectDialogOpen, setTechnicianSelectDialogOpen] = useState(false);
+  const [selectedTechnicianForComplete, setSelectedTechnicianForComplete] = useState<string>('');
   // Complete job state moved to CompleteJobDialog component
   const [commonQrCodes, setCommonQrCodes] = useState<CommonQrCode[]>([]);
   const [customerReportDialogOpen, setCustomerReportDialogOpen] = useState(false);
@@ -5811,19 +5813,8 @@ const AdminDashboard = () => {
   // Calculate AMC end date: agreement date + years - 1 day
   // calculateAMCEndDate moved to CompleteJobDialog component
 
-  // Handle job completion
+  // Handle job completion - first show technician selection
   const handleCompleteJob = async (job: Job) => {
-    // OPTIMIZATION: Load QR codes only when completing a job (deferred loading)
-    // Check cache first, then load if needed
-    const cachedQrCodes = getCachedQrCodes();
-    if (!cachedQrCodes || cachedQrCodes.length === 0) {
-      // Load QR codes in background - don't block dialog opening
-      loadQrCodes().catch(err => console.error('Error loading QR codes:', err));
-    } else {
-      // Use cached QR codes immediately
-      setCommonQrCodes(cachedQrCodes);
-    }
-    
     // Fetch full job data with customer if not already loaded
     let jobWithCustomer = job;
     if (!job.customer || !job.serviceType) {
@@ -5839,6 +5830,57 @@ const AdminDashboard = () => {
     }
     
     setSelectedJobForComplete(jobWithCustomer);
+    setSelectedTechnicianForComplete('');
+    setTechnicianSelectDialogOpen(true);
+  };
+
+  // Handle technician selection for job completion
+  const handleTechnicianSelectedForComplete = async () => {
+    if (!selectedTechnicianForComplete || !selectedJobForComplete) {
+      toast.error('Please select a technician');
+      return;
+    }
+
+    // Validate technician ID format (should be a valid UUID)
+    const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+    if (!uuidRegex.test(selectedTechnicianForComplete)) {
+      console.error('Invalid technician ID format:', selectedTechnicianForComplete);
+      toast.error('Invalid technician selected. Please try again.');
+      return;
+    }
+
+    // Verify technician exists in the technicians list
+    const selectedTechnician = technicians.find(t => t.id === selectedTechnicianForComplete);
+    if (!selectedTechnician) {
+      console.error('Technician not found in list:', selectedTechnicianForComplete);
+      toast.error('Selected technician not found. Please refresh and try again.');
+      return;
+    }
+
+    // OPTIMIZATION: Load QR codes only when completing a job (deferred loading)
+    // Check cache first, then load if needed
+    const cachedQrCodes = getCachedQrCodes();
+    if (!cachedQrCodes || cachedQrCodes.length === 0) {
+      // Load QR codes in background - don't block dialog opening
+      loadQrCodes().catch(err => console.error('Error loading QR codes:', err));
+    } else {
+      // Use cached QR codes immediately
+      setCommonQrCodes(cachedQrCodes);
+    }
+
+    // Note: We don't update the job assignment here anymore
+    // The CompleteJobDialog will handle assigning the technician when completing the job
+    // This avoids the 400 error that can occur with the select query
+    // Just update local state for UI consistency
+    if (selectedJobForComplete.assigned_technician_id !== selectedTechnicianForComplete) {
+      setJobs(prev => prev.map(job => 
+        job.id === selectedJobForComplete.id 
+          ? { ...job, assigned_technician_id: selectedTechnicianForComplete }
+          : job
+      ));
+    }
+
+    setTechnicianSelectDialogOpen(false);
     setCompleteDialogOpen(true);
   };
 
@@ -9011,6 +9053,76 @@ const AdminDashboard = () => {
         onDeny={handleDenyJobSubmit}
       />
 
+      {/* Technician Selection Dialog for Job Completion */}
+      <Dialog open={technicianSelectDialogOpen} onOpenChange={setTechnicianSelectDialogOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Select Technician</DialogTitle>
+            <DialogDescription>
+              Select the technician who completed this job
+            </DialogDescription>
+          </DialogHeader>
+          
+          <div className="space-y-4">
+            {selectedJobForComplete && (
+              <div className="p-3 bg-gray-50 rounded-md">
+                <p className="font-medium text-sm">Job: {(selectedJobForComplete as any).job_number || selectedJobForComplete.jobNumber}</p>
+                <p className="text-sm text-gray-600">
+                  {(selectedJobForComplete.serviceType || (selectedJobForComplete as any).service_type || 'N/A')} - {(selectedJobForComplete.serviceSubType || (selectedJobForComplete as any).service_sub_type || 'N/A')}
+                </p>
+              </div>
+            )}
+            
+            <div>
+              <Label htmlFor="technician-select-complete">Select Technician *</Label>
+              <Select 
+                value={selectedTechnicianForComplete} 
+                onValueChange={setSelectedTechnicianForComplete}
+              >
+                <SelectTrigger className="mt-1">
+                  <SelectValue placeholder="Choose a technician" />
+                </SelectTrigger>
+                <SelectContent>
+                  {technicians.length === 0 ? (
+                    <SelectItem value="no-technicians" disabled>
+                      No technicians available
+                    </SelectItem>
+                  ) : (
+                    technicians
+                      .filter(tech => !(tech as any).account_status || (tech as any).account_status === 'ACTIVE')
+                      .map((technician) => (
+                        <SelectItem key={technician.id} value={technician.id}>
+                          {technician.fullName || 'Unknown'} ({technician.employeeId || 'No ID'})
+                        </SelectItem>
+                      ))
+                  )}
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+          
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => {
+                setTechnicianSelectDialogOpen(false);
+                setSelectedTechnicianForComplete('');
+                setSelectedJobForComplete(null);
+              }}
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={handleTechnicianSelectedForComplete}
+              disabled={!selectedTechnicianForComplete}
+              className="bg-black hover:bg-gray-800 text-white"
+            >
+              Continue
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       {/* Complete Job Dialog */}
       <CompleteJobDialog
         open={completeDialogOpen}
@@ -9018,14 +9130,17 @@ const AdminDashboard = () => {
           setCompleteDialogOpen(open);
         if (!open) {
           setSelectedJobForComplete(null);
+          setSelectedTechnicianForComplete('');
           }
         }}
         job={selectedJobForComplete}
         technicians={technicians}
         commonQrCodes={commonQrCodes}
         onLoadQrCodes={loadQrCodes}
+        selectedTechnicianId={selectedTechnicianForComplete}
         onJobCompleted={async () => {
           await loadFilteredJobs(statusFilter, currentPage);
+          setSelectedTechnicianForComplete('');
         }}
       />
       

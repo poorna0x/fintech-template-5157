@@ -299,18 +299,74 @@ export const db = {
     },
     
     async update(id: string, updates: Database['public']['Tables']['jobs']['Update']) {
-      const { data, error } = await supabase
-        .from('jobs')
-        .update(updates)
-        .eq('id', id)
-        .select();
+      // Debug logging
+      console.log('🔧 [db.jobs.update] Called with:', {
+        id,
+        updates,
+        updateKeys: Object.keys(updates || {}),
+        assignedTechnicianId: (updates as any)?.assigned_technician_id
+      });
       
-      if (error) {
-        return { data: null, error };
+      try {
+        // First, try update without select to avoid relationship query issues
+        const { error: updateError } = await supabase
+          .from('jobs')
+          .update(updates)
+          .eq('id', id);
+        
+        if (updateError) {
+          console.error('❌ [db.jobs.update] Supabase update error:', {
+            error: updateError,
+            errorMessage: updateError.message,
+            errorDetails: updateError.details,
+            errorHint: updateError.hint,
+            errorCode: updateError.code,
+            id,
+            updates
+          });
+          return { data: null, error: updateError };
+        }
+        
+        // Then fetch the updated row with minimal select to avoid relationship issues
+        const { data, error: selectError } = await supabase
+          .from('jobs')
+          .select('id, status, assigned_technician_id, completed_by, completed_at, end_time')
+          .eq('id', id)
+          .single();
+        
+        if (selectError) {
+          console.warn('⚠️ [db.jobs.update] Select error (non-critical):', {
+            error: selectError,
+            id
+          });
+          // Update succeeded, but select failed - return success anyway
+          return { data: null, error: null };
+        }
+        
+        console.log('✅ [db.jobs.update] Success:', {
+          id,
+          updatedData: data
+        });
+        
+        return { data: data || null, error: null };
+      } catch (err: any) {
+        console.error('❌ [db.jobs.update] Exception:', {
+          err,
+          errorMessage: err?.message,
+          errorStack: err?.stack,
+          id,
+          updates
+        });
+        return { 
+          data: null, 
+          error: {
+            message: err?.message || 'Unknown error during update',
+            details: err?.details || null,
+            hint: err?.hint || null,
+            code: err?.code || 'UNKNOWN_ERROR'
+          } as any
+        };
       }
-      
-      // Return the first (and should be only) updated row
-      return { data: data?.[0] || null, error: null };
     },
     
     async getByStatus(status: string) {

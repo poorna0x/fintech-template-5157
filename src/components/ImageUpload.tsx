@@ -799,7 +799,7 @@ const ImageUpload: React.FC<ImageUploadProps> = ({
         onChange={handleFileInputChange}
         className="hidden"
         // iOS PWA: Prevent webkitdirectory which can cause issues
-        {...({ webkitdirectory: false } as any)}
+        // Don't set webkitdirectory attribute at all (undefined instead of false)
       />
       
       {/* Camera input with capture attribute - opens camera directly on mobile devices */}
@@ -813,7 +813,7 @@ const ImageUpload: React.FC<ImageUploadProps> = ({
         // Additional attributes for better mobile compatibility
         multiple={false}
         // iOS PWA: Ensure webkitdirectory is not set
-        {...({ webkitdirectory: false } as any)}
+        // Don't set webkitdirectory attribute at all (undefined instead of false)
         // Additional capture attributes for better compatibility across browsers
         {...({ 'x-capture': 'environment' } as any)}
         {...({ 'webkit-capture': 'environment' } as any)}
