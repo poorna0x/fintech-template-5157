@@ -8078,19 +8078,22 @@ const AdminDashboard = () => {
                                       </Button>
                                     </DropdownMenuTrigger>
                                     <DropdownMenuContent align="end" className="w-48">
-                                      {/* Complete Job - First option for all active statuses */}
-                                      {(job.status === 'PENDING' || job.status === 'ASSIGNED' || job.status === 'EN_ROUTE' || job.status === 'IN_PROGRESS' || job.status === 'FOLLOW_UP' || job.status === 'RESCHEDULED') && (
-                                        <DropdownMenuItem onClick={() => handleCompleteJob(job)}>
-                                          <CheckCircle2 className="mr-2 h-4 w-4" />
-                                          Complete Job
-                                        </DropdownMenuItem>
-                                      )}
+                                      {/* Assign to Technician - First option for PENDING status */}
                                       {job.status === 'PENDING' && (
                                         <DropdownMenuItem onClick={() => handleAssignJob(job)}>
                                           <Wrench className="mr-2 h-4 w-4" />
                                           Assign to Technician
                                         </DropdownMenuItem>
                                       )}
+                                      
+                                      {/* Complete Job - Second option for all active statuses */}
+                                      {(job.status === 'PENDING' || job.status === 'ASSIGNED' || job.status === 'EN_ROUTE' || job.status === 'IN_PROGRESS' || job.status === 'FOLLOW_UP' || job.status === 'RESCHEDULED') && (
+                                        <DropdownMenuItem onClick={() => handleCompleteJob(job)}>
+                                          <CheckCircle2 className="mr-2 h-4 w-4" />
+                                          Complete Job
+                                        </DropdownMenuItem>
+                                      )}
+                                      
                                       {job.status === 'ASSIGNED' && (
                                         <DropdownMenuItem onClick={() => handleJobStatusUpdate(job.id, 'IN_PROGRESS')}>
                                           <Clock className="mr-2 h-4 w-4" />
