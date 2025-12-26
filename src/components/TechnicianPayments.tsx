@@ -96,6 +96,7 @@ interface TechnicianSalaryBreakdown {
   extraHolidays: number;
   holidayDeduction: number;
   totalSalary: number; // adjustedBaseSalary + commission + extraCommission - advances
+  totalBillAmount: number; // Total billing done by this technician in the period
   payments: TechnicianPayment[];
   expenses: TechnicianExpense[];
   advances: TechnicianAdvance[];
@@ -110,6 +111,7 @@ const TechnicianPayments = () => {
   const [loading, setLoading] = useState(true);
   const [selectedTechnician, setSelectedTechnician] = useState<string | null>(null);
   const [commissionPeriod, setCommissionPeriod] = useState<{ start: Date; end: Date } | null>(null);
+  const [completedJobs, setCompletedJobs] = useState<any[]>([]);
   const [selectedPeriod, setSelectedPeriod] = useState<'current' | 'pastMonth'>('current');
   const [selectedPastMonth, setSelectedPastMonth] = useState<string>(() => {
     // Default to previous month
@@ -290,6 +292,7 @@ const TechnicianPayments = () => {
         .lte('end_time', endDate.toISOString());
       
       if (completedJobsError) throw completedJobsError;
+      setCompletedJobs(completedJobsData || []);
 
       // Calculate number of months in the selected period
       // Both current cycle and past month are always 1 month (1st to last day of month)
@@ -599,6 +602,7 @@ const TechnicianPayments = () => {
           extraHolidays,
           holidayDeduction,
           totalSalary,
+          totalBillAmount, // Total billing done by this technician
           payments: techPayments,
           expenses: techExpenses,
           advances: techAdvances,
@@ -1387,17 +1391,17 @@ const TechnicianPayments = () => {
   return (
     <div className="space-y-6">
       <div>
-        <h2 className="text-2xl font-bold text-gray-900 mb-2">Technician Payments</h2>
-        <p className="text-gray-600">
+        <h2 className="text-xl sm:text-2xl font-bold text-gray-900 mb-2">Technician Payments</h2>
+        <p className="text-sm sm:text-base text-gray-600">
           Manage technician salaries, commissions (10% per job), expenses, and advances
         </p>
         
         {/* Period Selector */}
-        <div className="mt-4 flex flex-wrap gap-4 items-end">
-          <div className="flex-1 min-w-[200px]">
+        <div className="mt-4 flex flex-col sm:flex-row flex-wrap gap-3 sm:gap-4 items-stretch sm:items-end">
+          <div className="flex-1 min-w-0 sm:min-w-[200px]">
             <Label htmlFor="period-select">View Period</Label>
             <Select value={selectedPeriod} onValueChange={(value: any) => setSelectedPeriod(value)}>
-              <SelectTrigger id="period-select">
+              <SelectTrigger id="period-select" className="w-full">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -1408,19 +1412,20 @@ const TechnicianPayments = () => {
           </div>
           
           {selectedPeriod === 'pastMonth' && (
-            <div className="flex-1 min-w-[200px]">
+            <div className="flex-1 min-w-0 sm:min-w-[200px]">
               <Label htmlFor="month-select">Select Month</Label>
               <Input
                 id="month-select"
                 type="month"
                 value={selectedPastMonth}
                 onChange={(e) => setSelectedPastMonth(e.target.value)}
+                className="w-full"
               />
             </div>
           )}
           
           {commissionPeriod && (
-            <div className="text-sm text-gray-500 flex items-center">
+            <div className="text-xs sm:text-sm text-gray-500 flex items-center px-2 py-1 sm:px-0 sm:py-0">
               Period: {(() => {
                 const startDay = commissionPeriod.start.getDate();
                 const endDay = commissionPeriod.end.getDate();
@@ -1451,92 +1456,100 @@ const TechnicianPayments = () => {
         {salaryBreakdowns.map((breakdown) => (
           <Card key={breakdown.technicianId} className="overflow-hidden">
             <CardHeader className="bg-gray-50 border-b">
-              <div className="flex items-center justify-between">
-                <div>
+              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+                <div className="flex-1">
                   <CardTitle className="text-lg">{breakdown.technicianName}</CardTitle>
                   <p className="text-sm text-gray-600 mt-1">Employee ID: {breakdown.employeeId}</p>
                 </div>
-                <div className="text-right">
-                  <div className="text-2xl font-bold text-green-600">
-                    INR {breakdown.totalSalary.toFixed(2)}
+                <div className="flex flex-col sm:flex-row items-start sm:items-center gap-4 sm:gap-6">
+                  <div className="flex-1 sm:flex-initial sm:text-right">
+                    <div className="text-2xl font-bold text-blue-600">
+                      ₹{breakdown.totalBillAmount.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                    </div>
+                    <p className="text-xs text-gray-500">Total Billing</p>
                   </div>
-                  <p className="text-xs text-gray-500">Total Salary</p>
+                  <div className="flex-1 sm:flex-initial sm:text-right">
+                    <div className="text-2xl font-bold text-green-600">
+                      ₹{breakdown.totalSalary.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                    </div>
+                    <p className="text-xs text-gray-500">Total Salary</p>
+                  </div>
                 </div>
               </div>
             </CardHeader>
-            <CardContent className="p-6">
+            <CardContent className="p-4 sm:p-6">
               {/* Salary Breakdown */}
-              <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mb-6">
-                <div className="bg-blue-50 p-4 rounded-lg">
-                  <p className="text-sm text-gray-600 mb-1">Base Salary (Monthly)</p>
-                  <p className="text-xl font-semibold text-blue-600">INR {breakdown.baseSalary.toFixed(2)}</p>
+              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3 sm:gap-4 mb-6">
+                <div className="bg-blue-50 p-3 sm:p-4 rounded-lg">
+                  <p className="text-xs sm:text-sm text-gray-600 mb-1">Base Salary (Monthly)</p>
+                  <p className="text-lg sm:text-xl font-semibold text-blue-600">₹{breakdown.baseSalary.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
                   <p className="text-xs text-gray-500 mt-1">
-                    Period: INR {breakdown.periodBaseSalary.toFixed(2)}
+                    Period: ₹{breakdown.periodBaseSalary.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                   </p>
                   {breakdown.holidayDeduction > 0 && (
                     <p className="text-xs text-red-600 mt-1">
-                      Adjusted: INR {breakdown.adjustedBaseSalary.toFixed(2)}
+                      Adjusted: ₹{breakdown.adjustedBaseSalary.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                     </p>
                   )}
                 </div>
-                <div className="bg-green-50 p-4 rounded-lg">
-                  <p className="text-sm text-gray-600 mb-1">Commission</p>
-                  <p className="text-xl font-semibold text-green-600">INR {breakdown.totalCommission.toFixed(2)}</p>
+                <div className="bg-green-50 p-3 sm:p-4 rounded-lg">
+                  <p className="text-xs sm:text-sm text-gray-600 mb-1">Commission</p>
+                  <p className="text-lg sm:text-xl font-semibold text-green-600">₹{breakdown.totalCommission.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
                   <p className="text-xs text-gray-500 mt-1">(Variable % per job)</p>
                 </div>
-                <div className="bg-purple-50 p-4 rounded-lg">
-                  <p className="text-sm text-gray-600 mb-1">Extra Commission</p>
-                  <p className="text-xl font-semibold text-purple-600">INR {breakdown.totalExtraCommission.toFixed(2)}</p>
+                <div className="bg-purple-50 p-3 sm:p-4 rounded-lg">
+                  <p className="text-xs sm:text-sm text-gray-600 mb-1">Extra Commission</p>
+                  <p className="text-lg sm:text-xl font-semibold text-purple-600">₹{breakdown.totalExtraCommission.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
                 </div>
-                <div className="bg-red-50 p-4 rounded-lg">
-                  <p className="text-sm text-gray-600 mb-1">Expenses</p>
-                  <p className="text-xl font-semibold text-red-600">INR {breakdown.totalExpenses.toFixed(2)}</p>
+                <div className="bg-red-50 p-3 sm:p-4 rounded-lg">
+                  <p className="text-xs sm:text-sm text-gray-600 mb-1">Expenses</p>
+                  <p className="text-lg sm:text-xl font-semibold text-red-600">₹{breakdown.totalExpenses.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
                 </div>
-                <div className="bg-orange-50 p-4 rounded-lg">
-                  <p className="text-sm text-gray-600 mb-1">Advances</p>
-                  <p className="text-xl font-semibold text-orange-600">INR {breakdown.totalAdvances.toFixed(2)}</p>
+                <div className="bg-orange-50 p-3 sm:p-4 rounded-lg">
+                  <p className="text-xs sm:text-sm text-gray-600 mb-1">Advances</p>
+                  <p className="text-lg sm:text-xl font-semibold text-orange-600">₹{breakdown.totalAdvances.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
                 </div>
               </div>
 
               {/* Calculation */}
-              <div className="mb-6 p-4 bg-gray-50 rounded-lg">
+              <div className="mb-6 p-3 sm:p-4 bg-gray-50 rounded-lg">
                 <p className="text-sm font-medium text-gray-700 mb-2">Salary Calculation:</p>
-                <div className="space-y-1 text-sm">
-                  <div className="flex justify-between">
-                    <span>Base Salary (Monthly):</span>
-                    <span className="font-medium">INR {breakdown.baseSalary.toFixed(2)}</span>
+                <div className="space-y-1 text-xs sm:text-sm">
+                  <div className="flex justify-between items-center gap-2">
+                    <span className="truncate">Base Salary (Monthly):</span>
+                    <span className="font-medium whitespace-nowrap">₹{breakdown.baseSalary.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
                   </div>
-                  <div className="flex justify-between text-gray-500 text-xs">
-                    <span>Base Salary (Period):</span>
-                    <span>INR {breakdown.periodBaseSalary.toFixed(2)}</span>
+                  <div className="flex justify-between items-center gap-2 text-gray-500">
+                    <span className="truncate">Base Salary (Period):</span>
+                    <span className="whitespace-nowrap">₹{breakdown.periodBaseSalary.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
                   </div>
                   {breakdown.holidayDeduction > 0 && (
                     <>
-                      <div className="flex justify-between text-red-600">
-                        <span>Leave Deduction ({breakdown.extraHolidays} absent days):</span>
-                        <span className="font-medium">- INR {breakdown.holidayDeduction.toFixed(2)}</span>
+                      <div className="flex justify-between items-center gap-2 text-red-600">
+                        <span className="truncate">Leave Deduction ({breakdown.extraHolidays} absent days):</span>
+                        <span className="font-medium whitespace-nowrap">- ₹{breakdown.holidayDeduction.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
                       </div>
-                      <div className="flex justify-between">
-                        <span>Adjusted Base Salary:</span>
-                        <span className="font-medium">INR {breakdown.adjustedBaseSalary.toFixed(2)}</span>
+                      <div className="flex justify-between items-center gap-2">
+                        <span className="truncate">Adjusted Base Salary:</span>
+                        <span className="font-medium whitespace-nowrap">₹{breakdown.adjustedBaseSalary.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
                       </div>
                     </>
                   )}
-                  <div className="flex justify-between text-green-600">
-                    <span>+ Commission:</span>
-                    <span className="font-medium">+ INR {breakdown.totalCommission.toFixed(2)}</span>
+                  <div className="flex justify-between items-center gap-2 text-green-600">
+                    <span className="truncate">+ Commission:</span>
+                    <span className="font-medium whitespace-nowrap">+ ₹{breakdown.totalCommission.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
                   </div>
-                  <div className="flex justify-between text-purple-600">
-                    <span>+ Extra Commission:</span>
-                    <span className="font-medium">+ INR {breakdown.totalExtraCommission.toFixed(2)}</span>
+                  <div className="flex justify-between items-center gap-2 text-purple-600">
+                    <span className="truncate">+ Extra Commission:</span>
+                    <span className="font-medium whitespace-nowrap">+ ₹{breakdown.totalExtraCommission.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
                   </div>
-                  <div className="flex justify-between text-orange-600">
-                    <span>- Advances:</span>
-                    <span className="font-medium">- INR {breakdown.totalAdvances.toFixed(2)}</span>
+                  <div className="flex justify-between items-center gap-2 text-orange-600">
+                    <span className="truncate">- Advances:</span>
+                    <span className="font-medium whitespace-nowrap">- ₹{breakdown.totalAdvances.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
                   </div>
-                  <div className="flex justify-between pt-2 border-t border-gray-300 font-bold text-lg">
-                    <span>Total Salary:</span>
-                    <span className="text-green-600">INR {breakdown.totalSalary.toFixed(2)}</span>
+                  <div className="flex justify-between items-center gap-2 pt-2 border-t border-gray-300 font-bold text-base sm:text-lg">
+                    <span className="truncate">Total Salary:</span>
+                    <span className="text-green-600 whitespace-nowrap">₹{breakdown.totalSalary.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
                   </div>
                   <div className="flex justify-between text-gray-500 text-xs mt-2 pt-2 border-t border-gray-200">
                     <span>Total Expenses (for analytics only):</span>
