@@ -16,7 +16,8 @@ import {
   Award,
   AlertCircle,
   Calendar,
-  Filter
+  Filter,
+  Settings
 } from 'lucide-react';
 
 interface AnalyticsData {
@@ -46,6 +47,27 @@ interface AnalyticsData {
   serviceTypeBreakdown?: Array<{ serviceType: string; count: number; amount: number }>;
   paymentMethodBreakdown?: Array<{ method: string; count: number; amount: number }>;
   dailyStats?: Array<{ date: string; jobs: number; revenue: number }>;
+  softenerData?: {
+    totalJobs: number;
+    completedJobs: number;
+    deniedJobs: number;
+    pendingJobs: number;
+    assignedJobs: number;
+    inProgressJobs: number;
+    totalBilling: number;
+    averageBill: number;
+    completionRate: number;
+    serviceTypeBreakdown: Array<{ serviceType: string; count: number; amount: number }>;
+    paymentMethodBreakdown: Array<{ method: string; count: number; amount: number }>;
+    technicianStats: Array<{
+      id: string;
+      name: string;
+      totalJobs: number;
+      completedJobs: number;
+      periodEarnings: number;
+    }>;
+    dailyStats: Array<{ date: string; jobs: number; revenue: number }>;
+  };
 }
 
 type PeriodOption = '7d' | '30d' | 'thisWeek' | 'thisMonth' | '3m' | '6m' | '1y' | 'all' | 'custom';
@@ -353,13 +375,13 @@ const Analytics = () => {
         const techId = job.assigned_technician_id || job.assignedTechnicianId;
         if (!techId) return;
         
-        const tech = technicians.find((t: any) => t.id === techId);
+        const tech: any = technicians.find((t: any) => t.id === techId);
         if (!tech) return;
         
         if (!technicianStatsMap[techId]) {
           technicianStatsMap[techId] = {
             id: techId,
-            name: tech.full_name || tech.fullName || 'Unknown',
+            name: (tech as any).full_name || (tech as any).fullName || 'Unknown',
             totalJobs: 0,
             completedJobs: 0,
             periodEarnings: 0
@@ -430,6 +452,155 @@ const Analytics = () => {
         .map(([date, stats]) => ({ date, ...stats }))
         .sort((a, b) => a.date.localeCompare(b.date));
       
+      // ========== SOFTENER-SPECIFIC ANALYTICS ==========
+      // Filter jobs for softener services only
+      const softenerJobs = jobs.filter((j: any) => {
+        if (!j) return false;
+        const serviceType = j.service_type || j.serviceType;
+        const isSoftener = serviceType === 'SOFTENER' || serviceType === 'softener';
+        if (isSoftener) {
+          console.log('🔵 [Analytics] Found softener job:', { 
+            id: j.id, 
+            serviceType, 
+            status: j.status,
+            jobNumber: j.job_number || j.jobNumber 
+          });
+        }
+        return isSoftener;
+      });
+      
+      console.log('🔵 [Analytics] Total softener jobs found:', softenerJobs.length, 'out of', jobs.length, 'total jobs');
+      
+      const softenerCompletedJobs = softenerJobs.filter((j: any) => j && j.status === 'COMPLETED');
+      if (startDate && endDate) {
+        const filteredSoftenerCompleted = softenerCompletedJobs.filter((j: any) => {
+          const completedDate = j.completed_at || j.end_time || j.completedAt;
+          return isDateInRange(completedDate, startDate, endDate);
+        });
+        // Use filtered for billing calculations
+        var softenerCompletedForBilling = filteredSoftenerCompleted;
+      } else {
+        var softenerCompletedForBilling = softenerCompletedJobs;
+      }
+      
+      // Softener Service Type Breakdown
+      const softenerServiceTypeMap: Record<string, { count: number; amount: number }> = {};
+      softenerCompletedForBilling.forEach((job: any) => {
+        if (!job) return;
+        const serviceType = job.service_sub_type || job.serviceSubType || 'Unknown';
+        const amount = Number(job.payment_amount || job.actual_cost || 0);
+        if (!softenerServiceTypeMap[serviceType]) {
+          softenerServiceTypeMap[serviceType] = { count: 0, amount: 0 };
+        }
+        softenerServiceTypeMap[serviceType].count += 1;
+        softenerServiceTypeMap[serviceType].amount += amount;
+      });
+      
+      // Softener Payment Method Breakdown
+      const softenerPaymentMethodMap: Record<string, { count: number; amount: number }> = {};
+      softenerCompletedForBilling.forEach((job: any) => {
+        if (!job) return;
+        const method = job.payment_method || 'Unknown';
+        const amount = Number(job.payment_amount || job.actual_cost || 0);
+        if (!softenerPaymentMethodMap[method]) {
+          softenerPaymentMethodMap[method] = { count: 0, amount: 0 };
+        }
+        softenerPaymentMethodMap[method].count += 1;
+        softenerPaymentMethodMap[method].amount += amount;
+      });
+      
+      // Softener Technician Stats
+      const softenerTechnicianStatsMap: Record<string, {
+        id: string;
+        name: string;
+        totalJobs: number;
+        completedJobs: number;
+        periodEarnings: number;
+      }> = {};
+      
+      softenerJobs.forEach((job: any) => {
+        if (!job) return;
+        const techId = job.assigned_technician_id || job.assignedTechnicianId;
+        if (!techId) return;
+        
+        const tech: any = technicians.find((t: any) => t.id === techId);
+        if (!tech) return;
+        
+        if (!softenerTechnicianStatsMap[techId]) {
+          softenerTechnicianStatsMap[techId] = {
+            id: techId,
+            name: (tech as any).full_name || (tech as any).fullName || 'Unknown',
+            totalJobs: 0,
+            completedJobs: 0,
+            periodEarnings: 0
+          };
+        }
+        
+        softenerTechnicianStatsMap[techId].totalJobs += 1;
+        
+        if (job.status === 'COMPLETED') {
+          softenerTechnicianStatsMap[techId].completedJobs += 1;
+          const jobAmount = Number(job.payment_amount || job.actual_cost || 0);
+          softenerTechnicianStatsMap[techId].periodEarnings += jobAmount;
+        }
+      });
+      
+      // Softener Daily Stats
+      const softenerDailyStatsMap: Record<string, { jobs: number; revenue: number }> = {};
+      softenerCompletedForBilling.forEach((job: any) => {
+        if (!job) return;
+        const completedDate = job.completed_at || job.end_time;
+        if (completedDate) {
+          try {
+            const date = new Date(completedDate).toISOString().split('T')[0];
+            const jobDate = new Date(completedDate);
+            if (!isNaN(jobDate.getTime())) {
+              if (startDate && endDate) {
+                if (jobDate >= startDate && jobDate <= endDate) {
+                  if (!softenerDailyStatsMap[date]) {
+                    softenerDailyStatsMap[date] = { jobs: 0, revenue: 0 };
+                  }
+                  softenerDailyStatsMap[date].jobs += 1;
+                  softenerDailyStatsMap[date].revenue += Number(job.payment_amount || job.actual_cost || 0);
+                }
+              } else {
+                if (!softenerDailyStatsMap[date]) {
+                  softenerDailyStatsMap[date] = { jobs: 0, revenue: 0 };
+                }
+                softenerDailyStatsMap[date].jobs += 1;
+                softenerDailyStatsMap[date].revenue += Number(job.payment_amount || job.actual_cost || 0);
+              }
+            }
+          } catch (e) {
+            // Skip invalid dates
+          }
+        }
+      });
+      
+      const softenerDailyStats = Object.entries(softenerDailyStatsMap)
+        .map(([date, stats]) => ({ date, ...stats }))
+        .sort((a, b) => a.date.localeCompare(b.date));
+      
+      // Softener Total Billing
+      const softenerBilling = softenerCompletedForBilling.reduce((sum: number, job: any) => {
+        if (!job) return sum;
+        const paymentAmount = Number(job.payment_amount || 0);
+        if (paymentAmount > 0) {
+          return sum + paymentAmount;
+        }
+        const actualCost = Number(job.actual_cost || 0);
+        if (actualCost > 0) {
+          return sum + actualCost;
+        }
+        return sum;
+      }, 0);
+      
+      const softenerAverageBill = softenerCompletedForBilling.length > 0
+        ? softenerBilling / softenerCompletedForBilling.length
+        : 0;
+      
+      // ========== END SOFTENER ANALYTICS ==========
+      
       // Calculate total billing for the selected period (from completed jobs with payment)
       // Only count jobs that have payment_amount > 0 (actual payments received)
       // Prefer payment_amount over actual_cost as it represents actual money received
@@ -484,7 +655,27 @@ const Analytics = () => {
         paymentMethodBreakdown: Object.entries(paymentMethodMap)
           .map(([method, stats]) => ({ method, ...stats }))
           .sort((a, b) => b.amount - a.amount),
-        dailyStats
+        dailyStats,
+        softenerData: {
+          totalJobs: softenerJobs.length,
+          completedJobs: softenerCompletedForBilling.length,
+          deniedJobs: softenerJobs.filter((j: any) => j && (j.status === 'DENIED' || j.status === 'CANCELLED')).length,
+          pendingJobs: softenerJobs.filter((j: any) => j && j.status === 'PENDING').length,
+          assignedJobs: softenerJobs.filter((j: any) => j && j.status === 'ASSIGNED').length,
+          inProgressJobs: softenerJobs.filter((j: any) => j && j.status === 'IN_PROGRESS').length,
+          totalBilling: softenerBilling,
+          averageBill: softenerAverageBill,
+          completionRate: softenerJobs.length > 0 ? (softenerCompletedForBilling.length / softenerJobs.length) * 100 : 0,
+          serviceTypeBreakdown: Object.entries(softenerServiceTypeMap)
+            .map(([serviceType, stats]) => ({ serviceType, ...stats }))
+            .sort((a, b) => b.amount - a.amount),
+          paymentMethodBreakdown: Object.entries(softenerPaymentMethodMap)
+            .map(([method, stats]) => ({ method, ...stats }))
+            .sort((a, b) => b.amount - a.amount),
+          technicianStats: Object.values(softenerTechnicianStatsMap)
+            .sort((a, b) => b.completedJobs - a.completedJobs),
+          dailyStats: softenerDailyStats
+        }
       });
     } catch (error: any) {
       console.error('Error loading analytics:', error);
@@ -647,7 +838,6 @@ const Analytics = () => {
         </Card>
       </div>
 
-
       {/* Technician Performance */}
       <Card>
         <CardHeader>
@@ -753,12 +943,6 @@ const Analytics = () => {
               </div>
             </div>
             
-            <div className="pt-4 border-t border-gray-200">
-              <div className="flex items-center justify-between mb-2">
-                <span className="text-gray-600">Average Bill Amount</span>
-                <span className="font-bold text-lg">INR {analytics.averageBill.toFixed(2)}</span>
-              </div>
-            </div>
           </CardContent>
         </Card>
 
@@ -822,7 +1006,6 @@ const Analytics = () => {
                               <TableHead>Service Type</TableHead>
                               <TableHead className="text-right">Jobs</TableHead>
                               <TableHead className="text-right">Amount</TableHead>
-                              <TableHead className="text-right">Average</TableHead>
                             </TableRow>
                           </TableHeader>
                           <TableBody>
@@ -832,9 +1015,6 @@ const Analytics = () => {
                                 <TableCell className="text-right">{serviceType.count}</TableCell>
                                 <TableCell className="text-right font-semibold text-green-600">
                                   INR {serviceType.amount.toFixed(2)}
-                                </TableCell>
-                                <TableCell className="text-right text-gray-600">
-                                  INR {serviceType.count > 0 ? (serviceType.amount / serviceType.count).toFixed(2) : '0.00'}
                                 </TableCell>
                               </TableRow>
                             ))}
@@ -867,7 +1047,6 @@ const Analytics = () => {
                     <TableHead>Service Type</TableHead>
                     <TableHead className="text-right">Number of Calls</TableHead>
                     <TableHead className="text-right">Total Revenue</TableHead>
-                    <TableHead className="text-right">Average Revenue</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -877,9 +1056,6 @@ const Analytics = () => {
                       <TableCell className="text-right">{item.count}</TableCell>
                       <TableCell className="text-right font-semibold text-green-600">
                         INR {item.amount.toFixed(2)}
-                      </TableCell>
-                      <TableCell className="text-right text-gray-600">
-                        INR {item.count > 0 ? (item.amount / item.count).toFixed(2) : '0.00'}
                       </TableCell>
                     </TableRow>
                   ))}
@@ -907,7 +1083,6 @@ const Analytics = () => {
                     <TableHead>Payment Method</TableHead>
                     <TableHead className="text-right">Transactions</TableHead>
                     <TableHead className="text-right">Total Amount</TableHead>
-                    <TableHead className="text-right">Average Amount</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -917,9 +1092,6 @@ const Analytics = () => {
                       <TableCell className="text-right">{item.count}</TableCell>
                       <TableCell className="text-right font-semibold text-green-600">
                         INR {item.amount.toFixed(2)}
-                      </TableCell>
-                      <TableCell className="text-right text-gray-600">
-                        INR {item.count > 0 ? (item.amount / item.count).toFixed(2) : '0.00'}
                       </TableCell>
                     </TableRow>
                   ))}
@@ -960,6 +1132,236 @@ const Analytics = () => {
             </div>
           </CardContent>
         </Card>
+      )}
+
+      {/* Softener Section */}
+      {analytics.softenerData && (
+        <div className="space-y-6">
+          <div className="border-t-4 border-black pt-6">
+            <h2 className="text-2xl font-bold text-black mb-4 flex items-center gap-2">
+              <Settings className="w-6 h-6" />
+              Water Softener Analytics
+            </h2>
+            
+            {/* Softener Key Metrics */}
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+              <Card className="border-gray-300 bg-gray-50">
+                <CardHeader className="pb-3">
+                  <CardTitle className="text-sm font-medium text-gray-600 flex items-center gap-2">
+                    <BarChart3 className="w-4 h-4" />
+                    Total Softener Jobs
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <div className="text-2xl font-bold text-black">{analytics.softenerData.totalJobs}</div>
+                </CardContent>
+              </Card>
+              
+              <Card className="border-gray-300 bg-gray-50">
+                <CardHeader className="pb-3">
+                  <CardTitle className="text-sm font-medium text-gray-600 flex items-center gap-2">
+                    <CheckCircle className="w-4 h-4 text-gray-700" />
+                    Completed
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <div className="text-2xl font-bold text-black">{analytics.softenerData.completedJobs}</div>
+                  <div className="text-xs text-gray-500 mt-1">
+                    {analytics.softenerData.completionRate.toFixed(1)}% completion rate
+                  </div>
+                </CardContent>
+              </Card>
+              
+              <Card className="border-gray-300 bg-gray-50">
+                <CardHeader className="pb-3">
+                  <CardTitle className="text-sm font-medium text-gray-600 flex items-center gap-2">
+                    <DollarSign className="w-4 h-4 text-gray-700" />
+                    Total Billing
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <div className="text-2xl font-bold text-black">₹{analytics.softenerData.totalBilling.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
+                </CardContent>
+              </Card>
+              
+              <Card className="border-gray-300 bg-gray-50">
+                <CardHeader className="pb-3">
+                  <CardTitle className="text-sm font-medium text-gray-600 flex items-center gap-2">
+                    <XCircle className="w-4 h-4 text-gray-700" />
+                    Denied/Cancelled
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <div className="text-2xl font-bold text-black">{analytics.softenerData.deniedJobs}</div>
+                </CardContent>
+              </Card>
+            </div>
+
+            {/* Softener Service Type Breakdown */}
+            {analytics.softenerData.serviceTypeBreakdown && analytics.softenerData.serviceTypeBreakdown.length > 0 && (
+              <Card className="border-gray-300 mb-6">
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2 text-black">
+                    <BarChart3 className="w-5 h-5" />
+                    Softener Service Type Breakdown
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <div className="overflow-x-auto">
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead>Service Type</TableHead>
+                          <TableHead className="text-right">Number of Jobs</TableHead>
+                          <TableHead className="text-right">Total Revenue</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {analytics.softenerData.serviceTypeBreakdown.map((item, index) => (
+                          <TableRow key={index}>
+                            <TableCell className="font-medium">{item.serviceType}</TableCell>
+                            <TableCell className="text-right">{item.count}</TableCell>
+                            <TableCell className="text-right font-semibold text-green-600">
+                              ₹{item.amount.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                            </TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </div>
+                </CardContent>
+              </Card>
+            )}
+
+            {/* Softener Payment Method Breakdown */}
+            {analytics.softenerData.paymentMethodBreakdown && analytics.softenerData.paymentMethodBreakdown.length > 0 && (
+              <Card className="border-gray-300 mb-6">
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2 text-black">
+                    <DollarSign className="w-5 h-5" />
+                    Softener Payment Method Breakdown
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <div className="overflow-x-auto">
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead>Payment Method</TableHead>
+                          <TableHead className="text-right">Transactions</TableHead>
+                          <TableHead className="text-right">Total Amount</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {analytics.softenerData.paymentMethodBreakdown.map((item, index) => (
+                          <TableRow key={index}>
+                            <TableCell className="font-medium">{item.method}</TableCell>
+                            <TableCell className="text-right">{item.count}</TableCell>
+                            <TableCell className="text-right font-semibold text-green-600">
+                              ₹{item.amount.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                            </TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </div>
+                </CardContent>
+              </Card>
+            )}
+
+            {/* Softener Technician Performance */}
+            {analytics.softenerData.technicianStats && analytics.softenerData.technicianStats.length > 0 && (
+              <Card className="border-gray-300 mb-6">
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2 text-black">
+                    <Award className="w-5 h-5" />
+                    Softener Technician Performance
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <div className="overflow-x-auto">
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead>Technician</TableHead>
+                          <TableHead>Total Jobs</TableHead>
+                          <TableHead>Completed</TableHead>
+                          <TableHead>Completion Rate</TableHead>
+                          <TableHead className="text-right">Total Earnings ({getPeriodLabel()})</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {analytics.softenerData.technicianStats.map((tech) => {
+                          const completionRate = tech.totalJobs > 0
+                            ? (tech.completedJobs / tech.totalJobs) * 100
+                            : 0;
+                          
+                          return (
+                            <TableRow key={tech.id}>
+                              <TableCell className="font-medium">{tech.name}</TableCell>
+                              <TableCell>{tech.totalJobs}</TableCell>
+                              <TableCell className="text-green-600 font-semibold">
+                                {tech.completedJobs}
+                              </TableCell>
+                              <TableCell>
+                                <div className="flex items-center gap-2">
+                                  <div className="flex-1 bg-gray-200 rounded-full h-2">
+                                    <div
+                                      className="bg-green-600 h-2 rounded-full"
+                                      style={{ width: `${completionRate}%` }}
+                                    />
+                                  </div>
+                                  <span className="text-sm text-gray-600 w-12">
+                                    {completionRate.toFixed(0)}%
+                                  </span>
+                                </div>
+                              </TableCell>
+                              <TableCell className="text-right font-semibold text-green-600">
+                                ₹{tech.periodEarnings.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                              </TableCell>
+                            </TableRow>
+                          );
+                        })}
+                      </TableBody>
+                    </Table>
+                  </div>
+                </CardContent>
+              </Card>
+            )}
+
+            {/* Softener Daily Stats */}
+            {analytics.softenerData.dailyStats && analytics.softenerData.dailyStats.length > 0 && (
+              <Card className="border-gray-300">
+                <CardHeader>
+                  <CardTitle className="text-sm font-medium text-gray-600 flex items-center gap-2">
+                    <Calendar className="w-4 h-4" />
+                    Softener Daily Summary ({getPeriodLabel()})
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <div className="space-y-2 max-h-[400px] overflow-y-auto">
+                    {analytics.softenerData.dailyStats.map((day, index) => (
+                      <div key={index} className="flex items-center justify-between text-sm">
+                        <span className="text-gray-600">
+                          {new Date(day.date).toLocaleDateString('en-IN', { 
+                            month: 'short', 
+                            day: 'numeric' 
+                          })}
+                        </span>
+                        <div className="flex items-center gap-4">
+                          <span className="text-gray-500">{day.jobs} jobs</span>
+                          <span className="font-medium text-green-600">
+                            ₹{day.revenue.toLocaleString('en-IN', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
+                          </span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </CardContent>
+              </Card>
+            )}
+          </div>
+        </div>
       )}
     </div>
   );
