@@ -4558,9 +4558,27 @@ const AdminDashboard = () => {
     }
   };
 
+  // Helper function to normalize phone numbers for search (remove spaces, handle +91 prefix)
+  const normalizePhoneNumber = (phone: string | undefined | null): string => {
+    if (!phone) return '';
+    // Remove all spaces and special characters except + and digits
+    let normalized = phone.replace(/\s+/g, '').trim();
+    // Handle +91 prefix - remove it for comparison
+    if (normalized.startsWith('+91')) {
+      normalized = normalized.substring(3);
+    } else if (normalized.startsWith('91') && normalized.length > 10) {
+      normalized = normalized.substring(2);
+    }
+    return normalized;
+  };
+
   const handleSearch = () => {
+    // Trim the search query
+    const trimmedQuery = searchQuery.trim();
     setIsSearching(true);
-    setSearchTerm(searchQuery);
+    setSearchTerm(trimmedQuery);
+    // Update searchQuery to trimmed version
+    setSearchQuery(trimmedQuery);
     // Small delay to show loading state
     setTimeout(() => {
       setIsSearching(false);
@@ -6496,15 +6514,25 @@ const AdminDashboard = () => {
   const filteredCustomers = customers.filter(customer => {
     if (!searchTerm.trim()) return true; // Show all customers if search is empty
     
-    const searchLower = searchTerm.toLowerCase();
+    const searchLower = searchTerm.toLowerCase().trim();
     const searchTermClean = searchTerm.trim();
+    
+    // Normalize search term for phone number comparison
+    const normalizedSearchPhone = normalizePhoneNumber(searchTermClean);
+    
+    // Normalize customer phone numbers
+    const normalizedCustomerPhone = normalizePhoneNumber(customer.phone);
+    const normalizedAlternatePhone = normalizePhoneNumber(customer.alternatePhone || customer.alternate_phone);
     
     return (
       // Customer ID search
       (customer.customerId || customer.customer_id)?.toLowerCase().includes(searchLower) ||
       // Name search
       (customer.fullName || customer.full_name)?.toLowerCase().includes(searchLower) ||
-      // Phone search (exact match or partial)
+      // Phone search - compare normalized versions (handles spaces and +91 prefix)
+      (normalizedSearchPhone && normalizedCustomerPhone && normalizedCustomerPhone.includes(normalizedSearchPhone)) ||
+      (normalizedSearchPhone && normalizedAlternatePhone && normalizedAlternatePhone.includes(normalizedSearchPhone)) ||
+      // Also check original phone with spaces (for partial matches)
       customer.phone?.includes(searchTermClean) ||
       (customer.alternatePhone || customer.alternate_phone)?.includes(searchTermClean) ||
       // Email search
@@ -7097,7 +7125,18 @@ const AdminDashboard = () => {
                 <Input
                   placeholder="Search by customer ID, name, phone, or email..."
                   value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
+                  onChange={(e) => {
+                    // Auto-trim leading/trailing spaces as user types
+                    const value = e.target.value;
+                    setSearchQuery(value);
+                  }}
+                  onBlur={(e) => {
+                    // Trim on blur to clean up any trailing spaces
+                    const trimmed = e.target.value.trim();
+                    if (trimmed !== e.target.value) {
+                      setSearchQuery(trimmed);
+                    }
+                  }}
                   onKeyPress={handleSearchKeyPress}
                   className="pl-10 bg-white border-gray-400 focus:border-blue-500 focus:ring-blue-500"
                 />
@@ -7217,7 +7256,18 @@ const AdminDashboard = () => {
               <Input
                 placeholder="Search by customer ID, name, phone, or email..."
                 value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
+                onChange={(e) => {
+                  // Auto-trim leading/trailing spaces as user types
+                  const value = e.target.value;
+                  setSearchQuery(value);
+                }}
+                onBlur={(e) => {
+                  // Trim on blur to clean up any trailing spaces
+                  const trimmed = e.target.value.trim();
+                  if (trimmed !== e.target.value) {
+                    setSearchQuery(trimmed);
+                  }
+                }}
                 onKeyPress={handleSearchKeyPress}
               className="pl-10 bg-white border-gray-300 focus:border-blue-500 focus:ring-blue-500 text-sm"
             />
