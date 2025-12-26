@@ -161,9 +161,9 @@ export const bangaloreAreas = [
   // Layouts and Extensions
   'HBR Layout', 'HRBR Layout', 'KHB Layout', 'ARE Layout', 'BEML Layout', 'BEL Layout', 'ISRO Layout',
   'BDA Layout', 'BDA Complex', 'NRI Layout', 'Prestige Layout', 'Prestige Shantiniketan',
-  // Generic Types
-  'Home', 'Office', 'Shop', 'Factory', 'Warehouse', 'Residence', 'Apartment', 'Villa', 'House',
-  'Showroom', 'Workshop', 'Store', 'Building', 'Complex', 'Tower', 'Plaza', 'Mall',
+  // Generic Types (removed - these are not location names)
+  // 'Home', 'Office', 'Shop', 'Factory', 'Warehouse', 'Residence', 'Apartment', 'Villa', 'House',
+  // 'Showroom', 'Workshop', 'Store', 'Building', 'Complex', 'Tower', 'Plaza', 'Mall',
   // More Areas - Extended Coverage
   'Agara', 'Akshayanagar', 'Amruthahalli', 'Anandnagar', 'Ananthapura', 'Anjanapura', 'Arakere',
   'Arekere', 'Avalahalli', 'Bagalur', 'Baiyappanahalli', 'Banaswadi', 'Bannerghatta', 'Basapura',
