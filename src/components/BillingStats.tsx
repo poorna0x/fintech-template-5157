@@ -39,7 +39,7 @@ interface LeadTypeBilling {
   jobCount: number;
 }
 
-type DateFilter = 'today' | 'last30days' | 'year' | 'all' | 'range';
+type DateFilter = 'today' | 'thismonth' | 'last30days' | 'year' | 'all' | 'range';
 
 // Helper function to get today's date in local timezone (YYYY-MM-DD format)
 const getTodayLocalDate = () => {
@@ -48,6 +48,15 @@ const getTodayLocalDate = () => {
   const month = String(today.getMonth() + 1).padStart(2, '0');
   const day = String(today.getDate()).padStart(2, '0');
   return `${year}-${month}-${day}`;
+};
+
+// Helper function to format currency with commas and without .00 when it's zero
+const formatCurrency = (amount: number): string => {
+  const formatted = amount.toLocaleString('en-IN', {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2
+  });
+  return formatted.endsWith('.00') ? formatted.slice(0, -3) : formatted;
 };
 
 const BillingStats = () => {
@@ -76,6 +85,10 @@ const BillingStats = () => {
         start.setHours(0, 0, 0, 0);
         end.setTime(start.getTime());
         end.setHours(23, 59, 59, 999);
+        break;
+      case 'thismonth':
+        start = new Date(end.getFullYear(), end.getMonth(), 1);
+        start.setHours(0, 0, 0, 0);
         break;
       case 'last30days':
         start.setDate(start.getDate() - 30);
@@ -283,6 +296,7 @@ const BillingStats = () => {
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="today">Today</SelectItem>
+                <SelectItem value="thismonth">This Month</SelectItem>
                 <SelectItem value="last30days">Last 30 Days</SelectItem>
                 <SelectItem value="year">This Year</SelectItem>
                 <SelectItem value="range">Date Range</SelectItem>
@@ -337,7 +351,7 @@ const BillingStats = () => {
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold text-gray-900">INR {totalBilling.toFixed(2)}</div>
+            <div className="text-2xl font-bold text-purple-600">₹ {formatCurrency(totalBilling)}</div>
           </CardContent>
         </Card>
         <Card>
@@ -348,7 +362,7 @@ const BillingStats = () => {
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold text-green-600">INR {totalCash.toFixed(2)}</div>
+            <div className="text-2xl font-bold text-green-600">₹ {formatCurrency(totalCash)}</div>
           </CardContent>
         </Card>
         <Card>
@@ -359,7 +373,7 @@ const BillingStats = () => {
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold text-blue-600">INR {totalQR.toFixed(2)}</div>
+            <div className="text-2xl font-bold text-blue-600">₹ {formatCurrency(totalQR)}</div>
           </CardContent>
         </Card>
         <Card>
@@ -390,21 +404,21 @@ const BillingStats = () => {
               <TableHeader>
                 <TableRow>
                   <TableHead>Technician</TableHead>
-                  <TableHead>Employee ID</TableHead>
                   <TableHead className="text-right">Total Billing</TableHead>
                   <TableHead className="text-right">Cash</TableHead>
                   <TableHead className="text-right">QR/UPI/Card</TableHead>
-                  <TableHead className="text-right">Other</TableHead>
                   <TableHead className="text-right">Jobs</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {technicianBilling.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={7} className="text-center text-gray-500 py-8">
+                    <TableCell colSpan={5} className="text-center text-gray-500 py-8">
                       No billing data found for {
                         dateFilter === 'today' 
                           ? new Date(selectedDate).toLocaleDateString()
+                          : dateFilter === 'thismonth'
+                          ? 'this month'
                           : dateFilter === 'last30days'
                           ? 'the last 30 days'
                           : dateFilter === 'year'
@@ -421,18 +435,14 @@ const BillingStats = () => {
                     .map((item) => (
                       <TableRow key={item.technicianId}>
                         <TableCell className="font-medium">{item.technicianName}</TableCell>
-                        <TableCell>{item.employeeId}</TableCell>
                         <TableCell className="text-right font-semibold">
-                          INR {item.totalBilling.toFixed(2)}
+                          ₹ {formatCurrency(item.totalBilling)}
                         </TableCell>
                         <TableCell className="text-right text-green-600">
-                          INR {item.cashAmount.toFixed(2)}
+                          ₹ {formatCurrency(item.cashAmount)}
                         </TableCell>
                         <TableCell className="text-right text-blue-600">
-                          INR {item.qrAmount.toFixed(2)}
-                        </TableCell>
-                        <TableCell className="text-right text-gray-600">
-                          INR {item.otherAmount.toFixed(2)}
+                          ₹ {formatCurrency(item.qrAmount)}
                         </TableCell>
                         <TableCell className="text-right">{item.jobCount}</TableCell>
                       </TableRow>
@@ -468,6 +478,8 @@ const BillingStats = () => {
                       No QR code billing data found for {
                         dateFilter === 'today' 
                           ? new Date(selectedDate).toLocaleDateString()
+                          : dateFilter === 'thismonth'
+                          ? 'this month'
                           : dateFilter === 'last30days'
                           ? 'the last 30 days'
                           : dateFilter === 'year'
@@ -487,7 +499,7 @@ const BillingStats = () => {
                           {item.qrCodeName}
                         </TableCell>
                         <TableCell className="text-right font-semibold">
-                          INR {item.totalAmount.toFixed(2)}
+                          ₹ {formatCurrency(item.totalAmount)}
                         </TableCell>
                       </TableRow>
                     ))
@@ -523,6 +535,8 @@ const BillingStats = () => {
                       No lead type billing data found for {
                         dateFilter === 'today' 
                           ? new Date(selectedDate).toLocaleDateString()
+                          : dateFilter === 'thismonth'
+                          ? 'this month'
                           : dateFilter === 'last30days'
                           ? 'the last 30 days'
                           : dateFilter === 'year'
@@ -542,7 +556,7 @@ const BillingStats = () => {
                           {item.leadType}
                         </TableCell>
                         <TableCell className="text-right font-semibold">
-                          INR {item.totalAmount.toFixed(2)}
+                          ₹ {formatCurrency(item.totalAmount)}
                         </TableCell>
                         <TableCell className="text-right">{item.jobCount}</TableCell>
                       </TableRow>
