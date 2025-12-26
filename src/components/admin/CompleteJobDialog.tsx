@@ -228,7 +228,7 @@ export const CompleteJobDialog: React.FC<CompleteJobDialogProps> = ({
         // Continue to submit logic - don't return here
       } else {
         setCompleteJobStep(nextStep);
-        return;
+      return;
       }
     }
 
@@ -247,15 +247,15 @@ export const CompleteJobDialog: React.FC<CompleteJobDialogProps> = ({
           // Continue to submit logic
         } else {
           setCompleteJobStep(nextStep);
-          return;
-        }
+        return;
+      }
       }
       
       // Only allow proceeding if hasAMC is not null (question has been answered)
       if (hasAMC === null) {
         toast.error('Please answer whether the customer needs AMC or not');
-        return;
-      }
+          return;
+        }
       
       // If years is 0, treat it as no AMC
       const effectiveHasAMC = hasAMC === true && amcYears > 0;
@@ -329,9 +329,9 @@ export const CompleteJobDialog: React.FC<CompleteJobDialogProps> = ({
         setCompleteJobStep(6);
         // Continue to submit logic - don't return here
       } else {
-        setCompleteJobStep(6);
-        return;
-      }
+      setCompleteJobStep(6);
+      return;
+    }
     }
 
     // Step 6: Prefilter - submit the form (or submit directly if softener service skipped this step)
@@ -349,14 +349,14 @@ export const CompleteJobDialog: React.FC<CompleteJobDialogProps> = ({
       
       setIsSubmittingJobCompletion(true);
       
-      try {
-        let dbPaymentMethod: 'CASH' | 'CARD' | 'UPI' | 'BANK_TRANSFER' | null = null;
+    try {
+      let dbPaymentMethod: 'CASH' | 'CARD' | 'UPI' | 'BANK_TRANSFER' | null = null;
         if (!isBillAmountZero()) {
           if (finalPaymentMode === 'CASH') {
-            dbPaymentMethod = 'CASH';
+        dbPaymentMethod = 'CASH';
           } else if (finalPaymentMode === 'ONLINE') {
-            dbPaymentMethod = 'UPI';
-          }
+        dbPaymentMethod = 'UPI';
+      }
         }
         
         // Determine who completed the job
@@ -373,15 +373,15 @@ export const CompleteJobDialog: React.FC<CompleteJobDialogProps> = ({
           paymentMode: finalPaymentMode,
           isBillAmountZero: isBillAmountZero()
         });
-        
-        const updateData: any = {
-          status: 'COMPLETED',
-          end_time: new Date().toISOString(),
-          completion_notes: completionNotes.trim(),
+      
+      const updateData: any = {
+        status: 'COMPLETED',
+        end_time: new Date().toISOString(),
+        completion_notes: completionNotes.trim(),
           completed_by: completedByTechnicianId,
-          completed_at: new Date().toISOString(),
-          actual_cost: parseFloat(billAmount) || 0,
-          payment_amount: parseFloat(billAmount) || 0,
+        completed_at: new Date().toISOString(),
+        actual_cost: parseFloat(billAmount) || 0,
+        payment_amount: parseFloat(billAmount) || 0,
           payment_method: dbPaymentMethod || (isBillAmountZero() ? null : 'CASH'),
           // Note: customer_has_prefilter is NOT stored in jobs table - it's stored in customers table
           // We'll update the customer separately below
@@ -404,72 +404,72 @@ export const CompleteJobDialog: React.FC<CompleteJobDialogProps> = ({
         
         console.log('📤 [CompleteJobDialog] Update payload:', updateData);
 
-        // Handle requirements
-        const currentRequirements = job.requirements || [];
-        let requirements: any[] = [];
-        
-        if (Array.isArray(currentRequirements)) {
-          requirements = [...currentRequirements];
-        } else if (typeof currentRequirements === 'string') {
-          try {
-            requirements = JSON.parse(currentRequirements);
-            if (!Array.isArray(requirements)) {
-              requirements = [];
-            }
-          } catch {
+      // Handle requirements
+      const currentRequirements = job.requirements || [];
+      let requirements: any[] = [];
+      
+      if (Array.isArray(currentRequirements)) {
+        requirements = [...currentRequirements];
+      } else if (typeof currentRequirements === 'string') {
+        try {
+          requirements = JSON.parse(currentRequirements);
+          if (!Array.isArray(requirements)) {
             requirements = [];
           }
+        } catch {
+          requirements = [];
         }
+      }
 
-        requirements = requirements.filter((req: any) => !req.bill_photos && !req.payment_photos && !req.qr_photos && !req.amc_info);
+      requirements = requirements.filter((req: any) => !req.bill_photos && !req.payment_photos && !req.qr_photos && !req.amc_info);
 
-        if (billPhotos.length > 0) {
-          requirements.push({ bill_photos: billPhotos });
-        }
+      if (billPhotos.length > 0) {
+        requirements.push({ bill_photos: billPhotos });
+      }
 
         if (!isBillAmountZero() && finalPaymentMode === 'ONLINE' && finalSelectedQrCodeId) {
-          const qrPhotos: any = {
+        const qrPhotos: any = {
             qr_code_type: finalQrCodeType,
             selected_qr_code_id: finalSelectedQrCodeId,
             payment_screenshot: finalPaymentScreenshot || null
-          };
-          
+        };
+        
           if (finalSelectedQrCodeId.startsWith('common_')) {
             const qrId = finalSelectedQrCodeId.replace('common_', '');
-            const selectedQr = localCommonQrCodes.find(qr => qr.id === qrId);
-            if (selectedQr) {
-              qrPhotos.selected_qr_code_url = selectedQr.qrCodeUrl;
-              qrPhotos.selected_qr_code_name = selectedQr.name;
-            }
+          const selectedQr = localCommonQrCodes.find(qr => qr.id === qrId);
+          if (selectedQr) {
+            qrPhotos.selected_qr_code_url = selectedQr.qrCodeUrl;
+            qrPhotos.selected_qr_code_name = selectedQr.name;
+          }
           } else if (finalSelectedQrCodeId.startsWith('technician_')) {
             const techId = finalSelectedQrCodeId.replace('technician_', '');
-            const selectedTech = technicians.find(t => t.id === techId);
-            if (selectedTech && (selectedTech as any).qrCode) {
-              qrPhotos.selected_qr_code_url = (selectedTech as any).qrCode;
-              qrPhotos.selected_qr_code_name = selectedTech.fullName || 'Technician';
-            }
+          const selectedTech = technicians.find(t => t.id === techId);
+          if (selectedTech && (selectedTech as any).qrCode) {
+            qrPhotos.selected_qr_code_url = (selectedTech as any).qrCode;
+            qrPhotos.selected_qr_code_name = selectedTech.fullName || 'Technician';
           }
-          
-          requirements.push({ qr_photos: qrPhotos });
         }
+        
+        requirements.push({ qr_photos: qrPhotos });
+      }
 
         // Only add AMC if it was actually set (hasAMC === true and years > 0)
         const effectiveHasAMC = hasAMC === true && amcYears > 0;
         if (effectiveHasAMC && amcDateGiven && amcEndDate) {
-          requirements.push({ 
-            amc_info: {
-              date_given: amcDateGiven,
-              end_date: amcEndDate,
-              years: amcYears,
+        requirements.push({ 
+          amc_info: {
+            date_given: amcDateGiven,
+            end_date: amcEndDate,
+            years: amcYears,
               includes_prefilter: amcIncludesPrefilter,
               additional_info: amcAdditionalInfo || null
-            }
-          });
-        }
+          }
+        });
+      }
 
         if (billPhotos.length > 0 || (!isBillAmountZero() && finalPaymentMode === 'ONLINE' && finalSelectedQrCodeId) || (effectiveHasAMC && amcDateGiven && amcEndDate)) {
-          updateData.requirements = JSON.stringify(requirements);
-        }
+        updateData.requirements = JSON.stringify(requirements);
+      }
 
         console.log('🚀 [CompleteJobDialog] Calling db.jobs.update with:', {
           jobId: job.id,
@@ -479,7 +479,7 @@ export const CompleteJobDialog: React.FC<CompleteJobDialogProps> = ({
         
         const { data: updatedJob, error } = await db.jobs.update(job.id, updateData);
 
-        if (error) {
+      if (error) {
           console.error('❌ [CompleteJobDialog] Update error:', {
             error,
             errorMessage: error.message,
@@ -539,11 +539,11 @@ export const CompleteJobDialog: React.FC<CompleteJobDialogProps> = ({
             });
             // Don't fail the job completion if customer update fails - just log it
           }
-        }
-        
-        toast.success('Job completed successfully');
-        handleClose();
-        onJobCompleted();
+      }
+
+      toast.success('Job completed successfully');
+      handleClose();
+      onJobCompleted();
       } catch (error: any) {
         console.error('❌ [CompleteJobDialog] Exception during job completion:', {
           error,
@@ -601,24 +601,24 @@ export const CompleteJobDialog: React.FC<CompleteJobDialogProps> = ({
             }}
           >
             {job && (
-              <div className="p-3 bg-gray-50 rounded-lg mb-4">
-                <div className="text-sm font-medium text-gray-900">
-                  Job: {(job as any).job_number || job.jobNumber}
-                </div>
-                <div className="text-sm text-gray-600">
-                  {(job.serviceType || (job as any).service_type || 'N/A')} - {(job.serviceSubType || (job as any).service_sub_type || 'N/A')}
-                </div>
-                <div className="text-sm text-gray-600">
-                  Customer: {
-                    job.customer?.fullName || 
-                    (job.customer as any)?.full_name ||
-                    (job.customer as any)?.name ||
-                    'Unknown'
-                  }
-                </div>
+            <div className="p-3 bg-gray-50 rounded-lg mb-4">
+              <div className="text-sm font-medium text-gray-900">
+                Job: {(job as any).job_number || job.jobNumber}
               </div>
+              <div className="text-sm text-gray-600">
+                {(job.serviceType || (job as any).service_type || 'N/A')} - {(job.serviceSubType || (job as any).service_sub_type || 'N/A')}
+              </div>
+              <div className="text-sm text-gray-600">
+                Customer: {
+                  job.customer?.fullName || 
+                  (job.customer as any)?.full_name ||
+                  (job.customer as any)?.name ||
+                  'Unknown'
+                }
+              </div>
+            </div>
             )}
-            
+
             {/* Step Indicator - Fixed horizontal scroll and border clipping */}
             <div className="flex items-center justify-center mb-6 overflow-x-auto pb-2 -mx-2 px-2">
               <div className="flex items-center space-x-0.5 sm:space-x-1 min-w-0 flex-shrink-0 py-1">

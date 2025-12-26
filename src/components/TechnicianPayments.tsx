@@ -105,6 +105,15 @@ interface TechnicianSalaryBreakdown {
   dailyBreakdown: DailyBreakdown[]; // Daily billing breakdown
 }
 
+// Helper function to format currency with commas and without .00 when it's zero
+const formatCurrency = (amount: number): string => {
+  const formatted = amount.toLocaleString('en-IN', {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2
+  });
+  return formatted.endsWith('.00') ? formatted.slice(0, -3) : formatted;
+};
+
 const TechnicianPayments = () => {
   const [technicians, setTechnicians] = useState<any[]>([]);
   const [salaryBreakdowns, setSalaryBreakdowns] = useState<TechnicianSalaryBreakdown[]>([]);
@@ -1183,7 +1192,7 @@ const TechnicianPayments = () => {
         }
       }
 
-      toast.success(`Job amount updated to ₹${roundedAmount.toFixed(2)}`);
+      toast.success(`Job amount updated to ₹ ${formatCurrency(roundedAmount)}`);
       
       // Reload jobs to reflect changes
       if (selectedDateForJobs) {
@@ -1464,15 +1473,15 @@ const TechnicianPayments = () => {
                 <div className="flex flex-col sm:flex-row items-start sm:items-center gap-4 sm:gap-6">
                   <div className="flex-1 sm:flex-initial sm:text-right">
                     <div className="text-2xl font-bold text-blue-600">
-                      ₹{breakdown.totalBillAmount.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                      ₹ {formatCurrency(breakdown.totalBillAmount)}
                     </div>
                     <p className="text-xs text-gray-500">Total Billing</p>
                   </div>
                   <div className="flex-1 sm:flex-initial sm:text-right">
-                    <div className="text-2xl font-bold text-green-600">
-                      ₹{breakdown.totalSalary.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                    </div>
-                    <p className="text-xs text-gray-500">Total Salary</p>
+                  <div className="text-2xl font-bold text-green-600">
+                      ₹ {formatCurrency(breakdown.totalSalary)}
+                  </div>
+                  <p className="text-xs text-gray-500">Total Salary</p>
                   </div>
                 </div>
               </div>
@@ -1482,32 +1491,32 @@ const TechnicianPayments = () => {
               <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3 sm:gap-4 mb-6">
                 <div className="bg-blue-50 p-3 sm:p-4 rounded-lg">
                   <p className="text-xs sm:text-sm text-gray-600 mb-1">Base Salary (Monthly)</p>
-                  <p className="text-lg sm:text-xl font-semibold text-blue-600">₹{breakdown.baseSalary.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
+                  <p className="text-lg sm:text-xl font-semibold text-blue-600">₹ {formatCurrency(breakdown.baseSalary)}</p>
                   <p className="text-xs text-gray-500 mt-1">
-                    Period: ₹{breakdown.periodBaseSalary.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                    Period: ₹ {formatCurrency(breakdown.periodBaseSalary)}
                   </p>
                   {breakdown.holidayDeduction > 0 && (
                     <p className="text-xs text-red-600 mt-1">
-                      Adjusted: ₹{breakdown.adjustedBaseSalary.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                      Adjusted: ₹ {formatCurrency(breakdown.adjustedBaseSalary)}
                     </p>
                   )}
                 </div>
                 <div className="bg-green-50 p-3 sm:p-4 rounded-lg">
                   <p className="text-xs sm:text-sm text-gray-600 mb-1">Commission</p>
-                  <p className="text-lg sm:text-xl font-semibold text-green-600">₹{breakdown.totalCommission.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
+                  <p className="text-lg sm:text-xl font-semibold text-green-600">₹ {formatCurrency(breakdown.totalCommission)}</p>
                   <p className="text-xs text-gray-500 mt-1">(Variable % per job)</p>
                 </div>
                 <div className="bg-purple-50 p-3 sm:p-4 rounded-lg">
                   <p className="text-xs sm:text-sm text-gray-600 mb-1">Extra Commission</p>
-                  <p className="text-lg sm:text-xl font-semibold text-purple-600">₹{breakdown.totalExtraCommission.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
+                  <p className="text-lg sm:text-xl font-semibold text-purple-600">₹ {formatCurrency(breakdown.totalExtraCommission)}</p>
                 </div>
                 <div className="bg-red-50 p-3 sm:p-4 rounded-lg">
                   <p className="text-xs sm:text-sm text-gray-600 mb-1">Expenses</p>
-                  <p className="text-lg sm:text-xl font-semibold text-red-600">₹{breakdown.totalExpenses.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
+                  <p className="text-lg sm:text-xl font-semibold text-red-600">₹ {formatCurrency(breakdown.totalExpenses)}</p>
                 </div>
                 <div className="bg-orange-50 p-3 sm:p-4 rounded-lg">
                   <p className="text-xs sm:text-sm text-gray-600 mb-1">Advances</p>
-                  <p className="text-lg sm:text-xl font-semibold text-orange-600">₹{breakdown.totalAdvances.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
+                  <p className="text-lg sm:text-xl font-semibold text-orange-600">₹ {formatCurrency(breakdown.totalAdvances)}</p>
                 </div>
               </div>
 
@@ -1517,43 +1526,43 @@ const TechnicianPayments = () => {
                 <div className="space-y-1 text-xs sm:text-sm">
                   <div className="flex justify-between items-center gap-2">
                     <span className="truncate">Base Salary (Monthly):</span>
-                    <span className="font-medium whitespace-nowrap">₹{breakdown.baseSalary.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                    <span className="font-medium whitespace-nowrap">₹ {formatCurrency(breakdown.baseSalary)}</span>
                   </div>
                   <div className="flex justify-between items-center gap-2 text-gray-500">
                     <span className="truncate">Base Salary (Period):</span>
-                    <span className="whitespace-nowrap">₹{breakdown.periodBaseSalary.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                    <span className="whitespace-nowrap">₹ {formatCurrency(breakdown.periodBaseSalary)}</span>
                   </div>
                   {breakdown.holidayDeduction > 0 && (
                     <>
                       <div className="flex justify-between items-center gap-2 text-red-600">
                         <span className="truncate">Leave Deduction ({breakdown.extraHolidays} absent days):</span>
-                        <span className="font-medium whitespace-nowrap">- ₹{breakdown.holidayDeduction.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                        <span className="font-medium whitespace-nowrap">- ₹ {formatCurrency(breakdown.holidayDeduction)}</span>
                       </div>
                       <div className="flex justify-between items-center gap-2">
                         <span className="truncate">Adjusted Base Salary:</span>
-                        <span className="font-medium whitespace-nowrap">₹{breakdown.adjustedBaseSalary.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                        <span className="font-medium whitespace-nowrap">₹ {formatCurrency(breakdown.adjustedBaseSalary)}</span>
                       </div>
                     </>
                   )}
                   <div className="flex justify-between items-center gap-2 text-green-600">
                     <span className="truncate">+ Commission:</span>
-                    <span className="font-medium whitespace-nowrap">+ ₹{breakdown.totalCommission.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                    <span className="font-medium whitespace-nowrap">+ ₹ {formatCurrency(breakdown.totalCommission)}</span>
                   </div>
                   <div className="flex justify-between items-center gap-2 text-purple-600">
                     <span className="truncate">+ Extra Commission:</span>
-                    <span className="font-medium whitespace-nowrap">+ ₹{breakdown.totalExtraCommission.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                    <span className="font-medium whitespace-nowrap">+ ₹ {formatCurrency(breakdown.totalExtraCommission)}</span>
                   </div>
                   <div className="flex justify-between items-center gap-2 text-orange-600">
                     <span className="truncate">- Advances:</span>
-                    <span className="font-medium whitespace-nowrap">- ₹{breakdown.totalAdvances.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                    <span className="font-medium whitespace-nowrap">- ₹ {formatCurrency(breakdown.totalAdvances)}</span>
                   </div>
                   <div className="flex justify-between items-center gap-2 pt-2 border-t border-gray-300 font-bold text-base sm:text-lg">
                     <span className="truncate">Total Salary:</span>
-                    <span className="text-green-600 whitespace-nowrap">₹{breakdown.totalSalary.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                    <span className="text-green-600 whitespace-nowrap">₹ {formatCurrency(breakdown.totalSalary)}</span>
                   </div>
                   <div className="flex justify-between text-gray-500 text-xs mt-2 pt-2 border-t border-gray-200">
                     <span>Total Expenses (for analytics only):</span>
-                    <span>INR {breakdown.totalExpenses.toFixed(2)}</span>
+                    <span>₹ {formatCurrency(breakdown.totalExpenses)}</span>
                   </div>
                   <div className="flex justify-between text-gray-500 text-xs pt-1">
                     <span>Leaves: {breakdown.totalHolidays} total ({breakdown.allowedHolidays} allowed, {breakdown.extraHolidays} absent)</span>
@@ -1621,7 +1630,7 @@ const TechnicianPayments = () => {
                             <TableCell>{expense.description}</TableCell>
                             <TableCell>{expense.category || 'OTHER'}</TableCell>
                             <TableCell className="text-right font-semibold text-red-600">
-                              INR {expense.amount.toFixed(2)}
+                              ₹ {formatCurrency(expense.amount)}
                             </TableCell>
                             <TableCell className="text-right">
                               <div className="flex gap-2 justify-end">
@@ -1680,7 +1689,7 @@ const TechnicianPayments = () => {
                             <TableCell>{advance.description || '-'}</TableCell>
                             <TableCell>{advance.payment_method || 'CASH'}</TableCell>
                             <TableCell className="text-right font-semibold text-orange-600">
-                              INR {advance.amount.toFixed(2)}
+                              ₹ {formatCurrency(advance.amount)}
                             </TableCell>
                             <TableCell className="text-right">
                               <div className="flex gap-2 justify-end">
@@ -1739,7 +1748,7 @@ const TechnicianPayments = () => {
                             <TableCell>{commission.description}</TableCell>
                             <TableCell>{commission.payment_method || 'CASH'}</TableCell>
                             <TableCell className="text-right font-semibold text-purple-600">
-                              INR {commission.amount.toFixed(2)}
+                              ₹ {formatCurrency(commission.amount)}
                             </TableCell>
                             <TableCell className="text-right">
                               <div className="flex gap-2 justify-end">
@@ -1839,7 +1848,7 @@ const TechnicianPayments = () => {
                                   })()}
                                 </TableCell>
                                 <TableCell className="text-right font-semibold">
-                                  {day.billAmount > 0 ? `₹${day.billAmount.toFixed(2)}` : '-'}
+                                  {day.billAmount > 0 ? `₹ ${formatCurrency(day.billAmount)}` : '-'}
                                 </TableCell>
                                 <TableCell className="text-center">
                                   {day.isAbsent ? (
@@ -1986,7 +1995,7 @@ const TechnicianPayments = () => {
                     </div>
                     <div className="text-right">
                       <p className="text-2xl font-bold text-green-700">
-                        ₹{breakdown.totalSalary.toFixed(2)}
+                        ₹ {formatCurrency(breakdown.totalSalary)}
                       </p>
                       <p className="text-xs text-gray-500 mt-1">
                         Paid on {(() => {
@@ -2275,7 +2284,7 @@ const TechnicianPayments = () => {
               </Select>
             </div>
             <div>
-              <Label htmlFor="expense-amount">Amount (INR) *</Label>
+              <Label htmlFor="expense-amount">Amount (₹) *</Label>
               <Input
                 id="expense-amount"
                 type="number"
@@ -2446,7 +2455,7 @@ const TechnicianPayments = () => {
                             </div>
                           ) : (
                             <div className="flex items-center gap-2 justify-end">
-                              <span className="font-semibold">₹{job.bill_amount.toFixed(2)}</span>
+                              <span className="font-semibold">₹ {formatCurrency(job.bill_amount)}</span>
                               <Button
                                 size="sm"
                                 variant="ghost"
@@ -2543,7 +2552,7 @@ const TechnicianPayments = () => {
                           )}
                         </TableCell>
                         <TableCell className="text-right font-semibold text-green-600">
-                          ₹{job.commission_amount.toFixed(2)}
+                          ₹ {formatCurrency(job.commission_amount)}
                         </TableCell>
                         <TableCell className="text-center">
                           <Button
@@ -2628,7 +2637,7 @@ const TechnicianPayments = () => {
               </Select>
             </div>
             <div>
-              <Label htmlFor="advance-amount">Amount (INR) *</Label>
+              <Label htmlFor="advance-amount">Amount (₹) *</Label>
               <Input
                 id="advance-amount"
                 type="number"

@@ -983,7 +983,7 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
 
               <div className="space-y-2">
                 <div className="flex items-center justify-between">
-                  <Label htmlFor="add_address">Complete Address</Label>
+                <Label htmlFor="add_address">Complete Address</Label>
                   <Button
                     type="button"
                     variant="outline"
@@ -1026,9 +1026,9 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
                   />
                   {addFormData.google_location && (
                     <>
-                      <Button
-                        type="button"
-                        variant="outline"
+                  <Button
+                    type="button"
+                    variant="outline"
                         size="sm"
                         onClick={fetchAddressFromGoogleLocation}
                         className="whitespace-nowrap"
@@ -1036,7 +1036,7 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
                       >
                         <Download className="w-3 h-3 mr-1" />
                         Fetch Address
-                      </Button>
+                  </Button>
                       <Button
                         type="button"
                         variant="outline"

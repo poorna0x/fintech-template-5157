@@ -72,6 +72,15 @@ interface AnalyticsData {
 
 type PeriodOption = '7d' | '30d' | 'thisWeek' | 'thisMonth' | '3m' | '6m' | '1y' | 'all' | 'custom';
 
+// Helper function to format currency with commas and without .00 when it's zero
+const formatCurrency = (amount: number): string => {
+  const formatted = amount.toLocaleString('en-IN', {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2
+  });
+  return formatted.endsWith('.00') ? formatted.slice(0, -3) : formatted;
+};
+
 const Analytics = () => {
   const [analytics, setAnalytics] = useState<AnalyticsData | null>(null);
   const [loading, setLoading] = useState(true);
@@ -833,7 +842,7 @@ const Analytics = () => {
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold text-gray-900">INR {analytics.totalBilling.toFixed(2)}</div>
+            <div className="text-2xl font-bold text-gray-900">₹ {formatCurrency(analytics.totalBilling)}</div>
           </CardContent>
         </Card>
       </div>
@@ -894,7 +903,7 @@ const Analytics = () => {
                             </div>
                           </TableCell>
                           <TableCell className="text-right font-semibold text-green-600">
-                            INR {tech.periodEarnings.toFixed(2)}
+                            ₹ {formatCurrency(tech.periodEarnings)}
                           </TableCell>
                         </TableRow>
                       );
@@ -990,7 +999,7 @@ const Analytics = () => {
                       <div className="text-right">
                         <div className="text-sm text-gray-500">Total: {leadSource.count} jobs</div>
                         <div className="text-lg font-bold text-green-600">
-                          INR {leadSource.amount.toFixed(2)}
+                          ₹ {formatCurrency(leadSource.amount)}
                         </div>
                       </div>
                     </div>
@@ -1014,7 +1023,7 @@ const Analytics = () => {
                                 <TableCell className="font-medium">{serviceType.serviceType}</TableCell>
                                 <TableCell className="text-right">{serviceType.count}</TableCell>
                                 <TableCell className="text-right font-semibold text-green-600">
-                                  INR {serviceType.amount.toFixed(2)}
+                                  ₹ {formatCurrency(serviceType.amount)}
                                 </TableCell>
                               </TableRow>
                             ))}
@@ -1055,7 +1064,7 @@ const Analytics = () => {
                       <TableCell className="font-medium">{item.serviceType}</TableCell>
                       <TableCell className="text-right">{item.count}</TableCell>
                       <TableCell className="text-right font-semibold text-green-600">
-                        INR {item.amount.toFixed(2)}
+                        ₹ {formatCurrency(item.amount)}
                       </TableCell>
                     </TableRow>
                   ))}
@@ -1091,7 +1100,7 @@ const Analytics = () => {
                       <TableCell className="font-medium">{item.method}</TableCell>
                       <TableCell className="text-right">{item.count}</TableCell>
                       <TableCell className="text-right font-semibold text-green-600">
-                        INR {item.amount.toFixed(2)}
+                        ₹ {formatCurrency(item.amount)}
                       </TableCell>
                     </TableRow>
                   ))}
@@ -1124,7 +1133,7 @@ const Analytics = () => {
                   <div className="flex items-center gap-4">
                     <span className="text-gray-500">{day.jobs} jobs</span>
                     <span className="font-medium text-green-600">
-                      ₹{day.revenue.toFixed(0)}
+                      ₹{formatCurrency(day.revenue)}
                     </span>
                   </div>
                 </div>
@@ -1180,7 +1189,7 @@ const Analytics = () => {
                   </CardTitle>
                 </CardHeader>
                 <CardContent>
-                  <div className="text-2xl font-bold text-black">₹{analytics.softenerData.totalBilling.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
+                  <div className="text-2xl font-bold text-black">₹ {formatCurrency(analytics.softenerData.totalBilling)}</div>
                 </CardContent>
               </Card>
               
@@ -1222,7 +1231,7 @@ const Analytics = () => {
                             <TableCell className="font-medium">{item.serviceType}</TableCell>
                             <TableCell className="text-right">{item.count}</TableCell>
                             <TableCell className="text-right font-semibold text-green-600">
-                              ₹{item.amount.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                              ₹ {formatCurrency(item.amount)}
                             </TableCell>
                           </TableRow>
                         ))}
@@ -1258,7 +1267,7 @@ const Analytics = () => {
                             <TableCell className="font-medium">{item.method}</TableCell>
                             <TableCell className="text-right">{item.count}</TableCell>
                             <TableCell className="text-right font-semibold text-green-600">
-                              ₹{item.amount.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                              ₹ {formatCurrency(item.amount)}
                             </TableCell>
                           </TableRow>
                         ))}
@@ -1317,7 +1326,7 @@ const Analytics = () => {
                                 </div>
                               </TableCell>
                               <TableCell className="text-right font-semibold text-green-600">
-                                ₹{tech.periodEarnings.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                ₹ {formatCurrency(tech.periodEarnings)}
                               </TableCell>
                             </TableRow>
                           );
@@ -1351,7 +1360,7 @@ const Analytics = () => {
                         <div className="flex items-center gap-4">
                           <span className="text-gray-500">{day.jobs} jobs</span>
                           <span className="font-medium text-green-600">
-                            ₹{day.revenue.toLocaleString('en-IN', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
+                            ₹{formatCurrency(day.revenue)}
                           </span>
                         </div>
                       </div>

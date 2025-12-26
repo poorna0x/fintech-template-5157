@@ -310,8 +310,8 @@ export const db = {
       try {
         // First, try update without select to avoid relationship query issues
         const { error: updateError } = await supabase
-          .from('jobs')
-          .update(updates)
+        .from('jobs')
+        .update(updates)
           .eq('id', id);
         
         if (updateError) {
@@ -331,9 +331,9 @@ export const db = {
         const { data, error: selectError } = await supabase
           .from('jobs')
           .select('id, status, assigned_technician_id, completed_by, completed_at, end_time')
-          .eq('id', id)
+        .eq('id', id)
           .single();
-        
+      
         if (selectError) {
           console.warn('⚠️ [db.jobs.update] Select error (non-critical):', {
             error: selectError,
@@ -341,8 +341,8 @@ export const db = {
           });
           // Update succeeded, but select failed - return success anyway
           return { data: null, error: null };
-        }
-        
+      }
+      
         console.log('✅ [db.jobs.update] Success:', {
           id,
           updatedData: data
