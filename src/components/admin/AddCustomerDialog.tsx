@@ -500,11 +500,12 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
     
     const localModels: string[] = [];
     if (serviceType && brand && modelData[serviceType as keyof typeof modelData]) {
-      const brandKey = Object.keys(modelData[serviceType as keyof typeof modelData]).find(key => 
+      const serviceModels = modelData[serviceType as keyof typeof modelData] as Record<string, string[]>;
+      const brandKey = Object.keys(serviceModels).find(key => 
         key.toLowerCase() === brand.toLowerCase()
       );
-      if (brandKey && modelData[serviceType as keyof typeof modelData][brandKey as keyof typeof modelData[typeof serviceType]]) {
-        localModels.push(...(modelData[serviceType as keyof typeof modelData][brandKey as keyof typeof modelData[typeof serviceType]] || []));
+      if (brandKey && serviceModels[brandKey]) {
+        localModels.push(...(serviceModels[brandKey] || []));
       }
     }
     
@@ -720,10 +721,11 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
       if (error) {
         throw new Error(error.message);
       }
-      toast.success(`Customer ${newCustomer.customer_id || newCustomer.customerId} created successfully!`);
 
-      await onCustomerCreated();
+      let newJob = null;
+      let jobError = null;
 
+      // Create job if requested
       if (shouldCreateJob && newCustomer) {
         try {
           let scheduledTimeSlot: 'MORNING' | 'AFTERNOON' | 'EVENING' = 'MORNING';
@@ -767,22 +769,34 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
             payment_status: 'PENDING' as const,
           };
 
-          const { data: newJob, error: jobError } = await db.jobs.create(jobData);
+          const jobResult = await db.jobs.create(jobData as any);
+          newJob = jobResult.data;
+          jobError = jobResult.error;
           
           if (jobError) {
             console.error('Failed to create job:', jobError);
-            toast.error('Customer created but failed to create job');
-          } else {
-            toast.success(`Job ${newJob.job_number} created successfully!`);
-            await onCustomerCreated();
           }
         } catch (error) {
           console.error('Error creating job:', error);
-          toast.error('Customer created but failed to create job');
+          jobError = error as any;
         }
       }
 
-      // Reset form
+      // Close dialog immediately to prevent empty flash
+      onOpenChange(false);
+
+      // Show combined toast message
+      if (shouldCreateJob && newJob) {
+        const jobNumber = (newJob as any).job_number || (newJob as any).jobNumber || 'N/A';
+        toast.success(`Customer ${newCustomer.customer_id || newCustomer.customerId} and Job ${jobNumber} created successfully!`);
+      } else if (shouldCreateJob && jobError) {
+        toast.success(`Customer ${newCustomer.customer_id || newCustomer.customerId} created successfully!`);
+        toast.error('Failed to create job. Please create it manually.');
+      } else {
+        toast.success(`Customer ${newCustomer.customer_id || newCustomer.customerId} created successfully!`);
+      }
+
+      // Reset form after dialog is closed
       setAddFormData({
         full_name: '',
         phone: '',
@@ -816,7 +830,8 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
         priority: 'MEDIUM' as 'LOW' | 'MEDIUM' | 'HIGH' | 'URGENT'
       });
 
-      onOpenChange(false);
+      // Call onCustomerCreated only once at the end
+      await onCustomerCreated();
     } catch (error) {
       toast.error('Failed to create customer');
     } finally {
@@ -1498,4 +1513,5 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
 };
 
 export default AddCustomerDialog;
+
 
