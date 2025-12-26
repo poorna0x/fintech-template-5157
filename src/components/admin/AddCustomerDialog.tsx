@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo, useRef } from 'react';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -8,8 +8,50 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Customer } from '@/types';
 import { db } from '@/lib/supabase';
 import { toast } from 'sonner';
-import { MapPin } from 'lucide-react';
-import { generateJobNumber, extractLocationFromAddressString } from '@/lib/adminUtils';
+import { MapPin, Download, ExternalLink } from 'lucide-react';
+import { generateJobNumber, extractLocationFromAddressString, bangaloreAreas } from '@/lib/adminUtils';
+
+// Brand and model data
+const brandData = {
+  'K': ['Kent'],
+  'A': ['Aquaguard', 'AO Smith', 'Aqua Fresh'],
+  'P': ['Pureit', 'Protek'],
+  'L': ['Livpure', 'LG'],
+  'B': ['Blue Star'],
+  'T': ['Tata Swach'],
+  'E': ['Eureka Forbes'],
+  'S': ['Samsung', 'Supreme'],
+  'W': ['Whirlpool'],
+  'H': ['Havells', 'Hindware']
+};
+
+const modelData = {
+  'RO': {
+    'Kent': ['Ace Plus 8 L RO+UV+UF+TDS', 'Ace Copper 8 L RO+UV+UF+TDS', 'Ace 8 L', 'Pearl ZW 8 L RO+UV+UF+TDS', 'Pride Plus 8 L', 'Prime Plus 9 L RO+UV+UF+TDS', 'Sterling Plus 6 L', 'Grand 8 L RO', 'Grand Plus 9 L RO+UV+UF+TDS', 'Grand Star 9 L', 'Excell Plus 7 L RO+UV+UF+TDS', 'Elegant Copper 8 L', 'Marvel', 'Sapphire'],
+    'Aquaguard': ['Delight NXT RO+UV+UF Aquasaver', 'Delight RO+UV+UF 2X', 'Aura 2X RO+UV + Copper', 'Glory RO+UV+UF + Active Copper', 'Designo NXT Under-counter RO+UV Copper', 'Blaze Insta WS RO+UV Hot & Ambient', 'SlimGlass RO+UV'],
+    'Pureit': ['Marvella 10 L RO+UV', 'Eco Water Saver RO+UV+MF+Mineral', 'RO+UV+MF+Copper+Minerial', 'Classic RO variants'],
+    'Livpure': ['Pep Pro 7 L RO+UF', 'Glitz 7 L RO+UF', 'Glo Star RO+In-Tank UV+UF+Mineraliser', 'Allura Premia'],
+    'Blue Star': ['Aristo 7 L RO+UV+UF with Pre-Filter', 'Mid-range models with taste boosters'],
+    'Havells': ['Max Alkaline RO+UV', 'Fab Alkaline RO+UV'],
+    'AO Smith': ['Z9 Pro Instant Hot & Ambient Purifier', 'Models with SCMT'],
+    'Tata Swach': ['Cristella Plus RO Water Purifier', 'Other RO combo models'],
+    'LG': ['Puricare WW180EP RO model', 'Models with mineral booster'],
+    'Protek': ['Elite Plus 12 L RO+UV+UF'],
+    'Aqua Fresh': ['Swift 15 L RO+UV+TDS'],
+    'Samsung': ['PURE RO + UV + UF', 'PURE RO + UV + Mineral', 'PURE RO + UV + Alkaline'],
+    'Supreme': ['Supreme RO + UV', 'Supreme RO + UV + UF', 'Supreme RO + UV + Mineral'],
+    'Whirlpool': ['Whirlpool RO + UV', 'Whirlpool RO + UV + UF', 'Whirlpool RO + UV + Mineral'],
+    'Hindware': ['Hindware RO + UV', 'Hindware RO + UV + UF'],
+    'Eureka Forbes': ['Aquaguard RO + UV', 'Aquaguard RO + UV + UF']
+  },
+  'SOFTENER': {
+    'Kent': ['Grand Softener 25L', 'Grand Softener 50L'],
+    'Aquaguard': ['Supreme Softener 25L', 'Supreme Softener 50L'],
+    'Pureit': ['Pureit Softener 25L', 'Pureit Softener 50L'],
+    'Livpure': ['Livpure Softener 25L', 'Livpure Softener 50L'],
+    'Blue Star': ['Blue Star Softener 25L', 'Blue Star Softener 50L']
+  }
+};
 
 interface AddCustomerDialogProps {
   open: boolean;
@@ -42,10 +84,17 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
     status: 'ACTIVE' as 'ACTIVE' | 'INACTIVE' | 'BLOCKED',
     notes: '',
     address: '',
+    visible_address: '',
     google_location: '',
     service_cost: 0,
     cost_agreed: false
   });
+  const [visibleAddressSuggestions, setVisibleAddressSuggestions] = useState(false);
+  const [brandSuggestions, setBrandSuggestions] = useState<string[]>([]);
+  const [modelSuggestions, setModelSuggestions] = useState<string[]>([]);
+  const [showBrandSuggestions, setShowBrandSuggestions] = useState(false);
+  const [showModelSuggestions, setShowModelSuggestions] = useState(false);
+  const locationManuallyEditedRef = useRef(false);
   const [step5JobData, setStep5JobData] = useState({
     service_type: 'RO' as 'RO' | 'SOFTENER',
     service_sub_type: 'Installation',
@@ -244,6 +293,240 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
     }
   };
 
+  const filteredAddressSuggestions = useMemo(() => {
+    if (!addFormData.visible_address || addFormData.visible_address.trim().length === 0) {
+      return [];
+    }
+    const searchTerm = addFormData.visible_address.toLowerCase();
+    const uniqueAreas = [...new Set(bangaloreAreas)];
+    return uniqueAreas.filter(area => 
+      area.toLowerCase().includes(searchTerm)
+    ).slice(0, 12);
+  }, [addFormData.visible_address]);
+
+  const handleFetchLocationFromAddress = () => {
+    const address = addFormData.address || '';
+    const currentAddress = address.trim();
+    const currentLocation = addFormData.visible_address || '';
+    
+    if (!currentAddress || currentAddress.length === 0) {
+      toast.error('Please enter a complete address first');
+      return;
+    }
+    
+    if (currentLocation && currentLocation.trim().length > 0) {
+      toast.info('Location already set. Clear it first if you want to fetch a new one.');
+      return;
+    }
+    
+    const extracted = extractLocationFromAddressString(currentAddress);
+    if (extracted) {
+      handleAddFormChange('visible_address', extracted);
+      locationManuallyEditedRef.current = false;
+      toast.success(`Location extracted: ${extracted}`);
+    } else {
+      toast.warning('Could not extract location from address. Please enter manually.');
+    }
+  };
+
+  // Extract coordinates from Google Maps link
+  const extractCoordinatesFromGoogleMapsLink = (url: string): { latitude: number; longitude: number } | null => {
+    try {
+      let lat: number | null = null;
+      let lng: number | null = null;
+      
+      const preciseMatch = url.match(/!3d([0-9.-]+)!4d([0-9.-]+)/);
+      if (preciseMatch) {
+        lat = parseFloat(preciseMatch[1]);
+        lng = parseFloat(preciseMatch[2]);
+        if (lat && lng && !isNaN(lat) && !isNaN(lng) && lat >= -90 && lat <= 90 && lng >= -180 && lng <= 180) {
+          return { latitude: lat, longitude: lng };
+        }
+      }
+      
+      const placeMatch = url.match(/\/place\/([0-9.-]+),([0-9.-]+)/);
+      if (placeMatch) {
+        lat = parseFloat(placeMatch[1]);
+        lng = parseFloat(placeMatch[2]);
+        if (lat && lng && !isNaN(lat) && !isNaN(lng) && lat >= -90 && lat <= 90 && lng >= -180 && lng <= 180) {
+          return { latitude: lat, longitude: lng };
+        }
+      }
+      
+      return null;
+    } catch (error) {
+      console.error('Error extracting coordinates:', error);
+      return null;
+    }
+  };
+
+  const loadGoogleMapsScript = (): Promise<void> => {
+    return new Promise((resolve, reject) => {
+      if (window.google && window.google.maps && window.google.maps.Geocoder) {
+        resolve();
+        return;
+      }
+      
+      const script = document.createElement('script');
+      script.src = `https://maps.googleapis.com/maps/api/js?key=${import.meta.env.VITE_GOOGLE_MAPS_API_KEY}&libraries=places`;
+      script.async = true;
+      script.defer = true;
+      script.onload = () => resolve();
+      script.onerror = () => reject(new Error('Failed to load Google Maps script'));
+      document.head.appendChild(script);
+    });
+  };
+
+  const reverseGeocode = async (lat: number, lng: number): Promise<string | null> => {
+    try {
+      if (!window.google || !window.google.maps || !window.google.maps.Geocoder) {
+        await loadGoogleMapsScript();
+      }
+      
+      const geocoder = new window.google.maps.Geocoder();
+      return new Promise((resolve, reject) => {
+        geocoder.geocode({ location: { lat, lng } }, (results, status) => {
+          if (status === 'OK' && results && results[0]) {
+            resolve(results[0].formatted_address);
+          } else {
+            resolve(null);
+          }
+        });
+      });
+    } catch (error) {
+      console.error('Reverse geocoding error:', error);
+      return null;
+    }
+  };
+
+  const fetchAddressFromGoogleLocation = async () => {
+    const googleLocation = addFormData.google_location || '';
+    
+    if (!googleLocation.trim()) {
+      toast.error('Please enter a Google Maps link first');
+      return;
+    }
+
+    if (!googleLocation.includes('google.com/maps') && !googleLocation.includes('maps.app.goo.gl') && !googleLocation.includes('goo.gl/maps')) {
+      toast.error('Please enter a valid Google Maps link');
+      return;
+    }
+
+    const coords = extractCoordinatesFromGoogleMapsLink(googleLocation);
+    if (!coords) {
+      toast.error('Could not extract coordinates from this link. Short links may not work.');
+      return;
+    }
+
+    try {
+      const loadingToast = toast.loading('Fetching address from Google Maps...');
+
+      const apiKey = import.meta.env.VITE_GOOGLE_MAPS_API_KEY;
+      if (apiKey && (!window.google || !window.google.maps || !window.google.maps.Geocoder)) {
+        await loadGoogleMapsScript();
+      }
+
+      const address = await reverseGeocode(coords.latitude, coords.longitude);
+      
+      let extractedLocation = null;
+      if (address) {
+        extractedLocation = extractLocationFromAddressString(address);
+      }
+      if (!extractedLocation && addFormData.address) {
+        extractedLocation = extractLocationFromAddressString(addFormData.address);
+      }
+      
+      setAddFormData(prev => ({
+        ...prev,
+        address: address || prev.address,
+        visible_address: extractedLocation 
+          ? extractedLocation.substring(0, 20) 
+          : prev.visible_address
+      }));
+      
+      if (extractedLocation) {
+        locationManuallyEditedRef.current = false;
+      }
+      
+      toast.dismiss(loadingToast);
+      
+      if (address) {
+        toast.success(`Address fetched: ${address.substring(0, 50)}${address.length > 50 ? '...' : ''}`);
+        if (extractedLocation) {
+          toast.info(`Location automatically identified: ${extractedLocation}`);
+        }
+      } else {
+        toast.success(`Coordinates extracted: ${coords.latitude}, ${coords.longitude}`);
+        toast.warning('Could not fetch address. Coordinates saved.');
+        if (extractedLocation) {
+          toast.info(`Location extracted from existing address: ${extractedLocation}`);
+        }
+      }
+    } catch (error) {
+      console.error('Error fetching address:', error);
+      toast.error('Failed to fetch address. Please try again.');
+    }
+  };
+
+  const handleBrandInput = (serviceType: string, value: string) => {
+    if (value.trim() === '') {
+      setShowBrandSuggestions(false);
+      return;
+    }
+    
+    const searchTerm = value.toLowerCase();
+    const allLocalBrands: string[] = [];
+    Object.values(brandData).forEach(brands => {
+      allLocalBrands.push(...brands);
+    });
+    
+    const filtered = allLocalBrands.filter(brand => 
+      brand.toLowerCase().includes(searchTerm) && 
+      brand.toLowerCase() !== searchTerm.toLowerCase()
+    ).slice(0, 10);
+    
+    setBrandSuggestions(filtered);
+    setShowBrandSuggestions(filtered.length > 0);
+  };
+
+  const handleModelInput = (serviceType: string, value: string) => {
+    if (value.trim() === '') {
+      setShowModelSuggestions(false);
+      return;
+    }
+    
+    const searchTerm = value.toLowerCase();
+    const brand = addFormData.equipment[serviceType]?.brand || '';
+    
+    const localModels: string[] = [];
+    if (serviceType && brand && modelData[serviceType as keyof typeof modelData]) {
+      const brandKey = Object.keys(modelData[serviceType as keyof typeof modelData]).find(key => 
+        key.toLowerCase() === brand.toLowerCase()
+      );
+      if (brandKey && modelData[serviceType as keyof typeof modelData][brandKey as keyof typeof modelData[typeof serviceType]]) {
+        localModels.push(...(modelData[serviceType as keyof typeof modelData][brandKey as keyof typeof modelData[typeof serviceType]] || []));
+      }
+    }
+    
+    const filtered = localModels.filter(model => 
+      model.toLowerCase().includes(searchTerm) && 
+      model.toLowerCase() !== searchTerm.toLowerCase()
+    ).slice(0, 10);
+    
+    setModelSuggestions(filtered);
+    setShowModelSuggestions(filtered.length > 0);
+  };
+
+  const selectBrand = (serviceType: string, brand: string) => {
+    handleEquipmentChange(serviceType, 'brand', brand);
+    setShowBrandSuggestions(false);
+  };
+
+  const selectModel = (serviceType: string, model: string) => {
+    handleEquipmentChange(serviceType, 'model', model);
+    setShowModelSuggestions(false);
+  };
+
   const handleServiceTypeToggle = (serviceType: string) => {
     setAddFormData(prev => {
       const newServiceTypes = prev.service_types.includes(serviceType)
@@ -278,11 +561,17 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
       equipment: {
         ...prev.equipment,
         [serviceType]: {
-          ...prev.equipment[serviceType],
+          ...(prev.equipment[serviceType] || { brand: '', model: '' }),
           [field]: value
         }
       }
     }));
+    
+    if (field === 'brand') {
+      handleBrandInput(serviceType, value);
+    } else if (field === 'model') {
+      handleModelInput(serviceType, value);
+    }
     
     const errorKey = `equipment.${serviceType}.${field}`;
     if (formErrors[errorKey]) {
@@ -291,30 +580,6 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
         [errorKey]: ''
       }));
     }
-  };
-
-  const handleGoogleMapsNavigation = () => {
-    // Only open link from Google Maps Location field - don't use address field
-    if (addFormData.google_location && addFormData.google_location.trim()) {
-      const googleLocation = addFormData.google_location.trim();
-      // Check if it's already a Google Maps URL
-      if (googleLocation.includes('google.com/maps') || googleLocation.includes('maps.app.goo.gl')) {
-        window.open(googleLocation, '_blank', 'noopener,noreferrer');
-        return;
-      }
-      // If it looks like coordinates (lat,lng format)
-      const coordMatch = googleLocation.match(/(-?\d+\.?\d*),\s*(-?\d+\.?\d*)/);
-      if (coordMatch) {
-        const lat = coordMatch[1];
-        const lng = coordMatch[2];
-        const googleMapsUrl = `https://www.google.com/maps/place/${lat},${lng}`;
-        window.open(googleMapsUrl, '_blank', 'noopener,noreferrer');
-        return;
-      }
-    }
-    
-    // If no valid Google Maps location, show error
-    toast.error('Please enter a Google Maps link or coordinates in the "Google Maps Location" field');
   };
 
   const handleCreateCustomer = async () => {
@@ -433,7 +698,7 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
           formattedAddress: addFormData.address,
           googleLocation: googleLocation
         },
-        visible_address: extractedLocation ? extractedLocation.substring(0, 20) : '',
+        visible_address: addFormData.visible_address ? addFormData.visible_address.trim().substring(0, 20) : (extractedLocation ? extractedLocation.substring(0, 20) : ''),
         service_type: (() => {
           const selectedTypes = addFormData.service_types;
           const validTypes = ['RO', 'SOFTENER'];
@@ -530,6 +795,7 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
         status: 'ACTIVE',
         notes: '',
         address: '',
+        visible_address: '',
         google_location: '',
         service_cost: 0,
         cost_agreed: false
@@ -659,14 +925,72 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
           {currentStep === 2 && (
             <div className="space-y-4">
               <div className="space-y-2">
-                <Label htmlFor="add_address">Complete Address</Label>
+                <Label htmlFor="add_visible_address">Location</Label>
+                <div className="relative">
+                  <Input
+                    id="add_visible_address"
+                    value={addFormData.visible_address}
+                    onChange={(e) => {
+                      locationManuallyEditedRef.current = true;
+                      handleAddFormChange('visible_address', e.target.value);
+                      setVisibleAddressSuggestions(e.target.value.length > 0);
+                    }}
+                    onFocus={() => setVisibleAddressSuggestions((addFormData.visible_address || '').length > 0)}
+                    onBlur={() => {
+                      setTimeout(() => setVisibleAddressSuggestions(false), 200);
+                    }}
+                    placeholder="e.g., Bansawadi, Koramangala, Whitefield, etc."
+                    maxLength={20}
+                    className="text-sm"
+                  />
+                  {visibleAddressSuggestions && filteredAddressSuggestions.length > 0 && (
+                    <div className="absolute z-50 w-full mt-1 bg-white border border-gray-300 rounded-md shadow-lg max-h-48 overflow-y-auto">
+                      {filteredAddressSuggestions.map((suggestion, idx) => (
+                        <button
+                          key={idx}
+                          type="button"
+                          onMouseDown={(e) => {
+                            e.preventDefault();
+                            locationManuallyEditedRef.current = true;
+                            handleAddFormChange('visible_address', suggestion);
+                            setVisibleAddressSuggestions(false);
+                          }}
+                          className="w-full text-left px-3 py-2 hover:bg-gray-100 text-sm"
+                        >
+                          {suggestion}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+                <p className="text-xs text-gray-500">Enter a one-word location identifier for quick recognition. Start typing to see suggestions.</p>
+              </div>
+
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <Label htmlFor="add_address">Complete Address</Label>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={handleFetchLocationFromAddress}
+                    className="whitespace-nowrap"
+                    title={addFormData.visible_address && addFormData.visible_address.trim().length > 0 
+                      ? "Location already set. Clear it first to fetch a new one."
+                      : "Extract location from complete address"}
+                    disabled={!addFormData.address || addFormData.address.trim().length === 0 || (addFormData.visible_address && addFormData.visible_address.trim().length > 0)}
+                  >
+                    <MapPin className="w-3 h-3 mr-1" />
+                    Fetch Location
+                  </Button>
+                </div>
                 <Textarea
                   id="add_address"
                   value={addFormData.address}
                   onChange={(e) => handleAddFormChange('address', e.target.value)}
-                  placeholder="Enter complete address (street, area, city, state, pincode)"
+                  placeholder="Enter complete address (e.g., 123 MG Road, Koramangala, Bangalore, Karnataka, 560034)"
                   rows={3}
-                  className={formErrors.address ? 'border-red-500' : ''}
+                  className={`resize-none ${formErrors.address ? 'border-red-500' : ''}`}
                 />
                 {formErrors?.address && (
                   <p className="text-sm text-red-500">{formErrors.address}</p>
@@ -674,28 +998,46 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="add_google_location">Google Maps Location (Optional)</Label>
+                <Label htmlFor="add_google_location" className="text-sm font-medium text-gray-900">
+                  Google Maps Location
+                </Label>
                 <div className="flex gap-2">
                   <Input
                     id="add_google_location"
                     value={addFormData.google_location}
                     onChange={(e) => handleAddFormChange('google_location', e.target.value)}
-                    placeholder="Enter Google Maps link or coordinates"
+                    placeholder="Paste Google Maps share link here..."
+                    className="text-sm flex-1"
                   />
-                  <Button
-                    type="button"
-                    variant="outline"
-                    onClick={handleGoogleMapsNavigation}
-                    disabled={!addFormData.google_location.trim()}
-                    className="flex items-center gap-2 whitespace-nowrap"
-                  >
-                    <MapPin className="w-4 h-4" />
-                    Open in Maps
-                  </Button>
+                  {addFormData.google_location && (
+                    <>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={fetchAddressFromGoogleLocation}
+                        className="whitespace-nowrap"
+                        title="Fetch address from Google Maps link"
+                      >
+                        <Download className="w-3 h-3 mr-1" />
+                        Fetch Address
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={() => {
+                          window.open(addFormData.google_location, '_blank', 'noopener,noreferrer');
+                        }}
+                        className="whitespace-nowrap"
+                        title="Open in Google Maps"
+                      >
+                        <ExternalLink className="w-3 h-3 mr-1" />
+                        Test
+                      </Button>
+                    </>
+                  )}
                 </div>
-                <p className="text-xs text-gray-500">
-                  Paste a Google Maps link or coordinates (e.g., 12.9716,77.5946), then click "Open in Maps" to navigate
-                </p>
               </div>
             </div>
           )}
@@ -707,10 +1049,8 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
                 <Label>Service Types</Label>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   {[
-                    { value: 'RO', label: 'RO (Reverse Osmosis)', icon: '💧' },
-                    { value: 'SOFTENER', label: 'Water Softener', icon: '🧂' },
-                    { value: 'AC', label: 'AC Services', icon: '❄️' },
-                    { value: 'APPLIANCE', label: 'Home Appliances', icon: '🏠' }
+                    { value: 'RO', label: 'RO (Reverse Osmosis)' },
+                    { value: 'SOFTENER', label: 'Water Softener' }
                   ].map((service) => (
                     <div
                       key={service.value}
@@ -722,7 +1062,6 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
                       }`}
                     >
                       <div className="flex items-center gap-2">
-                        <span className="text-lg">{service.icon}</span>
                         <span className="text-sm font-medium">{service.label}</span>
                       </div>
                     </div>
@@ -738,10 +1077,8 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
                   <Label className="text-base font-semibold">Equipment Details</Label>
                   {addFormData.service_types.map((serviceType) => {
                     const serviceInfo = [
-                      { value: 'RO', label: 'RO (Reverse Osmosis)', icon: '💧' },
-                      { value: 'SOFTENER', label: 'Water Softener', icon: '🧂' },
-                      { value: 'AC', label: 'AC Services', icon: '❄️' },
-                      { value: 'APPLIANCE', label: 'Home Appliances', icon: '🏠' }
+                      { value: 'RO', label: 'RO (Reverse Osmosis)' },
+                      { value: 'SOFTENER', label: 'Water Softener' }
                     ].find(s => s.value === serviceType);
                     
                     const equipment = addFormData.equipment[serviceType] || { brand: '', model: '' };
@@ -749,12 +1086,11 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
                     return (
                       <div key={serviceType} className="bg-gray-50 p-4 rounded-lg space-y-3">
                         <div className="flex items-center gap-2">
-                          <span className="text-lg">{serviceInfo?.icon}</span>
                           <span className="font-medium text-gray-900">{serviceInfo?.label}</span>
                         </div>
                         
                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                          <div className="space-y-2">
+                          <div className="space-y-2 relative">
                             <Label htmlFor={`brand_${serviceType}`}>Brand</Label>
                             <Input
                               id={`brand_${serviceType}`}
@@ -762,13 +1098,29 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
                               onChange={(e) => handleEquipmentChange(serviceType, 'brand', e.target.value)}
                               placeholder={`Enter ${serviceType} brand`}
                               className={formErrors[`equipment.${serviceType}.brand`] ? 'border-red-500' : ''}
+                              onBlur={() => {
+                                setTimeout(() => setShowBrandSuggestions(false), 200);
+                              }}
                             />
+                            {showBrandSuggestions && brandSuggestions.length > 0 && (
+                              <div className="absolute z-10 w-full mt-1 bg-card border border-border rounded-md shadow-lg max-h-40 overflow-y-auto">
+                                {brandSuggestions.map((brand, index) => (
+                                  <div
+                                    key={index}
+                                    className="px-3 py-2 hover:bg-accent hover:text-accent-foreground cursor-pointer text-sm text-foreground"
+                                    onClick={() => selectBrand(serviceType, brand)}
+                                  >
+                                    {brand}
+                                  </div>
+                                ))}
+                              </div>
+                            )}
                             {formErrors?.[`equipment.${serviceType}.brand`] && (
                               <p className="text-sm text-red-500">{formErrors[`equipment.${serviceType}.brand`]}</p>
                             )}
                           </div>
 
-                          <div className="space-y-2">
+                          <div className="space-y-2 relative">
                             <Label htmlFor={`model_${serviceType}`}>Model</Label>
                             <Input
                               id={`model_${serviceType}`}
@@ -776,7 +1128,23 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
                               onChange={(e) => handleEquipmentChange(serviceType, 'model', e.target.value)}
                               placeholder={`Enter ${serviceType} model`}
                               className={formErrors[`equipment.${serviceType}.model`] ? 'border-red-500' : ''}
+                              onBlur={() => {
+                                setTimeout(() => setShowModelSuggestions(false), 200);
+                              }}
                             />
+                            {showModelSuggestions && modelSuggestions.length > 0 && (
+                              <div className="absolute z-10 w-full mt-1 bg-card border border-border rounded-md shadow-lg max-h-40 overflow-y-auto">
+                                {modelSuggestions.map((model, index) => (
+                                  <div
+                                    key={index}
+                                    className="px-3 py-2 hover:bg-accent hover:text-accent-foreground cursor-pointer text-sm text-foreground"
+                                    onClick={() => selectModel(serviceType, model)}
+                                  >
+                                    {model}
+                                  </div>
+                                ))}
+                              </div>
+                            )}
                             {formErrors?.[`equipment.${serviceType}.model`] && (
                               <p className="text-sm text-red-500">{formErrors[`equipment.${serviceType}.model`]}</p>
                             )}
@@ -816,7 +1184,9 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
                     <p className="text-gray-900">{addFormData.email || 'Not provided'}</p>
                   </div>
                   <div className="sm:col-span-2">
-                    <span className="font-medium text-gray-600">Address:</span>
+                    <span className="font-medium text-gray-600">Location:</span>
+                    <p className="text-gray-900">{addFormData.visible_address || 'Not provided'}</p>
+                    <span className="font-medium text-gray-600">Complete Address:</span>
                     <p className="text-gray-900">{addFormData.address || 'Not provided'}</p>
                     {addFormData.google_location && (
                       <div className="mt-1">
@@ -830,17 +1200,14 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
                     <div className="mt-1 space-y-2">
                       {addFormData.service_types.map((serviceType) => {
                         const serviceInfo = [
-                          { value: 'RO', label: 'RO (Reverse Osmosis)', icon: '💧' },
-                          { value: 'SOFTENER', label: 'Water Softener', icon: '🧂' },
-                          { value: 'AC', label: 'AC Services', icon: '❄️' },
-                          { value: 'APPLIANCE', label: 'Home Appliances', icon: '🏠' }
+                          { value: 'RO', label: 'RO (Reverse Osmosis)' },
+                          { value: 'SOFTENER', label: 'Water Softener' }
                         ].find(s => s.value === serviceType);
                         
                         const equipment = addFormData.equipment[serviceType];
                         
                         return (
                           <div key={serviceType} className="flex items-center gap-2 text-sm">
-                            <span>{serviceInfo?.icon}</span>
                             <span className="font-medium">{serviceInfo?.label}:</span>
                             <span className="text-gray-700">
                               {equipment?.brand} - {equipment?.model}
