@@ -630,13 +630,15 @@ const TechnicianPayments = () => {
     }
   };
 
-  const handleAddExpense = () => {
-    if (!selectedTechnician) {
+  const handleAddExpense = (technicianId?: string) => {
+    const techId = technicianId || selectedTechnician;
+    if (!techId) {
       toast.error('Please select a technician');
       return;
     }
+    setSelectedTechnician(techId);
     setExpenseFormData({
-      technician_id: selectedTechnician,
+      technician_id: techId,
       amount: '',
       description: '',
       expense_date: new Date().toISOString().split('T')[0],
@@ -706,13 +708,15 @@ const TechnicianPayments = () => {
     }
   };
 
-  const handleAddAdvance = () => {
-    if (!selectedTechnician) {
+  const handleAddAdvance = (technicianId?: string) => {
+    const techId = technicianId || selectedTechnician;
+    if (!techId) {
       toast.error('Please select a technician');
       return;
     }
+    setSelectedTechnician(techId);
     setAdvanceFormData({
-      technician_id: selectedTechnician,
+      technician_id: techId,
       amount: '',
       description: '',
       advance_date: new Date().toISOString().split('T')[0],
@@ -785,13 +789,15 @@ const TechnicianPayments = () => {
     }
   };
 
-  const handleAddExtraCommission = () => {
-    if (!selectedTechnician) {
+  const handleAddExtraCommission = (technicianId?: string) => {
+    const techId = technicianId || selectedTechnician;
+    if (!techId) {
       toast.error('Please select a technician');
       return;
     }
+    setSelectedTechnician(techId);
     setExtraCommissionFormData({
-      technician_id: selectedTechnician,
+      technician_id: techId,
       amount: '',
       description: '',
       commission_date: new Date().toISOString().split('T')[0],
@@ -1575,10 +1581,7 @@ const TechnicianPayments = () => {
               <div className="flex gap-2 mb-6 flex-wrap">
                 <Button
                   size="sm"
-                  onClick={() => {
-                    setSelectedTechnician(breakdown.technicianId);
-                    handleAddExpense();
-                  }}
+                  onClick={() => handleAddExpense(breakdown.technicianId)}
                   className="bg-red-600 hover:bg-red-700 text-white"
                 >
                   <TrendingDown className="w-4 h-4 mr-2" />
@@ -1586,10 +1589,7 @@ const TechnicianPayments = () => {
                 </Button>
                 <Button
                   size="sm"
-                  onClick={() => {
-                    setSelectedTechnician(breakdown.technicianId);
-                    handleAddExtraCommission();
-                  }}
+                  onClick={() => handleAddExtraCommission(breakdown.technicianId)}
                   className="bg-purple-600 hover:bg-purple-700 text-white"
                 >
                   <DollarSign className="w-4 h-4 mr-2" />
@@ -1597,10 +1597,7 @@ const TechnicianPayments = () => {
                 </Button>
                 <Button
                   size="sm"
-                  onClick={() => {
-                    setSelectedTechnician(breakdown.technicianId);
-                    handleAddAdvance();
-                  }}
+                  onClick={() => handleAddAdvance(breakdown.technicianId)}
                   className="bg-orange-600 hover:bg-orange-700 text-white"
                 >
                   <TrendingUp className="w-4 h-4 mr-2" />
