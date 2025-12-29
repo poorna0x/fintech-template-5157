@@ -5618,7 +5618,18 @@ const AdminDashboard = () => {
             assigned_technician_id: null,
             scheduledDate: moveToOngoingDate,
             scheduledTimeSlot: timeSlotToUse,
-            requirements: requirements
+            requirements: requirements,
+            // Clear all followup-related fields
+            followUpDate: null,
+            follow_up_date: null,
+            followUpTime: null,
+            follow_up_time: null,
+            followUpNotes: null,
+            follow_up_notes: null,
+            followUpScheduledBy: null,
+            follow_up_scheduled_by: null,
+            followUpScheduledAt: null,
+            follow_up_scheduled_at: null
           };
           return updatedJob;
         }
@@ -5639,7 +5650,18 @@ const AdminDashboard = () => {
                 assigned_technician_id: null,
                 scheduledDate: moveToOngoingDate,
                 scheduledTimeSlot: timeSlotToUse,
-                requirements: requirements
+                requirements: requirements,
+                // Clear all followup-related fields
+                followUpDate: null,
+                follow_up_date: null,
+                followUpTime: null,
+                follow_up_time: null,
+                followUpNotes: null,
+                follow_up_notes: null,
+                followUpScheduledBy: null,
+                follow_up_scheduled_by: null,
+                followUpScheduledAt: null,
+                follow_up_scheduled_at: null
               };
             }
             return job;
