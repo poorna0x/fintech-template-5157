@@ -84,7 +84,7 @@ const formatCurrency = (amount: number): string => {
 const Analytics = () => {
   const [analytics, setAnalytics] = useState<AnalyticsData | null>(null);
   const [loading, setLoading] = useState(true);
-  const [period, setPeriod] = useState<PeriodOption>('30d');
+  const [period, setPeriod] = useState<PeriodOption>('thisMonth');
   const [customStartDate, setCustomStartDate] = useState<string>('');
   const [customEndDate, setCustomEndDate] = useState<string>('');
 
