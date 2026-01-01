@@ -875,7 +875,7 @@ const Analytics = () => {
                   <TableHead>Total Jobs</TableHead>
                   <TableHead>Completed</TableHead>
                   <TableHead>Completion Rate</TableHead>
-                  <TableHead className="text-right">Total Earnings ({getPeriodLabel()})</TableHead>
+                  <TableHead className="text-right">Total Billing ({getPeriodLabel()})</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -1307,7 +1307,7 @@ const Analytics = () => {
                           <TableHead>Total Jobs</TableHead>
                           <TableHead>Completed</TableHead>
                           <TableHead>Completion Rate</TableHead>
-                          <TableHead className="text-right">Total Earnings ({getPeriodLabel()})</TableHead>
+                          <TableHead className="text-right">Total Billing ({getPeriodLabel()})</TableHead>
                         </TableRow>
                       </TableHeader>
                       <TableBody>
