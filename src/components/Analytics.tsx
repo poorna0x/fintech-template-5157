@@ -187,24 +187,35 @@ const Analytics = () => {
         return;
       }
       
-      let jobs = Array.isArray(jobsData) ? jobsData : [];
+      let allJobs = Array.isArray(jobsData) ? jobsData : [];
       
-      // Filter jobs by date range
-      if (startDate && endDate) {
-        jobs = jobs.filter((j: any) => {
-          if (!j) return false;
-          const jobDate = j.created_at || j.createdAt;
-          return isDateInRange(jobDate, startDate, endDate);
-        });
-      }
+      // Filter jobs by date range based on their status
+      // - Completed jobs: filter by completion date (when they were finished)
+      // - Other jobs: filter by creation date (when they were created)
+      let jobs: any[] = [];
+      let completedJobs: any[] = [];
       
-      // Filter completed jobs and apply date range to completion date
-      let completedJobs = jobs.filter((j: any) => j && j.status === 'COMPLETED');
       if (startDate && endDate) {
-        completedJobs = completedJobs.filter((j: any) => {
+        // First, get all completed jobs filtered by completion date
+        completedJobs = allJobs.filter((j: any) => {
+          if (!j || j.status !== 'COMPLETED') return false;
           const completedDate = j.completed_at || j.end_time || j.completedAt;
           return isDateInRange(completedDate, startDate, endDate);
         });
+        
+        // Then, get all other jobs filtered by creation date
+        const otherJobs = allJobs.filter((j: any) => {
+          if (!j || j.status === 'COMPLETED') return false;
+          const jobDate = j.created_at || j.createdAt;
+          return isDateInRange(jobDate, startDate, endDate);
+        });
+        
+        // Combine completed jobs (by completion date) and other jobs (by creation date)
+        jobs = [...completedJobs, ...otherJobs];
+      } else {
+        // No date filter - get all jobs
+        completedJobs = allJobs.filter((j: any) => j && j.status === 'COMPLETED');
+        jobs = allJobs;
       }
       
       // Lead Source Breakdown with Service Type details
