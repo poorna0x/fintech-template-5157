@@ -745,16 +745,29 @@ const Settings = () => {
         return;
       }
 
-      const { error } = await db.adminTodos.create({ text: newTodoText.trim() });
+      const { data, error } = await db.adminTodos.create({ text: newTodoText.trim() });
       if (error) throw error;
       
       toast.success('Task added successfully');
       await loadTodos();
       setAddTodoDialogOpen(false);
       setNewTodoText('');
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error saving todo:', error);
-      toast.error('Failed to add task');
+      console.error('Error details:', {
+        code: error?.code,
+        message: error?.message,
+        details: error?.details,
+        hint: error?.hint,
+        fullError: JSON.stringify(error, null, 2)
+      });
+      
+      if (error?.code === '42501') {
+        toast.error('Permission denied. Please run the RLS fix SQL script in Supabase.');
+      } else {
+        const errorMsg = error?.message || error?.details || 'Unknown error';
+        toast.error('Failed to add task: ' + errorMsg);
+      }
     }
   };
 
