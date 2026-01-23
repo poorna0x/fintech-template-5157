@@ -103,6 +103,7 @@ import PhotoViewerDialog from './admin/PhotoViewerDialog';
 import CustomerPhotoGalleryDialog from './admin/CustomerPhotoGalleryDialog';
 import AssignJobDialog from './admin/AssignJobDialog';
 import AddTeamDialog from './admin/AddTeamDialog';
+import RemoveTeamDialog from './admin/RemoveTeamDialog';
 import NewJobDialog from './admin/NewJobDialog';
 import EditJobDialog from './admin/EditJobDialog';
 import PhoneNumbersDialog from './admin/PhoneNumbersDialog';
@@ -719,6 +720,11 @@ const AdminDashboard = () => {
   const [addTeamDialogOpen, setAddTeamDialogOpen] = useState(false);
   const [jobForTeam, setJobForTeam] = useState<Job | null>(null);
   const [selectedTeamMemberId, setSelectedTeamMemberId] = useState('');
+  
+  // Remove Team Dialog state
+  const [removeTeamDialogOpen, setRemoveTeamDialogOpen] = useState(false);
+  const [jobForRemoveTeam, setJobForRemoveTeam] = useState<Job | null>(null);
+  const [selectedTeamMemberToRemove, setSelectedTeamMemberToRemove] = useState('');
 
   useEffect(() => {
     registerAdminPWA();
@@ -4844,6 +4850,45 @@ const AdminDashboard = () => {
     }
   };
 
+  const handleRemoveTeam = async (job: Job) => {
+    setJobForRemoveTeam(job);
+    setSelectedTeamMemberToRemove('');
+    setRemoveTeamDialogOpen(true);
+
+    // Reload technicians to get latest data
+    await reloadTechnicians();
+  };
+
+  const handleSaveTeamMemberRemoval = async () => {
+    if (!jobForRemoveTeam || !selectedTeamMemberToRemove) return;
+
+    try {
+      // Get current team_members from job
+      const currentTeamMembers = (jobForRemoveTeam as any).team_members || [];
+      const teamMembersArray = Array.isArray(currentTeamMembers) ? currentTeamMembers : [];
+      
+      // Remove the selected team member
+      const updatedTeamMembers = teamMembersArray.filter((id: string) => id !== selectedTeamMemberToRemove);
+
+      const { error } = await db.jobs.update(jobForRemoveTeam.id, {
+        team_members: updatedTeamMembers
+      } as any);
+
+      if (error) throw error;
+
+      toast.success('Team member removed successfully');
+      setRemoveTeamDialogOpen(false);
+      setJobForRemoveTeam(null);
+      setSelectedTeamMemberToRemove('');
+      
+      // Refresh jobs
+      await loadFilteredJobs(statusFilter, currentPage);
+    } catch (error: any) {
+      console.error('Error removing team member:', error);
+      toast.error(error.message || 'Failed to remove team member');
+    }
+  };
+
   // Bulk assignment removed - not needed
 
 
@@ -8258,6 +8303,16 @@ const AdminDashboard = () => {
                                             <UserPlus className="mr-2 h-4 w-4" />
                                             Add Team
                                           </DropdownMenuItem>
+                                          {(() => {
+                                            const currentTeamMembers = (job as any).team_members || [];
+                                            const teamMembersArray = Array.isArray(currentTeamMembers) ? currentTeamMembers : [];
+                                            return teamMembersArray.length > 0 ? (
+                                              <DropdownMenuItem onClick={() => handleRemoveTeam(job)}>
+                                                <User className="mr-2 h-4 w-4" />
+                                                Remove Team Member
+                                              </DropdownMenuItem>
+                                            ) : null;
+                                          })()}
                                         </>
                                       )}
                                       {(job.status === 'PENDING' || job.status === 'ASSIGNED' || job.status === 'EN_ROUTE' || job.status === 'IN_PROGRESS') && (
@@ -8711,6 +8766,22 @@ const AdminDashboard = () => {
           setAddTeamDialogOpen(false);
           setJobForTeam(null);
           setSelectedTeamMemberId('');
+        }}
+      />
+
+      {/* Remove Team Dialog */}
+      <RemoveTeamDialog
+        open={removeTeamDialogOpen}
+        onOpenChange={setRemoveTeamDialogOpen}
+        job={jobForRemoveTeam}
+        technicians={technicians}
+        selectedTeamMemberId={selectedTeamMemberToRemove}
+        onTeamMemberSelect={setSelectedTeamMemberToRemove}
+        onSave={handleSaveTeamMemberRemoval}
+        onCancel={() => {
+          setRemoveTeamDialogOpen(false);
+          setJobForRemoveTeam(null);
+          setSelectedTeamMemberToRemove('');
         }}
       />
 
