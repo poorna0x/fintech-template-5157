@@ -1570,4 +1570,3 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
 
 export default AddCustomerDialog;
 
-

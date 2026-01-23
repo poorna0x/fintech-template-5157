@@ -480,7 +480,7 @@ const EditJobDialog: React.FC<EditJobDialogProps> = ({
                   <SelectItem value="Website">Website</SelectItem>
                   <SelectItem value="Direct call">Direct call</SelectItem>
                   <SelectItem value="RO care india">RO care india</SelectItem>
-                  <SelectItem value="Home triangle">Home triangle</SelectItem>
+                  <SelectItem value="Home Triangle">Home Triangle</SelectItem>
                   <SelectItem value="Local Ramu">Local Ramu</SelectItem>
                   <SelectItem value="Other">Other</SelectItem>
                 </SelectContent>

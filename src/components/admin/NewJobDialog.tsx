@@ -608,7 +608,7 @@ const NewJobDialog: React.FC<NewJobDialogProps> = ({
                   <option value="Website">Website</option>
                   <option value="Direct call">Direct call</option>
                   <option value="RO care india">RO care india</option>
-                  <option value="Home triangle">Home triangle</option>
+                  <option value="Home Triangle">Home Triangle</option>
                   <option value="Local Ramu">Local Ramu</option>
                   <option value="Other">Other</option>
                 </select>
