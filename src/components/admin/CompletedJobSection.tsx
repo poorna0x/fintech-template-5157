@@ -91,11 +91,9 @@ export const CompletedJobSection: React.FC<CompletedJobSectionProps> = ({
           )}
           
           {/* Lead Source */}
-          {leadSource && (
-            <div className="text-gray-700 break-words">
-              <span className="text-gray-500 font-medium">Lead Source:</span> {leadSource}
-            </div>
-          )}
+          <div className="text-gray-700 break-words">
+            <span className="text-gray-500 font-medium">Lead Source:</span> {leadSource || 'Direct call'}
+          </div>
           
           {/* QR Code Info (if online) */}
           {qrPhotos?.selected_qr_code_name && (
@@ -254,9 +252,24 @@ export const CompletedJobSection: React.FC<CompletedJobSectionProps> = ({
               const completedDate = completedAt ? new Date(completedAt).toISOString().split('T')[0] : '';
               const completedTime = completedAt ? new Date(completedAt).toTimeString().slice(0, 5) : '';
               
+              // Extract lead source and custom lead source from requirements
+              let leadSourceValue = leadSource || 'Direct call';
+              let leadSourceCustomValue = '';
+              
+              // Check if lead source is "Other" and find custom value
+              if (leadSourceValue === 'Other' || !leadSourceValue) {
+                const leadSourceObj = requirements.find((r: any) => r && r.lead_source);
+                if (leadSourceObj) {
+                  leadSourceValue = leadSourceObj.lead_source === 'Other' ? 'Other' : (leadSourceObj.lead_source || 'Direct call');
+                  leadSourceCustomValue = leadSourceObj.lead_source_custom || '';
+                }
+              }
+
               const editData: any = {
                 amount: actualCost || paymentAmount || '',
                 paymentMethod: paymentMethod || 'CASH',
+                leadSource: leadSourceValue,
+                leadSourceCustom: leadSourceCustomValue,
                 qrCodeName: qrPhotos?.selected_qr_code_name || '',
                 amcInfo: amcInfo || null,
                 completionNotes: completionNotes || '',

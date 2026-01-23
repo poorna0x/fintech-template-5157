@@ -236,7 +236,7 @@ const Analytics = () => {
         'hometriangle': 'Home Triangle',
         'localramu': 'Local Ramu',
         'admincreated': 'Admin Created',
-        'unknown': 'Unknown (Needs Review)',
+        'unknown': 'Direct call',
         'other': 'Other'
       };
       
@@ -271,7 +271,7 @@ const Analytics = () => {
             ? JSON.parse(job.requirements) 
             : (job.requirements || []);
           
-          let leadSource = 'Unknown';
+          let leadSource = 'Direct call';
           
           // Try to extract lead source from requirements
           if (Array.isArray(requirements)) {
@@ -280,29 +280,28 @@ const Analytics = () => {
               leadSource = leadSourceObj.lead_source;
             }
           } else if (requirements && typeof requirements === 'object') {
-            leadSource = requirements.lead_source || 'Unknown';
+            leadSource = requirements.lead_source || 'Direct call';
           }
           
-          // If still Unknown, try to infer from other job data
-          if (leadSource === 'Unknown' || !leadSource || leadSource.trim() === '') {
+          // If still no lead source, try to infer from other job data
+          if (!leadSource || leadSource.trim() === '') {
             // Check if job was created through admin (has assigned_by) vs website
             // Jobs created through admin typically have assigned_by set
             // Website jobs typically don't have assigned_by initially
             if (job.assigned_by || job.assignedBy) {
               leadSource = 'Admin Created';
             } else {
-              // Could be website booking - but we'll keep as Unknown for now
-              // You can add more inference logic here based on your needs
-              leadSource = 'Unknown';
+              // Default to Direct call for unknown sources
+              leadSource = 'Direct call';
             }
           }
           
           // Normalize for comparison (trim, lowercase, normalize spaces)
-          const trimmedSource = leadSource.trim() || 'Unknown';
+          const trimmedSource = leadSource.trim() || 'Direct call';
           
-          // Skip empty or invalid lead sources - they'll be grouped as Unknown
-          if (!trimmedSource || trimmedSource === 'Unknown' || trimmedSource.length === 0) {
-            leadSource = 'Unknown';
+          // Skip empty or invalid lead sources - they'll be grouped as Direct call
+          if (!trimmedSource || trimmedSource.length === 0) {
+            leadSource = 'Direct call';
           }
           
           const normalizedKey = normalizeLeadSource(trimmedSource);

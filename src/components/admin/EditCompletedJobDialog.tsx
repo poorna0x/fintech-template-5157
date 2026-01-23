@@ -70,6 +70,43 @@ const EditCompletedJobDialog: React.FC<EditCompletedJobDialogProps> = ({
             </Select>
           </div>
 
+          {/* Lead Source */}
+          <div>
+            <Label htmlFor="edit-lead-source">Lead Source</Label>
+            <Select
+              value={editData.leadSource || 'Direct call'}
+              onValueChange={(value) => onEditDataChange({ 
+                ...editData, 
+                leadSource: value === 'Other' ? 'Other' : value,
+                leadSourceCustom: value === 'Other' ? editData.leadSourceCustom : ''
+              })}
+            >
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="Website">Website</SelectItem>
+                <SelectItem value="Direct call">Direct call</SelectItem>
+                <SelectItem value="RO care india">RO care india</SelectItem>
+                <SelectItem value="Home Triangle">Home Triangle</SelectItem>
+                <SelectItem value="Local Ramu">Local Ramu</SelectItem>
+                <SelectItem value="Other">Other</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+
+          {editData.leadSource === 'Other' && (
+            <div>
+              <Label htmlFor="edit-lead-source-custom">Custom Lead Source</Label>
+              <Input
+                id="edit-lead-source-custom"
+                value={editData.leadSourceCustom || ''}
+                onChange={(e) => onEditDataChange({ ...editData, leadSourceCustom: e.target.value })}
+                placeholder="Enter custom lead source"
+              />
+            </div>
+          )}
+
           {/* QR Code Name (if online payment) */}
           {(editData.paymentMethod === 'UPI' || editData.paymentMethod === 'CARD' || editData.paymentMethod === 'BANK_TRANSFER') && (
             <div>

@@ -230,11 +230,11 @@ const BillingStats = () => {
           
           if (Array.isArray(requirements)) {
             const leadSourceObj = requirements.find((r: any) => r?.lead_source);
-            leadSource = leadSourceObj?.lead_source || 'Unknown';
+            leadSource = leadSourceObj?.lead_source || 'Direct call';
           } else if (requirements && typeof requirements === 'object') {
-            leadSource = requirements.lead_source || 'Unknown';
+            leadSource = requirements.lead_source || 'Direct call';
           } else {
-            leadSource = 'Unknown';
+            leadSource = 'Direct call';
           }
           
           if (!leadTotals[leadSource]) {
