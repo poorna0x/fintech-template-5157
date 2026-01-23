@@ -4678,37 +4678,50 @@ const TechnicianDashboard = () => {
                           // Ignore parse errors
                         }
                         
+                        // Determine payment type display
+                        let paymentTypeDisplay = '';
+                        if (paymentMethod === 'CASH') {
+                          paymentTypeDisplay = 'Cash';
+                        } else if (qrCodeInfo?.selected_qr_code_name) {
+                          paymentTypeDisplay = qrCodeInfo.selected_qr_code_name;
+                        } else if (qrCodeInfo?.qr_code_type) {
+                          paymentTypeDisplay = qrCodeInfo.qr_code_type;
+                        } else if (paymentMethod) {
+                          paymentTypeDisplay = paymentMethod.replace('_', ' ');
+                        }
+                        
                         if (paymentAmount > 0 || paymentMethod || qrCodeInfo) {
                           return (
-                            <div className="mb-4 p-4 bg-green-50 border border-green-200 rounded-lg">
-                              <div className="flex items-center gap-2 mb-3">
-                                <Receipt className="w-5 h-5 text-green-700" />
-                                <h3 className="font-semibold text-green-900 text-base">Payment Details</h3>
+                            <div className="mb-4 p-4 sm:p-5 bg-green-50 border-2 border-green-300 rounded-lg shadow-sm">
+                              <div className="flex items-center gap-2 mb-4">
+                                <Receipt className="w-5 h-5 sm:w-6 sm:h-6 text-green-700 flex-shrink-0" />
+                                <h3 className="font-bold text-green-900 text-base sm:text-lg">Payment & Billing Details</h3>
                               </div>
-                              <div className="space-y-2 text-sm">
+                              <div className="space-y-3 text-sm sm:text-base">
                                 {paymentAmount > 0 && (
-                                  <div className="flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-2">
-                                    <span className="font-medium text-gray-700 min-w-[120px]">Bill Amount:</span>
-                                    <span className="text-gray-900 font-semibold">₹{paymentAmount.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                                  <div className="flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-3 p-3 bg-white rounded-lg border border-green-200">
+                                    <span className="font-semibold text-gray-700 min-w-[140px] sm:min-w-[160px]">Total Billing:</span>
+                                    <span className="text-gray-900 font-bold text-lg sm:text-xl">₹{paymentAmount.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
                                   </div>
                                 )}
                                 {paymentMethod && (
-                                  <div className="flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-2">
-                                    <span className="font-medium text-gray-700 min-w-[120px]">Payment Mode:</span>
-                                    <span className="text-gray-900 capitalize">{paymentMethod.replace('_', ' ')}</span>
+                                  <div className="flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-3 p-3 bg-white rounded-lg border border-green-200">
+                                    <span className="font-semibold text-gray-700 min-w-[140px] sm:min-w-[160px]">Payment Mode:</span>
+                                    <span className="text-gray-900 font-medium capitalize">{paymentMethod.replace('_', ' ')}</span>
                                   </div>
                                 )}
-                                {qrCodeInfo && (
-                                  <div className="flex flex-col sm:flex-row sm:items-start gap-1 sm:gap-2">
-                                    <span className="font-medium text-gray-700 min-w-[120px]">QR Code:</span>
-                                    <div className="flex-1">
-                                      {qrCodeInfo.qr_code_type && (
-                                        <div className="text-gray-900 capitalize mb-1">{qrCodeInfo.qr_code_type}</div>
-                                      )}
-                                      {qrCodeInfo.selected_qr_code_name && (
-                                        <div className="text-gray-600 text-xs">{qrCodeInfo.selected_qr_code_name}</div>
-                                      )}
-                                    </div>
+                                {paymentTypeDisplay && (
+                                  <div className="flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-3 p-3 bg-white rounded-lg border border-green-200">
+                                    <span className="font-semibold text-gray-700 min-w-[140px] sm:min-w-[160px]">
+                                      {paymentMethod === 'CASH' ? 'Payment Type:' : 'QR Code:'}
+                                    </span>
+                                    <span className="text-gray-900 font-medium">{paymentTypeDisplay}</span>
+                                  </div>
+                                )}
+                                {qrCodeInfo?.qr_code_type && paymentMethod !== 'CASH' && (
+                                  <div className="flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-3 p-3 bg-white rounded-lg border border-green-200">
+                                    <span className="font-semibold text-gray-700 min-w-[140px] sm:min-w-[160px]">QR Type:</span>
+                                    <span className="text-gray-900 font-medium capitalize">{qrCodeInfo.qr_code_type}</span>
                                   </div>
                                 )}
                               </div>
