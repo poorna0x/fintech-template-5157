@@ -1008,7 +1008,8 @@ const TechnicianDashboard = () => {
         }
       }
 
-      // Create a simpler channel without extra config
+      // Create a channel that listens to ALL job updates (no filter)
+      // We'll check relevance in the handler to support unassignment, reassignment, and team members
       channel = supabase
         .channel(`technician-jobs-${user.technicianId}`)
         .on(
@@ -1017,7 +1018,7 @@ const TechnicianDashboard = () => {
             event: 'UPDATE',
             schema: 'public',
             table: 'jobs',
-            filter: `assigned_technician_id=eq.${user.technicianId}`,
+            // No filter - listen to all job updates to handle unassignment, reassignment, and team changes
           },
         async (payload) => {
           console.log('📨 Realtime update received:', payload);
@@ -1030,18 +1031,56 @@ const TechnicianDashboard = () => {
             return;
           }
           
-          // Check if this is a NEW assignment (assigned_technician_id changed TO this technician)
+          // Helper function to check if a job is relevant to this technician
+          const isJobRelevantToMe = (job: any) => {
+            if (!job) return false;
+            // Check if assigned to this technician
+            if (job.assigned_technician_id === user.technicianId) return true;
+            // Check if this technician is in team_members
+            const teamMembers = job.team_members || [];
+            if (Array.isArray(teamMembers) && teamMembers.includes(user.technicianId)) return true;
+            return false;
+          };
+          
+          // Check relevance in old and new states
+          const wasRelevantToMe = isJobRelevantToMe(oldJob);
+          const isNowRelevantToMe = isJobRelevantToMe(updatedJob);
+          const isNewAssignment = !wasRelevantToMe && isNowRelevantToMe;
+          const isUnassignment = wasRelevantToMe && !isNowRelevantToMe;
+          const isReassignment = wasRelevantToMe && isNowRelevantToMe; // Still relevant but might have changed
+          
+          // Check assignment changes
           const wasAssignedToMe = oldJob?.assigned_technician_id === user.technicianId;
           const isNowAssignedToMe = updatedJob.assigned_technician_id === user.technicianId;
-          const isNewAssignment = !wasAssignedToMe && isNowAssignedToMe;
+          const wasUnassignedFromMe = wasAssignedToMe && !isNowAssignedToMe;
+          
+          // Check team member changes
+          const oldTeamMembers = oldJob?.team_members || [];
+          const newTeamMembers = updatedJob.team_members || [];
+          const oldTeamArray = Array.isArray(oldTeamMembers) ? oldTeamMembers : [];
+          const newTeamArray = Array.isArray(newTeamMembers) ? newTeamMembers : [];
+          const wasInTeam = oldTeamArray.includes(user.technicianId);
+          const isNowInTeam = newTeamArray.includes(user.technicianId);
+          const wasRemovedFromTeam = wasInTeam && !isNowInTeam;
+          const wasAddedToTeam = !wasInTeam && isNowInTeam;
           
           // Don't process if status is COMPLETED (already completed)
           const isCompleted = updatedJob.status === 'COMPLETED';
           
-          console.log('🔍 Assignment check:', {
+          console.log('🔍 Realtime update analysis:', {
+            jobId: updatedJob.id,
+            wasRelevantToMe,
+            isNowRelevantToMe,
+            isNewAssignment,
+            isUnassignment,
+            isReassignment,
             wasAssignedToMe,
             isNowAssignedToMe,
-            isNewAssignment,
+            wasUnassignedFromMe,
+            wasInTeam,
+            isNowInTeam,
+            wasRemovedFromTeam,
+            wasAddedToTeam,
             oldStatus: oldJob?.status,
             newStatus: updatedJob.status,
             isCompleted,
@@ -1050,19 +1089,16 @@ const TechnicianDashboard = () => {
             myTechnicianId: user.technicianId
           });
           
-          // Check if this is a new assignment with ASSIGNED status
-          // 1. It's newly assigned to this technician (wasn't before, is now)
-          // 2. Status is ASSIGNED
-          // 3. Not already being processed
-          // 4. Not completed
-          if (isNewAssignment && isNowAssignedToMe && updatedJob.status === 'ASSIGNED' && !isCompleted) {
-            console.log('✅ New job assignment detected via realtime:', updatedJob.id);
-            console.log('📋 Assignment details:', {
-              wasAssignedToMe,
-              isNowAssignedToMe,
-              status: updatedJob.status,
-              assignedDate: updatedJob.assigned_date
-            });
+          // Case 1: Job was unassigned/removed from me - remove from list
+          if (isUnassignment) {
+            console.log('🗑️ Job unassigned/removed from me, removing from list:', updatedJob.id);
+            setJobs(prev => prev.filter(j => j.id !== updatedJob.id));
+            return;
+          }
+          
+          // Case 2: Job is newly assigned/added to me - add to list
+          if (isNewAssignment && !isCompleted) {
+            console.log('✅ New job assignment/team addition detected via realtime:', updatedJob.id);
             
             // Check assigned_date if it exists, otherwise accept it
             let shouldProcess = true;
@@ -1120,44 +1156,43 @@ const TechnicianDashboard = () => {
                 console.error('Error fetching new job details:', error);
               }
             }
-          } else {
-            console.log('Not a new assignment:', { wasAssignedToMe, isNowAssignedToMe, status: updatedJob.status });
+            return;
+          }
+          
+          // Case 3: Job is still relevant to me but was updated (reassignment, team change, or other update)
+          if (isNowRelevantToMe && !processingJobsRef.current.has(updatedJob.id)) {
+            console.log('🔄 Updating existing job in UI:', updatedJob.id);
             
-            // Even if not a new assignment, update the job in the UI if it's assigned to this technician
-            if (isNowAssignedToMe && !processingJobsRef.current.has(updatedJob.id)) {
-              console.log('🔄 Updating existing job in UI:', updatedJob.id);
-              
-              // Fetch full job details
-              try {
-                const { data: fullJob, error } = await db.jobs.getById(updatedJob.id);
-                if (!error && fullJob) {
-                  const jobStatus = (fullJob as any).status || fullJob.status;
-                  
-                  // Preserve order when updating from realtime (don't re-sort)
-                  shouldPreserveOrderRef.current = true;
-                  
-                  // Update in jobs list
-                  setJobs(prev => {
-                    const index = prev.findIndex(j => j.id === fullJob.id);
-                    if (index >= 0) {
-                      // Update existing job in place
-                      const updated = [...prev];
-                      updated[index] = fullJob;
-                      return updated;
-                    } else {
-                      // Job not in list yet, add it at end to preserve order
-                      if (['PENDING', 'ASSIGNED', 'EN_ROUTE', 'IN_PROGRESS'].includes(jobStatus)) {
-                        return [...prev, fullJob];
-                      }
-                      return prev;
+            // Fetch full job details
+            try {
+              const { data: fullJob, error } = await db.jobs.getById(updatedJob.id);
+              if (!error && fullJob) {
+                const jobStatus = (fullJob as any).status || fullJob.status;
+                
+                // Preserve order when updating from realtime (don't re-sort)
+                shouldPreserveOrderRef.current = true;
+                
+                // Update in jobs list
+                setJobs(prev => {
+                  const index = prev.findIndex(j => j.id === fullJob.id);
+                  if (index >= 0) {
+                    // Update existing job in place
+                    const updated = [...prev];
+                    updated[index] = fullJob;
+                    return updated;
+                  } else {
+                    // Job not in list yet, add it at end to preserve order (if ongoing)
+                    if (['PENDING', 'ASSIGNED', 'EN_ROUTE', 'IN_PROGRESS'].includes(jobStatus)) {
+                      return [...prev, fullJob];
                     }
-                  });
-                  
-                  console.log('✅ Job updated in UI');
-                }
-              } catch (error) {
-                console.error('Error updating job in UI:', error);
+                    return prev;
+                  }
+                });
+                
+                console.log('✅ Job updated in UI');
               }
+            } catch (error) {
+              console.error('Error updating job in UI:', error);
             }
           }
         }
@@ -1687,7 +1722,7 @@ const TechnicianDashboard = () => {
         return deniedDate >= today && deniedDate < tomorrow;
       });
     } else if (statusFilter === 'COMPLETED') {
-      // Filter completed jobs - only show today's completed jobs by this technician
+      // Filter completed jobs - only show today's completed jobs completed BY this technician
       const today = new Date();
       const todayStart = new Date(today);
       todayStart.setHours(0, 0, 0, 0);
@@ -1697,6 +1732,15 @@ const TechnicianDashboard = () => {
       filtered = filtered.filter(job => {
         const status = (job as any).status || job.status;
         if (status !== 'COMPLETED') return false;
+        
+        // Only show jobs completed by this technician (not just assigned to them)
+        const completedBy = (job as any).completed_by;
+        if (!completedBy) return false;
+        
+        // Check if this technician completed it
+        if (completedBy !== user?.technicianId && completedBy !== user?.id) {
+          return false;
+        }
         
         // Check if completed today
         const completedAt = (job as any).completed_at || job.completedAt;
