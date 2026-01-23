@@ -1719,7 +1719,7 @@ const TechnicianPayments = () => {
                         {breakdown.expenses.map((expense) => (
                           <TableRow key={expense.id}>
                             <TableCell>{new Date(expense.expense_date).toLocaleDateString()}</TableCell>
-                            <TableCell>{expense.description}</TableCell>
+                            <TableCell>{(expense.description && expense.description.trim()) || (expense.notes && expense.notes.trim()) || 'N/A'}</TableCell>
                             <TableCell>{expense.category || 'OTHER'}</TableCell>
                             <TableCell className="text-right font-semibold text-red-600">
                               ₹ {formatCurrency(expense.amount)}
