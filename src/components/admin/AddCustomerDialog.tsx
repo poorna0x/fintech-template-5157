@@ -1550,20 +1550,22 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
                     <div className="space-y-2 sm:col-span-2">
                       <Label htmlFor="step5_technician">Assign to Technician (Optional)</Label>
                       <Select
-                        value={step5JobData.assigned_technician_id || ''}
-                        onValueChange={(value) => setStep5JobData(prev => ({ ...prev, assigned_technician_id: value || '' }))}
+                        value={step5JobData.assigned_technician_id || 'none'}
+                        onValueChange={(value) => setStep5JobData(prev => ({ ...prev, assigned_technician_id: value === 'none' ? '' : value }))}
                         disabled={loadingTechnicians}
                       >
                         <SelectTrigger>
                           <SelectValue placeholder={loadingTechnicians ? "Loading technicians..." : "Select technician (optional)"} />
                         </SelectTrigger>
                         <SelectContent>
-                          <SelectItem value="">None (Assign later)</SelectItem>
-                          {technicians.map((tech) => (
-                            <SelectItem key={tech.id} value={tech.id}>
-                              {tech.full_name} ({tech.employee_id})
-                            </SelectItem>
-                          ))}
+                          <SelectItem value="none">None (Assign later)</SelectItem>
+                          {technicians
+                            .filter((tech) => tech && tech.id && tech.full_name)
+                            .map((tech) => (
+                              <SelectItem key={tech.id} value={tech.id || ''}>
+                                {tech.full_name || 'Unknown'} {tech.employee_id ? `(${tech.employee_id})` : ''}
+                              </SelectItem>
+                            ))}
                         </SelectContent>
                       </Select>
                       {step5JobData.assigned_technician_id && (
