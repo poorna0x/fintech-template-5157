@@ -283,7 +283,32 @@ const TechnicianPayments = () => {
       if (advancesError) throw advancesError;
 
       const { data: extraCommissionsData, error: extraCommissionsError } = await db.technicianExtraCommissions.getAll();
-      if (extraCommissionsError) throw extraCommissionsError;
+      if (extraCommissionsError) {
+        console.error('❌ Error loading extra commissions:', extraCommissionsError);
+        throw extraCommissionsError;
+      }
+      console.log('📊 Loaded Extra Commissions:', extraCommissionsData?.length || 0, 'records');
+      if (extraCommissionsData && extraCommissionsData.length > 0) {
+        console.log('📋 Extra Commissions Details:', extraCommissionsData.map((ec: any) => ({
+          id: ec.id,
+          technician_id: ec.technician_id,
+          amount: ec.amount,
+          description: ec.description,
+          date: ec.commission_date
+        })));
+        // Check for specific amount (₹60) to help debug
+        const sixtyRupeeCommissions = extraCommissionsData.filter((ec: any) => ec.amount === 60);
+        if (sixtyRupeeCommissions.length > 0) {
+          console.log('🔍 Found ₹60 extra commissions:', sixtyRupeeCommissions.map((ec: any) => ({
+            id: ec.id,
+            technician_id: ec.technician_id,
+            amount: ec.amount,
+            description: ec.description
+          })));
+        }
+      } else {
+        console.warn('⚠️ No extra commissions found in database at all!');
+      }
 
       // Load holidays for all technicians in the period
       const { data: holidaysData, error: holidaysError } = await db.technicianHolidays.getAll(
@@ -401,6 +426,19 @@ const TechnicianPayments = () => {
         // Extra commissions persist across months and should be included in all salary calculations
         const techExtraCommissions = (extraCommissionsData || []).filter((ec: TechnicianExtraCommission) => ec.technician_id === techId);
         const totalExtraCommission = techExtraCommissions.reduce((sum, ec) => sum + (ec.amount || 0), 0);
+        console.log(`💰 ${tech.full_name} (ID: ${techId}): Extra Commissions = ${techExtraCommissions.length} records, Total = ₹${totalExtraCommission}`);
+        
+        // Debug: Log all extra commissions and their technician IDs to find mismatches
+        if (techExtraCommissions.length === 0 && (extraCommissionsData || []).length > 0) {
+          console.warn(`⚠️ No extra commissions found for ${tech.full_name} (ID: ${techId})`);
+          console.log('📋 All extra commissions in database:', (extraCommissionsData || []).map((ec: any) => ({
+            id: ec.id,
+            technician_id: ec.technician_id,
+            amount: ec.amount,
+            description: ec.description,
+            date: ec.commission_date
+          })));
+        }
 
         // Get holidays for this technician
         const techHolidays = (holidaysData || []).filter((h: TechnicianHoliday) => h.technician_id === techId);
@@ -856,8 +894,17 @@ const TechnicianPayments = () => {
         if (error) throw error;
         toast.success('Extra commission updated');
       } else {
-        const { error } = await db.technicianExtraCommissions.create(commissionData);
-        if (error) throw error;
+        console.log('💾 Creating extra commission:', commissionData);
+        const { data, error } = await db.technicianExtraCommissions.create(commissionData);
+        if (error) {
+          console.error('❌ Error creating extra commission:', error);
+          throw error;
+        }
+        if (!data) {
+          console.error('❌ No data returned from create operation');
+          throw new Error('Failed to create extra commission - no data returned');
+        }
+        console.log('✅ Extra commission created successfully:', data);
         toast.success('Extra commission added');
       }
 
