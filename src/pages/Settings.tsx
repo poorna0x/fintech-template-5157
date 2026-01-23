@@ -1705,12 +1705,12 @@ const Settings = () => {
           setSelectedTechnician(null);
         }
       }}>
-        <DialogContent className="sm:max-w-md mx-4 max-h-[90vh] overflow-y-auto">
+        <DialogContent className="w-[95vw] sm:w-full sm:max-w-md mx-4 max-h-[90vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>
+            <DialogTitle className="text-base sm:text-lg">
               {editTechnicianDialogOpen ? 'Edit Technician' : 'Add New Technician'}
             </DialogTitle>
-            <DialogDescription>
+            <DialogDescription className="text-sm">
               {editTechnicianDialogOpen 
                 ? 'Update technician information and credentials'
                 : 'Create a new technician account with login credentials'
@@ -1718,10 +1718,10 @@ const Settings = () => {
             </DialogDescription>
           </DialogHeader>
           
-          <div className="space-y-6">
-            <div className="space-y-4">
-              <h3 className="text-lg font-semibold text-gray-900">Basic Information</h3>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <div className="space-y-4 sm:space-y-6">
+            <div className="space-y-3 sm:space-y-4">
+              <h3 className="text-base sm:text-lg font-semibold text-gray-900">Basic Information</h3>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
                 <div>
                   <Label htmlFor="fullName">Full Name *</Label>
                   <Input
@@ -1794,11 +1794,11 @@ const Settings = () => {
               </div>
             </div>
             
-            <div className="space-y-4">
-              <h3 className="text-lg font-semibold text-gray-900">Technician Photo</h3>
+            <div className="space-y-3 sm:space-y-4">
+              <h3 className="text-base sm:text-lg font-semibold text-gray-900">Technician Photo</h3>
               <div>
-                <Label>Upload Technician Photo (Optional)</Label>
-                <p className="text-sm text-gray-500 mb-2">Upload photo for ID card display</p>
+                <Label className="text-sm sm:text-base">Upload Technician Photo (Optional)</Label>
+                <p className="text-xs sm:text-sm text-gray-500 mb-2">Upload photo for ID card display</p>
                 <ImageUpload
                   onImagesChange={(images) => setTechnicianFormData(prev => ({ ...prev, photo: images[0] || '' }))}
                   maxImages={1}
@@ -1822,11 +1822,11 @@ const Settings = () => {
               </div>
             </div>
             
-            <div className="space-y-4">
-              <h3 className="text-lg font-semibold text-gray-900">Payment QR Code</h3>
+            <div className="space-y-3 sm:space-y-4">
+              <h3 className="text-base sm:text-lg font-semibold text-gray-900">Payment QR Code</h3>
               <div>
-                <Label>Upload Payment QR Code (Optional)</Label>
-                <p className="text-sm text-gray-500 mb-2">Upload QR code for payment scanning</p>
+                <Label className="text-sm sm:text-base">Upload Payment QR Code (Optional)</Label>
+                <p className="text-xs sm:text-sm text-gray-500 mb-2">Upload QR code for payment scanning</p>
                 <ImageUpload
                   onImagesChange={(images) => setTechnicianFormData(prev => ({ ...prev, qrCode: images[0] || '' }))}
                   maxImages={1}
@@ -1851,15 +1851,15 @@ const Settings = () => {
             </div>
             
             {/* QR Code Visibility Settings */}
-            <div className="space-y-4">
-              <h3 className="text-lg font-semibold text-gray-900">QR Code Visibility</h3>
+            <div className="space-y-3 sm:space-y-4">
+              <h3 className="text-base sm:text-lg font-semibold text-gray-900">QR Code Visibility</h3>
               <div>
-                <Label>Select which QR codes this technician can see</Label>
-                <p className="text-sm text-gray-500 mb-3">Control which payment QR codes are available to this technician</p>
+                <Label className="text-sm sm:text-base">Select which QR codes this technician can see</Label>
+                <p className="text-xs sm:text-sm text-gray-500 mb-3">Control which payment QR codes are available to this technician</p>
                 
-                <div className="space-y-3">
+                <div className="space-y-2 sm:space-y-3">
                   {/* Show All Option */}
-                  <div className="flex items-center space-x-2 p-3 border rounded-lg">
+                  <div className="flex items-center space-x-2 p-2 sm:p-3 border rounded-lg">
                     <Checkbox
                       id="qr-all"
                       checked={technicianFormData.visibleQrCodes.includes('all')}
@@ -1871,7 +1871,7 @@ const Settings = () => {
                         }
                       }}
                     />
-                    <Label htmlFor="qr-all" className="font-medium cursor-pointer flex-1">
+                    <Label htmlFor="qr-all" className="font-medium cursor-pointer flex-1 text-sm sm:text-base">
                       Show All QR Codes
                     </Label>
                   </div>
@@ -1879,7 +1879,7 @@ const Settings = () => {
                   {/* Common QR Codes */}
                   {commonQrCodes.length > 0 && (
                     <div className="space-y-2">
-                      <Label className="text-sm font-medium text-gray-700">Common QR Codes:</Label>
+                      <Label className="text-xs sm:text-sm font-medium text-gray-700">Common QR Codes:</Label>
                       {commonQrCodes.map((qr) => {
                         const qrId = `common_${qr.id}`;
                         const isChecked = technicianFormData.visibleQrCodes.includes(qrId);
@@ -1907,7 +1907,7 @@ const Settings = () => {
                                 }
                               }}
                             />
-                            <Label htmlFor={qrId} className="cursor-pointer flex-1 text-sm">
+                            <Label htmlFor={qrId} className="cursor-pointer flex-1 text-xs sm:text-sm">
                               {qr.name}
                             </Label>
                           </div>
@@ -1919,7 +1919,7 @@ const Settings = () => {
                   {/* Technician QR Codes */}
                   {technicians.filter(t => (t as any).qrCode && (t as any).qrCode.trim() !== '').length > 0 && (
                     <div className="space-y-2">
-                      <Label className="text-sm font-medium text-gray-700">Technician QR Codes:</Label>
+                      <Label className="text-xs sm:text-sm font-medium text-gray-700">Technician QR Codes:</Label>
                       {technicians
                         .filter(t => (t as any).qrCode && (t as any).qrCode.trim() !== '')
                         .map((tech) => {
@@ -1949,7 +1949,7 @@ const Settings = () => {
                                   }
                                 }}
                               />
-                              <Label htmlFor={qrId} className="cursor-pointer flex-1 text-sm">
+                              <Label htmlFor={qrId} className="cursor-pointer flex-1 text-xs sm:text-sm">
                                 {tech.fullName}'s QR Code
                               </Label>
                             </div>
@@ -1959,7 +1959,7 @@ const Settings = () => {
                   )}
                   
                   {commonQrCodes.length === 0 && technicians.filter(t => (t as any).qrCode && (t as any).qrCode.trim() !== '').length === 0 && (
-                    <p className="text-sm text-gray-500 italic">No QR codes available. Add common QR codes or upload QR codes for technicians.</p>
+                    <p className="text-xs sm:text-sm text-gray-500 italic">No QR codes available. Add common QR codes or upload QR codes for technicians.</p>
                   )}
                 </div>
               </div>
