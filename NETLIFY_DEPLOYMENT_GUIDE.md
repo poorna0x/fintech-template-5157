@@ -37,6 +37,10 @@
 ✅ **VITE_GOOGLE_MAPS_API_KEY**
 ✅ All **VITE_FIREBASE_*** variables
 ✅ All **VITE_CLOUDINARY_*** variables
+  - **VITE_CLOUDINARY_CLOUD_NAME** (required for uploads)
+  - **VITE_CLOUDINARY_UPLOAD_PRESET** (required for uploads)
+  - **VITE_CLOUDINARY_API_KEY** (required for uploads)
+  - **VITE_CLOUDINARY_API_SECRET** (REQUIRED for photo deletion - without this, photos will only be removed from database, not Cloudinary storage)
 
 ### Runtime Variables (Server-Side)
 
