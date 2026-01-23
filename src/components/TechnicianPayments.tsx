@@ -1515,7 +1515,8 @@ const TechnicianPayments = () => {
                 const month = commissionPeriod.start.toLocaleDateString('en-IN', { month: 'long', year: 'numeric' });
                 
                 // Calculate payment date: 10th of next month
-                const nextMonth = new Date(commissionPeriod.end);
+                // Use start date (1st of month) to avoid date rollover issues when adding months
+                const nextMonth = new Date(commissionPeriod.start);
                 nextMonth.setMonth(nextMonth.getMonth() + 1);
                 nextMonth.setDate(10); // Set to 10th of next month
                 const paymentDate = nextMonth.toLocaleDateString('en-IN', { day: 'numeric', month: 'long', year: 'numeric' });
@@ -2091,8 +2092,9 @@ const TechnicianPayments = () => {
                       </p>
                       <p className="text-xs text-gray-500 mt-1">
                         Paid on {(() => {
-                          const endDate = commissionPeriod?.end || new Date();
-                          const paymentDate = new Date(endDate);
+                          // Use start date (1st of month) to avoid date rollover issues when adding months
+                          const startDate = commissionPeriod?.start || new Date();
+                          const paymentDate = new Date(startDate);
                           paymentDate.setMonth(paymentDate.getMonth() + 1);
                           paymentDate.setDate(10);
                           return paymentDate.toLocaleDateString('en-IN', {
