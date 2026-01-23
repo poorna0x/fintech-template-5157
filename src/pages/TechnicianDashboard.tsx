@@ -4202,65 +4202,9 @@ const TechnicianDashboard = () => {
                     </Card>
                   );
                 })}
-              
-              {/* Daily Summary for Completed Jobs */}
-              {statusFilter === 'COMPLETED' && filteredJobs.length > 0 && (() => {
-                let totalCash = 0;
-                let totalOnline = 0;
-                let totalAmount = 0;
-                
-                filteredJobs.forEach((job) => {
-                  const paymentAmount = (job as any).payment_amount || (job as any).actual_cost || 0;
-                  const paymentMethod = (job as any).payment_method || '';
-                  
-                  if (paymentAmount > 0) {
-                    totalAmount += paymentAmount;
-                    if (paymentMethod === 'CASH') {
-                      totalCash += paymentAmount;
-                    } else if (paymentMethod && paymentMethod !== 'CASH') {
-                      totalOnline += paymentAmount;
-                    }
-                  }
-                });
-                
-                if (totalAmount > 0) {
-                  return (
-                    <Card className="mt-6 border-2 border-green-500 bg-green-50">
-                      <CardContent className="p-4 sm:p-6">
-                        <div className="flex items-center gap-2 mb-4">
-                          <Receipt className="w-5 h-5 sm:w-6 sm:h-6 text-green-700" />
-                          <h3 className="text-lg sm:text-xl font-bold text-green-900">Today's Billing Summary</h3>
-                        </div>
-                        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                          <div className="bg-white rounded-lg p-3 sm:p-4 border border-green-200">
-                            <div className="text-xs sm:text-sm text-gray-600 mb-1">Total Cash</div>
-                            <div className="text-lg sm:text-2xl font-bold text-gray-900">
-                              ₹{totalCash.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                            </div>
-                          </div>
-                          <div className="bg-white rounded-lg p-3 sm:p-4 border border-green-200">
-                            <div className="text-xs sm:text-sm text-gray-600 mb-1">Total Online/QR</div>
-                            <div className="text-lg sm:text-2xl font-bold text-gray-900">
-                              ₹{totalOnline.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                            </div>
-                          </div>
-                          <div className="bg-white rounded-lg p-3 sm:p-4 border-2 border-green-500">
-                            <div className="text-xs sm:text-sm text-gray-600 mb-1">Grand Total</div>
-                            <div className="text-lg sm:text-2xl font-bold text-green-700">
-                              ₹{totalAmount.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                            </div>
-                          </div>
-                        </div>
-                      </CardContent>
-                    </Card>
-                  );
-                }
-                return null;
-              })()}
               </div>
             </CardContent>
           </Card>
-          </>
         )}
 
         {/* Section Title */}
@@ -4305,7 +4249,8 @@ const TechnicianDashboard = () => {
               </CardContent>
             </Card>
           ) : (
-            filteredJobs.map((job) => {
+            <>
+            {filteredJobs.map((job) => {
               // Extract follow-up information
               const followUpDate = (job as any).follow_up_date || job.followUpDate || null;
               const followUpTime = (job as any).follow_up_time || job.followUpTime || null;
@@ -4357,7 +4302,7 @@ const TechnicianDashboard = () => {
               })() : false;
               
               return (
-                <div key={job.id}>
+                <div key={job.id} className="mb-4">
                   <Card 
                     className={`hover:shadow-md transition-shadow ${
                       (job as any).status === 'IN_PROGRESS' || job.status === 'IN_PROGRESS'
@@ -5016,7 +4961,7 @@ const TechnicianDashboard = () => {
                     </div>
                 </CardContent>
               </Card>
-              </div>
+                </div>
               );
             })}
             
@@ -5074,6 +5019,7 @@ const TechnicianDashboard = () => {
               }
               return null;
             })()}
+            </>
           )}
         </div>
 
