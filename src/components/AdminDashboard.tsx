@@ -6174,15 +6174,19 @@ const AdminDashboard = () => {
       }
 
       // Delete from Cloudinary if it's a Cloudinary URL
+      let cloudinaryDeleted = false;
       try {
         const publicIdInfo = cloudinaryService.extractPublicId(photoToDelete.photoUrl);
         if (publicIdInfo) {
           const deleted = await cloudinaryService.deleteImage(publicIdInfo.publicId, publicIdInfo.useSecondary);
           if (deleted) {
             console.log(`✅ Photo deleted from Cloudinary: ${publicIdInfo.publicId}`);
+            cloudinaryDeleted = true;
           } else {
             console.warn(`⚠️ Failed to delete photo from Cloudinary: ${publicIdInfo.publicId}`);
           }
+        } else {
+          console.warn('Could not extract public_id from URL:', photoToDelete.photoUrl);
         }
       } catch (cloudinaryError) {
         console.error('Error deleting photo from Cloudinary:', cloudinaryError);
@@ -6230,7 +6234,12 @@ const AdminDashboard = () => {
         }
       }
 
-      toast.success('Photo deleted successfully');
+      // Show appropriate success message
+      if (cloudinaryDeleted) {
+        toast.success('Photo deleted successfully from both database and Cloudinary');
+      } else {
+        toast.success('Photo removed from database. Note: Cloudinary deletion may have failed - check console for details.');
+      }
       setDeletePhotoDialogOpen(false);
       setPhotoToDelete(null);
     } catch (error) {
