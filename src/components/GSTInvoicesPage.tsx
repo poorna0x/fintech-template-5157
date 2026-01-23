@@ -89,8 +89,8 @@ export default function GSTInvoicesPage() {
   const [totalCount, setTotalCount] = useState(0);
   const pageSize = 20;
 
-  // Date filters
-  const [dateFilter, setDateFilter] = useState<'all' | 'custom' | 'month' | 'year'>('all');
+  // Date filters - default to current month
+  const [dateFilter, setDateFilter] = useState<'all' | 'custom' | 'month' | 'year'>('month');
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
   const [selectedMonth, setSelectedMonth] = useState(new Date().getMonth() + 1);
@@ -1145,7 +1145,7 @@ export default function GSTInvoicesPage() {
 
           {/* Date Filter */}
           <div className="border-t pt-4">
-            <Label className="mb-2 block">Date Filter</Label>
+            <Label className="mb-2 block text-sm sm:text-base">Date Filter</Label>
             <Select value={dateFilter} onValueChange={(value: 'all' | 'custom' | 'month' | 'year') => {
               setDateFilter(value);
               setCurrentPage(1);
@@ -1162,12 +1162,12 @@ export default function GSTInvoicesPage() {
             </Select>
 
             {dateFilter === 'month' && (
-              <div className="flex gap-2 mt-2">
+              <div className="flex flex-col sm:flex-row gap-2 mt-2">
                 <Select value={selectedMonth.toString()} onValueChange={(value) => {
                   setSelectedMonth(parseInt(value));
                   setCurrentPage(1);
                 }}>
-                  <SelectTrigger className="w-[150px]">
+                  <SelectTrigger className="w-full sm:w-[150px]">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
@@ -1182,7 +1182,7 @@ export default function GSTInvoicesPage() {
                   setSelectedYear(parseInt(value));
                   setCurrentPage(1);
                 }}>
-                  <SelectTrigger className="w-[150px]">
+                  <SelectTrigger className="w-full sm:w-[150px]">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
