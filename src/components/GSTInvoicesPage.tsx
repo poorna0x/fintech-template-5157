@@ -1502,6 +1502,7 @@ export default function GSTInvoicesPage() {
                   ))}
                 </TableBody>
               </Table>
+              </div>
             </div>
           )}
 
