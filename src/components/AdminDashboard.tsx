@@ -5357,6 +5357,7 @@ const AdminDashboard = () => {
       }
 
       // Create follow-up record in follow_ups table
+      // Always set scheduled_by to 'admin' when creating from admin panel
       const { data: followUpRecord, error: followUpError } = await supabase
         .from('follow_ups')
         .insert({
@@ -5365,7 +5366,7 @@ const AdminDashboard = () => {
           follow_up_date: followUpData.followUpDate,
           reason: followUpData.followUpReason,
           notes: null,
-          scheduled_by: user?.id || 'admin',
+          scheduled_by: 'admin', // Always admin when created from admin panel
           completed: false
         } as any)
         .select()
@@ -5381,12 +5382,13 @@ const AdminDashboard = () => {
       }
 
       // If this is the first follow-up (no parent), update job status
+      // Always set follow_up_scheduled_by to 'admin' when created from admin panel
       if (!followUpData.parentFollowUpId) {
         const { error: jobError } = await db.jobs.update(jobId, {
           status: 'FOLLOW_UP',
           follow_up_date: followUpData.followUpDate,
           follow_up_notes: followUpData.followUpReason,
-          follow_up_scheduled_by: user?.id || 'admin',
+          follow_up_scheduled_by: 'admin', // Always admin when created from admin panel
           follow_up_scheduled_at: new Date().toISOString()
         } as any);
 
