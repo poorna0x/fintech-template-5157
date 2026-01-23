@@ -19,7 +19,8 @@ interface Advance {
   id: string;
   technician_id: string;
   amount: number;
-  reason?: string;
+  description?: string;
+  reason?: string; // Keep for backward compatibility
   advance_date?: string;
   created_at?: string;
 }
@@ -652,7 +653,7 @@ function generateSalarySlipHTML(data: SalarySlipPDFData, includeDayWiseBreakdown
                         return `
                           <tr>
                             <td>${formattedDate}</td>
-                            <td>${sanitizeForTemplate(advance.reason || 'No reason provided')}</td>
+                            <td>${sanitizeForTemplate(advance.description || advance.reason || 'No reason provided')}</td>
                             <td style="text-align: right;" class="amount-negative">- ₹ ${formatCurrency(advance.amount || 0)}</td>
                           </tr>
                         `;
