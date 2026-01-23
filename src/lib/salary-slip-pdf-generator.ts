@@ -99,28 +99,82 @@ function generateSalarySlipHTML(data: SalarySlipPDFData): string {
           @page {
             margin: 13mm;
             size: A4;
+            border: 2px solid #000000;
+          }
+          
+          @page :first {
+            margin: 13mm;
+            size: A4;
+            border: 2px solid #000000;
+          }
+          
+          @page :left {
+            margin: 13mm;
+            size: A4;
+            border: 2px solid #000000;
+          }
+          
+          @page :right {
+            margin: 13mm;
+            size: A4;
+            border: 2px solid #000000;
           }
           
           body {
             padding: 0 !important;
             margin: 0 !important;
-            border: 2px solid #000000 !important;
+            border: none !important;
             width: 210mm !important;
             min-height: 297mm !important;
             box-sizing: border-box !important;
+          }
+          
+          /* Remove ALL pseudo-element borders to prevent double border */
+          body::before,
+          body::after {
+            display: none !important;
+            content: none !important;
+            border: none !important;
+            outline: none !important;
           }
           
           .salary-container {
             border: none !important;
             box-shadow: none !important;
             border-radius: 0 !important;
-            padding-top: 10mm !important;
-            padding-bottom: 10mm !important;
+            outline: none !important;
+            /* Generous padding ensures content never touches border - even at page breaks */
+            padding-top: 10mm !important;    /* Space from top border on first page */
+            padding-bottom: 10mm !important;  /* Space from bottom border on last page */
             padding-left: 5mm !important;
             padding-right: 5mm !important;
             margin: 0 !important;
             width: 100% !important;
             max-width: 100% !important;
+            /* Ensure padding is maintained across page breaks */
+            box-decoration-break: clone;
+            -webkit-box-decoration-break: clone;
+          }
+          
+          /* Ensure first element respects container padding */
+          .salary-container > *:first-child {
+            margin-top: 0 !important;
+          }
+          
+          /* Add extra spacing to major sections to prevent touching at page breaks */
+          .salary-breakdown,
+          .holidays-section,
+          .info-card {
+            margin-top: 8mm !important;
+            margin-bottom: 8mm !important;
+            page-break-inside: avoid;
+            break-inside: avoid;
+          }
+          
+          /* Ensure header has proper spacing */
+          .header {
+            margin-top: 0 !important;
+            margin-bottom: 12mm !important;
           }
         }
         
