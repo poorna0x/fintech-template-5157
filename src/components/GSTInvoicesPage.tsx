@@ -1280,9 +1280,9 @@ export default function GSTInvoicesPage() {
 
       {/* Invoices Table */}
       <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <Receipt className="h-5 w-5" />
+        <CardHeader className="p-4 sm:p-6">
+          <CardTitle className="flex items-center gap-2 text-base sm:text-lg">
+            <Receipt className="h-4 w-4 sm:h-5 sm:w-5" />
             Invoices ({totalCount})
           </CardTitle>
         </CardHeader>
