@@ -422,9 +422,13 @@ const TechnicianPayments = () => {
         });
         const totalAdvances = techAdvances.reduce((sum, a) => sum + (a.amount || 0), 0);
         
-        // Get extra commissions for this technician - show all extra commissions (not filtered by date)
-        // Extra commissions persist across months and should be included in all salary calculations
-        const techExtraCommissions = (extraCommissionsData || []).filter((ec: TechnicianExtraCommission) => ec.technician_id === techId);
+        // Get extra commissions for this technician - filter by selected period date range
+        // Extra commissions should only show for the selected month (current or past month)
+        const techExtraCommissions = (extraCommissionsData || []).filter((ec: TechnicianExtraCommission) => {
+          if (ec.technician_id !== techId) return false;
+          const commissionDate = ec.commission_date.split('T')[0];
+          return commissionDate >= periodStartStr && commissionDate <= periodEndStr;
+        });
         const totalExtraCommission = techExtraCommissions.reduce((sum, ec) => sum + (ec.amount || 0), 0);
         console.log(`💰 ${tech.full_name} (ID: ${techId}): Extra Commissions = ${techExtraCommissions.length} records, Total = ₹${totalExtraCommission}`);
         
