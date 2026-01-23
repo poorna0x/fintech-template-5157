@@ -224,8 +224,14 @@ export default function FollowUpModal({ isOpen, onClose, job, onScheduleFollowUp
     setIsSubmitting(true);
     
     try {
+      // Format date in local timezone to avoid UTC conversion issues
+      const year = selectedDate.getFullYear();
+      const month = String(selectedDate.getMonth() + 1).padStart(2, '0');
+      const day = String(selectedDate.getDate()).padStart(2, '0');
+      const formattedDate = `${year}-${month}-${day}`;
+      
       const followUpData = {
-        followUpDate: selectedDate.toISOString().split('T')[0],
+        followUpDate: formattedDate,
         followUpReason: reason.trim(),
         parentFollowUpId: selectedParentFollowUp || undefined,
         rescheduleFollowUpId: rescheduleFollowUpId || undefined

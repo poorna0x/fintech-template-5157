@@ -129,6 +129,7 @@ const AdminDashboard = () => {
   const { user, isAdmin, loading: authLoading, logout } = useAuth();
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [jobs, setJobs] = useState<Job[]>([]);
+  const [allFollowUpJobs, setAllFollowUpJobs] = useState<Job[]>([]); // All follow-up jobs for glow effect
   const [technicians, setTechnicians] = useState<Technician[]>([]);
   const [loading, setLoading] = useState(true);
   const [customerAMCStatus, setCustomerAMCStatus] = useState<Record<string, boolean>>({}); // Map customer ID to hasActiveAMC
@@ -1102,6 +1103,19 @@ const AdminDashboard = () => {
     }
   }, [pageSize, deniedDateFilter, completedDateFilter]);
 
+  // Reload follow-up jobs when status filter changes to RESCHEDULED
+  useEffect(() => {
+    if (statusFilter === 'RESCHEDULED') {
+      db.jobs.getByStatusPaginated(['FOLLOW_UP', 'RESCHEDULED'], 1, 1000).then(result => {
+        if (result.data) {
+          setAllFollowUpJobs(result.data);
+        }
+      }).catch(() => {
+        // Silently fail
+      });
+    }
+  }, [statusFilter]);
+
   // Fetch all jobs for customer when report dialog opens
   useEffect(() => {
     const fetchCustomerReportJobs = async () => {
@@ -1225,7 +1239,15 @@ const AdminDashboard = () => {
       // Brands/models can load in background while jobs load
       Promise.all([
         loadBrandsAndModels(),
-        loadFilteredJobs(statusFilter, currentPage)
+        loadFilteredJobs(statusFilter, currentPage),
+        // Load all follow-up jobs for glow effect in stats card
+        db.jobs.getByStatusPaginated(['FOLLOW_UP', 'RESCHEDULED'], 1, 1000).then(result => {
+          if (result.data) {
+            setAllFollowUpJobs(result.data);
+          }
+        }).catch(() => {
+          setAllFollowUpJobs([]);
+        })
       ]).catch((error) => {
         console.error('Error loading secondary data:', error);
       });
@@ -5455,8 +5477,18 @@ const AdminDashboard = () => {
     rescheduleFollowUpId?: string;
   }) => {
     try {
-      // If rescheduling, delete the old follow-up first
+      // If rescheduling, check if the old follow-up is a root (no parent) before deleting
+      let wasRootFollowUp = false;
       if (followUpData.rescheduleFollowUpId) {
+        // Get the old follow-up to check if it's a root
+        const { data: oldFollowUp } = await supabase
+          .from('follow_ups')
+          .select('parent_follow_up_id')
+          .eq('id', followUpData.rescheduleFollowUpId)
+          .single();
+        
+        wasRootFollowUp = !oldFollowUp?.parent_follow_up_id;
+        
         const { error: deleteError } = await supabase
           .from('follow_ups')
           .delete()
@@ -5501,9 +5533,9 @@ const AdminDashboard = () => {
         throw new Error(followUpError.message || 'Failed to create follow-up record');
       }
 
-      // If this is the first follow-up (no parent), update job status
+      // If this is a root follow-up (no parent) OR if we're rescheduling a root follow-up, update job status
       // Use the actual user ID for follow_up_scheduled_by
-      if (!followUpData.parentFollowUpId) {
+      if (!followUpData.parentFollowUpId || wasRootFollowUp) {
         const { error: jobError } = await db.jobs.update(jobId, {
           status: 'FOLLOW_UP',
           follow_up_date: followUpData.followUpDate,
@@ -5553,6 +5585,20 @@ const AdminDashboard = () => {
             ? 'Nested follow-up added successfully' 
             : 'Follow-up scheduled successfully'
       );
+      
+      // Reload all follow-up jobs to update glow effect
+      db.jobs.getByStatusPaginated(['FOLLOW_UP', 'RESCHEDULED'], 1, 1000).then(result => {
+        if (result.data) {
+          setAllFollowUpJobs(result.data);
+        }
+      }).catch(() => {
+        // Silently fail
+      });
+      
+      // Reload filtered jobs if currently viewing follow-up jobs to show updated date
+      if (statusFilter === 'RESCHEDULED') {
+        loadFilteredJobs('RESCHEDULED', currentPage);
+      }
     } catch (error: any) {
       const errorMessage = error?.message || 'Failed to schedule follow-up';
       if (process.env.NODE_ENV === 'development') {
@@ -7478,6 +7524,7 @@ const AdminDashboard = () => {
           jobCounts={jobCounts}
           pendingJobs={pendingJobs}
           inProgressJobs={inProgressJobs}
+          allJobs={allFollowUpJobs}
         />
 
         {/* Date Filter for Denied Jobs */}
