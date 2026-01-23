@@ -107,8 +107,34 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
     description: '',
     lead_source: '',
     lead_source_custom: '',
-    priority: 'MEDIUM' as 'LOW' | 'MEDIUM' | 'HIGH' | 'URGENT'
+    priority: 'MEDIUM' as 'LOW' | 'MEDIUM' | 'HIGH' | 'URGENT',
+    assigned_technician_id: '' // Add technician assignment field
   });
+
+  // Load technicians for assignment
+  const [technicians, setTechnicians] = useState<any[]>([]);
+  const [loadingTechnicians, setLoadingTechnicians] = useState(false);
+
+  useEffect(() => {
+    const loadTechnicians = async () => {
+      if (open && shouldCreateJob) {
+        setLoadingTechnicians(true);
+        try {
+          const { data, error } = await db.technicians.getAll();
+          if (error) {
+            console.error('Error loading technicians:', error);
+          } else {
+            setTechnicians(data || []);
+          }
+        } catch (error) {
+          console.error('Error loading technicians:', error);
+        } finally {
+          setLoadingTechnicians(false);
+        }
+      }
+    };
+    loadTechnicians();
+  }, [open, shouldCreateJob]);
 
   // Initialize scheduled_date when dialog opens and shouldCreateJob is true
   useEffect(() => {
@@ -796,7 +822,7 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
             scheduled_time_slot: scheduledTimeSlot,
             service_address: newCustomer.address,
             service_location: newCustomer.location,
-            status: 'PENDING' as const,
+            status: step5JobData.assigned_technician_id ? 'ASSIGNED' as const : 'PENDING' as const,
             priority: step5JobData.priority,
             description: step5JobData.description.trim() || '',
             requirements: [{ 
@@ -806,6 +832,8 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
             estimated_cost: 0,
             payment_status: 'PENDING' as const,
             before_photos: allPhotos.length > 0 ? allPhotos : [], // Add photos from Step 3 to job's before_photos
+            assigned_technician_id: step5JobData.assigned_technician_id || null,
+            assigned_date: step5JobData.assigned_technician_id ? new Date().toISOString() : null
           };
 
           const jobResult = await db.jobs.create(jobData as any);
@@ -814,6 +842,18 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
           
           if (jobError) {
             console.error('Failed to create job:', jobError);
+          } else if (newJob && step5JobData.assigned_technician_id) {
+            // Send notification to assigned technician
+            try {
+              const { sendNotification, createJobAssignedNotification } = await import('@/lib/notifications');
+              const notification = createJobAssignedNotification(newJob as any, technicians.find(t => t.id === step5JobData.assigned_technician_id));
+              if (notification) {
+                await sendNotification(notification);
+              }
+            } catch (notifError) {
+              console.error('Error sending notification:', notifError);
+              // Don't fail the job creation if notification fails
+            }
           }
         } catch (error) {
           console.error('Error creating job:', error);
@@ -827,7 +867,11 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
       // Show combined toast message
       if (shouldCreateJob && newJob) {
         const jobNumber = (newJob as any).job_number || (newJob as any).jobNumber || 'N/A';
-        toast.success(`Customer ${newCustomer.customer_id || newCustomer.customerId} and Job ${jobNumber} created successfully!`);
+        const assignedTech = step5JobData.assigned_technician_id 
+          ? technicians.find(t => t.id === step5JobData.assigned_technician_id)
+          : null;
+        const techName = assignedTech ? ` and assigned to ${assignedTech.full_name}` : '';
+        toast.success(`Customer ${newCustomer.customer_id || newCustomer.customerId} and Job ${jobNumber} created${techName}!`);
       } else if (shouldCreateJob && jobError) {
         toast.success(`Customer ${newCustomer.customer_id || newCustomer.customerId} created successfully!`);
         toast.error('Failed to create job. Please create it manually.');
@@ -867,7 +911,8 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
         description: '',
         lead_source: '',
         lead_source_custom: '',
-        priority: 'MEDIUM' as 'LOW' | 'MEDIUM' | 'HIGH' | 'URGENT'
+        priority: 'MEDIUM' as 'LOW' | 'MEDIUM' | 'HIGH' | 'URGENT',
+        assigned_technician_id: '' // Reset technician assignment
       });
 
       // Call onCustomerCreated only once at the end
@@ -1500,6 +1545,32 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
                           <SelectItem value="URGENT">Urgent</SelectItem>
                         </SelectContent>
                       </Select>
+                    </div>
+
+                    <div className="space-y-2 sm:col-span-2">
+                      <Label htmlFor="step5_technician">Assign to Technician (Optional)</Label>
+                      <Select
+                        value={step5JobData.assigned_technician_id || ''}
+                        onValueChange={(value) => setStep5JobData(prev => ({ ...prev, assigned_technician_id: value || '' }))}
+                        disabled={loadingTechnicians}
+                      >
+                        <SelectTrigger>
+                          <SelectValue placeholder={loadingTechnicians ? "Loading technicians..." : "Select technician (optional)"} />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="">None (Assign later)</SelectItem>
+                          {technicians.map((tech) => (
+                            <SelectItem key={tech.id} value={tech.id}>
+                              {tech.full_name} ({tech.employee_id})
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      {step5JobData.assigned_technician_id && (
+                        <p className="text-xs text-gray-500">
+                          Job will be assigned to selected technician immediately
+                        </p>
+                      )}
                     </div>
 
                     <div className="space-y-2 sm:col-span-2">
