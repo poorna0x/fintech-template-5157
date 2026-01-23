@@ -1286,14 +1286,119 @@ export default function GSTInvoicesPage() {
             Invoices ({totalCount})
           </CardTitle>
         </CardHeader>
-        <CardContent>
+        <CardContent className="p-4 sm:p-6">
           {loading ? (
             <div className="text-center py-8 text-gray-500">Loading invoices...</div>
           ) : filteredInvoices.length === 0 ? (
             <div className="text-center py-8 text-gray-500">No invoices found</div>
           ) : (
-            <div className="overflow-x-auto">
-              <Table>
+            <div className="overflow-x-auto -mx-4 sm:mx-0">
+              {/* Mobile Card View */}
+              <div className="block sm:hidden space-y-4">
+                {filteredInvoices.map((invoice) => (
+                  <Card key={invoice.id} className="mx-4">
+                    <CardContent className="p-4 space-y-3">
+                      <div className="flex items-start justify-between">
+                        <div className="flex-1 min-w-0">
+                          <div className="font-mono font-semibold text-sm mb-1 break-all">
+                            {invoice.invoice_number}
+                          </div>
+                          <div className="flex items-center gap-1 text-xs text-gray-500">
+                            <Calendar className="h-3 w-3" />
+                            {formatDate(invoice.invoice_date)}
+                          </div>
+                        </div>
+                        <Badge variant={invoice.invoice_type === 'B2B' ? 'default' : 'secondary'} className="text-xs shrink-0">
+                          {invoice.invoice_type}
+                        </Badge>
+                      </div>
+                      
+                      <div className="space-y-2 text-sm">
+                        <div>
+                          <span className="font-medium">Customer: </span>
+                          <span>{invoice.customer_name}</span>
+                        </div>
+                        {invoice.customer_phone && (
+                          <div>
+                            <span className="font-medium">Phone: </span>
+                            <span>{invoice.customer_phone}</span>
+                          </div>
+                        )}
+                        {invoice.customer_gstin && (
+                          <div>
+                            <span className="font-medium">GSTIN: </span>
+                            <span className="font-mono text-xs">{invoice.customer_gstin}</span>
+                          </div>
+                        )}
+                        <div>
+                          <span className="font-medium">Total: </span>
+                          <span className="font-semibold">{formatCurrency(invoice.total_amount)}</span>
+                        </div>
+                        <div className="text-xs">
+                          {invoice.is_intra_state ? (
+                            <div>
+                              <span>CGST: {formatCurrency(invoice.cgst)}</span>
+                              <span className="mx-2">|</span>
+                              <span>SGST: {formatCurrency(invoice.sgst)}</span>
+                            </div>
+                          ) : (
+                            <div>IGST: {formatCurrency(invoice.igst)}</div>
+                          )}
+                        </div>
+                      </div>
+                      
+                      <div className="flex flex-wrap gap-2 pt-2 border-t">
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => handleViewInvoice(invoice)}
+                          className="flex-1 min-w-[80px] text-xs"
+                        >
+                          <Eye className="h-3 w-3 mr-1" />
+                          View
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => handleRegenerateInvoice(invoice)}
+                          className="flex-1 min-w-[80px] text-xs"
+                        >
+                          <Download className="h-3 w-3 mr-1" />
+                          PDF
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => {
+                            exportGSTInvoicesToCSV([invoice], `Invoice_${invoice.invoice_number}`);
+                            toast.success('Invoice exported to CSV');
+                          }}
+                          className="border-green-600 text-green-700 hover:bg-green-50 text-xs"
+                          title="Export to CSV"
+                        >
+                          <FileDown className="h-3 w-3" />
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => {
+                            exportGSTInvoicesToExcel([invoice], `Invoice_${invoice.invoice_number}`);
+                            toast.success('Invoice exported to Excel');
+                          }}
+                          className="border-green-600 text-green-700 hover:bg-green-50 text-xs"
+                          title="Export to Excel"
+                        >
+                          <FileSpreadsheet className="h-3 w-3" />
+                        </Button>
+                      </div>
+                    </CardContent>
+                  </Card>
+                ))}
+              </div>
+              
+              {/* Desktop Table View */}
+              <div className="hidden sm:block">
+                <Table>
                 <TableHeader>
                   <TableRow>
                     <TableHead>Invoice #</TableHead>
