@@ -271,6 +271,7 @@ const TechnicianDashboard = () => {
   const lastJobIdsRef = useRef<Set<string>>(new Set()); // Track job IDs from last active session
   const hasJobsRef = useRef<boolean>(false); // Track if we have loaded jobs at least once
   const shouldPreserveOrderRef = useRef<boolean>(false); // Track if we should preserve job order (true when updating status, false when loading from DB)
+  const jobsRef = useRef<Job[]>([]); // Track current jobs state for synchronous access in realtime handler
   // Load seenJobs from localStorage on mount
   const [seenJobs, setSeenJobs] = useState<Set<string>>(() => {
     try {
@@ -506,6 +507,7 @@ const TechnicianDashboard = () => {
       // Mark that we should sort (loading from database)
       shouldPreserveOrderRef.current = false;
       setJobs(allJobs);
+      jobsRef.current = allJobs; // Update ref for synchronous access
       hasJobsRef.current = true; // Mark that we've loaded jobs at least once
       setJobsLoading(false); // Show jobs immediately, don't wait for AMC
       
@@ -1031,7 +1033,7 @@ const TechnicianDashboard = () => {
             return;
           }
           
-          // Helper function to check if a job is relevant to this technician
+          // Helper function to check if a job is relevant to this technician (should be in their list)
           const isJobRelevantToMe = (job: any) => {
             if (!job) return false;
             // Check if assigned to this technician
@@ -1042,158 +1044,106 @@ const TechnicianDashboard = () => {
             return false;
           };
           
-          // Check relevance in old and new states
-          const wasRelevantToMe = isJobRelevantToMe(oldJob);
-          const isNowRelevantToMe = isJobRelevantToMe(updatedJob);
-          const isNewAssignment = !wasRelevantToMe && isNowRelevantToMe;
-          const isUnassignment = wasRelevantToMe && !isNowRelevantToMe;
-          const isReassignment = wasRelevantToMe && isNowRelevantToMe; // Still relevant but might have changed
-          
-          // Check assignment changes
-          const wasAssignedToMe = oldJob?.assigned_technician_id === user.technicianId;
-          const isNowAssignedToMe = updatedJob.assigned_technician_id === user.technicianId;
-          const wasUnassignedFromMe = wasAssignedToMe && !isNowAssignedToMe;
-          
-          // Check team member changes
-          const oldTeamMembers = oldJob?.team_members || [];
-          const newTeamMembers = updatedJob.team_members || [];
-          const oldTeamArray = Array.isArray(oldTeamMembers) ? oldTeamMembers : [];
-          const newTeamArray = Array.isArray(newTeamMembers) ? newTeamMembers : [];
-          const wasInTeam = oldTeamArray.includes(user.technicianId);
-          const isNowInTeam = newTeamArray.includes(user.technicianId);
-          const wasRemovedFromTeam = wasInTeam && !isNowInTeam;
-          const wasAddedToTeam = !wasInTeam && isNowInTeam;
-          
-          // Don't process if status is COMPLETED (already completed)
+          // Check if job should be in list based on NEW state
+          const shouldBeInList = isJobRelevantToMe(updatedJob);
           const isCompleted = updatedJob.status === 'COMPLETED';
+          
+          // Get current jobs state synchronously from ref
+          const currentJobsState = jobsRef.current;
+          const jobInList = currentJobsState.find(j => j.id === updatedJob.id);
+          const isInList = !!jobInList;
           
           console.log('🔍 Realtime update analysis:', {
             jobId: updatedJob.id,
-            wasRelevantToMe,
-            isNowRelevantToMe,
-            isNewAssignment,
-            isUnassignment,
-            isReassignment,
-            wasAssignedToMe,
-            isNowAssignedToMe,
-            wasUnassignedFromMe,
-            wasInTeam,
-            isNowInTeam,
-            wasRemovedFromTeam,
-            wasAddedToTeam,
-            oldStatus: oldJob?.status,
-            newStatus: updatedJob.status,
+            isInList,
+            shouldBeInList,
             isCompleted,
+            assignedToMe: updatedJob.assigned_technician_id === user.technicianId,
+            inTeam: Array.isArray(updatedJob.team_members) && updatedJob.team_members.includes(user.technicianId),
             oldAssignedId: oldJob?.assigned_technician_id,
             newAssignedId: updatedJob.assigned_technician_id,
             myTechnicianId: user.technicianId
           });
           
-          // Case 1: Job was unassigned/removed from me - remove from list
-          if (isUnassignment) {
-            console.log('🗑️ Job unassigned/removed from me, removing from list:', updatedJob.id);
-            setJobs(prev => prev.filter(j => j.id !== updatedJob.id));
-            return;
+          // Case 1: Job should NOT be in list (unassigned, removed from team, or completed by someone else)
+          if (!shouldBeInList || isCompleted) {
+            if (isInList) {
+              console.log('🗑️ Removing job from list (unassigned/removed/completed):', updatedJob.id);
+              setJobs(prev => {
+                const filtered = prev.filter(j => j.id !== updatedJob.id);
+                jobsRef.current = filtered; // Update ref
+                return filtered;
+              });
+            }
+            return; // Done - no need to add or update
           }
           
-          // Case 2: Job is newly assigned/added to me - add to list
-          if (isNewAssignment && !isCompleted) {
-            console.log('✅ New job assignment/team addition detected via realtime:', updatedJob.id);
+          // Case 2: Job should be in list but isn't - add it (new assignment or team addition)
+          if (!isInList) {
+            console.log('✅ Job should be in list but is not - fetching and adding:', updatedJob.id);
             
-            // Check assigned_date if it exists, otherwise accept it
-            let shouldProcess = true;
-            if (updatedJob.assigned_date) {
-              const assignedDate = new Date(updatedJob.assigned_date);
-              const now = new Date();
-              const timeDiff = now.getTime() - assignedDate.getTime();
-              
-              // Only treat as new if assigned within last 10 minutes (more lenient)
-              if (timeDiff < 10 * 60 * 1000 && timeDiff >= -60000) { // Allow 1 minute in future for clock skew
-                shouldProcess = true;
-              } else {
-                console.log('⚠️ Job assignment too old or in future, ignoring:', timeDiff);
-                shouldProcess = false;
-              }
-            }
-            
-            if (shouldProcess) {
-              // Check if we're already processing this job (prevent duplicates) - use ref for synchronous check
-              if (processingJobsRef.current.has(updatedJob.id)) {
-                console.log('⚠️ Job already being processed, skipping duplicate:', updatedJob.id);
-                return;
-              }
-              
-              // Mark as processing immediately (synchronous)
-              processingJobsRef.current.add(updatedJob.id);
-              console.log('🔒 Marked job as processing:', updatedJob.id);
-              
-              // Remove from processing set after 30 seconds (in case of errors)
-              setTimeout(() => {
-                processingJobsRef.current.delete(updatedJob.id);
-                console.log('🔓 Removed job from processing set:', updatedJob.id);
-              }, 30000);
-              
-              // Fetch full job details with customer info
-              try {
-                const { data: fullJob, error } = await db.jobs.getById(updatedJob.id);
-                if (!error && fullJob) {
-                  // Add to jobs list (will show with blue border and NEW badge if not seen)
-                  setJobs(prev => {
-                    const exists = prev.some(j => j.id === fullJob.id);
-                    if (exists) {
-                      console.log('⚠️ Job already in list, updating:', fullJob.id);
-                      return prev.map(j => j.id === fullJob.id ? fullJob : j);
-                    }
-                    console.log('✅ Adding new job to list:', fullJob.id);
-                    return [fullJob, ...prev]; // Add to top
-                  });
-                  
-                  // New job added silently - no notifications
-                } else {
-                  console.error('Error fetching job details:', error);
-                }
-              } catch (error) {
-                console.error('Error fetching new job details:', error);
-              }
-            }
-            return;
-          }
-          
-          // Case 3: Job is still relevant to me but was updated (reassignment, team change, or other update)
-          if (isNowRelevantToMe && !processingJobsRef.current.has(updatedJob.id)) {
-            console.log('🔄 Updating existing job in UI:', updatedJob.id);
+            // Mark as processing to prevent duplicate fetches
+            processingJobsRef.current.add(updatedJob.id);
             
             // Fetch full job details
             try {
               const { data: fullJob, error } = await db.jobs.getById(updatedJob.id);
               if (!error && fullJob) {
-                const jobStatus = (fullJob as any).status || fullJob.status;
-                
-                // Preserve order when updating from realtime (don't re-sort)
-                shouldPreserveOrderRef.current = true;
-                
-                // Update in jobs list
                 setJobs(prev => {
-                  const index = prev.findIndex(j => j.id === fullJob.id);
-                  if (index >= 0) {
-                    // Update existing job in place
-                    const updated = [...prev];
-                    updated[index] = fullJob;
+                  // Double-check it's still not in list (race condition protection)
+                  const stillNotInList = !prev.some(j => j.id === fullJob.id);
+                  if (stillNotInList) {
+                    console.log('✅ Adding new job to list:', fullJob.id);
+                    const updated = [fullJob, ...prev]; // Add to top
+                    jobsRef.current = updated; // Update ref
                     return updated;
-                  } else {
-                    // Job not in list yet, add it at end to preserve order (if ongoing)
-                    if (['PENDING', 'ASSIGNED', 'EN_ROUTE', 'IN_PROGRESS'].includes(jobStatus)) {
-                      return [...prev, fullJob];
-                    }
-                    return prev;
                   }
+                  return prev;
                 });
-                
-                console.log('✅ Job updated in UI');
+              } else {
+                console.error('Error fetching job details:', error);
               }
             } catch (error) {
-              console.error('Error updating job in UI:', error);
+              console.error('Error fetching new job details:', error);
+            } finally {
+              // Remove from processing set
+              processingJobsRef.current.delete(updatedJob.id);
             }
+            return;
+          }
+          
+          // Case 3: Job is in list and should be - update it
+          console.log('🔄 Updating existing job in list:', updatedJob.id);
+          
+          // Mark as processing
+          processingJobsRef.current.add(updatedJob.id);
+          
+          // Fetch full job details
+          try {
+            const { data: fullJob, error } = await db.jobs.getById(updatedJob.id);
+            if (!error && fullJob) {
+              setJobs(prev => {
+                const index = prev.findIndex(j => j.id === fullJob.id);
+                if (index >= 0) {
+                  // Update existing job in place
+                  const updated = [...prev];
+                  updated[index] = fullJob;
+                  shouldPreserveOrderRef.current = true; // Preserve order
+                  jobsRef.current = updated; // Update ref
+                  console.log('✅ Job updated in UI');
+                  return updated;
+                }
+                // Job was removed while fetching - don't add it back
+                return prev;
+              });
+            } else {
+              console.error('Error fetching job details for update:', error);
+            }
+          } catch (error) {
+            console.error('Error updating job in UI:', error);
+          } finally {
+            // Remove from processing set
+            processingJobsRef.current.delete(updatedJob.id);
           }
         }
       )
