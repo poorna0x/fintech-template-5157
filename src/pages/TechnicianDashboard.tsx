@@ -4704,31 +4704,25 @@ const TechnicianDashboard = () => {
                         
                         if (paymentAmount > 0 || paymentMethod || qrCodeInfo) {
                           return (
-                            <div className="mb-4 p-4 sm:p-5 bg-green-50 border-2 border-green-300 rounded-lg shadow-sm">
-                              <div className="flex items-center gap-2 mb-4">
-                                <Receipt className="w-5 h-5 sm:w-6 sm:h-6 text-green-700 flex-shrink-0" />
-                                <h3 className="font-bold text-green-900 text-base sm:text-lg">Payment & Billing Details</h3>
-                              </div>
-                              <div className="space-y-3 text-sm sm:text-base">
+                            <div className="mb-3 pt-3 border-t border-gray-200">
+                              <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-sm text-gray-600">
                                 {paymentAmount > 0 && (
-                                  <div className="flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-3 p-3 bg-white rounded-lg border border-green-200">
-                                    <span className="font-semibold text-gray-700 min-w-[140px] sm:min-w-[160px]">Total Billing:</span>
-                                    <span className="text-gray-900 font-bold text-lg sm:text-xl">₹{paymentAmount.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
-                                  </div>
+                                  <span>
+                                    <span className="font-medium text-gray-700">Amount:</span>{' '}
+                                    <span className="text-gray-900">₹{paymentAmount.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                                  </span>
                                 )}
                                 {paymentMethod && (
-                                  <div className="flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-3 p-3 bg-white rounded-lg border border-green-200">
-                                    <span className="font-semibold text-gray-700 min-w-[140px] sm:min-w-[160px]">Payment Mode:</span>
-                                    <span className="text-gray-900 font-medium capitalize">{paymentMethod.replace('_', ' ')}</span>
-                                  </div>
+                                  <span>
+                                    <span className="font-medium text-gray-700">Mode:</span>{' '}
+                                    <span className="text-gray-900 capitalize">{paymentMethod.replace('_', ' ')}</span>
+                                  </span>
                                 )}
                                 {paymentTypeDisplay && (
-                                  <div className="flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-3 p-3 bg-white rounded-lg border border-green-200">
-                                    <span className="font-semibold text-gray-700 min-w-[140px] sm:min-w-[160px]">
-                                      {paymentMethod === 'CASH' ? 'Payment Type:' : 'QR Code:'}
-                                    </span>
-                                    <span className="text-gray-900 font-medium">{paymentTypeDisplay}</span>
-                                  </div>
+                                  <span>
+                                    <span className="font-medium text-gray-700">{paymentMethod === 'CASH' ? 'Type:' : 'QR:'}</span>{' '}
+                                    <span className="text-gray-900">{paymentTypeDisplay}</span>
+                                  </span>
                                 )}
                               </div>
                             </div>
