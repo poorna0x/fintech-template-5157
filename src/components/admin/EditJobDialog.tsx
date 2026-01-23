@@ -80,6 +80,42 @@ const EditJobDialog: React.FC<EditJobDialogProps> = ({
       let leadSource = '';
       let leadSourceCustom = '';
       let costAgreed = '';
+      
+      // Normalize lead source to match Select options exactly
+      const normalizeLeadSource = (source: string): string => {
+        if (!source) return '';
+        const sourceLower = source.toLowerCase().trim();
+        
+        // Map common variations to exact Select values
+        const leadSourceMap: { [key: string]: string } = {
+          'website': 'Website',
+          'direct call': 'Direct call',
+          'directcall': 'Direct call',
+          'ro care india': 'RO care india',
+          'rocareindia': 'RO care india',
+          'home triangle': 'Home Triangle',
+          'hometriangle': 'Home Triangle',
+          'local ramu': 'Local Ramu',
+          'localramu': 'Local Ramu',
+          'other': 'Other'
+        };
+        
+        // Check for exact match first
+        if (leadSourceMap[sourceLower]) {
+          return leadSourceMap[sourceLower];
+        }
+        
+        // Check if it's already one of the valid options (case-insensitive)
+        const validOptions = ['Website', 'Direct call', 'RO care india', 'Home Triangle', 'Local Ramu', 'Other'];
+        const matchedOption = validOptions.find(opt => opt.toLowerCase() === sourceLower);
+        if (matchedOption) {
+          return matchedOption;
+        }
+        
+        // If not found, return as-is (might be a custom value)
+        return source;
+      };
+      
       try {
         const requirements = (job as any).requirements;
         if (requirements) {
@@ -91,8 +127,9 @@ const EditJobDialog: React.FC<EditJobDialogProps> = ({
             const req = reqs.find((r: any) => r && typeof r === 'object');
             if (req) {
               if (req.lead_source) {
-                leadSource = req.lead_source === 'Other' ? 'Other' : req.lead_source;
-                leadSourceCustom = req.lead_source === 'Other' ? (req.lead_source_custom || '') : '';
+                const normalized = normalizeLeadSource(req.lead_source);
+                leadSource = normalized === 'Other' ? 'Other' : normalized;
+                leadSourceCustom = normalized === 'Other' ? (req.lead_source_custom || '') : '';
               }
               if (req.cost_range) {
                 costAgreed = req.cost_range;
@@ -100,8 +137,9 @@ const EditJobDialog: React.FC<EditJobDialogProps> = ({
             }
           } else if (reqs && typeof reqs === 'object') {
             if (reqs.lead_source) {
-              leadSource = reqs.lead_source === 'Other' ? 'Other' : reqs.lead_source;
-              leadSourceCustom = reqs.lead_source === 'Other' ? (reqs.lead_source_custom || '') : '';
+              const normalized = normalizeLeadSource(reqs.lead_source);
+              leadSource = normalized === 'Other' ? 'Other' : normalized;
+              leadSourceCustom = normalized === 'Other' ? (reqs.lead_source_custom || '') : '';
             }
             if (reqs.cost_range) {
               costAgreed = reqs.cost_range;
@@ -110,6 +148,11 @@ const EditJobDialog: React.FC<EditJobDialogProps> = ({
         }
       } catch (e) {
         // Ignore parsing errors
+      }
+      
+      // Default to "Direct call" if no lead source found (as per previous requirements)
+      if (!leadSource) {
+        leadSource = 'Direct call';
       }
       
       // If cost_range not found in requirements, try to get from estimated_cost
