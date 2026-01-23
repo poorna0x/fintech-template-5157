@@ -15,6 +15,24 @@ interface Payment {
   };
 }
 
+interface Advance {
+  id: string;
+  technician_id: string;
+  amount: number;
+  reason?: string;
+  advance_date?: string;
+  created_at?: string;
+}
+
+interface ExtraCommission {
+  id: string;
+  technician_id: string;
+  amount: number;
+  description?: string;
+  commission_date?: string;
+  created_at?: string;
+}
+
 interface SalarySlipPDFData {
   technicianName: string;
   employeeId: string;
@@ -38,6 +56,8 @@ interface SalarySlipPDFData {
   totalSalary: number;
   totalBillAmount: number;
   payments: Payment[];
+  advances: Advance[];
+  extraCommissions: ExtraCommission[];
   company: {
     name: string;
     address: string;
@@ -48,9 +68,10 @@ interface SalarySlipPDFData {
     email: string;
     gstNumber?: string;
   };
+  includeDayWiseBreakdown: boolean;
 }
 
-function generateSalarySlipHTML(data: SalarySlipPDFData): string {
+function generateSalarySlipHTML(data: SalarySlipPDFData, includeDayWiseBreakdown: boolean = true): string {
   const formatCurrency = (amount: number): string => {
     return amount.toLocaleString('en-IN', {
       minimumFractionDigits: 2,
@@ -525,7 +546,7 @@ function generateSalarySlipHTML(data: SalarySlipPDFData): string {
         </div>
 
         <!-- Day-wise Job Breakdown -->
-        ${data.payments && data.payments.length > 0 ? `
+        ${includeDayWiseBreakdown && data.payments && data.payments.length > 0 ? `
         <div class="salary-breakdown" style="margin-bottom: 30px;">
           <h3 class="breakdown-title">Day-wise Job Breakdown</h3>
           ${(() => {
@@ -599,6 +620,106 @@ function generateSalarySlipHTML(data: SalarySlipPDFData): string {
             
             return html;
           })()}
+          
+          ${(() => {
+            // Add Advances section at the end
+            if (data.advances && data.advances.length > 0) {
+              let advancesHtml = `
+                <div style="margin-top: 30px; margin-bottom: 20px;">
+                  <div style="font-weight: 600; font-size: 16px; color: #374151; margin-bottom: 12px; padding: 8px; background: #fef3c7; border-left: 4px solid #f59e0b;">
+                    Advances
+                  </div>
+                  <table class="breakdown-table">
+                    <thead>
+                      <tr>
+                        <th style="width: 25%;">Date</th>
+                        <th style="width: 50%;">Reason</th>
+                        <th style="width: 25%; text-align: right;">Amount (₹)</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      ${data.advances.map((advance: Advance) => {
+                        const advanceDate = advance.advance_date 
+                          ? advance.advance_date.split('T')[0] 
+                          : (advance.created_at ? advance.created_at.split('T')[0] : '');
+                        const dateObj = advanceDate ? new Date(advanceDate + 'T00:00:00') : null;
+                        const formattedDate = dateObj ? dateObj.toLocaleDateString('en-IN', {
+                          day: '2-digit',
+                          month: 'short',
+                          year: 'numeric'
+                        }) : 'N/A';
+                        
+                        return `
+                          <tr>
+                            <td>${formattedDate}</td>
+                            <td>${sanitizeForTemplate(advance.reason || 'No reason provided')}</td>
+                            <td style="text-align: right;" class="amount-negative">- ₹ ${formatCurrency(advance.amount || 0)}</td>
+                          </tr>
+                        `;
+                      }).join('')}
+                      <tr style="background-color: #f0f9ff; font-weight: 600;">
+                        <td><strong>Total Advances</strong></td>
+                        <td>-</td>
+                        <td style="text-align: right;" class="amount-total"><strong>- ₹ ${formatCurrency(data.totalAdvances)}</strong></td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              `;
+              return advancesHtml;
+            }
+            return '';
+          })()}
+          
+          ${(() => {
+            // Add Extra Commissions section at the end
+            if (data.extraCommissions && data.extraCommissions.length > 0) {
+              let extraCommissionsHtml = `
+                <div style="margin-top: 30px; margin-bottom: 20px;">
+                  <div style="font-weight: 600; font-size: 16px; color: #374151; margin-bottom: 12px; padding: 8px; background: #f3e8ff; border-left: 4px solid #9333ea;">
+                    Extra Commissions
+                  </div>
+                  <table class="breakdown-table">
+                    <thead>
+                      <tr>
+                        <th style="width: 25%;">Date</th>
+                        <th style="width: 50%;">Description</th>
+                        <th style="width: 25%; text-align: right;">Amount (₹)</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      ${data.extraCommissions.map((ec: ExtraCommission) => {
+                        const ecDate = ec.commission_date 
+                          ? ec.commission_date.split('T')[0] 
+                          : (ec.created_at ? ec.created_at.split('T')[0] : '');
+                        const dateObj = ecDate ? new Date(ecDate + 'T00:00:00') : null;
+                        const formattedDate = dateObj ? dateObj.toLocaleDateString('en-IN', {
+                          day: '2-digit',
+                          month: 'short',
+                          year: 'numeric'
+                        }) : 'N/A';
+                        
+                        return `
+                          <tr>
+                            <td>${formattedDate}</td>
+                            <td>${sanitizeForTemplate(ec.description || 'No description provided')}</td>
+                            <td style="text-align: right;" class="amount-positive">+ ₹ ${formatCurrency(ec.amount || 0)}</td>
+                          </tr>
+                        `;
+                      }).join('')}
+                      <tr style="background-color: #f0f9ff; font-weight: 600;">
+                        <td><strong>Total Extra Commissions</strong></td>
+                        <td>-</td>
+                        <td style="text-align: right;" class="amount-total"><strong>+ ₹ ${formatCurrency(data.totalExtraCommission)}</strong></td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              `;
+              return extraCommissionsHtml;
+            }
+            return '';
+          })()}
         </div>
         ` : ''}
 
@@ -631,7 +752,8 @@ function generateSalarySlipHTML(data: SalarySlipPDFData): string {
 export function generateSalarySlipPDF(
   breakdown: TechnicianSalaryBreakdown,
   period: { start: Date; end: Date },
-  action: 'print' | 'pdf' = 'pdf'
+  action: 'print' | 'pdf' = 'pdf',
+  includeDayWiseBreakdown: boolean = true
 ): void {
   try {
     // Prevent multiple simultaneous print operations
@@ -684,20 +806,23 @@ export function generateSalarySlipPDF(
       totalSalary: breakdown.totalSalary,
       totalBillAmount: breakdown.totalBillAmount,
       payments: breakdown.payments || [],
-      company: companyData
+      advances: breakdown.advances || [],
+      extraCommissions: breakdown.extraCommissions || [],
+      company: companyData,
+      includeDayWiseBreakdown
     };
 
     // Create a new window for printing
     const printWindow = window.open('', '_blank', 'width=800,height=600');
     
-    if (!printWindow || printWindow.closed || typeof printWindow.closed === 'undefined') {
+      if (!printWindow || printWindow.closed || typeof printWindow.closed === 'undefined') {
       console.warn('Popup blocked, falling back to mobile print method');
-      handleMobilePrint(pdfData, action);
+      handleMobilePrint(pdfData, action, includeDayWiseBreakdown);
       return;
     }
 
     // Write content to new window
-    printWindow.document.write(generateSalarySlipHTML(pdfData));
+    printWindow.document.write(generateSalarySlipHTML(pdfData, includeDayWiseBreakdown));
     printWindow.document.close();
 
     // Wait for content to load, then trigger print
@@ -749,11 +874,11 @@ export function generateSalarySlipPDF(
   }
 }
 
-function handleMobilePrint(data: SalarySlipPDFData, action: 'print' | 'pdf'): void {
+function handleMobilePrint(data: SalarySlipPDFData, action: 'print' | 'pdf', includeDayWiseBreakdown: boolean = true): void {
   try {
     // Create a temporary div with the salary slip content
     const tempDiv = document.createElement('div');
-    tempDiv.innerHTML = generateSalarySlipHTML(data);
+    tempDiv.innerHTML = generateSalarySlipHTML(data, includeDayWiseBreakdown);
     tempDiv.style.position = 'absolute';
     tempDiv.style.left = '-9999px';
     tempDiv.style.top = '0';
@@ -771,7 +896,7 @@ function handleMobilePrint(data: SalarySlipPDFData, action: 'print' | 'pdf'): vo
           // Create print window
           const printWindow = window.open('', '_blank');
           if (printWindow) {
-            printWindow.document.write(generateSalarySlipHTML(data));
+            printWindow.document.write(generateSalarySlipHTML(data, includeDayWiseBreakdown));
             printWindow.document.close();
             
             setTimeout(() => {

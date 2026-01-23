@@ -194,6 +194,11 @@ const TechnicianPayments = () => {
     isAbsent: false
   });
 
+  // Salary slip download dialog
+  const [salarySlipDialogOpen, setSalarySlipDialogOpen] = useState(false);
+  const [selectedBreakdownForSlip, setSelectedBreakdownForSlip] = useState<TechnicianSalaryBreakdown | null>(null);
+  const [includeDayWiseBreakdown, setIncludeDayWiseBreakdown] = useState(true);
+
   // Job details dialog
   const [jobDetailsDialogOpen, setJobDetailsDialogOpen] = useState(false);
   const [selectedDateForJobs, setSelectedDateForJobs] = useState<{technicianId: string; date: string} | null>(null);
@@ -1657,7 +1662,9 @@ const TechnicianPayments = () => {
                   size="sm"
                   onClick={() => {
                     if (commissionPeriod) {
-                      generateSalarySlipPDF(breakdown, commissionPeriod, 'pdf');
+                      setSelectedBreakdownForSlip(breakdown);
+                      setIncludeDayWiseBreakdown(true); // Default to with breakdown
+                      setSalarySlipDialogOpen(true);
                     } else {
                       toast.error('Period information not available');
                     }
@@ -2798,6 +2805,66 @@ const TechnicianPayments = () => {
               className="bg-orange-600 hover:bg-orange-700"
             >
               {editingAdvance ? 'Update' : 'Add'} Advance
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Salary Slip Download Dialog */}
+      <Dialog open={salarySlipDialogOpen} onOpenChange={setSalarySlipDialogOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Download Salary Slip</DialogTitle>
+            <DialogDescription>
+              Choose the type of salary slip you want to download
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <div className="space-y-2">
+              <Label>Salary Slip Type</Label>
+              <Select
+                value={includeDayWiseBreakdown ? 'with' : 'without'}
+                onValueChange={(value) => setIncludeDayWiseBreakdown(value === 'with')}
+              >
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="with">With Day-wise Breakdown</SelectItem>
+                  <SelectItem value="without">Without Day-wise Breakdown</SelectItem>
+                </SelectContent>
+              </Select>
+              <p className="text-xs text-gray-500">
+                {includeDayWiseBreakdown 
+                  ? 'Includes detailed day-wise job breakdown with commissions, advances, and extra commissions'
+                  : 'Summary only without day-wise details'}
+              </p>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => {
+                setSalarySlipDialogOpen(false);
+                setSelectedBreakdownForSlip(null);
+              }}
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={() => {
+                if (selectedBreakdownForSlip && commissionPeriod) {
+                  generateSalarySlipPDF(selectedBreakdownForSlip, commissionPeriod, 'pdf', includeDayWiseBreakdown);
+                  setSalarySlipDialogOpen(false);
+                  setSelectedBreakdownForSlip(null);
+                } else {
+                  toast.error('Period information not available');
+                }
+              }}
+              className="bg-blue-600 hover:bg-blue-700"
+            >
+              <Download className="w-4 h-4 mr-2" />
+              Download
             </Button>
           </DialogFooter>
         </DialogContent>
