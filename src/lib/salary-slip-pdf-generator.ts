@@ -88,7 +88,9 @@ function generateSalarySlipHTML(data: SalarySlipPDFData, includeDayWiseBreakdown
     });
   };
 
-  const paymentDate = new Date(data.period.end);
+  // Calculate payment date: 10th of next month
+  // Use start date (1st of month) to avoid date rollover issues when adding months
+  const paymentDate = new Date(data.period.start);
   paymentDate.setMonth(paymentDate.getMonth() + 1);
   paymentDate.setDate(10);
 
@@ -764,16 +766,16 @@ export function generateSalarySlipPDF(
     }
     (window as any).isPrintingSalarySlip = true;
 
-    // Get company details (you may want to load this from settings/config)
+    // Get company details (matching AMC generator)
     const companyData = {
-      name: 'Hydrogen RO',
-      address: 'Your Company Address',
-      city: 'Your City',
-      state: 'Your State',
-      pincode: 'Your Pincode',
-      phone: 'Your Phone',
-      email: 'Your Email',
-      gstNumber: 'Your GST Number'
+      name: 'Authorised Service Franchise',
+      address: 'Ground Floor, 13, 4th Main Road, Next To Jain Temple,Seshadripuram, Kumara Park West',
+      city: 'Bengaluru',
+      state: 'Karnataka',
+      pincode: '560020',
+      phone: '9886944288 & 8884944288',
+      email: 'mail@hydrogenro.com',
+      gstNumber: '29LIJPS5140P1Z6'
     };
 
     // Try to get company details from localStorage or config
