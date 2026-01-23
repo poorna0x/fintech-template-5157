@@ -858,16 +858,17 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
             });
             
             if (step5JobData.assigned_technician_id) {
-            // Send notification to assigned technician
-            try {
-              const { sendNotification, createJobAssignedNotification } = await import('@/lib/notifications');
-              const notification = createJobAssignedNotification(newJob as any, technicians.find(t => t.id === step5JobData.assigned_technician_id));
-              if (notification) {
-                await sendNotification(notification);
+              // Send notification to assigned technician
+              try {
+                const { sendNotification, createJobAssignedNotification } = await import('@/lib/notifications');
+                const notification = createJobAssignedNotification(newJob as any, technicians.find(t => t.id === step5JobData.assigned_technician_id));
+                if (notification) {
+                  await sendNotification(notification);
+                }
+              } catch (notifError) {
+                console.error('Error sending notification:', notifError);
+                // Don't fail the job creation if notification fails
               }
-            } catch (notifError) {
-              console.error('Error sending notification:', notifError);
-              // Don't fail the job creation if notification fails
             }
           }
         } catch (error) {

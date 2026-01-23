@@ -156,18 +156,18 @@ const EditJobDialog: React.FC<EditJobDialogProps> = ({
       }
       
       // If cost_range not found in requirements, try to get from estimated_cost
-      if (!costAgreed && ((job as any).estimated_cost || job.estimatedCost)) {
-        const estimatedCost = (job as any).estimated_cost || job.estimatedCost || 0;
+      if (!costAgreed && (job as any).estimated_cost) {
+        const estimatedCost = (job as any).estimated_cost || 0;
         costAgreed = estimatedCost.toString();
       }
 
-      const formData = {
+      const formData: EditJobFormData = {
         serviceType: (job.service_type || job.serviceType || 'RO') as 'RO' | 'SOFTENER',
         serviceSubType: isCustomSubType ? 'Custom' : serviceSubType,
         serviceSubTypeCustom: isCustomSubType ? serviceSubType : '',
         description: job.description || '',
         scheduledDate: job.scheduled_date || job.scheduledDate || '',
-        scheduledTimeSlot: isCustomTimeSlot ? 'CUSTOM' : (timeSlot as 'MORNING' | 'AFTERNOON' | 'EVENING'),
+        scheduledTimeSlot: (isCustomTimeSlot ? 'CUSTOM' : (timeSlot || 'MORNING')) as 'MORNING' | 'AFTERNOON' | 'EVENING' | 'CUSTOM' | 'FLEXIBLE',
         scheduledTimeCustom: customTimeValue,
         lead_source: leadSource,
         lead_source_custom: leadSourceCustom,
