@@ -4837,7 +4837,7 @@ const AdminDashboard = () => {
       setSelectedTeamMemberId('');
       
       // Refresh jobs
-      await onCustomerCreated();
+      await loadFilteredJobs(statusFilter, currentPage);
     } catch (error: any) {
       console.error('Error adding team member:', error);
       toast.error(error.message || 'Failed to add team member');
