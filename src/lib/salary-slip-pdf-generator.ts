@@ -548,6 +548,21 @@ function generateSalarySlipHTML(data: SalarySlipPDFData, includeDayWiseBreakdown
           ` : ''}
         </div>
 
+        <!-- Signatures -->
+        <div class="signatures">
+          <div class="signature-box">
+            <div class="signature-label">Employee Signature</div>
+            <div class="signature-line"></div>
+            <div class="signature-date">Date: ${formatDate(paymentDate)}</div>
+          </div>
+          
+          <div class="signature-box">
+            <div class="signature-label">Authorized Signatory</div>
+            <img src="/HydrogenROSeal.webp" alt="Hydrogen RO Seal" class="signature-seal" />
+            <div class="signature-date">Date: ${formatDate(paymentDate)}</div>
+          </div>
+        </div>
+
         <!-- Day-wise Job Breakdown -->
         ${includeDayWiseBreakdown && data.payments && data.payments.length > 0 ? `
         <div class="salary-breakdown" style="margin-bottom: 30px;">
@@ -725,21 +740,6 @@ function generateSalarySlipHTML(data: SalarySlipPDFData, includeDayWiseBreakdown
           })()}
         </div>
         ` : ''}
-
-        <!-- Signatures -->
-        <div class="signatures">
-          <div class="signature-box">
-            <div class="signature-label">Employee Signature</div>
-            <div class="signature-line"></div>
-            <div class="signature-date">Date: ${formatDate(paymentDate)}</div>
-          </div>
-          
-          <div class="signature-box">
-            <div class="signature-label">Authorized Signatory</div>
-            <img src="/HydrogenROSeal.webp" alt="Hydrogen RO Seal" class="signature-seal" />
-            <div class="signature-date">Date: ${formatDate(paymentDate)}</div>
-          </div>
-        </div>
 
         <!-- Footer -->
         <div class="footer">
