@@ -121,13 +121,14 @@ export default function FollowUpModal({ isOpen, onClose, job, onScheduleFollowUp
         
         if (followUpDate && followUpNotes) {
           // Create follow-up record from job data
+          // scheduled_by must be a UUID (null if not available)
           const { data: newFollowUp, error: createError } = await supabase
             .from('follow_ups')
             .insert({
               job_id: job.id,
               follow_up_date: followUpDate,
               reason: followUpNotes,
-              scheduled_by: followUpScheduledBy || 'technician',
+              scheduled_by: followUpScheduledBy || null, // Must be UUID or null, not a string
               completed: false
             })
             .select()
@@ -243,9 +244,12 @@ export default function FollowUpModal({ isOpen, onClose, job, onScheduleFollowUp
       
       // Close dialog after successful submission
       onClose();
-    } catch (error) {
-      console.error('Error scheduling follow-up:', error);
-      toast.error('Failed to schedule follow-up');
+    } catch (error: any) {
+      const errorMessage = error?.message || 'Failed to schedule follow-up';
+      if (process.env.NODE_ENV === 'development') {
+        console.error('Error scheduling follow-up:', error);
+      }
+      toast.error(errorMessage);
     } finally {
       setIsSubmitting(false);
     }

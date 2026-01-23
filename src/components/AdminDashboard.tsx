@@ -5462,18 +5462,20 @@ const AdminDashboard = () => {
           .delete()
           .eq('id', followUpData.rescheduleFollowUpId);
 
-        if (deleteError) {
+      if (deleteError) {
+        if (process.env.NODE_ENV === 'development') {
           console.error('Delete follow-up error details:', deleteError);
-          // Provide more helpful error message for 401 errors
-          if (deleteError.code === 'PGRST301' || deleteError.message?.includes('401') || deleteError.message?.includes('unauthorized')) {
-            throw new Error('Authentication failed. Please check your login status and try again.');
-          }
-          throw new Error(deleteError.message || 'Failed to delete follow-up record');
         }
+        // Provide more helpful error message for 401 errors
+        if (deleteError.code === 'PGRST301' || deleteError.message?.includes('401') || deleteError.message?.includes('unauthorized')) {
+          throw new Error('Authentication failed. Please check your login status and try again.');
+        }
+        throw new Error(deleteError.message || 'Failed to delete follow-up record');
+      }
       }
 
       // Create follow-up record in follow_ups table
-      // Always set scheduled_by to 'admin' when creating from admin panel
+      // Use the actual user ID for scheduled_by
       const { data: followUpRecord, error: followUpError } = await supabase
         .from('follow_ups')
         .insert({
@@ -5482,14 +5484,16 @@ const AdminDashboard = () => {
           follow_up_date: followUpData.followUpDate,
           reason: followUpData.followUpReason,
           notes: null,
-          scheduled_by: 'admin', // Always admin when created from admin panel
+          scheduled_by: user?.id || null, // Use actual user ID
           completed: false
         } as any)
         .select()
         .single();
 
       if (followUpError) {
-        console.error('Follow-up error details:', followUpError);
+        if (process.env.NODE_ENV === 'development') {
+          console.error('Follow-up error details:', followUpError);
+        }
         // Provide more helpful error message for 401 errors
         if (followUpError.code === 'PGRST301' || followUpError.message?.includes('401') || followUpError.message?.includes('unauthorized')) {
           throw new Error('Authentication failed. Please check your login status and try again.');
@@ -5498,13 +5502,13 @@ const AdminDashboard = () => {
       }
 
       // If this is the first follow-up (no parent), update job status
-      // Always set follow_up_scheduled_by to 'admin' when created from admin panel
+      // Use the actual user ID for follow_up_scheduled_by
       if (!followUpData.parentFollowUpId) {
         const { error: jobError } = await db.jobs.update(jobId, {
           status: 'FOLLOW_UP',
           follow_up_date: followUpData.followUpDate,
           follow_up_notes: followUpData.followUpReason,
-          follow_up_scheduled_by: 'admin', // Always admin when created from admin panel
+          follow_up_scheduled_by: user?.id || null, // Use actual user ID
           follow_up_scheduled_at: new Date().toISOString()
         } as any);
 
@@ -5549,8 +5553,12 @@ const AdminDashboard = () => {
             ? 'Nested follow-up added successfully' 
             : 'Follow-up scheduled successfully'
       );
-    } catch (error) {
-      toast.error('Failed to schedule follow-up');
+    } catch (error: any) {
+      const errorMessage = error?.message || 'Failed to schedule follow-up';
+      if (process.env.NODE_ENV === 'development') {
+        console.error('Follow-up submission error:', error);
+      }
+      toast.error(errorMessage);
     }
   };
 
@@ -7715,14 +7723,26 @@ const AdminDashboard = () => {
                           return `${normalizedHour}:${minutes.padEnd(2, '0')} ${suffix}`;
                         })() : null;
                         const formattedFollowUpScheduledAt = followUpScheduledAt ? new Date(followUpScheduledAt).toLocaleString() : null;
-                        const followUpScheduledByTechnician = followUpScheduledBy
-                          ? technicians.find(tech => tech.id === followUpScheduledBy)
-                          : null;
-                        const followUpScheduledByName =
-                          followUpScheduledByTechnician?.fullName ||
-                          (followUpScheduledBy === 'admin' ? 'Admin' : undefined) ||
-                          (followUpScheduledBy === 'technician' ? 'Technician' : undefined) ||
-                          'Admin';
+                        // Determine who scheduled the follow-up
+                        // Both admins and technicians now store UUID
+                        // Check if UUID is in technicians list → show technician name
+                        // If UUID is NOT in technicians list → show "Admin" (admins aren't technicians)
+                        // If it's a string (old data) → show that string for backward compatibility
+                        const isUUID = followUpScheduledBy && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(followUpScheduledBy);
+                        let followUpScheduledByName = 'Admin';
+                        
+                        if (isUUID) {
+                          // It's a UUID - check if it's a technician ID
+                          const followUpScheduledByTechnician = technicians.find(tech => tech.id === followUpScheduledBy);
+                          followUpScheduledByName = followUpScheduledByTechnician?.fullName || 'Admin';
+                        } else if (followUpScheduledBy) {
+                          // It's a string (old data format) - show it directly for backward compatibility
+                          followUpScheduledByName = followUpScheduledBy;
+                        } else if (followUpScheduledBy === 'admin') {
+                          followUpScheduledByName = 'Admin';
+                        } else if (followUpScheduledBy === 'technician') {
+                          followUpScheduledByName = 'Technician';
+                        }
                         
                         const denialReason = (job as any).denial_reason || job.denialReason || '';
                         const deniedBy = (job as any).denied_by || job.deniedBy || '';

@@ -2123,13 +2123,12 @@ const TechnicianDashboard = () => {
   }) => {
     try {
       // Update job status and follow-up info
-      // Use technician's name instead of ID for better readability
-      const technicianName = user?.fullName || user?.id || 'technician';
+      // Use technician's user ID (UUID) - database expects UUID, not name
       const { error: jobError } = await db.jobs.update(jobId, {
         status: 'FOLLOW_UP',
         follow_up_date: followUpData.followUpDate,
         follow_up_notes: followUpData.followUpReason || '',
-        follow_up_scheduled_by: technicianName,
+        follow_up_scheduled_by: user?.id || null,
         follow_up_scheduled_at: new Date().toISOString()
       });
 
@@ -2155,8 +2154,7 @@ const TechnicianDashboard = () => {
         }
       } else {
         // Create new follow-up record
-        // Use technician's name instead of ID for better readability
-        const technicianName = user?.fullName || user?.id || 'technician';
+        // Use technician's user ID (UUID) - database expects UUID, not name
         const { error: followUpError } = await supabase
           .from('follow_ups')
           .insert({
@@ -2164,7 +2162,7 @@ const TechnicianDashboard = () => {
             scheduled_date: followUpData.followUpDate,
             reason: followUpData.followUpReason,
             parent_follow_up_id: followUpData.parentFollowUpId || null,
-            scheduled_by: technicianName,
+            scheduled_by: user?.id || null,
             completed: false
           });
 
