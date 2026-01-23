@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useRef } from 'react';
+import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -10,6 +10,7 @@ import { db } from '@/lib/supabase';
 import { toast } from 'sonner';
 import { MapPin, Download, ExternalLink } from 'lucide-react';
 import { generateJobNumber, extractLocationFromAddressString, bangaloreAreas } from '@/lib/adminUtils';
+import ImageUpload from '@/components/ImageUpload';
 
 // Brand and model data
 const brandData = {
@@ -71,7 +72,7 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
   const [currentStep, setCurrentStep] = useState(1);
   const [formErrors, setFormErrors] = useState<{[key: string]: string}>({});
   const [isCreating, setIsCreating] = useState(false);
-  const [shouldCreateJob, setShouldCreateJob] = useState(false);
+  const [shouldCreateJob, setShouldCreateJob] = useState(true); // Default to true
   const [addFormData, setAddFormData] = useState({
     full_name: '',
     phone: '',
@@ -79,6 +80,7 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
     email: '',
     service_types: [] as string[],
     equipment: {} as {[serviceType: string]: {brand: string, model: string}},
+    photos: {} as {[serviceType: string]: string[]}, // Photos for each service type
     behavior: '',
     native_language: '',
     status: 'ACTIVE' as 'ACTIVE' | 'INACTIVE' | 'BLOCKED',
@@ -97,7 +99,7 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
   const locationManuallyEditedRef = useRef(false);
   const [step5JobData, setStep5JobData] = useState({
     service_type: 'RO' as 'RO' | 'SOFTENER',
-    service_sub_type: 'Installation',
+    service_sub_type: 'Service', // Default to 'Service' instead of 'Installation'
     service_sub_type_custom: '',
     scheduled_date: '',
     scheduled_time_slot: 'MORNING' as 'MORNING' | 'AFTERNOON' | 'EVENING' | 'CUSTOM',
@@ -107,6 +109,22 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
     lead_source_custom: '',
     priority: 'MEDIUM' as 'LOW' | 'MEDIUM' | 'HIGH' | 'URGENT'
   });
+
+  // Initialize scheduled_date when dialog opens and shouldCreateJob is true
+  useEffect(() => {
+    if (open && shouldCreateJob && !step5JobData.scheduled_date) {
+      const today = new Date();
+      const year = today.getFullYear();
+      const month = String(today.getMonth() + 1).padStart(2, '0');
+      const day = String(today.getDate()).padStart(2, '0');
+      const todayDateString = `${year}-${month}-${day}`;
+      setStep5JobData(prev => ({
+        ...prev,
+        scheduled_date: todayDateString,
+        service_type: addFormData.service_types[0] === 'SOFTENER' ? 'SOFTENER' : 'RO'
+      }));
+    }
+  }, [open, shouldCreateJob, step5JobData.scheduled_date, addFormData.service_types]);
 
   const cleanPhoneNumber = (phone: string): string => {
     return phone.replace(/\D/g, '');
@@ -535,16 +553,20 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
         : [...prev.service_types, serviceType];
       
       const newEquipment = { ...prev.equipment };
+      const newPhotos = { ...prev.photos };
       if (!prev.service_types.includes(serviceType)) {
         newEquipment[serviceType] = { brand: '', model: '' };
+        newPhotos[serviceType] = [];
       } else {
         delete newEquipment[serviceType];
+        delete newPhotos[serviceType];
       }
       
       return {
         ...prev,
         service_types: newServiceTypes,
-        equipment: newEquipment
+        equipment: newEquipment,
+        photos: newPhotos
       };
     });
     
@@ -554,6 +576,16 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
         service_types: ''
       }));
     }
+  };
+
+  const handlePhotosChange = (serviceType: string, photoUrls: string[]) => {
+    setAddFormData(prev => ({
+      ...prev,
+      photos: {
+        ...prev.photos,
+        [serviceType]: photoUrls
+      }
+    }));
   };
 
   const handleEquipmentChange = (serviceType: string, field: 'brand' | 'model', value: string) => {
@@ -680,6 +712,12 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
         googleLocation = `https://www.google.com/maps/place/${latitude},${longitude}`;
       }
       
+      // Collect all photos from all service types
+      const allPhotos: string[] = [];
+      Object.values(addFormData.photos).forEach(photoArray => {
+        allPhotos.push(...photoArray);
+      });
+
       const customerData = {
         customer_id: '',
         full_name: addFormData.full_name,
@@ -767,6 +805,7 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
             }],
             estimated_cost: 0,
             payment_status: 'PENDING' as const,
+            before_photos: allPhotos.length > 0 ? allPhotos : [], // Add photos from Step 3 to job's before_photos
           };
 
           const jobResult = await db.jobs.create(jobData as any);
@@ -804,6 +843,7 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
         email: '',
         service_types: [],
         equipment: {},
+        photos: {},
         behavior: '',
         native_language: '',
         status: 'ACTIVE',
@@ -816,10 +856,10 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
       });
       setCurrentStep(1);
       setFormErrors({});
-      setShouldCreateJob(false);
+      setShouldCreateJob(true); // Reset to true (default)
       setStep5JobData({
         service_type: 'RO' as 'RO' | 'SOFTENER',
-        service_sub_type: 'Installation',
+        service_sub_type: 'Service', // Reset to 'Service' (default)
         service_sub_type_custom: '',
         scheduled_date: '',
         scheduled_time_slot: 'MORNING' as 'MORNING' | 'AFTERNOON' | 'EVENING' | 'CUSTOM',
@@ -1097,6 +1137,7 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
                     ].find(s => s.value === serviceType);
                     
                     const equipment = addFormData.equipment[serviceType] || { brand: '', model: '' };
+                    const photos = addFormData.photos[serviceType] || [];
                     
                     return (
                       <div key={serviceType} className="bg-gray-50 p-4 rounded-lg space-y-3">
@@ -1164,6 +1205,21 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
                               <p className="text-sm text-red-500">{formErrors[`equipment.${serviceType}.model`]}</p>
                             )}
                           </div>
+                        </div>
+
+                        {/* Photo Upload Section */}
+                        <div className="space-y-2 mt-4">
+                          <Label>Add Photo</Label>
+                          <ImageUpload
+                            onImagesChange={(photoUrls) => handlePhotosChange(serviceType, photoUrls)}
+                            maxImages={5}
+                            folder="customer-equipment"
+                            title={`${serviceInfo?.label} Photo`}
+                            description={`Upload photo of ${serviceInfo?.label} equipment`}
+                            initialImages={photos}
+                            maxWidth={1280}
+                            quality={0.7}
+                          />
                         </div>
                       </div>
                     );
@@ -1247,7 +1303,7 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
                 </p>
                 
                 <div className="space-y-3">
-                  <label className="flex items-center gap-3 p-3 bg-white rounded-lg border-2 cursor-pointer transition-all hover:border-blue-300">
+                  <label className="flex items-center gap-3 p-3 bg-white rounded-lg border-2 border-blue-500 cursor-pointer transition-all hover:border-blue-300">
                     <input
                       type="radio"
                       name="createJob"
@@ -1325,9 +1381,9 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
                           <SelectValue />
                         </SelectTrigger>
                         <SelectContent>
+                          <SelectItem value="Service">Service</SelectItem>
                           <SelectItem value="Installation">Installation</SelectItem>
                           <SelectItem value="Reinstallation">Reinstallation</SelectItem>
-                          <SelectItem value="Service">Service</SelectItem>
                           <SelectItem value="Return Complaint">Return Complaint</SelectItem>
                           <SelectItem value="AMC Service">AMC Service</SelectItem>
                           <SelectItem value="Custom">Custom</SelectItem>
