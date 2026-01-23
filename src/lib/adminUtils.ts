@@ -233,6 +233,59 @@ export const bangaloreAreas = [
   'Uttarahalli Hobli', 'Vaddarahalli', 'Varthur', 'Varthur Kodi', 'Varthur Road', 'Vasanthnagar',
   'Vidhana Soudha', 'Vidyaranyapura', 'Vijaya Bank Layout', 'Vijaya Nagar', 'Vijayanagar',
   'Vijayanagar Extension', 'Whitefield', 'Whitefield Main Road', 'Whitefield Road', 'Wilson Garden',
+  'Yelahanka', 'Yelahanka New Town', 'Yeshwanthpur', 'Yeshwanthpur Industrial',
+  // Additional popular single-word areas
+  'Adugodi', 'Akshayanagar', 'Amruthahalli', 'Anandnagar', 'Ananthapura', 'Arakere',
+  'Arekere', 'Avalahalli', 'Bagalur', 'Baiyappanahalli', 'Banaswadi', 'Bannerghatta',
+  'Basapura', 'Basaveshwara Nagar', 'Begur', 'Bellandur', 'Benson Town',
+  'Bhairava Nagar', 'Bidadi', 'Bidrahalli', 'Bommanahalli', 'Bommasandra',
+  'Budigere', 'Byatarayanapura', 'Chikkaballapur', 'Chikkajala', 'Dasarahalli',
+  'Doddaballapur', 'Doddakallasandra', 'Doddanekundi', 'Domlur', 'Electronic City',
+  'Gandhinagar', 'Girinagar', 'Gokula', 'HAL', 'Hebbal', 'Hennur', 'Hoodi',
+  'Hope Farm', 'Horamavu', 'Hosa Road', 'Hoskote', 'Hosur', 'Hulimavu',
+  'ITPL', 'Jakkur', 'Jalahalli', 'Jigani', 'Kadubeesanahalli', 'Kadugodi',
+  'Kaggadasapura', 'Kannamangala', 'Kengeri', 'Konanakunte', 'Kothanur',
+  'Kumbalgodu', 'Kundalahalli', 'Mathikere', 'Nagarbhavi', 'Nagasandra',
+  'Nagavara', 'Nayandahalli', 'Nelamangala', 'Padmanabhanagar', 'Panathur',
+  'Peenya', 'Ramamurthy Nagar', 'Ramanagara', 'Ramanagaram', 'Seshadripuram',
+  'Singasandra', 'Thanisandra', 'Tumkur', 'Tumkuru', 'Uttarahalli', 'Vaddarahalli',
+  'Varthur', 'Vidyaranyapura', 'Vijaya Nagar', 'Vijayanagar',
+  // More areas - Additional coverage
+  'Acharya Layout', 'AECS Layout', 'Agara', 'Akshaya Nagar', 'Ambedkar Nagar', 'Anjanapura',
+  'Anugraha Layout', 'Arakere', 'Ashwath Nagar', 'Attiguppe', 'Austin Town',
+  'Baiyappanahalli', 'Banaswadi', 'Banashankari', 'Bannerghatta', 'Basavanagudi',
+  'Basaveshwara Nagar', 'BEML Layout', 'Benson Town', 'Bhairava Nagar', 'Bidadi',
+  'Bidrahalli', 'Bommanahalli', 'Bommasandra', 'Brigade Road', 'Brookefield',
+  'BTM', 'BTM Layout', 'Budigere', 'Byatarayanapura', 'Chamrajpet', 'Chickpet',
+  'Chikkaballapur', 'Chikkajala', 'Church Street', 'City Market', 'Commercial Street',
+  'Cooke Town', 'Cox Town', 'Cubbon Park', 'Cunningham', 'CV Raman Nagar',
+  'Dasarahalli', 'Devanahalli', 'Doddaballapur', 'Doddakallasandra', 'Doddanekundi',
+  'Domlur', 'Electronic City', 'Frazer Town', 'Gandhinagar', 'Girinagar',
+  'Gokula', 'HAL', 'Hebbal', 'Hennur', 'Hennur Main Road', 'Hoodi', 'Hope Farm',
+  'Horamavu', 'Hosa Road', 'Hoskote', 'Hosur', 'Hosur Road', 'HSR', 'HSR Sector 1',
+  'HSR Sector 2', 'HSR Sector 3', 'HSR Sector 4', 'HSR Sector 5', 'HSR Sector 6',
+  'HSR Sector 7', 'Hudson Circle', 'Hulimavu', 'Indiranagar', 'ITPL', 'Jakkur',
+  'Jalahalli', 'Jayanagar', 'Jigani', 'Kadubeesanahalli', 'Kadugodi', 'Kaggadasapura',
+  'Kalyan Nagar', 'Kalyan Nagar Main Road', 'Kannamangala', 'Kasturba Road',
+  'Kempegowda', 'Kempegowda Bus Stand', 'Kengeri', 'Kengeri Satellite Town',
+  'Konanakunte', 'Koramangala', 'Kothanur', 'KR Market', 'KR Puram',
+  'KR Puram Railway Station', 'Kumbalgodu', 'Kundalahalli', 'Kundalahalli Gate',
+  'Lalbagh', 'Lavelle Road', 'Magadi', 'Magadi Road', 'Mahadevapura', 'Majestic',
+  'Majestic Bus Stand', 'Marathahalli', 'Marathahalli Bridge', 'Mathikere',
+  'MG Road', 'Miller Road', 'MS Palya', 'Murphy Town', 'Murugeshpalya', 'Mysore Road',
+  'Nagarbhavi', 'Nagasandra', 'Nagavara', 'Nayandahalli', 'Nelamangala',
+  'Nelamangala Road', 'NRI Layout', 'Nrupathunga Road', 'Padmanabhanagar',
+  'Palace Road', 'Panathur', 'Peenya', 'Peenya Industrial', 'Prestige Layout',
+  'Prestige Shantiniketan', 'Rajarajeshwari Nagar', 'Rajajinagar', 'Rajajinagar Extension',
+  'Rajajinagar Industrial', 'Ramamurthy Nagar', 'Ramanagara', 'Ramanagaram',
+  'Residency Road', 'Rest House Road', 'Richmond', 'Richmond Circle', 'Richmond Town',
+  'RT Nagar', 'Russell Market', 'Sahakara Nagar', 'Sanjay Nagar', 'Sarjapur',
+  'Shanti Nagar', 'Shivajinagar', 'Shivajinagar Bus Stand', 'Singasandra',
+  'Seshadripuram', 'St Marks Road', 'Thanisandra', 'Tumkur', 'Tumkur Road',
+  'Tumkuru', 'Ulsoor', 'Uttarahalli', 'Uttarahalli Hobli', 'Vaddarahalli', 'Varthur',
+  'Varthur Kodi', 'Varthur Road', 'Vasanthnagar', 'Vidhana Soudha', 'Vidyaranyapura',
+  'Vijaya Bank Layout', 'Vijaya Nagar', 'Vijayanagar', 'Vijayanagar Extension',
+  'Whitefield', 'Whitefield Main Road', 'Whitefield Road', 'Wilson Garden',
   'Yelahanka', 'Yelahanka New Town', 'Yeshwanthpur', 'Yeshwanthpur Industrial'
 ];
 
@@ -335,6 +388,15 @@ export const findLeadSource = (requirements: any[]): string | null => {
   return leadSource;
 };
 
+// Normalize string for comparison - handles variations like "J.P Nagar" vs "JP Nagar"
+const normalizeForComparison = (str: string): string => {
+  return str
+    .toLowerCase()
+    .replace(/\./g, '') // Remove dots (J.P -> JP)
+    .replace(/\s+/g, '') // Remove all spaces (J P -> JP)
+    .trim();
+};
+
 // Reusable function to extract location from any address string
 // Only returns a match if it's confident - otherwise returns null
 export const extractLocationFromAddressString = (completeAddress: string): string | null => {
@@ -362,7 +424,19 @@ export const extractLocationFromAddressString = (completeAddress: string): strin
     }
   }
 
-  // Second, try multi-word exact matches (e.g., "G.B palya" should match "G.B palya")
+  // Second, try normalized exact matches (handles "J.P Nagar" vs "JP Nagar")
+  for (const part of addressParts) {
+    const normalizedPart = normalizeForComparison(part);
+    const normalizedMatch = uniqueAreas.find(area => {
+      const normalizedArea = normalizeForComparison(area);
+      return normalizedArea === normalizedPart;
+    });
+    if (normalizedMatch) {
+      return normalizedMatch;
+    }
+  }
+
+  // Third, try multi-word exact matches (e.g., "G.B palya" should match "G.B palya")
   // This is more confident than partial matches
   for (let i = 0; i < addressParts.length - 1; i++) {
     const twoWordPart = `${addressParts[i]} ${addressParts[i + 1]}`.toLowerCase();
@@ -371,6 +445,19 @@ export const extractLocationFromAddressString = (completeAddress: string): strin
     );
     if (multiWordMatch) {
       return multiWordMatch;
+    }
+  }
+
+  // Fourth, try normalized multi-word matches (handles "J.P Nagar" vs "JP Nagar")
+  for (let i = 0; i < addressParts.length - 1; i++) {
+    const twoWordPart = `${addressParts[i]} ${addressParts[i + 1]}`;
+    const normalizedTwoWord = normalizeForComparison(twoWordPart);
+    const normalizedMultiWordMatch = uniqueAreas.find(area => {
+      const normalizedArea = normalizeForComparison(area);
+      return normalizedArea === normalizedTwoWord;
+    });
+    if (normalizedMultiWordMatch) {
+      return normalizedMultiWordMatch;
     }
   }
 
