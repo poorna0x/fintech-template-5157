@@ -86,7 +86,7 @@ interface TechnicianSalaryBreakdown {
   employeeId: string;
   baseSalary: number; // Monthly base salary
   periodBaseSalary: number; // Base salary for the period (monthly * months)
-  adjustedBaseSalary: number; // After holiday deductions
+  adjustedBaseSalary: number; // After holiday deductions and unused leave bonus
   totalCommission: number;
   totalExtraCommission: number;
   totalExpenses: number;
@@ -94,6 +94,8 @@ interface TechnicianSalaryBreakdown {
   totalHolidays: number;
   allowedHolidays: number;
   extraHolidays: number;
+  unusedLeaves: number; // Number of unused leaves (if less than 4 used)
+  unusedLeaveBonus: number; // Bonus amount for unused leaves
   holidayDeduction: number;
   totalSalary: number; // adjustedBaseSalary + commission + extraCommission - advances
   totalBillAmount: number; // Total billing done by this technician in the period
@@ -388,15 +390,15 @@ const TechnicianPayments = () => {
         });
         const totalExpenses = techExpenses.reduce((sum, e) => sum + (e.amount || 0), 0);
 
-        // Get advances for this technician - filter by current cycle date range
+        // Get advances for this technician - show all advances (not filtered by date)
+        // Advances persist across months and should be included in all salary calculations
         const techAdvances = (advancesData || []).filter((a: TechnicianAdvance) => {
-          if (a.technician_id !== techId) return false;
-          const advanceDate = a.advance_date.split('T')[0];
-          return advanceDate >= periodStartStr && advanceDate <= periodEndStr;
+          return a.technician_id === techId;
         });
         const totalAdvances = techAdvances.reduce((sum, a) => sum + (a.amount || 0), 0);
         
-        // Get extra commissions for this technician
+        // Get extra commissions for this technician - show all extra commissions (not filtered by date)
+        // Extra commissions persist across months and should be included in all salary calculations
         const techExtraCommissions = (extraCommissionsData || []).filter((ec: TechnicianExtraCommission) => ec.technician_id === techId);
         const totalExtraCommission = techExtraCommissions.reduce((sum, ec) => sum + (ec.amount || 0), 0);
 
@@ -504,10 +506,17 @@ const TechnicianPayments = () => {
         // Calculate holidays for the entire cycle (not per month)
         // IMPORTANT: First 4 holidays per cycle are FREE (no deduction)
         // Only holidays beyond 4 per cycle reduce base salary
+        // If technician used LESS than 4 leaves, add unused leave amount to basic
         const totalHolidays = allHolidayDates.size;
         const extraHolidays = Math.max(0, totalHolidays - allowedHolidays);
         const holidayDeduction = extraHolidays * dailyBaseSalary;
-        const adjustedBaseSalary = periodBaseSalary - holidayDeduction;
+        
+        // Calculate unused leave bonus: if used less than 4 leaves, add the unused amount
+        const unusedLeaves = Math.max(0, allowedHolidays - totalHolidays);
+        const unusedLeaveBonus = unusedLeaves * dailyBaseSalary;
+        
+        // Adjusted base salary: periodBaseSalary - holidayDeduction + unusedLeaveBonus
+        const adjustedBaseSalary = periodBaseSalary - holidayDeduction + unusedLeaveBonus;
 
         // Create holiday records for display (include auto-detected ones)
         // EXCLUDE present override markers (MARKED_AS_PRESENT) from display
@@ -609,6 +618,8 @@ const TechnicianPayments = () => {
           totalHolidays,
           allowedHolidays,
           extraHolidays,
+          unusedLeaves,
+          unusedLeaveBonus,
           holidayDeduction,
           totalSalary,
           totalBillAmount, // Total billing done by this technician
@@ -1501,9 +1512,12 @@ const TechnicianPayments = () => {
                   <p className="text-xs text-gray-500 mt-1">
                     Period: ₹ {formatCurrency(breakdown.periodBaseSalary)}
                   </p>
-                  {breakdown.holidayDeduction > 0 && (
-                    <p className="text-xs text-red-600 mt-1">
+                  {(breakdown.holidayDeduction > 0 || breakdown.unusedLeaveBonus > 0) && (
+                    <p className="text-xs text-gray-600 mt-1">
                       Adjusted: ₹ {formatCurrency(breakdown.adjustedBaseSalary)}
+                      {breakdown.unusedLeaveBonus > 0 && (
+                        <span className="text-green-600 ml-1">(+₹{formatCurrency(breakdown.unusedLeaveBonus)} unused leaves)</span>
+                      )}
                     </p>
                   )}
                 </div>
@@ -1538,12 +1552,20 @@ const TechnicianPayments = () => {
                     <span className="truncate">Base Salary (Period):</span>
                     <span className="whitespace-nowrap">₹ {formatCurrency(breakdown.periodBaseSalary)}</span>
                   </div>
-                  {breakdown.holidayDeduction > 0 && (
+                  {(breakdown.holidayDeduction > 0 || breakdown.unusedLeaveBonus > 0) && (
                     <>
-                      <div className="flex justify-between items-center gap-2 text-red-600">
-                        <span className="truncate">Leave Deduction ({breakdown.extraHolidays} absent days):</span>
-                        <span className="font-medium whitespace-nowrap">- ₹ {formatCurrency(breakdown.holidayDeduction)}</span>
-                      </div>
+                      {breakdown.holidayDeduction > 0 && (
+                        <div className="flex justify-between items-center gap-2 text-red-600">
+                          <span className="truncate">Leave Deduction ({breakdown.extraHolidays} absent days):</span>
+                          <span className="font-medium whitespace-nowrap">- ₹ {formatCurrency(breakdown.holidayDeduction)}</span>
+                        </div>
+                      )}
+                      {breakdown.unusedLeaveBonus > 0 && (
+                        <div className="flex justify-between items-center gap-2 text-green-600">
+                          <span className="truncate">Unused Leave Bonus ({breakdown.unusedLeaves} unused leaves):</span>
+                          <span className="font-medium whitespace-nowrap">+ ₹ {formatCurrency(breakdown.unusedLeaveBonus)}</span>
+                        </div>
+                      )}
                       <div className="flex justify-between items-center gap-2">
                         <span className="truncate">Adjusted Base Salary:</span>
                         <span className="font-medium whitespace-nowrap">₹ {formatCurrency(breakdown.adjustedBaseSalary)}</span>
