@@ -7493,28 +7493,30 @@ const TechnicianDashboard = () => {
           <div className="flex flex-col items-center justify-center py-6">
             {(() => {
               const technicianId = user?.technicianId || user?.id;
-              const currentTechnician = allTechnicians.find(t => t.id === technicianId);
-              const technicianQrCode = currentTechnician?.qrCode || null;
-
-              if (!technicianQrCode) {
+              
+              if (!technicianId) {
                 return (
                   <div className="text-center py-8">
                     <QrCode className="w-16 h-16 mx-auto text-gray-300 mb-4" />
-                    <p className="text-gray-600">QR code not available</p>
-                    <p className="text-sm text-gray-500 mt-2">Please contact admin to set up your ID card QR code</p>
+                    <p className="text-gray-600">Technician ID not available</p>
+                    <p className="text-sm text-gray-500 mt-2">Please contact admin</p>
                   </div>
                 );
               }
+
+              // Generate QR code URL for technician ID card
+              const technicianIdCardUrl = `https://hydrogenro.com/technician-id/${technicianId}`;
+              const qrCodeImageUrl = `https://api.qrserver.com/v1/create-qr-code/?size=256x256&data=${encodeURIComponent(technicianIdCardUrl)}`;
 
               return (
                 <div className="flex flex-col items-center gap-4">
                   <div className="bg-white p-4 rounded-lg border-2 border-gray-200 shadow-lg">
                     <img
-                      src={technicianQrCode}
+                      src={qrCodeImageUrl}
                       alt="Technician ID Card QR Code"
                       className="w-64 h-64 object-contain"
                       onError={(e) => {
-                        console.error('QR code image failed to load:', technicianQrCode);
+                        console.error('QR code image failed to load:', qrCodeImageUrl);
                         e.currentTarget.style.display = 'none';
                         const parent = e.currentTarget.parentElement;
                         if (parent) {
@@ -7531,9 +7533,19 @@ const TechnicianDashboard = () => {
                       )}
                     </div>
                   )}
-                  <p className="text-xs text-gray-500 text-center max-w-xs">
-                    Show this QR code to others for easy identification
-                  </p>
+                  <div className="text-center">
+                    <p className="text-xs text-gray-500 max-w-xs mb-2">
+                      Scan this QR code to view technician information
+                    </p>
+                    <a
+                      href={technicianIdCardUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-xs text-blue-600 hover:text-blue-800 underline break-all"
+                    >
+                      {technicianIdCardUrl}
+                    </a>
+                  </div>
                 </div>
               );
             })()}
