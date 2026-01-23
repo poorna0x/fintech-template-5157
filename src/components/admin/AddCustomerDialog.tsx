@@ -105,7 +105,7 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
     scheduled_time_slot: 'MORNING' as 'MORNING' | 'AFTERNOON' | 'EVENING' | 'CUSTOM',
     scheduled_time_custom: '',
     description: '',
-    lead_source: '',
+    lead_source: 'Direct call', // Default to 'Direct call'
     lead_source_custom: '',
     priority: 'MEDIUM' as 'LOW' | 'MEDIUM' | 'HIGH' | 'URGENT',
     assigned_technician_id: '' // Add technician assignment field
@@ -836,13 +836,28 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
             assigned_date: step5JobData.assigned_technician_id ? new Date().toISOString() : null
           };
 
+          // Debug: Log the job data being created
+          console.log('📋 Creating job with data:', {
+            job_number: jobData.job_number,
+            lead_source: jobData.requirements[0]?.lead_source,
+            requirements: jobData.requirements,
+            assigned_technician_id: jobData.assigned_technician_id
+          });
+
           const jobResult = await db.jobs.create(jobData as any);
           newJob = jobResult.data;
           jobError = jobResult.error;
           
           if (jobError) {
             console.error('Failed to create job:', jobError);
-          } else if (newJob && step5JobData.assigned_technician_id) {
+          } else if (newJob) {
+            console.log('✅ Job created successfully:', {
+              job_id: (newJob as any).id,
+              job_number: (newJob as any).job_number,
+              requirements: (newJob as any).requirements
+            });
+            
+            if (step5JobData.assigned_technician_id) {
             // Send notification to assigned technician
             try {
               const { sendNotification, createJobAssignedNotification } = await import('@/lib/notifications');
@@ -909,7 +924,7 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
         scheduled_time_slot: 'MORNING' as 'MORNING' | 'AFTERNOON' | 'EVENING' | 'CUSTOM',
         scheduled_time_custom: '',
         description: '',
-        lead_source: '',
+        lead_source: 'Direct call', // Reset to 'Direct call' (default)
         lead_source_custom: '',
         priority: 'MEDIUM' as 'LOW' | 'MEDIUM' | 'HIGH' | 'URGENT',
         assigned_technician_id: '' // Reset technician assignment
@@ -1495,7 +1510,7 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
                     <div className="space-y-2">
                       <Label htmlFor="step5_lead_source">Lead Source *</Label>
                       <Select
-                        value={step5JobData.lead_source || ''}
+                        value={step5JobData.lead_source || 'Direct call'}
                         onValueChange={(value) => setStep5JobData(prev => ({ 
                           ...prev, 
                           lead_source: value === 'Other' ? 'Other' : value,
