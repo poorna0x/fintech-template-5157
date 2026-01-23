@@ -43,7 +43,8 @@ import {
   RefreshCw,
   FileText,
   Star,
-  Receipt
+  Receipt,
+  QrCode
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { db, supabase } from '@/lib/supabase';
@@ -436,6 +437,9 @@ const TechnicianDashboard = () => {
   // Phone popup state
   const [phonePopupOpen, setPhonePopupOpen] = useState(false);
   const [selectedCustomerPhone, setSelectedCustomerPhone] = useState<{phone: string, alternate_phone?: string, full_name?: string} | null>(null);
+
+  // Technician ID Card QR Code Dialog
+  const [technicianIdCardDialogOpen, setTechnicianIdCardDialogOpen] = useState(false);
 
   // Photos dialog state
   const [photosDialogOpen, setPhotosDialogOpen] = useState(false);
@@ -3856,6 +3860,14 @@ const TechnicianDashboard = () => {
                   <RefreshCw className="w-4 h-4 mr-2" />
                   Refresh
                 </DropdownMenuItem>
+                <DropdownMenuItem 
+                  onClick={() => {
+                    setTechnicianIdCardDialogOpen(true);
+                  }}
+                >
+                  <QrCode className="w-4 h-4 mr-2" />
+                  Show ID Card QR
+                </DropdownMenuItem>
                 <DropdownMenuItem onClick={logout}>
                   <LogOut className="w-4 h-4 mr-2" />
                   Logout
@@ -4716,12 +4728,6 @@ const TechnicianDashboard = () => {
                                       {paymentMethod === 'CASH' ? 'Payment Type:' : 'QR Code:'}
                                     </span>
                                     <span className="text-gray-900 font-medium">{paymentTypeDisplay}</span>
-                                  </div>
-                                )}
-                                {qrCodeInfo?.qr_code_type && paymentMethod !== 'CASH' && (
-                                  <div className="flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-3 p-3 bg-white rounded-lg border border-green-200">
-                                    <span className="font-semibold text-gray-700 min-w-[140px] sm:min-w-[160px]">QR Type:</span>
-                                    <span className="text-gray-900 font-medium capitalize">{qrCodeInfo.qr_code_type}</span>
                                   </div>
                                 )}
                               </div>
@@ -7469,6 +7475,74 @@ const TechnicianDashboard = () => {
               />
             )}
           </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Technician ID Card QR Code Dialog */}
+      <Dialog open={technicianIdCardDialogOpen} onOpenChange={setTechnicianIdCardDialogOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <QrCode className="w-5 h-5" />
+              Technician ID Card QR Code
+            </DialogTitle>
+            <DialogDescription>
+              Scan this QR code to view technician information
+            </DialogDescription>
+          </DialogHeader>
+          <div className="flex flex-col items-center justify-center py-6">
+            {(() => {
+              const technicianId = user?.technicianId || user?.id;
+              const currentTechnician = allTechnicians.find(t => t.id === technicianId);
+              const technicianQrCode = currentTechnician?.qrCode || null;
+
+              if (!technicianQrCode) {
+                return (
+                  <div className="text-center py-8">
+                    <QrCode className="w-16 h-16 mx-auto text-gray-300 mb-4" />
+                    <p className="text-gray-600">QR code not available</p>
+                    <p className="text-sm text-gray-500 mt-2">Please contact admin to set up your ID card QR code</p>
+                  </div>
+                );
+              }
+
+              return (
+                <div className="flex flex-col items-center gap-4">
+                  <div className="bg-white p-4 rounded-lg border-2 border-gray-200 shadow-lg">
+                    <img
+                      src={technicianQrCode}
+                      alt="Technician ID Card QR Code"
+                      className="w-64 h-64 object-contain"
+                      onError={(e) => {
+                        console.error('QR code image failed to load:', technicianQrCode);
+                        e.currentTarget.style.display = 'none';
+                        const parent = e.currentTarget.parentElement;
+                        if (parent) {
+                          parent.innerHTML = '<div class="text-center py-8 text-gray-600">QR code image not available</div>';
+                        }
+                      }}
+                    />
+                  </div>
+                  {user?.fullName && (
+                    <div className="text-center">
+                      <p className="font-semibold text-gray-900">{user.fullName}</p>
+                      {user?.employeeId && (
+                        <p className="text-sm text-gray-600">ID: {user.employeeId}</p>
+                      )}
+                    </div>
+                  )}
+                  <p className="text-xs text-gray-500 text-center max-w-xs">
+                    Show this QR code to others for easy identification
+                  </p>
+                </div>
+              );
+            })()}
+          </div>
+          <DialogFooter>
+            <Button onClick={() => setTechnicianIdCardDialogOpen(false)}>
+              Close
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
     </div>
