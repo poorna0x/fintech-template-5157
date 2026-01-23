@@ -209,12 +209,25 @@ export const db = {
   
   // Job operations
   jobs: {
-    async create(job: Database['public']['Tables']['jobs']['Insert']) {
+    async create(job: Database['public']['Tables']['jobs']['Insert'], retryCount: number = 0) {
       const { data, error } = await supabase
         .from('jobs')
         .insert(job)
         .select()
         .single();
+      
+      // If duplicate job_number error and we haven't retried too many times, retry with new job number
+      if (error && error.code === '23505' && error.message?.includes('job_number') && retryCount < 3) {
+        // Generate a new job number by adding more randomness
+        const serviceType = (job as any).service_type || 'RO';
+        const prefix = serviceType === 'RO' ? 'RO' : 'WS';
+        const timestamp = Date.now().toString().slice(-6);
+        const random = Math.floor(Math.random() * 10000).toString().padStart(4, '0'); // 4 digits for more uniqueness
+        const newJobNumber = `${prefix}${timestamp}${random}`;
+        
+        // Retry with new job number
+        return this.create({ ...job, job_number: newJobNumber }, retryCount + 1);
+      }
       
       return { data, error };
     },
