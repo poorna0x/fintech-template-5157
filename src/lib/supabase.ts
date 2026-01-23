@@ -1655,7 +1655,8 @@ export const db = {
               amc_contract_id: amc.id,
               auto_created: true,
               service_due: true,
-              amc_service: true
+              amc_service: true,
+              lead_source: 'Direct call'
             }],
             estimated_cost: 0,
             payment_status: 'PENDING'
