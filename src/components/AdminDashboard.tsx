@@ -101,6 +101,7 @@ import PhotoGalleryDialog from './admin/PhotoGalleryDialog';
 import PhotoViewerDialog from './admin/PhotoViewerDialog';
 import CustomerPhotoGalleryDialog from './admin/CustomerPhotoGalleryDialog';
 import AssignJobDialog from './admin/AssignJobDialog';
+import AddTeamDialog from './admin/AddTeamDialog';
 import NewJobDialog from './admin/NewJobDialog';
 import EditJobDialog from './admin/EditJobDialog';
 import PhoneNumbersDialog from './admin/PhoneNumbersDialog';
@@ -712,6 +713,11 @@ const AdminDashboard = () => {
   const [assignJobDialogOpen, setAssignJobDialogOpen] = useState(false);
   const [jobToAssign, setJobToAssign] = useState<Job | null>(null);
   const [selectedTechnicianId, setSelectedTechnicianId] = useState('');
+  
+  // Add Team Dialog state
+  const [addTeamDialogOpen, setAddTeamDialogOpen] = useState(false);
+  const [jobForTeam, setJobForTeam] = useState<Job | null>(null);
+  const [selectedTeamMemberId, setSelectedTeamMemberId] = useState('');
 
   useEffect(() => {
     registerAdminPWA();
@@ -4773,6 +4779,70 @@ const AdminDashboard = () => {
     }
   };
 
+  const handleAddTeam = async (job: Job) => {
+    setJobForTeam(job);
+    setSelectedTeamMemberId('');
+    setAddTeamDialogOpen(true);
+
+    // Reload technicians to get latest data
+    await reloadTechnicians();
+  };
+
+  const handleSaveTeamMember = async () => {
+    if (!jobForTeam || !selectedTeamMemberId) return;
+
+    try {
+      // Get current team_members from job
+      const currentTeamMembers = (jobForTeam as any).team_members || [];
+      const teamMembersArray = Array.isArray(currentTeamMembers) ? currentTeamMembers : [];
+      
+      // Check if technician is already in team
+      if (teamMembersArray.includes(selectedTeamMemberId)) {
+        toast.error('This technician is already in the team');
+        return;
+      }
+
+      // Check if technician is the primary assigned technician
+      if ((jobForTeam as any).assigned_technician_id === selectedTeamMemberId) {
+        toast.error('This technician is already the primary assigned technician');
+        return;
+      }
+
+      // Add new team member
+      const updatedTeamMembers = [...teamMembersArray, selectedTeamMemberId];
+
+      const { error } = await db.jobs.update(jobForTeam.id, {
+        team_members: updatedTeamMembers
+      } as any);
+
+      if (error) throw error;
+
+      // Send notification to team member
+      const teamMember = technicians.find(t => t.id === selectedTeamMemberId);
+      if (teamMember) {
+        const notification = createJobAssignedNotification(
+          (jobForTeam as any).job_number || jobForTeam.jobNumber || 'Job',
+          (jobForTeam.customer as any)?.full_name || (jobForTeam.customer as any)?.fullName || 'Customer',
+          teamMember.fullName,
+          jobForTeam.id,
+          teamMember.id
+        );
+        await sendNotification(notification);
+      }
+
+      toast.success('Team member added successfully');
+      setAddTeamDialogOpen(false);
+      setJobForTeam(null);
+      setSelectedTeamMemberId('');
+      
+      // Refresh jobs
+      await onCustomerCreated();
+    } catch (error: any) {
+      console.error('Error adding team member:', error);
+      toast.error(error.message || 'Failed to add team member');
+    }
+  };
+
   // Bulk assignment removed - not needed
 
 
@@ -8617,6 +8687,23 @@ const AdminDashboard = () => {
           setAssignJobDialogOpen(false);
           setJobToAssign(null);
           setSelectedTechnicianId('');
+        }}
+      />
+
+      {/* Add Team Dialog */}
+      <AddTeamDialog
+        open={addTeamDialogOpen}
+        onOpenChange={setAddTeamDialogOpen}
+        job={jobForTeam}
+        technicians={technicians}
+        selectedTeamMemberId={selectedTeamMemberId}
+        onTeamMemberSelect={setSelectedTeamMemberId}
+        onReloadTechnicians={reloadTechnicians}
+        onSave={handleSaveTeamMember}
+        onCancel={() => {
+          setAddTeamDialogOpen(false);
+          setJobForTeam(null);
+          setSelectedTeamMemberId('');
         }}
       />
 

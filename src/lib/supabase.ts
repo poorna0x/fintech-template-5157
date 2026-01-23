@@ -397,6 +397,7 @@ export const db = {
     
     async getByTechnicianId(technicianId: string) {
       // Optimized query for mobile - only fetch essential fields
+      // Include jobs where technician is assigned OR is a team member
       const { data, error } = await supabase
         .from('jobs')
         .select(`
@@ -425,7 +426,7 @@ export const db = {
             employee_id
           )
         `)
-        .eq('assigned_technician_id', technicianId)
+        .or(`assigned_technician_id.eq.${technicianId},team_members.cs.["${technicianId}"]`)
         .order('created_at', { ascending: false })
         .limit(100); // Limit to 100 jobs for mobile performance
       
