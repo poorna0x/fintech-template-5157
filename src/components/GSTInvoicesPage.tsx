@@ -788,11 +788,11 @@ export default function GSTInvoicesPage() {
   };
 
   return (
-    <div className="space-y-6 p-6">
-      <div className="flex items-center justify-between flex-wrap gap-4">
-        <div>
-          <h1 className="text-3xl font-bold">GST Invoices</h1>
-          <p className="text-gray-500 mt-1">View and manage all tax invoices</p>
+    <div className="space-y-4 sm:space-y-6 p-3 sm:p-6 max-w-full overflow-x-hidden">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+        <div className="min-w-0">
+          <h1 className="text-2xl sm:text-3xl font-bold">GST Invoices</h1>
+          <p className="text-sm sm:text-base text-gray-500 mt-1">View and manage all tax invoices</p>
         </div>
         <div className="flex gap-2 flex-wrap">
           {/* Quick Export Buttons */}
@@ -842,13 +842,13 @@ export default function GSTInvoicesPage() {
 
       {/* Filters and Search */}
       <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <Filter className="h-5 w-5" />
+        <CardHeader className="p-4 sm:p-6">
+          <CardTitle className="flex items-center gap-2 text-base sm:text-lg">
+            <Filter className="h-4 w-4 sm:h-5 sm:w-5" />
             Filters & Search
           </CardTitle>
         </CardHeader>
-        <CardContent className="space-y-4">
+        <CardContent className="space-y-4 p-4 sm:p-6">
           {/* Search */}
           <div className="relative">
             <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" size={18} />
@@ -862,8 +862,8 @@ export default function GSTInvoicesPage() {
 
           {/* Invoice Type Filter */}
           <div>
-            <Label className="mb-2 block">Invoice Type</Label>
-            <div className="flex gap-2">
+            <Label className="mb-2 block text-sm sm:text-base">Invoice Type</Label>
+            <div className="flex gap-2 flex-wrap">
               <Button
                 variant={filterType === 'ALL' ? 'default' : 'outline'}
                 onClick={() => setFilterType('ALL')}
@@ -922,8 +922,8 @@ export default function GSTInvoicesPage() {
 
             {/* Single Date Mode */}
             {bulkDownloadMode === 'single' && (
-              <div className="flex gap-2 items-end mb-3">
-                <div className="flex-1">
+              <div className="flex flex-col sm:flex-row gap-2 items-end mb-3">
+                <div className="flex-1 w-full sm:w-auto">
                   <Label className="mb-1 block text-xs">Select Date</Label>
                   <Input
                     type="date"
@@ -937,8 +937,8 @@ export default function GSTInvoicesPage() {
 
             {/* Date Range Mode */}
             {bulkDownloadMode === 'range' && (
-              <div className="flex gap-2 items-end mb-3">
-                <div className="flex-1">
+              <div className="flex flex-col sm:flex-row gap-2 items-end mb-3">
+                <div className="flex-1 w-full sm:w-auto">
                   <Label className="mb-1 block text-xs">Start Date</Label>
                   <Input
                     type="date"
@@ -948,7 +948,7 @@ export default function GSTInvoicesPage() {
                     max={bulkDownloadEndDate || undefined}
                   />
                 </div>
-                <div className="flex-1">
+                <div className="flex-1 w-full sm:w-auto">
                   <Label className="mb-1 block text-xs">End Date</Label>
                   <Input
                     type="date"
@@ -1000,7 +1000,7 @@ export default function GSTInvoicesPage() {
 
             {/* Download Buttons */}
             <div className="space-y-3">
-              <div className="flex gap-2 flex-wrap">
+              <div className="flex flex-col sm:flex-row gap-2">
                 <Button
                   onClick={handleBulkDownload}
                   disabled={
@@ -1008,7 +1008,7 @@ export default function GSTInvoicesPage() {
                     (bulkDownloadMode === 'single' && !bulkDownloadDate) ||
                     (bulkDownloadMode === 'range' && (!bulkDownloadStartDate || !bulkDownloadEndDate))
                   }
-                  className="bg-blue-600 hover:bg-blue-700"
+                  className="bg-blue-600 hover:bg-blue-700 w-full sm:w-auto"
                 >
                   {isBulkDownloading ? (
                     <>
@@ -1027,7 +1027,7 @@ export default function GSTInvoicesPage() {
                 <Button
                   onClick={handleExportToCSV}
                   variant="outline"
-                  className="border-green-600 text-green-700 hover:bg-green-50"
+                  className="border-green-600 text-green-700 hover:bg-green-50 w-full sm:w-auto"
                   disabled={
                     (bulkDownloadMode === 'single' && !bulkDownloadDate) ||
                     (bulkDownloadMode === 'range' && (!bulkDownloadStartDate || !bulkDownloadEndDate))
@@ -1041,7 +1041,7 @@ export default function GSTInvoicesPage() {
                 <Button
                   onClick={handleExportToExcel}
                   variant="outline"
-                  className="border-green-600 text-green-700 hover:bg-green-50"
+                  className="border-green-600 text-green-700 hover:bg-green-50 w-full sm:w-auto"
                   disabled={
                     (bulkDownloadMode === 'single' && !bulkDownloadDate) ||
                     (bulkDownloadMode === 'range' && (!bulkDownloadStartDate || !bulkDownloadEndDate))
@@ -1120,11 +1120,11 @@ export default function GSTInvoicesPage() {
                 </Select>
               </div>
             </div>
-            <div className="flex gap-2">
+            <div className="flex flex-col sm:flex-row gap-2">
               <Button
                 onClick={() => handleExportMonthlyInvoices('csv')}
                 variant="outline"
-                className="border-green-600 text-green-700 hover:bg-green-50 flex-1"
+                className="border-green-600 text-green-700 hover:bg-green-50 flex-1 w-full sm:w-auto"
               >
                 <FileDown className="h-4 w-4 mr-2" />
                 Export Month CSV
@@ -1132,7 +1132,7 @@ export default function GSTInvoicesPage() {
               <Button
                 onClick={() => handleExportMonthlyInvoices('excel')}
                 variant="outline"
-                className="border-green-600 text-green-700 hover:bg-green-50 flex-1"
+                className="border-green-600 text-green-700 hover:bg-green-50 flex-1 w-full sm:w-auto"
               >
                 <FileSpreadsheet className="h-4 w-4 mr-2" />
                 Export Month Excel
@@ -1292,11 +1292,11 @@ export default function GSTInvoicesPage() {
           ) : filteredInvoices.length === 0 ? (
             <div className="text-center py-8 text-gray-500">No invoices found</div>
           ) : (
-            <div className="overflow-x-auto -mx-4 sm:mx-0">
+            <div className="overflow-x-hidden">
               {/* Mobile Card View */}
               <div className="block sm:hidden space-y-4">
                 {filteredInvoices.map((invoice) => (
-                  <Card key={invoice.id} className="mx-4">
+                  <Card key={invoice.id}>
                     <CardContent className="p-4 space-y-3">
                       <div className="flex items-start justify-between">
                         <div className="flex-1 min-w-0">
