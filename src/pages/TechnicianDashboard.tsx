@@ -42,7 +42,8 @@ import {
   Bell,
   RefreshCw,
   FileText,
-  Star
+  Star,
+  Receipt
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { db, supabase } from '@/lib/supabase';
@@ -4201,9 +4202,65 @@ const TechnicianDashboard = () => {
                     </Card>
                   );
                 })}
+              
+              {/* Daily Summary for Completed Jobs */}
+              {statusFilter === 'COMPLETED' && filteredJobs.length > 0 && (() => {
+                let totalCash = 0;
+                let totalOnline = 0;
+                let totalAmount = 0;
+                
+                filteredJobs.forEach((job) => {
+                  const paymentAmount = (job as any).payment_amount || (job as any).actual_cost || 0;
+                  const paymentMethod = (job as any).payment_method || '';
+                  
+                  if (paymentAmount > 0) {
+                    totalAmount += paymentAmount;
+                    if (paymentMethod === 'CASH') {
+                      totalCash += paymentAmount;
+                    } else if (paymentMethod && paymentMethod !== 'CASH') {
+                      totalOnline += paymentAmount;
+                    }
+                  }
+                });
+                
+                if (totalAmount > 0) {
+                  return (
+                    <Card className="mt-6 border-2 border-green-500 bg-green-50">
+                      <CardContent className="p-4 sm:p-6">
+                        <div className="flex items-center gap-2 mb-4">
+                          <Receipt className="w-5 h-5 sm:w-6 sm:h-6 text-green-700" />
+                          <h3 className="text-lg sm:text-xl font-bold text-green-900">Today's Billing Summary</h3>
+                        </div>
+                        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                          <div className="bg-white rounded-lg p-3 sm:p-4 border border-green-200">
+                            <div className="text-xs sm:text-sm text-gray-600 mb-1">Total Cash</div>
+                            <div className="text-lg sm:text-2xl font-bold text-gray-900">
+                              ₹{totalCash.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                            </div>
+                          </div>
+                          <div className="bg-white rounded-lg p-3 sm:p-4 border border-green-200">
+                            <div className="text-xs sm:text-sm text-gray-600 mb-1">Total Online/QR</div>
+                            <div className="text-lg sm:text-2xl font-bold text-gray-900">
+                              ₹{totalOnline.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                            </div>
+                          </div>
+                          <div className="bg-white rounded-lg p-3 sm:p-4 border-2 border-green-500">
+                            <div className="text-xs sm:text-sm text-gray-600 mb-1">Grand Total</div>
+                            <div className="text-lg sm:text-2xl font-bold text-green-700">
+                              ₹{totalAmount.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                            </div>
+                          </div>
+                        </div>
+                      </CardContent>
+                    </Card>
+                  );
+                }
+                return null;
+              })()}
               </div>
             </CardContent>
           </Card>
+          </>
         )}
 
         {/* Section Title */}
@@ -4651,6 +4708,71 @@ const TechnicianDashboard = () => {
                         </div>
                       )}
 
+                      {/* Payment Information for Completed Jobs */}
+                      {statusFilter === 'COMPLETED' && (job.status === 'COMPLETED' || (job as any).status === 'COMPLETED') && (() => {
+                        const paymentAmount = (job as any).payment_amount || (job as any).actual_cost || 0;
+                        const paymentMethod = (job as any).payment_method || '';
+                        
+                        // Extract QR code info from requirements
+                        let qrCodeInfo: any = null;
+                        try {
+                          const requirements = (job as any).requirements;
+                          if (requirements) {
+                            let reqs = requirements;
+                            if (typeof reqs === 'string') {
+                              reqs = JSON.parse(reqs);
+                            }
+                            if (Array.isArray(reqs)) {
+                              const qrReq = reqs.find((r: any) => r?.qr_photos);
+                              if (qrReq?.qr_photos) {
+                                qrCodeInfo = qrReq.qr_photos;
+                              }
+                            }
+                          }
+                        } catch (e) {
+                          // Ignore parse errors
+                        }
+                        
+                        if (paymentAmount > 0 || paymentMethod || qrCodeInfo) {
+                          return (
+                            <div className="mb-4 p-4 bg-green-50 border border-green-200 rounded-lg">
+                              <div className="flex items-center gap-2 mb-3">
+                                <Receipt className="w-5 h-5 text-green-700" />
+                                <h3 className="font-semibold text-green-900 text-base">Payment Details</h3>
+                              </div>
+                              <div className="space-y-2 text-sm">
+                                {paymentAmount > 0 && (
+                                  <div className="flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-2">
+                                    <span className="font-medium text-gray-700 min-w-[120px]">Bill Amount:</span>
+                                    <span className="text-gray-900 font-semibold">₹{paymentAmount.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                                  </div>
+                                )}
+                                {paymentMethod && (
+                                  <div className="flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-2">
+                                    <span className="font-medium text-gray-700 min-w-[120px]">Payment Mode:</span>
+                                    <span className="text-gray-900 capitalize">{paymentMethod.replace('_', ' ')}</span>
+                                  </div>
+                                )}
+                                {qrCodeInfo && (
+                                  <div className="flex flex-col sm:flex-row sm:items-start gap-1 sm:gap-2">
+                                    <span className="font-medium text-gray-700 min-w-[120px]">QR Code:</span>
+                                    <div className="flex-1">
+                                      {qrCodeInfo.qr_code_type && (
+                                        <div className="text-gray-900 capitalize mb-1">{qrCodeInfo.qr_code_type}</div>
+                                      )}
+                                      {qrCodeInfo.selected_qr_code_name && (
+                                        <div className="text-gray-600 text-xs">{qrCodeInfo.selected_qr_code_name}</div>
+                                      )}
+                                    </div>
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+                          );
+                        }
+                        return null;
+                      })()}
+
                       <div className="space-y-3 mb-4">
                         {/* Contact Information - Admin Style: 4 items - Desktop 1 row, Mobile 2x2 */}
                         <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 lg:gap-4">
@@ -4896,7 +5018,62 @@ const TechnicianDashboard = () => {
               </Card>
               </div>
               );
-            })
+            })}
+            
+            {/* Daily Summary for Completed Jobs */}
+            {statusFilter === 'COMPLETED' && filteredJobs.length > 0 && (() => {
+              let totalCash = 0;
+              let totalOnline = 0;
+              let totalAmount = 0;
+              
+              filteredJobs.forEach((job) => {
+                const paymentAmount = (job as any).payment_amount || (job as any).actual_cost || 0;
+                const paymentMethod = (job as any).payment_method || '';
+                
+                if (paymentAmount > 0) {
+                  totalAmount += paymentAmount;
+                  if (paymentMethod === 'CASH') {
+                    totalCash += paymentAmount;
+                  } else if (paymentMethod && paymentMethod !== 'CASH') {
+                    totalOnline += paymentAmount;
+                  }
+                }
+              });
+              
+              if (totalAmount > 0) {
+                return (
+                  <Card className="mt-6 border-2 border-green-500 bg-green-50">
+                    <CardContent className="p-4 sm:p-6">
+                      <div className="flex items-center gap-2 mb-4">
+                        <Receipt className="w-5 h-5 sm:w-6 sm:h-6 text-green-700" />
+                        <h3 className="text-lg sm:text-xl font-bold text-green-900">Today's Billing Summary</h3>
+                      </div>
+                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                        <div className="bg-white rounded-lg p-3 sm:p-4 border border-green-200">
+                          <div className="text-xs sm:text-sm text-gray-600 mb-1">Total Cash</div>
+                          <div className="text-lg sm:text-2xl font-bold text-gray-900">
+                            ₹{totalCash.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                          </div>
+                        </div>
+                        <div className="bg-white rounded-lg p-3 sm:p-4 border border-green-200">
+                          <div className="text-xs sm:text-sm text-gray-600 mb-1">Total Online/QR</div>
+                          <div className="text-lg sm:text-2xl font-bold text-gray-900">
+                            ₹{totalOnline.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                          </div>
+                        </div>
+                        <div className="bg-white rounded-lg p-3 sm:p-4 border-2 border-green-500">
+                          <div className="text-xs sm:text-sm text-gray-600 mb-1">Grand Total</div>
+                          <div className="text-lg sm:text-2xl font-bold text-green-700">
+                            ₹{totalAmount.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                          </div>
+                        </div>
+                      </div>
+                    </CardContent>
+                  </Card>
+                );
+              }
+              return null;
+            })()}
           )}
         </div>
 
