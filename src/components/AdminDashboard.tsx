@@ -17,6 +17,7 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigge
 import { Pagination, PaginationContent, PaginationItem, PaginationLink, PaginationNext, PaginationPrevious } from '@/components/ui/pagination';
 import { 
   Users, 
+  UserPlus,
   Wrench, 
   Clock, 
   CheckCircle, 
@@ -8248,10 +8249,16 @@ const AdminDashboard = () => {
                                       )}
                                       
                                       {job.status === 'ASSIGNED' && (
-                                        <DropdownMenuItem onClick={() => handleJobStatusUpdate(job.id, 'IN_PROGRESS')}>
-                                          <Clock className="mr-2 h-4 w-4" />
-                                          Start Job
-                                        </DropdownMenuItem>
+                                        <>
+                                          <DropdownMenuItem onClick={() => handleJobStatusUpdate(job.id, 'IN_PROGRESS')}>
+                                            <Clock className="mr-2 h-4 w-4" />
+                                            Start Job
+                                          </DropdownMenuItem>
+                                          <DropdownMenuItem onClick={() => handleAddTeam(job)}>
+                                            <UserPlus className="mr-2 h-4 w-4" />
+                                            Add Team
+                                          </DropdownMenuItem>
+                                        </>
                                       )}
                                       {(job.status === 'PENDING' || job.status === 'ASSIGNED' || job.status === 'EN_ROUTE' || job.status === 'IN_PROGRESS') && (
                                         <>
