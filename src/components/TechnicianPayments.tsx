@@ -10,8 +10,9 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Textarea } from '@/components/ui/textarea';
 import { db } from '@/lib/supabase';
 import { toast } from 'sonner';
-import { DollarSign, User, Plus, Trash2, Edit, TrendingDown, TrendingUp, RefreshCw, ChevronDown, ChevronUp, Pencil, Check, X, ChevronLeft, ChevronRight, Eye, TrendingUp as TrendingUpIcon } from 'lucide-react';
+import { DollarSign, User, Plus, Trash2, Edit, TrendingDown, TrendingUp, RefreshCw, ChevronDown, ChevronUp, Pencil, Check, X, ChevronLeft, ChevronRight, Eye, TrendingUp as TrendingUpIcon, Download } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
+import { generateSalarySlipPDF } from '@/lib/salary-slip-pdf-generator';
 
 interface TechnicianPayment {
   id: string;
@@ -1652,6 +1653,20 @@ const TechnicianPayments = () => {
 
               {/* Actions */}
               <div className="flex gap-2 mb-6 flex-wrap">
+                <Button
+                  size="sm"
+                  onClick={() => {
+                    if (commissionPeriod) {
+                      generateSalarySlipPDF(breakdown, commissionPeriod, 'pdf');
+                    } else {
+                      toast.error('Period information not available');
+                    }
+                  }}
+                  className="bg-blue-600 hover:bg-blue-700 text-white"
+                >
+                  <Download className="w-4 h-4 mr-2" />
+                  Download Salary Slip
+                </Button>
                 <Button
                   size="sm"
                   onClick={() => handleAddExpense(breakdown.technicianId)}
