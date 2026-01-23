@@ -91,6 +91,8 @@ const EditJobDialog: React.FC<EditJobDialogProps> = ({
           'website': 'Website',
           'direct call': 'Direct call',
           'directcall': 'Direct call',
+          'google': 'Google-Leads',
+          'google-leads': 'Google-Leads',
           'ro care india': 'RO care india',
           'rocareindia': 'RO care india',
           'home triangle': 'Home Triangle',
@@ -106,7 +108,7 @@ const EditJobDialog: React.FC<EditJobDialogProps> = ({
         }
         
         // Check if it's already one of the valid options (case-insensitive)
-        const validOptions = ['Website', 'Direct call', 'RO care india', 'Home Triangle', 'Local Ramu', 'Other'];
+        const validOptions = ['Website', 'Direct call', 'Google-Leads', 'RO care india', 'Home Triangle', 'Local Ramu', 'Other'];
         const matchedOption = validOptions.find(opt => opt.toLowerCase() === sourceLower);
         if (matchedOption) {
           return matchedOption;
@@ -522,6 +524,7 @@ const EditJobDialog: React.FC<EditJobDialogProps> = ({
                 <SelectContent>
                   <SelectItem value="Website">Website</SelectItem>
                   <SelectItem value="Direct call">Direct call</SelectItem>
+                  <SelectItem value="Google-Leads">Google-Leads</SelectItem>
                   <SelectItem value="RO care india">RO care india</SelectItem>
                   <SelectItem value="Home Triangle">Home Triangle</SelectItem>
                   <SelectItem value="Local Ramu">Local Ramu</SelectItem>

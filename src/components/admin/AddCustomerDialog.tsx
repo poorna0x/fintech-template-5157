@@ -1525,6 +1525,7 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
                         <SelectContent>
                           <SelectItem value="Website">Website</SelectItem>
                           <SelectItem value="Direct call">Direct call</SelectItem>
+                          <SelectItem value="Google-Leads">Google-Leads</SelectItem>
                           <SelectItem value="RO care india">RO care india</SelectItem>
                           <SelectItem value="Home Triangle">Home Triangle</SelectItem>
                           <SelectItem value="Local Ramu">Local Ramu</SelectItem>
