@@ -1705,7 +1705,7 @@ const Settings = () => {
           setSelectedTechnician(null);
         }
       }}>
-        <DialogContent className="w-[95vw] sm:w-full sm:max-w-md mx-4 max-h-[90vh] overflow-y-auto">
+        <DialogContent className="w-full sm:w-full sm:max-w-md max-h-[90vh] overflow-y-auto rounded-none sm:rounded-lg">
           <DialogHeader>
             <DialogTitle className="text-base sm:text-lg">
               {editTechnicianDialogOpen ? 'Edit Technician' : 'Add New Technician'}
