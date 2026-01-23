@@ -1,6 +1,20 @@
 import { TechnicianSalaryBreakdown } from '@/components/TechnicianPayments';
 import { sanitizeForTemplate } from './sanitize';
 
+interface Payment {
+  id: string;
+  job_id: string;
+  bill_amount: number;
+  commission_percentage: number;
+  commission_amount: number;
+  payment_date?: string;
+  created_at?: string;
+  job?: {
+    id: string;
+    job_number: string;
+  };
+}
+
 interface SalarySlipPDFData {
   technicianName: string;
   employeeId: string;
@@ -23,6 +37,7 @@ interface SalarySlipPDFData {
   holidayDeduction: number;
   totalSalary: number;
   totalBillAmount: number;
+  payments: Payment[];
   company: {
     name: string;
     address: string;
@@ -509,6 +524,84 @@ function generateSalarySlipHTML(data: SalarySlipPDFData): string {
           ` : ''}
         </div>
 
+        <!-- Day-wise Job Breakdown -->
+        ${data.payments && data.payments.length > 0 ? `
+        <div class="salary-breakdown" style="margin-bottom: 30px;">
+          <h3 class="breakdown-title">Day-wise Job Breakdown</h3>
+          ${(() => {
+            // Group payments by date
+            const paymentsByDate = new Map<string, Payment[]>();
+            data.payments.forEach((payment: Payment) => {
+              // Get date from payment_date or created_at
+              const dateStr = payment.payment_date 
+                ? payment.payment_date.split('T')[0] 
+                : (payment.created_at ? payment.created_at.split('T')[0] : '');
+              
+              if (dateStr) {
+                if (!paymentsByDate.has(dateStr)) {
+                  paymentsByDate.set(dateStr, []);
+                }
+                paymentsByDate.get(dateStr)!.push(payment);
+              }
+            });
+            
+            // Sort dates
+            const sortedDates = Array.from(paymentsByDate.keys()).sort();
+            
+            // Generate HTML for each date
+            let html = '';
+            sortedDates.forEach(dateStr => {
+              const payments = paymentsByDate.get(dateStr)!;
+              const dateObj = new Date(dateStr + 'T00:00:00');
+              const formattedDate = dateObj.toLocaleDateString('en-IN', {
+                day: '2-digit',
+                month: 'short',
+                year: 'numeric'
+              });
+              
+              const dayTotalBill = payments.reduce((sum, p) => sum + (p.bill_amount || 0), 0);
+              const dayTotalCommission = payments.reduce((sum, p) => sum + (p.commission_amount || 0), 0);
+              
+              html += `
+                <div style="margin-bottom: 20px;">
+                  <div style="font-weight: 600; font-size: 14px; color: #374151; margin-bottom: 8px; padding: 8px; background: #f8fafc; border-left: 4px solid #2563eb;">
+                    ${formattedDate} - Total: ₹${formatCurrency(dayTotalBill)} | Commission: ₹${formatCurrency(dayTotalCommission)}
+                  </div>
+                  <table class="breakdown-table" style="margin-bottom: 15px;">
+                    <thead>
+                      <tr>
+                        <th style="width: 20%;">Job Number</th>
+                        <th style="width: 25%; text-align: right;">Bill Amount</th>
+                        <th style="width: 15%; text-align: right;">Commission %</th>
+                        <th style="width: 25%; text-align: right;">Commission Amount</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      ${payments.map((payment: Payment) => `
+                        <tr>
+                          <td>${payment.job?.job_number || payment.job_id.substring(0, 8)}</td>
+                          <td style="text-align: right;">₹ ${formatCurrency(payment.bill_amount || 0)}</td>
+                          <td style="text-align: right;">${payment.commission_percentage || 10}%</td>
+                          <td style="text-align: right;" class="amount-positive">₹ ${formatCurrency(payment.commission_amount || 0)}</td>
+                        </tr>
+                      `).join('')}
+                      <tr style="background-color: #f0f9ff; font-weight: 600;">
+                        <td><strong>Day Total</strong></td>
+                        <td style="text-align: right;"><strong>₹ ${formatCurrency(dayTotalBill)}</strong></td>
+                        <td style="text-align: right;">-</td>
+                        <td style="text-align: right;" class="amount-total"><strong>₹ ${formatCurrency(dayTotalCommission)}</strong></td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              `;
+            });
+            
+            return html;
+          })()}
+        </div>
+        ` : ''}
+
         <!-- Signatures -->
         <div class="signatures">
           <div class="signature-box">
@@ -590,6 +683,7 @@ export function generateSalarySlipPDF(
       holidayDeduction: breakdown.holidayDeduction,
       totalSalary: breakdown.totalSalary,
       totalBillAmount: breakdown.totalBillAmount,
+      payments: breakdown.payments || [],
       company: companyData
     };
 
