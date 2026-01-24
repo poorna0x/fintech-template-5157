@@ -3703,15 +3703,11 @@ const AdminDashboard = () => {
                     });
                   }
                   // Also check qr_photos for payment screenshots (from secondary account)
+                  // Do NOT add selected_qr_code_url — QR codes are references, not job photos
                   if (req.qr_photos && typeof req.qr_photos === 'object') {
                     if (req.qr_photos.payment_screenshot) {
                       const screenshotUrls = extractPhotoUrls([req.qr_photos.payment_screenshot]);
                       screenshotUrls.forEach(url => photoSet.add(url));
-                    }
-                    if (req.qr_photos.selected_qr_code_url) {
-                      // QR code image URL (if stored)
-                      const qrUrls = extractPhotoUrls([req.qr_photos.selected_qr_code_url]);
-                      qrUrls.forEach(url => photoSet.add(url));
                     }
                   }
                 });
@@ -3729,15 +3725,11 @@ const AdminDashboard = () => {
                   });
                 }
                 // Also check qr_photos for payment screenshots (from secondary account)
+                // Do NOT add selected_qr_code_url — QR codes are references, not job photos
                 if (requirements.qr_photos && typeof requirements.qr_photos === 'object') {
                   if (requirements.qr_photos.payment_screenshot) {
                     const screenshotUrls = extractPhotoUrls([requirements.qr_photos.payment_screenshot]);
                     screenshotUrls.forEach(url => photoSet.add(url));
-                  }
-                  if (requirements.qr_photos.selected_qr_code_url) {
-                    // QR code image URL (if stored)
-                    const qrUrls = extractPhotoUrls([requirements.qr_photos.selected_qr_code_url]);
-                    qrUrls.forEach(url => photoSet.add(url));
                   }
                 }
               }
