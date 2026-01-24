@@ -25,29 +25,30 @@ export const StatsCards: React.FC<StatsCardsProps> = ({
   inProgressJobs,
   allJobs = [],
 }) => {
+  // Helper: format date as local YYYY-MM-DD (avoid UTC/toISOString mismatch)
+  const toLocalDateStr = (d: Date) =>
+    `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+
   // Check for follow-ups scheduled for today or tomorrow
   const getFollowUpGlowClass = () => {
     if (!allJobs || allJobs.length === 0) return '';
     
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    const todayStr = today.toISOString().split('T')[0];
-    
-    const tomorrow = new Date(today);
+    const now = new Date();
+    const todayStr = toLocalDateStr(now);
+    const tomorrow = new Date(now);
     tomorrow.setDate(tomorrow.getDate() + 1);
-    const tomorrowStr = tomorrow.toISOString().split('T')[0];
+    const tomorrowStr = toLocalDateStr(tomorrow);
     
     const followUpJobs = allJobs.filter(job => {
       if (!['FOLLOW_UP', 'RESCHEDULED'].includes(job.status)) return false;
       const followUpDate = job.followUpDate || (job as any).follow_up_date;
       if (!followUpDate) return false;
-      // Normalize date format
-      let dateStr = '';
+      let dateStr: string;
       if (followUpDate.includes('T')) {
         const date = new Date(followUpDate);
-        dateStr = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+        dateStr = toLocalDateStr(date);
       } else {
-        dateStr = followUpDate.split('T')[0];
+        dateStr = followUpDate.split('T')[0].trim();
       }
       return dateStr === todayStr || dateStr === tomorrowStr;
     });
@@ -58,23 +59,23 @@ export const StatsCards: React.FC<StatsCardsProps> = ({
     const todayFollowUps = followUpJobs.filter(job => {
       const followUpDate = job.followUpDate || (job as any).follow_up_date;
       if (!followUpDate) return false;
-      let dateStr = '';
+      let dateStr: string;
       if (followUpDate.includes('T')) {
         const date = new Date(followUpDate);
-        dateStr = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+        dateStr = toLocalDateStr(date);
       } else {
-        dateStr = followUpDate.split('T')[0];
+        dateStr = followUpDate.split('T')[0].trim();
       }
       return dateStr === todayStr;
     });
     
-    // If there are follow-ups for today, use orange/red glow
+    // If there are follow-ups for today, use red glow
     if (todayFollowUps.length > 0) {
-      return 'ring-4 ring-orange-400 ring-opacity-75 shadow-lg shadow-orange-200';
+      return 'ring-4 ring-red-400 ring-opacity-75 shadow-lg shadow-red-200';
     }
     
-    // If there are follow-ups for tomorrow, use yellow/amber glow
-    return 'ring-4 ring-amber-400 ring-opacity-75 shadow-lg shadow-amber-200';
+    // If there are follow-ups for tomorrow, use yellow glow
+    return 'ring-4 ring-yellow-400 ring-opacity-75 shadow-lg shadow-yellow-200';
   };
   
   const followUpGlowClass = getFollowUpGlowClass();
