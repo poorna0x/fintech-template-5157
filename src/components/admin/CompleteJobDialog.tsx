@@ -184,6 +184,229 @@ export const CompleteJobDialog: React.FC<CompleteJobDialogProps> = ({
     onOpenChange(false);
   };
 
+  // Extract submission logic to a separate function so it can be called directly
+  const performJobSubmission = async () => {
+    if (!job) return;
+
+    // If softener service, customerHasPrefilter should be null (not applicable)
+    if (isSoftenerService()) {
+      setCustomerHasPrefilter(null);
+    }
+    
+    // Determine payment mode - if bill is zero, payment mode should be empty
+    const finalPaymentMode = isBillAmountZero() ? '' : (paymentMode as 'CASH' | 'ONLINE' | '');
+    const finalPaymentScreenshot = isBillAmountZero() ? '' : paymentScreenshot;
+    const finalQrCodeType = isBillAmountZero() ? '' : qrCodeType;
+    const finalSelectedQrCodeId = isBillAmountZero() ? '' : selectedQrCodeId;
+    
+    setIsSubmittingJobCompletion(true);
+    
+    try {
+      let dbPaymentMethod: 'CASH' | 'CARD' | 'UPI' | 'BANK_TRANSFER' | null = null;
+      if (!isBillAmountZero()) {
+        if (finalPaymentMode === 'CASH') {
+          dbPaymentMethod = 'CASH';
+        } else if (finalPaymentMode === 'ONLINE') {
+          dbPaymentMethod = 'UPI';
+        }
+      }
+      
+      // Determine who completed the job
+      const completedByTechnicianId = selectedTechnicianId || user?.technicianId || user?.id || null;
+      
+      // Debug logging
+      console.log('🔍 [CompleteJobDialog] Submitting job completion:', {
+        jobId: job.id,
+        selectedTechnicianId,
+        userTechnicianId: user?.technicianId,
+        userId: user?.id,
+        completedByTechnicianId,
+        billAmount,
+        paymentMode: finalPaymentMode,
+        isBillAmountZero: isBillAmountZero(),
+        isSoftener: isSoftenerService()
+      });
+    
+      const updateData: any = {
+        status: 'COMPLETED',
+        end_time: new Date().toISOString(),
+        completion_notes: completionNotes.trim(),
+        completed_by: completedByTechnicianId,
+        completed_at: new Date().toISOString(),
+        actual_cost: parseFloat(billAmount) || 0,
+        payment_amount: parseFloat(billAmount) || 0,
+        payment_method: dbPaymentMethod || (isBillAmountZero() ? null : 'CASH'),
+      };
+
+      // If completing from admin page with selected technician, ensure job is assigned to that technician
+      if (selectedTechnicianId) {
+        // Validate technician ID format before adding to update
+        const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+        if (uuidRegex.test(selectedTechnicianId)) {
+          updateData.assigned_technician_id = selectedTechnicianId;
+          console.log('✅ [CompleteJobDialog] Valid technician ID, adding to update:', selectedTechnicianId);
+        } else {
+          console.error('❌ [CompleteJobDialog] Invalid technician ID format:', selectedTechnicianId);
+          toast.error('Invalid technician ID. Please try again.');
+          setIsSubmittingJobCompletion(false);
+          return;
+        }
+      }
+      
+      console.log('📤 [CompleteJobDialog] Update payload:', updateData);
+
+      // Handle requirements
+      const currentRequirements = job.requirements || [];
+      let requirements: any[] = [];
+      
+      if (Array.isArray(currentRequirements)) {
+        requirements = [...currentRequirements];
+      } else if (typeof currentRequirements === 'string') {
+        try {
+          requirements = JSON.parse(currentRequirements);
+          if (!Array.isArray(requirements)) {
+            requirements = [];
+          }
+        } catch {
+          requirements = [];
+        }
+      }
+
+      requirements = requirements.filter((req: any) => !req.bill_photos && !req.payment_photos && !req.qr_photos && !req.amc_info);
+
+      if (billPhotos.length > 0) {
+        requirements.push({ bill_photos: billPhotos });
+      }
+
+      if (!isBillAmountZero() && finalPaymentMode === 'ONLINE' && finalSelectedQrCodeId) {
+        const qrPhotos: any = {
+          qr_code_type: finalQrCodeType,
+          selected_qr_code_id: finalSelectedQrCodeId,
+          payment_screenshot: finalPaymentScreenshot || null
+        };
+        
+        if (finalSelectedQrCodeId.startsWith('common_')) {
+          const qrId = finalSelectedQrCodeId.replace('common_', '');
+          const selectedQr = localCommonQrCodes.find(qr => qr.id === qrId);
+          if (selectedQr) {
+            qrPhotos.selected_qr_code_url = selectedQr.qrCodeUrl;
+            qrPhotos.selected_qr_code_name = selectedQr.name;
+          }
+        } else if (finalSelectedQrCodeId.startsWith('technician_')) {
+          const techId = finalSelectedQrCodeId.replace('technician_', '');
+          const selectedTech = technicians.find(t => t.id === techId);
+          if (selectedTech && (selectedTech as any).qrCode) {
+            qrPhotos.selected_qr_code_url = (selectedTech as any).qrCode;
+            qrPhotos.selected_qr_code_name = selectedTech.fullName || 'Technician';
+          }
+        }
+        
+        requirements.push({ qr_photos: qrPhotos });
+      }
+
+      // Only add AMC if it was actually set (hasAMC === true and years > 0)
+      const effectiveHasAMC = hasAMC === true && amcYears > 0;
+      if (effectiveHasAMC && amcDateGiven && amcEndDate) {
+        requirements.push({ 
+          amc_info: {
+            date_given: amcDateGiven,
+            end_date: amcEndDate,
+            years: amcYears,
+            includes_prefilter: amcIncludesPrefilter,
+            additional_info: amcAdditionalInfo || null
+          }
+        });
+      }
+
+      if (billPhotos.length > 0 || (!isBillAmountZero() && finalPaymentMode === 'ONLINE' && finalSelectedQrCodeId) || (effectiveHasAMC && amcDateGiven && amcEndDate)) {
+        updateData.requirements = JSON.stringify(requirements);
+      }
+
+      console.log('🚀 [CompleteJobDialog] Calling db.jobs.update with:', {
+        jobId: job.id,
+        updateData,
+        updateDataKeys: Object.keys(updateData)
+      });
+      
+      const { data: updatedJob, error } = await db.jobs.update(job.id, updateData);
+
+      if (error) {
+        console.error('❌ [CompleteJobDialog] Update error:', {
+          error,
+          errorMessage: error.message,
+          errorDetails: error.details,
+          errorHint: error.hint,
+          errorCode: error.code,
+          jobId: job.id,
+          updateData
+        });
+        throw new Error(error.message || `Failed to update job: ${error.code || 'Unknown error'}`);
+      }
+
+      console.log('✅ [CompleteJobDialog] Job updated successfully:', updatedJob);
+      
+      // Update customer's has_prefilter field (same as technician dashboard)
+      if (customerHasPrefilter !== null && !isSoftenerService()) {
+        try {
+          // Get customer UUID from job - prioritize customer.id (UUID) over customer_id
+          const customerId = 
+            (job.customer as any)?.id ||  // UUID from joined customer object (most reliable)
+            job.customer?.id ||           // UUID from customer object
+            job.customer_id ||            // UUID from job's customer_id field
+            (job as any).customer_id;     // Alternative field name
+          
+          if (customerId) {
+            console.log('🔄 [CompleteJobDialog] Updating customer prefilter status:', {
+              customerId,
+              hasPrefilter: customerHasPrefilter,
+              jobId: job.id
+            });
+            
+            const { error: customerUpdateError } = await db.customers.update(customerId, {
+              has_prefilter: customerHasPrefilter
+            });
+            
+            if (customerUpdateError) {
+              console.error('❌ [CompleteJobDialog] Failed to update customer prefilter status:', {
+                error: customerUpdateError,
+                customerId,
+                hasPrefilter: customerHasPrefilter,
+                errorMessage: customerUpdateError.message,
+                errorCode: customerUpdateError.code
+              });
+              // Don't fail the job completion if customer update fails - just log it
+            } else {
+              console.log('✅ [CompleteJobDialog] Customer prefilter status updated successfully');
+            }
+          } else {
+            console.warn('⚠️ [CompleteJobDialog] Could not find customer ID to update prefilter status');
+          }
+        } catch (error: any) {
+          console.error('❌ [CompleteJobDialog] Exception updating customer prefilter:', {
+            error,
+            errorMessage: error?.message,
+            errorStack: error?.stack,
+            hasPrefilter: customerHasPrefilter
+          });
+          // Don't fail the job completion if customer update fails - just log it
+        }
+      }
+
+      toast.success('Job completed successfully');
+      handleClose();
+      onJobCompleted();
+    } catch (error: any) {
+      console.error('❌ [CompleteJobDialog] Exception during job completion:', {
+        error,
+        errorMessage: error?.message,
+        errorStack: error?.stack,
+        jobId: job?.id
+      });
+      toast.error(`Failed to complete job: ${error?.message || 'Unknown error'}`);
+      setIsSubmittingJobCompletion(false);
+    }
+  };
+
   const handleSubmit = async () => {
     if (!job) return;
 
@@ -220,15 +443,17 @@ export const CompleteJobDialog: React.FC<CompleteJobDialogProps> = ({
         }
       }
       
-      // If skipping AMC and bill is zero and softener, set up for direct submission
+      // If skipping AMC and bill is zero and softener, submit directly
       if (shouldSkipAMC && billIsZero && isSoftener) {
         setHasAMC(false);
         setCustomerHasPrefilter(null);
         setCompleteJobStep(6);
-        // Continue to submit logic - don't return here
+        // Directly call submission for softener with zero bill
+        await performJobSubmission();
+        return;
       } else {
         setCompleteJobStep(nextStep);
-      return;
+        return;
       }
     }
 
@@ -244,11 +469,13 @@ export const CompleteJobDialog: React.FC<CompleteJobDialogProps> = ({
         if (billIsZeroStep3 && isSoftenerStep3) {
           setCustomerHasPrefilter(null);
           setCompleteJobStep(6);
-          // Continue to submit logic
+          // Directly call submission for softener with zero bill
+          await performJobSubmission();
+          return;
         } else {
           setCompleteJobStep(nextStep);
-        return;
-      }
+          return;
+        }
       }
       
       // Only allow proceeding if hasAMC is not null (question has been answered)
@@ -277,9 +504,10 @@ export const CompleteJobDialog: React.FC<CompleteJobDialogProps> = ({
       if (billIsZeroStep3Final && isSoftenerService()) {
         // Set customerHasPrefilter to null (not applicable for softener)
         setCustomerHasPrefilter(null);
-        // Set step to 6 to trigger submit logic, but skip step 6 UI
         setCompleteJobStep(6);
-        // Continue to submit logic - don't return here
+        // Directly call submission for softener with zero bill
+        await performJobSubmission();
+        return;
       } else {
         setCompleteJobStep(nextStep);
         return;
@@ -295,7 +523,9 @@ export const CompleteJobDialog: React.FC<CompleteJobDialogProps> = ({
         if (isSoftener) {
           setCustomerHasPrefilter(null);
           setCompleteJobStep(6);
-          // Continue to submit logic
+          // Directly call submission for softener with zero bill
+          await performJobSubmission();
+          return;
         } else {
           setCompleteJobStep(6);
           return;
@@ -325,235 +555,21 @@ export const CompleteJobDialog: React.FC<CompleteJobDialogProps> = ({
       if (isSoftenerService()) {
         // Set customerHasPrefilter to null (not applicable for softener)
         setCustomerHasPrefilter(null);
-        // Set step to 6 to trigger submit logic, but skip step 6 UI
         setCompleteJobStep(6);
-        // Continue to submit logic - don't return here
+        // Directly call submission for softener
+        await performJobSubmission();
+        return;
       } else {
-      setCompleteJobStep(6);
-      return;
-    }
+        setCompleteJobStep(6);
+        return;
+      }
     }
 
     // Step 6: Prefilter - submit the form (or submit directly if softener service skipped this step)
     if (completeJobStep === 6) {
-      // If softener service, customerHasPrefilter should be null (not applicable)
-      if (isSoftenerService()) {
-        setCustomerHasPrefilter(null);
-      }
-      
-      // Determine payment mode - if bill is zero, payment mode should be empty
-      const finalPaymentMode = isBillAmountZero() ? '' : (paymentMode as 'CASH' | 'ONLINE' | '');
-      const finalPaymentScreenshot = isBillAmountZero() ? '' : paymentScreenshot;
-      const finalQrCodeType = isBillAmountZero() ? '' : qrCodeType;
-      const finalSelectedQrCodeId = isBillAmountZero() ? '' : selectedQrCodeId;
-      
-      setIsSubmittingJobCompletion(true);
-      
-    try {
-      let dbPaymentMethod: 'CASH' | 'CARD' | 'UPI' | 'BANK_TRANSFER' | null = null;
-        if (!isBillAmountZero()) {
-          if (finalPaymentMode === 'CASH') {
-        dbPaymentMethod = 'CASH';
-          } else if (finalPaymentMode === 'ONLINE') {
-        dbPaymentMethod = 'UPI';
-      }
-        }
-        
-        // Determine who completed the job
-        const completedByTechnicianId = selectedTechnicianId || user?.technicianId || user?.id || null;
-        
-        // Debug logging
-        console.log('🔍 [CompleteJobDialog] Submitting job completion:', {
-          jobId: job.id,
-          selectedTechnicianId,
-          userTechnicianId: user?.technicianId,
-          userId: user?.id,
-          completedByTechnicianId,
-          billAmount,
-          paymentMode: finalPaymentMode,
-          isBillAmountZero: isBillAmountZero()
-        });
-      
-      const updateData: any = {
-        status: 'COMPLETED',
-        end_time: new Date().toISOString(),
-        completion_notes: completionNotes.trim(),
-          completed_by: completedByTechnicianId,
-        completed_at: new Date().toISOString(),
-        actual_cost: parseFloat(billAmount) || 0,
-        payment_amount: parseFloat(billAmount) || 0,
-          payment_method: dbPaymentMethod || (isBillAmountZero() ? null : 'CASH'),
-          // Note: customer_has_prefilter is NOT stored in jobs table - it's stored in customers table
-          // We'll update the customer separately below
-        };
-
-        // If completing from admin page with selected technician, ensure job is assigned to that technician
-        if (selectedTechnicianId) {
-          // Validate technician ID format before adding to update
-          const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-          if (uuidRegex.test(selectedTechnicianId)) {
-            updateData.assigned_technician_id = selectedTechnicianId;
-            console.log('✅ [CompleteJobDialog] Valid technician ID, adding to update:', selectedTechnicianId);
-          } else {
-            console.error('❌ [CompleteJobDialog] Invalid technician ID format:', selectedTechnicianId);
-            toast.error('Invalid technician ID. Please try again.');
-            setIsSubmittingJobCompletion(false);
-            return;
-          }
-        }
-        
-        console.log('📤 [CompleteJobDialog] Update payload:', updateData);
-
-      // Handle requirements
-      const currentRequirements = job.requirements || [];
-      let requirements: any[] = [];
-      
-      if (Array.isArray(currentRequirements)) {
-        requirements = [...currentRequirements];
-      } else if (typeof currentRequirements === 'string') {
-        try {
-          requirements = JSON.parse(currentRequirements);
-          if (!Array.isArray(requirements)) {
-            requirements = [];
-          }
-        } catch {
-          requirements = [];
-        }
-      }
-
-      requirements = requirements.filter((req: any) => !req.bill_photos && !req.payment_photos && !req.qr_photos && !req.amc_info);
-
-      if (billPhotos.length > 0) {
-        requirements.push({ bill_photos: billPhotos });
-      }
-
-        if (!isBillAmountZero() && finalPaymentMode === 'ONLINE' && finalSelectedQrCodeId) {
-        const qrPhotos: any = {
-            qr_code_type: finalQrCodeType,
-            selected_qr_code_id: finalSelectedQrCodeId,
-            payment_screenshot: finalPaymentScreenshot || null
-        };
-        
-          if (finalSelectedQrCodeId.startsWith('common_')) {
-            const qrId = finalSelectedQrCodeId.replace('common_', '');
-          const selectedQr = localCommonQrCodes.find(qr => qr.id === qrId);
-          if (selectedQr) {
-            qrPhotos.selected_qr_code_url = selectedQr.qrCodeUrl;
-            qrPhotos.selected_qr_code_name = selectedQr.name;
-          }
-          } else if (finalSelectedQrCodeId.startsWith('technician_')) {
-            const techId = finalSelectedQrCodeId.replace('technician_', '');
-          const selectedTech = technicians.find(t => t.id === techId);
-          if (selectedTech && (selectedTech as any).qrCode) {
-            qrPhotos.selected_qr_code_url = (selectedTech as any).qrCode;
-            qrPhotos.selected_qr_code_name = selectedTech.fullName || 'Technician';
-          }
-        }
-        
-        requirements.push({ qr_photos: qrPhotos });
-      }
-
-        // Only add AMC if it was actually set (hasAMC === true and years > 0)
-        const effectiveHasAMC = hasAMC === true && amcYears > 0;
-        if (effectiveHasAMC && amcDateGiven && amcEndDate) {
-        requirements.push({ 
-          amc_info: {
-            date_given: amcDateGiven,
-            end_date: amcEndDate,
-            years: amcYears,
-              includes_prefilter: amcIncludesPrefilter,
-              additional_info: amcAdditionalInfo || null
-          }
-        });
-      }
-
-        if (billPhotos.length > 0 || (!isBillAmountZero() && finalPaymentMode === 'ONLINE' && finalSelectedQrCodeId) || (effectiveHasAMC && amcDateGiven && amcEndDate)) {
-        updateData.requirements = JSON.stringify(requirements);
-      }
-
-        console.log('🚀 [CompleteJobDialog] Calling db.jobs.update with:', {
-          jobId: job.id,
-          updateData,
-          updateDataKeys: Object.keys(updateData)
-        });
-        
-        const { data: updatedJob, error } = await db.jobs.update(job.id, updateData);
-
-      if (error) {
-          console.error('❌ [CompleteJobDialog] Update error:', {
-            error,
-            errorMessage: error.message,
-            errorDetails: error.details,
-            errorHint: error.hint,
-            errorCode: error.code,
-            jobId: job.id,
-            updateData
-          });
-          throw new Error(error.message || `Failed to update job: ${error.code || 'Unknown error'}`);
-        }
-
-        console.log('✅ [CompleteJobDialog] Job updated successfully:', updatedJob);
-        
-        // Update customer's has_prefilter field (same as technician dashboard)
-        if (customerHasPrefilter !== null && !isSoftenerService()) {
-          try {
-            // Get customer UUID from job - prioritize customer.id (UUID) over customer_id
-            const customerId = 
-              (job.customer as any)?.id ||  // UUID from joined customer object (most reliable)
-              job.customer?.id ||           // UUID from customer object
-              job.customer_id ||            // UUID from job's customer_id field
-              (job as any).customer_id;     // Alternative field name
-            
-            if (customerId) {
-              console.log('🔄 [CompleteJobDialog] Updating customer prefilter status:', {
-                customerId,
-                hasPrefilter: customerHasPrefilter,
-                jobId: job.id
-              });
-              
-              const { error: customerUpdateError } = await db.customers.update(customerId, {
-                has_prefilter: customerHasPrefilter
-              });
-              
-              if (customerUpdateError) {
-                console.error('❌ [CompleteJobDialog] Failed to update customer prefilter status:', {
-                  error: customerUpdateError,
-                  customerId,
-                  hasPrefilter: customerHasPrefilter,
-                  errorMessage: customerUpdateError.message,
-                  errorCode: customerUpdateError.code
-                });
-                // Don't fail the job completion if customer update fails - just log it
-              } else {
-                console.log('✅ [CompleteJobDialog] Customer prefilter status updated successfully');
-              }
-            } else {
-              console.warn('⚠️ [CompleteJobDialog] Could not find customer ID to update prefilter status');
-            }
-          } catch (error: any) {
-            console.error('❌ [CompleteJobDialog] Exception updating customer prefilter:', {
-              error,
-              errorMessage: error?.message,
-              errorStack: error?.stack,
-              hasPrefilter: customerHasPrefilter
-            });
-            // Don't fail the job completion if customer update fails - just log it
-          }
-      }
-
-      toast.success('Job completed successfully');
-      handleClose();
-      onJobCompleted();
-      } catch (error: any) {
-        console.error('❌ [CompleteJobDialog] Exception during job completion:', {
-          error,
-          errorMessage: error?.message,
-          errorStack: error?.stack,
-          jobId: job?.id
-        });
-        toast.error(`Failed to complete job: ${error?.message || 'Unknown error'}`);
-        setIsSubmittingJobCompletion(false);
-      }
+      // Call the extracted submission function
+      await performJobSubmission();
+      return;
     }
   };
 

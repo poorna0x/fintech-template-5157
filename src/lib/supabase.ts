@@ -1179,6 +1179,62 @@ export const db = {
       return { data, error, count };
     },
     
+    // Optimized method for filtered and paginated queries
+    async getFilteredPaginated(filters: {
+      invoiceType?: 'ALL' | 'B2B' | 'B2C';
+      dateFilter?: 'all' | 'custom' | 'month' | 'year';
+      startDate?: string;
+      endDate?: string;
+      selectedMonth?: number;
+      selectedYear?: number;
+      searchQuery?: string;
+      page?: number;
+      pageSize?: number;
+    }) {
+      const { invoiceType, dateFilter, startDate, endDate, selectedMonth, selectedYear, searchQuery, page = 1, pageSize = 20 } = filters;
+      
+      let query = supabase
+        .from('tax_invoices')
+        .select('id, invoice_number, invoice_date, invoice_type, customer_name, customer_phone, customer_email, customer_gstin, total_amount, cgst, sgst, igst, is_intra_state, created_at', { count: 'exact' })
+        .order('invoice_date', { ascending: false });
+      
+      // Filter by invoice type
+      if (invoiceType && invoiceType !== 'ALL') {
+        query = query.eq('invoice_type', invoiceType);
+      }
+      
+      // Filter by date
+      if (dateFilter === 'custom' && startDate && endDate) {
+        const start = new Date(startDate);
+        const end = new Date(endDate);
+        end.setHours(23, 59, 59, 999);
+        query = query.gte('invoice_date', start.toISOString()).lte('invoice_date', end.toISOString());
+      } else if (dateFilter === 'month' && selectedMonth && selectedYear) {
+        const monthStart = new Date(selectedYear, selectedMonth - 1, 1);
+        const monthEnd = new Date(selectedYear, selectedMonth, 0, 23, 59, 59, 999);
+        query = query.gte('invoice_date', monthStart.toISOString()).lte('invoice_date', monthEnd.toISOString());
+      } else if (dateFilter === 'year' && selectedYear) {
+        const yearStart = new Date(selectedYear, 0, 1);
+        const yearEnd = new Date(selectedYear, 11, 31, 23, 59, 59, 999);
+        query = query.gte('invoice_date', yearStart.toISOString()).lte('invoice_date', yearEnd.toISOString());
+      }
+      
+      // Filter by search query
+      if (searchQuery && searchQuery.trim()) {
+        const queryLower = searchQuery.toLowerCase();
+        query = query.or(`invoice_number.ilike.%${queryLower}%,customer_name.ilike.%${queryLower}%,customer_phone.ilike.%${queryLower}%,customer_email.ilike.%${queryLower}%,customer_gstin.ilike.%${queryLower}%`);
+      }
+      
+      // Apply pagination
+      const from = (page - 1) * pageSize;
+      const to = from + pageSize - 1;
+      query = query.range(from, to);
+      
+      const { data, error, count } = await query;
+      
+      return { data, error, count };
+    },
+    
     async getByInvoiceNumber(invoiceNumber: string) {
       const { data, error } = await supabase
         .from('tax_invoices')
