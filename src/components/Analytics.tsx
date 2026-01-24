@@ -35,9 +35,26 @@ interface AnalyticsData {
     totalJobs: number;
     completedJobs: number;
     periodEarnings: number;
+    returnComplaints?: number; // Return complaints allocated to this technician
   }>;
   completionRate: number;
   denialRate: number;
+  returnComplaints?: {
+    total: number;
+    byTechnician: Array<{
+      technicianId: string;
+      technicianName: string;
+      count: number;
+      jobs: Array<{
+        jobId: string;
+        jobNumber: string;
+        customerName: string;
+        createdAt: string;
+        originalJobDate: string;
+        originalTechnicianName: string;
+      }>;
+    }>;
+  };
   leadSourceBreakdown?: Array<{ 
     leadType: string; 
     count: number; 
@@ -199,7 +216,7 @@ const Analytics = () => {
         // First, get all completed jobs filtered by completion date
         completedJobs = allJobs.filter((j: any) => {
           if (!j || j.status !== 'COMPLETED') return false;
-          const completedDate = j.completed_at || j.end_time || j.completedAt;
+          const completedDate = j.end_time || j.completed_at || j.completedAt;
           return isDateInRange(completedDate, startDate, endDate);
         });
         
@@ -382,11 +399,161 @@ const Analytics = () => {
         totalJobs: number;
         completedJobs: number;
         periodEarnings: number;
+        returnComplaints: number;
       }> = {};
       
       // Get all technicians
       const { data: techniciansData } = await db.technicians.getAll();
       const technicians = techniciansData || [];
+      
+      // ========== RETURN COMPLAINTS CALCULATION ==========
+      // Only count jobs CREATED in the selected period (not completed in period)
+      // A return complaint is a NEW job created in the period for a customer who had previous completed jobs
+      let returnComplaintsTotal = 0;
+      const returnComplaintsByTechnician: Record<string, number> = {};
+      const returnComplaintsDetails: Array<{
+        jobNumber: string;
+        customerId: string;
+        customerName: string;
+        jobCreatedDate: string;
+        previousJobsCount: number;
+        lastCompletedJobDate: string;
+        technicianName: string;
+      }> = [];
+      
+      // Get all completed jobs from entire history (for finding previous completed jobs)
+      const allCompletedJobs = allJobs.filter((j: any) => j && j.status === 'COMPLETED');
+      
+      // Only check jobs CREATED in the selected period (not completed ones)
+      // For completed jobs in period, we only want those created in period, not those completed in period
+      const jobsCreatedInPeriod = allJobs.filter((j: any) => {
+        if (!j) return false;
+        if (!startDate || !endDate) return true; // If no date filter, include all
+        
+        const jobCreatedDate = j.created_at;
+        if (!jobCreatedDate) return false;
+        return isDateInRange(jobCreatedDate, startDate, endDate);
+      });
+      
+      console.log('[Return Complaints Debug]', {
+        totalJobs: allJobs.length,
+        completedJobs: allCompletedJobs.length,
+        jobsCreatedInPeriod: jobsCreatedInPeriod.length,
+        period: startDate && endDate ? `${startDate} to ${endDate}` : 'All time'
+      });
+      
+      console.log('[Return Complaints Logic Explanation]', {
+        step1: 'Get all jobs CREATED in the selected period',
+        step2: 'For each job, check if customer had ANY previous completed job (any time in the past)',
+        step3: 'If yes, count it as return complaint and allocate to last technician who completed a job for that customer',
+        note: 'This means ANY customer with a previous completed job will have their new jobs counted as return complaints'
+      });
+      
+      // Check if service sub type indicates return complaint
+      // Common values: "Return Complaint", "Return", "Complaint", "Service Return", etc.
+      const isReturnComplaint = (serviceSubType: string): boolean => {
+        if (!serviceSubType) return false;
+        const lower = serviceSubType.toLowerCase().trim();
+        return lower.includes('return') && (lower.includes('complaint') || lower.includes('service'));
+      };
+      
+      // Check each job CREATED in the selected period
+      jobsCreatedInPeriod.forEach((currentJob: any) => {
+        if (!currentJob) return;
+        
+        // Only count if Service Sub Type indicates return complaint
+        const serviceSubType = currentJob.service_sub_type || currentJob.serviceSubType || '';
+        if (!isReturnComplaint(serviceSubType)) return;
+        
+        // Get customer ID - jobs have customer_id directly
+        const customerId = currentJob.customer_id;
+        if (!customerId) return;
+        
+        // Find previous completed jobs for this customer (completed BEFORE current job was created)
+        const currentJobCreatedDate = new Date(currentJob.created_at || 0);
+        if (isNaN(currentJobCreatedDate.getTime())) return;
+        
+        const previousCompletedJobs = allCompletedJobs.filter((prevJob: any) => {
+          if (!prevJob || prevJob.id === currentJob.id) return false;
+          if (prevJob.customer_id !== customerId) return false;
+          
+          const prevCompletedDate = prevJob.end_time || prevJob.completed_at;
+          if (!prevCompletedDate) return false;
+          
+          const prevDate = new Date(prevCompletedDate);
+          if (isNaN(prevDate.getTime())) return false;
+          
+          // Previous job must be completed BEFORE current job was created
+          return prevDate < currentJobCreatedDate;
+        });
+        
+        // Find the most recent completed job (last technician who did service for this customer)
+        if (previousCompletedJobs.length > 0) {
+          const lastCompletedJob = previousCompletedJobs.sort((a: any, b: any) => {
+            const aDate = new Date(a.end_time || a.completed_at || 0);
+            const bDate = new Date(b.end_time || b.completed_at || 0);
+            return bDate.getTime() - aDate.getTime(); // Most recent first
+          })[0];
+          
+          const originalTechnicianId = lastCompletedJob.assigned_technician_id;
+          if (originalTechnicianId) {
+            const tech = technicians.find((t: any) => t.id === originalTechnicianId);
+            const technicianName = tech ? (tech.full_name || 'Unknown') : 'Unknown';
+            const customerName = currentJob.customer 
+              ? (currentJob.customer.full_name || 'Unknown') 
+              : 'Unknown';
+            
+            returnComplaintsTotal++;
+            returnComplaintsByTechnician[originalTechnicianId] = (returnComplaintsByTechnician[originalTechnicianId] || 0) + 1;
+            
+            // Store details for logging
+            returnComplaintsDetails.push({
+              jobNumber: currentJob.job_number || currentJob.jobNumber || 'N/A',
+              customerId,
+              customerName,
+              jobCreatedDate: currentJob.created_at || '',
+              serviceSubType,
+              lastCompletedJobDate: lastCompletedJob.end_time || lastCompletedJob.completed_at || '',
+              technicianName
+            });
+            
+            console.log(`[Return Complaint Found] Job: ${currentJob.job_number || currentJob.jobNumber || 'N/A'}`, {
+              serviceSubType,
+              customerName,
+              customerId,
+              lastCompletedJobDate: lastCompletedJob.end_time || lastCompletedJob.completed_at,
+              lastCompletedJobNumber: lastCompletedJob.job_number || lastCompletedJob.jobNumber,
+              allocatedToTechnician: technicianName,
+              currentJobCreated: currentJob.created_at
+            });
+            
+            // Add to technician stats
+            if (!technicianStatsMap[originalTechnicianId]) {
+              technicianStatsMap[originalTechnicianId] = {
+                id: originalTechnicianId,
+                name: technicianName,
+                totalJobs: 0,
+                completedJobs: 0,
+                periodEarnings: 0,
+                returnComplaints: 0
+              };
+            }
+            technicianStatsMap[originalTechnicianId].returnComplaints = (technicianStatsMap[originalTechnicianId].returnComplaints || 0) + 1;
+          }
+        } else {
+          console.log(`[Return Complaint - No Previous Service] Job: ${currentJob.job_number || currentJob.jobNumber || 'N/A'}`, {
+            serviceSubType,
+            customerId,
+            note: 'Customer has no previous completed service, so not counted'
+          });
+        }
+      });
+      
+      // Console log all return complaints details
+      console.log('[Return Complaints] Total:', returnComplaintsTotal);
+      console.log('[Return Complaints] By Technician:', returnComplaintsByTechnician);
+      console.log('[Return Complaints] Details:', returnComplaintsDetails);
+      // ========== END RETURN COMPLAINTS CALCULATION ==========
       
       // Calculate stats for each technician based on jobs in the selected period
       jobs.forEach((job: any) => {
@@ -403,7 +570,8 @@ const Analytics = () => {
             name: (tech as any).full_name || (tech as any).fullName || 'Unknown',
             totalJobs: 0,
             completedJobs: 0,
-            periodEarnings: 0
+            periodEarnings: 0,
+            returnComplaints: 0
           };
         }
         
@@ -656,6 +824,18 @@ const Analytics = () => {
         inProgressJobs: jobs.filter((j: any) => j && j.status === 'IN_PROGRESS').length,
         completionRate: jobs.length > 0 ? (completedJobs.length / jobs.length) * 100 : 0,
         denialRate: jobs.length > 0 ? (jobs.filter((j: any) => j && (j.status === 'DENIED' || j.status === 'CANCELLED')).length / jobs.length) * 100 : 0,
+        returnComplaints: returnComplaintsTotal > 0 ? {
+          total: returnComplaintsTotal,
+          byTechnician: Object.entries(returnComplaintsByTechnician).map(([techId, count]) => {
+            const tech = technicians.find((t: any) => t.id === techId);
+            return {
+              technicianId: techId,
+              technicianName: tech ? (tech.full_name || 'Unknown') : 'Unknown',
+              count: count,
+              jobs: [] // Simplified - no job details needed
+            };
+          }).sort((a, b) => b.count - a.count)
+        } : undefined,
         technicianStats: Object.values(technicianStatsMap)
           .sort((a, b) => b.completedJobs - a.completedJobs),
         leadSourceBreakdown: Object.entries(leadSourceMap)
@@ -873,6 +1053,7 @@ const Analytics = () => {
                   <TableHead>Technician</TableHead>
                   <TableHead>Total Jobs</TableHead>
                   <TableHead>Completed</TableHead>
+                  <TableHead>Return Complaints</TableHead>
                   <TableHead>Completion Rate</TableHead>
                   <TableHead className="text-right">Total Billing ({getPeriodLabel()})</TableHead>
                 </TableRow>
@@ -880,7 +1061,7 @@ const Analytics = () => {
               <TableBody>
                 {analytics.technicianStats.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={5} className="text-center text-gray-500 py-8">
+                    <TableCell colSpan={6} className="text-center text-gray-500 py-8">
                       No technician data available
                     </TableCell>
                   </TableRow>
@@ -891,6 +1072,7 @@ const Analytics = () => {
                       const completionRate = tech.totalJobs > 0
                         ? (tech.completedJobs / tech.totalJobs) * 100
                         : 0;
+                      const returnComplaintsCount = tech.returnComplaints || 0;
                       
                       return (
                         <TableRow key={tech.id}>
@@ -898,6 +1080,13 @@ const Analytics = () => {
                           <TableCell>{tech.totalJobs}</TableCell>
                           <TableCell className="text-green-600 font-semibold">
                             {tech.completedJobs}
+                          </TableCell>
+                          <TableCell>
+                            {returnComplaintsCount > 0 ? (
+                              <span className="text-orange-600 font-semibold">{returnComplaintsCount}</span>
+                            ) : (
+                              <span className="text-gray-400">0</span>
+                            )}
                           </TableCell>
                           <TableCell>
                             <div className="flex items-center gap-2">
