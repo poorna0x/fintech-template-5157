@@ -656,7 +656,7 @@ CREATE TABLE public.customers (
     has_prefilter boolean,
     CONSTRAINT customers_preferred_language_check CHECK (((preferred_language)::text = ANY ((ARRAY['ENGLISH'::character varying, 'HINDI'::character varying, 'KANNADA'::character varying, 'TAMIL'::character varying, 'TELUGU'::character varying])::text[]))),
     CONSTRAINT customers_preferred_time_slot_check CHECK (((preferred_time_slot)::text = ANY ((ARRAY['MORNING'::character varying, 'AFTERNOON'::character varying, 'EVENING'::character varying, 'CUSTOM'::character varying])::text[]))),
-    CONSTRAINT customers_service_type_check CHECK (((service_type)::text = ANY ((ARRAY['RO'::character varying, 'SOFTENER'::character varying, 'AC'::character varying, 'APPLIANCE'::character varying, 'MULTIPLE'::character varying])::text[]))),
+    CONSTRAINT customers_service_type_check CHECK (((service_type)::text = ANY ((ARRAY['RO'::character varying, 'SOFTENER'::character varying, 'AC'::character varying, 'APPLIANCE'::character varying, 'MULTIPLE'::character varying, 'RO_SOFTENER'::character varying, 'RO_AC'::character varying, 'SOFTENER_AC'::character varying, 'ALL_SERVICES'::character varying])::text[]))),
     CONSTRAINT customers_status_check CHECK (((status)::text = ANY ((ARRAY['ACTIVE'::character varying, 'INACTIVE'::character varying, 'BLOCKED'::character varying])::text[])))
 );
 

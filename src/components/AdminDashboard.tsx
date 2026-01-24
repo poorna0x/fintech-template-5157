@@ -3185,7 +3185,8 @@ const AdminDashboard = () => {
       customerModel = models[0] || '';
       
       // If service type is RO or SOFTENER, try to find matching brand/model
-      const selectedServiceType = (customer.serviceType === 'SOFTENER' ? 'SOFTENER' : 'RO');
+      const svcType = (customer as any).service_type || customer.serviceType;
+      const selectedServiceType = (svcType === 'SOFTENER' ? 'SOFTENER' : 'RO');
       const serviceTypeIndex = serviceTypes.indexOf(selectedServiceType);
       if (serviceTypeIndex >= 0 && brands[serviceTypeIndex]) {
         customerBrand = brands[serviceTypeIndex];
@@ -3194,8 +3195,9 @@ const AdminDashboard = () => {
     }
     
     // Initialize form data with proper defaults
+    const svcType = (customer as any).service_type || customer.serviceType;
     const initialFormData = {
-      service_type: (customer.serviceType === 'SOFTENER' ? 'SOFTENER' : 'RO') as 'RO' | 'SOFTENER',
+      service_type: (svcType === 'SOFTENER' ? 'SOFTENER' : 'RO') as 'RO' | 'SOFTENER',
       service_sub_type: 'Installation',
       service_sub_type_custom: '',
       brand: customerBrand || 'Not specified',

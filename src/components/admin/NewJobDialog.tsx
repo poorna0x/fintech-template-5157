@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -70,6 +70,29 @@ const NewJobDialog: React.FC<NewJobDialogProps> = ({
     lead_source_custom: '',
     photos: []
   });
+
+  // Initialize service type, brand, model from customer when dialog opens (supports Softener-only)
+  useEffect(() => {
+    if (!open || !customer) return;
+    const svcType = (customer as any).service_type || customer.serviceType;
+    const types = parseDbServiceType
+      ? parseDbServiceType((customer as any).service_type || customer.serviceType || '')
+      : (svcType === 'SOFTENER' ? ['SOFTENER'] : ['RO']);
+    const defaultServiceType = types.includes('SOFTENER') && !types.includes('RO')
+      ? 'SOFTENER'
+      : (types[0] === 'SOFTENER' ? 'SOFTENER' : 'RO');
+    const brands = (customer.brand || '').split(',').map((s: string) => s.trim()).filter(Boolean);
+    const models = (customer.model || '').split(',').map((s: string) => s.trim()).filter(Boolean);
+    const idx = types.indexOf(defaultServiceType);
+    const brand = idx >= 0 && brands[idx] ? brands[idx] : (brands[0] || '');
+    const model = idx >= 0 && models[idx] ? models[idx] : (models[0] || '');
+    setNewJobFormData(prev => ({
+      ...prev,
+      service_type: defaultServiceType as 'RO' | 'SOFTENER',
+      brand: brand || prev.brand || 'Not specified',
+      model: model || prev.model || 'Not specified'
+    }));
+  }, [open, customer, parseDbServiceType]);
 
   const handleClose = () => {
     onOpenChange(false);
