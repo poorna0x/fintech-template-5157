@@ -7791,7 +7791,9 @@ const AdminDashboard = () => {
                         // Extract completion details
                         const completionNotes = (job as any).completion_notes || job.completionNotes || '';
                         const completedAt = (job as any).completed_at || job.completedAt || null;
-                        const formattedCompletedAt = completedAt ? new Date(completedAt).toLocaleString() : null;
+                        const formattedCompletedAt = completedAt
+                          ? new Date(completedAt).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short', hour12: true })
+                          : null;
                         const completedBy = (job as any).completed_by || job.completedBy || null;
                         const actualCost = (job as any).actual_cost || job.actual_cost || null;
                         const paymentAmount = (job as any).payment_amount || job.payment_amount || null;
