@@ -62,6 +62,11 @@ export const CompletedJobSection: React.FC<CompletedJobSectionProps> = ({
     return false;
   });
   const messageSentAt = requirements.find((r: any) => r?.message_sent_at)?.message_sent_at;
+  
+  // Extract OTP information
+  const otpRequirement = requirements.find((r: any) => r?.require_otp === true);
+  const otpVerified = otpRequirement?.otp_verified === true;
+  const otpVerifiedAt = otpRequirement?.otp_verified_at;
 
   return (
     <div className="mt-4 mb-2">
@@ -228,6 +233,23 @@ export const CompletedJobSection: React.FC<CompletedJobSectionProps> = ({
           {formattedCompletedAt && (
             <div className="text-xs text-gray-500 mt-1 break-words flex items-center gap-2">
               <span>Completed on {formattedCompletedAt}</span>
+            </div>
+          )}
+          
+          {/* OTP Verification Status */}
+          {otpRequirement && (
+            <div className={`text-xs mt-2 pt-2 border-t border-green-200 break-words font-medium ${
+              otpVerified ? 'text-green-600' : 'text-red-600'
+            }`}>
+              {otpVerified ? (
+                <>
+                  ✓ OTP Verified{otpVerifiedAt ? ` on ${new Date(otpVerifiedAt).toLocaleString()}` : ''}
+                </>
+              ) : (
+                <>
+                  ⚠ OTP Not Verified - Job requires OTP verification
+                </>
+              )}
             </div>
           )}
           

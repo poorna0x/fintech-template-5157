@@ -108,7 +108,8 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
     lead_source: 'Direct call', // Default to 'Direct call'
     lead_source_custom: '',
     priority: 'MEDIUM' as 'LOW' | 'MEDIUM' | 'HIGH' | 'URGENT',
-    assigned_technician_id: '' // Add technician assignment field
+    assigned_technician_id: '', // Add technician assignment field
+    require_otp: false
   });
 
   // Load technicians for assignment
@@ -812,6 +813,26 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
           
           const jobNumber = generateJobNumber(step5JobData.service_type);
           
+          // Generate 4-digit OTP if require_otp is true
+          let otpCode: string | null = null;
+          if (step5JobData.require_otp) {
+            otpCode = Math.floor(1000 + Math.random() * 9000).toString(); // 4-digit OTP
+          }
+
+          const requirements: any[] = [{ 
+            lead_source: step5JobData.lead_source === 'Other' ? (step5JobData.lead_source_custom || 'Other') : step5JobData.lead_source,
+            custom_time: customTimeInRequirements
+          }];
+
+          // Add OTP requirement if enabled
+          if (step5JobData.require_otp && otpCode) {
+            requirements.push({
+              require_otp: true,
+              otp_code: otpCode,
+              otp_verified: false
+            });
+          }
+          
           const jobData = {
             job_number: jobNumber,
             customer_id: newCustomer.id,
@@ -826,10 +847,7 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
             status: step5JobData.assigned_technician_id ? 'ASSIGNED' as const : 'PENDING' as const,
             priority: step5JobData.priority,
             description: step5JobData.description.trim() || '',
-            requirements: [{ 
-              lead_source: step5JobData.lead_source === 'Other' ? (step5JobData.lead_source_custom || 'Other') : step5JobData.lead_source,
-              custom_time: customTimeInRequirements
-            }],
+            requirements: requirements,
             estimated_cost: 0,
             payment_status: 'PENDING' as const,
             before_photos: allPhotos.length > 0 ? allPhotos : [], // Add photos from Step 3 to job's before_photos
@@ -929,7 +947,8 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
         lead_source: 'Direct call', // Reset to 'Direct call' (default)
         lead_source_custom: '',
         priority: 'MEDIUM' as 'LOW' | 'MEDIUM' | 'HIGH' | 'URGENT',
-        assigned_technician_id: '' // Reset technician assignment
+        assigned_technician_id: '', // Reset technician assignment
+        require_otp: false
       });
 
       // Call onCustomerCreated only once at the end
@@ -1518,11 +1537,21 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
                       <Label htmlFor="step5_lead_source">Lead Source *</Label>
                       <Select
                         value={step5JobData.lead_source || 'Direct call'}
-                        onValueChange={(value) => setStep5JobData(prev => ({ 
-                          ...prev, 
-                          lead_source: value === 'Other' ? 'Other' : value,
-                          lead_source_custom: value === 'Other' ? prev.lead_source_custom : ''
-                        }))}
+                        onValueChange={(value) => {
+                          const selectedLeadSource = value === 'Other' ? 'Other' : value;
+                          setStep5JobData(prev => {
+                            const updated = {
+                              ...prev,
+                              lead_source: selectedLeadSource,
+                              lead_source_custom: value === 'Other' ? prev.lead_source_custom : ''
+                            };
+                            // Auto-enable OTP if lead source is "Home Triangle"
+                            if (selectedLeadSource === 'Home Triangle') {
+                              updated.require_otp = true;
+                            }
+                            return updated;
+                          });
+                        }}
                         required
                       >
                         <SelectTrigger>
@@ -1607,6 +1636,25 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
                         placeholder="Enter job description"
                         rows={3}
                       />
+                    </div>
+
+                    {/* OTP Verification Toggle */}
+                    <div className="space-y-2 sm:col-span-2 pt-2 border-t border-gray-200">
+                      <div className="flex items-center space-x-2">
+                        <input
+                          type="checkbox"
+                          id="step5_require_otp"
+                          checked={step5JobData.require_otp}
+                          onChange={(e) => setStep5JobData(prev => ({ ...prev, require_otp: e.target.checked }))}
+                          className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                        />
+                        <Label htmlFor="step5_require_otp" className="cursor-pointer">
+                          Require OTP Verification
+                        </Label>
+                      </div>
+                      <p className="text-xs text-gray-500 ml-6">
+                        If enabled, technician will need to enter a 4-digit OTP to complete this job
+                      </p>
                     </div>
                   </div>
                 </div>

@@ -28,6 +28,7 @@ interface NewJobFormData {
   lead_source: string;
   lead_source_custom: string;
   photos: string[];
+  require_otp: boolean;
 }
 
 interface NewJobDialogProps {
@@ -68,7 +69,8 @@ const NewJobDialog: React.FC<NewJobDialogProps> = ({
     cost_agreed: '',
     lead_source: '',
     lead_source_custom: '',
-    photos: []
+    photos: [],
+    require_otp: false
   });
 
   // Initialize service type, brand, model from customer when dialog opens (supports Softener-only)
@@ -112,7 +114,8 @@ const NewJobDialog: React.FC<NewJobDialogProps> = ({
       cost_agreed: '',
       lead_source: '',
       lead_source_custom: '',
-      photos: []
+      photos: [],
+      require_otp: false
     });
   };
 
@@ -251,6 +254,28 @@ const NewJobDialog: React.FC<NewJobDialogProps> = ({
         scheduledTimeSlot = newJobFormData.scheduled_time_slot as 'MORNING' | 'AFTERNOON' | 'EVENING';
       }
 
+      // Generate 4-digit OTP if require_otp is true
+      let otpCode: string | null = null;
+      if (newJobFormData.require_otp) {
+        otpCode = Math.floor(1000 + Math.random() * 9000).toString(); // 4-digit OTP
+      }
+
+      const requirements: any[] = [{ 
+        lead_source: newJobFormData.lead_source === 'Other' ? (newJobFormData.lead_source_custom || 'Other') : newJobFormData.lead_source,
+        cost_range: newJobFormData.cost_agreed || '',
+        custom_time: customTimeInRequirements,
+        flexible_time: isFlexible
+      }];
+
+      // Add OTP requirement if enabled
+      if (newJobFormData.require_otp && otpCode) {
+        requirements.push({
+          require_otp: true,
+          otp_code: otpCode,
+          otp_verified: false
+        });
+      }
+
       const jobData = {
         job_number: jobNumber,
         customer_id: customer.id,
@@ -265,12 +290,7 @@ const NewJobDialog: React.FC<NewJobDialogProps> = ({
         status: newJobFormData.assigned_technician_id ? 'ASSIGNED' : 'PENDING',
         priority: newJobFormData.priority,
         description: newJobFormData.description.trim() || '',
-        requirements: [{ 
-          lead_source: newJobFormData.lead_source === 'Other' ? (newJobFormData.lead_source_custom || 'Other') : newJobFormData.lead_source,
-          cost_range: newJobFormData.cost_agreed || '',
-          custom_time: customTimeInRequirements,
-          flexible_time: isFlexible
-        }],
+        requirements: requirements,
         estimated_cost: newJobFormData.cost_agreed ? (parseFloat(newJobFormData.cost_agreed.toString().split('-')[0].trim()) || 0) : 0,
         payment_status: 'PENDING',
         assigned_technician_id: newJobFormData.assigned_technician_id || null,
@@ -624,7 +644,14 @@ const NewJobDialog: React.FC<NewJobDialogProps> = ({
                 <select
                   id="job_lead_source"
                   value={newJobFormData.lead_source}
-                  onChange={(e) => handleFormChange('lead_source', e.target.value)}
+                  onChange={(e) => {
+                    const selectedLeadSource = e.target.value;
+                    handleFormChange('lead_source', selectedLeadSource);
+                    // Auto-enable OTP if lead source is "Home Triangle"
+                    if (selectedLeadSource === 'Home Triangle') {
+                      handleFormChange('require_otp', true);
+                    }
+                  }}
                   required
                   className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 appearance-none bg-white"
                 >
@@ -646,6 +673,25 @@ const NewJobDialog: React.FC<NewJobDialogProps> = ({
                     className="mt-2"
                   />
                 )}
+              </div>
+
+              {/* OTP Verification Toggle */}
+              <div className="space-y-2 pt-2 border-t border-gray-200">
+                <div className="flex items-center space-x-2">
+                  <input
+                    type="checkbox"
+                    id="job_require_otp"
+                    checked={newJobFormData.require_otp}
+                    onChange={(e) => handleFormChange('require_otp', e.target.checked)}
+                    className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                  />
+                  <Label htmlFor="job_require_otp" className="cursor-pointer">
+                    Require OTP Verification
+                  </Label>
+                </div>
+                <p className="text-xs text-gray-500 ml-6">
+                  If enabled, technician will need to enter a 4-digit OTP to complete this job
+                </p>
               </div>
             </div>
           </div>

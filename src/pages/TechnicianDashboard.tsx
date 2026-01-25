@@ -407,11 +407,14 @@ const TechnicianDashboard = () => {
   const [completeDialogOpen, setCompleteDialogOpen] = useState(false);
   const [selectedJobForComplete, setSelectedJobForComplete] = useState<Job | null>(null);
   const [completionNotes, setCompletionNotes] = useState('');
-  const [completeJobStep, setCompleteJobStep] = useState<1 | 2 | 3 | 4 | 5 | 6>(1);
+  const [completeJobStep, setCompleteJobStep] = useState<1 | 2 | 3 | 4 | 5 | 6 | 7>(1);
   const completeJobScrollRef = useRef<HTMLDivElement>(null);
   const [billAmount, setBillAmount] = useState<string>('');
   const [billPhotos, setBillPhotos] = useState<string[]>([]);
   const [paymentPhotos, setPaymentPhotos] = useState<string[]>([]);
+  const [otpInput, setOtpInput] = useState<string[]>(['', '', '', '']);
+  const [otpError, setOtpError] = useState<string>('');
+  const otpInputRefs = useRef<(HTMLInputElement | null)[]>([]);
   const [amcDateGiven, setAmcDateGiven] = useState<string>('');
   const [amcEndDate, setAmcEndDate] = useState<string>('');
   const [amcYears, setAmcYears] = useState<number>(0);
@@ -2101,6 +2104,9 @@ const TechnicianDashboard = () => {
       setCustomerHasPrefilter(null);
       setQrCodeType('');
       setSelectedQrCodeId('');
+      setOtpInput(['', '', '', '']);
+      setOtpError('');
+      otpInputRefs.current = [];
     
     // Initialize customerHasPrefilter from customer's existing value if available
     const customerPrefilter = jobWithCustomer.customer 
@@ -2472,6 +2478,27 @@ const TechnicianDashboard = () => {
            serviceType.includes('SOFTENER');
   };
 
+  // Check if job requires OTP verification
+  const requiresOtp = (): boolean => {
+    if (!selectedJobForComplete) return false;
+    const requirements = selectedJobForComplete.requirements || [];
+    if (Array.isArray(requirements)) {
+      return requirements.some((req: any) => req?.require_otp === true);
+    }
+    return false;
+  };
+
+  // Get OTP code from job requirements
+  const getOtpCode = (): string | null => {
+    if (!selectedJobForComplete) return null;
+    const requirements = selectedJobForComplete.requirements || [];
+    if (Array.isArray(requirements)) {
+      const otpReq = requirements.find((req: any) => req?.require_otp === true);
+      return otpReq?.otp_code || null;
+    }
+    return null;
+  };
+
   const handleCompleteJobSubmit = async () => {
     if (!selectedJobForComplete) return;
 
@@ -2501,13 +2528,15 @@ const TechnicianDashboard = () => {
       const shouldSkipAMC = billIsZero || isSoftener;
       
       // Determine next step:
-      // - If should skip AMC: go directly to step 4 (payment) or step 6 (prefilter/submit)
+      // - If should skip AMC: go directly to step 4 (payment) or step 7 (OTP) or step 6 (prefilter/submit)
       // - If not skipping AMC: go to step 3 (AMC)
-      let nextStep: 3 | 4 | 6 = 3;
+      const needsOtp = requiresOtp();
+      let nextStep: 3 | 4 | 6 | 7 = 3;
       if (shouldSkipAMC) {
         if (billIsZero) {
-          // Skip AMC and payment steps, go directly to prefilter (or submit if softener)
-          nextStep = 6;
+          // Skip AMC and payment steps
+          // If OTP required, go to step 7, otherwise go to prefilter (step 6) or submit if softener
+          nextStep = needsOtp ? 7 : 6;
         } else {
           // Skip AMC but go to payment step (step 4)
           nextStep = 4;
@@ -2521,12 +2550,17 @@ const TechnicianDashboard = () => {
         currentStep: nextStep,
       });
       
-      // If skipping AMC and bill is zero and softener, set up for direct submission
+      // If skipping AMC and bill is zero and softener, check OTP first
       if (shouldSkipAMC && billIsZero && isSoftener) {
         setHasAMC(false);
         setCustomerHasPrefilter(null);
-        setCompleteJobStep(6);
-        // Continue to submit logic - don't return here
+        if (needsOtp) {
+          setCompleteJobStep(7);
+          return;
+        } else {
+          setCompleteJobStep(6);
+          // Continue to submit logic - don't return here
+        }
       } else {
         setCompleteJobStep(nextStep);
         return;
@@ -2579,15 +2613,16 @@ const TechnicianDashboard = () => {
       
       // Check if bill amount is zero - if so, skip payment steps (4 and 5)
       const billIsZeroStep3Continue = isBillAmountZero();
+      const needsOtp = requiresOtp();
       
       // Determine next step:
-      // - If bill is zero: skip to step 6 (prefilter) or submit if softener
+      // - If bill is zero: skip to step 7 (OTP) if required, or step 6 (prefilter) or submit if softener
       // - If bill is not zero: go to step 4 (payment mode)
-      let nextStep: 4 | 6 = 4;
+      let nextStep: 4 | 6 | 7 = 4;
       const billIsZeroStep3Final = billIsZeroStep3Continue;
       if (billIsZeroStep3Final) {
-        // Skip payment steps, go directly to prefilter (or submit if softener)
-        nextStep = 6;
+        // Skip payment steps, check if OTP is required
+        nextStep = needsOtp ? 7 : 6;
       }
       
       // Save progress (AMC is optional, can skip)
@@ -2608,13 +2643,18 @@ const TechnicianDashboard = () => {
         currentStep: nextStep,
       });
       
-      // If bill is zero and service is softener, skip prefilter step and submit directly
+      // If bill is zero and service is softener, check OTP first
       if (billIsZeroStep3Final && isSoftenerService()) {
         // Set customerHasPrefilter to null (not applicable for softener)
         setCustomerHasPrefilter(null);
-        // Set step to 6 to trigger submit logic, but skip step 6 UI
-        setCompleteJobStep(6);
-        // Continue to submit logic - don't return here
+        if (needsOtp) {
+          setCompleteJobStep(7);
+          return;
+        } else {
+          // Set step to 6 to trigger submit logic, but skip step 6 UI
+          setCompleteJobStep(6);
+          // Continue to submit logic - don't return here
+        }
       } else {
         setCompleteJobStep(nextStep);
         return;
@@ -2625,8 +2665,9 @@ const TechnicianDashboard = () => {
     if (completeJobStep === 4) {
       // Skip payment step if bill amount is zero (shouldn't reach here, but safety check)
       if (isBillAmountZero()) {
-        // Skip to step 6 (prefilter) or submit if softener
+        // Skip to step 7 (OTP) if required, or step 6 (prefilter) or submit if softener
         const isSoftener = isSoftenerService();
+        const needsOtp = requiresOtp();
         saveJobCompletionProgress(selectedJobForComplete.id, {
           billPhotos,
           billAmount,
@@ -2641,8 +2682,12 @@ const TechnicianDashboard = () => {
           amcYears: 0,
           amcIncludesPrefilter: false,
           amcAdditionalInfo: '',
-          currentStep: 6,
+          currentStep: needsOtp ? 7 : 6,
         });
+        if (needsOtp) {
+          setCompleteJobStep(7);
+          return;
+        }
         if (isSoftener) {
           setCustomerHasPrefilter(null);
           setCompleteJobStep(6);
@@ -2715,8 +2760,11 @@ const TechnicianDashboard = () => {
         return;
     }
 
-    // Step 5: Payment Screenshot (optional) - move to step 6 (Prefilter) or submit if softener
+    // Step 5: Payment Screenshot (optional) - move to step 7 (OTP) if required, or step 6 (Prefilter)
     if (completeJobStep === 5) {
+      // Check if OTP is required
+      const needsOtp = requiresOtp();
+      
       // Save progress
       saveJobCompletionProgress(selectedJobForComplete.id, {
         billPhotos,
@@ -2730,8 +2778,14 @@ const TechnicianDashboard = () => {
         amcYears,
         amcIncludesPrefilter,
         amcAdditionalInfo,
-        currentStep: 6,
+        currentStep: needsOtp ? 7 : 6,
       });
+      
+      if (needsOtp) {
+        // Go to OTP step (step 7)
+        setCompleteJobStep(7);
+        return;
+      }
       
       // If service is softener, skip prefilter step and submit directly
       if (isSoftenerService()) {
@@ -2740,6 +2794,46 @@ const TechnicianDashboard = () => {
         // Set step to 6 to trigger submit logic, but skip step 6 UI
         setCompleteJobStep(6);
         // Continue to submit logic - don't return here
+      } else {
+        setCompleteJobStep(6);
+        return;
+      }
+    }
+
+    // Step 7: OTP Verification (if required)
+    if (completeJobStep === 7) {
+      // Validate OTP - check all 4 boxes are filled
+      const otpValue = otpInput.join('');
+      if (otpValue.length !== 4) {
+        setOtpError('Please enter all 4 digits');
+        return;
+      }
+      
+      // OTP entered (any 4 digits), proceed to prefilter step (step 6) or submit if softener
+      setOtpError('');
+      
+      // Save progress
+      saveJobCompletionProgress(selectedJobForComplete.id, {
+        billPhotos,
+        billAmount,
+        paymentMode: paymentMode as 'CASH' | 'ONLINE' | '',
+        paymentScreenshot,
+        qrCodeType,
+        selectedQrCodeId,
+        amcDateGiven,
+        amcEndDate,
+        amcYears,
+        amcIncludesPrefilter,
+        amcAdditionalInfo,
+        customerHasPrefilter: isSoftenerService() ? null : customerHasPrefilter,
+        currentStep: 6,
+      });
+      
+      if (isSoftenerService()) {
+        // Set customerHasPrefilter to null (not applicable for softener)
+        setCustomerHasPrefilter(null);
+        setCompleteJobStep(6);
+        // Continue to submit logic
       } else {
         setCompleteJobStep(6);
         return;
@@ -2917,6 +3011,17 @@ const TechnicianDashboard = () => {
             }
           } catch {
             requirements = [];
+          }
+        }
+
+        // Update OTP verification status if OTP was entered (any 4 digits)
+        const otpValue = otpInput.join('');
+        if (requiresOtp() && otpValue && otpValue.length === 4) {
+          const otpReq = requirements.find((req: any) => req?.require_otp === true);
+          if (otpReq) {
+            otpReq.otp_verified = true;
+            otpReq.otp_verified_at = new Date().toISOString();
+            otpReq.otp_entered = otpValue; // Store the entered OTP for manual verification
           }
         }
 
@@ -5663,6 +5768,7 @@ const TechnicianDashboard = () => {
                     {completeJobStep === 3 && 'AMC Information (Optional - Can Skip)'}
                     {completeJobStep === 4 && 'Select payment mode and QR code'}
                     {completeJobStep === 5 && 'Upload payment screenshot (optional)'}
+                    {completeJobStep === 7 && 'Enter OTP Verification'}
                     {completeJobStep === 6 && !isSoftenerService() && 'Does the customer have a prefilter?'}
                     {completeJobStep === 6 && isSoftenerService() && 'Complete Job'}
                   </>
@@ -5776,19 +5882,49 @@ const TechnicianDashboard = () => {
                     <span className="relative z-10">5</span>
                   </div>
                   <div className={`w-4 sm:w-6 md:w-8 h-0.5 sm:h-1 transition-colors flex-shrink-0 ${
-                    completeJobStep >= 6 ? 'bg-black' : 'bg-gray-200'
+                    completeJobStep >= (requiresOtp() ? 7 : 6) ? 'bg-black' : 'bg-gray-200'
                   }`}></div>
                   
-                  {/* Step 6 - Prefilter */}
-                  <div className={`flex items-center justify-center w-6 h-6 sm:w-7 sm:h-7 md:w-8 md:h-8 rounded-full text-xs font-medium flex-shrink-0 relative ${
-                    completeJobStep === 6 ? 'bg-black text-white' : 
-                    'bg-gray-200 text-gray-600'
-                  }`}>
-                    {completeJobStep === 6 && (
-                      <div className="absolute inset-0 rounded-full border-2 border-black" style={{ margin: '-2px' }}></div>
-                    )}
-                    <span className="relative z-10">6</span>
-                  </div>
+                  {/* Step 6 - Prefilter (or Step 7 - OTP if required) */}
+                  {requiresOtp() ? (
+                    <>
+                      {/* Step 7 - OTP Verification */}
+                      <div className={`flex items-center justify-center w-6 h-6 sm:w-7 sm:h-7 md:w-8 md:h-8 rounded-full text-xs font-medium flex-shrink-0 relative ${
+                        completeJobStep === 7 ? 'bg-black text-white' : 
+                        completeJobStep > 7 ? 'bg-black text-white' : 
+                        'bg-gray-200 text-gray-600'
+                      }`}>
+                        {completeJobStep === 7 && (
+                          <div className="absolute inset-0 rounded-full border-2 border-black" style={{ margin: '-2px' }}></div>
+                        )}
+                        <span className="relative z-10">7</span>
+                      </div>
+                      <div className={`w-4 sm:w-6 md:w-8 h-0.5 sm:h-1 transition-colors flex-shrink-0 ${
+                        completeJobStep >= 6 ? 'bg-black' : 'bg-gray-200'
+                      }`}></div>
+                      
+                      {/* Step 6 - Prefilter */}
+                      <div className={`flex items-center justify-center w-6 h-6 sm:w-7 sm:h-7 md:w-8 md:h-8 rounded-full text-xs font-medium flex-shrink-0 relative ${
+                        completeJobStep === 6 ? 'bg-black text-white' : 
+                        'bg-gray-200 text-gray-600'
+                      }`}>
+                        {completeJobStep === 6 && (
+                          <div className="absolute inset-0 rounded-full border-2 border-black" style={{ margin: '-2px' }}></div>
+                        )}
+                        <span className="relative z-10">6</span>
+                      </div>
+                    </>
+                  ) : (
+                    <div className={`flex items-center justify-center w-6 h-6 sm:w-7 sm:h-7 md:w-8 md:h-8 rounded-full text-xs font-medium flex-shrink-0 relative ${
+                      completeJobStep === 6 ? 'bg-black text-white' : 
+                      'bg-gray-200 text-gray-600'
+                    }`}>
+                      {completeJobStep === 6 && (
+                        <div className="absolute inset-0 rounded-full border-2 border-black" style={{ margin: '-2px' }}></div>
+                      )}
+                      <span className="relative z-10">6</span>
+                    </div>
+                  )}
                 </div>
               </div>
 
@@ -6238,6 +6374,75 @@ const TechnicianDashboard = () => {
                   </div>
                 )}
 
+              {/* Step 7: OTP Verification */}
+              {completeJobStep === 7 && requiresOtp() && (
+                <div className="space-y-4">
+                  <div>
+                    <Label>Enter 4-Digit OTP *</Label>
+                    <p className="text-sm text-gray-500 mb-4">
+                      Please enter the 4-digit OTP to verify job completion
+                    </p>
+                    <div className="flex justify-center gap-3">
+                      {[0, 1, 2, 3].map((index) => (
+                        <Input
+                          key={index}
+                          ref={(el) => {
+                            otpInputRefs.current[index] = el;
+                          }}
+                          type="text"
+                          inputMode="numeric"
+                          maxLength={1}
+                          value={otpInput[index]}
+                          onChange={(e) => {
+                            const value = e.target.value.replace(/\D/g, ''); // Only allow digits
+                            if (value.length <= 1) {
+                              const newOtp = [...otpInput];
+                              newOtp[index] = value;
+                              setOtpInput(newOtp);
+                              setOtpError(''); // Clear error when user types
+                              
+                              // Auto-focus next box if value entered
+                              if (value && index < 3) {
+                                otpInputRefs.current[index + 1]?.focus();
+                              }
+                            }
+                          }}
+                          onKeyDown={(e) => {
+                            // Handle backspace to go to previous box
+                            if (e.key === 'Backspace' && !otpInput[index] && index > 0) {
+                              otpInputRefs.current[index - 1]?.focus();
+                            }
+                          }}
+                          onPaste={(e) => {
+                            e.preventDefault();
+                            const pastedData = e.clipboardData.getData('text').replace(/\D/g, '').slice(0, 4);
+                            if (pastedData.length > 0) {
+                              const newOtp = ['', '', '', ''];
+                              for (let i = 0; i < pastedData.length && i < 4; i++) {
+                                newOtp[i] = pastedData[i];
+                              }
+                              setOtpInput(newOtp);
+                              setOtpError('');
+                              // Focus the next empty box or the last box
+                              const nextIndex = Math.min(pastedData.length, 3);
+                              otpInputRefs.current[nextIndex]?.focus();
+                            }
+                          }}
+                          className="w-14 h-14 text-center text-2xl font-mono border-2 focus:border-black"
+                          autoFocus={index === 0}
+                        />
+                      ))}
+                    </div>
+                    {otpError && (
+                      <p className="text-sm text-red-500 mt-2 text-center">{otpError}</p>
+                    )}
+                    <p className="text-xs text-gray-500 mt-2 text-center">
+                      The OTP was generated when this job was created
+                    </p>
+                  </div>
+                </div>
+              )}
+
               {/* Step 6: Prefilter Question - only show if not softener service */}
               {completeJobStep === 6 && isSoftenerService() && (
                 <div className="space-y-4">
@@ -6311,7 +6516,21 @@ const TechnicianDashboard = () => {
                 variant="outline"
                 onClick={() => {
                   if (completeJobStep > 1) {
-                    setCompleteJobStep((prev) => (prev - 1) as 1 | 2 | 3 | 4 | 5 | 6);
+                    setCompleteJobStep((prev) => {
+                      // If going back from step 6 and OTP is required, go to step 7, not step 5
+                      if (prev === 6 && requiresOtp()) {
+                        return 7;
+                      }
+                      // If going back from step 7, go to step 5
+                      if (prev === 7) {
+                        return 5;
+                      }
+                      return (prev - 1) as 1 | 2 | 3 | 4 | 5 | 6 | 7;
+                    });
+                    setOtpError(''); // Clear OTP error when going back
+                    if (completeJobStep === 7) {
+                      setOtpInput(['', '', '', '']); // Reset OTP when going back
+                    }
                   } else {
                   setCompleteDialogOpen(false);
                   setSelectedJobForComplete(null);
@@ -6330,6 +6549,9 @@ const TechnicianDashboard = () => {
       setQrCodeType('');
       setSelectedQrCodeId('');
       setPaymentScreenshot('');
+      setOtpInput(['', '', '', '']);
+      setOtpError('');
+      otpInputRefs.current = [];
                   }
                 }}
               >
@@ -6390,7 +6612,9 @@ const TechnicianDashboard = () => {
                   (completeJobStep === 6 && (isBillPhotosUploading || isPaymentScreenshotUploading)) ||
                   // Step 4 validation: only require payment mode if bill amount is not zero
                   (completeJobStep === 4 && !isBillAmountZero() && !paymentMode) || 
-                  (completeJobStep === 4 && !isBillAmountZero() && paymentMode === 'ONLINE' && !selectedQrCodeId)
+                  (completeJobStep === 4 && !isBillAmountZero() && paymentMode === 'ONLINE' && !selectedQrCodeId) ||
+                  // Step 7 validation: require OTP if step is 7
+                  (completeJobStep === 7 && otpInput.join('').length !== 4)
                 }
               >
                 {isSubmittingJobCompletion || (completeJobStep === 6 && (isBillPhotosUploading || isPaymentScreenshotUploading)) ? (
@@ -6403,8 +6627,8 @@ const TechnicianDashboard = () => {
                         : 'Saving...'}
                   </>
                 ) : (
-                  // Show "Complete Job" on step 6, or if we're on step 3/5 and skipping to submit
-                  (completeJobStep === 6 || (completeJobStep === 3 && isBillAmountZero() && isSoftenerService()) || (completeJobStep === 5 && isSoftenerService())) 
+                  // Show "Complete Job" on step 6, or if we're on step 3/5 and skipping to submit (but not if OTP is required)
+                  (completeJobStep === 6 || (completeJobStep === 3 && isBillAmountZero() && isSoftenerService() && !requiresOtp()) || (completeJobStep === 5 && isSoftenerService() && !requiresOtp())) 
                     ? 'Complete Job' 
                     : 'Next'
                 )}
