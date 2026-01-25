@@ -120,7 +120,8 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
       if (open && shouldCreateJob) {
         setLoadingTechnicians(true);
         try {
-          const { data, error } = await db.technicians.getAll();
+          // OPTIMIZATION: Limit technicians fetch
+          const { data, error } = await db.technicians.getAll(100);
           if (error) {
             console.error('Error loading technicians:', error);
           } else {
@@ -1445,6 +1446,11 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
                           <SelectItem value="Service">Service</SelectItem>
                           <SelectItem value="Installation">Installation</SelectItem>
                           <SelectItem value="Reinstallation">Reinstallation</SelectItem>
+                          <SelectItem value="Un-Installation">Un-Installation</SelectItem>
+                          <SelectItem value="Repair">Repair</SelectItem>
+                          <SelectItem value="Maintenance">Maintenance</SelectItem>
+                          <SelectItem value="Replacement">Replacement</SelectItem>
+                          <SelectItem value="Inspection">Inspection</SelectItem>
                           <SelectItem value="Return Complaint">Return Complaint</SelectItem>
                           <SelectItem value="AMC Service">AMC Service</SelectItem>
                           <SelectItem value="Custom">Custom</SelectItem>

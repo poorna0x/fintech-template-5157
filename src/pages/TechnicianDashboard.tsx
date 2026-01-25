@@ -646,9 +646,10 @@ const TechnicianDashboard = () => {
         }
 
         // Always fetch from database (cache will be updated)
+        // OPTIMIZATION: Limit technicians fetch
         const [commonResult, allTechniciansResult] = await Promise.all([
           db.commonQrCodes.getAll(),
-          db.technicians.getAll()
+          db.technicians.getAll(100)
         ]);
 
         // Transform common QR codes

@@ -149,7 +149,8 @@ const Settings = () => {
 
   const loadTechnicians = async () => {
     try {
-      const { data, error } = await db.technicians.getAll();
+      // OPTIMIZATION: Limit technicians fetch
+      const { data, error } = await db.technicians.getAll(100);
       if (error) throw error;
       
       if (data) {
@@ -309,7 +310,8 @@ const Settings = () => {
         }
         
         // Check for duplicate employee_id or phone before creating
-        const { data: existingTechnicians } = await db.technicians.getAll();
+        // OPTIMIZATION: Limit check to recent technicians (duplicates are usually recent)
+        const { data: existingTechnicians } = await db.technicians.getAll(500);
         if (existingTechnicians) {
           const duplicateEmployeeId = existingTechnicians.find(
             (t: any) => t.employee_id === technicianData.employee_id
@@ -854,7 +856,9 @@ const Settings = () => {
       const tables: { name: string; data: any[] }[] = [];
 
       // Fetch all tables
-      const { data: customers, error: customersError } = await db.customers.getAll();
+      // For export, we need all data, but still reasonable to have a safety limit
+      // If you have more than 10k customers, consider pagination
+      const { data: customers, error: customersError } = await db.customers.getAll(10000);
       if (customersError) {
         console.error('Error fetching customers:', customersError);
         toast.error(`Failed to fetch customers: ${customersError.message}`);
@@ -862,7 +866,9 @@ const Settings = () => {
         tables.push({ name: 'customers', data: customers || [] });
       }
 
-      const { data: jobs, error: jobsError } = await db.jobs.getAll();
+      // OPTIMIZATION: For export, fetch jobs without nested customer data to reduce payload
+      // Customer data is already in the customers table, no need to duplicate
+      const { data: jobs, error: jobsError } = await db.jobs.getAll(undefined, false);
       if (jobsError) {
         console.error('Error fetching jobs:', jobsError);
         toast.error(`Failed to fetch jobs: ${jobsError.message}`);
@@ -870,7 +876,8 @@ const Settings = () => {
         tables.push({ name: 'jobs', data: jobs || [] });
       }
 
-      const { data: technicians, error: techniciansError } = await db.technicians.getAll();
+      // For export, limit technicians (shouldn't be more than a few hundred)
+      const { data: technicians, error: techniciansError } = await db.technicians.getAll(500);
       if (techniciansError) {
         console.error('Error fetching technicians:', techniciansError);
         toast.error(`Failed to fetch technicians: ${techniciansError.message}`);

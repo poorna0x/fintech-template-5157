@@ -282,7 +282,7 @@ export interface BookingFormData {
   
   // Service Details
   serviceType: 'RO' | 'SOFTENER';
-  serviceSubType: 'Installation' | 'Repair' | 'Maintenance' | 'AMC';
+  serviceSubType: 'Installation' | 'Un-Installation' | 'Repair' | 'Maintenance' | 'Inspection' | 'AMC';
   brand: string;
   model: string;
   

@@ -398,6 +398,7 @@ const NewJobDialog: React.FC<NewJobDialogProps> = ({
                   >
                     <option value="Installation">Installation</option>
                     <option value="Reinstallation">Reinstallation</option>
+                    <option value="Un-Installation">Un-Installation</option>
                     <option value="Service">Service</option>
                     <option value="Repair">Repair</option>
                     <option value="Maintenance">Maintenance</option>

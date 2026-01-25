@@ -45,7 +45,7 @@ const bookingSchema = z.object({
   
   // Service Details
   serviceType: z.enum(['RO', 'SOFTENER']),
-  serviceSubType: z.enum(['Installation', 'Repair', 'Maintenance', 'AMC']),
+  serviceSubType: z.enum(['Installation', 'Un-Installation', 'Repair', 'Maintenance', 'Inspection', 'AMC']),
   brand: z.string().min(1, 'Please enter brand name'),
   model: z.string().min(1, 'Please enter model name'),
   
@@ -630,8 +630,10 @@ const EnhancedBookingForm = () => {
                     </SelectTrigger>
                     <SelectContent>
                       <SelectItem value="Installation">Installation</SelectItem>
+                      <SelectItem value="Un-Installation">Un-Installation</SelectItem>
                       <SelectItem value="Repair">Repair</SelectItem>
                       <SelectItem value="Maintenance">Maintenance</SelectItem>
+                      <SelectItem value="Inspection">Inspection</SelectItem>
                       <SelectItem value="AMC">Annual Maintenance Contract</SelectItem>
                     </SelectContent>
                   </Select>

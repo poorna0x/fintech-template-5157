@@ -167,12 +167,18 @@ export const db = {
       return result;
     },
     
-    async getAll() {
-      const { data, error } = await supabase
+    async getAll(limit?: number) {
+      let query = supabase
         .from('customers')
         .select('*')
         .order('created_at', { ascending: false });
       
+      // Add limit if provided to reduce data transfer
+      if (limit && limit > 0) {
+        query = query.limit(limit);
+      }
+      
+      const { data, error } = await query;
       return { data, error };
     },
 
@@ -277,37 +283,54 @@ export const db = {
       return { data, error };
     },
     
-    async getAll() {
-      const { data, error } = await supabase
-        .from('jobs')
-        .select(`
-          *,
-          customer:customers(
-            id,
-            customer_id,
-            full_name,
-            phone,
-            email,
-            alternate_phone,
-            address,
-            location,
-            service_type,
-            brand,
-            model,
-            installation_date,
-            warranty_expiry,
-            status,
-            customer_since,
-            last_service_date,
-            notes,
-            preferred_time_slot,
-            preferred_language,
-            created_at,
-            updated_at
-          )
-        `)
-        .order('created_at', { ascending: false });
+    async getAll(limit?: number, includeCustomer?: boolean) {
+      // OPTIMIZATION: By default, don't fetch nested customer data to reduce payload size
+      // Only fetch customer data when explicitly needed
+      let query;
+      if (includeCustomer) {
+        query = supabase
+          .from('jobs')
+          .select(`
+            *,
+            customer:customers(
+              id,
+              customer_id,
+              full_name,
+              phone,
+              email,
+              alternate_phone,
+              address,
+              location,
+              service_type,
+              brand,
+              model,
+              installation_date,
+              warranty_expiry,
+              status,
+              customer_since,
+              last_service_date,
+              notes,
+              preferred_time_slot,
+              preferred_language,
+              created_at,
+              updated_at
+            )
+          `);
+      } else {
+        // Fetch only job data without nested customer (much smaller payload)
+        query = supabase
+          .from('jobs')
+          .select('*');
+      }
       
+      query = query.order('created_at', { ascending: false });
+      
+      // Add limit if provided to reduce data transfer
+      if (limit && limit > 0) {
+        query = query.limit(limit);
+      }
+      
+      const { data, error } = await query;
       return { data, error };
     },
     
@@ -714,12 +737,18 @@ export const db = {
       return { data, error };
     },
     
-    async getAll() {
-      const { data, error } = await supabase
+    async getAll(limit?: number) {
+      let query = supabase
         .from('technicians')
         .select('*')
         .order('created_at', { ascending: false });
       
+      // Add limit if provided to reduce data transfer
+      if (limit && limit > 0) {
+        query = query.limit(limit);
+      }
+      
+      const { data, error } = await query;
       return { data, error };
     },
     

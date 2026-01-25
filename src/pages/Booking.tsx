@@ -356,17 +356,21 @@ const Booking: React.FC = () => {
   const serviceOptions = {
     'RO': [
       'Installation',
-      'Reinstallation', 
+      'Reinstallation',
+      'Un-Installation',
       'Repair',
       'General Maintenance',
       'Full Filter Change',
+      'Inspection',
       'Other'
     ],
     'SOFTENER': [
       'Installation',
       'Reinstallation',
+      'Un-Installation',
       'General Service',
       'Resin Change',
+      'Inspection',
       'Other'
     ]
   };

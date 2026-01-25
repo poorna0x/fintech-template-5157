@@ -56,7 +56,7 @@ const EditJobDialog: React.FC<EditJobDialogProps> = ({
     if (job && open) {
       // Determine if service sub type is custom
       const serviceSubType = job.service_sub_type || job.serviceSubType || 'Installation';
-      const isCustomSubType = !['Installation', 'Reinstallation', 'Service', 'Repair', 'Return Complaint', 'AMC Service', 'Other'].includes(serviceSubType);
+      const isCustomSubType = !['Installation', 'Reinstallation', 'Un-Installation', 'Service', 'Repair', 'Maintenance', 'Replacement', 'Inspection', 'Return Complaint', 'AMC Service', 'Other'].includes(serviceSubType);
       
       // Determine if time slot is custom
       const timeSlot = job.scheduled_time_slot || job.scheduledTimeSlot || 'MORNING';
@@ -443,8 +443,12 @@ const EditJobDialog: React.FC<EditJobDialogProps> = ({
                 <SelectContent>
                   <SelectItem value="Installation">Installation</SelectItem>
                   <SelectItem value="Reinstallation">Reinstallation</SelectItem>
+                  <SelectItem value="Un-Installation">Un-Installation</SelectItem>
                   <SelectItem value="Service">Service</SelectItem>
                   <SelectItem value="Repair">Repair</SelectItem>
+                  <SelectItem value="Maintenance">Maintenance</SelectItem>
+                  <SelectItem value="Replacement">Replacement</SelectItem>
+                  <SelectItem value="Inspection">Inspection</SelectItem>
                   <SelectItem value="Return Complaint">Return Complaint</SelectItem>
                   <SelectItem value="AMC Service">AMC Service</SelectItem>
                   <SelectItem value="Other">Other</SelectItem>

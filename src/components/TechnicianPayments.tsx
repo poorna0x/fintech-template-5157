@@ -250,8 +250,8 @@ const TechnicianPayments = () => {
         setLoading(true);
       }
       
-      // Load technicians
-      const { data: techsData, error: techsError } = await db.technicians.getAll();
+      // OPTIMIZATION: Limit technicians fetch
+      const { data: techsData, error: techsError } = await db.technicians.getAll(100);
       if (techsError) throw techsError;
       setTechnicians(techsData || []);
 

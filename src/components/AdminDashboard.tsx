@@ -800,7 +800,8 @@ const AdminDashboard = () => {
   // Reload technicians to get latest location data
   const reloadTechnicians = useCallback(async () => {
     try {
-      const { data, error } = await db.technicians.getAll();
+      // OPTIMIZATION: Use limit to reduce data transfer
+      const { data, error } = await db.technicians.getAll(100);
       if (error) {
         console.error('Error reloading technicians:', error);
         return;
@@ -973,31 +974,37 @@ const AdminDashboard = () => {
   const loadBrandsAndModels = useCallback(async () => {
     try {
       // OPTIMIZATION: Fetch all 4 queries in parallel instead of sequentially
+      // OPTIMIZATION: Add limits to reduce data transfer (we only need unique values, not all rows)
+      // Limit to 1000 rows per query - should cover most brands/models
       const [customerBrandsResult, jobBrandsResult, customerModelsResult, jobModelsResult] = await Promise.all([
         supabase
         .from('customers')
         .select('brand')
         .not('brand', 'is', null)
         .neq('brand', '')
-          .neq('brand', 'Not specified'),
+          .neq('brand', 'Not specified')
+          .limit(1000),
         supabase
         .from('jobs')
         .select('brand')
         .not('brand', 'is', null)
         .neq('brand', '')
-          .neq('brand', 'Not specified'),
+          .neq('brand', 'Not specified')
+          .limit(1000),
         supabase
         .from('customers')
         .select('model')
         .not('model', 'is', null)
         .neq('model', '')
-          .neq('model', 'Not specified'),
+          .neq('model', 'Not specified')
+          .limit(1000),
         supabase
         .from('jobs')
         .select('model')
         .not('model', 'is', null)
         .neq('model', '')
           .neq('model', 'Not specified')
+          .limit(1000)
       ]);
       
       // Only process if all queries succeeded
@@ -1106,7 +1113,8 @@ const AdminDashboard = () => {
   // Reload follow-up jobs when status filter changes to RESCHEDULED
   useEffect(() => {
     if (statusFilter === 'RESCHEDULED') {
-      db.jobs.getByStatusPaginated(['FOLLOW_UP', 'RESCHEDULED'], 1, 1000).then(result => {
+      // OPTIMIZATION: Use pagination with reasonable limit instead of 1000
+      db.jobs.getByStatusPaginated(['FOLLOW_UP', 'RESCHEDULED'], 1, 100).then(result => {
         if (result.data) {
           setAllFollowUpJobs(result.data);
         }
@@ -1171,9 +1179,12 @@ const AdminDashboard = () => {
       });
       
       // OPTIMIZATION: Parallelize all independent data loading operations
+      // OPTIMIZATION: Use reasonable limits to reduce data transfer (Supabase free tier)
+      // For admin dashboard, we typically don't need ALL customers/technicians at once
+      // Limit to 1000 customers and 100 technicians (adjust based on your needs)
       const [customersResult, techniciansResult, amcContractsResult, jobCountsResult] = await Promise.all([
-        db.customers.getAll(),
-        db.technicians.getAll(),
+        db.customers.getAll(1000), // Limit to 1000 most recent customers
+        db.technicians.getAll(100), // Limit to 100 technicians (should be enough for most cases)
         // Load AMC contracts in parallel
         supabase
         .from('amc_contracts')
@@ -1240,8 +1251,9 @@ const AdminDashboard = () => {
       Promise.all([
         loadBrandsAndModels(),
         loadFilteredJobs(statusFilter, currentPage),
-        // Load all follow-up jobs for glow effect in stats card
-        db.jobs.getByStatusPaginated(['FOLLOW_UP', 'RESCHEDULED'], 1, 1000).then(result => {
+        // OPTIMIZATION: Reduce limit for follow-up jobs (100 instead of 1000)
+        // This is just for the glow effect in stats card, we don't need all 1000
+        db.jobs.getByStatusPaginated(['FOLLOW_UP', 'RESCHEDULED'], 1, 100).then(result => {
           if (result.data) {
             setAllFollowUpJobs(result.data);
           }

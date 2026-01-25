@@ -196,8 +196,9 @@ const Analytics = () => {
         return;
       }
       
-      // Fetch additional detailed data
-      const { data: jobsData, error: jobsError } = await db.jobs.getAll();
+      // OPTIMIZATION: Fetch jobs without nested customer data and with reasonable limit
+      // For analytics, we typically don't need ALL historical jobs
+      const { data: jobsData, error: jobsError } = await db.jobs.getAll(5000, false);
       if (jobsError || !jobsData) {
         console.error('Error loading jobs for detailed analytics:', jobsError);
         setAnalytics(baseData);
@@ -403,7 +404,8 @@ const Analytics = () => {
       }> = {};
       
       // Get all technicians
-      const { data: techniciansData } = await db.technicians.getAll();
+      // OPTIMIZATION: Limit technicians fetch
+      const { data: techniciansData } = await db.technicians.getAll(100);
       const technicians = techniciansData || [];
       
       // ========== RETURN COMPLAINTS CALCULATION ==========
