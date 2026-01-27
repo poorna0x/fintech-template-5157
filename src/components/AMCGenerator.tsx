@@ -51,7 +51,7 @@ export default function AMCGenerator({ customer, onPrint, onAMCSaved }: AMCGener
 
 Breakdown Support: If any breakdown or problem happens with the RO during the AMC period, the company will provide service without extra charges.
 
-Filters / RO Membrane / Consumables: Company will clean, repair, or replace filters and parts needed for smooth working.
+Filters / RO Membrane / Consumables / Electricals / Motor: Company will clean, repair, or replace filters and parts needed for smooth working.
 
 Safe RO output: Water quality TDS between 50 to 150, as per WHO guidelines or as per customer preference.
 

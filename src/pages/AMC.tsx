@@ -171,7 +171,7 @@ const AMC = () => {
       pdf.setFontSize(10);
       const services = [
         'Breakdown Support: If any breakdown or problem happens with the RO during this 1-year period, the company will provide service without extra charges.',
-        'Filters / RO Membrane / Consumables: Company will clean, repair, or replace filters and parts needed for smooth working.',
+        'Filters / RO Membrane / Consumables / Electricals / Motor: Company will clean, repair, or replace filters and parts needed for smooth working.',
         'Safe RO output: Water quality TDS between 50 to 150, as per WHO guidelines or as per customer preference.',
         'Clean cosmetics and smooth working of the machine.',
         'Quick service: Any breakdown will be resolved within 24 hours.',
@@ -511,7 +511,7 @@ const AMC = () => {
                               <h3 className="font-medium text-foreground text-sm mb-3">SERVICES COVERED BY THE AGREEMENT ARE AS FOLLOWS:</h3>
                               <ul className="list-disc pl-4 space-y-2 text-sm text-muted-foreground">
                                 <li className="leading-relaxed">Breakdown Support: If any breakdown or problem happens with the RO during this 1-year period, the company will provide service without extra charges.</li>
-                                <li className="leading-relaxed">Filters / RO Membrane / Consumables: Company will clean, repair, or replace filters and parts needed for smooth working.</li>
+                                <li className="leading-relaxed">Filters / RO Membrane / Consumables / Electricals / Motor: Company will clean, repair, or replace filters and parts needed for smooth working.</li>
                                 <li className="leading-relaxed">Safe RO output: Water quality TDS between 50 to 150, as per WHO guidelines or as per customer preference.</li>
                                 <li className="leading-relaxed">Clean cosmetics and smooth working of the machine.</li>
                                 <li className="leading-relaxed">Quick service: Any breakdown will be resolved within 24 hours.</li>
@@ -676,7 +676,7 @@ const AMC = () => {
                 <h3 className="font-bold mb-3 text-blue-800 text-sm">SERVICES COVERED BY THE AGREEMENT ARE AS FOLLOWS:</h3>
                 <ul className="list-disc pl-6 space-y-2 text-xs">
                   <li>Breakdown Support: If any breakdown or problem happens with the RO during this 1-year period, the company will provide service without extra charges.</li>
-                  <li>Filters / RO Membrane / Consumables: Company will clean, repair, or replace filters and parts needed for smooth working.</li>
+                  <li>Filters / RO Membrane / Consumables / Electricals / Motor: Company will clean, repair, or replace filters and parts needed for smooth working.</li>
                   <li>Safe RO output: Water quality TDS between 50 to 150, as per WHO guidelines or as per customer preference.</li>
                   <li>Clean cosmetics and smooth working of the machine.</li>
                   <li>Quick service: Any breakdown will be resolved within 24 hours.</li>

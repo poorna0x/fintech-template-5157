@@ -735,7 +735,7 @@ function generateAMCHTML(data: AMCPDFData, options?: AMCPDFOptions): string {
           <h3 class="services-title">SERVICES COVERED BY THE AGREEMENT ARE AS FOLLOWS:</h3>
           <ul class="services-list">
             <li><strong>Breakdown Support:</strong> If any breakdown or problem happens with the RO during the AMC period, the company will provide service without extra charges.</li>
-            <li><strong>Filters / RO Membrane / Consumables:</strong> Company will clean, repair, or replace filters and parts needed for smooth working.</li>
+            <li><strong>Filters / RO Membrane / Consumables / Electricals / Motor:</strong> Company will clean, repair, or replace filters and parts needed for smooth working.</li>
             <li><strong>Safe RO output:</strong> Water quality TDS between 50 to 150, as per WHO guidelines or as per customer preference.</li>
             <li><strong>Clean cosmetics and smooth working</strong> of the machine.</li>
             <li><strong>Quick service:</strong> Any breakdown will be resolved within 24 hours.</li>
