@@ -26,33 +26,26 @@ const SPARE_PARTS: SparePart[] = [
   { id: 'sed-006', name: 'Sediment Filter 10 Micron - 20 inch', price: 750 },
 
   // Carbon Filters
-  { id: 'carb-001', name: 'Carbon Block Filter - 10 inch', price: 500 },
-  { id: 'carb-002', name: 'Carbon Block Filter - 20 inch', price: 720 },
-  { id: 'carb-003', name: 'Granular Activated Carbon (GAC) - 10 inch', price: 440 },
-  { id: 'carb-004', name: 'Granular Activated Carbon (GAC) - 20 inch', price: 660 },
-  { id: 'carb-005', name: 'Carbon Block Filter - 5 inch', price: 330 },
-  { id: 'carb-006', name: 'Carbon Block Filter - 15 inch', price: 600 },
+  { id: 'carb-001', name: 'Carbon Block Filter - 10 inch', price: 800 },
+  { id: 'carb-002', name: 'Carbon Block Filter - 20 inch', price: 800 },
+  { id: 'carb-003', name: 'Granular Activated Carbon (GAC) - 10 inch', price: 900 },
+  { id: 'carb-004', name: 'Granular Activated Carbon (GAC) - 20 inch', price: 900 },
+  { id: 'carb-005', name: 'Carbon Block Filter - 5 inch', price: 800 },
+  { id: 'carb-006', name: 'Carbon Block Filter - 15 inch', price: 800 },
 
   // RO Membranes
-  { id: 'mem-001', name: 'RO Membrane 50 GPD', price: 1350 },
-  { id: 'mem-002', name: 'RO Membrane 75 GPD', price: 1650 },
-  { id: 'mem-003', name: 'RO Membrane 80 GPD', price: 3200 },
-  { id: 'mem-004', name: 'RO Membrane 100 GPD', price: 2000 },
-  { id: 'mem-005', name: 'RO Membrane 120 GPD', price: 3700 },
-  { id: 'mem-006', name: 'RO Membrane 200 GPD', price: 2800 },
-  { id: 'mem-007', name: 'RO Membrane 300 GPD', price: 3500 },
-  { id: 'mem-008', name: 'RO Membrane 400 GPD', price: 4200 },
-  { id: 'mem-009', name: 'RO Membrane 600 GPD', price: 5000 },
-  { id: 'mem-010', name: 'RO Membrane 800 GPD', price: 6000 },
+  { id: 'mem-001', name: 'RO Membrane 80 GPD', price: 3200 },
+  { id: 'mem-002', name: 'RO Membrane 110 GPD', price: 3800 },
+  { id: 'mem-003', name: 'RO Membrane 120 GPD', price: 4200 },
 
   // Post Filters
-  { id: 'post-001', name: 'Post Carbon Filter - 10 inch', price: 550 },
-  { id: 'post-002', name: 'Post Carbon Filter - 20 inch', price: 780 },
+  { id: 'post-001', name: 'Post Carbon Filter - 10 inch', price: 800 },
+  { id: 'post-002', name: 'Post Carbon Filter - 20 inch', price: 800 },
   { id: 'post-003', name: 'Mineral Filter', price: 660 },
   { id: 'post-004', name: 'Alkaline Filter', price: 880 },
   { id: 'post-005', name: 'TDS Controller Filter', price: 820 },
-  { id: 'post-006', name: 'Post Carbon Filter - 5 inch', price: 390 },
-  { id: 'post-007', name: 'Post Carbon Filter - 15 inch', price: 660 },
+  { id: 'post-006', name: 'Post Carbon Filter - 5 inch', price: 800 },
+  { id: 'post-007', name: 'Post Carbon Filter - 15 inch', price: 800 },
 
   // UV Filters
   { id: 'uv-001', name: 'UV Lamp 11W', price: 1350 },
