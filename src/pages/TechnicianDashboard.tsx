@@ -430,7 +430,8 @@ const TechnicianDashboard = () => {
   const [commonQrCodes, setCommonQrCodes] = useState<CommonQrCode[]>([]);
   const [allCommonQrCodes, setAllCommonQrCodes] = useState<CommonQrCode[]>([]); // Store all QR codes
   const [technicians, setTechnicians] = useState<any[]>([]);
-  const [allTechnicians, setAllTechnicians] = useState<any[]>([]); // Store all technicians
+  const [allTechnicians, setAllTechnicians] = useState<any[]>([]); // Store all technicians (filtered for QR codes)
+  const [allTechniciansForReports, setAllTechniciansForReports] = useState<any[]>([]); // Store ALL technicians for reports lookup
   const [technicianVisibleQrCodes, setTechnicianVisibleQrCodes] = useState<string[]>([]); // Current technician's visibility settings
   const [paymentScreenshot, setPaymentScreenshot] = useState<string>('');
   const [isSubmittingJobCompletion, setIsSubmittingJobCompletion] = useState(false);
@@ -679,6 +680,15 @@ const TechnicianDashboard = () => {
         let rawVisibleQrCodes: any = null; // Store raw value to distinguish null/undefined from empty array
         
         if (allTechniciansResult.data) {
+          // Store ALL technicians for reports lookup (not filtered)
+          const allTechniciansForReportsData = allTechniciansResult.data.map((tech: any) => ({
+            id: tech.id,
+            fullName: tech.full_name,
+            full_name: tech.full_name // Keep both for compatibility
+          }));
+          setAllTechniciansForReports(allTechniciansForReportsData);
+          
+          // Filter only those with QR codes for QR code selection
           allTechniciansData = allTechniciansResult.data
             .filter((tech: any) => tech.qr_code && tech.qr_code.trim() !== '')
             .map((tech: any) => ({
@@ -7234,7 +7244,27 @@ const TechnicianDashboard = () => {
                         // Extract completion details
                         const completionNotes = (job as any).completion_notes || job.completionNotes || '';
                         const completedAt = (job as any).completed_at || job.completedAt || null;
-                        const formattedCompletedAt = completedAt ? new Date(completedAt).toLocaleString() : null;
+                        // Format date as "January 5th 2026" with 12-hour time format
+                        const formattedCompletedAt = completedAt ? (() => {
+                          const date = new Date(completedAt);
+                          const day = date.getDate();
+                          const month = date.toLocaleString('en-US', { month: 'long' });
+                          const year = date.getFullYear();
+                          // Get ordinal suffix (1st, 2nd, 3rd, 4th, etc.)
+                          const getOrdinalSuffix = (n: number) => {
+                            const s = ['th', 'st', 'nd', 'rd'];
+                            const v = n % 100;
+                            return s[(v - 20) % 10] || s[v] || s[0];
+                          };
+                          // Format time as 12-hour format (5:30 PM)
+                          const hours = date.getHours();
+                          const minutes = date.getMinutes();
+                          const ampm = hours >= 12 ? 'PM' : 'AM';
+                          const displayHours = hours % 12 || 12;
+                          const displayMinutes = minutes.toString().padStart(2, '0');
+                          const timeStr = `${displayHours}:${displayMinutes} ${ampm}`;
+                          return `${month} ${day}${getOrdinalSuffix(day)} ${year} at ${timeStr}`;
+                        })() : null;
                         const completedBy = (job as any).completed_by || job.completedBy || null;
                         const actualCost = (job as any).actual_cost || job.actual_cost || null;
                         const paymentAmount = (job as any).payment_amount || job.payment_amount || null;
@@ -7246,9 +7276,9 @@ const TechnicianDashboard = () => {
                           if (completedBy === 'admin' || completedBy === 'Admin') {
                             completedByName = 'Admin';
                           } else {
-                            // Try to find technician by ID from allTechnicians
-                            const completedByTechnician = allTechnicians.find(tech => tech.id === completedBy);
-                            completedByName = completedByTechnician?.fullName || 'Technician';
+                            // Try to find technician by ID from allTechniciansForReports (includes all technicians, not just those with QR codes)
+                            const completedByTechnician = allTechniciansForReports.find(tech => tech.id === completedBy);
+                            completedByName = completedByTechnician?.fullName || completedByTechnician?.full_name || 'Technician';
                           }
                         }
                         

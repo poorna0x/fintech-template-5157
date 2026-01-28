@@ -123,7 +123,27 @@ const CustomerReportDialog: React.FC<CustomerReportDialogProps> = ({
                 {completedJobs.map((job) => {
                   const completionNotes = (job as any).completion_notes || job.completionNotes || '';
                   const completedAt = (job as any).completed_at || job.completedAt || null;
-                  const formattedCompletedAt = completedAt ? new Date(completedAt).toLocaleString() : null;
+                  // Format date as "January 5th 2026" with 12-hour time format
+                  const formattedCompletedAt = completedAt ? (() => {
+                    const date = new Date(completedAt);
+                    const day = date.getDate();
+                    const month = date.toLocaleString('en-US', { month: 'long' });
+                    const year = date.getFullYear();
+                    // Get ordinal suffix (1st, 2nd, 3rd, 4th, etc.)
+                    const getOrdinalSuffix = (n: number) => {
+                      const s = ['th', 'st', 'nd', 'rd'];
+                      const v = n % 100;
+                      return s[(v - 20) % 10] || s[v] || s[0];
+                    };
+                    // Format time as 12-hour format (5:30 PM)
+                    const hours = date.getHours();
+                    const minutes = date.getMinutes();
+                    const ampm = hours >= 12 ? 'PM' : 'AM';
+                    const displayHours = hours % 12 || 12;
+                    const displayMinutes = minutes.toString().padStart(2, '0');
+                    const timeStr = `${displayHours}:${displayMinutes} ${ampm}`;
+                    return `${month} ${day}${getOrdinalSuffix(day)} ${year} at ${timeStr}`;
+                  })() : null;
                   const completedBy = (job as any).completed_by || job.completedBy || null;
                   const actualCost = (job as any).actual_cost || job.actual_cost || null;
                   const paymentAmount = (job as any).payment_amount || job.payment_amount || null;
