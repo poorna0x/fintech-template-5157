@@ -9,10 +9,11 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from '@/components/ui/command';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { User, Plus, Edit, Trash2, Package, Search, Check, ChevronsUpDown } from 'lucide-react';
+import { User, Plus, Edit, Trash2, Package, Search, Check, ChevronsUpDown, X } from 'lucide-react';
 import { db } from '@/lib/supabase';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
+import { inventoryCache, debounce } from '@/lib/inventoryCache';
 
 interface Technician {
   id: string;
@@ -57,35 +58,90 @@ const TechnicianInventoryManagement: React.FC<TechnicianInventoryManagementProps
     quantity: ''
   });
   const [loading, setLoading] = useState(true);
+  const [itemSearchQuery, setItemSearchQuery] = useState('');
+  const [debouncedItemSearchQuery, setDebouncedItemSearchQuery] = useState('');
   const [inventorySearchOpen, setInventorySearchOpen] = useState(false);
   const [inventorySearchQuery, setInventorySearchQuery] = useState('');
+  const [debouncedInventorySearchQuery, setDebouncedInventorySearchQuery] = useState('');
+  const lastLoadTimeRef = useRef<number>(0);
+  const CACHE_DURATION = 5 * 60 * 1000; // 5 minutes
 
-  // Load technicians
+  // Debounce search queries
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setDebouncedItemSearchQuery(itemSearchQuery);
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [itemSearchQuery]);
+
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setDebouncedInventorySearchQuery(inventorySearchQuery);
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [inventorySearchQuery]);
+
+  // Load technicians with caching
   const loadTechnicians = useCallback(async () => {
+    const cacheKey = 'technicians_list';
+    const cached = inventoryCache.get<Technician[]>(cacheKey);
+    if (cached) {
+      setTechnicians(cached);
+      return;
+    }
+
     try {
       const { data, error } = await db.technicians.getAll();
       if (error) throw error;
-      setTechnicians(data || []);
+      const techData = data || [];
+      setTechnicians(techData);
+      inventoryCache.set(cacheKey, techData);
     } catch (error) {
       console.error('Error loading technicians:', error);
       toast.error('Failed to load technicians');
     }
   }, []);
 
-  // Load inventory items
-  const loadInventoryItems = useCallback(async () => {
+  // Load inventory items with caching
+  const loadInventoryItems = useCallback(async (forceReload = false) => {
+    const cacheKey = 'inventory_items';
+    
+    if (!forceReload) {
+      const cached = inventoryCache.get<InventoryItem[]>(cacheKey);
+      if (cached) {
+        setInventoryItems(cached);
+        return;
+      }
+    }
+
     try {
       const { data, error } = await db.inventory.getAll();
       if (error) throw error;
-      setInventoryItems(data || []);
+      const items = data || [];
+      setInventoryItems(items);
+      inventoryCache.set(cacheKey, items);
     } catch (error) {
       console.error('Error loading inventory:', error);
       toast.error('Failed to load inventory items');
     }
   }, []);
 
-  // Load technician inventory
-  const loadTechnicianInventory = useCallback(async (technicianId?: string) => {
+  // Load technician inventory with caching
+  const loadTechnicianInventory = useCallback(async (technicianId?: string, forceReload = false) => {
+    const cacheKey = technicianId ? `tech_inventory_${technicianId}` : 'all_tech_inventory';
+    const now = Date.now();
+    const cacheValid = now - lastLoadTimeRef.current < CACHE_DURATION;
+
+    // Check cache first
+    if (!forceReload && cacheValid) {
+      const cached = inventoryCache.get<TechnicianInventoryItem[]>(cacheKey);
+      if (cached) {
+        setTechnicianInventory(cached);
+        setLoading(false);
+        return;
+      }
+    }
+
     try {
       setLoading(true);
       let result;
@@ -96,7 +152,10 @@ const TechnicianInventoryManagement: React.FC<TechnicianInventoryManagementProps
       }
       
       if (result.error) throw result.error;
-      setTechnicianInventory(result.data || []);
+      const inventoryData = result.data || [];
+      setTechnicianInventory(inventoryData);
+      inventoryCache.set(cacheKey, inventoryData);
+      lastLoadTimeRef.current = now;
     } catch (error) {
       console.error('Error loading technician inventory:', error);
       toast.error('Failed to load technician inventory');
@@ -121,13 +180,37 @@ const TechnicianInventoryManagement: React.FC<TechnicianInventoryManagementProps
     }
   }, [selectedTechnicianId, loadTechnicianInventory]);
 
-  // Filter technician inventory based on selected technician
+  // Filter technician inventory based on selected technician and item search (using debounced query)
   const filteredInventory = useMemo(() => {
-    if (!selectedTechnicianId) {
-      return technicianInventory;
+    let filtered = technicianInventory;
+    
+    // Filter by technician
+    if (selectedTechnicianId) {
+      filtered = filtered.filter(item => item.technician_id === selectedTechnicianId);
     }
-    return technicianInventory.filter(item => item.technician_id === selectedTechnicianId);
-  }, [technicianInventory, selectedTechnicianId]);
+    
+    // Filter by debounced item search query
+    if (debouncedItemSearchQuery.trim()) {
+      const query = debouncedItemSearchQuery.toLowerCase().trim();
+      filtered = filtered.filter(item => {
+        const inventory = item.inventory;
+        if (!inventory) {
+          const mainItem = inventoryItems.find(i => i.id === item.inventory_id);
+          if (mainItem) {
+            const nameMatch = mainItem.product_name?.toLowerCase().includes(query);
+            const codeMatch = mainItem.code?.toLowerCase().includes(query);
+            return nameMatch || codeMatch;
+          }
+          return false;
+        }
+        const nameMatch = inventory.product_name?.toLowerCase().includes(query);
+        const codeMatch = inventory.code?.toLowerCase().includes(query);
+        return nameMatch || codeMatch;
+      });
+    }
+    
+    return filtered;
+  }, [technicianInventory, selectedTechnicianId, debouncedItemSearchQuery, inventoryItems]);
 
   // Get selected technician name
   const selectedTechnician = useMemo(() => {
@@ -192,11 +275,13 @@ const TechnicianInventoryManagement: React.FC<TechnicianInventoryManagementProps
         toast.success('Inventory item assigned to technician successfully');
       }
 
-      // Reload data
+      // Clear cache and reload data
+      const cacheKey = selectedTechnicianId ? `tech_inventory_${selectedTechnicianId}` : 'all_tech_inventory';
+      inventoryCache.clear(cacheKey);
       if (selectedTechnicianId) {
-        await loadTechnicianInventory(selectedTechnicianId);
+        await loadTechnicianInventory(selectedTechnicianId, true);
       } else {
-        await loadTechnicianInventory();
+        await loadTechnicianInventory(undefined, true);
       }
 
       setAddDialogOpen(false);
@@ -224,11 +309,13 @@ const TechnicianInventoryManagement: React.FC<TechnicianInventoryManagementProps
       if (error) throw error;
       toast.success('Inventory item removed from technician');
 
-      // Reload data
+      // Clear cache and reload data
+      const cacheKey = selectedTechnicianId ? `tech_inventory_${selectedTechnicianId}` : 'all_tech_inventory';
+      inventoryCache.clear(cacheKey);
       if (selectedTechnicianId) {
-        await loadTechnicianInventory(selectedTechnicianId);
+        await loadTechnicianInventory(selectedTechnicianId, true);
       } else {
-        await loadTechnicianInventory();
+        await loadTechnicianInventory(undefined, true);
       }
 
       setDeleteDialogOpen(false);
@@ -260,13 +347,13 @@ const TechnicianInventoryManagement: React.FC<TechnicianInventoryManagementProps
     return counts;
   }, [technicianInventory]);
 
-  // Filter and sort inventory items for search
+  // Filter and sort inventory items for search (using debounced query)
   const filteredInventoryItems = useMemo(() => {
     let filtered = inventoryItems;
     
-    // Filter by search query
-    if (inventorySearchQuery.trim()) {
-      const query = inventorySearchQuery.toLowerCase().trim();
+    // Filter by debounced search query
+    if (debouncedInventorySearchQuery.trim()) {
+      const query = debouncedInventorySearchQuery.toLowerCase().trim();
       filtered = filtered.filter(item => {
         const nameMatch = item.product_name?.toLowerCase().includes(query);
         const codeMatch = item.code?.toLowerCase().includes(query);
@@ -274,18 +361,21 @@ const TechnicianInventoryManagement: React.FC<TechnicianInventoryManagementProps
       });
     }
     
-    // Sort by usage count (most used first), then by name
-    filtered.sort((a, b) => {
-      const aUsage = inventoryUsageCount[a.id] || 0;
-      const bUsage = inventoryUsageCount[b.id] || 0;
-      if (bUsage !== aUsage) {
-        return bUsage - aUsage; // Most used first
-      }
-      return a.product_name.localeCompare(b.product_name);
-    });
+    // Sort by usage count (most used first), then by name (only if needed)
+    if (filtered.length > 0) {
+      filtered = [...filtered].sort((a, b) => {
+        const aUsage = inventoryUsageCount[a.id] || 0;
+        const bUsage = inventoryUsageCount[b.id] || 0;
+        if (bUsage !== aUsage) {
+          return bUsage - aUsage; // Most used first
+        }
+        return a.product_name.localeCompare(b.product_name);
+      });
+    }
     
-    return filtered;
-  }, [inventoryItems, inventorySearchQuery, inventoryUsageCount]);
+    // Limit results for performance
+    return filtered.slice(0, 20);
+  }, [inventoryItems, debouncedInventorySearchQuery, inventoryUsageCount]);
 
   // Get selected inventory item name
   const selectedInventoryName = useMemo(() => {
@@ -330,6 +420,37 @@ const TechnicianInventoryManagement: React.FC<TechnicianInventoryManagementProps
               <Plus className="w-4 h-4 mr-2" />
               Assign Inventory
             </Button>
+          </div>
+
+          {/* Item Search */}
+          <div>
+            <Label htmlFor="item-search">Search Items</Label>
+            <div className="relative">
+              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
+              <Input
+                id="item-search"
+                type="text"
+                placeholder="Search by product name or code..."
+                value={itemSearchQuery}
+                onChange={(e) => setItemSearchQuery(e.target.value)}
+                className="pl-10 pr-10"
+              />
+              {itemSearchQuery && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => setItemSearchQuery('')}
+                  className="absolute right-1 top-1/2 transform -translate-y-1/2 h-7 w-7 p-0"
+                >
+                  <X className="w-4 h-4" />
+                </Button>
+              )}
+            </div>
+            {itemSearchQuery && (
+              <p className="text-xs text-gray-500 mt-1">
+                {filteredInventory.length} item{filteredInventory.length !== 1 ? 's' : ''} found
+              </p>
+            )}
           </div>
 
           {/* Summary */}

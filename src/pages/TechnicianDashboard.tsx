@@ -44,7 +44,8 @@ import {
   FileText,
   Star,
   Receipt,
-  QrCode
+  QrCode,
+  Package
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { db, supabase } from '@/lib/supabase';
@@ -60,6 +61,7 @@ import { processQueuedPhotos, startRetryProcessing, setupOnlineListener, stopRet
 import { getQueuedPhotosCount } from '@/lib/offlinePhotoQueue';
 import { saveJobCompletionProgress, getQueuedCompletionForJob } from '@/lib/offlineJobCompletion';
 import { withTimeout, isSlowNetworkError, isTimeoutError } from '@/lib/networkTimeout';
+import TechnicianInventoryView from '@/components/TechnicianInventoryView';
 
 // Bangalore areas list for location extraction
 const bangaloreAreas = [
@@ -444,6 +446,7 @@ const TechnicianDashboard = () => {
 
   // Technician ID Card QR Code Dialog
   const [technicianIdCardDialogOpen, setTechnicianIdCardDialogOpen] = useState(false);
+  const [inventoryDialogOpen, setInventoryDialogOpen] = useState(false);
 
   // Photos dialog state
   const [photosDialogOpen, setPhotosDialogOpen] = useState(false);
@@ -3981,6 +3984,14 @@ const TechnicianDashboard = () => {
                 >
                   <QrCode className="w-4 h-4 mr-2" />
                   Show ID Card QR
+                </DropdownMenuItem>
+                <DropdownMenuItem 
+                  onClick={() => {
+                    setInventoryDialogOpen(true);
+                  }}
+                >
+                  <Package className="w-4 h-4 mr-2" />
+                  My Inventory
                 </DropdownMenuItem>
                 <DropdownMenuItem onClick={logout}>
                   <LogOut className="w-4 h-4 mr-2" />
@@ -7726,6 +7737,21 @@ const TechnicianDashboard = () => {
       </Dialog>
 
       {/* Technician ID Card QR Code Dialog */}
+      {/* Inventory Dialog */}
+      {user && (
+        <Dialog open={inventoryDialogOpen} onOpenChange={setInventoryDialogOpen}>
+          <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto p-0">
+            <DialogHeader className="sr-only">
+              <DialogTitle>My Inventory</DialogTitle>
+            </DialogHeader>
+            <TechnicianInventoryView 
+              technicianId={user.technicianId || user.id} 
+              onClose={() => setInventoryDialogOpen(false)}
+            />
+          </DialogContent>
+        </Dialog>
+      )}
+
       <Dialog open={technicianIdCardDialogOpen} onOpenChange={setTechnicianIdCardDialogOpen}>
         <DialogContent className="max-w-md">
           <DialogHeader>

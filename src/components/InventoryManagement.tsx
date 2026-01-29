@@ -218,6 +218,20 @@ const InventoryManagement: React.FC<InventoryManagementProps> = ({ onBack }) => 
         return;
       }
 
+      // Check for duplicate product code (only if code is provided)
+      if (inventoryFormData.code && inventoryFormData.code.trim()) {
+        const codeToCheck = inventoryFormData.code.trim();
+        const existingItem = inventoryItems.find(
+          item => item.code && item.code.toLowerCase() === codeToCheck.toLowerCase() && 
+          (!editInventoryDialogOpen || item.id !== selectedInventoryItem?.id)
+        );
+        
+        if (existingItem) {
+          toast.error(`Product code "${codeToCheck}" already exists. Please use a different code.`);
+          return;
+        }
+      }
+
       if (editInventoryDialogOpen && selectedInventoryItem) {
         const { error } = await db.inventory.update(selectedInventoryItem.id, {
           product_name: inventoryFormData.product_name,
@@ -226,7 +240,14 @@ const InventoryManagement: React.FC<InventoryManagementProps> = ({ onBack }) => 
           quantity: quantity
         });
 
-        if (error) throw error;
+        if (error) {
+          // Check if it's a unique constraint violation
+          if (error.message?.includes('unique') || error.message?.includes('duplicate')) {
+            toast.error('Product code already exists. Please use a different code.');
+            return;
+          }
+          throw error;
+        }
         toast.success('Inventory item updated successfully');
         setEditInventoryDialogOpen(false);
       } else {
@@ -237,7 +258,14 @@ const InventoryManagement: React.FC<InventoryManagementProps> = ({ onBack }) => 
           quantity: quantity
         });
 
-        if (error) throw error;
+        if (error) {
+          // Check if it's a unique constraint violation
+          if (error.message?.includes('unique') || error.message?.includes('duplicate')) {
+            toast.error('Product code already exists. Please use a different code.');
+            return;
+          }
+          throw error;
+        }
         toast.success('Inventory item added successfully');
         setAddInventoryDialogOpen(false);
       }

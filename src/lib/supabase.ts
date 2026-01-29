@@ -2324,9 +2324,10 @@ export const db = {
   // Inventory operations
   inventory: {
     async getAll() {
+      // Only select needed fields to reduce egress
       const { data, error } = await supabase
         .from('inventory')
-        .select('*')
+        .select('id, product_name, code, price, quantity, created_at, updated_at')
         .order('created_at', { ascending: false });
       
       return { data, error };
@@ -2403,12 +2404,18 @@ export const db = {
   // Technician Inventory operations
   technicianInventory: {
     async getAll() {
+      // Only select needed fields to reduce egress
       const { data, error } = await supabase
         .from('technician_inventory')
         .select(`
-          *,
+          id,
+          technician_id,
+          inventory_id,
+          quantity,
+          created_at,
+          updated_at,
           technician:technicians(id, full_name, employee_id),
-          inventory:inventory(id, product_name, code, price)
+          inventory:inventory(id, product_name, code)
         `)
         .order('created_at', { ascending: false });
       
@@ -2416,12 +2423,18 @@ export const db = {
     },
 
     async getByTechnician(technicianId: string) {
+      // Only select needed fields to reduce egress
       const { data, error } = await supabase
         .from('technician_inventory')
         .select(`
-          *,
+          id,
+          technician_id,
+          inventory_id,
+          quantity,
+          created_at,
+          updated_at,
           technician:technicians(id, full_name, employee_id),
-          inventory:inventory(id, product_name, code, price)
+          inventory:inventory(id, product_name, code)
         `)
         .eq('technician_id', technicianId)
         .order('created_at', { ascending: false });
