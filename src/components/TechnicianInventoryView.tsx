@@ -302,17 +302,24 @@ const TechnicianInventoryView: React.FC<TechnicianInventoryViewProps> = ({ techn
         await loadMainInventory(true);
       }
       
-      // Get ALL parts used by this technician (no date filter)
-      const { data: allPartsUsed, error } = await db.jobPartsUsed.getByTechnician(technicianId);
+      // Fetch technician inventory and parts used in parallel so we filter with fresh data
+      const [invResult, partsResult] = await Promise.all([
+        db.technicianInventory.getByTechnician(technicianId),
+        db.jobPartsUsed.getByTechnician(technicianId),
+      ]);
+      const { data: currentTechInventory } = invResult;
+      const allPartsUsed = partsResult.data;
+      const { error } = partsResult;
+
       if (error) throw error;
-      
       if (!allPartsUsed || allPartsUsed.length === 0) {
         toast.info('No items have been used yet');
         return;
       }
-      
+
+      const currentInventory = currentTechInventory || [];
+
       // Group by inventory_id and sum quantities
-      // Sort by most recent date first (so today's items appear first if checked today)
       const groupedItems = new Map<string, {
         inventory_id: string;
         quantity_used: number;
@@ -325,7 +332,6 @@ const TechnicianInventoryView: React.FC<TechnicianInventoryViewProps> = ({ techn
         if (groupedItems.has(key)) {
           const existing = groupedItems.get(key)!;
           existing.quantity_used += part.quantity_used;
-          // Keep the most recent created_at (so we can sort by date)
           if (new Date(part.created_at) > new Date(existing.created_at)) {
             existing.created_at = part.created_at;
           }
@@ -338,16 +344,18 @@ const TechnicianInventoryView: React.FC<TechnicianInventoryViewProps> = ({ techn
           });
         }
       });
-      
-      // Convert to array and sort by most recent date first
-      // This way, if technician checks today, today's items appear first
-      // If they check after a month, all items are still available, sorted by most recent
-      const itemsArray = Array.from(groupedItems.values()).sort((a, b) => {
-        return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
-      });
+
+      // Only show items that still need topping up: technician's current qty < total used
+      // (once they've topped up, current >= used so item won't show again when they reopen Top Up)
+      const itemsArray = Array.from(groupedItems.values())
+        .filter((item) => {
+          const currentQty = currentInventory.find((i: any) => i.inventory_id === item.inventory_id)?.quantity ?? 0;
+          return currentQty < item.quantity_used;
+        })
+        .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
       
       if (itemsArray.length === 0) {
-        toast.info('No items to top up');
+        toast.info('No items to top up — all used items are already topped up');
         return;
       }
       
@@ -380,15 +388,8 @@ const TechnicianInventoryView: React.FC<TechnicianInventoryViewProps> = ({ techn
       }
       
       if (mainItem.quantity < currentItem.quantity_used) {
-        toast.error(`Insufficient stock. Available: ${mainItem.quantity}, Needed: ${currentItem.quantity_used}`);
-        // Skip to next item
-        if (currentTopUpIndex < topUpItems.length - 1) {
-          setCurrentTopUpIndex(currentTopUpIndex + 1);
-        } else {
-          setTopUpDialogOpen(false);
-          setTopUpItems([]);
-          setCurrentTopUpIndex(0);
-        }
+        toast.error(`Insufficient stock in main inventory. Available: ${mainItem.quantity}, needed: ${currentItem.quantity_used}. Top up cannot proceed until stock is added.`);
+        // Stay on same item — don't advance; user must skip or add stock first
         return;
       }
       
