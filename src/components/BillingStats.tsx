@@ -68,6 +68,13 @@ const BillingStats = () => {
   const [technicianBilling, setTechnicianBilling] = useState<TechnicianBilling[]>([]);
   const [leadTypeBilling, setLeadTypeBilling] = useState<LeadTypeBilling[]>([]);
   const [loading, setLoading] = useState(true);
+  const [summary, setSummary] = useState<{
+    revenue: number;
+    leadCost: number;
+    sparePartsCost: number;
+    commission10: number;
+    profit: number;
+  }>({ revenue: 0, leadCost: 0, sparePartsCost: 0, commission10: 0, profit: 0 });
 
   useEffect(() => {
     loadBillingStats();
@@ -131,6 +138,7 @@ const BillingStats = () => {
           payment_method,
           status,
           assigned_technician_id,
+          lead_cost,
           technician:technicians(
             id,
             full_name,
@@ -255,6 +263,23 @@ const BillingStats = () => {
       setTechnicianBilling(Object.values(techTotals));
       setQrCodeBilling(Object.values(qrTotals));
       setLeadTypeBilling(Object.values(leadTotals));
+
+      // Summary: revenue - (10% commission + spare parts + lead cost) = profit
+      const revenue = jobs.reduce((sum: number, j: any) => sum + (Number(j.payment_amount) || Number(j.actual_cost) || 0), 0);
+      const leadCost = jobs.reduce((sum: number, j: any) => sum + (Number(j.lead_cost) || 0), 0);
+      const jobIds = jobs.map((j: any) => j.id).filter(Boolean);
+      let sparePartsCost = 0;
+      if (jobIds.length > 0) {
+        const { data: partsUsed } = await db.jobPartsUsed.getWithPriceByJobIds(jobIds);
+        sparePartsCost = (partsUsed || []).reduce((s: number, row: any) => {
+          const qty = Number(row.quantity_used) || 0;
+          const price = Number(row.inventory?.price) ?? 0;
+          return s + qty * price;
+        }, 0);
+      }
+      const commission10 = revenue * 0.1;
+      const profit = revenue - commission10 - sparePartsCost - leadCost;
+      setSummary({ revenue, leadCost, sparePartsCost, commission10, profit });
     } catch (error: any) {
       console.error('Error loading billing stats:', error);
       toast.error('Failed to load billing stats: ' + error.message);
@@ -564,6 +589,58 @@ const BillingStats = () => {
                 )}
               </TableBody>
             </Table>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Revenue & Profit Summary */}
+      <Card className="border-2 border-blue-200 bg-blue-50/30">
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2 text-lg">
+            <DollarSign className="w-5 h-5" />
+            Revenue & Profit Summary
+            <span className="text-sm font-normal text-gray-500">
+              ({dateFilter === 'today'
+                ? new Date(selectedDate).toLocaleDateString()
+                : dateFilter === 'thismonth'
+                ? 'This month'
+                : dateFilter === 'last30days'
+                ? 'Last 30 days'
+                : dateFilter === 'year'
+                ? `Year ${new Date().getFullYear()}`
+                : dateFilter === 'range'
+                ? `${new Date(startDate).toLocaleDateString()} – ${new Date(endDate).toLocaleDateString()}`
+                : 'All time'})
+            </span>
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="space-y-4">
+            <div className="flex justify-between items-center">
+              <span className="text-gray-700 font-medium">Total Revenue</span>
+              <span className="text-xl font-bold text-green-600">₹ {formatCurrency(summary.revenue)}</span>
+            </div>
+            <div className="border-t pt-3 space-y-2 text-sm text-gray-600">
+              <div className="flex justify-between">
+                <span>− 10% Commission</span>
+                <span className="font-medium text-red-600">₹ {formatCurrency(summary.commission10)}</span>
+              </div>
+              <div className="flex justify-between">
+                <span>− Spare Parts</span>
+                <span className="font-medium text-red-600">₹ {formatCurrency(summary.sparePartsCost)}</span>
+              </div>
+              <div className="flex justify-between">
+                <span>− Lead Cost</span>
+                <span className="font-medium text-red-600">₹ {formatCurrency(summary.leadCost)}</span>
+              </div>
+            </div>
+            <div className="border-t pt-3 flex justify-between items-center">
+              <span className="font-semibold text-gray-800">Profit</span>
+              <span className={`text-2xl font-bold ${summary.profit >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                ₹ {formatCurrency(summary.profit)}
+              </span>
+            </div>
+            <p className="text-xs text-gray-500">Profit = Revenue − 10% commission − spare parts − lead cost</p>
           </div>
         </CardContent>
       </Card>
