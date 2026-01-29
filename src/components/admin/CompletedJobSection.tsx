@@ -1,9 +1,10 @@
-import React from 'react';
-import { CheckCircle, Edit } from 'lucide-react';
+import React, { useState } from 'react';
+import { CheckCircle, Edit, Package } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Job, Technician } from '@/types';
 import { WhatsAppIcon } from '../WhatsAppIcon';
 import { findLeadSource } from '@/lib/adminUtils';
+import JobPartsUsedDialog from './JobPartsUsedDialog';
 
 interface CompletedJobSectionProps {
   job: Job;
@@ -52,9 +53,15 @@ export const CompletedJobSection: React.FC<CompletedJobSectionProps> = ({
   setSelectedPhoto,
   setPhotoViewerOpen,
 }) => {
+  const [partsUsedDialogOpen, setPartsUsedDialogOpen] = useState(false);
+  
   if (job.status !== 'COMPLETED') return null;
 
   const leadSource = findLeadSource(requirements);
+  
+  // Find assigned technician
+  const assignedTechnicianId = (job as any).assigned_technician_id || (job as any).assignedTechnicianId;
+  const assignedTechnician = technicians.find(t => t.id === assignedTechnicianId) || null;
   const messageSent = requirements.some((r: any) => {
     if (r && typeof r === 'object') {
       return r.message_sent === true || r.message_sent === 'true';
@@ -320,8 +327,31 @@ export const CompletedJobSection: React.FC<CompletedJobSectionProps> = ({
             <WhatsAppIcon className="w-3 h-3 mr-1" />
             {messageSent ? 'Send Again' : 'Send Message'}
           </Button>
+          {assignedTechnician && (
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => {
+                setPartsUsedDialogOpen(true);
+              }}
+              className="text-xs flex-1 sm:flex-none"
+            >
+              <Package className="w-3 h-3 mr-1" />
+              Add Parts
+            </Button>
+          )}
         </div>
       </div>
+      
+      {/* Parts Used Dialog */}
+      {assignedTechnician && (
+        <JobPartsUsedDialog
+          open={partsUsedDialogOpen}
+          onOpenChange={setPartsUsedDialogOpen}
+          job={job}
+          technician={assignedTechnician}
+        />
+      )}
     </div>
   );
 };

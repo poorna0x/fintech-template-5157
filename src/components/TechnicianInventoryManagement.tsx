@@ -398,12 +398,21 @@ const TechnicianInventoryManagement: React.FC<TechnicianInventoryManagementProps
           <div className="flex flex-col sm:flex-row gap-4 items-start sm:items-end">
             <div className="flex-1">
               <Label htmlFor="technician-select">Filter by Technician</Label>
-              <Select value={selectedTechnicianId || "all"} onValueChange={(value) => setSelectedTechnicianId(value === "all" ? "" : value)}>
+              <Select 
+                value={selectedTechnicianId || undefined} 
+                onValueChange={(value) => {
+                  if (value === "__all__" || !value) {
+                    setSelectedTechnicianId("");
+                  } else {
+                    setSelectedTechnicianId(value);
+                  }
+                }}
+              >
                 <SelectTrigger id="technician-select" className="w-full">
                   <SelectValue placeholder="All Technicians" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="all">All Technicians</SelectItem>
+                  <SelectItem value="__all__">All Technicians</SelectItem>
                   {technicians.length > 0 ? (
                     technicians.map(tech => (
                       <SelectItem key={tech.id} value={tech.id}>

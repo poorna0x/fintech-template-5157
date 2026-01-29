@@ -2533,6 +2533,96 @@ export const db = {
       
       return { data, error };
     }
+  },
+
+  // Job Parts Used operations
+  jobPartsUsed: {
+    async getByJob(jobId: string) {
+      const { data, error } = await supabase
+        .from('job_parts_used')
+        .select(`
+          id,
+          job_id,
+          technician_id,
+          inventory_id,
+          quantity_used,
+          created_at,
+          inventory:inventory(id, product_name, code)
+        `)
+        .eq('job_id', jobId)
+        .order('created_at', { ascending: false });
+      
+      return { data, error };
+    },
+
+    async getByTechnician(technicianId: string) {
+      const { data, error } = await supabase
+        .from('job_parts_used')
+        .select(`
+          id,
+          job_id,
+          technician_id,
+          inventory_id,
+          quantity_used,
+          created_at,
+          inventory:inventory(id, product_name, code)
+        `)
+        .eq('technician_id', technicianId)
+        .order('created_at', { ascending: false });
+      
+      return { data, error };
+    },
+
+    async create(part: { job_id: string; technician_id: string; inventory_id: string; quantity_used: number }) {
+      const { data, error } = await supabase
+        .from('job_parts_used')
+        .insert({
+          job_id: part.job_id,
+          technician_id: part.technician_id,
+          inventory_id: part.inventory_id,
+          quantity_used: part.quantity_used
+        })
+        .select(`
+          id,
+          job_id,
+          technician_id,
+          inventory_id,
+          quantity_used,
+          created_at,
+          inventory:inventory(id, product_name, code)
+        `)
+        .single();
+      
+      return { data, error };
+    },
+
+    async update(id: string, updates: { quantity_used?: number }) {
+      const { data, error } = await supabase
+        .from('job_parts_used')
+        .update(updates)
+        .eq('id', id)
+        .select(`
+          id,
+          job_id,
+          technician_id,
+          inventory_id,
+          quantity_used,
+          created_at,
+          inventory:inventory(id, product_name, code)
+        `)
+        .single();
+      
+      return { data, error };
+    },
+
+    async delete(id: string) {
+      const { error } = await supabase
+        .from('job_parts_used')
+        .delete()
+        .eq('id', id);
+      
+      return { error };
+    }
   }
 };
 
