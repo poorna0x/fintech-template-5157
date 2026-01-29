@@ -7,7 +7,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from '@/components/ui/command';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { Package, Plus, Search, Check, ChevronsUpDown, RefreshCw, X } from 'lucide-react';
+import { Package, Plus, Search, Check, ChevronsUpDown, RefreshCw, X, ArrowUpCircle } from 'lucide-react';
 import { db } from '@/lib/supabase';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
@@ -49,6 +49,16 @@ const TechnicianInventoryView: React.FC<TechnicianInventoryViewProps> = ({ techn
   const [debouncedSearchQuery, setDebouncedSearchQuery] = useState('');
   const [loading, setLoading] = useState(true);
   const [mainInventoryLoading, setMainInventoryLoading] = useState(false);
+  const [topUpDialogOpen, setTopUpDialogOpen] = useState(false);
+  const [topUpItems, setTopUpItems] = useState<Array<{
+    id: string;
+    inventory_id: string;
+    quantity_used: number;
+    created_at: string;
+    inventory?: { id: string; product_name: string; code: string | null };
+  }>>([]);
+  const [currentTopUpIndex, setCurrentTopUpIndex] = useState(0);
+  const [topUpLoading, setTopUpLoading] = useState(false);
   const lastLoadTimeRef = useRef<number>(0);
   const CACHE_DURATION = 5 * 60 * 1000; // 5 minutes
 
@@ -265,6 +275,181 @@ const TechnicianInventoryView: React.FC<TechnicianInventoryViewProps> = ({ techn
     return item ? `${item.product_name}${item.code ? ` (${item.code})` : ''}` : 'Unknown';
   };
 
+  // Handle top up - load items used yesterday or today
+  const handleTopUp = async () => {
+    try {
+      setTopUpLoading(true);
+      
+      // Ensure main inventory is loaded
+      if (mainInventory.length === 0) {
+        await loadMainInventory(true);
+      }
+      
+      // Get yesterday's date (default) and today's date
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      const yesterday = new Date(today);
+      yesterday.setDate(yesterday.getDate() - 1);
+      
+      // Get parts used by this technician
+      const { data: allPartsUsed, error } = await db.jobPartsUsed.getByTechnician(technicianId);
+      if (error) throw error;
+      
+      if (!allPartsUsed || allPartsUsed.length === 0) {
+        toast.info('No items used in the last 2 days');
+        return;
+      }
+      
+      // Filter items used yesterday or today
+      const recentItems = allPartsUsed.filter((part: any) => {
+        const partDate = new Date(part.created_at);
+        partDate.setHours(0, 0, 0, 0);
+        return partDate.getTime() === yesterday.getTime() || partDate.getTime() === today.getTime();
+      });
+      
+      if (recentItems.length === 0) {
+        toast.info('No items used yesterday or today');
+        return;
+      }
+      
+      // Group by inventory_id and sum quantities
+      const groupedItems = new Map<string, {
+        inventory_id: string;
+        quantity_used: number;
+        created_at: string;
+        inventory?: { id: string; product_name: string; code: string | null };
+      }>();
+      
+      recentItems.forEach((part: any) => {
+        const key = part.inventory_id;
+        if (groupedItems.has(key)) {
+          const existing = groupedItems.get(key)!;
+          existing.quantity_used += part.quantity_used;
+          // Keep the most recent created_at
+          if (new Date(part.created_at) > new Date(existing.created_at)) {
+            existing.created_at = part.created_at;
+          }
+        } else {
+          groupedItems.set(key, {
+            inventory_id: part.inventory_id,
+            quantity_used: part.quantity_used,
+            created_at: part.created_at,
+            inventory: part.inventory
+          });
+        }
+      });
+      
+      const itemsArray = Array.from(groupedItems.values());
+      
+      if (itemsArray.length === 0) {
+        toast.info('No items to top up');
+        return;
+      }
+      
+      setTopUpItems(itemsArray);
+      setCurrentTopUpIndex(0);
+      setTopUpDialogOpen(true);
+    } catch (error: any) {
+      console.error('Error loading top up items:', error);
+      toast.error(error?.message || 'Failed to load used items');
+    } finally {
+      setTopUpLoading(false);
+    }
+  };
+
+  // Handle confirm top up for current item
+  const handleConfirmTopUp = async () => {
+    if (currentTopUpIndex >= topUpItems.length) return;
+    
+    const currentItem = topUpItems[currentTopUpIndex];
+    if (!currentItem) return;
+    
+    try {
+      setTopUpLoading(true);
+      
+      // Check available quantity in main inventory
+      const mainItem = mainInventory.find(i => i.id === currentItem.inventory_id);
+      if (!mainItem) {
+        toast.error('Product not found in main inventory');
+        return;
+      }
+      
+      if (mainItem.quantity < currentItem.quantity_used) {
+        toast.error(`Insufficient stock. Available: ${mainItem.quantity}, Needed: ${currentItem.quantity_used}`);
+        // Skip to next item
+        if (currentTopUpIndex < topUpItems.length - 1) {
+          setCurrentTopUpIndex(currentTopUpIndex + 1);
+        } else {
+          setTopUpDialogOpen(false);
+          setTopUpItems([]);
+          setCurrentTopUpIndex(0);
+        }
+        return;
+      }
+      
+      // Check if technician already has this item
+      const existingItem = myInventory.find(item => item.inventory_id === currentItem.inventory_id);
+      
+      if (existingItem) {
+        // Update existing quantity
+        const newQuantity = existingItem.quantity + currentItem.quantity_used;
+        const { error } = await db.technicianInventory.update(existingItem.id, {
+          quantity: newQuantity
+        });
+        if (error) throw error;
+      } else {
+        // Create new assignment
+        const { error } = await db.technicianInventory.upsert({
+          technician_id: technicianId,
+          inventory_id: currentItem.inventory_id,
+          quantity: currentItem.quantity_used
+        });
+        if (error) throw error;
+      }
+      
+      // Subtract from main inventory
+      const newMainQuantity = mainItem.quantity - currentItem.quantity_used;
+      const { error: updateMainError } = await db.inventory.update(currentItem.inventory_id, {
+        quantity: newMainQuantity
+      });
+      if (updateMainError) throw updateMainError;
+      
+      toast.success(`Added ${currentItem.quantity_used} ${currentItem.inventory?.product_name || 'items'}`);
+      
+      // Reload inventories
+      inventoryCache.clear(`tech_inventory_${technicianId}`);
+      inventoryCache.clear('main_inventory');
+      await loadMyInventory(true);
+      await loadMainInventory(true);
+      
+      // Move to next item or close
+      if (currentTopUpIndex < topUpItems.length - 1) {
+        setCurrentTopUpIndex(currentTopUpIndex + 1);
+      } else {
+        toast.success('All items topped up successfully!');
+        setTopUpDialogOpen(false);
+        setTopUpItems([]);
+        setCurrentTopUpIndex(0);
+      }
+    } catch (error: any) {
+      console.error('Error topping up item:', error);
+      toast.error(error?.message || 'Failed to top up item');
+    } finally {
+      setTopUpLoading(false);
+    }
+  };
+
+  // Handle skip top up item
+  const handleSkipTopUp = () => {
+    if (currentTopUpIndex < topUpItems.length - 1) {
+      setCurrentTopUpIndex(currentTopUpIndex + 1);
+    } else {
+      setTopUpDialogOpen(false);
+      setTopUpItems([]);
+      setCurrentTopUpIndex(0);
+    }
+  };
+
   return (
     <div className="space-y-4 sm:space-y-6">
       <Card>
@@ -308,6 +493,14 @@ const TechnicianInventoryView: React.FC<TechnicianInventoryViewProps> = ({ techn
               <Button onClick={handleRequestInventory} className="w-full sm:w-auto">
                 <Plus className="w-4 h-4 sm:mr-2" />
                 <span className="sm:inline">Add from Main Inventory</span>
+              </Button>
+              <Button 
+                onClick={handleTopUp} 
+                variant="outline"
+                className="w-full sm:w-auto"
+              >
+                <ArrowUpCircle className="w-4 h-4 sm:mr-2" />
+                <span className="sm:inline">Top Up Used Items</span>
               </Button>
             </div>
           </div>
@@ -477,6 +670,76 @@ const TechnicianInventoryView: React.FC<TechnicianInventoryViewProps> = ({ techn
             </Button>
             <Button onClick={handleSubmitRequest} disabled={!requestFormData.inventory_id || !requestFormData.quantity}>
               Add Inventory
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Top Up Dialog - Shows items one by one */}
+      <Dialog open={topUpDialogOpen} onOpenChange={(open) => {
+        if (!open) {
+          setTopUpDialogOpen(false);
+          setTopUpItems([]);
+          setCurrentTopUpIndex(0);
+        }
+      }}>
+        <DialogContent className="sm:max-w-[500px]">
+          <DialogHeader>
+            <DialogTitle className="text-base sm:text-lg">
+              Top Up Used Items ({currentTopUpIndex + 1} of {topUpItems.length})
+            </DialogTitle>
+            <DialogDescription className="text-xs sm:text-sm">
+              Review and confirm items you used yesterday or today
+            </DialogDescription>
+          </DialogHeader>
+          {topUpItems.length > 0 && currentTopUpIndex < topUpItems.length && (
+            <div className="space-y-4 py-4">
+              <div className="border rounded-lg p-4 bg-gray-50">
+                <div className="space-y-2">
+                  <div>
+                    <Label className="text-sm font-medium text-gray-600">Product</Label>
+                    <p className="text-base font-semibold mt-1">
+                      {topUpItems[currentTopUpIndex].inventory?.product_name || 'Unknown Product'}
+                    </p>
+                    {topUpItems[currentTopUpIndex].inventory?.code && (
+                      <p className="text-sm text-gray-500">Code: {topUpItems[currentTopUpIndex].inventory.code}</p>
+                    )}
+                  </div>
+                  <div>
+                    <Label className="text-sm font-medium text-gray-600">Quantity Used</Label>
+                    <p className="text-lg font-bold text-blue-600 mt-1">
+                      {topUpItems[currentTopUpIndex].quantity_used}
+                    </p>
+                  </div>
+                  <div>
+                    <Label className="text-sm font-medium text-gray-600">Date Used</Label>
+                    <p className="text-sm text-gray-600 mt-1">
+                      {new Date(topUpItems[currentTopUpIndex].created_at).toLocaleDateString('en-US', {
+                        weekday: 'short',
+                        year: 'numeric',
+                        month: 'short',
+                        day: 'numeric'
+                      })}
+                    </p>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+          <DialogFooter>
+            <Button 
+              variant="outline" 
+              onClick={handleSkipTopUp}
+              disabled={topUpLoading}
+            >
+              {currentTopUpIndex < topUpItems.length - 1 ? 'Skip' : 'Close'}
+            </Button>
+            <Button 
+              onClick={handleConfirmTopUp} 
+              disabled={topUpLoading || topUpItems.length === 0}
+              className="bg-blue-600 hover:bg-blue-700"
+            >
+              {topUpLoading ? 'Adding...' : 'Add to Inventory'}
             </Button>
           </DialogFooter>
         </DialogContent>

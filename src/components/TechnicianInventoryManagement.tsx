@@ -9,7 +9,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from '@/components/ui/command';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { User, Plus, Edit, Trash2, Package, Search, Check, ChevronsUpDown, X } from 'lucide-react';
+import { User, Plus, Edit, Trash2, Package, Search, Check, ChevronsUpDown, X, RefreshCw } from 'lucide-react';
 import { db } from '@/lib/supabase';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
@@ -164,19 +164,21 @@ const TechnicianInventoryManagement: React.FC<TechnicianInventoryManagementProps
     }
   }, []);
 
-  // Load data on mount
+  // Load data on mount - only load technicians and inventory items (not technician inventory)
   useEffect(() => {
     loadTechnicians();
     loadInventoryItems();
-    loadTechnicianInventory();
-  }, [loadTechnicians, loadInventoryItems, loadTechnicianInventory]);
+    // Don't load technician inventory by default - only when technician is selected
+  }, [loadTechnicians, loadInventoryItems]);
 
-  // Reload when technician filter changes
+  // Reload when technician filter changes - only load if technician is selected
   useEffect(() => {
     if (selectedTechnicianId) {
       loadTechnicianInventory(selectedTechnicianId);
     } else {
-      loadTechnicianInventory();
+      // Clear inventory when no technician selected
+      setTechnicianInventory([]);
+      setLoading(false);
     }
   }, [selectedTechnicianId, loadTechnicianInventory]);
 
@@ -217,6 +219,37 @@ const TechnicianInventoryManagement: React.FC<TechnicianInventoryManagementProps
     if (!selectedTechnicianId) return null;
     return technicians.find(t => t.id === selectedTechnicianId);
   }, [technicians, selectedTechnicianId]);
+
+  // Group inventory by technician for display (to show technician name only once per group)
+  const groupedInventory = useMemo(() => {
+    if (!selectedTechnicianId) {
+      // Group by technician when showing all
+      const groups = new Map<string, TechnicianInventoryItem[]>();
+      filteredInventory.forEach(item => {
+        const techId = item.technician_id;
+        if (!groups.has(techId)) {
+          groups.set(techId, []);
+        }
+        groups.get(techId)!.push(item);
+      });
+      return Array.from(groups.entries()).map(([techId, items]) => ({
+        technicianId: techId,
+        technicianName: items[0]?.technician 
+          ? `${items[0].technician.full_name} (${items[0].technician.employee_id})`
+          : getTechnicianName(techId),
+        items
+      }));
+    } else {
+      // Single technician - no grouping needed, but still return in same format
+      return [{
+        technicianId: selectedTechnicianId,
+        technicianName: selectedTechnician 
+          ? `${selectedTechnician.full_name} (${selectedTechnician.employee_id})`
+          : getTechnicianName(selectedTechnicianId),
+        items: filteredInventory
+      }];
+    }
+  }, [filteredInventory, selectedTechnicianId, selectedTechnician]);
 
   // Handle add inventory
   const handleAddInventory = () => {
@@ -435,8 +468,8 @@ const TechnicianInventoryManagement: React.FC<TechnicianInventoryManagementProps
       });
     }
     
-    // Limit results for performance
-    return filtered.slice(0, 20);
+    // Return all filtered results (Command component will handle display)
+    return filtered;
   }, [inventoryItems, debouncedInventorySearchQuery, inventoryUsageCount]);
 
   // Get selected inventory item name
@@ -447,34 +480,33 @@ const TechnicianInventoryManagement: React.FC<TechnicianInventoryManagementProps
   }, [formData.inventory_id, inventoryItems]);
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4 sm:space-y-6 p-2 sm:p-0">
       <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <User className="w-5 h-5" />
+        <CardHeader className="p-4 sm:p-6">
+          <CardTitle className="flex items-center gap-2 text-lg sm:text-xl">
+            <User className="w-4 h-4 sm:w-5 sm:h-5" />
             Technician Inventory Management
           </CardTitle>
         </CardHeader>
-        <CardContent className="space-y-4">
+        <CardContent className="space-y-4 p-4 sm:p-6">
           {/* Technician Filter */}
-          <div className="flex flex-col sm:flex-row gap-4 items-start sm:items-end">
-            <div className="flex-1">
-              <Label htmlFor="technician-select">Filter by Technician</Label>
+          <div className="flex flex-col sm:flex-row gap-3 sm:gap-4 items-stretch sm:items-end">
+            <div className="flex-1 w-full">
+              <Label htmlFor="technician-select" className="text-sm font-medium">Select Technician</Label>
               <Select 
                 value={selectedTechnicianId || undefined} 
                 onValueChange={(value) => {
-                  if (value === "__all__" || !value) {
-                    setSelectedTechnicianId("");
-                  } else {
+                  if (value) {
                     setSelectedTechnicianId(value);
+                  } else {
+                    setSelectedTechnicianId("");
                   }
                 }}
               >
                 <SelectTrigger id="technician-select" className="w-full">
-                  <SelectValue placeholder="All Technicians" />
+                  <SelectValue placeholder="Select Technician" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="__all__">All Technicians</SelectItem>
                   {technicians.length > 0 ? (
                     technicians.map(tech => (
                       <SelectItem key={tech.id} value={tech.id}>
@@ -487,47 +519,68 @@ const TechnicianInventoryManagement: React.FC<TechnicianInventoryManagementProps
                 </SelectContent>
               </Select>
             </div>
-            <Button onClick={handleAddInventory} className="w-full sm:w-auto">
-              <Plus className="w-4 h-4 mr-2" />
-              Assign Inventory
-            </Button>
-          </div>
-
-          {/* Item Search */}
-          <div>
-            <Label htmlFor="item-search">Search Items</Label>
-            <div className="relative">
-              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
-              <Input
-                id="item-search"
-                type="text"
-                placeholder="Search by product name or code..."
-                value={itemSearchQuery}
-                onChange={(e) => setItemSearchQuery(e.target.value)}
-                className="pl-10 pr-10"
-              />
-              {itemSearchQuery && (
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => setItemSearchQuery('')}
-                  className="absolute right-1 top-1/2 transform -translate-y-1/2 h-7 w-7 p-0"
+            <div className="flex flex-col sm:flex-row gap-2 w-full sm:w-auto">
+              <Button 
+                onClick={handleAddInventory} 
+                className="w-full sm:w-auto text-sm"
+                disabled={!selectedTechnicianId}
+              >
+                <Plus className="w-4 h-4 sm:mr-2" />
+                <span className="sm:inline">Assign Inventory</span>
+              </Button>
+              {selectedTechnicianId && (
+                <Button 
+                  variant="outline"
+                  onClick={() => {
+                    inventoryCache.clear(selectedTechnicianId ? `tech_inventory_${selectedTechnicianId}` : 'all_tech_inventory');
+                    loadTechnicianInventory(selectedTechnicianId, true);
+                  }}
+                  className="w-full sm:w-auto text-sm"
                 >
-                  <X className="w-4 h-4" />
+                  <RefreshCw className="w-4 h-4 sm:mr-2" />
+                  <span className="sm:inline">Refresh</span>
                 </Button>
               )}
             </div>
-            {itemSearchQuery && (
-              <p className="text-xs text-gray-500 mt-1">
-                {filteredInventory.length} item{filteredInventory.length !== 1 ? 's' : ''} found
-              </p>
-            )}
           </div>
+
+          {/* Item Search */}
+          {selectedTechnicianId && (
+            <div>
+              <Label htmlFor="item-search" className="text-sm font-medium">Search Items</Label>
+              <div className="relative mt-1">
+                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
+                <Input
+                  id="item-search"
+                  type="text"
+                  placeholder="Search by product name or code..."
+                  value={itemSearchQuery}
+                  onChange={(e) => setItemSearchQuery(e.target.value)}
+                  className="pl-10 pr-10 text-sm h-10"
+                />
+                {itemSearchQuery && (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => setItemSearchQuery('')}
+                    className="absolute right-1 top-1/2 transform -translate-y-1/2 h-7 w-7 p-0"
+                  >
+                    <X className="w-4 h-4" />
+                  </Button>
+                )}
+              </div>
+              {itemSearchQuery && (
+                <p className="text-xs text-gray-500 mt-1">
+                  {filteredInventory.length} item{filteredInventory.length !== 1 ? 's' : ''} found
+                </p>
+              )}
+            </div>
+          )}
 
           {/* Summary */}
           {selectedTechnician && (
-            <div className="p-4 bg-blue-50 rounded-lg">
-              <p className="text-sm font-medium text-blue-900">
+            <div className="p-3 sm:p-4 bg-blue-50 rounded-lg">
+              <p className="text-xs sm:text-sm font-medium text-blue-900">
                 Showing inventory for: <span className="font-semibold">{selectedTechnician.full_name}</span> ({selectedTechnician.employee_id})
               </p>
               <p className="text-xs text-blue-700 mt-1">
@@ -537,83 +590,93 @@ const TechnicianInventoryManagement: React.FC<TechnicianInventoryManagementProps
           )}
 
           {/* Inventory Table */}
-          {loading ? (
-            <div className="text-center py-8 text-gray-500">Loading...</div>
+          {!selectedTechnicianId ? (
+            <div className="text-center py-8 sm:py-12 text-gray-500">
+              <Package className="w-10 h-10 sm:w-12 sm:h-12 mx-auto mb-3 text-gray-400" />
+              <p className="text-sm sm:text-base">Select a technician to view their inventory</p>
+            </div>
+          ) : loading ? (
+            <div className="text-center py-8 sm:py-12 text-gray-500 text-sm sm:text-base">Loading...</div>
           ) : filteredInventory.length === 0 ? (
-            <div className="text-center py-8 text-gray-500">
-              <Package className="w-12 h-12 mx-auto mb-2 text-gray-400" />
-              <p>No inventory items assigned yet.</p>
-              {selectedTechnicianId && (
-                <p className="text-sm mt-2">Click "Assign Inventory" to add items to this technician.</p>
-              )}
+            <div className="text-center py-8 sm:py-12 text-gray-500">
+              <Package className="w-10 h-10 sm:w-12 sm:h-12 mx-auto mb-3 text-gray-400" />
+              <p className="text-sm sm:text-base">No inventory items assigned yet.</p>
+              <p className="text-xs sm:text-sm mt-2">Click "Assign Inventory" to add items to this technician.</p>
             </div>
           ) : (
             <div className="border rounded-lg overflow-hidden">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Technician</TableHead>
-                    <TableHead>Product</TableHead>
-                    <TableHead className="text-right">Quantity</TableHead>
-                    <TableHead className="text-right">Actions</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {filteredInventory.map(item => (
-                    <TableRow key={item.id}>
-                      <TableCell className="font-medium">
-                        {item.technician 
-                          ? `${item.technician.full_name} (${item.technician.employee_id})`
-                          : getTechnicianName(item.technician_id)}
-                      </TableCell>
-                      <TableCell>
-                        {item.inventory
-                          ? `${item.inventory.product_name}${item.inventory.code ? ` (${item.inventory.code})` : ''}`
-                          : getInventoryItemName(item.inventory_id)}
-                      </TableCell>
-                      <TableCell className="text-right font-semibold">
-                        {item.quantity}
-                      </TableCell>
-                      <TableCell className="text-right">
-                        <div className="flex justify-end gap-2">
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => handleEditInventory(item)}
-                          >
-                            <Edit className="w-4 h-4" />
-                          </Button>
-                          <AlertDialog>
-                            <AlertDialogTrigger asChild>
+              <div className="overflow-x-auto">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead className="text-xs sm:text-sm">Product</TableHead>
+                      <TableHead className="text-right text-xs sm:text-sm">Quantity</TableHead>
+                      <TableHead className="text-right text-xs sm:text-sm">Actions</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {groupedInventory.map((group) => 
+                      group.items.map((item, itemIndex) => (
+                        <TableRow key={item.id}>
+                          <TableCell className="text-xs sm:text-sm">
+                            <div className="flex flex-col">
+                              <span className="font-medium">
+                                {item.inventory
+                                  ? item.inventory.product_name
+                                  : getInventoryItemName(item.inventory_id).split(' (')[0]}
+                              </span>
+                              {item.inventory?.code && (
+                                <span className="text-xs text-gray-500 mt-0.5">Code: {item.inventory.code}</span>
+                              )}
+                            </div>
+                          </TableCell>
+                          <TableCell className="text-right font-semibold text-xs sm:text-sm">
+                            {item.quantity}
+                          </TableCell>
+                          <TableCell className="text-right">
+                            <div className="flex justify-end gap-1 sm:gap-2">
                               <Button
                                 variant="ghost"
                                 size="sm"
-                                onClick={() => setSelectedItem(item)}
+                                onClick={() => handleEditInventory(item)}
+                                className="h-8 w-8 p-0 sm:h-9 sm:w-9"
                               >
-                                <Trash2 className="w-4 h-4 text-red-500" />
+                                <Edit className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
                               </Button>
-                            </AlertDialogTrigger>
-                            <AlertDialogContent>
-                              <AlertDialogHeader>
-                                <AlertDialogTitle>Remove Inventory Item?</AlertDialogTitle>
-                                <AlertDialogDescription>
-                                  Are you sure you want to remove this inventory item from the technician? This action cannot be undone.
-                                </AlertDialogDescription>
-                              </AlertDialogHeader>
-                              <AlertDialogFooter>
-                                <AlertDialogCancel onClick={() => setSelectedItem(null)}>Cancel</AlertDialogCancel>
-                                <AlertDialogAction onClick={handleDeleteInventory} className="bg-red-600 hover:bg-red-700">
-                                  Remove
-                                </AlertDialogAction>
-                              </AlertDialogFooter>
-                            </AlertDialogContent>
-                          </AlertDialog>
-                        </div>
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
+                              <AlertDialog>
+                                <AlertDialogTrigger asChild>
+                                  <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    onClick={() => setSelectedItem(item)}
+                                    className="h-8 w-8 p-0 sm:h-9 sm:w-9"
+                                  >
+                                    <Trash2 className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-red-500" />
+                                  </Button>
+                                </AlertDialogTrigger>
+                                <AlertDialogContent className="sm:max-w-[425px]">
+                                  <AlertDialogHeader>
+                                    <AlertDialogTitle className="text-base sm:text-lg">Remove Inventory Item?</AlertDialogTitle>
+                                    <AlertDialogDescription className="text-sm">
+                                      Are you sure you want to remove this inventory item from the technician? This action cannot be undone.
+                                    </AlertDialogDescription>
+                                  </AlertDialogHeader>
+                                  <AlertDialogFooter className="flex-col sm:flex-row gap-2">
+                                    <AlertDialogCancel onClick={() => setSelectedItem(null)} className="w-full sm:w-auto">Cancel</AlertDialogCancel>
+                                    <AlertDialogAction onClick={handleDeleteInventory} className="bg-red-600 hover:bg-red-700 w-full sm:w-auto">
+                                      Remove
+                                    </AlertDialogAction>
+                                  </AlertDialogFooter>
+                                </AlertDialogContent>
+                              </AlertDialog>
+                            </div>
+                          </TableCell>
+                        </TableRow>
+                      ))
+                    )}
+                  </TableBody>
+                </Table>
+              </div>
             </div>
           )}
         </CardContent>
@@ -634,90 +697,95 @@ const TechnicianInventoryManagement: React.FC<TechnicianInventoryManagementProps
           });
         }
       }}>
-        <DialogContent className="sm:max-w-[500px]">
-          <DialogHeader>
-            <DialogTitle>{selectedItem ? 'Edit Technician Inventory' : 'Assign Inventory to Technician'}</DialogTitle>
-            <DialogDescription>
+        <DialogContent className="sm:max-w-[500px] max-h-[90vh] overflow-y-auto">
+          <DialogHeader className="px-1">
+            <DialogTitle className="text-base sm:text-lg">{selectedItem ? 'Edit Technician Inventory' : 'Assign Inventory to Technician'}</DialogTitle>
+            <DialogDescription className="text-xs sm:text-sm">
               {selectedItem ? 'Update the quantity for this inventory item.' : 'Assign inventory items to a technician. Search by product name or code.'}
             </DialogDescription>
           </DialogHeader>
-          <div className="space-y-4 py-4">
+          <div className="space-y-4 py-2 sm:py-4">
             <div>
-              <Label htmlFor="technician">Technician *</Label>
+              <Label htmlFor="technician" className="text-sm font-medium">Technician *</Label>
               <Select
                 value={formData.technician_id || undefined}
                 onValueChange={(value) => setFormData({ ...formData, technician_id: value })}
                 disabled={!!selectedItem}
               >
-                <SelectTrigger id="technician">
+                <SelectTrigger id="technician" className="h-10 text-sm">
                   <SelectValue placeholder="Select technician" />
                 </SelectTrigger>
                 <SelectContent>
                   {technicians.length > 0 ? (
                     technicians.map(tech => (
-                      <SelectItem key={tech.id} value={tech.id}>
+                      <SelectItem key={tech.id} value={tech.id} className="text-sm">
                         {tech.full_name} ({tech.employee_id})
                       </SelectItem>
                     ))
                   ) : (
-                    <SelectItem value="loading" disabled>Loading technicians...</SelectItem>
+                    <SelectItem value="loading" disabled className="text-sm">Loading technicians...</SelectItem>
                   )}
                 </SelectContent>
               </Select>
             </div>
             <div>
-              <Label htmlFor="inventory">Product *</Label>
+              <Label htmlFor="inventory" className="text-sm font-medium">Product *</Label>
               <Popover open={inventorySearchOpen} onOpenChange={setInventorySearchOpen}>
                 <PopoverTrigger asChild>
                   <Button
                     variant="outline"
                     role="combobox"
                     aria-expanded={inventorySearchOpen}
-                    className="w-full justify-between"
+                    className="w-full justify-between h-10 text-sm"
                     disabled={!!selectedItem}
                   >
-                    <span className="truncate">{selectedInventoryName}</span>
+                    <span className="truncate text-left flex-1">{selectedInventoryName}</span>
                     <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
                   </Button>
                 </PopoverTrigger>
-                <PopoverContent className="w-full p-0" align="start">
-                  <Command>
+                <PopoverContent className="w-[var(--radix-popover-trigger-width)] p-0" align="start" sideOffset={4}>
+                  <Command shouldFilter={false}>
                     <CommandInput 
                       placeholder="Search products by name or code..." 
                       value={inventorySearchQuery}
                       onValueChange={setInventorySearchQuery}
+                      className="h-11 text-sm"
                     />
-                    <CommandList>
-                      <CommandEmpty>No products found.</CommandEmpty>
+                    <CommandList className="max-h-[300px]">
+                      <CommandEmpty className="py-6 text-center text-sm text-gray-500">No products found.</CommandEmpty>
                       <CommandGroup>
                         {filteredInventoryItems.length > 0 ? (
                           <>
-                            {filteredInventoryItems.slice(0, 10).map((item) => (
+                            {filteredInventoryItems.slice(0, 20).map((item) => (
                               <CommandItem
                                 key={item.id}
-                                value={item.id}
+                                value={`${item.product_name} ${item.code || ''}`.trim()}
                                 onSelect={() => {
                                   setFormData({ ...formData, inventory_id: item.id });
                                   setInventorySearchOpen(false);
                                   setInventorySearchQuery('');
                                 }}
-                                className="flex items-center gap-2"
+                                className="flex items-center justify-between gap-3 px-3 py-2.5 cursor-pointer hover:bg-gray-50"
                               >
-                                <Check
-                                  className={cn(
-                                    "h-4 w-4",
-                                    formData.inventory_id === item.id ? "opacity-100" : "opacity-0"
-                                  )}
-                                />
-                                <span>{item.product_name}</span>
-                                {item.code && (
-                                  <span className="text-xs text-gray-500">({item.code})</span>
-                                )}
+                                <div className="flex items-center gap-2 flex-1 min-w-0">
+                                  <Check
+                                    className={cn(
+                                      "h-4 w-4 shrink-0",
+                                      formData.inventory_id === item.id ? "opacity-100 text-blue-600" : "opacity-0"
+                                    )}
+                                  />
+                                  <div className="flex flex-col min-w-0 flex-1">
+                                    <span className="text-sm font-medium truncate">{item.product_name}</span>
+                                    {item.code && (
+                                      <span className="text-xs text-gray-500">Code: {item.code}</span>
+                                    )}
+                                  </div>
+                                </div>
                               </CommandItem>
                             ))}
                           </>
                         ) : (
-                          <CommandItem disabled>Loading products...</CommandItem>
+                          <CommandItem disabled className="py-6 text-center text-sm text-gray-500">Loading products...</CommandItem>
                         )}
                       </CommandGroup>
                     </CommandList>
