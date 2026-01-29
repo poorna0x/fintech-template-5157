@@ -290,7 +290,9 @@ const TechnicianInventoryView: React.FC<TechnicianInventoryViewProps> = ({ techn
     return item ? `${item.product_name}${item.code ? ` (${item.code})` : ''}` : 'Unknown';
   };
 
-  // Handle top up - load items used yesterday or today
+  // Handle top up - load ALL items used by technician (not just yesterday/today)
+  // This allows technicians to top up items from any date - if they check today, they see today's items,
+  // if they check after a month, they see all items that were used
   const handleTopUp = async () => {
     try {
       setTopUpLoading(true);
@@ -300,34 +302,17 @@ const TechnicianInventoryView: React.FC<TechnicianInventoryViewProps> = ({ techn
         await loadMainInventory(true);
       }
       
-      // Get yesterday's date (default) and today's date
-      const today = new Date();
-      today.setHours(0, 0, 0, 0);
-      const yesterday = new Date(today);
-      yesterday.setDate(yesterday.getDate() - 1);
-      
-      // Get parts used by this technician
+      // Get ALL parts used by this technician (no date filter)
       const { data: allPartsUsed, error } = await db.jobPartsUsed.getByTechnician(technicianId);
       if (error) throw error;
       
       if (!allPartsUsed || allPartsUsed.length === 0) {
-        toast.info('No items used in the last 2 days');
-        return;
-      }
-      
-      // Filter items used yesterday or today
-      const recentItems = allPartsUsed.filter((part: any) => {
-        const partDate = new Date(part.created_at);
-        partDate.setHours(0, 0, 0, 0);
-        return partDate.getTime() === yesterday.getTime() || partDate.getTime() === today.getTime();
-      });
-      
-      if (recentItems.length === 0) {
-        toast.info('No items used yesterday or today');
+        toast.info('No items have been used yet');
         return;
       }
       
       // Group by inventory_id and sum quantities
+      // Sort by most recent date first (so today's items appear first if checked today)
       const groupedItems = new Map<string, {
         inventory_id: string;
         quantity_used: number;
@@ -335,12 +320,12 @@ const TechnicianInventoryView: React.FC<TechnicianInventoryViewProps> = ({ techn
         inventory?: { id: string; product_name: string; code: string | null };
       }>();
       
-      recentItems.forEach((part: any) => {
+      allPartsUsed.forEach((part: any) => {
         const key = part.inventory_id;
         if (groupedItems.has(key)) {
           const existing = groupedItems.get(key)!;
           existing.quantity_used += part.quantity_used;
-          // Keep the most recent created_at
+          // Keep the most recent created_at (so we can sort by date)
           if (new Date(part.created_at) > new Date(existing.created_at)) {
             existing.created_at = part.created_at;
           }
@@ -354,7 +339,12 @@ const TechnicianInventoryView: React.FC<TechnicianInventoryViewProps> = ({ techn
         }
       });
       
-      const itemsArray = Array.from(groupedItems.values());
+      // Convert to array and sort by most recent date first
+      // This way, if technician checks today, today's items appear first
+      // If they check after a month, all items are still available, sorted by most recent
+      const itemsArray = Array.from(groupedItems.values()).sort((a, b) => {
+        return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
+      });
       
       if (itemsArray.length === 0) {
         toast.info('No items to top up');
@@ -699,7 +689,7 @@ const TechnicianInventoryView: React.FC<TechnicianInventoryViewProps> = ({ techn
               Top Up Used Items ({currentTopUpIndex + 1} of {topUpItems.length})
             </DialogTitle>
             <DialogDescription className="text-xs sm:text-sm">
-              Review and confirm items you used yesterday or today
+              Review and confirm items you used. Items are sorted by most recent date first.
             </DialogDescription>
           </DialogHeader>
           {topUpItems.length > 0 && currentTopUpIndex < topUpItems.length && (

@@ -4,7 +4,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { db } from '@/lib/supabase';
+import { db, supabase } from '@/lib/supabase';
 import { toast } from 'sonner';
 import {
   BarChart3,
@@ -65,6 +65,14 @@ interface AnalyticsData {
   serviceTypeBreakdown?: Array<{ serviceType: string; count: number; amount: number }>;
   paymentMethodBreakdown?: Array<{ method: string; count: number; amount: number }>;
   dailyStats?: Array<{ date: string; jobs: number; revenue: number }>;
+  // Expense and profit summary
+  totalLeadCosts?: number;
+  totalTechnicianExpenses?: number;
+  totalTechnicianAdvances?: number;
+  totalBusinessExpenses?: number;
+  totalSalaryDeductions?: number; // From technician payments (base salary deductions)
+  totalExpenses?: number; // Sum of all expenses
+  totalProfit?: number; // Revenue - Lead Costs - Expenses
   softenerData?: {
     totalJobs: number;
     completedJobs: number;
@@ -195,6 +203,101 @@ const Analytics = () => {
         console.error('Error loading analytics:', error);
         toast.error('Failed to load analytics');
         return;
+      }
+
+      // Load expenses for the period
+      let totalTechnicianExpenses = 0;
+      let totalTechnicianAdvances = 0;
+      let totalBusinessExpenses = 0;
+      let totalSalaryDeductions = 0;
+
+      if (startDate && endDate) {
+        // Load technician expenses
+        const { data: techExpenses, error: techExpensesError } = await db.technicianExpenses.getAll();
+        if (!techExpensesError && techExpenses) {
+          const filteredExpenses = techExpenses.filter((exp: any) => {
+            const expDate = new Date(exp.expense_date);
+            return expDate >= startDate && expDate <= endDate;
+          });
+          totalTechnicianExpenses = filteredExpenses.reduce((sum: number, exp: any) => sum + Number(exp.amount || 0), 0);
+        }
+
+        // Load technician advances
+        const { data: techAdvances, error: techAdvancesError } = await db.technicianAdvances.getAll();
+        if (!techAdvancesError && techAdvances) {
+          const filteredAdvances = techAdvances.filter((adv: any) => {
+            const advDate = new Date(adv.advance_date);
+            return advDate >= startDate && advDate <= endDate;
+          });
+          totalTechnicianAdvances = filteredAdvances.reduce((sum: number, adv: any) => sum + Number(adv.amount || 0), 0);
+        }
+
+        // Load business expenses
+        const { data: businessExpenses, error: businessExpensesError } = await db.businessExpenses.getAll(
+          startDate.toISOString().split('T')[0],
+          endDate.toISOString().split('T')[0]
+        );
+        if (!businessExpensesError && businessExpenses) {
+          totalBusinessExpenses = businessExpenses.reduce((sum: number, exp: any) => sum + Number(exp.amount || 0), 0);
+        }
+
+        // Calculate salary expenses from technician payments
+        // Total salary paid = sum of (base salary + commissions + extra commissions - advances) for all technicians
+        // We'll calculate from technician payments and base salaries
+        try {
+          // Get all technicians
+          const { data: allTechnicians } = await db.technicians.getAll(100);
+          
+          if (allTechnicians && startDate && endDate) {
+            // Get technician payments for the period
+            const { data: paymentsData } = await supabase
+              .from('technician_payments')
+              .select('*')
+              .gte('created_at', startDate.toISOString())
+              .lte('created_at', endDate.toISOString());
+            
+            // Get technician advances (these reduce salary)
+            const { data: advancesData } = await db.technicianAdvances.getAll();
+            const { data: extraCommissionsData } = await db.technicianExtraCommissions.getAll();
+            
+            // Calculate total salary for each technician
+            let totalSalaryPaid = 0;
+            
+            allTechnicians.forEach((tech: any) => {
+              const techId = tech.id;
+              const monthlyBaseSalary = (tech.salary && typeof tech.salary === 'object' && (tech.salary as any).baseSalary) 
+                ? (tech.salary as any).baseSalary 
+                : 8000; // Default
+              
+              // Get payments, advances, extra commissions for this technician in period
+              const techPayments = (paymentsData || []).filter((p: any) => p.technician_id === techId);
+              const techAdvances = (advancesData || []).filter((a: any) => {
+                if (a.technician_id !== techId) return false;
+                const advDate = new Date(a.advance_date);
+                return advDate >= startDate && advDate <= endDate;
+              });
+              const techExtraCommissions = (extraCommissionsData || []).filter((ec: any) => {
+                if (ec.technician_id !== techId) return false;
+                const ecDate = new Date(ec.commission_date);
+                return ecDate >= startDate && ecDate <= endDate;
+              });
+              
+              // Calculate salary components
+              const baseSalary = monthlyBaseSalary; // Period is 1 month
+              const commissions = techPayments.reduce((sum: number, p: any) => sum + (p.commission_amount || 0), 0);
+              const extraCommissions = techExtraCommissions.reduce((sum: number, ec: any) => sum + (ec.amount || 0), 0);
+              const advances = techAdvances.reduce((sum: number, a: any) => sum + (a.amount || 0), 0);
+              
+              // Total salary = base + commissions + extra commissions - advances
+              const techTotalSalary = baseSalary + commissions + extraCommissions - advances;
+              totalSalaryPaid += Math.max(0, techTotalSalary); // Don't allow negative
+            });
+            
+            totalSalaryDeductions = totalSalaryPaid;
+          }
+        } catch (e) {
+          console.error('Error calculating salary deductions:', e);
+        }
       }
       
       // OPTIMIZATION: Fetch jobs without nested customer data and with reasonable limit
@@ -858,6 +961,17 @@ const Analytics = () => {
               .sort((a, b) => b.amount - a.amount)
           }))
           .sort((a, b) => b.amount - a.amount),
+        // Calculate total lead costs
+        totalLeadCosts: Object.values(leadSourceMap).reduce((sum, stats) => sum + stats.leadCost, 0),
+        // Expense totals
+        totalTechnicianExpenses,
+        totalTechnicianAdvances, // Keep for reference but don't show separately
+        totalBusinessExpenses,
+        totalSalaryDeductions, // This is now "Total Salary" (includes base salary + commissions + extra commissions - advances)
+        // Total expenses (sum of all expense types: technician expenses + total salary + business expenses)
+        totalExpenses: totalTechnicianExpenses + totalSalaryDeductions + totalBusinessExpenses,
+        // Total profit (Revenue - Lead Costs - Expenses)
+        totalProfit: periodBilling - Object.values(leadSourceMap).reduce((sum, stats) => sum + stats.leadCost, 0) - (totalTechnicianExpenses + totalSalaryDeductions + totalBusinessExpenses),
         serviceTypeBreakdown: Object.entries(serviceTypeMap)
           .map(([serviceType, stats]) => ({ serviceType, ...stats }))
           .sort((a, b) => b.amount - a.amount),
@@ -1583,6 +1697,116 @@ const Analytics = () => {
             )}
           </div>
         </div>
+      )}
+
+      {/* Profit & Expense Summary - Mobile first */}
+      {analytics && (
+        <Card className="mt-4 md:mt-8 border-2 border-blue-200 bg-blue-50/30 overflow-hidden">
+          <CardHeader className="px-3 py-3 sm:px-6 sm:py-4">
+            <CardTitle className="flex items-center gap-2 text-base sm:text-lg md:text-xl flex-wrap">
+              <DollarSign className="w-5 h-5 sm:w-6 sm:h-6 shrink-0" />
+              <span>Financial Summary ({getPeriodLabel()})</span>
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="px-3 pb-4 pt-0 sm:px-6 sm:pb-6">
+            <div className="space-y-4 md:space-y-6">
+              {/* Revenue Section - Stack on mobile, 2 cols on md+ */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3 sm:gap-4 md:gap-6">
+                <div className="bg-green-50 rounded-lg p-3 sm:p-4 border border-green-200 min-w-0">
+                  <div className="text-xs sm:text-sm font-medium text-gray-600 mb-0.5 sm:mb-1">Total Revenue</div>
+                  <div className="text-xl sm:text-2xl md:text-3xl font-bold text-green-600 break-all">
+                    ₹ {formatCurrency(analytics.totalBilling || 0)}
+                  </div>
+                  <div className="text-xs text-gray-500 mt-0.5 sm:mt-1">
+                    From {analytics.completedJobs || 0} completed jobs
+                  </div>
+                </div>
+
+                <div className="bg-orange-50 rounded-lg p-3 sm:p-4 border border-orange-200 min-w-0">
+                  <div className="text-xs sm:text-sm font-medium text-gray-600 mb-0.5 sm:mb-1">Total Lead Costs</div>
+                  <div className="text-xl sm:text-2xl md:text-3xl font-bold text-orange-600 break-all">
+                    ₹ {formatCurrency(analytics.totalLeadCosts || 0)}
+                  </div>
+                  <div className="text-xs text-gray-500 mt-0.5 sm:mt-1">
+                    Cost of acquiring leads
+                  </div>
+                </div>
+              </div>
+
+              {/* Expenses Breakdown - Compact rows, no overflow */}
+              <div className="bg-red-50 rounded-lg p-3 sm:p-4 border border-red-200 min-w-0">
+                <div className="text-xs sm:text-sm font-medium text-gray-700 mb-2 sm:mb-3">Total Expenses</div>
+                <div className="space-y-1.5 sm:space-y-2 text-xs sm:text-sm">
+                  <div className="flex justify-between gap-2 items-center min-w-0">
+                    <span className="text-gray-600 truncate">Technician Expenses:</span>
+                    <span className="font-semibold text-red-600 shrink-0 tabular-nums">
+                      ₹ {formatCurrency(analytics.totalTechnicianExpenses || 0)}
+                    </span>
+                  </div>
+                  <div className="flex justify-between gap-2 items-center min-w-0">
+                    <span className="text-gray-600 truncate">Total Salary:</span>
+                    <span className="font-semibold text-red-600 shrink-0 tabular-nums">
+                      ₹ {formatCurrency(analytics.totalSalaryDeductions || 0)}
+                    </span>
+                  </div>
+                  <div className="flex justify-between gap-2 items-center min-w-0">
+                    <span className="text-gray-600 truncate">Business Expenses:</span>
+                    <span className="font-semibold text-red-600 shrink-0 tabular-nums">
+                      ₹ {formatCurrency(analytics.totalBusinessExpenses || 0)}
+                    </span>
+                  </div>
+                  <div className="pt-1.5 sm:pt-2 mt-1.5 sm:mt-2 border-t border-red-300">
+                    <div className="flex justify-between items-center gap-2 min-w-0">
+                      <span className="text-sm sm:text-base font-semibold text-gray-700">Total Expenses:</span>
+                      <span className="text-lg sm:text-2xl font-bold text-red-600 shrink-0 tabular-nums">
+                        ₹ {formatCurrency(analytics.totalExpenses || 0)}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Profit Section - Stack on mobile, row on md+ */}
+              <div className="bg-blue-100 rounded-lg p-4 sm:p-5 md:p-6 border-2 border-blue-300 min-w-0">
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                  <div className="min-w-0">
+                    <div className="text-sm font-medium text-gray-700">Net Profit</div>
+                    <div className="text-xs text-gray-600">
+                      Revenue − Lead Costs − Expenses
+                    </div>
+                  </div>
+                  <div className={`text-2xl sm:text-3xl md:text-4xl font-bold shrink-0 tabular-nums ${
+                    (analytics.totalProfit || 0) >= 0 ? 'text-green-600' : 'text-red-600'
+                  }`}>
+                    ₹ {formatCurrency(analytics.totalProfit || 0)}
+                  </div>
+                </div>
+                <div className="mt-3 sm:mt-4 pt-3 sm:pt-4 border-t border-blue-300">
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 sm:gap-4 text-xs">
+                    <div className="flex justify-between sm:block py-1 sm:py-0 border-b border-blue-200 sm:border-b-0 last:border-b-0">
+                      <span className="text-gray-600">Revenue</span>
+                      <span className="font-semibold text-green-600 sm:block tabular-nums">
+                        ₹ {formatCurrency(analytics.totalBilling || 0)}
+                      </span>
+                    </div>
+                    <div className="flex justify-between sm:block py-1 sm:py-0 border-b border-blue-200 sm:border-b-0 last:border-b-0">
+                      <span className="text-gray-600">− Lead Costs</span>
+                      <span className="font-semibold text-orange-600 sm:block tabular-nums">
+                        ₹ {formatCurrency(analytics.totalLeadCosts || 0)}
+                      </span>
+                    </div>
+                    <div className="flex justify-between sm:block py-1 sm:py-0">
+                      <span className="text-gray-600">− Expenses</span>
+                      <span className="font-semibold text-red-600 sm:block tabular-nums">
+                        ₹ {formatCurrency(analytics.totalExpenses || 0)}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
       )}
     </div>
   );

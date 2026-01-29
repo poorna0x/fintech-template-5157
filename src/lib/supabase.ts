@@ -1988,6 +1988,57 @@ export const db = {
     }
   },
 
+  // Business expenses operations
+  businessExpenses: {
+    async getAll(startDate?: string, endDate?: string) {
+      let query = supabase
+        .from('business_expenses')
+        .select('*')
+        .order('expense_date', { ascending: false });
+      
+      if (startDate) {
+        query = query.gte('expense_date', startDate);
+      }
+      
+      if (endDate) {
+        query = query.lte('expense_date', endDate);
+      }
+      
+      const { data, error } = await query;
+      return { data, error };
+    },
+
+    async create(expense: any) {
+      const { data, error } = await supabase
+        .from('business_expenses')
+        .insert(expense)
+        .select()
+        .single();
+      
+      return { data, error };
+    },
+
+    async update(id: string, updates: any) {
+      const { data, error } = await supabase
+        .from('business_expenses')
+        .update(updates)
+        .eq('id', id)
+        .select()
+        .single();
+      
+      return { data, error };
+    },
+
+    async delete(id: string) {
+      const { error } = await supabase
+        .from('business_expenses')
+        .delete()
+        .eq('id', id);
+      
+      return { error };
+    }
+  },
+
   // Stats operations
   stats: {
     async getBillingByCustomer() {

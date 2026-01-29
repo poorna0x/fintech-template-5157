@@ -199,6 +199,25 @@ const TechnicianPayments = () => {
   const [selectedBreakdownForSlip, setSelectedBreakdownForSlip] = useState<TechnicianSalaryBreakdown | null>(null);
   const [includeDayWiseBreakdown, setIncludeDayWiseBreakdown] = useState(true);
 
+  // Business expenses
+  const [businessExpenses, setBusinessExpenses] = useState<Array<{
+    id: string;
+    amount: number;
+    description: string;
+    expense_date: string;
+    category?: string;
+    notes?: string;
+  }>>([]);
+  const [businessExpenseDialogOpen, setBusinessExpenseDialogOpen] = useState(false);
+  const [editingBusinessExpense, setEditingBusinessExpense] = useState<any>(null);
+  const [businessExpenseFormData, setBusinessExpenseFormData] = useState({
+    amount: '',
+    description: '',
+    expense_date: new Date().toISOString().split('T')[0],
+    category: 'OTHER',
+    notes: ''
+  });
+
   // Job details dialog
   const [jobDetailsDialogOpen, setJobDetailsDialogOpen] = useState(false);
   const [selectedDateForJobs, setSelectedDateForJobs] = useState<{technicianId: string; date: string} | null>(null);
@@ -294,6 +313,18 @@ const TechnicianPayments = () => {
         throw extraCommissionsError;
       }
       console.log('📊 Loaded Extra Commissions:', extraCommissionsData?.length || 0, 'records');
+
+      // Load business expenses
+      const { data: businessExpensesData, error: businessExpensesError } = await db.businessExpenses.getAll(
+        startDate.toISOString().split('T')[0],
+        endDate.toISOString().split('T')[0]
+      );
+      if (businessExpensesError) {
+        console.error('❌ Error loading business expenses:', businessExpensesError);
+        // Don't throw - business expenses are optional
+      } else {
+        setBusinessExpenses(businessExpensesData || []);
+      }
       if (extraCommissionsData && extraCommissionsData.length > 0) {
         console.log('📋 Extra Commissions Details:', extraCommissionsData.map((ec: any) => ({
           id: ec.id,
@@ -764,6 +795,76 @@ const TechnicianPayments = () => {
       await loadData();
     } catch (error: any) {
       toast.error('Failed to delete expense: ' + error.message);
+    }
+  };
+
+  // Business expense handlers
+  const handleAddBusinessExpense = () => {
+    setEditingBusinessExpense(null);
+    setBusinessExpenseFormData({
+      amount: '',
+      description: '',
+      expense_date: new Date().toISOString().split('T')[0],
+      category: 'OTHER',
+      notes: ''
+    });
+    setBusinessExpenseDialogOpen(true);
+  };
+
+  const handleEditBusinessExpense = (expense: any) => {
+    setEditingBusinessExpense(expense);
+    setBusinessExpenseFormData({
+      amount: expense.amount.toString(),
+      description: expense.description,
+      expense_date: expense.expense_date.split('T')[0],
+      category: expense.category || 'OTHER',
+      notes: expense.notes || ''
+    });
+    setBusinessExpenseDialogOpen(true);
+  };
+
+  const handleSaveBusinessExpense = async () => {
+    try {
+      if (!businessExpenseFormData.amount || !businessExpenseFormData.description) {
+        toast.error('Please fill in all required fields');
+        return;
+      }
+
+      const expenseData = {
+        amount: parseFloat(businessExpenseFormData.amount),
+        description: businessExpenseFormData.description,
+        expense_date: businessExpenseFormData.expense_date,
+        category: businessExpenseFormData.category,
+        notes: businessExpenseFormData.notes || null
+      };
+
+      if (editingBusinessExpense) {
+        const { error } = await db.businessExpenses.update(editingBusinessExpense.id, expenseData);
+        if (error) throw error;
+        toast.success('Business expense updated');
+      } else {
+        const { error } = await db.businessExpenses.create(expenseData);
+        if (error) throw error;
+        toast.success('Business expense added');
+      }
+
+      setBusinessExpenseDialogOpen(false);
+      await loadData();
+    } catch (error: any) {
+      toast.error('Failed to save business expense: ' + error.message);
+    }
+  };
+
+  const handleDeleteBusinessExpense = async (id: string) => {
+    if (!confirm('Are you sure you want to delete this business expense?')) return;
+    
+    try {
+      const { error } = await db.businessExpenses.delete(id);
+      if (error) throw error;
+      toast.success('Business expense deleted');
+      await loadData();
+    } catch (error: any) {
+      toast.error('Failed to delete business expense: ' + error.message);
     }
   };
 
@@ -2867,6 +2968,179 @@ const TechnicianPayments = () => {
             >
               <Download className="w-4 h-4 mr-2" />
               Download
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Business Expenses Section */}
+      <Card className="mt-8">
+        <CardHeader>
+          <div className="flex items-center justify-between">
+            <div>
+              <CardTitle className="flex items-center gap-2">
+                <TrendingDown className="w-5 h-5" />
+                Business Expenses
+              </CardTitle>
+              <CardDescription>
+                Track general business expenses (not tied to specific technicians)
+              </CardDescription>
+            </div>
+            <Button onClick={handleAddBusinessExpense} size="sm">
+              <Plus className="w-4 h-4 mr-2" />
+              Add Expense
+            </Button>
+          </div>
+        </CardHeader>
+        <CardContent>
+          {businessExpenses.length === 0 ? (
+            <div className="text-center py-8 text-gray-500">
+              <TrendingDown className="w-12 h-12 mx-auto mb-2 text-gray-400" />
+              <p>No business expenses recorded yet.</p>
+            </div>
+          ) : (
+            <div className="overflow-x-auto">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Date</TableHead>
+                    <TableHead>Description</TableHead>
+                    <TableHead>Category</TableHead>
+                    <TableHead className="text-right">Amount</TableHead>
+                    <TableHead className="text-right">Actions</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {businessExpenses.map((expense) => (
+                    <TableRow key={expense.id}>
+                      <TableCell>
+                        {new Date(expense.expense_date).toLocaleDateString('en-IN')}
+                      </TableCell>
+                      <TableCell className="font-medium">{expense.description}</TableCell>
+                      <TableCell>
+                        <Badge variant="outline">{expense.category || 'OTHER'}</Badge>
+                      </TableCell>
+                      <TableCell className="text-right font-semibold text-red-600">
+                        ₹ {formatCurrency(expense.amount)}
+                      </TableCell>
+                      <TableCell className="text-right">
+                        <div className="flex justify-end gap-2">
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => handleEditBusinessExpense(expense)}
+                          >
+                            <Edit className="w-4 h-4" />
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => handleDeleteBusinessExpense(expense.id)}
+                            className="text-red-600 hover:text-red-700"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </Button>
+                        </div>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
+          )}
+          {businessExpenses.length > 0 && (
+            <div className="mt-4 pt-4 border-t">
+              <div className="flex justify-between items-center">
+                <span className="font-semibold text-gray-700">Total Business Expenses:</span>
+                <span className="text-xl font-bold text-red-600">
+                  ₹ {formatCurrency(businessExpenses.reduce((sum, e) => sum + e.amount, 0))}
+                </span>
+              </div>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* Business Expense Dialog */}
+      <Dialog open={businessExpenseDialogOpen} onOpenChange={setBusinessExpenseDialogOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>
+              {editingBusinessExpense ? 'Edit Business Expense' : 'Add Business Expense'}
+            </DialogTitle>
+            <DialogDescription>
+              Record a general business expense
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <div>
+              <Label htmlFor="amount">Amount *</Label>
+              <Input
+                id="amount"
+                type="number"
+                step="0.01"
+                value={businessExpenseFormData.amount}
+                onChange={(e) => setBusinessExpenseFormData({ ...businessExpenseFormData, amount: e.target.value })}
+                placeholder="Enter amount"
+              />
+            </div>
+            <div>
+              <Label htmlFor="description">Description *</Label>
+              <Input
+                id="description"
+                value={businessExpenseFormData.description}
+                onChange={(e) => setBusinessExpenseFormData({ ...businessExpenseFormData, description: e.target.value })}
+                placeholder="Enter description"
+              />
+            </div>
+            <div>
+              <Label htmlFor="expense_date">Date *</Label>
+              <Input
+                id="expense_date"
+                type="date"
+                value={businessExpenseFormData.expense_date}
+                onChange={(e) => setBusinessExpenseFormData({ ...businessExpenseFormData, expense_date: e.target.value })}
+              />
+            </div>
+            <div>
+              <Label htmlFor="category">Category</Label>
+              <Select
+                value={businessExpenseFormData.category}
+                onValueChange={(value) => setBusinessExpenseFormData({ ...businessExpenseFormData, category: value })}
+              >
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="OFFICE">Office</SelectItem>
+                  <SelectItem value="MARKETING">Marketing</SelectItem>
+                  <SelectItem value="UTILITIES">Utilities</SelectItem>
+                  <SelectItem value="RENT">Rent</SelectItem>
+                  <SelectItem value="OTHER">Other</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <Label htmlFor="notes">Notes</Label>
+              <Textarea
+                id="notes"
+                value={businessExpenseFormData.notes}
+                onChange={(e) => setBusinessExpenseFormData({ ...businessExpenseFormData, notes: e.target.value })}
+                placeholder="Additional notes (optional)"
+                rows={3}
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setBusinessExpenseDialogOpen(false)}>
+              Cancel
+            </Button>
+            <Button
+              onClick={handleSaveBusinessExpense}
+              disabled={!businessExpenseFormData.amount || !businessExpenseFormData.description}
+              className="bg-red-600 hover:bg-red-700"
+            >
+              {editingBusinessExpense ? 'Update' : 'Add'} Expense
             </Button>
           </DialogFooter>
         </DialogContent>
