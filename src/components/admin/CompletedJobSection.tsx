@@ -1,10 +1,11 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { CheckCircle, Edit, Package } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Job, Technician } from '@/types';
 import { WhatsAppIcon } from '../WhatsAppIcon';
 import { findLeadSource } from '@/lib/adminUtils';
 import JobPartsUsedDialog from './JobPartsUsedDialog';
+import { db } from '@/lib/supabase';
 
 interface CompletedJobSectionProps {
   job: Job;
@@ -54,10 +55,32 @@ export const CompletedJobSection: React.FC<CompletedJobSectionProps> = ({
   setPhotoViewerOpen,
 }) => {
   const [partsUsedDialogOpen, setPartsUsedDialogOpen] = useState(false);
-  
+  const [sparePartsCost, setSparePartsCost] = useState<number>(0);
+
+  const fetchSparePartsCost = () => {
+    if (!job?.id || job.status !== 'COMPLETED') return;
+    db.jobPartsUsed.getByJob(job.id).then(({ data }) => {
+      const cost = (data || []).reduce((sum: number, row: any) => {
+        const qty = Number(row.quantity_used) || 0;
+        const price = Number(row.inventory?.price) ?? 0;
+        return sum + qty * price;
+      }, 0);
+      setSparePartsCost(cost);
+    });
+  };
+
+  useEffect(() => {
+    fetchSparePartsCost();
+  }, [job?.id, job?.status]);
+
   if (job.status !== 'COMPLETED') return null;
 
   const leadSource = findLeadSource(requirements);
+  const leadCost = Number((job as any).lead_cost) || 0;
+  const billAmount = Number(actualCost || paymentAmount) || 0;
+  const commission10 = billAmount * 0.1;
+  const profit = billAmount - sparePartsCost - leadCost - commission10;
+  const showProfit = billAmount > 0;
   
   // Find assigned technician
   const assignedTechnicianId = (job as any).assigned_technician_id || (job as any).assignedTechnicianId;
@@ -106,6 +129,19 @@ export const CompletedJobSection: React.FC<CompletedJobSectionProps> = ({
           <div className="text-gray-700 break-words">
             <span className="text-gray-500 font-medium">Lead Source:</span> {leadSource || 'Direct call'}
           </div>
+
+          {/* Profit: Amount - spare parts - lead cost - 10% commission */}
+          {showProfit && (
+            <div className="text-gray-700 break-words pt-2 border-t border-green-200">
+              <span className="text-gray-500 font-medium">Profit:</span>{' '}
+              <span className={profit >= 0 ? 'text-green-600 font-semibold' : 'text-red-600 font-semibold'}>
+                ₹{profit.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+              </span>
+              <span className="text-xs text-gray-500 ml-1">
+                (Amount − spare parts ₹{sparePartsCost.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} − lead ₹{leadCost.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} − 10% commission ₹{commission10.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })})
+              </span>
+            </div>
+          )}
           
           {/* QR Code Info (if online) */}
           {qrPhotos?.selected_qr_code_name && (
@@ -353,7 +389,10 @@ export const CompletedJobSection: React.FC<CompletedJobSectionProps> = ({
       {assignedTechnician && (
         <JobPartsUsedDialog
           open={partsUsedDialogOpen}
-          onOpenChange={setPartsUsedDialogOpen}
+          onOpenChange={(open) => {
+            setPartsUsedDialogOpen(open);
+            if (!open) fetchSparePartsCost();
+          }}
           job={job}
           technician={assignedTechnician}
         />
