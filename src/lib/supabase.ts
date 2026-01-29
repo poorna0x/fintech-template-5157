@@ -2624,6 +2624,16 @@ export const db = {
       return { data, error };
     },
 
+    /** Fetch parts used for given job IDs with inventory price (for analytics spare parts cost) */
+    async getWithPriceByJobIds(jobIds: string[]) {
+      if (!jobIds?.length) return { data: [] as any[], error: null };
+      const { data, error } = await supabase
+        .from('job_parts_used')
+        .select('id, job_id, quantity_used, inventory:inventory(id, price)')
+        .in('job_id', jobIds);
+      return { data: data || [], error };
+    },
+
     async create(part: { job_id: string; technician_id: string; inventory_id: string; quantity_used: number }) {
       const { data, error } = await supabase
         .from('job_parts_used')

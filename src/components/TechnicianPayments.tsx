@@ -3116,6 +3116,7 @@ const TechnicianPayments = () => {
                   <SelectItem value="MARKETING">Marketing</SelectItem>
                   <SelectItem value="UTILITIES">Utilities</SelectItem>
                   <SelectItem value="RENT">Rent</SelectItem>
+                  <SelectItem value="SPARE_PARTS">Spare Parts</SelectItem>
                   <SelectItem value="OTHER">Other</SelectItem>
                 </SelectContent>
               </Select>

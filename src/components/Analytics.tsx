@@ -70,6 +70,7 @@ interface AnalyticsData {
   totalTechnicianExpenses?: number;
   totalTechnicianAdvances?: number;
   totalBusinessExpenses?: number;
+  totalSparePartsCost?: number; // Cost of parts used on jobs (from job_parts_used × inventory price)
   totalSalaryDeductions?: number; // From technician payments (base salary deductions)
   totalExpenses?: number; // Sum of all expenses
   totalProfit?: number; // Revenue - Lead Costs - Expenses
@@ -209,6 +210,7 @@ const Analytics = () => {
       let totalTechnicianExpenses = 0;
       let totalTechnicianAdvances = 0;
       let totalBusinessExpenses = 0;
+      let totalSparePartsCost = 0;
       let totalSalaryDeductions = 0;
 
       if (startDate && endDate) {
@@ -339,7 +341,18 @@ const Analytics = () => {
         completedJobs = allJobs.filter((j: any) => j && j.status === 'COMPLETED');
         jobs = allJobs;
       }
-      
+
+      // Spare parts cost: parts used on completed jobs in period (quantity × inventory price)
+      const completedJobIds = completedJobs.map((j: any) => j.id).filter(Boolean);
+      if (completedJobIds.length > 0) {
+        const { data: partsUsedData } = await db.jobPartsUsed.getWithPriceByJobIds(completedJobIds);
+        totalSparePartsCost = (partsUsedData || []).reduce((sum: number, row: any) => {
+          const qty = Number(row.quantity_used) || 0;
+          const price = Number(row.inventory?.price) ?? 0;
+          return sum + qty * price;
+        }, 0);
+      }
+
       // Lead Source Breakdown with Service Type details and lead costs
       const leadSourceMap: Record<string, { 
         count: number; 
@@ -967,11 +980,12 @@ const Analytics = () => {
         totalTechnicianExpenses,
         totalTechnicianAdvances, // Keep for reference but don't show separately
         totalBusinessExpenses,
+        totalSparePartsCost, // Parts used on jobs (job_parts_used × inventory price)
         totalSalaryDeductions, // This is now "Total Salary" (includes base salary + commissions + extra commissions - advances)
-        // Total expenses (sum of all expense types: technician expenses + total salary + business expenses)
-        totalExpenses: totalTechnicianExpenses + totalSalaryDeductions + totalBusinessExpenses,
+        // Total expenses (technician expenses + total salary + business expenses + spare parts cost)
+        totalExpenses: totalTechnicianExpenses + totalSalaryDeductions + totalBusinessExpenses + totalSparePartsCost,
         // Total profit (Revenue - Lead Costs - Expenses)
-        totalProfit: periodBilling - Object.values(leadSourceMap).reduce((sum, stats) => sum + stats.leadCost, 0) - (totalTechnicianExpenses + totalSalaryDeductions + totalBusinessExpenses),
+        totalProfit: periodBilling - Object.values(leadSourceMap).reduce((sum, stats) => sum + stats.leadCost, 0) - (totalTechnicianExpenses + totalSalaryDeductions + totalBusinessExpenses + totalSparePartsCost),
         serviceTypeBreakdown: Object.entries(serviceTypeMap)
           .map(([serviceType, stats]) => ({ serviceType, ...stats }))
           .sort((a, b) => b.amount - a.amount),
@@ -1755,6 +1769,12 @@ const Analytics = () => {
                       ₹ {formatCurrency(analytics.totalBusinessExpenses || 0)}
                     </span>
                   </div>
+                  <div className="flex justify-between gap-2 items-center min-w-0">
+                    <span className="text-gray-600 truncate">Spare Parts (used on jobs):</span>
+                    <span className="font-semibold text-red-600 shrink-0 tabular-nums">
+                      ₹ {formatCurrency(analytics.totalSparePartsCost || 0)}
+                    </span>
+                  </div>
                   <div className="pt-1.5 sm:pt-2 mt-1.5 sm:mt-2 border-t border-red-300">
                     <div className="flex justify-between items-center gap-2 min-w-0">
                       <span className="text-sm sm:text-base font-semibold text-gray-700">Total Expenses:</span>
@@ -1796,7 +1816,7 @@ const Analytics = () => {
                       </span>
                     </div>
                     <div className="flex justify-between sm:block py-1 sm:py-0">
-                      <span className="text-gray-600">− Expenses</span>
+                      <span className="text-gray-600">− Expenses (incl. spare parts)</span>
                       <span className="font-semibold text-red-600 sm:block tabular-nums">
                         ₹ {formatCurrency(analytics.totalExpenses || 0)}
                       </span>
