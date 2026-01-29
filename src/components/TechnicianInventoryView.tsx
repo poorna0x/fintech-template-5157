@@ -190,12 +190,24 @@ const TechnicianInventoryView: React.FC<TechnicianInventoryViewProps> = ({ techn
     }
 
     const quantity = parseInt(requestFormData.quantity);
-    if (isNaN(quantity) || quantity < 0) {
-      toast.error('Quantity must be a valid number');
+    if (isNaN(quantity) || quantity <= 0) {
+      toast.error('Quantity must be a valid positive number');
       return;
     }
 
     try {
+      // Check available quantity in main inventory
+      const mainItem = mainInventory.find(i => i.id === requestFormData.inventory_id);
+      if (!mainItem) {
+        toast.error('Product not found in main inventory');
+        return;
+      }
+
+      if (mainItem.quantity < quantity) {
+        toast.error(`Insufficient stock. Available: ${mainItem.quantity}, Requested: ${quantity}`);
+        return;
+      }
+
       // Check if technician already has this item
       const existingItem = myInventory.find(item => item.inventory_id === requestFormData.inventory_id);
       
@@ -206,7 +218,6 @@ const TechnicianInventoryView: React.FC<TechnicianInventoryViewProps> = ({ techn
           quantity: newQuantity
         });
         if (error) throw error;
-        toast.success(`Added ${quantity} more items. Total: ${newQuantity}`);
       } else {
         // Create new assignment
         const { error } = await db.technicianInventory.upsert({
@@ -215,12 +226,26 @@ const TechnicianInventoryView: React.FC<TechnicianInventoryViewProps> = ({ techn
           quantity
         });
         if (error) throw error;
-        toast.success('Inventory item added successfully');
       }
 
-      // Reload inventory and clear cache
+      // Subtract from main inventory
+      const newMainQuantity = mainItem.quantity - quantity;
+      if (newMainQuantity < 0) {
+        throw new Error('Insufficient quantity in main inventory');
+      }
+
+      const { error: updateMainError } = await db.inventory.update(requestFormData.inventory_id, {
+        quantity: newMainQuantity
+      });
+      if (updateMainError) throw updateMainError;
+
+      toast.success(`Added ${quantity} items. ${existingItem ? `Total: ${existingItem.quantity + quantity}` : ''}`);
+
+      // Reload inventories and clear cache
       inventoryCache.clear(`tech_inventory_${technicianId}`);
+      inventoryCache.clear('main_inventory');
       await loadMyInventory(true);
+      await loadMainInventory(true);
       
       setRequestDialogOpen(false);
       setRequestFormData({

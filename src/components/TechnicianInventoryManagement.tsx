@@ -257,14 +257,59 @@ const TechnicianInventoryManagement: React.FC<TechnicianInventoryManagementProps
     }
 
     try {
+      // Get main inventory item to check available quantity
+      const mainItem = inventoryItems.find(i => i.id === formData.inventory_id);
+      if (!mainItem) {
+        toast.error('Product not found in main inventory');
+        return;
+      }
+
       if (selectedItem) {
-        // Update existing item
+        // Update existing item - calculate quantity difference
+        const quantityDifference = quantity - selectedItem.quantity;
+        
+        if (quantityDifference > 0) {
+          // Adding more items - check if main inventory has enough
+          if (mainItem.quantity < quantityDifference) {
+            toast.error(`Insufficient stock. Available: ${mainItem.quantity}, Needed: ${quantityDifference}`);
+            return;
+          }
+          
+          // Subtract from main inventory
+          const newMainQuantity = mainItem.quantity - quantityDifference;
+          const { error: updateMainError } = await db.inventory.update(formData.inventory_id, {
+            quantity: newMainQuantity
+          });
+          if (updateMainError) throw updateMainError;
+        } else if (quantityDifference < 0) {
+          // Removing items - add back to main inventory
+          const newMainQuantity = mainItem.quantity + Math.abs(quantityDifference);
+          const { error: updateMainError } = await db.inventory.update(formData.inventory_id, {
+            quantity: newMainQuantity
+          });
+          if (updateMainError) throw updateMainError;
+        }
+
+        // Update technician inventory
         const { error } = await db.technicianInventory.update(selectedItem.id, {
           quantity
         });
         if (error) throw error;
         toast.success('Technician inventory updated successfully');
       } else {
+        // Create new item - check if main inventory has enough
+        if (mainItem.quantity < quantity) {
+          toast.error(`Insufficient stock. Available: ${mainItem.quantity}, Requested: ${quantity}`);
+          return;
+        }
+
+        // Subtract from main inventory
+        const newMainQuantity = mainItem.quantity - quantity;
+        const { error: updateMainError } = await db.inventory.update(formData.inventory_id, {
+          quantity: newMainQuantity
+        });
+        if (updateMainError) throw updateMainError;
+
         // Create new item (use upsert to handle duplicates)
         const { error } = await db.technicianInventory.upsert({
           technician_id: formData.technician_id,
@@ -278,6 +323,8 @@ const TechnicianInventoryManagement: React.FC<TechnicianInventoryManagementProps
       // Clear cache and reload data
       const cacheKey = selectedTechnicianId ? `tech_inventory_${selectedTechnicianId}` : 'all_tech_inventory';
       inventoryCache.clear(cacheKey);
+      inventoryCache.clear('main_inventory');
+      await loadInventoryItems(true);
       if (selectedTechnicianId) {
         await loadTechnicianInventory(selectedTechnicianId, true);
       } else {
@@ -305,11 +352,26 @@ const TechnicianInventoryManagement: React.FC<TechnicianInventoryManagementProps
     if (!selectedItem) return;
 
     try {
+      // Get main inventory item to add back quantity
+      const mainItem = inventoryItems.find(i => i.id === selectedItem.inventory_id);
+      
+      if (mainItem) {
+        // Add back to main inventory
+        const newMainQuantity = mainItem.quantity + selectedItem.quantity;
+        const { error: updateMainError } = await db.inventory.update(selectedItem.inventory_id, {
+          quantity: newMainQuantity
+        });
+        if (updateMainError) throw updateMainError;
+      }
+
+      // Delete from technician inventory
       const { error } = await db.technicianInventory.delete(selectedItem.id);
       if (error) throw error;
-      toast.success('Inventory item removed from technician');
+      toast.success('Inventory item removed from technician and returned to main inventory');
 
       // Clear cache and reload data
+      inventoryCache.clear('main_inventory');
+      await loadInventoryItems(true);
       const cacheKey = selectedTechnicianId ? `tech_inventory_${selectedTechnicianId}` : 'all_tech_inventory';
       inventoryCache.clear(cacheKey);
       if (selectedTechnicianId) {
