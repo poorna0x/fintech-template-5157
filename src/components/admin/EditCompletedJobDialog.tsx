@@ -75,11 +75,27 @@ const EditCompletedJobDialog: React.FC<EditCompletedJobDialogProps> = ({
             <Label htmlFor="edit-lead-source">Lead Source</Label>
             <Select
               value={editData.leadSource || 'Direct call'}
-              onValueChange={(value) => onEditDataChange({ 
-                ...editData, 
-                leadSource: value === 'Other' ? 'Other' : value,
-                leadSourceCustom: value === 'Other' ? editData.leadSourceCustom : ''
-              })}
+              onValueChange={(value) => {
+                const selectedLeadSource = value === 'Other' ? 'Other' : value;
+                // Get default lead cost
+                const getDefaultLeadCost = (leadSource: string): string => {
+                  switch (leadSource) {
+                    case 'Home Triangle': return '200';
+                    case 'Direct call': return '0';
+                    case 'RO care india': return '400';
+                    case 'Local Ramu': return '500';
+                    case 'Google-Leads': return '0';
+                    case 'Website': return '0';
+                    default: return '0';
+                  }
+                };
+                onEditDataChange({ 
+                  ...editData, 
+                  leadSource: selectedLeadSource,
+                  leadSourceCustom: value === 'Other' ? editData.leadSourceCustom : '',
+                  leadCost: getDefaultLeadCost(selectedLeadSource)
+                });
+              }}
             >
               <SelectTrigger>
                 <SelectValue />
@@ -104,6 +120,23 @@ const EditCompletedJobDialog: React.FC<EditCompletedJobDialogProps> = ({
                 value={editData.leadSourceCustom || ''}
                 onChange={(e) => onEditDataChange({ ...editData, leadSourceCustom: e.target.value })}
                 placeholder="Enter custom lead source"
+              />
+            </div>
+          )}
+
+          {/* Lead Cost - Required when lead source is selected */}
+          {editData.leadSource && (
+            <div>
+              <Label htmlFor="edit-lead-cost">Lead Cost (₹) *</Label>
+              <Input
+                id="edit-lead-cost"
+                type="number"
+                min="0"
+                step="0.01"
+                value={editData.leadCost || '0'}
+                onChange={(e) => onEditDataChange({ ...editData, leadCost: e.target.value })}
+                placeholder="Enter lead cost"
+                required
               />
             </div>
           )}

@@ -294,11 +294,17 @@ export const CompletedJobSection: React.FC<CompletedJobSectionProps> = ({
                 }
               }
 
+              // Get lead_cost from job
+              const leadCost = (job as any).lead_cost !== undefined && (job as any).lead_cost !== null 
+                ? (job as any).lead_cost.toString() 
+                : '0';
+
               const editData: any = {
                 amount: actualCost || paymentAmount || '',
                 paymentMethod: paymentMethod || 'CASH',
                 leadSource: leadSourceValue,
                 leadSourceCustom: leadSourceCustomValue,
+                leadCost: leadCost,
                 qrCodeName: qrPhotos?.selected_qr_code_name || '',
                 amcInfo: amcInfo || null,
                 completionNotes: completionNotes || '',

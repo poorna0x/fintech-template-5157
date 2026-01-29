@@ -19,6 +19,7 @@ interface EditJobFormData {
   scheduledTimeCustom: string;
   lead_source: string;
   lead_source_custom: string;
+  lead_cost: string;
   cost_agreed: string;
 }
 
@@ -39,6 +40,26 @@ const EditJobDialog: React.FC<EditJobDialogProps> = ({
   const [forceOpen, setForceOpen] = useState(true);
   const allowCloseRef = useRef(false);
   const initialFormDataRef = useRef<EditJobFormData | null>(null);
+  // Get default lead cost based on lead source
+  const getDefaultLeadCost = (leadSource: string): string => {
+    switch (leadSource) {
+      case 'Home Triangle':
+        return '200';
+      case 'Direct call':
+        return '0';
+      case 'RO care india':
+        return '400';
+      case 'Local Ramu':
+        return '500';
+      case 'Google-Leads':
+        return '0';
+      case 'Website':
+        return '0';
+      default:
+        return '0';
+    }
+  };
+
   const [editJobFormData, setEditJobFormData] = useState<EditJobFormData>({
     serviceType: 'RO',
     serviceSubType: 'Installation',
@@ -49,6 +70,7 @@ const EditJobDialog: React.FC<EditJobDialogProps> = ({
     scheduledTimeCustom: '',
     lead_source: '',
     lead_source_custom: '',
+    lead_cost: '0',
     cost_agreed: ''
   });
 
@@ -76,10 +98,16 @@ const EditJobDialog: React.FC<EditJobDialogProps> = ({
         }
       }
       
-      // Extract lead_source and cost_range from requirements
+      // Extract lead_source, lead_cost, and cost_range from requirements and job
       let leadSource = '';
       let leadSourceCustom = '';
+      let leadCost = '0';
       let costAgreed = '';
+      
+      // Get lead_cost from job (if exists)
+      if ((job as any).lead_cost !== undefined && (job as any).lead_cost !== null) {
+        leadCost = (job as any).lead_cost.toString();
+      }
       
       // Normalize lead source to match Select options exactly
       const normalizeLeadSource = (source: string): string => {
@@ -163,6 +191,11 @@ const EditJobDialog: React.FC<EditJobDialogProps> = ({
         costAgreed = estimatedCost.toString();
       }
 
+      // If no lead_cost found, set default based on lead source
+      if (leadCost === '0' && leadSource) {
+        leadCost = getDefaultLeadCost(leadSource);
+      }
+
       const formData: EditJobFormData = {
         serviceType: (job.service_type || job.serviceType || 'RO') as 'RO' | 'SOFTENER',
         serviceSubType: isCustomSubType ? 'Custom' : serviceSubType,
@@ -173,6 +206,7 @@ const EditJobDialog: React.FC<EditJobDialogProps> = ({
         scheduledTimeCustom: customTimeValue,
         lead_source: leadSource,
         lead_source_custom: leadSourceCustom,
+        lead_cost: leadCost,
         cost_agreed: costAgreed
       };
       setEditJobFormData(formData);
@@ -287,6 +321,8 @@ const EditJobDialog: React.FC<EditJobDialogProps> = ({
         ? (parseFloat(editJobFormData.cost_agreed.toString().split('-')[0].trim()) || 0)
         : 0;
 
+      const leadCostNum = parseFloat(editJobFormData.lead_cost) || 0;
+
       const { data: updatedJob, error } = await db.jobs.update(job.id, {
         service_type: editJobFormData.serviceType,
         service_sub_type: editJobFormData.serviceSubType === 'Custom' ? editJobFormData.serviceSubTypeCustom : editJobFormData.serviceSubType,
@@ -294,6 +330,7 @@ const EditJobDialog: React.FC<EditJobDialogProps> = ({
         scheduled_date: editJobFormData.scheduledDate,
         scheduled_time_slot: timeSlotValue,
         estimated_cost: estimatedCost,
+        lead_cost: leadCostNum,
         requirements: requirements
       });
 
@@ -519,7 +556,14 @@ const EditJobDialog: React.FC<EditJobDialogProps> = ({
               <Label htmlFor="edit-lead-source">Lead Source *</Label>
               <Select 
                 value={editJobFormData.lead_source || ''} 
-                onValueChange={(value) => setEditJobFormData(prev => ({ ...prev, lead_source: value }))}
+                onValueChange={(value) => {
+                  const defaultCost = getDefaultLeadCost(value);
+                  setEditJobFormData(prev => ({ 
+                    ...prev, 
+                    lead_source: value,
+                    lead_cost: defaultCost
+                  }));
+                }}
                 required
               >
                 <SelectTrigger>
@@ -536,6 +580,21 @@ const EditJobDialog: React.FC<EditJobDialogProps> = ({
                 </SelectContent>
               </Select>
             </div>
+            {editJobFormData.lead_source && (
+              <div>
+                <Label htmlFor="edit-lead-cost">Lead Cost (₹) *</Label>
+                <Input
+                  id="edit-lead-cost"
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  value={editJobFormData.lead_cost}
+                  onChange={(e) => setEditJobFormData(prev => ({ ...prev, lead_cost: e.target.value }))}
+                  placeholder="Enter lead cost"
+                  required
+                />
+              </div>
+            )}
             {editJobFormData.lead_source === 'Other' && (
               <div>
                 <Label htmlFor="edit-lead-source-custom">Custom Lead Source</Label>

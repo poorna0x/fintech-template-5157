@@ -27,6 +27,7 @@ interface NewJobFormData {
   cost_agreed: string;
   lead_source: string;
   lead_source_custom: string;
+  lead_cost: string;
   photos: string[];
   require_otp: boolean;
 }
@@ -54,6 +55,26 @@ const NewJobDialog: React.FC<NewJobDialogProps> = ({
 }) => {
   const [isDragOverNewJob, setIsDragOverNewJob] = useState(false);
   const [isCreatingJob, setIsCreatingJob] = useState(false);
+  // Get default lead cost based on lead source
+  const getDefaultLeadCost = (leadSource: string): string => {
+    switch (leadSource) {
+      case 'Home Triangle':
+        return '200';
+      case 'Direct call':
+        return '0';
+      case 'RO care india':
+        return '400';
+      case 'Local Ramu':
+        return '500';
+      case 'Google-Leads':
+        return '0';
+      case 'Website':
+        return '0';
+      default:
+        return '0';
+    }
+  };
+
   const [newJobFormData, setNewJobFormData] = useState<NewJobFormData>({
     service_type: 'RO',
     service_sub_type: 'Installation',
@@ -69,6 +90,7 @@ const NewJobDialog: React.FC<NewJobDialogProps> = ({
     cost_agreed: '',
     lead_source: '',
     lead_source_custom: '',
+    lead_cost: '0',
     photos: [],
     require_otp: false
   });
@@ -97,8 +119,6 @@ const NewJobDialog: React.FC<NewJobDialogProps> = ({
   }, [open, customer, parseDbServiceType]);
 
   const handleClose = () => {
-    onOpenChange(false);
-    // Reset form
     setNewJobFormData({
       service_type: 'RO',
       service_sub_type: 'Installation',
@@ -114,9 +134,11 @@ const NewJobDialog: React.FC<NewJobDialogProps> = ({
       cost_agreed: '',
       lead_source: '',
       lead_source_custom: '',
+      lead_cost: '0',
       photos: [],
       require_otp: false
     });
+    onOpenChange(false);
   };
 
   const handleFormChange = (field: keyof NewJobFormData, value: string | number) => {
@@ -227,6 +249,17 @@ const NewJobDialog: React.FC<NewJobDialogProps> = ({
       return;
     }
 
+    if (!newJobFormData.lead_cost || newJobFormData.lead_cost.trim() === '') {
+      toast.error('Please enter lead cost');
+      return;
+    }
+
+    const leadCostNum = parseFloat(newJobFormData.lead_cost);
+    if (isNaN(leadCostNum) || leadCostNum < 0) {
+      toast.error('Lead cost must be a valid number');
+      return;
+    }
+
     setIsCreatingJob(true);
     try {
       const jobNumber = generateJobNumber(newJobFormData.service_type);
@@ -292,6 +325,7 @@ const NewJobDialog: React.FC<NewJobDialogProps> = ({
         description: newJobFormData.description.trim() || '',
         requirements: requirements,
         estimated_cost: newJobFormData.cost_agreed ? (parseFloat(newJobFormData.cost_agreed.toString().split('-')[0].trim()) || 0) : 0,
+        lead_cost: leadCostNum,
         payment_status: 'PENDING',
         assigned_technician_id: newJobFormData.assigned_technician_id || null,
         assigned_date: newJobFormData.assigned_technician_id ? new Date().toISOString() : null,
@@ -647,6 +681,11 @@ const NewJobDialog: React.FC<NewJobDialogProps> = ({
                   onChange={(e) => {
                     const selectedLeadSource = e.target.value;
                     handleFormChange('lead_source', selectedLeadSource);
+                    // Auto-set default lead cost based on lead source
+                    if (selectedLeadSource) {
+                      const defaultCost = getDefaultLeadCost(selectedLeadSource);
+                      handleFormChange('lead_cost', defaultCost);
+                    }
                     // Auto-enable OTP if lead source is "Home Triangle"
                     if (selectedLeadSource === 'Home Triangle') {
                       handleFormChange('require_otp', true);
@@ -674,6 +713,26 @@ const NewJobDialog: React.FC<NewJobDialogProps> = ({
                   />
                 )}
               </div>
+
+              {/* Lead Cost - Required when lead source is selected */}
+              {newJobFormData.lead_source && (
+                <div className="space-y-2">
+                  <Label htmlFor="job_lead_cost">Lead Cost (₹) *</Label>
+                  <Input
+                    id="job_lead_cost"
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    value={newJobFormData.lead_cost}
+                    onChange={(e) => handleFormChange('lead_cost', e.target.value)}
+                    placeholder="Enter lead cost"
+                    required
+                  />
+                  <p className="text-xs text-gray-500">
+                    Default: ₹{getDefaultLeadCost(newJobFormData.lead_source)} (can be changed)
+                  </p>
+                </div>
+              )}
 
               {/* OTP Verification Toggle */}
               <div className="space-y-2 pt-2 border-t border-gray-200">

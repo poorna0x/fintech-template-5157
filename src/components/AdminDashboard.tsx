@@ -9635,6 +9635,7 @@ const AdminDashboard = () => {
 
                   // Prepare update data
                   const amount = parseFloat(completedJobEditData.amount) || 0;
+                  const leadCost = parseFloat(completedJobEditData.leadCost) || 0;
                   
                   // Handle completion date
                   let completedAt = null;
@@ -9662,6 +9663,7 @@ const AdminDashboard = () => {
                     payment_status: amount > 0 ? 'PAID' : 'PENDING',
                     completion_notes: completedJobEditData.completionNotes || '',
                     completed_by: newCompletedBy,
+                    lead_cost: leadCost,
                     requirements: JSON.stringify(requirements)
                   };
                   

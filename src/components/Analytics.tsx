@@ -59,6 +59,7 @@ interface AnalyticsData {
     leadType: string; 
     count: number; 
     amount: number;
+    leadCost: number;
     serviceTypes: Array<{ serviceType: string; count: number; amount: number }>;
   }>;
   serviceTypeBreakdown?: Array<{ serviceType: string; count: number; amount: number }>;
@@ -236,10 +237,11 @@ const Analytics = () => {
         jobs = allJobs;
       }
       
-      // Lead Source Breakdown with Service Type details
+      // Lead Source Breakdown with Service Type details and lead costs
       const leadSourceMap: Record<string, { 
         count: number; 
         amount: number; 
+        leadCost: number; // Total lead cost for this source
         displayName: string;
         serviceTypes: Record<string, { count: number; amount: number }>;
       }> = {};
@@ -337,18 +339,23 @@ const Analytics = () => {
           // Use service_sub_type instead of service_type (e.g., Installation, Service, Reinstallation, etc.)
           const serviceType = job.service_sub_type || job.serviceSubType || 'Unknown';
           
+          // Get lead_cost from job
+          const leadCost = Number((job as any).lead_cost || 0);
+          
           if (!leadSourceMap[normalizedKey]) {
             // Use canonical name if available, otherwise use trimmed source
             const canonicalName = getCanonicalName(normalizedKey, trimmedSource);
             leadSourceMap[normalizedKey] = { 
               count: 0, 
-              amount: 0, 
+              amount: 0,
+              leadCost: 0,
               displayName: canonicalName,
               serviceTypes: {}
             };
           }
           leadSourceMap[normalizedKey].count += 1;
           leadSourceMap[normalizedKey].amount += amount;
+          leadSourceMap[normalizedKey].leadCost += leadCost;
           
           // Track service sub-type within this lead source (Installation, Service, Reinstallation, etc.)
           if (!leadSourceMap[normalizedKey].serviceTypes[serviceType]) {
@@ -845,6 +852,7 @@ const Analytics = () => {
             leadType: stats.displayName, 
             count: stats.count, 
             amount: stats.amount,
+            leadCost: stats.leadCost,
             serviceTypes: Object.entries(stats.serviceTypes)
               .map(([serviceType, serviceStats]) => ({ serviceType, ...serviceStats }))
               .sort((a, b) => b.amount - a.amount)
@@ -1201,6 +1209,9 @@ const Analytics = () => {
                         <div className="text-sm text-gray-500">Total: {leadSource.count} jobs</div>
                         <div className="text-lg font-bold text-green-600">
                           ₹ {formatCurrency(leadSource.amount)}
+                        </div>
+                        <div className="text-sm font-semibold text-orange-600 mt-1">
+                          Lead Cost: ₹ {formatCurrency(leadSource.leadCost || 0)}
                         </div>
                       </div>
                     </div>

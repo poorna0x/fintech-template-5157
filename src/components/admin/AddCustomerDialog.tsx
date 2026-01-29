@@ -107,6 +107,7 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
     description: '',
     lead_source: 'Direct call', // Default to 'Direct call'
     lead_source_custom: '',
+    lead_cost: '0', // Default lead cost
     priority: 'MEDIUM' as 'LOW' | 'MEDIUM' | 'HIGH' | 'URGENT',
     assigned_technician_id: '', // Add technician assignment field
     require_otp: false
@@ -666,6 +667,17 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
           return;
         }
 
+        if (!step5JobData.lead_cost || step5JobData.lead_cost.trim() === '') {
+          toast.error('Please enter lead cost');
+          return;
+        }
+
+        const leadCostNum = parseFloat(step5JobData.lead_cost);
+        if (isNaN(leadCostNum) || leadCostNum < 0) {
+          toast.error('Lead cost must be a valid number');
+          return;
+        }
+
         if (step5JobData.service_sub_type === 'Custom' && (!step5JobData.service_sub_type_custom || step5JobData.service_sub_type_custom.trim() === '')) {
           toast.error('Please enter a custom service sub type');
           return;
@@ -849,6 +861,7 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
             description: step5JobData.description.trim() || '',
             requirements: requirements,
             estimated_cost: 0,
+            lead_cost: leadCostNum,
             payment_status: 'PENDING' as const,
             before_photos: allPhotos.length > 0 ? allPhotos : [], // Add photos from Step 3 to job's before_photos
             assigned_technician_id: step5JobData.assigned_technician_id || null,
@@ -1539,11 +1552,24 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
                         value={step5JobData.lead_source || 'Direct call'}
                         onValueChange={(value) => {
                           const selectedLeadSource = value === 'Other' ? 'Other' : value;
+                          // Get default lead cost
+                          const getDefaultLeadCost = (leadSource: string): string => {
+                            switch (leadSource) {
+                              case 'Home Triangle': return '200';
+                              case 'Direct call': return '0';
+                              case 'RO care india': return '400';
+                              case 'Local Ramu': return '500';
+                              case 'Google-Leads': return '0';
+                              case 'Website': return '0';
+                              default: return '0';
+                            }
+                          };
                           setStep5JobData(prev => {
                             const updated = {
                               ...prev,
                               lead_source: selectedLeadSource,
-                              lead_source_custom: value === 'Other' ? prev.lead_source_custom : ''
+                              lead_source_custom: value === 'Other' ? prev.lead_source_custom : '',
+                              lead_cost: getDefaultLeadCost(selectedLeadSource)
                             };
                             // Auto-enable OTP if lead source is "Home Triangle"
                             if (selectedLeadSource === 'Home Triangle') {
@@ -1577,6 +1603,23 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
                           value={step5JobData.lead_source_custom}
                           onChange={(e) => setStep5JobData(prev => ({ ...prev, lead_source_custom: e.target.value }))}
                           placeholder="Enter custom lead source"
+                        />
+                      </div>
+                    )}
+
+                    {/* Lead Cost - Required when lead source is selected */}
+                    {step5JobData.lead_source && (
+                      <div className="space-y-2">
+                        <Label htmlFor="step5_lead_cost">Lead Cost (₹) *</Label>
+                        <Input
+                          id="step5_lead_cost"
+                          type="number"
+                          min="0"
+                          step="0.01"
+                          value={step5JobData.lead_cost || '0'}
+                          onChange={(e) => setStep5JobData(prev => ({ ...prev, lead_cost: e.target.value }))}
+                          placeholder="Enter lead cost"
+                          required
                         />
                       </div>
                     )}
@@ -1692,7 +1735,7 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
             ) : (
               <Button 
                 onClick={handleCreateCustomer}
-                disabled={isCreating || (shouldCreateJob && (!step5JobData.scheduled_date || !step5JobData.lead_source || (step5JobData.lead_source === 'Other' && !step5JobData.lead_source_custom) || (step5JobData.service_sub_type === 'Custom' && !step5JobData.service_sub_type_custom) || (step5JobData.scheduled_time_slot === 'CUSTOM' && !step5JobData.scheduled_time_custom)))}
+                disabled={isCreating || (shouldCreateJob && (!step5JobData.scheduled_date || !step5JobData.lead_source || !step5JobData.lead_cost || (step5JobData.lead_source === 'Other' && !step5JobData.lead_source_custom) || (step5JobData.service_sub_type === 'Custom' && !step5JobData.service_sub_type_custom) || (step5JobData.scheduled_time_slot === 'CUSTOM' && !step5JobData.scheduled_time_custom)))}
                 className="bg-green-600 hover:bg-green-700 w-full sm:w-auto text-sm"
               >
                 {isCreating ? (
