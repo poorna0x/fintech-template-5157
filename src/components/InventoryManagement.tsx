@@ -10,6 +10,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { ShoppingCart, Plus, Edit, Trash2, Search, X, RefreshCw, User } from 'lucide-react';
 import { db } from '@/lib/supabase';
 import { toast } from 'sonner';
+import { inventoryCache } from '@/lib/inventoryCache';
 import TechnicianInventoryManagement from './TechnicianInventoryManagement';
 
 interface InventoryItem {
@@ -277,6 +278,24 @@ const InventoryManagement: React.FC<InventoryManagementProps> = ({ onBack }) => 
         quantity: ''
       });
       setSelectedInventoryItem(null);
+      
+      // Clear all technician inventory caches since they contain joined inventory data
+      // This ensures technician views show updated product names, codes, etc.
+      // Clear all inventory-related caches
+      const allCacheKeys = Object.keys(localStorage);
+      allCacheKeys.forEach(key => {
+        // Clear all technician inventory caches (format: inventory_cache_tech_inventory_*)
+        if (key.startsWith('inventory_cache_') && key.includes('tech_inventory_')) {
+          const cacheKey = key.replace('inventory_cache_', '');
+          inventoryCache.clear(cacheKey);
+        }
+        // Clear main inventory cache
+        if (key.startsWith('inventory_cache_') && (key.includes('main_inventory') || key.includes('inventory_items'))) {
+          const cacheKey = key.replace('inventory_cache_', '');
+          inventoryCache.clear(cacheKey);
+        }
+      });
+      
       loadInventory(true); // Force reload after save
     } catch (error: any) {
       console.error('Error saving inventory:', error);
@@ -289,6 +308,23 @@ const InventoryManagement: React.FC<InventoryManagementProps> = ({ onBack }) => 
       const { error } = await db.inventory.delete(id);
       if (error) throw error;
       toast.success('Inventory item deleted successfully');
+      
+      // Clear all technician inventory caches since they contain joined inventory data
+      // Clear all inventory-related caches
+      const allCacheKeys = Object.keys(localStorage);
+      allCacheKeys.forEach(key => {
+        // Clear all technician inventory caches (format: inventory_cache_tech_inventory_*)
+        if (key.startsWith('inventory_cache_') && key.includes('tech_inventory_')) {
+          const cacheKey = key.replace('inventory_cache_', '');
+          inventoryCache.clear(cacheKey);
+        }
+        // Clear main inventory cache
+        if (key.startsWith('inventory_cache_') && (key.includes('main_inventory') || key.includes('inventory_items'))) {
+          const cacheKey = key.replace('inventory_cache_', '');
+          inventoryCache.clear(cacheKey);
+        }
+      });
+      
       // Optimistically update local state instead of reloading
       setInventoryItems(prev => prev.filter(item => item.id !== id));
       setLastLoadTime(Date.now()); // Update cache time

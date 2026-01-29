@@ -7,7 +7,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from '@/components/ui/command';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { Package, Plus, Search, Check, ChevronsUpDown, RefreshCw, X, ArrowUpCircle } from 'lucide-react';
+import { Package, Plus, Search, Check, ChevronsUpDown, RefreshCw, ArrowUpCircle } from 'lucide-react';
 import { db } from '@/lib/supabase';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
@@ -60,7 +60,7 @@ const TechnicianInventoryView: React.FC<TechnicianInventoryViewProps> = ({ techn
   const [currentTopUpIndex, setCurrentTopUpIndex] = useState(0);
   const [topUpLoading, setTopUpLoading] = useState(false);
   const lastLoadTimeRef = useRef<number>(0);
-  const CACHE_DURATION = 5 * 60 * 1000; // 5 minutes
+  const CACHE_DURATION = 30 * 1000; // 30 seconds - shorter cache to reflect main inventory updates faster
 
   // Safety check - don't render if no technicianId
   if (!technicianId) {
@@ -82,10 +82,17 @@ const TechnicianInventoryView: React.FC<TechnicianInventoryViewProps> = ({ techn
   // Load technician's inventory with caching
   const loadMyInventory = useCallback(async (forceReload = false) => {
     const cacheKey = `tech_inventory_${technicianId}`;
+    
+    // If force reload, clear cache first
+    if (forceReload) {
+      inventoryCache.clear(cacheKey);
+      lastLoadTimeRef.current = 0; // Reset cache time
+    }
+    
     const now = Date.now();
     const cacheValid = now - lastLoadTimeRef.current < CACHE_DURATION;
 
-    // Check cache first
+    // Check cache first (only if not forcing reload)
     if (!forceReload && cacheValid) {
       const cached = inventoryCache.get<TechnicianInventoryItem[]>(cacheKey);
       if (cached) {
@@ -97,6 +104,7 @@ const TechnicianInventoryView: React.FC<TechnicianInventoryViewProps> = ({ techn
 
     try {
       setLoading(true);
+      // Always fetch fresh data from database to get latest inventory details
       const { data, error } = await db.technicianInventory.getByTechnician(technicianId);
       if (error) throw error;
       const inventoryData = data || [];
@@ -115,7 +123,12 @@ const TechnicianInventoryView: React.FC<TechnicianInventoryViewProps> = ({ techn
   const loadMainInventory = useCallback(async (forceReload = false) => {
     const cacheKey = 'main_inventory';
     
-    // Check cache first
+    // If force reload, clear cache first
+    if (forceReload) {
+      inventoryCache.clear(cacheKey);
+    }
+    
+    // Check cache first (only if not forcing reload)
     if (!forceReload) {
       const cached = inventoryCache.get<InventoryItem[]>(cacheKey);
       if (cached) {
@@ -126,6 +139,7 @@ const TechnicianInventoryView: React.FC<TechnicianInventoryViewProps> = ({ techn
 
     try {
       setMainInventoryLoading(true);
+      // Always fetch fresh data from database
       const { data, error } = await db.inventory.getAll();
       if (error) throw error;
       const inventoryData = data || [];
@@ -139,9 +153,10 @@ const TechnicianInventoryView: React.FC<TechnicianInventoryViewProps> = ({ techn
     }
   }, []);
 
-  // Load technician inventory on mount
+  // Load technician inventory on mount and when component becomes visible
   useEffect(() => {
-    loadMyInventory();
+    // Always fetch fresh data on mount to ensure we have latest inventory details
+    loadMyInventory(true);
   }, [loadMyInventory]);
 
   // Load main inventory only when dialog opens (lazy loading)
@@ -465,24 +480,19 @@ const TechnicianInventoryView: React.FC<TechnicianInventoryViewProps> = ({ techn
                   View and manage your assigned inventory items
                 </p>
               </div>
-              {onClose && (
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={onClose}
-                  className="h-8 w-8 p-0 -mt-1 -mr-1"
-                  aria-label="Close"
-                >
-                  <X className="w-4 h-4" />
-                </Button>
-              )}
+              {/* Close handled by parent Dialog's X — no duplicate */}
             </div>
             <div className="flex flex-col sm:flex-row gap-2">
               <Button
                 variant="outline"
                 onClick={() => {
+                  // Clear all related caches and force fresh fetch
                   inventoryCache.clear(`tech_inventory_${technicianId}`);
+                  inventoryCache.clear('main_inventory');
+                  inventoryCache.clear('inventory_items');
+                  lastLoadTimeRef.current = 0; // Reset cache timestamp
                   loadMyInventory(true);
+                  loadMainInventory(true); // Also refresh main inventory cache
                 }}
                 className="w-full sm:w-auto"
                 title="Refresh inventory"

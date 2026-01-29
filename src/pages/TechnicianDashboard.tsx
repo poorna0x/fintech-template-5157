@@ -62,6 +62,7 @@ import { getQueuedPhotosCount } from '@/lib/offlinePhotoQueue';
 import { saveJobCompletionProgress, getQueuedCompletionForJob } from '@/lib/offlineJobCompletion';
 import { withTimeout, isSlowNetworkError, isTimeoutError } from '@/lib/networkTimeout';
 import TechnicianInventoryView from '@/components/TechnicianInventoryView';
+import JobPartsUsedDialog from '@/components/admin/JobPartsUsedDialog';
 
 // Bangalore areas list for location extraction
 const bangaloreAreas = [
@@ -332,6 +333,8 @@ const TechnicianDashboard = () => {
   const [photoViewerOpen, setPhotoViewerOpen] = useState(false);
   const [selectedPhoto, setSelectedPhoto] = useState<{url: string, index: number, total: number} | null>(null);
   const [selectedBillPhotos, setSelectedBillPhotos] = useState<string[]>([]);
+  const [partsUsedDialogOpen, setPartsUsedDialogOpen] = useState(false);
+  const [selectedJobForParts, setSelectedJobForParts] = useState<Job | null>(null);
   useEffect(() => {
     registerTechnicianPWA();
     
@@ -4856,6 +4859,64 @@ const TechnicianDashboard = () => {
                         return null;
                       })()}
 
+                      {/* View Bill & Add Parts for Completed Jobs */}
+                      {statusFilter === 'COMPLETED' && (job.status === 'COMPLETED' || (job as any).status === 'COMPLETED') && (() => {
+                        let requirements: any[] = [];
+                        try {
+                          const reqData = (job as any).requirements || job.requirements;
+                          if (typeof reqData === 'string') {
+                            requirements = JSON.parse(reqData);
+                          } else if (Array.isArray(reqData)) {
+                            requirements = reqData;
+                          } else if (reqData && typeof reqData === 'object') {
+                            requirements = [reqData];
+                          }
+                        } catch (e) {
+                          requirements = [];
+                        }
+                        const billPhotosReq = requirements.find((r: any) => r?.bill_photos);
+                        const qrReq = requirements.find((r: any) => r?.qr_photos);
+                        const billPhotos: string[] = Array.isArray(billPhotosReq?.bill_photos) ? billPhotosReq.bill_photos : [];
+                        const paymentScreenshot = qrReq?.qr_photos?.payment_screenshot || null;
+                        const hasBill = (billPhotos.length > 0) || !!paymentScreenshot;
+                        return (
+                          <div className="mb-3 pt-3 border-t border-gray-200 flex flex-wrap gap-2">
+                            {hasBill && (
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                onClick={() => {
+                                  const allPhotos: string[] = [];
+                                  if (paymentScreenshot) allPhotos.push(paymentScreenshot);
+                                  allPhotos.push(...billPhotos);
+                                  if (allPhotos.length > 0) {
+                                    setSelectedBillPhotos(allPhotos);
+                                    setSelectedPhoto({ url: allPhotos[0], index: 0, total: allPhotos.length });
+                                    setPhotoViewerOpen(true);
+                                  }
+                                }}
+                                className="text-xs"
+                              >
+                                <Receipt className="w-3.5 h-3.5 mr-1.5" />
+                                View Bill
+                              </Button>
+                            )}
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={() => {
+                                setSelectedJobForParts(job);
+                                setPartsUsedDialogOpen(true);
+                              }}
+                              className="text-xs"
+                            >
+                              <Package className="w-3.5 h-3.5 mr-1.5" />
+                              Add Parts
+                            </Button>
+                          </div>
+                        );
+                      })()}
+
                       <div className="space-y-3 mb-4">
                         {/* Contact Information - Admin Style: 4 items - Desktop 1 row, Mobile 2x2 */}
                         <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 lg:gap-4">
@@ -7735,6 +7796,29 @@ const TechnicianDashboard = () => {
           </div>
         </DialogContent>
       </Dialog>
+
+      {/* Job Parts Used Dialog - technician can add parts for completed jobs */}
+      {user && (
+        <JobPartsUsedDialog
+          open={partsUsedDialogOpen}
+          onOpenChange={(open) => {
+            setPartsUsedDialogOpen(open);
+            if (!open) setSelectedJobForParts(null);
+          }}
+          job={selectedJobForParts}
+          technician={{
+            id: user.technicianId || user.id,
+            fullName: (user as any).name || (user as any).email || 'Me',
+            full_name: (user as any).name || (user as any).email || 'Me',
+            phone: (user as any).phone || '',
+            email: (user as any).email || '',
+            employeeId: (user as any).employeeId || (user as any).employee_id || '',
+            skills: { serviceTypes: [], certifications: [], experience: 0, rating: 0 },
+            serviceAreas: { pincodes: [], cities: [], maxDistance: 0 },
+            status: 'AVAILABLE',
+          }}
+        />
+      )}
 
       {/* Technician ID Card QR Code Dialog */}
       {/* Inventory Dialog */}

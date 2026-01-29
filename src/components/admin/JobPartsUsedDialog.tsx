@@ -75,17 +75,15 @@ const JobPartsUsedDialog: React.FC<JobPartsUsedDialogProps> = ({
   const loadTechnicianInventory = useCallback(async () => {
     if (!technician?.id) return;
 
-    const cacheKey = `tech_inventory_${technician.id}`;
-    const cached = inventoryCache.get<TechnicianInventoryItem[]>(cacheKey);
-    if (cached && cached.length > 0) {
-      setTechnicianInventory(cached);
-    }
-
     try {
+      // Always fetch fresh data when dialog opens to ensure we have all items
       const { data, error } = await db.technicianInventory.getByTechnician(technician.id);
       if (error) throw error;
       const inventoryData = data || [];
       setTechnicianInventory(inventoryData);
+      
+      // Update cache
+      const cacheKey = `tech_inventory_${technician.id}`;
       inventoryCache.set(cacheKey, inventoryData);
     } catch (error) {
       console.error('Error loading technician inventory:', error);
@@ -104,8 +102,6 @@ const JobPartsUsedDialog: React.FC<JobPartsUsedDialogProps> = ({
     } catch (error) {
       console.error('Error loading parts used:', error);
       toast.error('Failed to load parts used');
-    } finally {
-      setLoading(false);
     }
   }, [job?.id]);
 
@@ -113,41 +109,76 @@ const JobPartsUsedDialog: React.FC<JobPartsUsedDialogProps> = ({
   useEffect(() => {
     if (open && job && technician) {
       setLoading(true);
-      loadTechnicianInventory();
-      loadPartsUsed();
+      Promise.all([
+        loadTechnicianInventory(),
+        loadPartsUsed()
+      ]).finally(() => {
+        setLoading(false);
+      });
+    } else if (!open) {
+      // Reset state when dialog closes to free memory
+      setTechnicianInventory([]);
+      setPartsUsed([]);
+      setMainInventoryItems([]);
+      setMainInventoryLoaded(false);
+      setInventorySearchQuery('');
+      setDebouncedSearchQuery('');
+      setFormData({
+        inventory_id: '',
+        quantity: ''
+      });
     }
   }, [open, job?.id, technician?.id, loadTechnicianInventory, loadPartsUsed]);
 
-  // Load main inventory items if needed (for items without inventory relation)
+  // Load main inventory items only when needed (lazy load for fallback)
   const [mainInventoryItems, setMainInventoryItems] = useState<InventoryItem[]>([]);
+  const [mainInventoryLoaded, setMainInventoryLoaded] = useState(false);
   
+  // Only load main inventory if technician inventory items are missing inventory relations
   useEffect(() => {
-    if (open) {
-      // Always load main inventory when dialog opens (for fallback)
-      const cacheKey = 'inventory_items';
-      const cached = inventoryCache.get<InventoryItem[]>(cacheKey);
-      if (cached) {
-        setMainInventoryItems(cached);
-      } else {
-        db.inventory.getAll().then(({ data, error }) => {
-          if (!error && data) {
-            setMainInventoryItems(data);
-            inventoryCache.set(cacheKey, data);
-          }
-        });
+    if (open && technicianInventory.length > 0 && !mainInventoryLoaded) {
+      // Check if any items are missing inventory relations
+      const needsMainInventory = technicianInventory.some(item => !item.inventory);
+      
+      if (needsMainInventory) {
+        const cacheKey = 'inventory_items';
+        const cached = inventoryCache.get<InventoryItem[]>(cacheKey);
+        if (cached && cached.length > 0) {
+          setMainInventoryItems(cached);
+          setMainInventoryLoaded(true);
+        } else {
+          // Only fetch essential fields to reduce egress
+          db.inventory.getAll().then(({ data, error }) => {
+            if (!error && data) {
+              setMainInventoryItems(data);
+              inventoryCache.set(cacheKey, data);
+            }
+            setMainInventoryLoaded(true);
+          });
+        }
       }
     }
-  }, [open]);
+  }, [open, technicianInventory, mainInventoryLoaded]);
 
-  // Filter technician inventory for search
+  // Memoize inventory lookup map for O(1) access
+  const inventoryMap = useMemo(() => {
+    const map = new Map<string, InventoryItem>();
+    mainInventoryItems.forEach(item => map.set(item.id, item));
+    return map;
+  }, [mainInventoryItems]);
+
+  // Filter technician inventory for search (optimized)
   const filteredInventoryItems = useMemo(() => {
-    // Enrich items with inventory data if missing
+    // Early return if no inventory
+    if (technicianInventory.length === 0) return [];
+
+    // Enrich items with inventory data if missing (using Map for O(1) lookup)
     const enrichedItems = technicianInventory.map(item => {
       if (item.inventory) {
         return item;
       }
-      // Try to find inventory from mainInventoryItems
-      const inventoryItem = mainInventoryItems.find(i => i.id === item.inventory_id);
+      // Try to find inventory from map (faster than array.find)
+      const inventoryItem = inventoryMap.get(item.inventory_id);
       if (inventoryItem) {
         return {
           ...item,
@@ -157,46 +188,42 @@ const JobPartsUsedDialog: React.FC<JobPartsUsedDialogProps> = ({
       return item;
     });
 
-    let filtered = enrichedItems.filter(item => item.quantity > 0); // Only show items with quantity > 0
+    // Filter by quantity first (cheaper operation)
+    let filtered = enrichedItems.filter(item => item.quantity > 0);
     
+    // Then filter by search query if provided
     if (debouncedSearchQuery.trim()) {
       const query = debouncedSearchQuery.toLowerCase().trim();
       filtered = filtered.filter(item => {
-        const inventory = item.inventory;
-        if (!inventory) {
-          // If no inventory relation, try to match by ID from mainInventoryItems
-          const mainItem = mainInventoryItems.find(i => i.id === item.inventory_id);
-          if (mainItem) {
-            const nameMatch = mainItem.product_name?.toLowerCase().includes(query);
-            const codeMatch = mainItem.code?.toLowerCase().includes(query);
-            return nameMatch || codeMatch;
-          }
-          return false;
-        }
+        const inventory = item.inventory || inventoryMap.get(item.inventory_id);
+        if (!inventory) return false;
         const nameMatch = inventory.product_name?.toLowerCase().includes(query);
         const codeMatch = inventory.code?.toLowerCase().includes(query);
         return nameMatch || codeMatch;
       });
     }
     
-    filtered.sort((a, b) => {
-      const aInventory = a.inventory || mainInventoryItems.find(i => i.id === a.inventory_id);
-      const bInventory = b.inventory || mainInventoryItems.find(i => i.id === b.inventory_id);
-      const aName = aInventory?.product_name || '';
-      const bName = bInventory?.product_name || '';
-      return aName.localeCompare(bName);
-    });
+    // Sort (only if needed)
+    if (filtered.length > 1) {
+      filtered.sort((a, b) => {
+        const aInventory = a.inventory || inventoryMap.get(a.inventory_id);
+        const bInventory = b.inventory || inventoryMap.get(b.inventory_id);
+        const aName = aInventory?.product_name || '';
+        const bName = bInventory?.product_name || '';
+        return aName.localeCompare(bName);
+      });
+    }
     
-    return filtered.slice(0, 20);
-  }, [technicianInventory, debouncedSearchQuery, mainInventoryItems]);
+    return filtered;
+  }, [technicianInventory, debouncedSearchQuery, inventoryMap]);
 
-  // Get selected inventory item name
+  // Get selected inventory item name (optimized with Map lookup)
   const selectedInventoryName = useMemo(() => {
     if (!formData.inventory_id) return 'Select part...';
     const item = technicianInventory.find(i => i.inventory_id === formData.inventory_id);
-    const inventory = item?.inventory;
+    const inventory = item?.inventory || inventoryMap.get(formData.inventory_id);
     return inventory ? `${inventory.product_name}${inventory.code ? ` (${inventory.code})` : ''}` : 'Select part...';
-  }, [formData.inventory_id, technicianInventory]);
+  }, [formData.inventory_id, technicianInventory, inventoryMap]);
 
   // Get available quantity for selected item
   const availableQuantity = useMemo(() => {
@@ -454,7 +481,7 @@ const JobPartsUsedDialog: React.FC<JobPartsUsedDialogProps> = ({
                   </Button>
                 </PopoverTrigger>
                 <PopoverContent className="w-[var(--radix-popover-trigger-width)] p-0" align="start" sideOffset={4}>
-                  <Command className="rounded-lg">
+                  <Command shouldFilter={false} className="rounded-lg">
                     <CommandInput 
                       placeholder="Search parts by name or code..." 
                       value={inventorySearchQuery}
@@ -471,13 +498,13 @@ const JobPartsUsedDialog: React.FC<JobPartsUsedDialogProps> = ({
                             {filteredInventoryItems.map((item) => (
                               <CommandItem
                                 key={item.id}
-                                value={item.inventory_id}
+                                value={`${item.inventory?.product_name || inventoryMap.get(item.inventory_id)?.product_name || 'Unknown'} ${item.inventory?.code || inventoryMap.get(item.inventory_id)?.code || ''}`.trim()}
                                 onSelect={() => {
                                   setFormData({ ...formData, inventory_id: item.inventory_id });
                                   setInventorySearchOpen(false);
                                   setInventorySearchQuery('');
                                 }}
-                                className="flex items-center justify-between gap-3 px-3 py-2.5 cursor-pointer hover:bg-gray-50"
+                                className="flex items-center justify-between gap-3 px-3 py-2.5 cursor-pointer hover:bg-blue-50 dark:hover:bg-blue-950/20 transition-colors"
                               >
                                 <div className="flex items-center gap-2 flex-1 min-w-0">
                                   <Check
@@ -488,11 +515,11 @@ const JobPartsUsedDialog: React.FC<JobPartsUsedDialogProps> = ({
                                   />
                                   <div className="flex flex-col min-w-0 flex-1">
                                     <span className="text-sm font-medium truncate">
-                                      {item.inventory?.product_name || mainInventoryItems.find(i => i.id === item.inventory_id)?.product_name || 'Unknown'}
+                                      {item.inventory?.product_name || inventoryMap.get(item.inventory_id)?.product_name || 'Unknown'}
                                     </span>
-                                    {(item.inventory?.code || mainInventoryItems.find(i => i.id === item.inventory_id)?.code) && (
+                                    {(item.inventory?.code || inventoryMap.get(item.inventory_id)?.code) && (
                                       <span className="text-xs text-gray-500">
-                                        Code: {item.inventory?.code || mainInventoryItems.find(i => i.id === item.inventory_id)?.code}
+                                        Code: {item.inventory?.code || inventoryMap.get(item.inventory_id)?.code}
                                       </span>
                                     )}
                                   </div>
