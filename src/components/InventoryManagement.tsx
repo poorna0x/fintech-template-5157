@@ -6,9 +6,11 @@ import { Label } from '@/components/ui/label';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from '@/components/ui/alert-dialog';
 import { Pagination, PaginationContent, PaginationItem, PaginationLink, PaginationNext, PaginationPrevious, PaginationEllipsis } from '@/components/ui/pagination';
-import { ShoppingCart, Plus, Edit, Trash2, Search, X, RefreshCw } from 'lucide-react';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { ShoppingCart, Plus, Edit, Trash2, Search, X, RefreshCw, User } from 'lucide-react';
 import { db } from '@/lib/supabase';
 import { toast } from 'sonner';
+import TechnicianInventoryManagement from './TechnicianInventoryManagement';
 
 interface InventoryItem {
   id: string;
@@ -272,8 +274,23 @@ const InventoryManagement: React.FC<InventoryManagementProps> = ({ onBack }) => 
 
   return (
     <div className="space-y-6">
-      {/* Inventory Management */}
-      <Card>
+      {/* Tabs for Main Inventory and Technician Inventory */}
+      <Tabs defaultValue="main" className="w-full">
+        <TabsList className="grid w-full grid-cols-2">
+          <TabsTrigger value="main" className="flex items-center gap-2">
+            <ShoppingCart className="w-4 h-4" />
+            Main Inventory
+          </TabsTrigger>
+          <TabsTrigger value="technician" className="flex items-center gap-2">
+            <User className="w-4 h-4" />
+            Technician Inventory
+          </TabsTrigger>
+        </TabsList>
+
+        {/* Main Inventory Tab */}
+        <TabsContent value="main" className="space-y-6">
+          {/* Inventory Management */}
+          <Card>
         <CardHeader>
           <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
             <div>
@@ -662,6 +679,13 @@ const InventoryManagement: React.FC<InventoryManagementProps> = ({ onBack }) => 
           </DialogFooter>
         </DialogContent>
       </Dialog>
+        </TabsContent>
+
+        {/* Technician Inventory Tab */}
+        <TabsContent value="technician" className="space-y-6">
+          <TechnicianInventoryManagement />
+        </TabsContent>
+      </Tabs>
     </div>
   );
 };

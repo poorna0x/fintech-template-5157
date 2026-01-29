@@ -2398,6 +2398,128 @@ export const db = {
         error: null
       };
     }
+  },
+
+  // Technician Inventory operations
+  technicianInventory: {
+    async getAll() {
+      const { data, error } = await supabase
+        .from('technician_inventory')
+        .select(`
+          *,
+          technician:technicians(id, full_name, employee_id),
+          inventory:inventory(id, product_name, code, price)
+        `)
+        .order('created_at', { ascending: false });
+      
+      return { data, error };
+    },
+
+    async getByTechnician(technicianId: string) {
+      const { data, error } = await supabase
+        .from('technician_inventory')
+        .select(`
+          *,
+          technician:technicians(id, full_name, employee_id),
+          inventory:inventory(id, product_name, code, price)
+        `)
+        .eq('technician_id', technicianId)
+        .order('created_at', { ascending: false });
+      
+      return { data, error };
+    },
+
+    async getByInventory(inventoryId: string) {
+      const { data, error } = await supabase
+        .from('technician_inventory')
+        .select(`
+          *,
+          technician:technicians(id, full_name, employee_id),
+          inventory:inventory(id, product_name, code, price)
+        `)
+        .eq('inventory_id', inventoryId)
+        .order('created_at', { ascending: false });
+      
+      return { data, error };
+    },
+
+    async getById(id: string) {
+      const { data, error } = await supabase
+        .from('technician_inventory')
+        .select(`
+          *,
+          technician:technicians(id, full_name, employee_id),
+          inventory:inventory(id, product_name, code, price)
+        `)
+        .eq('id', id)
+        .single();
+      
+      return { data, error };
+    },
+
+    async create(item: { technician_id: string; inventory_id: string; quantity: number; notes?: string }) {
+      const { data, error } = await supabase
+        .from('technician_inventory')
+        .insert({
+          technician_id: item.technician_id,
+          inventory_id: item.inventory_id,
+          quantity: item.quantity,
+          notes: item.notes || null
+        })
+        .select(`
+          *,
+          technician:technicians(id, full_name, employee_id),
+          inventory:inventory(id, product_name, code, price)
+        `)
+        .single();
+      
+      return { data, error };
+    },
+
+    async update(id: string, updates: { quantity?: number }) {
+      const { data, error } = await supabase
+        .from('technician_inventory')
+        .update(updates)
+        .eq('id', id)
+        .select(`
+          *,
+          technician:technicians(id, full_name, employee_id),
+          inventory:inventory(id, product_name, code, price)
+        `)
+        .single();
+      
+      return { data, error };
+    },
+
+    async delete(id: string) {
+      const { error } = await supabase
+        .from('technician_inventory')
+        .delete()
+        .eq('id', id);
+      
+      return { error };
+    },
+
+    async upsert(item: { technician_id: string; inventory_id: string; quantity: number }) {
+      // Upsert: insert or update if technician_id + inventory_id combination exists
+      const { data, error } = await supabase
+        .from('technician_inventory')
+        .upsert({
+          technician_id: item.technician_id,
+          inventory_id: item.inventory_id,
+          quantity: item.quantity
+        }, {
+          onConflict: 'technician_id,inventory_id'
+        })
+        .select(`
+          *,
+          technician:technicians(id, full_name, employee_id),
+          inventory:inventory(id, product_name, code, price)
+        `)
+        .single();
+      
+      return { data, error };
+    }
   }
 };
 
