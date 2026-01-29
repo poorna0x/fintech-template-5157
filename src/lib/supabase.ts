@@ -2319,6 +2319,85 @@ export const db = {
       
       return { error };
     }
+  },
+
+  // Inventory operations
+  inventory: {
+    async getAll() {
+      const { data, error } = await supabase
+        .from('inventory')
+        .select('*')
+        .order('created_at', { ascending: false });
+      
+      return { data, error };
+    },
+
+    async getById(id: string) {
+      const { data, error } = await supabase
+        .from('inventory')
+        .select('*')
+        .eq('id', id)
+        .single();
+      
+      return { data, error };
+    },
+
+    async create(item: { product_name: string; code?: string; price: number; quantity: number }) {
+      const { data, error } = await supabase
+        .from('inventory')
+        .insert({
+          product_name: item.product_name,
+          code: item.code || null,
+          price: item.price,
+          quantity: item.quantity
+        })
+        .select()
+        .single();
+      
+      return { data, error };
+    },
+
+    async update(id: string, updates: { product_name?: string; code?: string; price?: number; quantity?: number }) {
+      const { data, error } = await supabase
+        .from('inventory')
+        .update(updates)
+        .eq('id', id)
+        .select()
+        .single();
+      
+      return { data, error };
+    },
+
+    async delete(id: string) {
+      const { error } = await supabase
+        .from('inventory')
+        .delete()
+        .eq('id', id);
+      
+      return { error };
+    },
+
+    async getSummary() {
+      const { data, error } = await supabase
+        .from('inventory')
+        .select('id, product_name, code, price, quantity');
+      
+      if (error) return { data: null, error };
+      
+      const totalItems = data?.length || 0;
+      const totalValue = data?.reduce((sum, item) => sum + (item.price * item.quantity), 0) || 0;
+      const lowStockItems = data?.filter(item => item.quantity <= 5).length || 0;
+      
+      return {
+        data: {
+          totalItems,
+          totalValue,
+          lowStockItems,
+          items: data || []
+        },
+        error: null
+      };
+    }
   }
 };
 

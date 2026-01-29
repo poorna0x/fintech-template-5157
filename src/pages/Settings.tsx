@@ -29,7 +29,8 @@ import {
   Receipt,
   FileText,
   LogOut,
-  ListTodo
+  ListTodo,
+  PhoneCall
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { db, supabase } from '@/lib/supabase';
@@ -37,6 +38,7 @@ import { Technician } from '@/types';
 import ImageUpload from '@/components/ImageUpload';
 import { CommonQrCode, invalidateQrCodesCache } from '@/lib/qrCodeManager';
 import JSZip from 'jszip';
+import CallingPage from '@/pages/CallingPage';
 
 const Settings = () => {
   const { user, isAdmin, logout } = useAuth();
@@ -99,6 +101,9 @@ const Settings = () => {
   const [addTodoDialogOpen, setAddTodoDialogOpen] = useState(false);
   const [newTodoText, setNewTodoText] = useState('');
   const [todoToDelete, setTodoToDelete] = useState<string | null>(null);
+
+  // Calling view state
+  const [showCallingPage, setShowCallingPage] = useState(false);
 
   // Load data on component mount
   useEffect(() => {
@@ -1071,6 +1076,40 @@ const Settings = () => {
 
   // Note: Currently allows unauthenticated access, but RLS policies need to be updated
   // Run supabase-qr-codes-rls-fix.sql to allow unauthenticated access
+
+
+  // Show calling page if requested
+  if (showCallingPage) {
+    return (
+      <div className="min-h-screen bg-gray-50">
+        <div className="bg-white border-b border-gray-200">
+          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 py-4 sm:py-0 sm:h-16">
+              <div className="flex items-center">
+                <SettingsIcon className="w-6 h-6 sm:w-8 sm:h-8 text-blue-600 mr-2 sm:mr-3 shrink-0" />
+                <div>
+                  <h1 className="text-lg sm:text-xl font-bold text-gray-900">Calling</h1>
+                  <p className="text-xs sm:text-sm text-gray-600">Manage customer calls</p>
+                </div>
+              </div>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => setShowCallingPage(false)}
+                className="text-gray-600 hover:text-gray-900 -ml-2"
+              >
+                <ArrowLeft className="w-4 h-4 mr-1" />
+                Back to Settings
+              </Button>
+            </div>
+          </div>
+        </div>
+        <div className="container mx-auto px-4 py-4 sm:py-8">
+          <CallingPage hideHeader={true} onBack={() => setShowCallingPage(false)} />
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -2424,6 +2463,29 @@ const Settings = () => {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {/* Calling Section */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2 text-lg sm:text-xl">
+            <PhoneCall className="w-5 h-5" />
+            Calling
+          </CardTitle>
+          <CardDescription className="text-sm mt-1">
+            Manage customer calls and communication
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="p-4 sm:p-6">
+          <Button
+            onClick={() => setShowCallingPage(true)}
+            className="w-full sm:w-auto bg-blue-600 hover:bg-blue-700"
+          >
+            <PhoneCall className="w-4 h-4 mr-2" />
+            Open Calling Page
+          </Button>
+        </CardContent>
+      </Card>
+
 
       {/* Logout Section at Bottom */}
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">

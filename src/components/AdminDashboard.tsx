@@ -59,7 +59,8 @@ import {
   X,
   LogOut,
   RefreshCw,
-  Navigation
+  Navigation,
+  ShoppingCart
 } from 'lucide-react';
 import { db, supabase } from '@/lib/supabase';
 import { registerAdminPWA, disablePWA } from '@/lib/pwa';
@@ -81,7 +82,7 @@ import ImageUpload from '@/components/ImageUpload';
 import TechnicianPayments from './TechnicianPayments';
 import BillingStats from './BillingStats';
 import Analytics from './Analytics';
-import CallingPage from '@/pages/CallingPage';
+import InventoryManagement from './InventoryManagement';
 import { generateJobNumber, formatPreferredTimeSlot, mapServiceTypesToDbValue, extractLocationFromAddressString, bangaloreAreas, levenshteinDistance, calculateSimilarity, extractPhotoUrls, parseJobRequirements, getFormattedTimeSlot } from '@/lib/adminUtils';
 import { StatusBadge } from './admin/StatusBadge';
 import { CustomerCardHeader } from './admin/CustomerCardHeader';
@@ -155,7 +156,7 @@ const AdminDashboard = () => {
   const [selectedCustomerForTaxInvoice, setSelectedCustomerForTaxInvoice] = useState<Customer | null>(null);
   const [showGSTInvoicesPage, setShowGSTInvoicesPage] = useState(false);
   const [showAMCViewPage, setShowAMCViewPage] = useState(false);
-  const [currentView, setCurrentView] = useState<'dashboard' | 'payments' | 'billing' | 'analytics' | 'calling'>('dashboard');
+  const [currentView, setCurrentView] = useState<'dashboard' | 'payments' | 'billing' | 'analytics' | 'inventory'>('dashboard');
   const [moreOptionsDialogOpen, setMoreOptionsDialogOpen] = useState<Record<string, boolean>>({});
   const [editFormData, setEditFormData] = useState({
     full_name: '',
@@ -207,7 +208,7 @@ const AdminDashboard = () => {
   const calculateDistanceAndTimeRef = useRef<((origin: { lat: number; lng: number }, destination: { lat: number; lng: number }, customerId: string) => Promise<void>) | null>(null);
   
   // Handle view change
-  const handleViewChange = (view: 'dashboard' | 'payments' | 'billing' | 'analytics' | 'calling') => {
+  const handleViewChange = (view: 'dashboard' | 'payments' | 'billing' | 'analytics' | 'inventory') => {
     setCurrentView(view);
   };
 
@@ -419,6 +420,7 @@ const AdminDashboard = () => {
       subscription.unsubscribe();
     };
   }, []);
+
   
   // Brand and model data - Comprehensive list of popular RO and Softener brands in India
   const brandData = {
@@ -1056,6 +1058,7 @@ const AdminDashboard = () => {
     }
   }, []);
 
+
   // Load jobs based on current filter (optimized)
   const loadFilteredJobs = useCallback(async (filter: typeof statusFilter, page: number = 1) => {
     try {
@@ -1320,7 +1323,7 @@ const AdminDashboard = () => {
     setCurrentPage(1); // Reset to first page when filter changes
     loadFilteredJobs(statusFilter, 1);
     // Refresh counts when filter changes
-    loadJobCounts();
+      loadJobCounts();
   }, [statusFilter, loadFilteredJobs, loadJobCounts, isInitialLoad]);
 
   // Reload jobs when denied date filter changes
@@ -7296,7 +7299,7 @@ const AdminDashboard = () => {
     );
   }
 
-  if (currentView === 'calling') {
+  if (currentView === 'inventory') {
     return (
       <div className="min-h-screen bg-gray-50">
         <AdminHeader />
@@ -7312,11 +7315,12 @@ const AdminDashboard = () => {
               Back
             </Button>
           </div>
-          <CallingPage hideHeader={true} onBack={() => setCurrentView('dashboard')} />
+          <InventoryManagement />
         </div>
       </div>
     );
   }
+
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -7414,7 +7418,7 @@ const AdminDashboard = () => {
                   <span className="hidden sm:inline">Payments</span>
                 </Button>
                 
-                {/* Row 2: Billing, Analytics, Calling */}
+                {/* Row 2: Billing, Analytics, Inventory */}
                 <Button
                   variant={(currentView as string) === 'billing' ? 'default' : 'outline'}
                   onClick={() => handleViewChange('billing')}
@@ -7434,13 +7438,13 @@ const AdminDashboard = () => {
                   <span className="hidden sm:inline">Analytics</span>
                 </Button>
                 <Button
-                  variant={(currentView as string) === 'calling' ? 'default' : 'outline'}
-                  onClick={() => handleViewChange('calling')}
+                  variant={(currentView as string) === 'inventory' ? 'default' : 'outline'}
+                  onClick={() => handleViewChange('inventory')}
                   className="flex items-center justify-center gap-2 w-full sm:w-auto sm:px-3"
-                  title="Calling"
+                  title="Inventory"
                 >
-                  <PhoneCall className="w-4 h-4" />
-                  <span className="hidden sm:inline">Calling</span>
+                  <ShoppingCart className="w-4 h-4" />
+                  <span className="hidden sm:inline">Inventory</span>
                 </Button>
               </div>
               
@@ -7532,6 +7536,7 @@ const AdminDashboard = () => {
           inProgressJobs={inProgressJobs}
           allJobs={allFollowUpJobs}
         />
+
 
         {/* Date Filter for Denied Jobs */}
         {statusFilter === 'CANCELLED' && (
