@@ -1468,7 +1468,7 @@ const AdminDashboard = () => {
     };
   }, []);
 
-  // Play notification sound (5 beeps). Call after user has clicked once on hosted.
+  // Play notification sound (5 beeps). Schedule all at once so they always play.
   const playNotificationSound = useCallback(async () => {
     toast.info('Job completed', { duration: 2000 });
     try {
@@ -1485,20 +1485,21 @@ const AdminDashboard = () => {
         toast.info('Click anywhere on this page once to enable sound', { duration: 5000 });
         return;
       }
-      const beep = () => {
+      const t = ctx.currentTime;
+      const beepDuration = 0.25;
+      const gap = 0.25;
+      for (let i = 0; i < 5; i++) {
+        const start = t + i * (beepDuration + gap);
         const osc = ctx.createOscillator();
         const gain = ctx.createGain();
         osc.connect(gain);
         gain.connect(ctx.destination);
         osc.frequency.value = 800;
         osc.type = 'sine';
-        gain.gain.setValueAtTime(0.25, ctx.currentTime);
-        gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.25);
-        osc.start(ctx.currentTime);
-        osc.stop(ctx.currentTime + 0.25);
-      };
-      for (let i = 0; i < 5; i++) {
-        setTimeout(beep, i * 500);
+        gain.gain.setValueAtTime(0.25, start);
+        gain.gain.exponentialRampToValueAtTime(0.01, start + beepDuration);
+        osc.start(start);
+        osc.stop(start + beepDuration);
       }
     } catch (e) {
       console.warn('Notification sound failed:', e);
