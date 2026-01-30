@@ -65,6 +65,7 @@ const TechnicianInventoryManagement: React.FC<TechnicianInventoryManagementProps
   const [inventorySearchQuery, setInventorySearchQuery] = useState('');
   const [debouncedInventorySearchQuery, setDebouncedInventorySearchQuery] = useState('');
   const [topUpDialogOpen, setTopUpDialogOpen] = useState(false);
+  const [loadedForTechnicianId, setLoadedForTechnicianId] = useState<string | null>(null);
   const lastLoadTimeRef = useRef<number>(0);
   const CACHE_DURATION = 5 * 60 * 1000; // 5 minutes
 
@@ -173,16 +174,18 @@ const TechnicianInventoryManagement: React.FC<TechnicianInventoryManagementProps
     // Don't load technician inventory by default - only when technician is selected
   }, [loadTechnicians, loadInventoryItems]);
 
-  // Reload when technician filter changes - only load if technician is selected
+  // When technician changes, clear loaded state and inventory (don't auto-load)
   useEffect(() => {
-    if (selectedTechnicianId) {
-      loadTechnicianInventory(selectedTechnicianId);
+    if (!selectedTechnicianId) {
+      setTechnicianInventory([]);
+      setLoadedForTechnicianId(null);
+      setLoading(false);
     } else {
-      // Clear inventory when no technician selected
+      setLoadedForTechnicianId(null);
       setTechnicianInventory([]);
       setLoading(false);
     }
-  }, [selectedTechnicianId, loadTechnicianInventory]);
+  }, [selectedTechnicianId]);
 
   // Filter technician inventory based on selected technician and item search (using debounced query)
   const filteredInventory = useMemo(() => {
@@ -221,6 +224,14 @@ const TechnicianInventoryManagement: React.FC<TechnicianInventoryManagementProps
     if (!selectedTechnicianId) return null;
     return technicians.find(t => t.id === selectedTechnicianId);
   }, [technicians, selectedTechnicianId]);
+
+  // Load inventory on demand when user clicks "Show inventory"
+  const handleShowInventory = useCallback(async () => {
+    if (!selectedTechnicianId) return;
+    inventoryCache.clear(`tech_inventory_${selectedTechnicianId}`);
+    await loadTechnicianInventory(selectedTechnicianId, true);
+    setLoadedForTechnicianId(selectedTechnicianId);
+  }, [selectedTechnicianId, loadTechnicianInventory]);
 
   // Group inventory by technician for display (to show technician name only once per group)
   const groupedInventory = useMemo(() => {
@@ -362,6 +373,7 @@ const TechnicianInventoryManagement: React.FC<TechnicianInventoryManagementProps
       await loadInventoryItems(true);
       if (selectedTechnicianId) {
         await loadTechnicianInventory(selectedTechnicianId, true);
+        setLoadedForTechnicianId(selectedTechnicianId);
       } else {
         await loadTechnicianInventory(undefined, true);
       }
@@ -411,6 +423,7 @@ const TechnicianInventoryManagement: React.FC<TechnicianInventoryManagementProps
       inventoryCache.clear(cacheKey);
       if (selectedTechnicianId) {
         await loadTechnicianInventory(selectedTechnicianId, true);
+        setLoadedForTechnicianId(selectedTechnicianId);
       } else {
         await loadTechnicianInventory(undefined, true);
       }
@@ -521,7 +534,16 @@ const TechnicianInventoryManagement: React.FC<TechnicianInventoryManagementProps
                 </SelectContent>
               </Select>
             </div>
-            <div className="flex flex-col sm:flex-row gap-2 w-full sm:w-auto">
+            <div className="flex flex-col sm:flex-row gap-2 w-full sm:w-auto flex-wrap">
+              {selectedTechnicianId && loadedForTechnicianId !== selectedTechnicianId && (
+                <Button 
+                  onClick={handleShowInventory}
+                  className="w-full sm:w-auto text-sm bg-blue-600 hover:bg-blue-700"
+                >
+                  <Package className="w-4 h-4 sm:mr-2" />
+                  <span className="sm:inline">Show inventory</span>
+                </Button>
+              )}
               <Button 
                 onClick={handleAddInventory} 
                 className="w-full sm:w-auto text-sm"
@@ -540,26 +562,28 @@ const TechnicianInventoryManagement: React.FC<TechnicianInventoryManagementProps
                     <ArrowUpCircle className="w-4 h-4 sm:mr-2" />
                     <span className="sm:inline">Top Up Used Items</span>
                   </Button>
-                  <Button 
-                    variant="outline"
-                    onClick={() => {
-                      inventoryCache.clear(selectedTechnicianId ? `tech_inventory_${selectedTechnicianId}` : 'all_tech_inventory');
-                      loadTechnicianInventory(selectedTechnicianId, true);
-                    }}
-                    className="w-full sm:w-auto text-sm"
-                  >
-                    <RefreshCw className="w-4 h-4 sm:mr-2" />
-                    <span className="sm:inline">Refresh</span>
-                  </Button>
+                  {loadedForTechnicianId === selectedTechnicianId && (
+                    <Button 
+                      variant="outline"
+                      onClick={() => {
+                        inventoryCache.clear(`tech_inventory_${selectedTechnicianId}`);
+                        loadTechnicianInventory(selectedTechnicianId, true);
+                      }}
+                      className="w-full sm:w-auto text-sm"
+                    >
+                      <RefreshCw className="w-4 h-4 sm:mr-2" />
+                      <span className="sm:inline">Refresh</span>
+                    </Button>
+                  )}
                 </>
               )}
             </div>
           </div>
 
-          {/* Item Search */}
-          {selectedTechnicianId && (
+          {/* Item Search - only when inventory is loaded */}
+          {selectedTechnicianId && loadedForTechnicianId === selectedTechnicianId && (
             <div>
-              <Label htmlFor="item-search" className="text-sm font-medium">Search Items</Label>
+              <Label htmlFor="item-search" className="text-sm font-medium">Search</Label>
               <div className="relative mt-1">
                 <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
                 <Input
@@ -589,8 +613,8 @@ const TechnicianInventoryManagement: React.FC<TechnicianInventoryManagementProps
             </div>
           )}
 
-          {/* Summary */}
-          {selectedTechnician && (
+          {/* Summary - when inventory loaded */}
+          {selectedTechnician && loadedForTechnicianId === selectedTechnicianId && (
             <div className="p-3 sm:p-4 bg-blue-50 rounded-lg">
               <p className="text-xs sm:text-sm font-medium text-blue-900">
                 Showing inventory for: <span className="font-semibold">{selectedTechnician.full_name}</span> ({selectedTechnician.employee_id})
@@ -607,13 +631,18 @@ const TechnicianInventoryManagement: React.FC<TechnicianInventoryManagementProps
               <Package className="w-10 h-10 sm:w-12 sm:h-12 mx-auto mb-3 text-gray-400" />
               <p className="text-sm sm:text-base">Select a technician to view their inventory</p>
             </div>
+          ) : loadedForTechnicianId !== selectedTechnicianId ? (
+            <div className="text-center py-8 sm:py-12 text-gray-500">
+              <Package className="w-10 h-10 sm:w-12 sm:h-12 mx-auto mb-3 text-gray-400" />
+              <p className="text-sm sm:text-base">Click &quot;Show inventory&quot; to load this technician&apos;s inventory</p>
+            </div>
           ) : loading ? (
             <div className="text-center py-8 sm:py-12 text-gray-500 text-sm sm:text-base">Loading...</div>
           ) : filteredInventory.length === 0 ? (
             <div className="text-center py-8 sm:py-12 text-gray-500">
               <Package className="w-10 h-10 sm:w-12 sm:h-12 mx-auto mb-3 text-gray-400" />
               <p className="text-sm sm:text-base">No inventory items assigned yet.</p>
-              <p className="text-xs sm:text-sm mt-2">Click "Assign Inventory" to add items to this technician.</p>
+              <p className="text-xs sm:text-sm mt-2">Click &quot;Assign Inventory&quot; to add items to this technician.</p>
             </div>
           ) : (
             <div className="border rounded-lg overflow-hidden">

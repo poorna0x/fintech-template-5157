@@ -343,7 +343,7 @@ const TechnicianTopUpDialog: React.FC<TechnicianTopUpDialogProps> = ({
             </div>
           </div>
         ) : null}
-        <DialogFooter className="flex flex-col gap-2">
+        <DialogFooter className="flex flex-col sm:flex-col gap-2 w-full items-stretch">
           <div className="flex gap-2 w-full">
             <Button type="button" variant="outline" onClick={handleSkipTopUp} disabled={topUpLoading} className="flex-1">
               Skip
@@ -356,8 +356,8 @@ const TechnicianTopUpDialog: React.FC<TechnicianTopUpDialogProps> = ({
               {topUpLoading ? 'Adding...' : 'Add to Inventory'}
             </Button>
           </div>
-          <div className="flex flex-col gap-1.5 w-full">
-            <p className="text-xs text-muted-foreground text-center">
+          <div className="flex flex-col gap-1.5 w-full items-center">
+            <p className="text-xs text-muted-foreground">
               {currentTopUpIndex + 1} of {topUpItems.length}
             </p>
             <Button type="button" variant="ghost" onClick={handleClose} disabled={topUpLoading} className="w-full">

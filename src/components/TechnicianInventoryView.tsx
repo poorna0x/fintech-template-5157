@@ -7,7 +7,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from '@/components/ui/command';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { Package, Plus, Search, Check, ChevronsUpDown, RefreshCw, ArrowUpCircle } from 'lucide-react';
+import { Package, Plus, Search, Check, ChevronsUpDown, RefreshCw, ArrowUpCircle, X } from 'lucide-react';
 import { db } from '@/lib/supabase';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
@@ -48,7 +48,10 @@ const TechnicianInventoryView: React.FC<TechnicianInventoryViewProps> = ({ techn
   const [inventorySearchOpen, setInventorySearchOpen] = useState(false);
   const [inventorySearchQuery, setInventorySearchQuery] = useState('');
   const [debouncedSearchQuery, setDebouncedSearchQuery] = useState('');
-  const [loading, setLoading] = useState(true);
+  const [itemSearchQuery, setItemSearchQuery] = useState('');
+  const [debouncedItemSearchQuery, setDebouncedItemSearchQuery] = useState('');
+  const [inventoryLoaded, setInventoryLoaded] = useState(false);
+  const [loading, setLoading] = useState(false);
   const [mainInventoryLoading, setMainInventoryLoading] = useState(false);
   const [topUpDialogOpen, setTopUpDialogOpen] = useState(false);
   const lastLoadTimeRef = useRef<number>(0);
@@ -63,13 +66,21 @@ const TechnicianInventoryView: React.FC<TechnicianInventoryViewProps> = ({ techn
     );
   }
 
-  // Debounced search query update
+  // Debounced search query update (for Add from Main dialog)
   useEffect(() => {
     const timer = setTimeout(() => {
       setDebouncedSearchQuery(inventorySearchQuery);
     }, 300);
     return () => clearTimeout(timer);
   }, [inventorySearchQuery]);
+
+  // Debounced search for my inventory list
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setDebouncedItemSearchQuery(itemSearchQuery);
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [itemSearchQuery]);
 
   // Load technician's inventory with caching
   const loadMyInventory = useCallback(async (forceReload = false) => {
@@ -145,11 +156,12 @@ const TechnicianInventoryView: React.FC<TechnicianInventoryViewProps> = ({ techn
     }
   }, []);
 
-  // Load technician inventory on mount and when component becomes visible
-  useEffect(() => {
-    // Always fetch fresh data on mount to ensure we have latest inventory details
-    loadMyInventory(true);
-  }, [loadMyInventory]);
+  // Load inventory on demand when user clicks "Show inventory"
+  const handleShowInventory = useCallback(async () => {
+    inventoryCache.clear(`tech_inventory_${technicianId}`);
+    await loadMyInventory(true);
+    setInventoryLoaded(true);
+  }, [technicianId, loadMyInventory]);
 
   // Load main inventory only when dialog opens (lazy loading)
   useEffect(() => {
@@ -157,6 +169,19 @@ const TechnicianInventoryView: React.FC<TechnicianInventoryViewProps> = ({ techn
       loadMainInventory();
     }
   }, [requestDialogOpen, mainInventory.length, loadMainInventory]);
+
+  // Filter my inventory list by search (product name or code)
+  const filteredMyInventory = useMemo(() => {
+    if (!debouncedItemSearchQuery.trim()) return myInventory;
+    const query = debouncedItemSearchQuery.toLowerCase().trim();
+    return myInventory.filter(item => {
+      const inv = item.inventory || mainInventory.find(i => i.id === item.inventory_id);
+      if (!inv) return false;
+      const nameMatch = inv.product_name?.toLowerCase().includes(query);
+      const codeMatch = inv.code?.toLowerCase().includes(query);
+      return nameMatch || codeMatch;
+    });
+  }, [myInventory, mainInventory, debouncedItemSearchQuery]);
 
   // Filter and sort inventory items for search (using debounced query)
   const filteredInventoryItems = useMemo(() => {
@@ -263,7 +288,8 @@ const TechnicianInventoryView: React.FC<TechnicianInventoryViewProps> = ({ techn
       inventoryCache.clear('main_inventory');
       await loadMyInventory(true);
       await loadMainInventory(true);
-      
+      setInventoryLoaded(true);
+
       setRequestDialogOpen(false);
       setRequestFormData({
         inventory_id: '',
@@ -299,24 +325,34 @@ const TechnicianInventoryView: React.FC<TechnicianInventoryViewProps> = ({ techn
               </div>
               {/* Close handled by parent Dialog's X — no duplicate */}
             </div>
-            <div className="flex flex-col sm:flex-row gap-2">
-              <Button
-                variant="outline"
-                onClick={() => {
-                  // Clear all related caches and force fresh fetch
-                  inventoryCache.clear(`tech_inventory_${technicianId}`);
-                  inventoryCache.clear('main_inventory');
-                  inventoryCache.clear('inventory_items');
-                  lastLoadTimeRef.current = 0; // Reset cache timestamp
-                  loadMyInventory(true);
-                  loadMainInventory(true); // Also refresh main inventory cache
-                }}
-                className="w-full sm:w-auto"
-                title="Refresh inventory"
-              >
-                <RefreshCw className="w-4 h-4 sm:mr-2" />
-                <span className="sm:inline">Refresh</span>
-              </Button>
+            <div className="flex flex-col sm:flex-row gap-2 flex-wrap">
+              {!inventoryLoaded && (
+                <Button
+                  onClick={handleShowInventory}
+                  className="w-full sm:w-auto bg-blue-600 hover:bg-blue-700"
+                >
+                  <Package className="w-4 h-4 sm:mr-2" />
+                  <span className="sm:inline">Show inventory</span>
+                </Button>
+              )}
+              {inventoryLoaded && (
+                <Button
+                  variant="outline"
+                  onClick={() => {
+                    inventoryCache.clear(`tech_inventory_${technicianId}`);
+                    inventoryCache.clear('main_inventory');
+                    inventoryCache.clear('inventory_items');
+                    lastLoadTimeRef.current = 0;
+                    loadMyInventory(true);
+                    loadMainInventory(true);
+                  }}
+                  className="w-full sm:w-auto"
+                  title="Refresh inventory"
+                >
+                  <RefreshCw className="w-4 h-4 sm:mr-2" />
+                  <span className="sm:inline">Refresh</span>
+                </Button>
+              )}
               <Button onClick={handleRequestInventory} className="w-full sm:w-auto">
                 <Plus className="w-4 h-4 sm:mr-2" />
                 <span className="sm:inline">Add from Main Inventory</span>
@@ -333,49 +369,90 @@ const TechnicianInventoryView: React.FC<TechnicianInventoryViewProps> = ({ techn
           </div>
         </CardHeader>
         <CardContent className="p-4 sm:p-6">
-          {loading ? (
-            <div className="text-center py-8 text-gray-500">Loading...</div>
-          ) : myInventory.length === 0 ? (
+          {!inventoryLoaded ? (
             <div className="text-center py-8 text-gray-500">
               <Package className="w-12 h-12 mx-auto mb-2 text-gray-400" />
-              <p>No inventory items assigned yet.</p>
-              <p className="text-sm mt-2">Click "Request from Main Inventory" to add items.</p>
+              <p>Click &quot;Show inventory&quot; to load your inventory</p>
             </div>
           ) : (
-            <div className="border rounded-lg overflow-hidden">
-              <div className="overflow-x-auto">
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead className="text-xs sm:text-sm">Product</TableHead>
-                      <TableHead className="text-right text-xs sm:text-sm">Quantity</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {myInventory.map(item => {
-                      const inventoryItem = item.inventory || mainInventory.find(i => i.id === item.inventory_id);
-                      return (
-                        <TableRow key={item.id}>
-                          <TableCell className="font-medium text-xs sm:text-sm">
-                            <div className="flex flex-col">
-                              <span>{inventoryItem
-                                ? inventoryItem.product_name
-                                : getInventoryItemName(item.inventory_id).split(' (')[0]}</span>
-                              {inventoryItem?.code && (
-                                <span className="text-xs text-gray-500">Code: {inventoryItem.code}</span>
-                              )}
-                            </div>
-                          </TableCell>
-                          <TableCell className="text-right font-semibold text-xs sm:text-sm">
-                            {item.quantity}
-                          </TableCell>
-                        </TableRow>
-                      );
-                    })}
-                  </TableBody>
-                </Table>
+            <>
+              {/* Search - only when inventory is loaded */}
+              <div className="mb-4">
+                <Label htmlFor="my-inventory-search" className="text-sm font-medium">Search</Label>
+                <div className="relative mt-1">
+                  <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
+                  <Input
+                    id="my-inventory-search"
+                    type="text"
+                    placeholder="Search by product name or code..."
+                    value={itemSearchQuery}
+                    onChange={(e) => setItemSearchQuery(e.target.value)}
+                    className="pl-10 pr-10 text-sm h-10"
+                  />
+                  {itemSearchQuery && (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => setItemSearchQuery('')}
+                      className="absolute right-1 top-1/2 transform -translate-y-1/2 h-7 w-7 p-0"
+                    >
+                      <X className="w-4 h-4" />
+                    </Button>
+                  )}
+                </div>
+                {itemSearchQuery && (
+                  <p className="text-xs text-gray-500 mt-1">
+                    {filteredMyInventory.length} item{filteredMyInventory.length !== 1 ? 's' : ''} found
+                  </p>
+                )}
               </div>
-            </div>
+              {loading ? (
+                <div className="text-center py-8 text-gray-500">Loading...</div>
+              ) : filteredMyInventory.length === 0 ? (
+                <div className="text-center py-8 text-gray-500">
+                  <Package className="w-12 h-12 mx-auto mb-2 text-gray-400" />
+                  <p>{myInventory.length === 0 ? 'No inventory items assigned yet.' : 'No items match your search.'}</p>
+                  {myInventory.length === 0 && (
+                    <p className="text-sm mt-2">Click &quot;Add from Main Inventory&quot; to add items.</p>
+                  )}
+                </div>
+              ) : (
+                <div className="border rounded-lg overflow-hidden">
+                  <div className="overflow-x-auto">
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead className="text-xs sm:text-sm">Product</TableHead>
+                          <TableHead className="text-right text-xs sm:text-sm">Quantity</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {filteredMyInventory.map(item => {
+                          const inventoryItem = item.inventory || mainInventory.find(i => i.id === item.inventory_id);
+                          return (
+                            <TableRow key={item.id}>
+                              <TableCell className="font-medium text-xs sm:text-sm">
+                                <div className="flex flex-col">
+                                  <span>{inventoryItem
+                                    ? inventoryItem.product_name
+                                    : getInventoryItemName(item.inventory_id).split(' (')[0]}</span>
+                                  {inventoryItem?.code && (
+                                    <span className="text-xs text-gray-500">Code: {inventoryItem.code}</span>
+                                  )}
+                                </div>
+                              </TableCell>
+                              <TableCell className="text-right font-semibold text-xs sm:text-sm">
+                                {item.quantity}
+                              </TableCell>
+                            </TableRow>
+                          );
+                        })}
+                      </TableBody>
+                    </Table>
+                  </div>
+                </div>
+              )}
+            </>
           )}
         </CardContent>
       </Card>
@@ -506,7 +583,10 @@ const TechnicianInventoryView: React.FC<TechnicianInventoryViewProps> = ({ techn
         technicianId={technicianId}
         open={topUpDialogOpen}
         onOpenChange={setTopUpDialogOpen}
-        onSuccess={() => loadMyInventory(true)}
+        onSuccess={() => {
+          loadMyInventory(true);
+          setInventoryLoaded(true);
+        }}
       />
     </div>
   );
