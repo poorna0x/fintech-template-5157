@@ -1660,19 +1660,20 @@ export const db = {
 
       console.log(`📊 Found ${lastServiceMap.size} customers with completed jobs`);
 
-      // Check for existing PENDING, ASSIGNED, or IN_PROGRESS AMC service jobs to avoid duplicates
+      // Check for existing AMC service jobs that are not yet completed/denied — do not create a new one
+      // Skip if customer already has PENDING, ASSIGNED, EN_ROUTE, IN_PROGRESS, FOLLOW_UP, or RESCHEDULED AMC job
       const { data: existingAMCJobs } = await supabase
         .from('jobs')
         .select('customer_id')
         .in('customer_id', customerIds)
         .eq('service_sub_type', 'AMC Service')
-        .in('status', ['PENDING', 'ASSIGNED', 'EN_ROUTE', 'IN_PROGRESS']);
+        .in('status', ['PENDING', 'ASSIGNED', 'EN_ROUTE', 'IN_PROGRESS', 'FOLLOW_UP', 'RESCHEDULED']);
 
       const existingAMCCustomers = new Set(
         (existingAMCJobs || []).map((job: any) => job.customer_id)
       );
 
-      console.log(`🚫 Found ${existingAMCCustomers.size} customers with existing AMC service jobs`);
+      console.log(`🚫 Found ${existingAMCCustomers.size} customers with existing AMC service job (pending/in progress/followup)`);
 
       const jobsToCreate: any[] = [];
       let createdCount = 0;
@@ -1686,9 +1687,9 @@ export const db = {
 
         console.log(`\n🔍 Processing customer: ${customer.customer_id || customer.id}`);
 
-        // Skip if already has an active AMC service job (PENDING, ASSIGNED, or IN_PROGRESS)
+        // Skip if already has an AMC service job in PENDING, IN_PROGRESS, FOLLOW_UP, or RESCHEDULED (no duplicate)
         if (existingAMCCustomers.has(customer.id)) {
-          console.log(`  ⏭️ Skipping - already has active AMC service job`);
+          console.log(`  ⏭️ Skipping - already has AMC service job (pending / in progress / follow-up)`);
           continue;
         }
 
