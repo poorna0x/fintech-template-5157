@@ -2616,7 +2616,8 @@ export const db = {
           inventory_id,
           quantity_used,
           created_at,
-          inventory:inventory(id, product_name, code)
+          inventory:inventory(id, product_name, code),
+          job:jobs(completed_at, end_time)
         `)
         .eq('technician_id', technicianId)
         .order('created_at', { ascending: false });
