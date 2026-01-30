@@ -34,6 +34,7 @@ interface JobPartUsed {
   technician_id: string;
   inventory_id: string;
   quantity_used: number;
+  price_at_time_of_use?: number | null;
   created_at: string;
   inventory?: InventoryItem;
 }
@@ -264,23 +265,30 @@ const JobPartsUsedDialog: React.FC<JobPartsUsedDialogProps> = ({
     }
 
     try {
+      // Fetch current price from inventory for price_at_time_of_use
+      const { data: inventoryData, error: invError } = await db.inventory.getById(formData.inventory_id);
+      if (invError) throw invError;
+      const currentPrice = inventoryData?.price ? Number(inventoryData.price) : 0;
+
       // Check if part already added to this job
       const existingPart = partsUsed.find(p => p.inventory_id === formData.inventory_id);
       
       if (existingPart) {
-        // Update existing part
+        // Update existing part - keep old price_at_time_of_use (don't update price when adding more quantity)
         const newQuantity = existingPart.quantity_used + quantity;
         const { error: updateError } = await db.jobPartsUsed.update(existingPart.id, {
           quantity_used: newQuantity
+          // Note: Not updating price_at_time_of_use - keep original price when part was first added
         });
         if (updateError) throw updateError;
       } else {
-        // Create new part
+        // Create new part - store current price
         const { error: createError } = await db.jobPartsUsed.create({
           job_id: job.id,
           technician_id: technician.id,
           inventory_id: formData.inventory_id,
-          quantity_used: quantity
+          quantity_used: quantity,
+          price_at_time_of_use: currentPrice
         });
         if (createError) throw createError;
       }

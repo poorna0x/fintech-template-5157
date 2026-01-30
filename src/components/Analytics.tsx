@@ -342,13 +342,17 @@ const Analytics = () => {
         jobs = allJobs;
       }
 
-      // Spare parts cost: parts used on completed jobs in period (quantity × inventory price)
+      // Spare parts cost: parts used on completed jobs in period (quantity × price_at_time_of_use)
+      // Uses stored historical price for accuracy, falls back to current inventory price if not stored
       const completedJobIds = completedJobs.map((j: any) => j.id).filter(Boolean);
       if (completedJobIds.length > 0) {
         const { data: partsUsedData } = await db.jobPartsUsed.getWithPriceByJobIds(completedJobIds);
         totalSparePartsCost = (partsUsedData || []).reduce((sum: number, row: any) => {
           const qty = Number(row.quantity_used) || 0;
-          const price = Number(row.inventory?.price) ?? 0;
+          // Use stored price_at_time_of_use if available, otherwise fallback to current inventory price
+          const price = row.price_at_time_of_use !== null && row.price_at_time_of_use !== undefined
+            ? Number(row.price_at_time_of_use)
+            : (Number(row.inventory?.price) ?? 0);
           return sum + qty * price;
         }, 0);
       }

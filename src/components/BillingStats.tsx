@@ -273,7 +273,10 @@ const BillingStats = () => {
         const { data: partsUsed } = await db.jobPartsUsed.getWithPriceByJobIds(jobIds);
         sparePartsCost = (partsUsed || []).reduce((s: number, row: any) => {
           const qty = Number(row.quantity_used) || 0;
-          const price = Number(row.inventory?.price) ?? 0;
+          // Use stored price_at_time_of_use if available, otherwise fallback to current inventory price
+          const price = row.price_at_time_of_use !== null && row.price_at_time_of_use !== undefined
+            ? Number(row.price_at_time_of_use)
+            : (Number(row.inventory?.price) ?? 0);
           return s + qty * price;
         }, 0);
       }

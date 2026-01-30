@@ -2597,6 +2597,7 @@ export const db = {
           technician_id,
           inventory_id,
           quantity_used,
+          price_at_time_of_use,
           created_at,
           inventory:inventory(id, product_name, code, price)
         `)
@@ -2625,24 +2626,36 @@ export const db = {
       return { data, error };
     },
 
-    /** Fetch parts used for given job IDs with inventory price (for analytics spare parts cost) */
+    /** Fetch parts used for given job IDs with stored price_at_time_of_use (for analytics spare parts cost) */
     async getWithPriceByJobIds(jobIds: string[]) {
       if (!jobIds?.length) return { data: [] as any[], error: null };
       const { data, error } = await supabase
         .from('job_parts_used')
-        .select('id, job_id, quantity_used, inventory:inventory(id, price)')
+        .select('id, job_id, quantity_used, price_at_time_of_use, inventory:inventory(id, price)')
         .in('job_id', jobIds);
       return { data: data || [], error };
     },
 
-    async create(part: { job_id: string; technician_id: string; inventory_id: string; quantity_used: number }) {
+    async create(part: { job_id: string; technician_id: string; inventory_id: string; quantity_used: number; price_at_time_of_use?: number }) {
+      // If price not provided, fetch it from inventory
+      let priceToStore = part.price_at_time_of_use;
+      if (priceToStore === undefined || priceToStore === null) {
+        const { data: invData } = await supabase
+          .from('inventory')
+          .select('price')
+          .eq('id', part.inventory_id)
+          .single();
+        priceToStore = invData?.price ? Number(invData.price) : 0;
+      }
+
       const { data, error } = await supabase
         .from('job_parts_used')
         .insert({
           job_id: part.job_id,
           technician_id: part.technician_id,
           inventory_id: part.inventory_id,
-          quantity_used: part.quantity_used
+          quantity_used: part.quantity_used,
+          price_at_time_of_use: priceToStore
         })
         .select(`
           id,
@@ -2650,6 +2663,7 @@ export const db = {
           technician_id,
           inventory_id,
           quantity_used,
+          price_at_time_of_use,
           created_at,
           inventory:inventory(id, product_name, code)
         `)
@@ -2658,7 +2672,7 @@ export const db = {
       return { data, error };
     },
 
-    async update(id: string, updates: { quantity_used?: number }) {
+    async update(id: string, updates: { quantity_used?: number; price_at_time_of_use?: number }) {
       const { data, error } = await supabase
         .from('job_parts_used')
         .update(updates)
@@ -2669,6 +2683,7 @@ export const db = {
           technician_id,
           inventory_id,
           quantity_used,
+          price_at_time_of_use,
           created_at,
           inventory:inventory(id, product_name, code)
         `)
