@@ -9,8 +9,9 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from '@/components/ui/command';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { User, Plus, Edit, Trash2, Package, Search, Check, ChevronsUpDown, X, RefreshCw } from 'lucide-react';
+import { User, Plus, Edit, Trash2, Package, Search, Check, ChevronsUpDown, X, RefreshCw, ArrowUpCircle } from 'lucide-react';
 import { db } from '@/lib/supabase';
+import TechnicianTopUpDialog from '@/components/TechnicianTopUpDialog';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
 import { inventoryCache, debounce } from '@/lib/inventoryCache';
@@ -63,6 +64,7 @@ const TechnicianInventoryManagement: React.FC<TechnicianInventoryManagementProps
   const [inventorySearchOpen, setInventorySearchOpen] = useState(false);
   const [inventorySearchQuery, setInventorySearchQuery] = useState('');
   const [debouncedInventorySearchQuery, setDebouncedInventorySearchQuery] = useState('');
+  const [topUpDialogOpen, setTopUpDialogOpen] = useState(false);
   const lastLoadTimeRef = useRef<number>(0);
   const CACHE_DURATION = 5 * 60 * 1000; // 5 minutes
 
@@ -529,17 +531,27 @@ const TechnicianInventoryManagement: React.FC<TechnicianInventoryManagementProps
                 <span className="sm:inline">Assign Inventory</span>
               </Button>
               {selectedTechnicianId && (
-                <Button 
-                  variant="outline"
-                  onClick={() => {
-                    inventoryCache.clear(selectedTechnicianId ? `tech_inventory_${selectedTechnicianId}` : 'all_tech_inventory');
-                    loadTechnicianInventory(selectedTechnicianId, true);
-                  }}
-                  className="w-full sm:w-auto text-sm"
-                >
-                  <RefreshCw className="w-4 h-4 sm:mr-2" />
-                  <span className="sm:inline">Refresh</span>
-                </Button>
+                <>
+                  <Button 
+                    variant="outline"
+                    onClick={() => setTopUpDialogOpen(true)}
+                    className="w-full sm:w-auto text-sm"
+                  >
+                    <ArrowUpCircle className="w-4 h-4 sm:mr-2" />
+                    <span className="sm:inline">Top Up Used Items</span>
+                  </Button>
+                  <Button 
+                    variant="outline"
+                    onClick={() => {
+                      inventoryCache.clear(selectedTechnicianId ? `tech_inventory_${selectedTechnicianId}` : 'all_tech_inventory');
+                      loadTechnicianInventory(selectedTechnicianId, true);
+                    }}
+                    className="w-full sm:w-auto text-sm"
+                  >
+                    <RefreshCw className="w-4 h-4 sm:mr-2" />
+                    <span className="sm:inline">Refresh</span>
+                  </Button>
+                </>
               )}
             </div>
           </div>
@@ -819,6 +831,15 @@ const TechnicianInventoryManagement: React.FC<TechnicianInventoryManagementProps
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {selectedTechnicianId && (
+        <TechnicianTopUpDialog
+          technicianId={selectedTechnicianId}
+          open={topUpDialogOpen}
+          onOpenChange={setTopUpDialogOpen}
+          onSuccess={() => loadTechnicianInventory(selectedTechnicianId, true)}
+        />
+      )}
     </div>
   );
 };
