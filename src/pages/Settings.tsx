@@ -1326,6 +1326,29 @@ const Settings = () => {
             </CardContent>
           </Card>
 
+          {/* Calling */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2 text-lg sm:text-xl">
+                <PhoneCall className="w-5 h-5" />
+                Calling
+              </CardTitle>
+              <CardDescription className="text-sm mt-1">
+                Manage customer calls and communication
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="p-4 sm:p-6">
+              <Button
+                variant="outline"
+                className="w-full sm:w-auto"
+                onClick={() => setShowCallingPage(true)}
+              >
+                <PhoneCall className="w-4 h-4 mr-2" />
+                Open Calling Page
+              </Button>
+            </CardContent>
+          </Card>
+
           {/* Common QR Codes Management */}
           <Card>
             <CardHeader>
@@ -2463,29 +2486,6 @@ const Settings = () => {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
-
-      {/* Calling Section */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2 text-lg sm:text-xl">
-            <PhoneCall className="w-5 h-5" />
-            Calling
-          </CardTitle>
-          <CardDescription className="text-sm mt-1">
-            Manage customer calls and communication
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="p-4 sm:p-6">
-          <Button
-            onClick={() => setShowCallingPage(true)}
-            className="w-full sm:w-auto bg-blue-600 hover:bg-blue-700"
-          >
-            <PhoneCall className="w-4 h-4 mr-2" />
-            Open Calling Page
-          </Button>
-        </CardContent>
-      </Card>
-
 
       {/* Logout Section at Bottom */}
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
