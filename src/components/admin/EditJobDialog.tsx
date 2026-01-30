@@ -580,21 +580,19 @@ const EditJobDialog: React.FC<EditJobDialogProps> = ({
                 </SelectContent>
               </Select>
             </div>
-            {editJobFormData.lead_source && (
-              <div>
-                <Label htmlFor="edit-lead-cost">Lead Cost (₹) *</Label>
-                <Input
-                  id="edit-lead-cost"
-                  type="number"
-                  min="0"
-                  step="0.01"
-                  value={editJobFormData.lead_cost}
-                  onChange={(e) => setEditJobFormData(prev => ({ ...prev, lead_cost: e.target.value }))}
-                  placeholder="Enter lead cost"
-                  required
-                />
-              </div>
-            )}
+            <div>
+              <Label htmlFor="edit-lead-cost">Lead Cost (₹)</Label>
+              <Input
+                id="edit-lead-cost"
+                type="number"
+                min="0"
+                step="0.01"
+                value={editJobFormData.lead_cost}
+                onChange={(e) => setEditJobFormData(prev => ({ ...prev, lead_cost: e.target.value }))}
+                placeholder="0 if none"
+              />
+              <p className="text-xs text-gray-500 mt-1">Edit if you need to update lead cost for this job</p>
+            </div>
             {editJobFormData.lead_source === 'Other' && (
               <div>
                 <Label htmlFor="edit-lead-source-custom">Custom Lead Source</Label>

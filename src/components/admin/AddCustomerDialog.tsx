@@ -844,18 +844,24 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
               otp_verified: false
             });
           }
-          
+
+          const leadCostNum = parseFloat(step5JobData.lead_cost) || 0;
+
+          // Use the same address/location we sent for the customer (don't rely on API return for JSONB)
+          const serviceAddress = customerData.address || {};
+          const serviceLocation = customerData.location || {};
+
           const jobData = {
             job_number: jobNumber,
             customer_id: newCustomer.id,
             service_type: step5JobData.service_type,
             service_sub_type: step5JobData.service_sub_type === 'Custom' ? step5JobData.service_sub_type_custom : step5JobData.service_sub_type,
-            brand: newCustomer.brand || '',
-            model: newCustomer.model || '',
+            brand: newCustomer.brand || customerData.brand || '',
+            model: newCustomer.model || customerData.model || '',
             scheduled_date: step5JobData.scheduled_date,
             scheduled_time_slot: scheduledTimeSlot,
-            service_address: newCustomer.address,
-            service_location: newCustomer.location,
+            service_address: serviceAddress,
+            service_location: serviceLocation,
             status: step5JobData.assigned_technician_id ? 'ASSIGNED' as const : 'PENDING' as const,
             priority: step5JobData.priority,
             description: step5JobData.description.trim() || '',
@@ -882,6 +888,7 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
           
           if (jobError) {
             console.error('Failed to create job:', jobError);
+            console.error('Job insert error details:', (jobError as { message?: string; code?: string; details?: string })?.message, (jobError as { details?: string })?.details);
           } else if (newJob) {
             console.log('✅ Job created successfully:', {
               job_id: (newJob as any).id,
@@ -959,6 +966,7 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
         description: '',
         lead_source: 'Direct call', // Reset to 'Direct call' (default)
         lead_source_custom: '',
+        lead_cost: '0',
         priority: 'MEDIUM' as 'LOW' | 'MEDIUM' | 'HIGH' | 'URGENT',
         assigned_technician_id: '', // Reset technician assignment
         require_otp: false

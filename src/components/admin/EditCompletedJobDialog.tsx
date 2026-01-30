@@ -124,22 +124,20 @@ const EditCompletedJobDialog: React.FC<EditCompletedJobDialogProps> = ({
             </div>
           )}
 
-          {/* Lead Cost - Required when lead source is selected */}
-          {editData.leadSource && (
-            <div>
-              <Label htmlFor="edit-lead-cost">Lead Cost (₹) *</Label>
-              <Input
-                id="edit-lead-cost"
-                type="number"
-                min="0"
-                step="0.01"
-                value={editData.leadCost || '0'}
-                onChange={(e) => onEditDataChange({ ...editData, leadCost: e.target.value })}
-                placeholder="Enter lead cost"
-                required
-              />
-            </div>
-          )}
+          {/* Lead Cost - Always editable so it can be updated when needed */}
+          <div>
+            <Label htmlFor="edit-lead-cost">Lead Cost (₹)</Label>
+            <Input
+              id="edit-lead-cost"
+              type="number"
+              min="0"
+              step="0.01"
+              value={editData.leadCost ?? ''}
+              onChange={(e) => onEditDataChange({ ...editData, leadCost: e.target.value })}
+              placeholder="0 if none"
+            />
+            <p className="text-xs text-gray-500 mt-1">Edit if you need to update lead cost for this job</p>
+          </div>
 
           {/* QR Code Name (if online payment) */}
           {(editData.paymentMethod === 'UPI' || editData.paymentMethod === 'CARD' || editData.paymentMethod === 'BANK_TRANSFER') && (
