@@ -7,7 +7,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from '@/components/ui/command';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { Package, Plus, Search, Check, ChevronsUpDown, RefreshCw, ArrowUpCircle } from 'lucide-react';
+import { Package, Plus, Search, Check, ChevronsUpDown, RefreshCw, ArrowUpCircle, Pencil } from 'lucide-react';
 import { db } from '@/lib/supabase';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
@@ -51,16 +51,23 @@ const TechnicianInventoryView: React.FC<TechnicianInventoryViewProps> = ({ techn
   const [mainInventoryLoading, setMainInventoryLoading] = useState(false);
   const [topUpDialogOpen, setTopUpDialogOpen] = useState(false);
   const [topUpItems, setTopUpItems] = useState<Array<{
-    id: string;
     inventory_id: string;
     quantity_used: number;
-    created_at: string;
+    quantity_needed: number;
+    last_used_at: string;
     inventory?: { id: string; product_name: string; code: string | null };
   }>>([]);
   const [currentTopUpIndex, setCurrentTopUpIndex] = useState(0);
   const [topUpLoading, setTopUpLoading] = useState(false);
+  const [editableTopUpQty, setEditableTopUpQty] = useState<string>('');
+  const [isTopUpQtyEditing, setIsTopUpQtyEditing] = useState(false);
+  const [topUpLastWorkingDayLabel, setTopUpLastWorkingDayLabel] = useState<string>('');
+  const topUpQtyInputRef = useRef<HTMLInputElement>(null);
   const lastLoadTimeRef = useRef<number>(0);
-  const CACHE_DURATION = 30 * 1000; // 30 seconds - shorter cache to reflect main inventory updates faster
+  const CACHE_DURATION = 30 * 1000; // 30 seconds
+
+  const toDateKey = (d: Date): string =>
+    `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 
   // Safety check - don't render if no technicianId
   if (!technicianId) {
@@ -290,77 +297,112 @@ const TechnicianInventoryView: React.FC<TechnicianInventoryViewProps> = ({ techn
     return item ? `${item.product_name}${item.code ? ` (${item.code})` : ''}` : 'Unknown';
   };
 
-  // Handle top up - load ALL items used by technician (not just yesterday/today)
-  // This allows technicians to top up items from any date - if they check today, they see today's items,
-  // if they check after a month, they see all items that were used
+  // Top Up: show ONLY parts from technician's LAST WORKING DAY. Last working day = from JOBS table (max completed_at), not from parts — so if you delete all parts from that day, list is empty.
   const handleTopUp = async () => {
     try {
       setTopUpLoading(true);
-      
-      // Ensure main inventory is loaded
-      if (mainInventory.length === 0) {
-        await loadMainInventory(true);
-      }
-      
-      // Fetch technician inventory and parts used in parallel so we filter with fresh data
-      const [invResult, partsResult] = await Promise.all([
-        db.technicianInventory.getByTechnician(technicianId),
+      inventoryCache.clear(`tech_inventory_${technicianId}`);
+      inventoryCache.clear('main_inventory');
+      if (mainInventory.length === 0) await loadMainInventory(true);
+
+      const [jobsResult, partsResult] = await Promise.all([
+        db.jobs.getByTechnicianId(technicianId),
         db.jobPartsUsed.getByTechnician(technicianId),
       ]);
-      const { data: currentTechInventory } = invResult;
-      const allPartsUsed = partsResult.data;
-      const { error } = partsResult;
+      const jobs = jobsResult.data || [];
+      const allPartsUsed = partsResult.data || []; // Live from DB — if you deleted parts, they won't be here
+      const jobsError = jobsResult.error;
+      const partsError = partsResult.error;
 
-      if (error) throw error;
-      if (!allPartsUsed || allPartsUsed.length === 0) {
-        toast.info('No items have been used yet');
+      if (jobsError) throw jobsError;
+      if (partsError) throw partsError;
+
+      // Last working day = max COMPLETED job date only (from jobs table — so deleting parts doesn't change this)
+      const completedJobs = (jobs as any[]).filter((j: any) => j.status === 'COMPLETED');
+      let lastWorkingDayKey: string | null = null;
+      completedJobs.forEach((job: any) => {
+        const dateStr = job.completed_at || job.end_time;
+        if (!dateStr) return;
+        const key = toDateKey(new Date(dateStr));
+        if (lastWorkingDayKey == null || key > lastWorkingDayKey) lastWorkingDayKey = key;
+      });
+      if (!lastWorkingDayKey) {
+        toast.info('No completed jobs found.');
         return;
       }
 
-      const currentInventory = currentTechInventory || [];
+      const getJob = (p: any) => (Array.isArray(p.job) ? p.job[0] : p.job);
+      const getPartJobDayKey = (part: any): string | null => {
+        const job = getJob(part);
+        if (!job || (!job.completed_at && !job.end_time)) return null;
+        return toDateKey(new Date(job.completed_at || job.end_time));
+      };
+      const getPartDate = (part: any): string => {
+        const job = getJob(part);
+        if (job && (job.completed_at || job.end_time)) return job.completed_at || job.end_time;
+        return part.created_at || '';
+      };
 
-      // Group by inventory_id and sum quantities
+      // Only parts whose JOB was completed on last working day (so if you deleted all parts from that day = empty)
+      const partsOnLastDay = allPartsUsed.filter((part: any) => getPartJobDayKey(part) === lastWorkingDayKey);
+
+      // Dedupe by (job_id, inventory_id) then group by inventory_id and sum
+      const byJobAndInv = new Map<string, { quantity_used: number; last_used_at: string; part: any }>();
+      partsOnLastDay.forEach((part: any) => {
+        const key = `${part.job_id}_${part.inventory_id}`;
+        if (byJobAndInv.has(key)) {
+          const existing = byJobAndInv.get(key)!;
+          const partDate = getPartDate(part);
+          if (partDate && new Date(partDate) > new Date(existing.last_used_at)) existing.last_used_at = partDate;
+          return;
+        }
+        byJobAndInv.set(key, {
+          quantity_used: Number(part.quantity_used) || 0,
+          last_used_at: getPartDate(part) || part.created_at || '',
+          part,
+        });
+      });
+
       const groupedItems = new Map<string, {
         inventory_id: string;
         quantity_used: number;
-        created_at: string;
+        last_used_at: string;
         inventory?: { id: string; product_name: string; code: string | null };
       }>();
-      
-      allPartsUsed.forEach((part: any) => {
+      byJobAndInv.forEach(({ quantity_used, last_used_at, part }) => {
         const key = part.inventory_id;
         if (groupedItems.has(key)) {
           const existing = groupedItems.get(key)!;
-          existing.quantity_used += part.quantity_used;
-          if (new Date(part.created_at) > new Date(existing.created_at)) {
-            existing.created_at = part.created_at;
-          }
+          existing.quantity_used += quantity_used;
+          if (new Date(last_used_at) > new Date(existing.last_used_at)) existing.last_used_at = last_used_at;
         } else {
           groupedItems.set(key, {
             inventory_id: part.inventory_id,
-            quantity_used: part.quantity_used,
-            created_at: part.created_at,
-            inventory: part.inventory
+            quantity_used,
+            last_used_at,
+            inventory: part.inventory,
           });
         }
       });
 
-      // Only show items that still need topping up: technician's current qty < total used
-      // (once they've topped up, current >= used so item won't show again when they reopen Top Up)
       const itemsArray = Array.from(groupedItems.values())
-        .filter((item) => {
-          const currentQty = currentInventory.find((i: any) => i.inventory_id === item.inventory_id)?.quantity ?? 0;
-          return currentQty < item.quantity_used;
-        })
-        .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
-      
+        .map((item) => ({ ...item, quantity_needed: item.quantity_used }))
+        .sort((a, b) => new Date(b.last_used_at).getTime() - new Date(a.last_used_at).getTime());
+
       if (itemsArray.length === 0) {
-        toast.info('No items to top up — all used items are already topped up');
+        const lastDayLabel = lastWorkingDayKey
+          ? new Date(lastWorkingDayKey + 'T12:00:00').toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })
+          : 'that day';
+        toast.info(`No parts were used on your last working day (${lastDayLabel}). Data is from the database — if you removed parts from the job, the list will be empty.`);
         return;
       }
-      
+
+      const lastDayLabel = new Date(lastWorkingDayKey + 'T12:00:00').toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' });
+      setTopUpLastWorkingDayLabel(lastDayLabel);
       setTopUpItems(itemsArray);
       setCurrentTopUpIndex(0);
+      setEditableTopUpQty(itemsArray[0] ? String(itemsArray[0].quantity_used) : '');
+      setIsTopUpQtyEditing(false);
       setTopUpDialogOpen(true);
     } catch (error: any) {
       console.error('Error loading top up items:', error);
@@ -370,72 +412,80 @@ const TechnicianInventoryView: React.FC<TechnicianInventoryViewProps> = ({ techn
     }
   };
 
-  // Handle confirm top up for current item
+  // Sync editable qty when current item changes (default = quantity_used, not 0)
+  useEffect(() => {
+    if (topUpDialogOpen && topUpItems.length > 0 && currentTopUpIndex < topUpItems.length) {
+      const item = topUpItems[currentTopUpIndex];
+      if (item) setEditableTopUpQty(String(item.quantity_used));
+      setIsTopUpQtyEditing(false);
+    }
+  }, [topUpDialogOpen, currentTopUpIndex, topUpItems]);
+
+  useEffect(() => {
+    if (isTopUpQtyEditing) {
+      const t = setTimeout(() => topUpQtyInputRef.current?.focus(), 50);
+      return () => clearTimeout(t);
+    }
+  }, [isTopUpQtyEditing]);
+
+  // Add to inventory (use editable qty), then show next
   const handleConfirmTopUp = async () => {
     if (currentTopUpIndex >= topUpItems.length) return;
-    
     const currentItem = topUpItems[currentTopUpIndex];
     if (!currentItem) return;
-    
+    const qty = Math.max(0, parseInt(editableTopUpQty, 10) || 0);
+
     try {
       setTopUpLoading(true);
-      
-      // Check available quantity in main inventory
-      const mainItem = mainInventory.find(i => i.id === currentItem.inventory_id);
-      if (!mainItem) {
-        toast.error('Product not found in main inventory');
-        return;
-      }
-      
-      if (mainItem.quantity < currentItem.quantity_used) {
-        toast.error(`Insufficient stock in main inventory. Available: ${mainItem.quantity}, needed: ${currentItem.quantity_used}. Top up cannot proceed until stock is added.`);
-        // Stay on same item — don't advance; user must skip or add stock first
-        return;
-      }
-      
-      // Check if technician already has this item
-      const existingItem = myInventory.find(item => item.inventory_id === currentItem.inventory_id);
-      
-      if (existingItem) {
-        // Update existing quantity
-        const newQuantity = existingItem.quantity + currentItem.quantity_used;
-        const { error } = await db.technicianInventory.update(existingItem.id, {
-          quantity: newQuantity
-        });
-        if (error) throw error;
+      if (qty === 0) {
+        toast.success('Skipped (0 qty)');
       } else {
-        // Create new assignment
-        const { error } = await db.technicianInventory.upsert({
-          technician_id: technicianId,
-          inventory_id: currentItem.inventory_id,
-          quantity: currentItem.quantity_used
+        const mainItem = mainInventory.find(i => i.id === currentItem.inventory_id);
+        if (!mainItem) {
+          toast.error('Product not found in main inventory');
+          return;
+        }
+        if (mainItem.quantity < qty) {
+          toast.error(`Insufficient stock in main inventory. Available: ${mainItem.quantity}, needed: ${qty}.`);
+          return;
+        }
+        const existingItem = myInventory.find(item => item.inventory_id === currentItem.inventory_id);
+        if (existingItem) {
+          const { error } = await db.technicianInventory.update(existingItem.id, {
+            quantity: existingItem.quantity + qty,
+          });
+          if (error) throw error;
+        } else {
+          const { error } = await db.technicianInventory.upsert({
+            technician_id: technicianId,
+            inventory_id: currentItem.inventory_id,
+            quantity: qty,
+          });
+          if (error) throw error;
+        }
+        const { error: updateMainError } = await db.inventory.update(currentItem.inventory_id, {
+          quantity: mainItem.quantity - qty,
         });
-        if (error) throw error;
+        if (updateMainError) throw updateMainError;
+        toast.success(`Added ${qty} ${currentItem.inventory?.product_name || 'items'}`);
       }
-      
-      // Subtract from main inventory
-      const newMainQuantity = mainItem.quantity - currentItem.quantity_used;
-      const { error: updateMainError } = await db.inventory.update(currentItem.inventory_id, {
-        quantity: newMainQuantity
-      });
-      if (updateMainError) throw updateMainError;
-      
-      toast.success(`Added ${currentItem.quantity_used} ${currentItem.inventory?.product_name || 'items'}`);
-      
-      // Reload inventories
+
       inventoryCache.clear(`tech_inventory_${technicianId}`);
       inventoryCache.clear('main_inventory');
       await loadMyInventory(true);
       await loadMainInventory(true);
-      
-      // Move to next item or close
-      if (currentTopUpIndex < topUpItems.length - 1) {
-        setCurrentTopUpIndex(currentTopUpIndex + 1);
-      } else {
-        toast.success('All items topped up successfully!');
+
+      const nextItems = topUpItems.filter((_, i) => i !== currentTopUpIndex);
+      setTopUpItems(nextItems);
+      if (nextItems.length === 0) {
+        toast.success('Done!');
         setTopUpDialogOpen(false);
-        setTopUpItems([]);
         setCurrentTopUpIndex(0);
+      } else {
+        const nextIndex = Math.min(currentTopUpIndex, nextItems.length - 1);
+        setCurrentTopUpIndex(nextIndex);
+        setEditableTopUpQty(String(nextItems[nextIndex].quantity_used));
+        setIsTopUpQtyEditing(false);
       }
     } catch (error: any) {
       console.error('Error topping up item:', error);
@@ -445,14 +495,18 @@ const TechnicianInventoryView: React.FC<TechnicianInventoryViewProps> = ({ techn
     }
   };
 
-  // Handle skip top up item
+  // Skip = just go to next (no persist)
   const handleSkipTopUp = () => {
-    if (currentTopUpIndex < topUpItems.length - 1) {
-      setCurrentTopUpIndex(currentTopUpIndex + 1);
-    } else {
+    const nextItems = topUpItems.filter((_, i) => i !== currentTopUpIndex);
+    setTopUpItems(nextItems);
+    if (nextItems.length === 0) {
       setTopUpDialogOpen(false);
-      setTopUpItems([]);
       setCurrentTopUpIndex(0);
+    } else {
+      const nextIndex = Math.min(currentTopUpIndex, nextItems.length - 1);
+      setCurrentTopUpIndex(nextIndex);
+      setEditableTopUpQty(String(nextItems[nextIndex].quantity_used));
+      setIsTopUpQtyEditing(false);
     }
   };
 
@@ -676,72 +730,112 @@ const TechnicianInventoryView: React.FC<TechnicianInventoryViewProps> = ({ techn
         </DialogContent>
       </Dialog>
 
-      {/* Top Up Dialog - Shows items one by one */}
+      {/* Top Up Dialog — all parts used, one by one. Skip = next; Add = add qty (editable) then next. No persist. */}
       <Dialog open={topUpDialogOpen} onOpenChange={(open) => {
         if (!open) {
           setTopUpDialogOpen(false);
           setTopUpItems([]);
           setCurrentTopUpIndex(0);
+          setEditableTopUpQty('');
+          setIsTopUpQtyEditing(false);
+          setTopUpLastWorkingDayLabel('');
         }
       }}>
         <DialogContent className="sm:max-w-[500px]">
           <DialogHeader>
             <DialogTitle className="text-base sm:text-lg">
-              Top Up Used Items ({currentTopUpIndex + 1} of {topUpItems.length})
+              Top Up — Last working day: {topUpLastWorkingDayLabel || '—'} ({currentTopUpIndex + 1} of {topUpItems.length})
             </DialogTitle>
-            <DialogDescription className="text-xs sm:text-sm">
-              Review and confirm items you used. Items are sorted by most recent date first.
-            </DialogDescription>
           </DialogHeader>
-          {topUpItems.length > 0 && currentTopUpIndex < topUpItems.length && (
-            <div className="space-y-4 py-4">
-              <div className="border rounded-lg p-4 bg-gray-50">
-                <div className="space-y-2">
-                  <div>
-                    <Label className="text-sm font-medium text-gray-600">Product</Label>
-                    <p className="text-base font-semibold mt-1">
-                      {topUpItems[currentTopUpIndex].inventory?.product_name || 'Unknown Product'}
-                    </p>
-                    {topUpItems[currentTopUpIndex].inventory?.code && (
-                      <p className="text-sm text-gray-500">Code: {topUpItems[currentTopUpIndex].inventory.code}</p>
-                    )}
-                  </div>
-                  <div>
-                    <Label className="text-sm font-medium text-gray-600">Quantity Used</Label>
-                    <p className="text-lg font-bold text-blue-600 mt-1">
-                      {topUpItems[currentTopUpIndex].quantity_used}
-                    </p>
-                  </div>
-                  <div>
-                    <Label className="text-sm font-medium text-gray-600">Date Used</Label>
-                    <p className="text-sm text-gray-600 mt-1">
-                      {new Date(topUpItems[currentTopUpIndex].created_at).toLocaleDateString('en-US', {
-                        weekday: 'short',
-                        year: 'numeric',
-                        month: 'short',
-                        day: 'numeric'
-                      })}
-                    </p>
+          {topUpItems.length > 0 && currentTopUpIndex < topUpItems.length && (() => {
+            const item = topUpItems[currentTopUpIndex];
+            return (
+              <div className="space-y-4 py-4">
+                <div className="border rounded-lg p-4 bg-gray-50">
+                  <div className="space-y-2">
+                    <div>
+                      <Label className="text-sm font-medium text-gray-600">Product</Label>
+                      <p className="text-base font-semibold mt-1">
+                        {item.inventory?.product_name || 'Unknown Product'}
+                      </p>
+                      {item.inventory?.code && (
+                        <p className="text-sm text-gray-500">Code: {item.inventory.code}</p>
+                      )}
+                    </div>
+                    <div>
+                      <Label className="text-sm font-medium text-gray-600">Quantity used</Label>
+                      <p className="text-lg font-bold text-blue-600 mt-1">{item.quantity_used}</p>
+                    </div>
+                    <div>
+                      <Label className="text-sm font-medium text-gray-600">Quantity to add</Label>
+                      <div className="flex items-center gap-2 mt-1">
+                        {isTopUpQtyEditing ? (
+                          <Input
+                            ref={topUpQtyInputRef}
+                            type="number"
+                            inputMode="numeric"
+                            min={0}
+                            value={editableTopUpQty}
+                            onChange={(e) => setEditableTopUpQty(e.target.value)}
+                            onBlur={() => setIsTopUpQtyEditing(false)}
+                            className="max-w-[100px] text-lg font-semibold"
+                          />
+                        ) : (
+                          <>
+                            <span className="text-lg font-semibold min-w-[2ch]">{editableTopUpQty || item.quantity_used}</span>
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="icon"
+                              className="h-8 w-8 shrink-0"
+                              onClick={() => {
+                                setEditableTopUpQty(String(item.quantity_used));
+                                setIsTopUpQtyEditing(true);
+                              }}
+                              aria-label="Edit quantity"
+                            >
+                              <Pencil className="h-4 w-4" />
+                            </Button>
+                          </>
+                        )}
+                      </div>
+                    </div>
                   </div>
                 </div>
               </div>
-            </div>
-          )}
-          <DialogFooter>
-            <Button 
-              variant="outline" 
-              onClick={handleSkipTopUp}
+            );
+          })()}
+          <DialogFooter className="flex-col sm:flex-row gap-2">
+            <Button
+              type="button"
+              variant="ghost"
+              onClick={() => {
+                setTopUpDialogOpen(false);
+                setTopUpItems([]);
+                setCurrentTopUpIndex(0);
+              }}
               disabled={topUpLoading}
+              className="order-2 sm:order-1"
             >
-              {currentTopUpIndex < topUpItems.length - 1 ? 'Skip' : 'Close'}
+              Cancel
             </Button>
-            <Button 
-              onClick={handleConfirmTopUp} 
-              disabled={topUpLoading || topUpItems.length === 0}
-              className="bg-blue-600 hover:bg-blue-700"
-            >
-              {topUpLoading ? 'Adding...' : 'Add to Inventory'}
-            </Button>
+            <div className="flex gap-2 order-1 sm:order-2 sm:ml-auto">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={handleSkipTopUp}
+                disabled={topUpLoading}
+              >
+                Skip
+              </Button>
+              <Button
+                onClick={handleConfirmTopUp}
+                disabled={topUpLoading || topUpItems.length === 0}
+                className="bg-blue-600 hover:bg-blue-700"
+              >
+                {topUpLoading ? 'Adding...' : 'Add to Inventory'}
+              </Button>
+            </div>
           </DialogFooter>
         </DialogContent>
       </Dialog>
