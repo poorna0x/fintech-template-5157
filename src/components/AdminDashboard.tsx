@@ -1511,75 +1511,31 @@ const AdminDashboard = () => {
 
 
 
-  // Poll for new jobs and play notification sound
+  // Poll for new jobs - no sound (sound only on job completion via realtime below)
   useEffect(() => {
     if (isInitialLoad || !isPollingEnabled) return;
 
     const checkForNewJobs = async () => {
       try {
-        // Check for new pending jobs (most recent first)
         const { data: newJobs, error } = await db.jobs.getByStatusPaginated(['PENDING'], 1, 5);
-        
         if (error || !newJobs || newJobs.length === 0) {
-          // If no pending jobs, clear the last checked ID to avoid false positives
-          if (newJobs && newJobs.length === 0) {
-            setLastCheckedJobId(null);
-          }
+          if (newJobs && newJobs.length === 0) setLastCheckedJobId(null);
           return;
         }
-
-        // Get the most recent job
         const mostRecentJob = newJobs[0] as any;
         const mostRecentJobId = mostRecentJob?.id;
-        const mostRecentJobCreatedAt = mostRecentJob?.created_at || mostRecentJob?.createdAt;
-
-        if (!mostRecentJobId) return;
-
-        // Only show notification if:
-        // 1. We have a last checked ID AND it's different (job changed)
-        // 2. AND the new job was created AFTER we last checked (truly new job)
-        // OR we don't have a last checked ID yet (first time checking)
-        if (lastCheckedJobId) {
-          // We've checked before - only notify if it's a truly NEW job
-          if (lastCheckedJobId !== mostRecentJobId) {
-            // Job ID changed - check if it's actually a new job or just reordering
-            // If the most recent job was created recently (within last 30 seconds), it's likely new
-            if (mostRecentJobCreatedAt) {
-              const jobCreatedAt = new Date(mostRecentJobCreatedAt);
-              const now = new Date();
-              const timeDiff = (now.getTime() - jobCreatedAt.getTime()) / 1000; // seconds
-              
-              // Only notify if job was created in the last 30 seconds (truly new)
-              if (timeDiff <= 30) {
-          // New job detected - play sound
-          playNotificationSound();
-          
-          // New lead received silently - no notification
-              }
-            }
-          }
-        } else {
-          // First time checking - just set the ID, don't notify
-          // (to avoid notifying on page load)
-        }
-
-        // Update the last checked job ID
-        setLastCheckedJobId(mostRecentJobId);
+        if (mostRecentJobId) setLastCheckedJobId(mostRecentJobId);
       } catch (error) {
       }
     };
 
-    // Poll every 10 seconds
     const interval = setInterval(checkForNewJobs, 10000);
-
-    // Initial check after a short delay
     const timeout = setTimeout(checkForNewJobs, 2000);
-
     return () => {
       clearInterval(interval);
       clearTimeout(timeout);
     };
-  }, [isInitialLoad, isPollingEnabled, lastCheckedJobId, jobs, playNotificationSound]);
+  }, [isInitialLoad, isPollingEnabled, lastCheckedJobId]);
 
   // Realtime subscription for job completion - play sound when technician finishes a job
   useEffect(() => {
