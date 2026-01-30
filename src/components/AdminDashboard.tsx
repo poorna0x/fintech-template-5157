@@ -284,6 +284,8 @@ const AdminDashboard = () => {
   const [lastCheckedJobId, setLastCheckedJobId] = useState<string | null>(null);
   const [isPollingEnabled, setIsPollingEnabled] = useState(true);
   const audioContextRef = React.useRef<AudioContext | null>(null);
+  // Job IDs just completed by admin in this session - don't play sound for these (only for technician completions)
+  const jobIdsCompletedByAdminRef = React.useRef<Set<string>>(new Set());
   
   // Distance measurement dialog state
   const [distanceMeasurementDialogOpen, setDistanceMeasurementDialogOpen] = useState(false);
@@ -1556,10 +1558,16 @@ const AdminDashboard = () => {
           // Check if this is a status change to COMPLETED (not just an update to an already completed job)
           const oldStatus = payload.old?.status;
           const newStatus = payload.new?.status;
-          
+          const jobId = payload.new?.id as string | undefined;
+
           if (oldStatus !== 'COMPLETED' && newStatus === 'COMPLETED') {
-            console.log('✅ Job completed detected via realtime:', {
-              jobId: payload.new?.id,
+            // Only play sound when technician completes in realtime - not when admin completed the job in this session
+            if (jobId && jobIdsCompletedByAdminRef.current.has(jobId)) {
+              console.log('🔇 Skipping sound - job was completed by admin in this session:', jobId);
+              return;
+            }
+            console.log('✅ Job completed detected via realtime (technician):', {
+              jobId,
               oldStatus,
               newStatus
             });
@@ -9443,7 +9451,14 @@ const AdminDashboard = () => {
         commonQrCodes={commonQrCodes}
         onLoadQrCodes={loadQrCodes}
         selectedTechnicianId={selectedTechnicianForComplete}
-        onJobCompleted={async () => {
+        onJobCompleted={async (completedJobId?: string) => {
+          // Mark this job as completed by admin so realtime handler doesn't play sound for it
+          if (completedJobId) {
+            jobIdsCompletedByAdminRef.current.add(completedJobId);
+            setTimeout(() => {
+              jobIdsCompletedByAdminRef.current.delete(completedJobId);
+            }, 5000);
+          }
           await loadFilteredJobs(statusFilter, currentPage);
           setSelectedTechnicianForComplete('');
         }}

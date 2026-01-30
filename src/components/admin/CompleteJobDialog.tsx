@@ -22,7 +22,7 @@ interface CompleteJobDialogProps {
   commonQrCodes: CommonQrCode[];
   onLoadQrCodes: () => Promise<void>;
   selectedTechnicianId?: string; // Technician who completed the job (from admin page)
-  onJobCompleted: () => void;
+  onJobCompleted: (completedJobId?: string) => void;
 }
 
 // Helper function to get today's date in local timezone (YYYY-MM-DD format)
@@ -435,7 +435,7 @@ export const CompleteJobDialog: React.FC<CompleteJobDialogProps> = ({
 
       toast.success('Job completed successfully');
       handleClose();
-      onJobCompleted();
+      onJobCompleted(job?.id);
     } catch (error: any) {
       console.error('❌ [CompleteJobDialog] Exception during job completion:', {
         error,
