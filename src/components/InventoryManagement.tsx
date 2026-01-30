@@ -38,7 +38,8 @@ const InventoryManagement: React.FC<InventoryManagementProps> = ({ onBack }) => 
     price: '',
     quantity: ''
   });
-  const [loading, setLoading] = useState(true);
+  const [inventoryLoaded, setInventoryLoaded] = useState(false);
+  const [loading, setLoading] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [debouncedSearchQuery, setDebouncedSearchQuery] = useState('');
   const [showSuggestions, setShowSuggestions] = useState(false);
@@ -85,11 +86,11 @@ const InventoryManagement: React.FC<InventoryManagementProps> = ({ onBack }) => 
     }
   }, [lastLoadTime, inventoryItems.length]);
 
-  // Load on mount, but use cache if available
-  useEffect(() => {
-    loadInventory();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []); // Only run on mount - loadInventory is stable
+  // Load main inventory on demand when user clicks "Show inventory"
+  const handleShowInventory = useCallback(async () => {
+    await loadInventory(true);
+    setInventoryLoaded(true);
+  }, [loadInventory]);
 
   // Filter inventory items based on search query
   const filteredItems = useMemo(() => {
@@ -296,7 +297,8 @@ const InventoryManagement: React.FC<InventoryManagementProps> = ({ onBack }) => 
         }
       });
       
-      loadInventory(true); // Force reload after save
+      await loadInventory(true); // Force reload after save
+      setInventoryLoaded(true);
     } catch (error: any) {
       console.error('Error saving inventory:', error);
       toast.error(error?.message || 'Failed to save inventory item');
@@ -328,6 +330,7 @@ const InventoryManagement: React.FC<InventoryManagementProps> = ({ onBack }) => 
       // Optimistically update local state instead of reloading
       setInventoryItems(prev => prev.filter(item => item.id !== id));
       setLastLoadTime(Date.now()); // Update cache time
+      setInventoryLoaded(true); // Keep table visible
     } catch (error: any) {
       console.error('Error deleting inventory:', error);
       toast.error(error?.message || 'Failed to delete inventory item');
@@ -366,16 +369,27 @@ const InventoryManagement: React.FC<InventoryManagementProps> = ({ onBack }) => 
                 Manage product inventory with name, code, price, and quantity
               </p>
             </div>
-            <div className="flex gap-2">
-              <Button
-                variant="outline"
-                onClick={() => loadInventory(true)}
-                className="w-full sm:w-auto"
-                title="Refresh inventory"
-              >
-                <RefreshCw className="w-4 h-4 mr-2" />
-                <span className="hidden sm:inline">Refresh</span>
-              </Button>
+            <div className="flex gap-2 flex-wrap">
+              {!inventoryLoaded && (
+                <Button
+                  onClick={handleShowInventory}
+                  className="w-full sm:w-auto bg-blue-600 hover:bg-blue-700"
+                >
+                  <ShoppingCart className="w-4 h-4 mr-2" />
+                  <span className="hidden sm:inline">Show inventory</span>
+                </Button>
+              )}
+              {inventoryLoaded && (
+                <Button
+                  variant="outline"
+                  onClick={() => loadInventory(true)}
+                  className="w-full sm:w-auto"
+                  title="Refresh inventory"
+                >
+                  <RefreshCw className="w-4 h-4 mr-2" />
+                  <span className="hidden sm:inline">Refresh</span>
+                </Button>
+              )}
               <Button
                 onClick={handleAddInventory}
                 className="w-full sm:w-auto bg-blue-600 hover:bg-blue-700"
@@ -387,6 +401,13 @@ const InventoryManagement: React.FC<InventoryManagementProps> = ({ onBack }) => 
           </div>
         </CardHeader>
         <CardContent className="p-4 sm:p-6">
+          {!inventoryLoaded ? (
+            <div className="text-center py-12 text-gray-500">
+              <ShoppingCart className="w-12 h-12 mx-auto mb-4 text-gray-400" />
+              <p>Click &quot;Show inventory&quot; to load main inventory (saves egress)</p>
+            </div>
+          ) : (
+            <>
           {/* Search Bar */}
           <div className="mb-4 relative">
             <div className="relative">
@@ -647,6 +668,8 @@ const InventoryManagement: React.FC<InventoryManagementProps> = ({ onBack }) => 
                   </Pagination>
                 </div>
               )}
+            </>
+          )}
             </>
           )}
         </CardContent>
