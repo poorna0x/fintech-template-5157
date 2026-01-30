@@ -1443,73 +1443,65 @@ const AdminDashboard = () => {
     }
   }, [currentPage, statusFilter, loadFilteredJobs]);
 
-  // Initialize audio context on user interaction
+  // Initialize audio context on first user interaction (required for sound on hosted)
   useEffect(() => {
-    const initAudioContext = () => {
-      if (!audioContextRef.current) {
-        try {
-          audioContextRef.current = new (window.AudioContext || (window as any).webkitAudioContext)();
-        } catch (error) {
+    const handleUserInteraction = async () => {
+      try {
+        const Ac = window.AudioContext || (window as any).webkitAudioContext;
+        if (!Ac) return;
+        if (!audioContextRef.current) {
+          audioContextRef.current = new Ac();
         }
-      }
-    };
-
-    // Initialize on first user interaction
-    const handleUserInteraction = () => {
-      initAudioContext();
-      // Remove listeners after first interaction
+        const ctx = audioContextRef.current;
+        if (ctx.state === 'suspended') {
+          await ctx.resume();
+        }
+      } catch (_) {}
       document.removeEventListener('click', handleUserInteraction);
       document.removeEventListener('keydown', handleUserInteraction);
     };
-
     document.addEventListener('click', handleUserInteraction, { once: true });
     document.addEventListener('keydown', handleUserInteraction, { once: true });
-
     return () => {
       document.removeEventListener('click', handleUserInteraction);
       document.removeEventListener('keydown', handleUserInteraction);
     };
   }, []);
 
-  // Function to play notification sound - plays 5 times
+  // Play notification sound (5 beeps). Call after user has clicked once on hosted.
   const playNotificationSound = useCallback(async () => {
+    toast.info('Job completed', { duration: 2000 });
     try {
-      // Create or get audio context
+      const Ac = window.AudioContext || (window as any).webkitAudioContext;
+      if (!Ac) return;
       if (!audioContextRef.current) {
-        audioContextRef.current = new (window.AudioContext || (window as any).webkitAudioContext)();
+        audioContextRef.current = new Ac();
       }
-
-      const audioContext = audioContextRef.current;
-
-      // Resume audio context if suspended (browser autoplay policy)
-      if (audioContext.state === 'suspended') {
-        await audioContext.resume();
+      const ctx = audioContextRef.current;
+      if (ctx.state === 'suspended') {
+        await ctx.resume();
       }
-
-      // Play the beep 5 times with small gaps between
-      const beepDuration = 0.3; // Each beep is 0.3 seconds
-      const gapDuration = 0.2; // 0.2 second gap between beeps
-      const totalDuration = (beepDuration + gapDuration) * 5 - gapDuration; // Total ~2.3 seconds
-
+      if (ctx.state !== 'running') {
+        toast.info('Click anywhere on this page once to enable sound', { duration: 5000 });
+        return;
+      }
+      const beep = () => {
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+        osc.frequency.value = 800;
+        osc.type = 'sine';
+        gain.gain.setValueAtTime(0.25, ctx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.25);
+        osc.start(ctx.currentTime);
+        osc.stop(ctx.currentTime + 0.25);
+      };
       for (let i = 0; i < 5; i++) {
-        const startTime = audioContext.currentTime + i * (beepDuration + gapDuration);
-        
-        const oscillator = audioContext.createOscillator();
-        const gainNode = audioContext.createGain();
-        
-        oscillator.connect(gainNode);
-        gainNode.connect(audioContext.destination);
-        
-        oscillator.frequency.value = 800; // Original frequency
-        oscillator.type = 'sine';
-        
-        gainNode.gain.setValueAtTime(0.3, startTime);
-        gainNode.gain.exponentialRampToValueAtTime(0.01, startTime + beepDuration);
-        
-        oscillator.start(startTime);
-        oscillator.stop(startTime + beepDuration);
+        setTimeout(beep, i * 500);
       }
-    } catch (error) {
+    } catch (e) {
+      console.warn('Notification sound failed:', e);
     }
   }, []);
 
