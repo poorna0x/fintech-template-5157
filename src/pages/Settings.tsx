@@ -1039,6 +1039,48 @@ const Settings = () => {
         tables.push({ name: 'service_areas', data: serviceAreas || [] });
       }
 
+      const { data: businessExpenses, error: businessExpensesError } = await db.businessExpenses.getAll();
+      if (businessExpensesError) {
+        console.error('Error fetching business expenses:', businessExpensesError);
+        toast.error(`Failed to fetch business expenses: ${businessExpensesError.message}`);
+      } else {
+        tables.push({ name: 'business_expenses', data: businessExpenses || [] });
+      }
+
+      const { data: inventory, error: inventoryError } = await db.inventory.getAll();
+      if (inventoryError) {
+        console.error('Error fetching inventory:', inventoryError);
+        toast.error(`Failed to fetch inventory: ${inventoryError.message}`);
+      } else {
+        tables.push({ name: 'inventory', data: inventory || [] });
+      }
+
+      const { data: technicianInventory, error: technicianInventoryError } = await db.technicianInventory.getAll();
+      if (technicianInventoryError) {
+        console.error('Error fetching technician inventory:', technicianInventoryError);
+        toast.error(`Failed to fetch technician inventory: ${technicianInventoryError.message}`);
+      } else {
+        tables.push({ name: 'technician_inventory', data: technicianInventory || [] });
+      }
+
+      const { data: jobPartsUsed, error: jobPartsUsedError } = await supabase
+        .from('job_parts_used')
+        .select('*');
+      if (jobPartsUsedError) {
+        console.error('Error fetching job parts used:', jobPartsUsedError);
+        toast.error(`Failed to fetch job parts used: ${jobPartsUsedError.message}`);
+      } else {
+        tables.push({ name: 'job_parts_used', data: jobPartsUsed || [] });
+      }
+
+      const { data: adminTodos, error: adminTodosError } = await db.adminTodos.getAll();
+      if (adminTodosError) {
+        console.error('Error fetching admin todos:', adminTodosError);
+        toast.error(`Failed to fetch admin todos: ${adminTodosError.message}`);
+      } else {
+        tables.push({ name: 'admin_todos', data: adminTodos || [] });
+      }
+
       // Create ZIP file with all CSV files
       const zip = new JSZip();
       
@@ -1737,13 +1779,17 @@ const Settings = () => {
                   <strong>What will be downloaded:</strong>
                 </p>
                 <ul className="text-sm text-blue-800 dark:text-blue-300 space-y-1 list-disc list-inside">
+                  <li>Admin Todos</li>
                   <li>Admin Users</li>
                   <li>AMC Contracts</li>
+                  <li>Business Expenses</li>
                   <li>Call History</li>
                   <li>Common QR Codes</li>
                   <li>Customers</li>
                   <li>Follow-ups</li>
+                  <li>Inventory</li>
                   <li>Job Assignment Requests</li>
+                  <li>Job Parts Used</li>
                   <li>Jobs</li>
                   <li>Notifications</li>
                   <li>Parts Inventory</li>
@@ -1754,6 +1800,7 @@ const Settings = () => {
                   <li>Technician Expenses</li>
                   <li>Technician Extra Commissions</li>
                   <li>Technician Holidays</li>
+                  <li>Technician Inventory</li>
                   <li>Technician Payments</li>
                   <li>Technicians</li>
                 </ul>
