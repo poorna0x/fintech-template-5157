@@ -1468,7 +1468,6 @@ const AdminDashboard = () => {
 
   // Play notification sound (5 beeps). Schedule all at once so they always play.
   const playNotificationSound = useCallback(async () => {
-    toast.info('Job completed', { duration: 2000 });
     try {
       const Ac = window.AudioContext || (window as any).webkitAudioContext;
       if (!Ac) return;
