@@ -286,8 +286,6 @@ const AdminDashboard = () => {
   const audioContextRef = React.useRef<AudioContext | null>(null);
   // Job IDs just completed by admin in this session - don't play sound for these (only for technician completions)
   const jobIdsCompletedByAdminRef = React.useRef<Set<string>>(new Set());
-  const lastSeenCompletedIdsRef = React.useRef<Set<string>>(new Set());
-  const completedPollInitializedRef = React.useRef(false);
   
   // Distance measurement dialog state
   const [distanceMeasurementDialogOpen, setDistanceMeasurementDialogOpen] = useState(false);
@@ -1534,50 +1532,7 @@ const AdminDashboard = () => {
     };
   }, [isInitialLoad, isPollingEnabled, lastCheckedJobId]);
 
-  // Poll for newly completed jobs and play sound (works when Realtime doesn't fire on hosted)
-  useEffect(() => {
-    if (isInitialLoad || !isPollingEnabled) return;
-
-    const pollCompleted = async () => {
-      try {
-        const { data: rows, error } = await supabase
-          .from('jobs')
-          .select('id')
-          .eq('status', 'COMPLETED')
-          .order('updated_at', { ascending: false })
-          .limit(15);
-        if (error || !rows?.length) return;
-
-        const ids = rows.map((r: { id: string }) => r.id);
-        if (!completedPollInitializedRef.current) {
-          ids.forEach((id: string) => lastSeenCompletedIdsRef.current.add(id));
-          completedPollInitializedRef.current = true;
-          return;
-        }
-
-        for (const id of ids) {
-          if (lastSeenCompletedIdsRef.current.has(id)) continue;
-          if (jobIdsCompletedByAdminRef.current.has(id)) continue;
-          lastSeenCompletedIdsRef.current.add(id);
-          if (lastSeenCompletedIdsRef.current.size > 100) {
-            lastSeenCompletedIdsRef.current.clear();
-            completedPollInitializedRef.current = false;
-          }
-          playNotificationSound();
-          break;
-        }
-      } catch (_) {}
-    };
-
-    const interval = setInterval(pollCompleted, 8000);
-    const t = setTimeout(pollCompleted, 3000);
-    return () => {
-      clearInterval(interval);
-      clearTimeout(t);
-    };
-  }, [isInitialLoad, isPollingEnabled, playNotificationSound]);
-
-  // Realtime subscription for job completion - play sound when technician finishes a job
+  // Realtime only: play sound when technician completes a job (status -> COMPLETED)
   useEffect(() => {
     if (isInitialLoad) return;
 
@@ -1597,12 +1552,13 @@ const AdminDashboard = () => {
 
           if (oldStatus !== 'COMPLETED' && newStatus === 'COMPLETED') {
             if (jobId && jobIdsCompletedByAdminRef.current.has(jobId)) return;
-            if (jobId) lastSeenCompletedIdsRef.current.add(jobId);
             playNotificationSound();
           }
         }
       )
-      .subscribe(() => {});
+      .subscribe((status) => {
+        if (import.meta.env.DEV) console.log('Job completion realtime:', status);
+      });
 
     return () => {
       supabase.removeChannel(channel);
