@@ -72,6 +72,7 @@ interface AnalyticsData {
   totalBusinessExpenses?: number;
   totalSparePartsCost?: number; // Cost of parts used on jobs (from job_parts_used × inventory price)
   totalSalaryDeductions?: number; // From technician payments (base salary deductions)
+  totalSalaryIncludingAll?: number; // Same but including excluded technician(s), for display in brackets
   totalExpenses?: number; // Sum of all expenses
   totalProfit?: number; // Revenue - Lead Costs - Expenses
   softenerData?: {
@@ -193,6 +194,33 @@ const Analytics = () => {
     }
   };
 
+  /** Pro-rated base salary for a period: only count salary up to today (current month "up to this date"). */
+  const getProRatedBaseSalary = (monthlyBaseSalary: number, periodStart: Date, periodEnd: Date): number => {
+    const today = new Date();
+    today.setHours(23, 59, 59, 999);
+    const effectiveEnd = periodEnd > today ? today : periodEnd;
+    if (periodStart > effectiveEnd) return 0;
+    const start = new Date(periodStart);
+    start.setHours(0, 0, 0, 0);
+    const end = new Date(effectiveEnd);
+    end.setHours(23, 59, 59, 999);
+    let total = 0;
+    const cur = new Date(start);
+    while (cur <= end) {
+      const monthDays = new Date(cur.getFullYear(), cur.getMonth() + 1, 0).getDate();
+      const monthStart = new Date(cur.getFullYear(), cur.getMonth(), 1);
+      const monthEnd = new Date(cur.getFullYear(), cur.getMonth() + 1, 0);
+      monthEnd.setHours(23, 59, 59, 999);
+      const rangeStart = monthStart < start ? start : monthStart;
+      const rangeEnd = monthEnd > end ? end : monthEnd;
+      const daysInRange = Math.round((rangeEnd.getTime() - rangeStart.getTime()) / 86400000) + 1;
+      total += (monthlyBaseSalary * daysInRange) / monthDays;
+      cur.setMonth(cur.getMonth() + 1);
+      cur.setDate(1);
+    }
+    return Math.round(total * 100) / 100;
+  };
+
   const loadAnalytics = async () => {
     try {
       setLoading(true);
@@ -212,6 +240,7 @@ const Analytics = () => {
       let totalBusinessExpenses = 0;
       let totalSparePartsCost = 0;
       let totalSalaryDeductions = 0;
+      let totalSalaryIncludingAll = 0;
 
       if (startDate && endDate) {
         // Load technician expenses
@@ -264,9 +293,15 @@ const Analytics = () => {
             
             // Calculate total salary for each technician
             let totalSalaryPaid = 0;
-            
+            const salaryBreakdown: { name: string; id: string; amount: number; base: number; commissions: number; extra: number; advances: number }[] = [];
+
+            // Exclude this technician from "Total Salary" and from profit (by employee_id, e.g. TECH851703400)
+            const EXCLUDED_EMPLOYEE_ID = 'TECH851703400'; // Srujan
+
             allTechnicians.forEach((tech: any) => {
               const techId = tech.id;
+              const techName = tech.name ?? tech.full_name ?? techId;
+              const employeeId = tech.employee_id ?? tech.employeeId ?? '';
               const monthlyBaseSalary = (tech.salary && typeof tech.salary === 'object' && (tech.salary as any).baseSalary) 
                 ? (tech.salary as any).baseSalary 
                 : 8000; // Default
@@ -284,18 +319,41 @@ const Analytics = () => {
                 return ecDate >= startDate && ecDate <= endDate;
               });
               
-              // Calculate salary components
-              const baseSalary = monthlyBaseSalary; // Period is 1 month
+              // Calculate salary components (base pro-rated by period up to today)
+              const baseSalary = getProRatedBaseSalary(monthlyBaseSalary, startDate, endDate);
               const commissions = techPayments.reduce((sum: number, p: any) => sum + (p.commission_amount || 0), 0);
               const extraCommissions = techExtraCommissions.reduce((sum: number, ec: any) => sum + (ec.amount || 0), 0);
               const advances = techAdvances.reduce((sum: number, a: any) => sum + (a.amount || 0), 0);
               
-              // Total salary = base + commissions + extra commissions - advances
               const techTotalSalary = baseSalary + commissions + extraCommissions - advances;
-              totalSalaryPaid += Math.max(0, techTotalSalary); // Don't allow negative
+              const amount = Math.max(0, techTotalSalary);
+              totalSalaryIncludingAll += amount;
+
+              if (employeeId === EXCLUDED_EMPLOYEE_ID) {
+                console.log('[Analytics Salary] EXCLUDED from Total Salary:', techName, employeeId, techId);
+                return; // Skip: not included in Total Salary / profit
+              }
+
+              totalSalaryPaid += amount;
+              salaryBreakdown.push({
+                name: techName,
+                id: techId,
+                amount,
+                base: baseSalary,
+                commissions,
+                extra: extraCommissions,
+                advances,
+              });
             });
-            
+
             totalSalaryDeductions = totalSalaryPaid;
+            // Break down Total Salary so you can see how the total is made up
+            console.log('[Analytics Salary] BREAKDOWN — Total Salary: ₹' + totalSalaryPaid.toLocaleString('en-IN'));
+            salaryBreakdown.forEach((b) => {
+              console.log(`  ${b.name} (${b.id}): ₹${b.amount.toLocaleString('en-IN')} = base ₹${b.base.toLocaleString('en-IN')} + comm ₹${b.commissions.toLocaleString('en-IN')} + extra ₹${b.extra.toLocaleString('en-IN')} − adv ₹${b.advances.toLocaleString('en-IN')}`);
+            });
+            console.log('[Analytics Salary] TOTAL: ₹' + totalSalaryPaid.toLocaleString('en-IN'));
+            console.table(salaryBreakdown.map((b) => ({ Technician: b.name, ID: b.id, Amount: b.amount, Base: b.base, Commissions: b.commissions, Extra: b.extra, Advances: b.advances })));
           }
         } catch (e) {
           console.error('Error calculating salary deductions:', e);
@@ -986,6 +1044,7 @@ const Analytics = () => {
         totalBusinessExpenses,
         totalSparePartsCost, // Parts used on jobs (job_parts_used × inventory price)
         totalSalaryDeductions, // This is now "Total Salary" (includes base salary + commissions + extra commissions - advances)
+        totalSalaryIncludingAll, // Full total including excluded technician(s), for display in brackets
         // Total expenses (technician expenses + total salary + business expenses + spare parts cost)
         totalExpenses: totalTechnicianExpenses + totalSalaryDeductions + totalBusinessExpenses + totalSparePartsCost,
         // Total profit (Revenue - Lead Costs - Expenses)
@@ -1762,9 +1821,12 @@ const Analytics = () => {
                     </span>
                   </div>
                   <div className="flex justify-between gap-2 items-center min-w-0">
-                    <span className="text-gray-600 truncate">Total Salary:</span>
+                    <span className="text-gray-600 truncate">Total Salary (all salary including):</span>
                     <span className="font-semibold text-red-600 shrink-0 tabular-nums">
                       ₹ {formatCurrency(analytics.totalSalaryDeductions || 0)}
+                      {analytics.totalSalaryIncludingAll != null && analytics.totalSalaryIncludingAll !== (analytics.totalSalaryDeductions ?? 0) && (
+                        <> (₹ {formatCurrency(analytics.totalSalaryIncludingAll)})</>
+                      )}
                     </span>
                   </div>
                   <div className="flex justify-between gap-2 items-center min-w-0">
