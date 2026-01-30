@@ -107,6 +107,7 @@ const CallingPage = ({ hideHeader = false, onBack }: CallingPageProps = {}) => {
   const [isLoadingPhotos, setIsLoadingPhotos] = useState(false);
   const [customerReportDialogOpen, setCustomerReportDialogOpen] = useState(false);
   const [selectedCustomerForReport, setSelectedCustomerForReport] = useState<Customer | null>(null);
+  const [technicians, setTechnicians] = useState<any[]>([]);
 
   // Redirect to admin login if not authenticated or not admin (only if standalone page)
   useEffect(() => {
@@ -120,6 +121,14 @@ const CallingPage = ({ hideHeader = false, onBack }: CallingPageProps = {}) => {
 
   useEffect(() => {
     loadCustomers();
+  }, []);
+
+  useEffect(() => {
+    const loadTechnicians = async () => {
+      const { data, error } = await db.technicians.getAll(100);
+      if (!error && data) setTechnicians(data);
+    };
+    loadTechnicians();
   }, []);
 
   useEffect(() => {
@@ -1240,7 +1249,7 @@ const CallingPage = ({ hideHeader = false, onBack }: CallingPageProps = {}) => {
       <CustomerReportDialog
         open={customerReportDialogOpen}
         customer={selectedCustomerForReport}
-        technicians={[]}
+        technicians={technicians}
         onOpenChange={(open) => {
           setCustomerReportDialogOpen(open);
           if (!open) {

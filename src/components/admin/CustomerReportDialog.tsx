@@ -154,8 +154,8 @@ const CustomerReportDialog: React.FC<CustomerReportDialogProps> = ({
                     if (completedBy === 'admin' || completedBy === 'Admin') {
                       completedByName = 'Admin';
                     } else {
-                      const completedByTechnician = technicians.find(tech => tech.id === completedBy);
-                      completedByName = completedByTechnician?.fullName || 'Technician';
+                      const completedByTechnician = technicians.find(tech => (tech.id || (tech as any).id) === completedBy);
+                      completedByName = completedByTechnician?.fullName || (completedByTechnician as any)?.full_name || 'Technician';
                     }
                   }
                   
