@@ -430,6 +430,7 @@ const TechnicianDashboard = () => {
   const [paymentMode, setPaymentMode] = useState<'CASH' | 'ONLINE' | ''>('');
   const [billAmountConfirmOpen, setBillAmountConfirmOpen] = useState(false);
   const [customerHasPrefilter, setCustomerHasPrefilter] = useState<boolean | null>(null);
+  const [rawWaterTds, setRawWaterTds] = useState<string>('');
   const [qrCodeType, setQrCodeType] = useState<string>('');
   const [selectedQrCodeId, setSelectedQrCodeId] = useState<string>('');
   const [commonQrCodes, setCommonQrCodes] = useState<CommonQrCode[]>([]);
@@ -2118,6 +2119,7 @@ const TechnicianDashboard = () => {
         setPaymentScreenshot('');
         setPaymentMode('');
       setCustomerHasPrefilter(null);
+      setRawWaterTds('');
       setQrCodeType('');
       setSelectedQrCodeId('');
       setOtpInput(['', '', '', '']);
@@ -2129,6 +2131,9 @@ const TechnicianDashboard = () => {
       ? ((jobWithCustomer.customer as any).has_prefilter ?? (jobWithCustomer.customer as any).hasPrefilter ?? null)
       : null;
     setCustomerHasPrefilter(customerPrefilter);
+    // Only prefill if value > 0; empty by default so mobile users can easily type (0 is hard to clear)
+    const existingTds = (jobWithCustomer.customer as any)?.raw_water_tds;
+    setRawWaterTds(existingTds != null && Number(existingTds) > 0 ? String(existingTds) : '');
     setCompleteDialogOpen(true);
   };
 
@@ -2570,6 +2575,7 @@ const TechnicianDashboard = () => {
       if (shouldSkipAMC && billIsZero && isSoftener) {
         setHasAMC(false);
         setCustomerHasPrefilter(null);
+        setRawWaterTds('');
         if (needsOtp) {
           setCompleteJobStep(7);
           return;
@@ -2610,6 +2616,7 @@ const TechnicianDashboard = () => {
         });
         if (billIsZeroStep3 && isSoftenerStep3) {
           setCustomerHasPrefilter(null);
+        setRawWaterTds('');
           setCompleteJobStep(6);
           // Continue to submit logic
         } else {
@@ -2663,6 +2670,7 @@ const TechnicianDashboard = () => {
       if (billIsZeroStep3Final && isSoftenerService()) {
         // Set customerHasPrefilter to null (not applicable for softener)
         setCustomerHasPrefilter(null);
+        setRawWaterTds('');
         if (needsOtp) {
           setCompleteJobStep(7);
           return;
@@ -2706,6 +2714,7 @@ const TechnicianDashboard = () => {
         }
         if (isSoftener) {
           setCustomerHasPrefilter(null);
+        setRawWaterTds('');
           setCompleteJobStep(6);
           // Continue to submit logic
         } else {
@@ -2807,6 +2816,7 @@ const TechnicianDashboard = () => {
       if (isSoftenerService()) {
         // Set customerHasPrefilter to null (not applicable for softener)
         setCustomerHasPrefilter(null);
+        setRawWaterTds('');
         // Set step to 6 to trigger submit logic, but skip step 6 UI
         setCompleteJobStep(6);
         // Continue to submit logic - don't return here
@@ -2848,6 +2858,7 @@ const TechnicianDashboard = () => {
       if (isSoftenerService()) {
         // Set customerHasPrefilter to null (not applicable for softener)
         setCustomerHasPrefilter(null);
+        setRawWaterTds('');
         setCompleteJobStep(6);
         // Continue to submit logic
       } else {
@@ -2861,6 +2872,13 @@ const TechnicianDashboard = () => {
       // If softener service, customerHasPrefilter should be null (not applicable)
       if (isSoftenerService()) {
         setCustomerHasPrefilter(null);
+        setRawWaterTds('');
+      } else {
+        // Raw water TDS is required for RO jobs
+        if (!rawWaterTds.trim()) {
+          toast.error('Please enter Raw water TDS (ppm)');
+          return;
+        }
       }
       
       // Determine payment mode - if bill is zero, payment mode should be empty
@@ -3208,8 +3226,8 @@ const TechnicianDashboard = () => {
           });
         }
 
-        // Update customer prefilter status if provided
-        if (customerHasPrefilter !== null) {
+        // Update customer prefilter status and raw_water_tds if provided (RO jobs only)
+        if (customerHasPrefilter !== null || (rawWaterTds !== '' && !isSoftenerService())) {
           // Get customer UUID from job - prioritize customer.id (UUID) over customer_id
           // customer.id is the UUID primary key, customer_id in job is also UUID foreign key
           const customerId = 
@@ -3221,35 +3239,40 @@ const TechnicianDashboard = () => {
           
           if (customerId) {
             try {
-              console.log('🔄 Updating customer prefilter status:', {
-                customerId,
-                hasPrefilter: customerHasPrefilter,
-                jobId: selectedJobForComplete.id,
-                customerObject: selectedJobForComplete.customer ? 'present' : 'missing',
-                customerIdFromCustomer: (selectedJobForComplete.customer as any)?.id,
-                customerIdFromJob: selectedJobForComplete.customer_id
-              });
-              
-              const { data, error } = await db.customers.update(customerId, {
-                has_prefilter: customerHasPrefilter
-              });
-              
-              if (error) {
-                console.error('❌ Failed to update customer prefilter status:', {
-                  error,
+              const updatePayload: Record<string, any> = {};
+              if (customerHasPrefilter !== null) updatePayload.has_prefilter = customerHasPrefilter;
+              const tdsVal = parseInt(rawWaterTds, 10);
+              if (!isSoftenerService() && !isNaN(tdsVal) && tdsVal >= 0) {
+                updatePayload.raw_water_tds = tdsVal;
+              } else if (!isSoftenerService() && rawWaterTds === '') {
+                updatePayload.raw_water_tds = 0;
+              }
+              if (Object.keys(updatePayload).length > 0) {
+                console.log('🔄 Updating customer prefilter/raw_water_tds:', {
                   customerId,
                   hasPrefilter: customerHasPrefilter,
-                  errorMessage: error.message,
-                  errorCode: error.code
+                  raw_water_tds: updatePayload.raw_water_tds,
+                  jobId: selectedJobForComplete.id,
                 });
-                toast.error(`Failed to update customer prefilter status: ${error.message || 'Unknown error'}`);
-              } else {
-                console.log('✅ Customer prefilter status updated successfully:', {
-                  customerId,
-                  hasPrefilter: customerHasPrefilter,
-                  updatedData: data
-                });
-                // Success - no toast needed, update happens silently
+                
+                const { data, error } = await db.customers.update(customerId, updatePayload);
+                
+                if (error) {
+                  console.error('❌ Failed to update customer prefilter status:', {
+                    error,
+                    customerId,
+                    hasPrefilter: customerHasPrefilter,
+                    errorMessage: error.message,
+                    errorCode: error.code
+                  });
+                  toast.error(`Failed to update customer prefilter status: ${error.message || 'Unknown error'}`);
+                } else {
+                  console.log('✅ Customer prefilter status updated successfully:', {
+                    customerId,
+                    hasPrefilter: customerHasPrefilter,
+                    updatedData: data
+                  });
+                }
               }
             } catch (error: any) {
               console.error('❌ Error updating customer prefilter status:', {
@@ -3309,6 +3332,7 @@ const TechnicianDashboard = () => {
         setHasAMC(null);
         setPaymentMode('');
         setCustomerHasPrefilter(null);
+        setRawWaterTds('');
         setQrCodeType('');
         setSelectedQrCodeId('');
         setPaymentScreenshot('');
@@ -4777,6 +4801,14 @@ const TechnicianDashboard = () => {
                         ) : null;
                       })()}
 
+                      {/* Raw Water TDS */}
+                      {((job as any).customer?.raw_water_tds != null && (job as any).customer?.raw_water_tds > 0) && (
+                        <div className="text-sm mb-3">
+                          <span className="font-medium text-gray-700 inline-block w-28">Raw Water TDS:</span>
+                          <span className="text-gray-600">{(job as any).customer.raw_water_tds} ppm</span>
+                        </div>
+                      )}
+
                       {/* Estimated Cost */}
                       {(job as any).estimated_cost ? (
                         <div className="text-sm mb-3">
@@ -5829,6 +5861,7 @@ const TechnicianDashboard = () => {
             setHasAMC(null);
             setPaymentMode('');
             setCustomerHasPrefilter(null);
+        setRawWaterTds('');
             setQrCodeType('');
             setSelectedQrCodeId('');
             setPaymentScreenshot('');
@@ -6588,6 +6621,18 @@ const TechnicianDashboard = () => {
                       </button>
                     </div>
                   </div>
+                  <div className="space-y-2">
+                    <Label className="text-base font-semibold">Raw water TDS (ppm) <span className="text-red-600">*</span></Label>
+                    <Input
+                      type="text"
+                      inputMode="numeric"
+                      placeholder="e.g. 500"
+                      value={rawWaterTds}
+                      onChange={(e) => setRawWaterTds(e.target.value.replace(/\D/g, '').slice(0, 4))}
+                      className="max-w-[140px]"
+                      required
+                    />
+                  </div>
                 </div>
               )}
 
@@ -6628,6 +6673,7 @@ const TechnicianDashboard = () => {
                     setHasAMC(null);
                     setPaymentMode('');
                     setCustomerHasPrefilter(null);
+        setRawWaterTds('');
       setQrCodeType('');
       setSelectedQrCodeId('');
       setPaymentScreenshot('');
@@ -6692,6 +6738,8 @@ const TechnicianDashboard = () => {
                   isSubmittingJobCompletion ||
                   // Only check upload states on final step (step 6) - allow proceeding on steps 2 and 5
                   (completeJobStep === 6 && (isBillPhotosUploading || isPaymentScreenshotUploading)) ||
+                  // Step 6 validation: Raw water TDS required for RO jobs
+                  (completeJobStep === 6 && !isSoftenerService() && !rawWaterTds.trim()) ||
                   // Step 4 validation: only require payment mode if bill amount is not zero
                   (completeJobStep === 4 && !isBillAmountZero() && !paymentMode) || 
                   (completeJobStep === 4 && !isBillAmountZero() && paymentMode === 'ONLINE' && !selectedQrCodeId) ||
@@ -7294,6 +7342,11 @@ const TechnicianDashboard = () => {
                         ? selectedCustomerForReport.email
                         : 'nomail@mail'}
                     </div>
+                    {((selectedCustomerForReport as any).raw_water_tds != null && (selectedCustomerForReport as any).raw_water_tds > 0) && (
+                      <div>
+                        <span className="text-gray-500">Raw Water TDS:</span> {(selectedCustomerForReport as any).raw_water_tds} ppm
+                      </div>
+                    )}
                   </div>
                 </div>
 
@@ -7522,6 +7575,14 @@ const TechnicianDashboard = () => {
                                 }
                                 return null;
                               })()}
+
+                              {/* Raw Water TDS - from selectedCustomerForReport (jobs from getByCustomerId don't have customer) */}
+                              {((selectedCustomerForReport as any)?.raw_water_tds != null && (selectedCustomerForReport as any)?.raw_water_tds > 0) && (
+                                <div className="flex items-center gap-2">
+                                  <span className="text-sm font-medium text-gray-700 w-32">Raw Water TDS:</span>
+                                  <span className="text-sm text-gray-900">{(selectedCustomerForReport as any).raw_water_tds} ppm</span>
+                                </div>
+                              )}
                               
                               {/* QR Code */}
                               {(paymentMethod === 'ONLINE' || paymentMethod === 'UPI' || paymentMethod === 'CARD' || paymentMethod === 'BANK_TRANSFER') && qrPhotos?.selected_qr_code_name && (

@@ -102,6 +102,11 @@ const CustomerReportDialog: React.FC<CustomerReportDialogProps> = ({
                   ? customer.email
                   : 'nomail@mail'}
               </div>
+              {((customer as any).raw_water_tds != null && (customer as any).raw_water_tds > 0) && (
+                <div>
+                  <span className="text-gray-500">Raw Water TDS:</span> {(customer as any).raw_water_tds} ppm
+                </div>
+              )}
             </div>
           </div>
 
@@ -245,6 +250,16 @@ const CustomerReportDialog: React.FC<CustomerReportDialogProps> = ({
                             );
                           }
                           return null;
+                        })()}
+
+                        {(() => {
+                          const tds = (customer as any).raw_water_tds ?? (customer as any).rawWaterTds;
+                          return tds != null && tds > 0 ? (
+                            <div className="flex items-center gap-2">
+                              <span className="text-sm font-medium text-gray-700 w-32">Raw Water TDS:</span>
+                              <span className="text-sm text-gray-900">{tds} ppm</span>
+                            </div>
+                          ) : null;
                         })()}
                         
                         {(paymentMethod === 'ONLINE' || paymentMethod === 'UPI' || paymentMethod === 'CARD' || paymentMethod === 'BANK_TRANSFER') && qrPhotos?.selected_qr_code_name && (

@@ -130,6 +130,13 @@ export const CompletedJobSection: React.FC<CompletedJobSectionProps> = ({
             <span className="text-gray-500 font-medium">Lead Source:</span> {leadSource || 'Direct call'}
           </div>
 
+          {/* Raw Water TDS */}
+          {((job as any).customer?.raw_water_tds != null && (job as any).customer?.raw_water_tds > 0) && (
+            <div className="text-gray-700 break-words">
+              <span className="text-gray-500 font-medium">Raw Water TDS:</span> {(job as any).customer.raw_water_tds} ppm
+            </div>
+          )}
+
           {/* Profit: Amount - spare parts - lead cost - 10% commission */}
           {showProfit && (
             <div className="text-gray-700 break-words pt-2 border-t border-green-200">

@@ -59,6 +59,7 @@ export const CompleteJobDialog: React.FC<CompleteJobDialogProps> = ({
   const [paymentMode, setPaymentMode] = useState<'CASH' | 'ONLINE' | ''>('');
   const [billAmountConfirmOpen, setBillAmountConfirmOpen] = useState(false);
   const [customerHasPrefilter, setCustomerHasPrefilter] = useState<boolean | null>(null);
+  const [rawWaterTds, setRawWaterTds] = useState<string>('');
   const [qrCodeType, setQrCodeType] = useState<string>('');
   const [selectedQrCodeId, setSelectedQrCodeId] = useState<string>('');
   const [paymentScreenshot, setPaymentScreenshot] = useState<string>('');
@@ -151,6 +152,9 @@ export const CompleteJobDialog: React.FC<CompleteJobDialogProps> = ({
         ? ((job.customer as any).has_prefilter ?? (job.customer as any).hasPrefilter ?? null)
         : null;
       setCustomerHasPrefilter(customerPrefilter);
+      // Only prefill if value > 0; empty by default so mobile users can easily type (0 is hard to clear)
+      const existingTds = (job.customer as any)?.raw_water_tds;
+      setRawWaterTds(existingTds != null && Number(existingTds) > 0 ? String(existingTds) : '');
       setQrCodeType('');
       setSelectedQrCodeId('');
       setPaymentScreenshot('');
@@ -201,6 +205,7 @@ export const CompleteJobDialog: React.FC<CompleteJobDialogProps> = ({
     setHasAMC(null);
     setPaymentMode('');
     setCustomerHasPrefilter(null);
+    setRawWaterTds('');
     setQrCodeType('');
     setSelectedQrCodeId('');
     setPaymentScreenshot('');
@@ -221,6 +226,12 @@ export const CompleteJobDialog: React.FC<CompleteJobDialogProps> = ({
     // If softener service, customerHasPrefilter should be null (not applicable)
     if (isSoftenerService()) {
       setCustomerHasPrefilter(null);
+    } else {
+      // Raw water TDS is required for RO jobs
+      if (!rawWaterTds.trim()) {
+        toast.error('Please enter Raw water TDS (ppm)');
+        return;
+      }
     }
     
     // Determine payment mode - if bill is zero, payment mode should be empty
@@ -386,8 +397,8 @@ export const CompleteJobDialog: React.FC<CompleteJobDialogProps> = ({
 
       console.log('✅ [CompleteJobDialog] Job updated successfully:', updatedJob);
       
-      // Update customer's has_prefilter field (same as technician dashboard)
-      if (customerHasPrefilter !== null && !isSoftenerService()) {
+      // Update customer's has_prefilter and raw_water_tds (same as technician dashboard)
+      if ((customerHasPrefilter !== null || (rawWaterTds !== '' && !isSoftenerService())) && !isSoftenerService()) {
         try {
           // Get customer UUID from job - prioritize customer.id (UUID) over customer_id
           const customerId = 
@@ -397,15 +408,23 @@ export const CompleteJobDialog: React.FC<CompleteJobDialogProps> = ({
             (job as any).customer_id;     // Alternative field name
           
           if (customerId) {
-            console.log('🔄 [CompleteJobDialog] Updating customer prefilter status:', {
+            const updatePayload: Record<string, any> = {};
+            if (customerHasPrefilter !== null) updatePayload.has_prefilter = customerHasPrefilter;
+            const tdsVal = parseInt(rawWaterTds, 10);
+            if (!isNaN(tdsVal) && tdsVal >= 0) {
+              updatePayload.raw_water_tds = tdsVal;
+            } else if (rawWaterTds === '') {
+              updatePayload.raw_water_tds = 0;
+            }
+            if (Object.keys(updatePayload).length > 0) {
+            console.log('🔄 [CompleteJobDialog] Updating customer prefilter/raw_water_tds:', {
               customerId,
               hasPrefilter: customerHasPrefilter,
+              raw_water_tds: updatePayload.raw_water_tds,
               jobId: job.id
             });
             
-            const { error: customerUpdateError } = await db.customers.update(customerId, {
-              has_prefilter: customerHasPrefilter
-            });
+            const { error: customerUpdateError } = await db.customers.update(customerId, updatePayload);
             
             if (customerUpdateError) {
               console.error('❌ [CompleteJobDialog] Failed to update customer prefilter status:', {
@@ -418,6 +437,7 @@ export const CompleteJobDialog: React.FC<CompleteJobDialogProps> = ({
               // Don't fail the job completion if customer update fails - just log it
             } else {
               console.log('✅ [CompleteJobDialog] Customer prefilter status updated successfully');
+            }
             }
           } else {
             console.warn('⚠️ [CompleteJobDialog] Could not find customer ID to update prefilter status');
@@ -1330,6 +1350,18 @@ export const CompleteJobDialog: React.FC<CompleteJobDialogProps> = ({
                     </button>
                   </div>
                 </div>
+                <div className="space-y-2">
+                  <Label className="text-base font-semibold">Raw water TDS (ppm) <span className="text-red-600">*</span></Label>
+                  <Input
+                    type="text"
+                    inputMode="numeric"
+                    placeholder="e.g. 500"
+                    value={rawWaterTds}
+                    onChange={(e) => setRawWaterTds(e.target.value.replace(/\D/g, '').slice(0, 4))}
+                    className="max-w-[140px]"
+                    required
+                  />
+                </div>
               </div>
             )}
           </div>
@@ -1417,6 +1449,8 @@ export const CompleteJobDialog: React.FC<CompleteJobDialogProps> = ({
               disabled={
                 isSubmittingJobCompletion || 
                 (completeJobStep === 6 && (isBillPhotosUploading || isPaymentScreenshotUploading)) ||
+                // Step 6 validation: Raw water TDS required for RO jobs
+                (completeJobStep === 6 && !isSoftenerService() && !rawWaterTds.trim()) ||
                 // Step 4 validation: only require payment mode if bill amount is not zero
                 (completeJobStep === 4 && !isBillAmountZero() && !paymentMode) || 
                 (completeJobStep === 4 && !isBillAmountZero() && paymentMode === 'ONLINE' && !selectedQrCodeId) ||

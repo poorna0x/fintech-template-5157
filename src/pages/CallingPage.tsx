@@ -67,6 +67,7 @@ interface CustomerWithHistory extends Customer {
   daysSinceContact?: number;
   lastContactStatus?: string;
   hasPrefilter?: boolean | null;
+  rawWaterTds?: number;
   callHistory?: CallHistory[];
 }
 
@@ -169,6 +170,7 @@ const CallingPage = ({ hideHeader = false, onBack }: CallingPageProps = {}) => {
           model,
           status,
           has_prefilter,
+          raw_water_tds,
           last_service_date
         `);
 
@@ -235,6 +237,7 @@ const CallingPage = ({ hideHeader = false, onBack }: CallingPageProps = {}) => {
           model: customer.model,
           status: customer.status,
           hasPrefilter: customer.has_prefilter ?? null,
+          rawWaterTds: customer.raw_water_tds ?? 0,
           lastServiceDate,
           daysSinceService,
           lastContacted: lastContact?.contacted_at || null,
@@ -885,6 +888,12 @@ const CallingPage = ({ hideHeader = false, onBack }: CallingPageProps = {}) => {
                               <div className="flex items-center gap-2">
                                 <Mail className="w-4 h-4" />
                                 <span>{customer.email}</span>
+                              </div>
+                            )}
+                            {(customer.rawWaterTds != null && customer.rawWaterTds > 0) && (
+                              <div className="flex items-center gap-2">
+                                <span className="text-gray-500">Raw water TDS:</span>
+                                <span className="font-medium">{customer.rawWaterTds} ppm</span>
                               </div>
                             )}
                             <div className="flex items-center gap-2">

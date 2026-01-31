@@ -57,6 +57,10 @@ export interface Customer {
   hasPrefilter?: boolean;
   has_prefilter?: boolean; // Alternative field name used in database
   
+  // Raw water TDS (ppm) - before RO purification
+  rawWaterTds?: number;
+  raw_water_tds?: number;
+  
   // Timestamps
   createdAt: string;
   updatedAt: string;

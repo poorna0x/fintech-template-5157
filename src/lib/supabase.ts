@@ -263,6 +263,8 @@ export const db = {
             notes,
             preferred_time_slot,
             preferred_language,
+            has_prefilter,
+            raw_water_tds,
             created_at,
             updated_at
           )
@@ -312,6 +314,8 @@ export const db = {
               notes,
               preferred_time_slot,
               preferred_language,
+              has_prefilter,
+              raw_water_tds,
               created_at,
               updated_at
             )
@@ -439,7 +443,9 @@ export const db = {
             brand,
             model,
             preferred_time_slot,
-            preferred_language
+            preferred_language,
+            has_prefilter,
+            raw_water_tds
           ),
           assigned_technician:technicians!assigned_technician_id(
             id,
@@ -589,6 +595,8 @@ export const db = {
             notes,
             preferred_time_slot,
             preferred_language,
+            has_prefilter,
+            raw_water_tds,
             created_at,
             updated_at
           )
@@ -704,6 +712,8 @@ export const db = {
             notes,
             preferred_time_slot,
             preferred_language,
+            has_prefilter,
+            raw_water_tds,
             created_at,
             updated_at
           )

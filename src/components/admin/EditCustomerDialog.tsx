@@ -113,6 +113,7 @@ const transformCustomerData = (customer: any): Customer => ({
   serviceCost: customer.service_cost,
   costAgreed: customer.cost_agreed,
   has_prefilter: customer.has_prefilter ?? null,
+  raw_water_tds: (customer as any).raw_water_tds ?? 0,
   createdAt: customer.created_at,
   updatedAt: customer.updated_at
 });
@@ -155,6 +156,7 @@ const EditCustomerDialog: React.FC<EditCustomerDialogProps> = ({
     visible_address: '',
     custom_time: '',
     has_prefilter: null as boolean | null,
+    raw_water_tds: 0 as number,
     address: {
       street: '',
       area: '',
@@ -234,6 +236,7 @@ const EditCustomerDialog: React.FC<EditCustomerDialogProps> = ({
             status: customerToUse.status || '',
             notes: customerToUse.notes || '',
             has_prefilter: (customerToUse as any).has_prefilter ?? null,
+            raw_water_tds: ((customerToUse as any).raw_water_tds != null && Number((customerToUse as any).raw_water_tds) > 0) ? (customerToUse as any).raw_water_tds : 0,
         google_location: (() => {
           if ((customerToUse.location as any)?.googleLocation) {
             const googleLoc = (customerToUse.location as any).googleLocation;
@@ -326,7 +329,7 @@ const EditCustomerDialog: React.FC<EditCustomerDialogProps> = ({
   }, [customer, open]);
 
 
-  const handleEditFormChange = (field: string, value: string | string[] | boolean | null) => {
+  const handleEditFormChange = (field: string, value: string | string[] | boolean | number | null) => {
     setEditFormData(prev => ({
       ...prev,
       [field]: value
@@ -856,6 +859,7 @@ const EditCustomerDialog: React.FC<EditCustomerDialogProps> = ({
         visible_address: editFormData.visible_address ? editFormData.visible_address.trim() : '',
         custom_time: editFormData.custom_time || null,
         has_prefilter: editFormData.has_prefilter,
+        raw_water_tds: Math.max(0, parseInt(String(editFormData.raw_water_tds), 10) || 0),
         address: updatedAddress,
         location: updatedLocation
       };
@@ -1019,6 +1023,7 @@ const EditCustomerDialog: React.FC<EditCustomerDialogProps> = ({
         visible_address: editFormData.visible_address ? editFormData.visible_address.trim() : '',
         custom_time: editFormData.custom_time || null,
         has_prefilter: editFormData.has_prefilter,
+        raw_water_tds: Math.max(0, parseInt(String(editFormData.raw_water_tds), 10) || 0),
         address: updatedAddress,
         location: updatedLocation
       });
@@ -1379,6 +1384,18 @@ const EditCustomerDialog: React.FC<EditCustomerDialogProps> = ({
                     <Label htmlFor="edit-prefilter-unknown" className="cursor-pointer">Not Set</Label>
                   </div>
                 </div>
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="edit-raw-water-tds">Raw water TDS (ppm)</Label>
+                <Input
+                  id="edit-raw-water-tds"
+                  type="text"
+                  inputMode="numeric"
+                  placeholder="e.g. 500"
+                  value={editFormData.raw_water_tds > 0 ? String(editFormData.raw_water_tds) : ''}
+                  onChange={(e) => handleEditFormChange('raw_water_tds', Math.max(0, parseInt(e.target.value.replace(/\D/g, ''), 10) || 0))}
+                  className="max-w-[140px]"
+                />
               </div>
             </div>
           </div>
