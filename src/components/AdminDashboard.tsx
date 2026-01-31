@@ -7334,7 +7334,6 @@ const AdminDashboard = () => {
                 onClick={async () => {
                   await loadDashboardData();
                   await loadFilteredJobs(statusFilter, currentPage);
-                  toast.success('Data refreshed');
                 }}
               >
                 <RefreshCw className="w-4 h-4" />
@@ -7470,6 +7469,17 @@ const AdminDashboard = () => {
                 <X className="w-4 h-4" />
               </Button>
             )}
+            <Button
+              variant="outline"
+              className="px-4"
+              title="Refresh data (no full page reload)"
+              onClick={async () => {
+                await loadDashboardData();
+                await loadFilteredJobs(statusFilter, currentPage);
+              }}
+            >
+              <RefreshCw className="w-4 h-4" />
+            </Button>
           </div>
           {searchTerm && (
             <div className="mt-2 text-sm text-gray-600">
