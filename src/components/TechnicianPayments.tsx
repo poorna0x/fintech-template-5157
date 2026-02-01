@@ -452,10 +452,12 @@ const TechnicianPayments = () => {
         });
         const totalExpenses = techExpenses.reduce((sum, e) => sum + (e.amount || 0), 0);
 
-        // Get advances for this technician - show all advances (not filtered by date)
-        // Advances persist across months and should be included in all salary calculations
+        // Get advances for this technician - filter by selected period (same as expenses)
+        // Advance taken in Dec is deducted from Dec salary only; when viewing Jan, show only Jan advances
         const techAdvances = (advancesData || []).filter((a: TechnicianAdvance) => {
-          return a.technician_id === techId;
+          if (a.technician_id !== techId) return false;
+          const advanceDate = (a as any).advance_date?.split?.('T')[0] ?? (a as any).advance_date;
+          return advanceDate >= periodStartStr && advanceDate <= periodEndStr;
         });
         const totalAdvances = techAdvances.reduce((sum, a) => sum + (a.amount || 0), 0);
         
