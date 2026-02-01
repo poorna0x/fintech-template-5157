@@ -4919,8 +4919,8 @@ const TechnicianDashboard = () => {
                                 variant="outline"
                                 onClick={() => {
                                   const allPhotos: string[] = [];
-                                  if (paymentScreenshot) allPhotos.push(paymentScreenshot);
                                   allPhotos.push(...billPhotos);
+                                  if (paymentScreenshot) allPhotos.push(paymentScreenshot);
                                   if (allPhotos.length > 0) {
                                     setSelectedBillPhotos(allPhotos);
                                     setSelectedPhoto({ url: allPhotos[0], index: 0, total: allPhotos.length });

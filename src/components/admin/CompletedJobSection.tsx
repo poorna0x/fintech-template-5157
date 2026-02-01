@@ -164,11 +164,11 @@ export const CompletedJobSection: React.FC<CompletedJobSectionProps> = ({
               <button
                 onClick={() => {
                   const allPhotos: string[] = [];
-                  if (paymentScreenshot) {
-                    allPhotos.push(paymentScreenshot);
-                  }
                   if (billPhotos && Array.isArray(billPhotos)) {
                     allPhotos.push(...billPhotos);
+                  }
+                  if (paymentScreenshot) {
+                    allPhotos.push(paymentScreenshot);
                   }
                   
                   if (allPhotos.length > 0) {
