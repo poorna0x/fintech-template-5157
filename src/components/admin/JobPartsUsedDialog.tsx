@@ -1,16 +1,12 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
-import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from '@/components/ui/command';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from '@/components/ui/alert-dialog';
-import { Package, Plus, Trash2, Check, ChevronsUpDown, X } from 'lucide-react';
+import { Package, Plus, Search, Trash2 } from 'lucide-react';
 import { db } from '@/lib/supabase';
 import { toast } from 'sonner';
-import { cn } from '@/lib/utils';
 import { inventoryCache } from '@/lib/inventoryCache';
 import { Job, Technician } from '@/types';
 
@@ -55,13 +51,8 @@ const JobPartsUsedDialog: React.FC<JobPartsUsedDialogProps> = ({
   const [technicianInventory, setTechnicianInventory] = useState<TechnicianInventoryItem[]>([]);
   const [partsUsed, setPartsUsed] = useState<JobPartUsed[]>([]);
   const [addPartDialogOpen, setAddPartDialogOpen] = useState(false);
-  const [inventorySearchOpen, setInventorySearchOpen] = useState(false);
   const [inventorySearchQuery, setInventorySearchQuery] = useState('');
   const [debouncedSearchQuery, setDebouncedSearchQuery] = useState('');
-  const [formData, setFormData] = useState({
-    inventory_id: '',
-    quantity: ''
-  });
   const [loading, setLoading] = useState(true);
 
   // Debounce search query
@@ -124,10 +115,6 @@ const JobPartsUsedDialog: React.FC<JobPartsUsedDialogProps> = ({
       setMainInventoryLoaded(false);
       setInventorySearchQuery('');
       setDebouncedSearchQuery('');
-      setFormData({
-        inventory_id: '',
-        quantity: ''
-      });
     }
   }, [open, job?.id, technician?.id, loadTechnicianInventory, loadPartsUsed]);
 
@@ -218,108 +205,59 @@ const JobPartsUsedDialog: React.FC<JobPartsUsedDialogProps> = ({
     return filtered;
   }, [technicianInventory, debouncedSearchQuery, inventoryMap]);
 
-  // Get selected inventory item name (optimized with Map lookup)
-  const selectedInventoryName = useMemo(() => {
-    if (!formData.inventory_id) return 'Select part...';
-    const item = technicianInventory.find(i => i.inventory_id === formData.inventory_id);
-    const inventory = item?.inventory || inventoryMap.get(formData.inventory_id);
-    return inventory ? `${inventory.product_name}${inventory.code ? ` (${inventory.code})` : ''}` : 'Select part...';
-  }, [formData.inventory_id, technicianInventory, inventoryMap]);
-
-  // Get available quantity for selected item
-  const availableQuantity = useMemo(() => {
-    if (!formData.inventory_id) return 0;
-    const item = technicianInventory.find(i => i.inventory_id === formData.inventory_id);
-    return item?.quantity || 0;
-  }, [formData.inventory_id, technicianInventory]);
-
-  // Handle add part
+  // Handle add part - opens dialog with search
   const handleAddPart = () => {
-    setFormData({
-      inventory_id: '',
-      quantity: ''
-    });
     setInventorySearchQuery('');
-    setInventorySearchOpen(false);
     setAddPartDialogOpen(true);
   };
 
-  // Handle save part
-  const handleSavePart = async () => {
-    if (!job?.id || !technician?.id || !formData.inventory_id || !formData.quantity) {
-      toast.error('Please fill in all required fields');
-      return;
-    }
+  // Quick add part with qty 1 (called from + button)
+  const handleQuickAddPart = async (inventoryId: string) => {
+    if (!job?.id || !technician?.id) return;
 
-    const quantity = parseInt(formData.quantity);
-    if (isNaN(quantity) || quantity <= 0) {
-      toast.error('Quantity must be a valid positive number');
-      return;
-    }
-
-    // Check available quantity
-    const techItem = technicianInventory.find(i => i.inventory_id === formData.inventory_id);
-    if (!techItem || techItem.quantity < quantity) {
-      toast.error(`Insufficient quantity. Available: ${techItem?.quantity || 0}`);
+    const techItem = technicianInventory.find(i => i.inventory_id === inventoryId);
+    if (!techItem || techItem.quantity < 1) {
+      toast.error('Insufficient quantity');
       return;
     }
 
     try {
-      // Fetch current price from inventory for price_at_time_of_use
-      const { data: inventoryData, error: invError } = await db.inventory.getById(formData.inventory_id);
+      const { data: inventoryData, error: invError } = await db.inventory.getById(inventoryId);
       if (invError) throw invError;
       const currentPrice = inventoryData?.price ? Number(inventoryData.price) : 0;
 
-      // Check if part already added to this job
-      const existingPart = partsUsed.find(p => p.inventory_id === formData.inventory_id);
-      
+      const existingPart = partsUsed.find(p => p.inventory_id === inventoryId);
+
       if (existingPart) {
-        // Update existing part - keep old price_at_time_of_use (don't update price when adding more quantity)
-        const newQuantity = existingPart.quantity_used + quantity;
+        const newQuantity = existingPart.quantity_used + 1;
         const { error: updateError } = await db.jobPartsUsed.update(existingPart.id, {
           quantity_used: newQuantity
-          // Note: Not updating price_at_time_of_use - keep original price when part was first added
         });
         if (updateError) throw updateError;
       } else {
-        // Create new part - store current price
         const { error: createError } = await db.jobPartsUsed.create({
           job_id: job.id,
           technician_id: technician.id,
-          inventory_id: formData.inventory_id,
-          quantity_used: quantity,
+          inventory_id: inventoryId,
+          quantity_used: 1,
           price_at_time_of_use: currentPrice
         });
         if (createError) throw createError;
       }
 
-      // Subtract from technician inventory
-      const newTechQuantity = techItem.quantity - quantity;
-      if (newTechQuantity < 0) {
-        throw new Error('Insufficient quantity in technician inventory');
-      }
-
+      const newTechQuantity = techItem.quantity - 1;
       const { error: updateTechError } = await db.technicianInventory.update(techItem.id, {
         quantity: newTechQuantity
       });
       if (updateTechError) throw updateTechError;
 
-      toast.success('Part added and deducted from technician inventory');
-      
-      // Clear cache and reload
+      toast.success('Part added (1 qty)');
       inventoryCache.clear(`tech_inventory_${technician.id}`);
       await loadTechnicianInventory();
       await loadPartsUsed();
-      
-      setAddPartDialogOpen(false);
-      setFormData({
-        inventory_id: '',
-        quantity: ''
-      });
-      setInventorySearchQuery('');
     } catch (error: any) {
-      console.error('Error saving part:', error);
-      toast.error(error?.message || 'Failed to save part');
+      console.error('Error quick adding part:', error);
+      toast.error(error?.message || 'Failed to add part');
     }
   };
 
@@ -363,7 +301,7 @@ const JobPartsUsedDialog: React.FC<JobPartsUsedDialogProps> = ({
   return (
     <>
       <Dialog open={open} onOpenChange={onOpenChange}>
-        <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
+        <DialogContent className="w-[calc(100%-2rem)] max-w-4xl max-h-[90vh] overflow-y-auto sm:max-h-[85vh] p-4 sm:p-6">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <Package className="w-5 h-5" />
@@ -398,8 +336,8 @@ const JobPartsUsedDialog: React.FC<JobPartsUsedDialogProps> = ({
                 )}
               </div>
             ) : (
-              <div className="border rounded-lg overflow-hidden">
-                <Table>
+              <div className="border rounded-lg overflow-x-auto">
+                <Table className="min-w-[280px]">
                   <TableHeader>
                     <TableRow>
                       <TableHead>Part</TableHead>
@@ -454,142 +392,78 @@ const JobPartsUsedDialog: React.FC<JobPartsUsedDialogProps> = ({
         </DialogContent>
       </Dialog>
 
-      {/* Add Part Dialog */}
+      {/* Add Part Dialog - search and click + to add 1 qty directly */}
       <Dialog open={addPartDialogOpen} onOpenChange={(open) => {
         if (!open) {
           setAddPartDialogOpen(false);
-          setFormData({
-            inventory_id: '',
-            quantity: ''
-          });
           setInventorySearchQuery('');
-          setInventorySearchOpen(false);
         }
       }}>
-        <DialogContent className="sm:max-w-[500px]">
-          <DialogHeader>
-            <DialogTitle>Add Part Used</DialogTitle>
-            <DialogDescription>
-              Select a part from {technician.fullName || technician.full_name}'s inventory and specify the quantity used.
+        <DialogContent className="w-[calc(100%-2rem)] max-w-md sm:max-w-lg p-4 sm:p-6 max-h-[90vh] overflow-hidden [&>div]:min-w-0">
+          <div className="flex flex-col min-h-0 min-w-0 gap-4 flex-1 max-w-full">
+          <DialogHeader className="space-y-1.5 shrink-0">
+            <DialogTitle className="text-base sm:text-lg">Add Part Used</DialogTitle>
+            <DialogDescription className="text-xs sm:text-sm">
+              Search and click + to add 1 qty from {technician.fullName || technician.full_name}'s inventory.
             </DialogDescription>
           </DialogHeader>
-          <div className="space-y-4 py-4">
-            <div>
-              <Label htmlFor="inventory" className="text-sm font-medium">Part *</Label>
-              <Popover open={inventorySearchOpen} onOpenChange={setInventorySearchOpen}>
-                <PopoverTrigger asChild>
-                  <Button
-                    variant="outline"
-                    role="combobox"
-                    aria-expanded={inventorySearchOpen}
-                    className="w-full justify-between h-10 text-sm"
-                  >
-                    <span className="truncate text-left flex-1">{selectedInventoryName}</span>
-                    <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
-                  </Button>
-                </PopoverTrigger>
-                <PopoverContent className="w-[var(--radix-popover-trigger-width)] p-0" align="start" sideOffset={4}>
-                  <Command shouldFilter={false} className="rounded-lg">
-                    <CommandInput 
-                      placeholder="Search parts by name or code..." 
-                      value={inventorySearchQuery}
-                      onValueChange={setInventorySearchQuery}
-                      className="h-11 text-sm"
-                    />
-                    <CommandList className="max-h-[300px]">
-                      <CommandEmpty className="py-6 text-center text-sm text-gray-500">
-                        No parts found.
-                      </CommandEmpty>
-                      <CommandGroup>
-                        {filteredInventoryItems.length > 0 ? (
-                          <>
-                            {filteredInventoryItems.map((item) => (
-                              <CommandItem
-                                key={item.id}
-                                value={`${item.inventory?.product_name || inventoryMap.get(item.inventory_id)?.product_name || 'Unknown'} ${item.inventory?.code || inventoryMap.get(item.inventory_id)?.code || ''}`.trim()}
-                                onSelect={() => {
-                                  setFormData({ ...formData, inventory_id: item.inventory_id });
-                                  setInventorySearchOpen(false);
-                                  setInventorySearchQuery('');
-                                }}
-                                className="flex items-center justify-between gap-3 px-3 py-2.5 cursor-pointer hover:bg-blue-50 dark:hover:bg-blue-950/20 transition-colors"
-                              >
-                                <div className="flex items-center gap-2 flex-1 min-w-0">
-                                  <Check
-                                    className={cn(
-                                      "h-4 w-4 shrink-0",
-                                      formData.inventory_id === item.inventory_id ? "opacity-100 text-blue-600" : "opacity-0"
-                                    )}
-                                  />
-                                  <div className="flex flex-col min-w-0 flex-1">
-                                    <span className="text-sm font-medium truncate">
-                                      {item.inventory?.product_name || inventoryMap.get(item.inventory_id)?.product_name || 'Unknown'}
-                                    </span>
-                                    {(item.inventory?.code || inventoryMap.get(item.inventory_id)?.code) && (
-                                      <span className="text-xs text-gray-500">
-                                        Code: {item.inventory?.code || inventoryMap.get(item.inventory_id)?.code}
-                                      </span>
-                                    )}
-                                  </div>
-                                </div>
-                                <span className="text-xs text-gray-500 font-medium shrink-0">
-                                  Available: {item.quantity}
-                                </span>
-                              </CommandItem>
-                            ))}
-                          </>
-                        ) : technicianInventory.length === 0 ? (
-                          <div className="py-6 text-center text-sm text-gray-500">
-                            <p>No parts available in technician inventory.</p>
-                            <p className="text-xs mt-1">The technician needs to add inventory items first.</p>
-                          </div>
-                        ) : (
-                          <div className="py-6 text-center text-sm text-gray-500">
-                            <p>No parts with available quantity.</p>
-                            <p className="text-xs mt-1">All inventory items are out of stock.</p>
-                          </div>
-                        )}
-                      </CommandGroup>
-                    </CommandList>
-                  </Command>
-                </PopoverContent>
-              </Popover>
-              {formData.inventory_id && availableQuantity > 0 && (
-                <p className="text-xs text-gray-500 mt-1">
-                  Available quantity: {availableQuantity}
-                </p>
-              )}
-            </div>
-            <div>
-              <Label htmlFor="quantity">Quantity Used *</Label>
+          <div className="flex flex-col min-h-0 min-w-0 flex-1 py-0 overflow-hidden">
+            <div className="relative shrink-0 mb-3">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none" />
               <Input
-                id="quantity"
-                type="number"
-                min="1"
-                max={availableQuantity}
-                value={formData.quantity}
-                onChange={(e) => setFormData({ ...formData, quantity: e.target.value })}
-                placeholder="Enter quantity"
+                placeholder="Search parts by name or code..."
+                value={inventorySearchQuery}
+                onChange={(e) => setInventorySearchQuery(e.target.value)}
+                className="pl-9 h-10 sm:h-11 text-sm"
               />
             </div>
+            <div className="rounded-lg border flex-1 min-h-0 min-w-0 flex flex-col overflow-hidden w-full">
+              {filteredInventoryItems.length === 0 ? (
+                <div className="py-8 px-4 text-center text-sm text-gray-500">
+                  {technicianInventory.length === 0
+                    ? 'No parts in technician inventory.'
+                    : debouncedSearchQuery.trim()
+                    ? 'No parts match your search.'
+                    : 'No parts with available quantity.'}
+                </div>
+              ) : (
+                <div className="overflow-y-auto overflow-x-hidden max-h-[min(50vh,280px)] sm:max-h-[320px] w-full min-w-0 pl-0 pr-4">
+                  {filteredInventoryItems.map((item) => {
+                    const productName = item.inventory?.product_name || inventoryMap.get(item.inventory_id)?.product_name || 'Unknown';
+                    const code = item.inventory?.code || inventoryMap.get(item.inventory_id)?.code || '';
+                    return (
+                      <div
+                        key={item.id}
+                        className="flex items-center gap-2 sm:gap-3 pl-3 pr-2 py-2.5 border-b last:border-b-0 bg-background hover:bg-muted/50 w-full max-w-full overflow-hidden"
+                      >
+                        <div className="min-w-0 flex-1 overflow-hidden">
+                          <span className="text-sm font-medium truncate block">
+                            {productName}
+                          </span>
+                          {code && (
+                            <span className="text-xs text-gray-500 truncate block">
+                              Code: {code}
+                            </span>
+                          )}
+                        </div>
+                        <Button
+                          size="sm"
+                          variant="default"
+                          className="h-8 w-8 min-w-[2rem] shrink-0"
+                          onClick={() => handleQuickAddPart(item.inventory_id)}
+                          disabled={item.quantity < 1}
+                          title="Add 1 qty"
+                        >
+                          <Plus className="w-4 h-4" />
+                        </Button>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
           </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => {
-              setAddPartDialogOpen(false);
-              setFormData({
-                inventory_id: '',
-                quantity: ''
-              });
-            }}>
-              Cancel
-            </Button>
-            <Button 
-              onClick={handleSavePart} 
-              disabled={!formData.inventory_id || !formData.quantity || parseInt(formData.quantity) > availableQuantity}
-            >
-              Add Part
-            </Button>
-          </DialogFooter>
+          </div>
         </DialogContent>
       </Dialog>
     </>
