@@ -77,7 +77,7 @@ const EditCompletedJobDialog: React.FC<EditCompletedJobDialogProps> = ({
               value={editData.leadSource || 'Direct call'}
               onValueChange={(value) => {
                 const selectedLeadSource = value === 'Other' ? 'Other' : value;
-                // Get default lead cost
+                // Get default lead cost for a source (used when switching to a non-Other source)
                 const getDefaultLeadCost = (leadSource: string): string => {
                   switch (leadSource) {
                     case 'Home Triangle': return '200';
@@ -89,11 +89,16 @@ const EditCompletedJobDialog: React.FC<EditCompletedJobDialogProps> = ({
                     default: return '0';
                   }
                 };
+                // When switching to "Other" (custom lead source), preserve existing lead cost so
+                // editing custom lead source doesn't reset the value; only set default when switching to a named source.
+                const newLeadCost = selectedLeadSource === 'Other'
+                  ? (editData.leadCost ?? getDefaultLeadCost(selectedLeadSource))
+                  : getDefaultLeadCost(selectedLeadSource);
                 onEditDataChange({ 
                   ...editData, 
                   leadSource: selectedLeadSource,
                   leadSourceCustom: value === 'Other' ? editData.leadSourceCustom : '',
-                  leadCost: getDefaultLeadCost(selectedLeadSource)
+                  leadCost: newLeadCost
                 });
               }}
             >
