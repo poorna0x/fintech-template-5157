@@ -4545,16 +4545,18 @@ const AdminDashboard = () => {
     }
   };
 
-  // Helper function to normalize phone numbers for search (remove spaces, handle +91 prefix)
+  // Helper: normalize phone for search (handles pasted formats: 063616 1253, +91 636161253, etc.)
   const normalizePhoneNumber = (phone: string | undefined | null): string => {
     if (!phone) return '';
-    // Remove all spaces and special characters except + and digits
-    let normalized = phone.replace(/\s+/g, '').trim();
-    // Handle +91 prefix - remove it for comparison
-    if (normalized.startsWith('+91')) {
-      normalized = normalized.substring(3);
-    } else if (normalized.startsWith('91') && normalized.length > 10) {
+    // Digits only (strip spaces, +, -, parentheses, etc.)
+    let normalized = phone.replace(/\D/g, '');
+    // Indian: strip country code 91 (e.g. 91636161253 or +91 636161253 → 636161253)
+    if (normalized.length >= 12 && normalized.startsWith('91')) {
       normalized = normalized.substring(2);
+    }
+    // Strip leading 0 so 0636161253 and 636161253 match (11 digits: 0+10, or 10 digits with leading 0)
+    if (normalized.length >= 10 && normalized.startsWith('0')) {
+      normalized = normalized.replace(/^0+/, '');
     }
     return normalized;
   };
@@ -4580,6 +4582,16 @@ const AdminDashboard = () => {
   const handleSearchKeyPress = (e: React.KeyboardEvent) => {
     if (e.key === 'Enter') {
       handleSearch();
+    }
+  };
+
+  // When user pastes a phone from contacts (e.g. 063616 1253, +91 636161253), normalize and format
+  const handleSearchPaste = (e: React.ClipboardEvent<HTMLInputElement>) => {
+    const pasted = e.clipboardData.getData('text');
+    const normalized = normalizePhoneNumber(pasted);
+    if (normalized.length >= 10) {
+      e.preventDefault();
+      setSearchQuery(normalized);
     }
   };
 
@@ -7282,12 +7294,11 @@ const AdminDashboard = () => {
                   placeholder="Search by customer ID, name, phone, or email..."
                   value={searchQuery}
                   onChange={(e) => {
-                    // Auto-trim leading/trailing spaces as user types
                     const value = e.target.value;
                     setSearchQuery(value);
                   }}
+                  onPaste={handleSearchPaste}
                   onBlur={(e) => {
-                    // Trim on blur to clean up any trailing spaces
                     const trimmed = e.target.value.trim();
                     if (trimmed !== e.target.value) {
                       setSearchQuery(trimmed);
@@ -7424,12 +7435,11 @@ const AdminDashboard = () => {
                 placeholder="Search by customer ID, name, phone, or email..."
                 value={searchQuery}
                 onChange={(e) => {
-                  // Auto-trim leading/trailing spaces as user types
                   const value = e.target.value;
                   setSearchQuery(value);
                 }}
+                onPaste={handleSearchPaste}
                 onBlur={(e) => {
-                  // Trim on blur to clean up any trailing spaces
                   const trimmed = e.target.value.trim();
                   if (trimmed !== e.target.value) {
                     setSearchQuery(trimmed);
