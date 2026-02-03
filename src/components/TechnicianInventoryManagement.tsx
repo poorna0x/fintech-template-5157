@@ -27,6 +27,7 @@ interface InventoryItem {
   product_name: string;
   code: string | null;
   price: number;
+  quantity?: number;
 }
 
 interface TechnicianInventoryItem {
@@ -274,6 +275,62 @@ const TechnicianInventoryManagement: React.FC<TechnicianInventoryManagementProps
     setInventorySearchQuery('');
     setInventorySearchOpen(false);
     setAddDialogOpen(true);
+  };
+
+  // Quick assign 1 qty from main inventory to selected technician (like + in Add Part)
+  const handleQuickAssignInventory = async (inventoryId: string) => {
+    const technicianId = formData.technician_id || selectedTechnicianId;
+    if (!technicianId) {
+      toast.error('Please select a technician first');
+      return;
+    }
+
+    const mainItem = inventoryItems.find(i => i.id === inventoryId);
+    if (!mainItem) {
+      toast.error('Product not found in main inventory');
+      return;
+    }
+
+    const availableQty = mainItem.quantity ?? 0;
+    if (availableQty < 1) {
+      toast.error(`Insufficient stock. Available: ${availableQty}`);
+      return;
+    }
+
+    try {
+      const newMainQuantity = availableQty - 1;
+      const { error: updateMainError } = await db.inventory.update(inventoryId, {
+        quantity: newMainQuantity
+      });
+      if (updateMainError) throw updateMainError;
+
+      const existingTechItem = technicianInventory.find(
+        i => i.technician_id === technicianId && i.inventory_id === inventoryId
+      );
+      if (existingTechItem) {
+        const { error } = await db.technicianInventory.update(existingTechItem.id, {
+          quantity: existingTechItem.quantity + 1
+        });
+        if (error) throw error;
+      } else {
+        const { error } = await db.technicianInventory.upsert({
+          technician_id: technicianId,
+          inventory_id: inventoryId,
+          quantity: 1
+        });
+        if (error) throw error;
+      }
+
+      toast.success('1 qty assigned to technician');
+      inventoryCache.clear(`tech_inventory_${technicianId}`);
+      inventoryCache.clear('inventory_items');
+      await loadInventoryItems(true);
+      await loadTechnicianInventory(technicianId, true);
+      setLoadedForTechnicianId(technicianId);
+    } catch (error: any) {
+      console.error('Error quick assigning inventory:', error);
+      toast.error(error?.message || 'Failed to assign inventory');
+    }
   };
 
   // Handle edit inventory
@@ -738,14 +795,22 @@ const TechnicianInventoryManagement: React.FC<TechnicianInventoryManagementProps
           });
         }
       }}>
-        <DialogContent className="sm:max-w-[500px] max-h-[90vh] overflow-y-auto">
-          <DialogHeader className="px-1">
+        <DialogContent className={cn(
+          "max-h-[90vh] p-4 sm:p-6",
+          !selectedItem && (formData.technician_id || selectedTechnicianId)
+            ? "w-[calc(100%-2rem)] max-w-md sm:max-w-lg overflow-hidden flex flex-col [&>div]:min-w-0"
+            : "sm:max-w-[500px] overflow-y-auto"
+        )}>
+          <DialogHeader className="px-1 shrink-0 space-y-1.5">
             <DialogTitle className="text-base sm:text-lg">{selectedItem ? 'Edit Technician Inventory' : 'Assign Inventory to Technician'}</DialogTitle>
             <DialogDescription className="text-xs sm:text-sm">
               {selectedItem ? 'Update the quantity for this inventory item.' : 'Assign inventory items to a technician. Search by product name or code.'}
             </DialogDescription>
           </DialogHeader>
-          <div className="space-y-4 py-2 sm:py-4">
+          <div className={cn(
+            "space-y-4 py-2 sm:py-4 min-w-0",
+            !selectedItem && (formData.technician_id || selectedTechnicianId) && "flex flex-col flex-1 min-h-0 overflow-y-auto overflow-x-hidden"
+          )}>
             <div>
               <Label htmlFor="technician" className="text-sm font-medium">Technician *</Label>
               <Select
@@ -769,6 +834,63 @@ const TechnicianInventoryManagement: React.FC<TechnicianInventoryManagementProps
                 </SelectContent>
               </Select>
             </div>
+
+            {/* Quick add from main inventory - list with + button (mobile responsive like Add Part) */}
+            {!selectedItem && (formData.technician_id || selectedTechnicianId) && (
+              <div className="flex flex-col min-h-0 min-w-0 flex-1 py-0 overflow-hidden space-y-2">
+                <Label className="text-sm font-medium shrink-0">Quick add from main inventory</Label>
+                <p className="text-xs text-muted-foreground shrink-0">Search and click + to assign 1 qty to this technician.</p>
+                <div className="relative shrink-0 mb-1">
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none" />
+                  <Input
+                    placeholder="Search by name or code..."
+                    value={inventorySearchQuery}
+                    onChange={(e) => setInventorySearchQuery(e.target.value)}
+                    className="pl-9 h-10 sm:h-11 text-sm"
+                  />
+                </div>
+                <div className="rounded-lg border flex-1 min-h-0 min-w-0 flex flex-col overflow-hidden w-full">
+                  {filteredInventoryItems.length === 0 ? (
+                    <div className="py-8 px-4 text-center text-sm text-gray-500">
+                      {inventoryItems.length === 0 ? 'No products in main inventory.' : debouncedInventorySearchQuery.trim() ? 'No products match your search.' : 'No products.'}
+                    </div>
+                  ) : (
+                    <div className="overflow-y-auto overflow-x-hidden max-h-[min(50vh,280px)] sm:max-h-[320px] w-full min-w-0 pl-0 pr-4">
+                      {filteredInventoryItems.map((item) => {
+                        const qty = item.quantity ?? 0;
+                        return (
+                          <div
+                            key={item.id}
+                            className="flex items-center gap-2 sm:gap-3 pl-3 pr-2 py-2.5 border-b last:border-b-0 bg-background hover:bg-muted/50 w-full max-w-full overflow-hidden"
+                          >
+                            <div className="min-w-0 flex-1 overflow-hidden">
+                              <span className="text-sm font-medium truncate block">{item.product_name}</span>
+                              {item.code && (
+                                <span className="text-xs text-gray-500 truncate block">Code: {item.code}</span>
+                              )}
+                              {qty >= 0 && (
+                                <span className="text-xs text-muted-foreground truncate block">Available: {qty}</span>
+                              )}
+                            </div>
+                            <Button
+                              size="sm"
+                              variant="default"
+                              className="h-8 w-8 min-w-[2rem] shrink-0"
+                              onClick={() => handleQuickAssignInventory(item.id)}
+                              disabled={qty < 1}
+                              title="Assign 1 qty"
+                            >
+                              <Plus className="w-4 h-4" />
+                            </Button>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+
             <div>
               <Label htmlFor="inventory" className="text-sm font-medium">Product *</Label>
               <Popover open={inventorySearchOpen} onOpenChange={setInventorySearchOpen}>
@@ -846,7 +968,7 @@ const TechnicianInventoryManagement: React.FC<TechnicianInventoryManagementProps
               />
             </div>
           </div>
-          <DialogFooter>
+          <DialogFooter className={cn(!selectedItem && (formData.technician_id || selectedTechnicianId) && "shrink-0")}>
             <Button variant="outline" onClick={() => {
               setAddDialogOpen(false);
               setEditDialogOpen(false);
