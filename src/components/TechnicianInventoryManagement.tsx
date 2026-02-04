@@ -45,6 +45,8 @@ interface TechnicianInventoryManagementProps {
   onBack?: () => void;
 }
 
+const ASSIGN_ALL_TECHNICIANS = '__all__';
+
 const TechnicianInventoryManagement: React.FC<TechnicianInventoryManagementProps> = ({ onBack }) => {
   const [technicians, setTechnicians] = useState<Technician[]>([]);
   const [inventoryItems, setInventoryItems] = useState<InventoryItem[]>([]);
@@ -277,11 +279,11 @@ const TechnicianInventoryManagement: React.FC<TechnicianInventoryManagementProps
     setAddDialogOpen(true);
   };
 
-  // Quick assign 1 qty from main inventory to selected technician (like + in Add Part)
+  // Quick assign 1 qty from main inventory to selected technician (or 1 to each when "All")
   const handleQuickAssignInventory = async (inventoryId: string) => {
     const technicianId = formData.technician_id || selectedTechnicianId;
     if (!technicianId) {
-      toast.error('Please select a technician first');
+      toast.error('Please select a technician or All technicians first');
       return;
     }
 
@@ -292,41 +294,77 @@ const TechnicianInventoryManagement: React.FC<TechnicianInventoryManagementProps
     }
 
     const availableQty = mainItem.quantity ?? 0;
-    if (availableQty < 1) {
-      toast.error(`Insufficient stock. Available: ${availableQty}`);
+    const isAll = technicianId === ASSIGN_ALL_TECHNICIANS;
+    if (isAll && technicians.length === 0) {
+      toast.error('No technicians to assign to');
+      return;
+    }
+    const qtyNeeded = isAll ? technicians.length : 1;
+    if (availableQty < qtyNeeded) {
+      toast.error(isAll
+        ? `Insufficient stock. Available: ${availableQty}, Needed: ${qtyNeeded} (1 per technician)`
+        : `Insufficient stock. Available: ${availableQty}`);
       return;
     }
 
     try {
-      const newMainQuantity = availableQty - 1;
+      const newMainQuantity = availableQty - qtyNeeded;
       const { error: updateMainError } = await db.inventory.update(inventoryId, {
         quantity: newMainQuantity
       });
       if (updateMainError) throw updateMainError;
 
-      const existingTechItem = technicianInventory.find(
-        i => i.technician_id === technicianId && i.inventory_id === inventoryId
-      );
-      if (existingTechItem) {
-        const { error } = await db.technicianInventory.update(existingTechItem.id, {
-          quantity: existingTechItem.quantity + 1
-        });
-        if (error) throw error;
+      if (isAll) {
+        for (const tech of technicians) {
+          const existingTechItem = technicianInventory.find(
+            i => i.technician_id === tech.id && i.inventory_id === inventoryId
+          );
+          if (existingTechItem) {
+            const { error } = await db.technicianInventory.update(existingTechItem.id, {
+              quantity: existingTechItem.quantity + 1
+            });
+            if (error) throw error;
+          } else {
+            const { error } = await db.technicianInventory.upsert({
+              technician_id: tech.id,
+              inventory_id: inventoryId,
+              quantity: 1
+            });
+            if (error) throw error;
+          }
+        }
+        toast.success(`1 qty assigned to all ${technicians.length} technicians`);
+        technicians.forEach(t => inventoryCache.clear(`tech_inventory_${t.id}`));
+        inventoryCache.clear('all_tech_inventory');
       } else {
-        const { error } = await db.technicianInventory.upsert({
-          technician_id: technicianId,
-          inventory_id: inventoryId,
-          quantity: 1
-        });
-        if (error) throw error;
+        const existingTechItem = technicianInventory.find(
+          i => i.technician_id === technicianId && i.inventory_id === inventoryId
+        );
+        if (existingTechItem) {
+          const { error } = await db.technicianInventory.update(existingTechItem.id, {
+            quantity: existingTechItem.quantity + 1
+          });
+          if (error) throw error;
+        } else {
+          const { error } = await db.technicianInventory.upsert({
+            technician_id: technicianId,
+            inventory_id: inventoryId,
+            quantity: 1
+          });
+          if (error) throw error;
+        }
+        toast.success('1 qty assigned to technician');
+        inventoryCache.clear(`tech_inventory_${technicianId}`);
       }
 
-      toast.success('1 qty assigned to technician');
-      inventoryCache.clear(`tech_inventory_${technicianId}`);
       inventoryCache.clear('inventory_items');
       await loadInventoryItems(true);
-      await loadTechnicianInventory(technicianId, true);
-      setLoadedForTechnicianId(technicianId);
+      if (isAll) {
+        await loadTechnicianInventory(undefined, true);
+      } else {
+        await loadTechnicianInventory(technicianId, true);
+        setLoadedForTechnicianId(technicianId);
+      }
     } catch (error: any) {
       console.error('Error quick assigning inventory:', error);
       toast.error(error?.message || 'Failed to assign inventory');
@@ -399,8 +437,48 @@ const TechnicianInventoryManagement: React.FC<TechnicianInventoryManagementProps
         });
         if (error) throw error;
         toast.success('Technician inventory updated successfully');
+      } else if (formData.technician_id === ASSIGN_ALL_TECHNICIANS) {
+        // Assign to all technicians
+        const count = technicians.length;
+        if (count === 0) {
+          toast.error('No technicians to assign to');
+          return;
+        }
+        const totalNeeded = quantity * count;
+        const availableQty = mainItem.quantity ?? 0;
+        if (availableQty < totalNeeded) {
+          toast.error(`Insufficient stock. Available: ${availableQty}, Needed: ${totalNeeded} (${quantity} × ${count} technicians)`);
+          return;
+        }
+
+        // Subtract total from main inventory
+        const newMainQuantity = availableQty - totalNeeded;
+        const { error: updateMainError } = await db.inventory.update(formData.inventory_id, {
+          quantity: newMainQuantity
+        });
+        if (updateMainError) throw updateMainError;
+
+        for (const tech of technicians) {
+          const existingTechItem = technicianInventory.find(
+            i => i.technician_id === tech.id && i.inventory_id === formData.inventory_id
+          );
+          if (existingTechItem) {
+            const { error } = await db.technicianInventory.update(existingTechItem.id, {
+              quantity: existingTechItem.quantity + quantity
+            });
+            if (error) throw error;
+          } else {
+            const { error } = await db.technicianInventory.upsert({
+              technician_id: tech.id,
+              inventory_id: formData.inventory_id,
+              quantity
+            });
+            if (error) throw error;
+          }
+        }
+        toast.success(`Assigned ${quantity} qty to all ${count} technicians`);
       } else {
-        // Create new item - check if main inventory has enough
+        // Create new item - single technician
         if (mainItem.quantity < quantity) {
           toast.error(`Insufficient stock. Available: ${mainItem.quantity}, Requested: ${quantity}`);
           return;
@@ -424,11 +502,18 @@ const TechnicianInventoryManagement: React.FC<TechnicianInventoryManagementProps
       }
 
       // Clear cache and reload data
-      const cacheKey = selectedTechnicianId ? `tech_inventory_${selectedTechnicianId}` : 'all_tech_inventory';
-      inventoryCache.clear(cacheKey);
-      inventoryCache.clear('main_inventory');
+      if (formData.technician_id === ASSIGN_ALL_TECHNICIANS) {
+        technicians.forEach(t => inventoryCache.clear(`tech_inventory_${t.id}`));
+        inventoryCache.clear('all_tech_inventory');
+      } else {
+        const cacheKey = selectedTechnicianId ? `tech_inventory_${selectedTechnicianId}` : 'all_tech_inventory';
+        inventoryCache.clear(cacheKey);
+      }
+      inventoryCache.clear('inventory_items');
       await loadInventoryItems(true);
-      if (selectedTechnicianId) {
+      if (formData.technician_id === ASSIGN_ALL_TECHNICIANS) {
+        await loadTechnicianInventory(undefined, true);
+      } else if (selectedTechnicianId) {
         await loadTechnicianInventory(selectedTechnicianId, true);
         setLoadedForTechnicianId(selectedTechnicianId);
       } else {
@@ -604,7 +689,6 @@ const TechnicianInventoryManagement: React.FC<TechnicianInventoryManagementProps
               <Button 
                 onClick={handleAddInventory} 
                 className="w-full sm:w-auto text-sm"
-                disabled={!selectedTechnicianId}
               >
                 <Plus className="w-4 h-4 sm:mr-2" />
                 <span className="sm:inline">Assign Inventory</span>
@@ -822,6 +906,9 @@ const TechnicianInventoryManagement: React.FC<TechnicianInventoryManagementProps
                   <SelectValue placeholder="Select technician" />
                 </SelectTrigger>
                 <SelectContent>
+                  <SelectItem value={ASSIGN_ALL_TECHNICIANS} className="text-sm font-medium">
+                    All technicians
+                  </SelectItem>
                   {technicians.length > 0 ? (
                     technicians.map(tech => (
                       <SelectItem key={tech.id} value={tech.id} className="text-sm">
@@ -839,7 +926,11 @@ const TechnicianInventoryManagement: React.FC<TechnicianInventoryManagementProps
             {!selectedItem && (formData.technician_id || selectedTechnicianId) && (
               <div className="flex flex-col min-h-0 min-w-0 flex-1 py-0 overflow-hidden space-y-2">
                 <Label className="text-sm font-medium shrink-0">Quick add from main inventory</Label>
-                <p className="text-xs text-muted-foreground shrink-0">Search and click + to assign 1 qty to this technician.</p>
+                <p className="text-xs text-muted-foreground shrink-0">
+                  {formData.technician_id === ASSIGN_ALL_TECHNICIANS
+                    ? `Search and click + to assign 1 qty to each of the ${technicians.length} technicians.`
+                    : 'Search and click + to assign 1 qty to this technician.'}
+                </p>
                 <div className="relative shrink-0 mb-1">
                   <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none" />
                   <Input
@@ -856,8 +947,11 @@ const TechnicianInventoryManagement: React.FC<TechnicianInventoryManagementProps
                     </div>
                   ) : (
                     <div className="overflow-y-auto overflow-x-hidden max-h-[min(50vh,280px)] sm:max-h-[320px] w-full min-w-0 pl-0 pr-4">
-                      {filteredInventoryItems.map((item) => {
+                      {                    filteredInventoryItems.map((item) => {
                         const qty = item.quantity ?? 0;
+                        const isAll = formData.technician_id === ASSIGN_ALL_TECHNICIANS;
+                        const minQty = isAll ? technicians.length : 1;
+                        const canAdd = qty >= minQty;
                         return (
                           <div
                             key={item.id}
@@ -877,8 +971,8 @@ const TechnicianInventoryManagement: React.FC<TechnicianInventoryManagementProps
                               variant="default"
                               className="h-8 w-8 min-w-[2rem] shrink-0"
                               onClick={() => handleQuickAssignInventory(item.id)}
-                              disabled={qty < 1}
-                              title="Assign 1 qty"
+                              disabled={!canAdd}
+                              title={isAll ? `Assign 1 to each (need ${minQty})` : 'Assign 1 qty'}
                             >
                               <Plus className="w-4 h-4" />
                             </Button>
