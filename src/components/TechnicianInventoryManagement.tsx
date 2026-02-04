@@ -357,14 +357,14 @@ const TechnicianInventoryManagement: React.FC<TechnicianInventoryManagementProps
         inventoryCache.clear(`tech_inventory_${technicianId}`);
       }
 
+      // Optimistic update only: don't refetch so list order and scroll position stay (no jump to top)
+      setInventoryItems(prev => prev.map(item =>
+        item.id === inventoryId
+          ? { ...item, quantity: Math.max(0, (item.quantity ?? 0) - qtyNeeded) }
+          : item
+      ));
       inventoryCache.clear('inventory_items');
-      await loadInventoryItems(true);
-      if (isAll) {
-        await loadTechnicianInventory(undefined, true);
-      } else {
-        await loadTechnicianInventory(technicianId, true);
-        setLoadedForTechnicianId(technicianId);
-      }
+      // Don't call loadInventoryItems or loadTechnicianInventory here – refresh when dialog closes
     } catch (error: any) {
       console.error('Error quick assigning inventory:', error);
       toast.error(error?.message || 'Failed to assign inventory');
@@ -877,6 +877,17 @@ const TechnicianInventoryManagement: React.FC<TechnicianInventoryManagementProps
             inventory_id: '',
             quantity: ''
           });
+          // Refresh data when closing assign dialog so main page table and main inventory are in sync
+          inventoryCache.clear('inventory_items');
+          loadInventoryItems(true);
+          if (selectedTechnicianId) {
+            inventoryCache.clear(`tech_inventory_${selectedTechnicianId}`);
+            loadTechnicianInventory(selectedTechnicianId, true).then(() => setLoadedForTechnicianId(selectedTechnicianId));
+          } else {
+            technicians.forEach(t => inventoryCache.clear(`tech_inventory_${t.id}`));
+            inventoryCache.clear('all_tech_inventory');
+            loadTechnicianInventory(undefined, true);
+          }
         }
       }}>
         <DialogContent className={cn(
