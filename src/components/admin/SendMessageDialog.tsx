@@ -28,10 +28,26 @@ const SendMessageDialog: React.FC<SendMessageDialogProps> = ({
   const actualCost = (job as any).actual_cost || job.actual_cost || null;
   const paymentAmount = (job as any).payment_amount || job.payment_amount || null;
   const amount = actualCost || paymentAmount || 0;
+
+  const serviceType = ((job as any).service_type || job.serviceType || '').toUpperCase();
+  const serviceSubType = (job as any).service_sub_type || job.serviceSubType || '';
+  const capitalize = (s: string) => s ? s.charAt(0).toUpperCase() + s.slice(1).toLowerCase() : '';
+  const subtypeText = serviceSubType ? capitalize(serviceSubType) : '';
+
+  let completionLine: string;
+  if (serviceType && serviceType.includes('RO') && subtypeText) {
+    completionLine = `Your Water Purifier ${subtypeText} is completed.`;
+  } else if (serviceType && serviceType.includes('SOFTENER') && subtypeText) {
+    completionLine = `Your Softener ${subtypeText} is completed.`;
+  } else if (subtypeText) {
+    completionLine = `Your ${subtypeText} is completed.`;
+  } else {
+    completionLine = 'Your service has been completed successfully.';
+  }
   
   const whatsappMessage = `Dear ${customerName},
 
-✅ Your service has been completed successfully.
+✅ ${completionLine}
 💰 Amount of ₹${amount} has been collected.
 
 For any queries or support, please contact us:
