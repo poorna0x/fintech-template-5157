@@ -9575,8 +9575,15 @@ const AdminDashboard = () => {
                     }
                   }
 
-                  // Update QR photos if QR code name changed
-                  if (completedJobEditData.qrCodeName) {
+                  // When payment method is CASH, clear qr_photos so billing section doesn't still show as QR payment
+                  if (completedJobEditData.paymentMethod === 'CASH') {
+                    requirements.forEach((r: any) => {
+                      if (r && typeof r === 'object' && r.qr_photos) delete r.qr_photos;
+                    });
+                  }
+
+                  // Update QR photos if QR code name changed (only for non-CASH / online payments)
+                  if (completedJobEditData.paymentMethod !== 'CASH' && completedJobEditData.qrCodeName) {
                     let qrIndex = requirements.findIndex((r: any) => r?.qr_photos);
                     if (qrIndex >= 0) {
                       requirements[qrIndex].qr_photos = {
