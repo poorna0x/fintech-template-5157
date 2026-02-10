@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState, useCallback } from 'react';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
@@ -28,6 +28,26 @@ const EditCompletedJobDialog: React.FC<EditCompletedJobDialogProps> = ({
   technicians,
   onSave
 }) => {
+  const [qrCodeNames, setQrCodeNames] = useState<string[]>([]);
+  const [qrCodesFetched, setQrCodesFetched] = useState(false);
+  const [qrCodesLoading, setQrCodesLoading] = useState(false);
+
+  const loadQrCodeNames = useCallback(async () => {
+    if (qrCodesFetched) return;
+    setQrCodesLoading(true);
+    try {
+      const { data, error } = await db.commonQrCodes.getNames();
+      if (error) throw error;
+      const names = (data || []).map((q: { name: string }) => q.name).filter(Boolean);
+      setQrCodeNames(names);
+      setQrCodesFetched(true);
+    } catch (e: any) {
+      toast.error(e?.message || 'Failed to load QR codes');
+    } finally {
+      setQrCodesLoading(false);
+    }
+  }, [qrCodesFetched]);
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-2xl max-h-[90vh] overflow-y-auto">
@@ -144,16 +164,30 @@ const EditCompletedJobDialog: React.FC<EditCompletedJobDialogProps> = ({
             <p className="text-xs text-gray-500 mt-1">Edit if you need to update lead cost for this job</p>
           </div>
 
-          {/* QR Code Name (if online payment) */}
+          {/* QR Code Name (if online payment) - dropdown, fetches list only when opened */}
           {(editData.paymentMethod === 'UPI' || editData.paymentMethod === 'CARD' || editData.paymentMethod === 'BANK_TRANSFER') && (
             <div>
               <Label htmlFor="edit-qr-code">QR Code Name</Label>
-              <Input
-                id="edit-qr-code"
-                value={editData.qrCodeName || ''}
-                onChange={(e) => onEditDataChange({ ...editData, qrCodeName: e.target.value })}
-                placeholder="Enter QR code name"
-              />
+              <Select
+                value={editData.qrCodeName || '__none__'}
+                onValueChange={(value) => onEditDataChange({ ...editData, qrCodeName: value === '__none__' ? '' : value })}
+                onOpenChange={(isOpen) => { if (isOpen) loadQrCodeNames(); }}
+              >
+                <SelectTrigger id="edit-qr-code">
+                  <SelectValue placeholder={qrCodesLoading ? 'Loading...' : 'Select QR code'} />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="__none__">None</SelectItem>
+                  {qrCodeNames.map((name) => (
+                    <SelectItem key={name} value={name}>
+                      {name}
+                    </SelectItem>
+                  ))}
+                  {qrCodesFetched && qrCodeNames.length === 0 && (
+                    <SelectItem value="__empty__" disabled>No QR codes found</SelectItem>
+                  )}
+                </SelectContent>
+              </Select>
             </div>
           )}
 

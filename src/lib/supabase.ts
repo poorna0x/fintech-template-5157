@@ -1065,6 +1065,15 @@ export const db = {
       
       return { data, error };
     },
+
+    /** Fetch only names (minimal egress) for dropdowns */
+    async getNames() {
+      const { data, error } = await supabase
+        .from('common_qr_codes')
+        .select('name')
+        .order('created_at', { ascending: false });
+      return { data, error };
+    },
     
     async update(id: string, updates: { name?: string; qr_code_url?: string }) {
       const { data, error } = await supabase
