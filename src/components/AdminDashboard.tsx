@@ -7023,6 +7023,34 @@ const AdminDashboard = () => {
             return bMostRecentCompleted - aMostRecentCompleted;
           });
         }
+        // For ONGOING filter, sort by most recently created ongoing job (newest first)
+        if (statusFilter === 'ONGOING') {
+          return filtered.sort((a, b) => {
+            // Get most recently created ongoing job for each customer
+            const getMostRecentOngoingJobDate = (customer: typeof filtered[0]): number => {
+              const ongoingJobs = customer.allJobs.filter(job => 
+                ['PENDING', 'ASSIGNED', 'EN_ROUTE', 'IN_PROGRESS'].includes(job.status)
+              );
+              if (ongoingJobs.length === 0) return 0;
+              
+              const dates = ongoingJobs
+                .map(job => {
+                  const createdAt = (job as any).created_at || job.createdAt;
+                  return createdAt ? new Date(createdAt).getTime() : 0;
+                })
+                .filter((d): d is number => d !== 0)
+                .sort((x, y) => y - x); // Sort descending (newest first)
+              
+              return dates.length > 0 ? dates[0] : 0;
+            };
+            
+            const aMostRecent = getMostRecentOngoingJobDate(a);
+            const bMostRecent = getMostRecentOngoingJobDate(b);
+            
+            // Sort by most recently created ongoing job (descending - newest first)
+            return bMostRecent - aMostRecent;
+          });
+        }
         // For RESCHEDULED filter, sort by closest follow-up date first
         if (statusFilter === 'RESCHEDULED') {
           return filtered.sort((a, b) => {
