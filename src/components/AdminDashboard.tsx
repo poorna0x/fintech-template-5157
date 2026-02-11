@@ -6979,31 +6979,37 @@ const AdminDashboard = () => {
             return bMostRecentCompleted - aMostRecentCompleted;
           });
         }
-        // For RESCHEDULED filter, sort by today's followups first
+        // For RESCHEDULED filter, sort by closest follow-up date first
         if (statusFilter === 'RESCHEDULED') {
           return filtered.sort((a, b) => {
-            // Check if customer has followup jobs scheduled for today
-            const aHasTodayFollowup = a.allJobs.some(job => {
-              if (!['FOLLOW_UP', 'RESCHEDULED'].includes(job.status)) return false;
-              const followUpDate = job.followUpDate || (job as any).follow_up_date;
-              if (!followUpDate) return false;
-              return followUpDate.startsWith(todayDateStr);
-            });
-            const bHasTodayFollowup = b.allJobs.some(job => {
-              if (!['FOLLOW_UP', 'RESCHEDULED'].includes(job.status)) return false;
-              const followUpDate = job.followUpDate || (job as any).follow_up_date;
-              if (!followUpDate) return false;
-              return followUpDate.startsWith(todayDateStr);
-            });
+            // Get closest follow-up date for each customer
+            const getClosestFollowUpDate = (customer: typeof filtered[0]): number | null => {
+              const followUpJobs = customer.allJobs.filter(job => 
+                ['FOLLOW_UP', 'RESCHEDULED'].includes(job.status)
+              );
+              if (followUpJobs.length === 0) return null;
+              
+              const dates = followUpJobs
+                .map(job => {
+                  const followUpDate = job.followUpDate || (job as any).follow_up_date;
+                  return followUpDate ? new Date(followUpDate).getTime() : null;
+                })
+                .filter((d): d is number => d !== null)
+                .sort((x, y) => x - y); // Sort ascending (closest first)
+              
+              return dates.length > 0 ? dates[0] : null;
+            };
             
-            // If one has today's followup and the other doesn't, prioritize the one with today's followup
-            if (aHasTodayFollowup && !bHasTodayFollowup) return -1;
-            if (!aHasTodayFollowup && bHasTodayFollowup) return 1;
+            const aClosestDate = getClosestFollowUpDate(a);
+            const bClosestDate = getClosestFollowUpDate(b);
             
-            // If both have or both don't have today's followup, sort by customer creation date
-            const aDate = new Date(a.customer.createdAt).getTime();
-            const bDate = new Date(b.customer.createdAt).getTime();
-            return bDate - aDate;
+            // Customers with follow-ups come before those without
+            if (aClosestDate === null && bClosestDate === null) return 0;
+            if (aClosestDate === null) return 1;
+            if (bClosestDate === null) return -1;
+            
+            // Sort by closest follow-up date (ascending - closest first)
+            return aClosestDate - bClosestDate;
           });
         }
         // For other filters, sort by customer creation date
@@ -7674,6 +7680,15 @@ const AdminDashboard = () => {
                         } else if (statusFilter === 'RESCHEDULED') {
                           // Show follow-up jobs (FOLLOW_UP status)
                           jobsToShow = allJobs.filter(job => job.status === 'FOLLOW_UP');
+                          // Sort by closest follow-up date first (ascending)
+                          jobsToShow.sort((a, b) => {
+                            const aFollowUpDate = (a as any).follow_up_date || a.followUpDate;
+                            const bFollowUpDate = (b as any).follow_up_date || b.followUpDate;
+                            if (!aFollowUpDate && !bFollowUpDate) return 0;
+                            if (!aFollowUpDate) return 1; // No date goes to end
+                            if (!bFollowUpDate) return -1; // No date goes to end
+                            return new Date(aFollowUpDate).getTime() - new Date(bFollowUpDate).getTime();
+                          });
                         } else if (statusFilter === 'CANCELLED') {
                           // Show denied jobs (DENIED status)
                           jobsToShow = allJobs.filter(job => job.status === 'DENIED');
@@ -7714,7 +7729,18 @@ const AdminDashboard = () => {
                               return bCompletionDate - aCompletionDate;
                             });
                         } else {
-                          jobsToShow = allJobs.filter(job => job.status === statusFilter);                                                                      
+                          jobsToShow = allJobs.filter(job => job.status === statusFilter);
+                          // Sort follow-up jobs by closest date first
+                          if (statusFilter === 'FOLLOW_UP') {
+                            jobsToShow.sort((a, b) => {
+                              const aFollowUpDate = (a as any).follow_up_date || a.followUpDate;
+                              const bFollowUpDate = (b as any).follow_up_date || b.followUpDate;
+                              if (!aFollowUpDate && !bFollowUpDate) return 0;
+                              if (!aFollowUpDate) return 1; // No date goes to end
+                              if (!bFollowUpDate) return -1; // No date goes to end
+                              return new Date(aFollowUpDate).getTime() - new Date(bFollowUpDate).getTime();
+                            });
+                          }
                         }
                         
                         // Debug logging
