@@ -684,6 +684,18 @@ const Analytics = () => {
           
           const originalTechnicianId = lastCompletedJob.assigned_technician_id;
           if (originalTechnicianId) {
+            // EXCLUDE: Don't count if the same technician completed the return complaint job
+            // We only count return complaints caused by a technician that were handled by someone else
+            const returnComplaintTechnicianId = currentJob.assigned_technician_id;
+            if (returnComplaintTechnicianId === originalTechnicianId) {
+              console.log(`[Return Complaint Excluded] Job: ${currentJob.job_number || currentJob.jobNumber || 'N/A'}`, {
+                reason: 'Same technician completed both original job and return complaint',
+                technicianId: originalTechnicianId,
+                note: 'Not counted as return complaint caused by this technician'
+              });
+              return; // Skip counting this return complaint
+            }
+            
             const tech = technicians.find((t: any) => t.id === originalTechnicianId);
             const technicianName = tech ? (tech.full_name || 'Unknown') : 'Unknown';
             const customerName = currentJob.customer 
