@@ -7676,7 +7676,13 @@ const AdminDashboard = () => {
                           jobsToShow = allJobs;
                         } else if (statusFilter === 'ONGOING') {
                           // Show ongoing jobs (pending, assigned, in-progress)
-                          jobsToShow = allJobs.filter(job => ['PENDING', 'ASSIGNED', 'EN_ROUTE', 'IN_PROGRESS'].includes(job.status));                                      
+                          jobsToShow = allJobs.filter(job => ['PENDING', 'ASSIGNED', 'EN_ROUTE', 'IN_PROGRESS'].includes(job.status));
+                          // Sort by created_at (newest/recently created first)
+                          jobsToShow.sort((a, b) => {
+                            const aCreated = new Date((a as any).created_at || a.createdAt || 0).getTime();
+                            const bCreated = new Date((b as any).created_at || b.createdAt || 0).getTime();
+                            return bCreated - aCreated; // Newest first
+                          });
                         } else if (statusFilter === 'RESCHEDULED') {
                           // Show follow-up jobs (FOLLOW_UP status)
                           jobsToShow = allJobs.filter(job => job.status === 'FOLLOW_UP');
