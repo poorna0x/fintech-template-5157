@@ -60,7 +60,9 @@ import {
   LogOut,
   RefreshCw,
   Navigation,
-  ShoppingCart
+  ShoppingCart,
+  ChevronDown,
+  ChevronUp
 } from 'lucide-react';
 import { db, supabase } from '@/lib/supabase';
 import { registerAdminPWA, disablePWA } from '@/lib/pwa';
@@ -667,6 +669,7 @@ const AdminDashboard = () => {
   const [messageSentFilter, setMessageSentFilter] = useState<'all' | 'sent' | 'not_sent'>('not_sent');
   const [statusFilter, setStatusFilter] = useState<'ALL' | 'ONGOING' | 'PENDING' | 'ASSIGNED' | 'EN_ROUTE' | 'IN_PROGRESS' | 'COMPLETED' | 'CANCELLED' | 'RESCHEDULED'>('ONGOING');
   const [loadingCustomerJobs, setLoadingCustomerJobs] = useState<{[customerId: string]: boolean}>({});
+  const [showAllFollowups, setShowAllFollowups] = useState<boolean>(false);
   // Pagination state
   const [currentPage, setCurrentPage] = useState<number>(1);
   const [pageSize] = useState<number>(20);
@@ -6923,7 +6926,8 @@ const AdminDashboard = () => {
           }
           customerMap.get(customerId)!.allJobs.push(job);
         });
-        return Array.from(customerMap.values()).map(({ customer, allJobs }) => {
+        
+        let customersList = Array.from(customerMap.values()).map(({ customer, allJobs }) => {
           // Sort completed jobs by completion date (latest first)
           const completedJobs = allJobs
             .filter(job => job.status === 'COMPLETED')
@@ -6941,11 +6945,51 @@ const AdminDashboard = () => {
             cancelledJobs: allJobs.filter(job => job.status === 'CANCELLED' || job.status === 'DENIED')
           };
         });
+        
+        // Filter customers by followup date (within 7 days) if not showing all
+        if (!showAllFollowups) {
+          const now = new Date();
+          const weekFromNow = new Date(now);
+          weekFromNow.setDate(weekFromNow.getDate() + 7);
+          
+          customersList = customersList.filter(({ allJobs }) => {
+            const followUpJobs = allJobs.filter(job => ['FOLLOW_UP', 'RESCHEDULED'].includes(job.status));
+            // Check if customer has at least one followup within 7 days
+            return followUpJobs.some((job: any) => {
+              const followUpDate = job.follow_up_date || job.followUpDate;
+              if (!followUpDate) return true; // Show customers with jobs without date
+              const followUpDateObj = new Date(followUpDate);
+              if (isNaN(followUpDateObj.getTime())) return true;
+              return followUpDateObj <= weekFromNow;
+            });
+          });
+        }
+        
+        return customersList;
       }
       // Filter for follow-up jobs (FOLLOW_UP and RESCHEDULED status)
       filteredCustomers = customersWithJobs.filter(({ allJobs }) => 
         allJobs.some(job => ['FOLLOW_UP', 'RESCHEDULED'].includes(job.status))
       );
+      
+      // Filter customers by followup date (within 7 days) if not showing all
+      if (!showAllFollowups) {
+        const now = new Date();
+        const weekFromNow = new Date(now);
+        weekFromNow.setDate(weekFromNow.getDate() + 7);
+        
+        filteredCustomers = filteredCustomers.filter(({ allJobs }) => {
+          const followUpJobs = allJobs.filter(job => ['FOLLOW_UP', 'RESCHEDULED'].includes(job.status));
+          // Check if customer has at least one followup within 7 days
+          return followUpJobs.some((job: any) => {
+            const followUpDate = job.follow_up_date || job.followUpDate;
+            if (!followUpDate) return true; // Show customers with jobs without date
+            const followUpDateObj = new Date(followUpDate);
+            if (isNaN(followUpDateObj.getTime())) return true;
+            return followUpDateObj <= weekFromNow;
+          });
+        });
+      }
     } else if (statusFilter === 'CANCELLED') {
       // Already handled above
       filteredCustomers = customersWithJobs.filter(({ allJobs }) => 
@@ -7573,14 +7617,69 @@ const AdminDashboard = () => {
 
         {/* Customers with Jobs */}
         <div className="mb-6">
-                    <h2 className="text-xl font-bold text-gray-900 mb-1">
-            {statusFilter === 'ALL' ? 'All Customers' :
-             statusFilter === 'ONGOING' ? 'Customers with Ongoing Jobs' : 
-             statusFilter === 'RESCHEDULED' ? 'Customers with Follow-up Jobs' :
-             statusFilter === 'CANCELLED' ? 'Customers with Denied Jobs' :
-             statusFilter === 'COMPLETED' ? 'Customers with Completed Jobs' :
-             `Customers with ${statusFilter} Jobs`}
-          </h2>
+          <div className="flex items-center justify-between mb-1 flex-wrap gap-2">
+            <h2 className="text-lg sm:text-xl font-bold text-gray-900">
+              {statusFilter === 'ALL' ? 'All Customers' :
+               statusFilter === 'ONGOING' ? 'Customers with Ongoing Jobs' : 
+               statusFilter === 'RESCHEDULED' ? 'Customers with Follow-up Jobs' :
+               statusFilter === 'CANCELLED' ? 'Customers with Denied Jobs' :
+               statusFilter === 'COMPLETED' ? 'Customers with Completed Jobs' :
+               `Customers with ${statusFilter} Jobs`}
+            </h2>
+            
+            {/* Show all followups button */}
+            {statusFilter === 'RESCHEDULED' && !searchTerm.trim() && (() => {
+              // Calculate total customers with followups (all dates)
+              const allCustomersWithFollowups = customersWithJobs.filter(({ allJobs }) => 
+                allJobs.some(job => ['FOLLOW_UP', 'RESCHEDULED'].includes(job.status))
+              );
+              
+              // Calculate customers with followups beyond 7 days
+              const now = new Date();
+              const weekFromNow = new Date(now);
+              weekFromNow.setDate(weekFromNow.getDate() + 7);
+              
+              const customersBeyondWeek = allCustomersWithFollowups.filter(({ allJobs }) => {
+                const followUpJobs = allJobs.filter(job => ['FOLLOW_UP', 'RESCHEDULED'].includes(job.status));
+                // Check if customer has ONLY followups beyond 7 days (no followups within 7 days)
+                const hasWithinWeek = followUpJobs.some((job: any) => {
+                  const followUpDate = job.follow_up_date || job.followUpDate;
+                  if (!followUpDate) return false;
+                  const followUpDateObj = new Date(followUpDate);
+                  if (isNaN(followUpDateObj.getTime())) return false;
+                  return followUpDateObj <= weekFromNow;
+                });
+                return !hasWithinWeek; // Only show if no followups within week
+              });
+              
+              const hiddenCount = customersBeyondWeek.length;
+              
+              if (hiddenCount === 0) return null;
+              
+              return (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setShowAllFollowups(!showAllFollowups)}
+                  className="flex items-center gap-1 sm:gap-2 text-xs sm:text-sm px-2 sm:px-3 py-1.5 sm:py-2 whitespace-nowrap"
+                >
+                  {showAllFollowups ? (
+                    <>
+                      <ChevronUp className="w-3 h-3 sm:w-4 sm:h-4 flex-shrink-0" />
+                      <span className="hidden sm:inline">Hide older followups</span>
+                      <span className="sm:hidden">Hide ({hiddenCount})</span>
+                    </>
+                  ) : (
+                    <>
+                      <ChevronDown className="w-3 h-3 sm:w-4 sm:h-4 flex-shrink-0" />
+                      <span className="hidden sm:inline">Show all followups ({hiddenCount} more)</span>
+                      <span className="sm:hidden">Show all ({hiddenCount})</span>
+                    </>
+                  )}
+                </Button>
+              );
+            })()}
+          </div>
           {!searchTerm.trim() && (
             <p className="text-xs text-gray-500 mb-3">
               {statusFilter === 'ALL'
