@@ -1564,6 +1564,7 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
                           const getDefaultLeadCost = (leadSource: string): string => {
                             switch (leadSource) {
                               case 'Home Triangle': return '200';
+                              case 'Home Triangle-Srujan': return '200';
                               case 'Direct call': return '0';
                               case 'RO care india': return '400';
                               case 'Local Ramu': return '500';
@@ -1579,8 +1580,8 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
                               lead_source_custom: value === 'Other' ? prev.lead_source_custom : '',
                               lead_cost: getDefaultLeadCost(selectedLeadSource)
                             };
-                            // Auto-enable OTP if lead source is "Home Triangle"
-                            if (selectedLeadSource === 'Home Triangle') {
+                            // Auto-enable OTP if lead source is "Home Triangle" or "Home Triangle-Srujan"
+                            if (selectedLeadSource === 'Home Triangle' || selectedLeadSource === 'Home Triangle-Srujan') {
                               updated.require_otp = true;
                             }
                             return updated;
@@ -1597,6 +1598,7 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
                           <SelectItem value="Google-Leads">Google-Leads</SelectItem>
                           <SelectItem value="RO care india">RO care india</SelectItem>
                           <SelectItem value="Home Triangle">Home Triangle</SelectItem>
+                          <SelectItem value="Home Triangle-Srujan">Home Triangle-Srujan</SelectItem>
                           <SelectItem value="Local Ramu">Local Ramu</SelectItem>
                           <SelectItem value="Other">Other</SelectItem>
                         </SelectContent>

@@ -432,6 +432,8 @@ const Analytics = () => {
         'directcall': 'Direct call',
         'rocareindia': 'RO care india',
         'hometriangle': 'Home Triangle',
+        'hometriangle-srujan': 'Home Triangle-Srujan',
+        'hometrianglesrujan': 'Home Triangle-Srujan',
         'localramu': 'Local Ramu',
         'admincreated': 'Admin Created',
         'unknown': 'Direct call',

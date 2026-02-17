@@ -101,6 +101,7 @@ const EditCompletedJobDialog: React.FC<EditCompletedJobDialogProps> = ({
                 const getDefaultLeadCost = (leadSource: string): string => {
                   switch (leadSource) {
                     case 'Home Triangle': return '200';
+                    case 'Home Triangle-Srujan': return '200';
                     case 'Direct call': return '0';
                     case 'RO care india': return '400';
                     case 'Local Ramu': return '500';
@@ -131,6 +132,7 @@ const EditCompletedJobDialog: React.FC<EditCompletedJobDialogProps> = ({
                 <SelectItem value="Google-Leads">Google-Leads</SelectItem>
                 <SelectItem value="RO care india">RO care india</SelectItem>
                 <SelectItem value="Home Triangle">Home Triangle</SelectItem>
+                <SelectItem value="Home Triangle-Srujan">Home Triangle-Srujan</SelectItem>
                 <SelectItem value="Local Ramu">Local Ramu</SelectItem>
                 <SelectItem value="Other">Other</SelectItem>
               </SelectContent>
