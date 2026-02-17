@@ -6,12 +6,16 @@ import Logo from './Logo';
 
 const Footer = () => {
   return (
-    <footer className="w-full py-16 px-2 md:px-12 border-t border-border bg-background">
+    <footer
+      className="w-full py-16 px-2 md:px-12 border-t border-border bg-background"
+      style={{ isolation: 'isolate', position: 'relative', zIndex: 1 }}
+    >
       <div className="max-w-7xl mx-auto">
         <div className="grid grid-cols-1 md:grid-cols-5 gap-10">
           <div className="md:col-span-2 space-y-6 text-center md:text-left">
-            <div className="flex justify-center md:justify-start">
-              <Logo />
+            {/* Logo wrapper: reserve space to prevent overlap on some Samsung devices */}
+            <div className="flex justify-center md:justify-start flex-shrink-0 min-h-[2.5rem]">
+              <Logo inFooter />
             </div>
             <p className="text-muted-foreground max-w-xs mx-auto md:mx-0">
               Expert RO water purifier solutions for homes and offices across Bengaluru, Karnataka. Clean, safe water guaranteed with professional installation and maintenance services.
@@ -89,7 +93,7 @@ const Footer = () => {
           </div>
         </div>
         
-        <div className="mt-16 pt-8 border-t border-border">
+        <div className="mt-16 pt-8 border-t border-border relative z-0">
           {/* Mobile Policy Links - Keep as is */}
           <div className="flex justify-center md:hidden mb-8">
             <div className="grid grid-cols-2 gap-6 text-sm">

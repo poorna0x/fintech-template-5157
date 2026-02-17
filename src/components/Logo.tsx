@@ -3,7 +3,12 @@ import React from 'react';
 import { Droplets } from 'lucide-react';
 import { useNavigate, useLocation } from 'react-router-dom';
 
-const Logo = () => {
+interface LogoProps {
+  /** When true, use neutral z-index to avoid overlap on some mobile browsers (e.g. Samsung) */
+  inFooter?: boolean;
+}
+
+const Logo = ({ inFooter = false }: LogoProps) => {
   const navigate = useNavigate();
   const location = useLocation();
 
@@ -31,9 +36,9 @@ const Logo = () => {
 
   return (
     <div 
-      className={`flex items-center gap-2 ${isTechnicianPage ? 'cursor-default' : 'cursor-pointer hover:opacity-80'} transition-opacity relative z-50 whitespace-nowrap`}
+      className={`flex items-center gap-2 ${isTechnicianPage ? 'cursor-default' : 'cursor-pointer hover:opacity-80'} transition-opacity relative whitespace-nowrap ${inFooter ? 'z-auto' : 'z-50'}`}
       onClick={handleLogoClick}
-      style={{ position: 'relative', zIndex: 9999 }}
+      style={{ position: 'relative', zIndex: inFooter ? 'auto' : 9999 }}
       role={isTechnicianPage ? undefined : "button"}
       tabIndex={isTechnicianPage ? -1 : 0}
       onKeyDown={(e) => {
