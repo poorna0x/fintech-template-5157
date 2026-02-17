@@ -20,7 +20,30 @@
     <meta name="googlebot" content="index, follow" />
     <meta name="bingbot" content="index, follow" />
     
-    <!-- Canonical URL - Will be set dynamically by CanonicalTag component -->
+    <!-- Canonical URL - set immediately from requested URL so crawlers see correct canonical before React -->
+    <script>
+(function(){
+  var p = (window.location.pathname || '/').replace(/\/$/, '') || '';
+  var pathForTest = '/' + (p || '');
+  var noIndex = /^\/(technician|admin|dashboard|search)(\/|$)/.test(pathForTest);
+  if (noIndex) {
+    var r = document.querySelector('meta[name="robots"]');
+    if (r) r.setAttribute('content', 'noindex, nofollow');
+    else {
+      var m = document.createElement('meta');
+      m.name = 'robots';
+      m.content = 'noindex, nofollow';
+      document.head.appendChild(m);
+    }
+  } else {
+    var h = 'https://hydrogenro.com' + (p ? p : '');
+    var link = document.createElement('link');
+    link.rel = 'canonical';
+    link.href = h;
+    document.head.appendChild(link);
+  }
+})();
+    </script>
     
     <!-- Open Graph / Facebook -->
     <meta property="og:type" content="website" />
@@ -1108,14 +1131,6 @@
           "@type": "ImageObject",
           "url": "https://hydrogenro.com/fulllogo.png"
         }
-      },
-      "potentialAction": {
-        "@type": "SearchAction",
-        "target": {
-          "@type": "EntryPoint",
-          "urlTemplate": "https://hydrogenro.com/search?q={search_term_string}"
-        },
-        "query-input": "required name=search_term_string"
       }
     }
     </script>
