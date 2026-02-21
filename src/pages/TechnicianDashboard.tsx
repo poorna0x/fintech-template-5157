@@ -451,6 +451,9 @@ const TechnicianDashboard = () => {
   // Technician ID Card QR Code Dialog
   const [technicianIdCardDialogOpen, setTechnicianIdCardDialogOpen] = useState(false);
   const [inventoryDialogOpen, setInventoryDialogOpen] = useState(false);
+  // Common QRs (assigned by admin, shown below payment QR) - multiple allowed
+  const [commonQrCodesForTechnician, setCommonQrCodesForTechnician] = useState<CommonQrCode[]>([]);
+  const [commonQrDialogOpen, setCommonQrDialogOpen] = useState(false);
 
   // Photos dialog state
   const [photosDialogOpen, setPhotosDialogOpen] = useState(false);
@@ -657,10 +660,11 @@ const TechnicianDashboard = () => {
         }
 
         // Always fetch from database (cache will be updated)
-        // OPTIMIZATION: Limit technicians fetch
-        const [commonResult, allTechniciansResult] = await Promise.all([
+        // OPTIMIZATION: Limit technicians fetch. Common QR (non-payment) from technician_common_qr.
+        const [commonResult, allTechniciansResult, technicianCommonQrResult] = await Promise.all([
           db.commonQrCodes.getAll(),
-          db.technicians.getAll(100)
+          db.technicians.getAll(100),
+          db.technicianCommonQr.getAll()
         ]);
 
         // Transform common QR codes
@@ -714,6 +718,19 @@ const TechnicianDashboard = () => {
           rawVisibleQrCodes = currentTech?.visible_qr_codes;
           currentTechnicianVisibleQrCodes = rawVisibleQrCodes === null || rawVisibleQrCodes === undefined ? ['all'] : rawVisibleQrCodes;
           setTechnicianVisibleQrCodes(currentTechnicianVisibleQrCodes);
+          // Common QRs (non-payment) assigned to this technician - from technician_common_qr table (multiple allowed)
+          const commonQrIds: string[] = Array.isArray(currentTech?.common_qr_code_ids)
+            ? currentTech.common_qr_code_ids
+            : (currentTech?.common_qr_code_id ? [currentTech.common_qr_code_id] : []);
+          const technicianCommonQrList: CommonQrCode[] = (technicianCommonQrResult.data || []).map((q: any) => ({
+            id: q.id,
+            name: q.name,
+            qrCodeUrl: q.qr_code_url,
+            createdAt: q.created_at,
+            updatedAt: q.updated_at
+          }));
+          const assigned = technicianCommonQrList.filter((q: CommonQrCode) => commonQrIds.includes(q.id));
+          setCommonQrCodesForTechnician(assigned);
           
           // Cache current technician's QR code if available
           const currentTechWithQr = allTechniciansData.find(t => t.id === technicianId);
@@ -4020,6 +4037,12 @@ const TechnicianDashboard = () => {
                   <Package className="w-4 h-4 mr-2" />
                   My Inventory
                 </DropdownMenuItem>
+                <DropdownMenuItem 
+                  onClick={() => setCommonQrDialogOpen(true)}
+                >
+                  <QrCode className="w-4 h-4 mr-2" />
+                  Common QR
+                </DropdownMenuItem>
                 <DropdownMenuItem onClick={logout}>
                   <LogOut className="w-4 h-4 mr-2" />
                   Logout
@@ -6455,6 +6478,27 @@ const TechnicianDashboard = () => {
                                 </div>
                         </div>
                     )}
+
+                      {/* Common QRs - shown below payment QR (assigned by admin in Settings), multiple allowed */}
+                      {commonQrCodesForTechnician.length > 0 && (
+                        <div className="mt-4 p-4 bg-muted/50 border border-border rounded-lg">
+                          <p className="text-sm font-semibold text-foreground mb-3 text-center">
+                            Common QR{commonQrCodesForTechnician.length > 1 ? 's' : ''}
+                          </p>
+                          <div className="flex flex-wrap justify-center gap-4">
+                            {commonQrCodesForTechnician.map((qr) => (
+                              <div key={qr.id} className="text-center">
+                                <p className="text-sm font-medium mb-2 text-muted-foreground">{qr.name}</p>
+                                <img
+                                  src={qr.qrCodeUrl}
+                                  alt={qr.name}
+                                  className="w-40 h-40 object-contain mx-auto border border-border rounded-lg bg-white p-2"
+                                />
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
                   </div>
                 )}
                       </div>
@@ -7972,6 +8016,47 @@ const TechnicianDashboard = () => {
             <Button onClick={() => setTechnicianIdCardDialogOpen(false)}>
               Close
             </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={commonQrDialogOpen} onOpenChange={setCommonQrDialogOpen}>
+        <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <QrCode className="w-5 h-5" />
+              Common QR{commonQrCodesForTechnician.length > 1 ? 's' : ''}
+            </DialogTitle>
+            <DialogDescription>
+              QR code(s) assigned to you by admin (shown below payment QR)
+            </DialogDescription>
+          </DialogHeader>
+          <div className="flex flex-col items-center justify-center py-6">
+            {commonQrCodesForTechnician.length > 0 ? (
+              <div className="flex flex-wrap justify-center gap-6">
+                {commonQrCodesForTechnician.map((qr) => (
+                  <div key={qr.id} className="flex flex-col items-center gap-2">
+                    <div className="bg-white p-4 rounded-lg border-2 border-gray-200 shadow-lg">
+                      <img
+                        src={qr.qrCodeUrl}
+                        alt={qr.name}
+                        className="w-48 h-48 object-contain"
+                      />
+                    </div>
+                    <p className="font-semibold text-gray-900">{qr.name}</p>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="text-center py-8">
+                <QrCode className="w-16 h-16 mx-auto text-gray-300 mb-4" />
+                <p className="text-gray-600">No common QR assigned</p>
+                <p className="text-sm text-gray-500 mt-2">Ask admin to assign in Settings → Technician Management → Common QR</p>
+              </div>
+            )}
+          </div>
+          <DialogFooter>
+            <Button onClick={() => setCommonQrDialogOpen(false)}>Close</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

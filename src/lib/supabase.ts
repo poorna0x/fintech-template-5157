@@ -1099,6 +1099,49 @@ export const db = {
     }
   },
 
+  // Technician Common QR (non-payment): QR shown below payment QR on technician app
+  technicianCommonQr: {
+    async create(qrCode: { name: string; qr_code_url: string }) {
+      const { data, error } = await supabase
+        .from('technician_common_qr')
+        .insert({
+          name: qrCode.name,
+          qr_code_url: qrCode.qr_code_url,
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString()
+        })
+        .select()
+        .single();
+      return { data, error };
+    },
+    async getAll() {
+      const { data, error } = await supabase
+        .from('technician_common_qr')
+        .select('*')
+        .order('created_at', { ascending: false });
+      return { data, error };
+    },
+    async update(id: string, updates: { name?: string; qr_code_url?: string }) {
+      const { data, error } = await supabase
+        .from('technician_common_qr')
+        .update({
+          ...updates,
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', id)
+        .select()
+        .single();
+      return { data, error };
+    },
+    async delete(id: string) {
+      const { error } = await supabase
+        .from('technician_common_qr')
+        .delete()
+        .eq('id', id);
+      return { data: null, error };
+    }
+  },
+
   // Product QR Codes operations (for product verification QR codes)
   productQrCodes: {
     async create(qrCode: { name: string; qr_code_url: string; product_image_url?: string; product_name?: string; product_description?: string; product_mrp?: string }) {

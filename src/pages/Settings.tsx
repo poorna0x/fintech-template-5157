@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Checkbox } from '@/components/ui/checkbox';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Switch } from '@/components/ui/switch';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Badge } from '@/components/ui/badge';
@@ -51,7 +52,7 @@ const Settings = () => {
   const [editTechnicianDialogOpen, setEditTechnicianDialogOpen] = useState(false);
   const [selectedTechnician, setSelectedTechnician] = useState<Technician | null>(null);
   
-  // Common QR Code management states
+  // Common QR Code management states (payment QR codes)
   const [commonQrCodes, setCommonQrCodes] = useState<CommonQrCode[]>([]);
   const [addQrCodeDialogOpen, setAddQrCodeDialogOpen] = useState(false);
   const [editQrCodeDialogOpen, setEditQrCodeDialogOpen] = useState(false);
@@ -60,6 +61,13 @@ const Settings = () => {
     name: '',
     qrCodeUrl: ''
   });
+
+  // Common QR (non-payment) management states - shown below payment QR on technician app
+  const [technicianCommonQrCodes, setTechnicianCommonQrCodes] = useState<CommonQrCode[]>([]);
+  const [addTechnicianCommonQrDialogOpen, setAddTechnicianCommonQrDialogOpen] = useState(false);
+  const [editTechnicianCommonQrDialogOpen, setEditTechnicianCommonQrDialogOpen] = useState(false);
+  const [selectedTechnicianCommonQr, setSelectedTechnicianCommonQr] = useState<CommonQrCode | null>(null);
+  const [technicianCommonQrFormData, setTechnicianCommonQrFormData] = useState({ name: '', qrCodeUrl: '' });
 
   // Product QR Code management states
   const [productQrCodes, setProductQrCodes] = useState<any[]>([]);
@@ -83,7 +91,8 @@ const Settings = () => {
     qrCode: '', // QR code image URL
     photo: '', // Technician photo URL
     baseSalary: 0,
-    visibleQrCodes: [] as string[] // Array of QR code IDs visible to this technician
+    visibleQrCodes: [] as string[], // Array of QR code IDs visible to this technician
+    commonQrCodeIds: [] as string[] // Common QRs to show to this technician (below payment QR), multiple allowed
   });
   const [newlyCreatedTechnicianId, setNewlyCreatedTechnicianId] = useState<string | null>(null);
 
@@ -109,6 +118,7 @@ const Settings = () => {
   useEffect(() => {
     loadTechnicians();
     loadCommonQrCodes();
+    loadTechnicianCommonQrCodes();
     loadProductQrCodes();
     loadTodos();
   }, []);
@@ -143,6 +153,7 @@ const Settings = () => {
     qrCode: tech.qr_code || tech.qrCode || '',
     photo: tech.photo || '',
     visibleQrCodes: tech.visible_qr_codes || [],
+    commonQrCodeIds: Array.isArray(tech.common_qr_code_ids) ? tech.common_qr_code_ids : (tech.common_qr_code_id ? [tech.common_qr_code_id] : []),
     createdAt: tech.created_at,
     updatedAt: tech.updated_at
   });
@@ -187,7 +198,8 @@ const Settings = () => {
       qrCode: '',
       photo: '',
       baseSalary: 0,
-      visibleQrCodes: []
+      visibleQrCodes: [],
+      commonQrCodeIds: []
     });
     setNewlyCreatedTechnicianId(null);
     setAddTechnicianDialogOpen(true);
@@ -204,7 +216,8 @@ const Settings = () => {
       qrCode: (technician as any).qrCode || '',
       photo: (technician as any).photo || '',
       baseSalary: technician.salary?.baseSalary || 0,
-      visibleQrCodes: technician.visibleQrCodes || []
+      visibleQrCodes: technician.visibleQrCodes || [],
+      commonQrCodeIds: (technician as any).commonQrCodeIds || []
     });
     setNewlyCreatedTechnicianId(null);
     setEditTechnicianDialogOpen(true);
@@ -255,6 +268,7 @@ const Settings = () => {
         qr_code: technicianFormData.qrCode || null,
         photo: technicianFormData.photo || null,
         visible_qr_codes: technicianFormData.visibleQrCodes || [],
+        common_qr_code_ids: technicianFormData.commonQrCodeIds || [],
         account_status: 'ACTIVE',
         skills: {
           serviceTypes: ['RO', 'SOFTENER', 'AC', 'APPLIANCE'],
@@ -536,6 +550,88 @@ const Settings = () => {
     } catch (error) {
       console.error('Error deleting QR code:', error);
       toast.error('Failed to delete QR code');
+    }
+  };
+
+  // Common QR (non-payment) management functions
+  const loadTechnicianCommonQrCodes = async () => {
+    try {
+      const { data, error } = await db.technicianCommonQr.getAll();
+      if (error) throw error;
+      if (data) {
+        const transformed = data.map((qr: any) => ({
+          id: qr.id,
+          name: qr.name,
+          qrCodeUrl: qr.qr_code_url,
+          createdAt: qr.created_at,
+          updatedAt: qr.updated_at
+        }));
+        setTechnicianCommonQrCodes(transformed);
+      } else {
+        setTechnicianCommonQrCodes([]);
+      }
+    } catch (error) {
+      console.error('Error loading technician common QR codes:', error);
+      setTechnicianCommonQrCodes([]);
+    }
+  };
+
+  const handleAddTechnicianCommonQr = () => {
+    setTechnicianCommonQrFormData({ name: '', qrCodeUrl: '' });
+    setAddTechnicianCommonQrDialogOpen(true);
+  };
+
+  const handleEditTechnicianCommonQr = (qrCode: CommonQrCode) => {
+    setSelectedTechnicianCommonQr(qrCode);
+    setTechnicianCommonQrFormData({ name: qrCode.name, qrCodeUrl: qrCode.qrCodeUrl });
+    setEditTechnicianCommonQrDialogOpen(true);
+  };
+
+  const handleSaveTechnicianCommonQr = async () => {
+    try {
+      if (!technicianCommonQrFormData.name?.trim()) {
+        toast.error('Please provide a name');
+        return;
+      }
+      if (!technicianCommonQrFormData.qrCodeUrl?.trim() || !technicianCommonQrFormData.qrCodeUrl.startsWith('http')) {
+        toast.error('Please upload a valid QR code image');
+        return;
+      }
+      if (editTechnicianCommonQrDialogOpen && selectedTechnicianCommonQr) {
+        const { error } = await db.technicianCommonQr.update(selectedTechnicianCommonQr.id, {
+          name: technicianCommonQrFormData.name.trim(),
+          qr_code_url: technicianCommonQrFormData.qrCodeUrl.trim()
+        });
+        if (error) throw error;
+        toast.success('Common QR updated successfully');
+      } else {
+        const { error } = await db.technicianCommonQr.create({
+          name: technicianCommonQrFormData.name.trim(),
+          qr_code_url: technicianCommonQrFormData.qrCodeUrl.trim()
+        });
+        if (error) throw error;
+        toast.success('Common QR created successfully');
+      }
+      await loadTechnicianCommonQrCodes();
+      setAddTechnicianCommonQrDialogOpen(false);
+      setEditTechnicianCommonQrDialogOpen(false);
+      setSelectedTechnicianCommonQr(null);
+      setTechnicianCommonQrFormData({ name: '', qrCodeUrl: '' });
+    } catch (error) {
+      console.error('Error saving technician common QR:', error);
+      toast.error(error instanceof Error ? error.message : 'Failed to save Common QR');
+    }
+  };
+
+  const handleDeleteTechnicianCommonQr = async (qrCodeId: string) => {
+    try {
+      const { error } = await db.technicianCommonQr.delete(qrCodeId);
+      if (error) throw error;
+      await loadTechnicianCommonQrCodes();
+      toast.success('Common QR deleted successfully');
+    } catch (error) {
+      console.error('Error deleting technician common QR:', error);
+      toast.error('Failed to delete Common QR');
     }
   };
 
@@ -1476,6 +1572,86 @@ const Settings = () => {
             </CardContent>
           </Card>
 
+          {/* Common QR (non-payment) - shown below payment QR on technician app */}
+          <Card>
+            <CardHeader>
+              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+                <div>
+                  <CardTitle className="flex items-center gap-2 text-lg sm:text-xl">
+                    <QrCode className="w-5 h-5" />
+                    Common QR
+                  </CardTitle>
+                  <CardDescription className="text-sm mt-1">
+                    QR codes shown to technicians below the payment QR. Assign per technician in Technician Management.
+                  </CardDescription>
+                </div>
+                <Button
+                  onClick={handleAddTechnicianCommonQr}
+                  className="bg-blue-600 hover:bg-blue-700 w-full sm:w-auto"
+                  size="sm"
+                >
+                  <Plus className="w-4 h-4 mr-2" />
+                  Add Common QR
+                </Button>
+              </div>
+            </CardHeader>
+            <CardContent className="p-4 sm:p-6">
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                {technicianCommonQrCodes.map((qrCode) => (
+                  <Card key={qrCode.id} className="hover:shadow-md transition-shadow">
+                    <CardContent className="p-4">
+                      <div className="flex items-start justify-between mb-3 gap-2">
+                        <div className="flex-1 min-w-0">
+                          <h3 className="font-semibold text-gray-900 text-sm sm:text-base truncate">{qrCode.name}</h3>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => handleEditTechnicianCommonQr(qrCode)}
+                          className="flex-1 text-xs sm:text-sm"
+                        >
+                          <Edit className="w-3 h-3 sm:w-4 sm:h-4 mr-1" />
+                          Edit
+                        </Button>
+                        <AlertDialog>
+                          <AlertDialogTrigger asChild>
+                            <Button variant="outline" size="sm" className="text-red-600 hover:text-red-700 px-2 sm:px-3">
+                              <Trash2 className="w-3 h-3 sm:w-4 sm:h-4" />
+                            </Button>
+                          </AlertDialogTrigger>
+                          <AlertDialogContent className="mx-4 sm:mx-0">
+                            <AlertDialogHeader>
+                              <AlertDialogTitle>Delete Common QR</AlertDialogTitle>
+                              <AlertDialogDescription>
+                                Are you sure you want to delete "{qrCode.name}"? Technicians assigned this QR will see none until you assign another.
+                              </AlertDialogDescription>
+                            </AlertDialogHeader>
+                            <AlertDialogFooter className="flex-col sm:flex-row gap-2">
+                              <AlertDialogCancel className="w-full sm:w-auto">Cancel</AlertDialogCancel>
+                              <AlertDialogAction
+                                onClick={() => handleDeleteTechnicianCommonQr(qrCode.id)}
+                                className="bg-red-600 hover:bg-red-700 w-full sm:w-auto"
+                              >
+                                Delete
+                              </AlertDialogAction>
+                            </AlertDialogFooter>
+                          </AlertDialogContent>
+                        </AlertDialog>
+                      </div>
+                    </CardContent>
+                  </Card>
+                ))}
+                {technicianCommonQrCodes.length === 0 && (
+                  <div className="col-span-full text-center py-8 text-gray-500">
+                    No Common QR added yet. Click "Add Common QR" to create one.
+                  </div>
+                )}
+              </div>
+            </CardContent>
+          </Card>
+
           {/* Product QR Codes Management */}
           <Card>
             <CardHeader>
@@ -2080,6 +2256,43 @@ const Settings = () => {
                 </div>
               </div>
             </div>
+
+            {/* Common QR (non-payment) - multiple allowed, shown below payment QR */}
+            <div className="space-y-3 sm:space-y-4">
+              <h3 className="text-base sm:text-lg font-semibold text-gray-900">Common QR</h3>
+              <div>
+                <Label className="text-sm sm:text-base">Common QRs to show to this technician</Label>
+                <p className="text-xs sm:text-sm text-gray-500 mb-2">Select one or more. They are shown below the payment QR on the technician app. Add options in the &quot;Common QR&quot; card above.</p>
+                <div className="space-y-2 max-h-48 overflow-y-auto border rounded-lg p-3">
+                  {technicianCommonQrCodes.length === 0 ? (
+                    <p className="text-xs text-gray-500 italic">No Common QRs added yet. Add some in the Common QR card above.</p>
+                  ) : (
+                    technicianCommonQrCodes.map((qr) => {
+                      const isChecked = technicianFormData.commonQrCodeIds.includes(qr.id);
+                      return (
+                        <div key={qr.id} className="flex items-center space-x-2 p-2 border rounded-lg">
+                          <Checkbox
+                            id={`common-qr-${qr.id}`}
+                            checked={isChecked}
+                            onCheckedChange={(checked) => {
+                              setTechnicianFormData(prev => ({
+                                ...prev,
+                                commonQrCodeIds: checked
+                                  ? [...prev.commonQrCodeIds, qr.id]
+                                  : prev.commonQrCodeIds.filter(id => id !== qr.id)
+                              }));
+                            }}
+                          />
+                          <Label htmlFor={`common-qr-${qr.id}`} className="cursor-pointer flex-1 text-sm">
+                            {qr.name}
+                          </Label>
+                        </div>
+                      );
+                    })
+                  )}
+                </div>
+              </div>
+            </div>
             
             {/* Show ID Card Link after creation */}
             {newlyCreatedTechnicianId && (
@@ -2289,6 +2502,79 @@ const Settings = () => {
               className="bg-blue-600 hover:bg-blue-700 w-full sm:w-auto"
             >
               {editQrCodeDialogOpen ? 'Update QR Code' : 'Create QR Code'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Add/Edit Common QR (non-payment) Dialog */}
+      <Dialog open={addTechnicianCommonQrDialogOpen || editTechnicianCommonQrDialogOpen} onOpenChange={(open) => {
+        if (!open) {
+          setAddTechnicianCommonQrDialogOpen(false);
+          setEditTechnicianCommonQrDialogOpen(false);
+          setSelectedTechnicianCommonQr(null);
+          setTechnicianCommonQrFormData({ name: '', qrCodeUrl: '' });
+        }
+      }}>
+        <DialogContent className="sm:max-w-md mx-4 max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>{editTechnicianCommonQrDialogOpen ? 'Edit Common QR' : 'Add Common QR'}</DialogTitle>
+            <DialogDescription>
+              {editTechnicianCommonQrDialogOpen ? 'Update this Common QR' : 'Create a QR shown to technicians below the payment QR. Assign it in Technician Management.'}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-6">
+            <div className="space-y-4">
+              <div>
+                <Label htmlFor="technicianCommonQrName">Name *</Label>
+                <Input
+                  id="technicianCommonQrName"
+                  value={technicianCommonQrFormData.name}
+                  onChange={(e) => setTechnicianCommonQrFormData(prev => ({ ...prev, name: e.target.value }))}
+                  placeholder="e.g., Support QR, Feedback QR"
+                />
+              </div>
+              <div>
+                <Label>Upload QR Code Image *</Label>
+                <p className="text-sm text-gray-500 mb-2">Upload the QR image (non-payment)</p>
+                <ImageUpload
+                  onImagesChange={(images) => setTechnicianCommonQrFormData(prev => ({ ...prev, qrCodeUrl: images[0] || '' }))}
+                  maxImages={1}
+                  folder="technician-common-qr"
+                  title=""
+                  description=""
+                  maxWidth={800}
+                  quality={0.8}
+                  aggressiveCompression={false}
+                  useSecondaryAccount={false}
+                />
+                {technicianCommonQrFormData.qrCodeUrl && (
+                  <div className="mt-2">
+                    <img src={technicianCommonQrFormData.qrCodeUrl} alt="Common QR" className="w-32 h-32 object-contain border border-gray-200 rounded" />
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+          <DialogFooter className="flex-col sm:flex-row gap-2 sm:gap-3">
+            <Button
+              variant="outline"
+              onClick={() => {
+                setAddTechnicianCommonQrDialogOpen(false);
+                setEditTechnicianCommonQrDialogOpen(false);
+                setSelectedTechnicianCommonQr(null);
+                setTechnicianCommonQrFormData({ name: '', qrCodeUrl: '' });
+              }}
+              className="w-full sm:w-auto"
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={handleSaveTechnicianCommonQr}
+              disabled={!technicianCommonQrFormData.name?.trim() || !technicianCommonQrFormData.qrCodeUrl?.trim()}
+              className="bg-blue-600 hover:bg-blue-700 w-full sm:w-auto"
+            >
+              {editTechnicianCommonQrDialogOpen ? 'Update Common QR' : 'Create Common QR'}
             </Button>
           </DialogFooter>
         </DialogContent>
