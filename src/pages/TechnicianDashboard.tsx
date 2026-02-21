@@ -454,6 +454,7 @@ const TechnicianDashboard = () => {
   // Common QRs (assigned by admin, shown below payment QR) - multiple allowed
   const [commonQrCodesForTechnician, setCommonQrCodesForTechnician] = useState<CommonQrCode[]>([]);
   const [commonQrDialogOpen, setCommonQrDialogOpen] = useState(false);
+  const [expandedCommonQr, setExpandedCommonQr] = useState<CommonQrCode | null>(null);
 
   // Photos dialog state
   const [photosDialogOpen, setPhotosDialogOpen] = useState(false);
@@ -6479,22 +6480,30 @@ const TechnicianDashboard = () => {
                         </div>
                     )}
 
-                      {/* Common QRs - shown below payment QR (assigned by admin in Settings), multiple allowed */}
+                      {/* Common QRs - compact, mobile-friendly (horizontal scroll on small screens) */}
                       {commonQrCodesForTechnician.length > 0 && (
-                        <div className="mt-4 p-4 bg-muted/50 border border-border rounded-lg">
-                          <p className="text-sm font-semibold text-foreground mb-3 text-center">
+                        <div className="mt-4 rounded-lg border border-border bg-muted/30 p-3 sm:p-4">
+                          <p className="text-xs sm:text-sm font-semibold text-foreground mb-2 sm:mb-3">
                             Common QR{commonQrCodesForTechnician.length > 1 ? 's' : ''}
                           </p>
-                          <div className="flex flex-wrap justify-center gap-4">
+                          {/* Mobile: horizontal scroll with snap */}
+                          <div className="flex gap-3 overflow-x-auto overflow-y-hidden pb-1 snap-x snap-mandatory sm:grid sm:grid-cols-2 sm:overflow-visible sm:pb-0 md:grid-cols-3">
                             {commonQrCodesForTechnician.map((qr) => (
-                              <div key={qr.id} className="text-center">
-                                <p className="text-sm font-medium mb-2 text-muted-foreground">{qr.name}</p>
+                              <button
+                                key={qr.id}
+                                type="button"
+                                onClick={() => setExpandedCommonQr(qr)}
+                                className="flex min-w-[100px] max-w-[100px] shrink-0 snap-center flex-col items-center gap-1.5 rounded-lg border border-border/60 bg-white p-2 transition-colors hover:border-primary/50 hover:bg-muted/30 active:scale-[0.98] sm:min-w-0 sm:max-w-none sm:p-2.5 focus:outline-none focus:ring-2 focus:ring-primary/20"
+                              >
                                 <img
                                   src={qr.qrCodeUrl}
                                   alt={qr.name}
-                                  className="w-40 h-40 object-contain mx-auto border border-border rounded-lg bg-white p-2"
+                                  className="h-20 w-20 object-contain sm:h-24 sm:w-24 md:h-28 md:w-28"
                                 />
-                              </div>
+                                <p className="text-xs font-medium text-muted-foreground truncate w-full text-center" title={qr.name}>
+                                  {qr.name}
+                                </p>
+                              </button>
                             ))}
                           </div>
                         </div>
@@ -8021,32 +8030,48 @@ const TechnicianDashboard = () => {
       </Dialog>
 
       <Dialog open={commonQrDialogOpen} onOpenChange={setCommonQrDialogOpen}>
-        <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
+        <DialogContent className="max-h-[90vh] w-[95vw] max-w-lg overflow-hidden flex flex-col">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <QrCode className="w-5 h-5" />
               Common QR{commonQrCodesForTechnician.length > 1 ? 's' : ''}
             </DialogTitle>
             <DialogDescription>
-              QR code(s) assigned to you by admin (shown below payment QR)
+              QR code(s) assigned to you (shown below payment QR)
             </DialogDescription>
           </DialogHeader>
-          <div className="flex flex-col items-center justify-center py-6">
+          <div className="flex-1 overflow-y-auto py-4 -mx-2 px-2">
             {commonQrCodesForTechnician.length > 0 ? (
-              <div className="flex flex-wrap justify-center gap-6">
-                {commonQrCodesForTechnician.map((qr) => (
-                  <div key={qr.id} className="flex flex-col items-center gap-2">
-                    <div className="bg-white p-4 rounded-lg border-2 border-gray-200 shadow-lg">
-                      <img
-                        src={qr.qrCodeUrl}
-                        alt={qr.name}
-                        className="w-48 h-48 object-contain"
-                      />
-                    </div>
-                    <p className="font-semibold text-gray-900">{qr.name}</p>
-                  </div>
-                ))}
-              </div>
+              <>
+                {/* Mobile: horizontal scroll - tap to expand */}
+                <div className="flex gap-4 overflow-x-auto overflow-y-hidden pb-2 snap-x snap-mandatory sm:hidden">
+                  {commonQrCodesForTechnician.map((qr) => (
+                    <button
+                      key={qr.id}
+                      type="button"
+                      onClick={() => setExpandedCommonQr(qr)}
+                      className="flex min-w-[140px] shrink-0 snap-center flex-col items-center gap-2 rounded-lg border border-gray-200 bg-white p-3 transition-colors hover:border-primary/50 hover:bg-gray-50 active:scale-[0.98] focus:outline-none focus:ring-2 focus:ring-primary/20"
+                    >
+                      <img src={qr.qrCodeUrl} alt={qr.name} className="h-32 w-32 object-contain" />
+                      <p className="text-sm font-medium text-gray-900 truncate w-full text-center">{qr.name}</p>
+                    </button>
+                  ))}
+                </div>
+                {/* Tablet/desktop: grid - click to expand */}
+                <div className="hidden sm:grid sm:grid-cols-2 md:grid-cols-3 gap-4 justify-items-center">
+                  {commonQrCodesForTechnician.map((qr) => (
+                    <button
+                      key={qr.id}
+                      type="button"
+                      onClick={() => setExpandedCommonQr(qr)}
+                      className="flex flex-col items-center gap-2 rounded-lg border border-gray-200 bg-white p-3 w-full max-w-[180px] transition-colors hover:border-primary/50 hover:bg-gray-50 active:scale-[0.98] focus:outline-none focus:ring-2 focus:ring-primary/20"
+                    >
+                      <img src={qr.qrCodeUrl} alt={qr.name} className="h-36 w-36 object-contain md:h-40 md:w-40" />
+                      <p className="text-sm font-medium text-gray-900 truncate w-full text-center">{qr.name}</p>
+                    </button>
+                  ))}
+                </div>
+              </>
             ) : (
               <div className="text-center py-8">
                 <QrCode className="w-16 h-16 mx-auto text-gray-300 mb-4" />
@@ -8058,6 +8083,31 @@ const TechnicianDashboard = () => {
           <DialogFooter>
             <Button onClick={() => setCommonQrDialogOpen(false)}>Close</Button>
           </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Expanded Common QR - tap/click any Common QR to open large */}
+      <Dialog open={!!expandedCommonQr} onOpenChange={(open) => !open && setExpandedCommonQr(null)}>
+        <DialogContent className="max-w-sm overflow-hidden p-6">
+          {expandedCommonQr && (
+            <>
+              <DialogHeader>
+                <DialogTitle className="text-center text-lg">{expandedCommonQr.name}</DialogTitle>
+              </DialogHeader>
+              <div className="flex flex-col items-center gap-4 py-2">
+                <div className="rounded-xl border-2 border-border bg-white p-4 shadow-inner">
+                  <img
+                    src={expandedCommonQr.qrCodeUrl}
+                    alt={expandedCommonQr.name}
+                    className="h-56 w-56 object-contain sm:h-64 sm:w-64"
+                  />
+                </div>
+              </div>
+              <DialogFooter className="flex sm:justify-center">
+                <Button onClick={() => setExpandedCommonQr(null)} variant="outline">Close</Button>
+              </DialogFooter>
+            </>
+          )}
         </DialogContent>
       </Dialog>
     </div>
