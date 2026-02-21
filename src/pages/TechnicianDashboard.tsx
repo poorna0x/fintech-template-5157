@@ -8036,9 +8036,6 @@ const TechnicianDashboard = () => {
               <QrCode className="w-5 h-5" />
               Common QR{commonQrCodesForTechnician.length > 1 ? 's' : ''}
             </DialogTitle>
-            <DialogDescription>
-              QR code(s) assigned to you (shown below payment QR)
-            </DialogDescription>
           </DialogHeader>
           <div className="flex-1 overflow-y-auto py-4 -mx-2 px-2">
             {commonQrCodesForTechnician.length > 0 ? (
