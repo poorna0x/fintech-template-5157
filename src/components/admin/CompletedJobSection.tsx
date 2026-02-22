@@ -118,8 +118,9 @@ export const CompletedJobSection: React.FC<CompletedJobSectionProps> = ({
           {paymentMethod && (
             <div className="text-gray-700 break-words">
               <span className="text-gray-500 font-medium">Payment Mode:</span> {
-                paymentMethod === 'CASH' ? 'Cash' : 
-                paymentMethod === 'ONLINE' || paymentMethod === 'UPI' || paymentMethod === 'CARD' || paymentMethod === 'BANK_TRANSFER' ? 'Online' : 
+                paymentMethod === 'CASH' ? 'Cash' :
+                paymentMethod === 'PARTIAL' ? 'Partial (Cash + Online)' :
+                paymentMethod === 'ONLINE' || paymentMethod === 'UPI' || paymentMethod === 'CARD' || paymentMethod === 'BANK_TRANSFER' ? 'Online' :
                 paymentMethod
               }
             </div>
@@ -342,6 +343,10 @@ export const CompletedJobSection: React.FC<CompletedJobSectionProps> = ({
                 ? (job as any).lead_cost.toString() 
                 : '0';
 
+              const partialReq = requirements.find((r: any) => r?.partial_cash_amount != null || r?.partial_online_amount != null);
+              const partialCashAmount = partialReq?.partial_cash_amount != null ? String(partialReq.partial_cash_amount) : '';
+              const partialOnlineAmount = partialReq?.partial_online_amount != null ? String(partialReq.partial_online_amount) : '';
+
               const editData: any = {
                 amount: actualCost || paymentAmount || '',
                 paymentMethod: paymentMethod || 'CASH',
@@ -349,6 +354,8 @@ export const CompletedJobSection: React.FC<CompletedJobSectionProps> = ({
                 leadSourceCustom: leadSourceCustomValue,
                 leadCost: leadCost,
                 qrCodeName: qrPhotos?.selected_qr_code_name || '',
+                partialCashAmount,
+                partialOnlineAmount,
                 amcInfo: amcInfo || null,
                 completionNotes: completionNotes || '',
                 completedBy: (job as any).completed_by || job.completedBy || '',

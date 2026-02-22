@@ -431,7 +431,7 @@ const TechnicianDashboard = () => {
   const [amcAdditionalInfo, setAmcAdditionalInfo] = useState<string>('');
   const [amcAmount, setAmcAmount] = useState<string>('');
   const [hasAMC, setHasAMC] = useState<boolean | null>(null);
-  const [paymentMode, setPaymentMode] = useState<'CASH' | 'ONLINE' | ''>('');
+  const [paymentMode, setPaymentMode] = useState<'CASH' | 'ONLINE' | 'PARTIAL' | ''>('');
   const [billAmountConfirmOpen, setBillAmountConfirmOpen] = useState(false);
   const [customerHasPrefilter, setCustomerHasPrefilter] = useState<boolean | null>(null);
   const [rawWaterTds, setRawWaterTds] = useState<string>('');
@@ -444,6 +444,8 @@ const TechnicianDashboard = () => {
   const [allTechniciansForReports, setAllTechniciansForReports] = useState<any[]>([]); // Store ALL technicians for reports lookup
   const [technicianVisibleQrCodes, setTechnicianVisibleQrCodes] = useState<string[]>([]); // Current technician's visibility settings
   const [paymentScreenshot, setPaymentScreenshot] = useState<string>('');
+  const [partialCashAmount, setPartialCashAmount] = useState<string>('');
+  const [partialOnlineAmount, setPartialOnlineAmount] = useState<string>('');
   const [isSubmittingJobCompletion, setIsSubmittingJobCompletion] = useState(false);
   const [isBillPhotosUploading, setIsBillPhotosUploading] = useState(false);
   const [isPaymentScreenshotUploading, setIsPaymentScreenshotUploading] = useState(false);
@@ -3025,16 +3027,20 @@ const TechnicianDashboard = () => {
       // STEP 3: Submit directly to database
       try {
         // Prepare update data
-        let dbPaymentMethod: 'CASH' | 'CARD' | 'UPI' | 'BANK_TRANSFER' | null = null;
-        // Only set payment method if bill amount is not zero
+        let dbPaymentMethod: 'CASH' | 'CARD' | 'UPI' | 'BANK_TRANSFER' | 'PARTIAL' | null = null;
+        let paymentAmount = parseFloat(billAmount) || 0;
         if (!isBillAmountZero()) {
           if (paymentMode === 'CASH') {
             dbPaymentMethod = 'CASH';
           } else if (paymentMode === 'ONLINE') {
             dbPaymentMethod = 'UPI';
+          } else if (paymentMode === 'PARTIAL') {
+            dbPaymentMethod = 'PARTIAL';
+            const cash = parseFloat(partialCashAmount) || 0;
+            const online = parseFloat(partialOnlineAmount) || 0;
+            paymentAmount = cash + online;
           }
         }
-        // For zero amount bills, payment method can be null or default to CASH
         
         const updateData: any = {
           status: 'COMPLETED',
@@ -3043,7 +3049,7 @@ const TechnicianDashboard = () => {
           completed_by: user?.id || user?.technicianId || null,
           completed_at: new Date().toISOString(),
           actual_cost: parseFloat(billAmount) || 0,
-          payment_amount: parseFloat(billAmount) || 0,
+          payment_amount: paymentAmount,
           payment_method: dbPaymentMethod || (isBillAmountZero() ? null : 'CASH'),
         };
 
@@ -3147,12 +3153,8 @@ const TechnicianDashboard = () => {
           }
         }
         
-        // Add qr_photos to requirements only for ONLINE payments
-        // IMPORTANT: QR codes are NOT uploaded to Cloudinary - we store the existing URL directly
-        // QR codes are already stored in Cloudinary (in common_qr_codes table or technician profiles)
-        // We just reference the existing URL, no upload happens
-        if (paymentMode === 'ONLINE') {
-          // Verify QR code URL is already a valid URL (should be Cloudinary URL from database)
+        // Add qr_photos to requirements for ONLINE and PARTIAL (online part) payments
+        if (paymentMode === 'ONLINE' || (paymentMode === 'PARTIAL' && selectedQrCodeId)) {
           if (selectedQrCodeUrl && !(
             selectedQrCodeUrl.includes('cloudinary.com') || 
             selectedQrCodeUrl.includes('res.cloudinary.com') ||
@@ -3160,19 +3162,23 @@ const TechnicianDashboard = () => {
             selectedQrCodeUrl.startsWith('https://')
           )) {
             console.warn('⚠️ QR code URL is not a valid URL format:', selectedQrCodeUrl);
-            // Still proceed, but log a warning
           }
-          
           const qrPhotos: any = {
             qr_code_type: qrCodeType,
             selected_qr_code_id: selectedQrCodeId,
             payment_screenshot: isPaymentScreenshotUploaded ? paymentScreenshot : null,
-            selected_qr_code_url: selectedQrCodeUrl, // This is already a Cloudinary URL, no upload needed
+            selected_qr_code_url: selectedQrCodeUrl,
             selected_qr_code_name: selectedQrCodeName,
           };
           requirements.push({ qr_photos: qrPhotos });
-          console.log('✅ Added qr_photos to requirements (QR code URL already exists, no upload):', qrPhotos);
-        } else if (isPaymentScreenshotUploaded) {
+          console.log('✅ Added qr_photos to requirements:', qrPhotos);
+        }
+        if (paymentMode === 'PARTIAL') {
+          const cash = parseFloat(partialCashAmount) || 0;
+          const online = parseFloat(partialOnlineAmount) || 0;
+          requirements.push({ partial_cash_amount: cash, partial_online_amount: online });
+        }
+        if ((paymentMode !== 'ONLINE' && paymentMode !== 'PARTIAL') && isPaymentScreenshotUploaded) {
           // For CASH payments, still save payment screenshot in requirements for easy access
           // Store it in a payment_photos array in requirements
           requirements.push({ payment_photos: [paymentScreenshot] });
@@ -3353,6 +3359,8 @@ const TechnicianDashboard = () => {
         setAmcIncludesPrefilter(false);
         setHasAMC(null);
         setPaymentMode('');
+        setPartialCashAmount('');
+        setPartialOnlineAmount('');
         setCustomerHasPrefilter(null);
         setRawWaterTds('');
         setQrCodeType('');
@@ -4882,6 +4890,8 @@ const TechnicianDashboard = () => {
                         let paymentTypeDisplay = '';
                         if (paymentMethod === 'CASH') {
                           paymentTypeDisplay = 'Cash';
+                        } else if (paymentMethod === 'PARTIAL') {
+                          paymentTypeDisplay = 'Partial (Cash + Online)';
                         } else if (qrCodeInfo?.selected_qr_code_name) {
                           paymentTypeDisplay = qrCodeInfo.selected_qr_code_name;
                         } else if (qrCodeInfo?.qr_code_type) {
@@ -4903,7 +4913,7 @@ const TechnicianDashboard = () => {
                                 {paymentMethod && (
                                   <span>
                                     <span className="font-medium text-gray-700">Mode:</span>{' '}
-                                    <span className="text-gray-900 capitalize">{paymentMethod.replace('_', ' ')}</span>
+                                    <span className="text-gray-900">{paymentMethod === 'PARTIAL' ? 'Partial (Cash + Online)' : paymentMethod.replace('_', ' ')}</span>
                                   </span>
                                 )}
                                 {paymentTypeDisplay && (
@@ -4972,6 +4982,26 @@ const TechnicianDashboard = () => {
                             >
                               <Package className="w-3.5 h-3.5 mr-1.5" />
                               Add Parts
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={() => {
+                                const customerId = (job.customer as any)?.id ?? (job as any).customer_id;
+                                if (customerId) {
+                                  setReminderEntity({ type: 'customer', id: customerId });
+                                  const custName = (job.customer as any)?.full_name || (job.customer as any)?.fullName || 'Customer';
+                                  const custCode = (job.customer as any)?.customer_id || (job.customer as any)?.customerId || '';
+                                  setReminderContextLabel(custCode ? `${custName} (${custCode})` : custName);
+                                  setAddReminderDialogOpen(true);
+                                } else {
+                                  toast.error('Customer not found for this job');
+                                }
+                              }}
+                              className="text-xs"
+                            >
+                              <Bell className="w-3.5 h-3.5 mr-1.5" />
+                              Add reminder
                             </Button>
                           </div>
                         );
@@ -5233,14 +5263,22 @@ const TechnicianDashboard = () => {
               filteredJobs.forEach((job) => {
                 const paymentAmount = (job as any).payment_amount || (job as any).actual_cost || 0;
                 const paymentMethod = (job as any).payment_method || '';
-                
-                if (paymentAmount > 0) {
-                  totalAmount += paymentAmount;
-                  if (paymentMethod === 'CASH') {
+                if (paymentAmount <= 0) return;
+                totalAmount += paymentAmount;
+                if (paymentMethod === 'PARTIAL') {
+                  try {
+                    const req = typeof (job as any).requirements === 'string' ? JSON.parse((job as any).requirements) : (job as any).requirements || [];
+                    const arr = Array.isArray(req) ? req : [];
+                    const partialReq = arr.find((r: any) => r?.partial_cash_amount != null || r?.partial_online_amount != null);
+                    totalCash += Number(partialReq?.partial_cash_amount) || 0;
+                    totalOnline += Number(partialReq?.partial_online_amount) || 0;
+                  } catch {
                     totalCash += paymentAmount;
-                  } else if (paymentMethod && paymentMethod !== 'CASH') {
-                    totalOnline += paymentAmount;
                   }
+                } else if (paymentMethod === 'CASH') {
+                  totalCash += paymentAmount;
+                } else if (paymentMethod && paymentMethod !== 'CASH') {
+                  totalOnline += paymentAmount;
                 }
               });
               
@@ -6333,13 +6371,12 @@ const TechnicianDashboard = () => {
                       <Label htmlFor="payment-mode">Payment Mode *</Label>
                       <Select 
                         value={paymentMode} 
-                        onValueChange={(value: 'CASH' | 'ONLINE') => {
+                        onValueChange={(value: 'CASH' | 'ONLINE' | 'PARTIAL') => {
                           setPaymentMode(value);
-                          // Reset QR code fields when changing payment mode
                           if (value === 'CASH') {
-                          setQrCodeType('');
-                          setSelectedQrCodeId('');
-                          setPaymentScreenshot('');
+                            setQrCodeType('');
+                            setSelectedQrCodeId('');
+                            setPaymentScreenshot('');
                           }
                         }}
                       >
@@ -6349,11 +6386,46 @@ const TechnicianDashboard = () => {
                         <SelectContent>
                           <SelectItem value="CASH">Cash</SelectItem>
                           <SelectItem value="ONLINE">Online</SelectItem>
+                          <SelectItem value="PARTIAL">Partial (Cash + Online)</SelectItem>
                         </SelectContent>
                       </Select>
                     </div>
+
+                  {(paymentMode === 'PARTIAL') && (
+                    <div className="space-y-3 pl-4 border-l-2 border-gray-200">
+                      <p className="text-sm text-gray-600">Enter amounts received by cash and online. For online part, select payment QR below.</p>
+                      <div className="grid grid-cols-2 gap-3">
+                        <div>
+                          <Label htmlFor="partial-cash">Cash amount (₹)</Label>
+                          <Input
+                            id="partial-cash"
+                            type="number"
+                            min={0}
+                            step={0.01}
+                            placeholder="0"
+                            value={partialCashAmount}
+                            onChange={(e) => setPartialCashAmount(e.target.value)}
+                            className="mt-1"
+                          />
+                        </div>
+                        <div>
+                          <Label htmlFor="partial-online">Online amount (₹)</Label>
+                          <Input
+                            id="partial-online"
+                            type="number"
+                            min={0}
+                            step={0.01}
+                            placeholder="0"
+                            value={partialOnlineAmount}
+                            onChange={(e) => setPartialOnlineAmount(e.target.value)}
+                            className="mt-1"
+                          />
+                        </div>
+                      </div>
+                    </div>
+                  )}
                   
-                  {paymentMode === 'ONLINE' && (
+                  {(paymentMode === 'ONLINE' || paymentMode === 'PARTIAL') && (
                     <div className="space-y-4 pl-4 border-l-2 border-gray-200">
                       <div>
                         <Label htmlFor="qr-code-type">Select QR Code *</Label>
@@ -6484,34 +6556,7 @@ const TechnicianDashboard = () => {
                         </div>
                     )}
 
-                      {/* Common QRs - compact, mobile-friendly (horizontal scroll on small screens) */}
-                      {commonQrCodesForTechnician.length > 0 && (
-                        <div className="mt-4 rounded-lg border border-border bg-muted/30 p-3 sm:p-4">
-                          <p className="text-xs sm:text-sm font-semibold text-foreground mb-2 sm:mb-3">
-                            Common QR{commonQrCodesForTechnician.length > 1 ? 's' : ''}
-                          </p>
-                          {/* Mobile: horizontal scroll with snap */}
-                          <div className="flex gap-3 overflow-x-auto overflow-y-hidden pb-1 snap-x snap-mandatory sm:grid sm:grid-cols-2 sm:overflow-visible sm:pb-0 md:grid-cols-3">
-                            {commonQrCodesForTechnician.map((qr) => (
-                              <button
-                                key={qr.id}
-                                type="button"
-                                onClick={() => setExpandedCommonQr(qr)}
-                                className="flex min-w-[100px] max-w-[100px] shrink-0 snap-center flex-col items-center gap-1.5 rounded-lg border border-border/60 bg-white p-2 transition-colors hover:border-primary/50 hover:bg-muted/30 active:scale-[0.98] sm:min-w-0 sm:max-w-none sm:p-2.5 focus:outline-none focus:ring-2 focus:ring-primary/20"
-                              >
-                                <img
-                                  src={qr.qrCodeUrl}
-                                  alt={qr.name}
-                                  className="h-20 w-20 object-contain sm:h-24 sm:w-24 md:h-28 md:w-28"
-                                />
-                                <p className="text-xs font-medium text-muted-foreground truncate w-full text-center" title={qr.name}>
-                                  {qr.name}
-                                </p>
-                              </button>
-                            ))}
-                          </div>
-                        </div>
-                      )}
+                      {/* Payment QR only for Online/Partial; non-payment Common QRs not shown here */}
                   </div>
                 )}
                       </div>
@@ -6799,7 +6844,7 @@ const TechnicianDashboard = () => {
                   (completeJobStep === 6 && !isSoftenerService() && !rawWaterTds.trim()) ||
                   // Step 4 validation: only require payment mode if bill amount is not zero
                   (completeJobStep === 4 && !isBillAmountZero() && !paymentMode) || 
-                  (completeJobStep === 4 && !isBillAmountZero() && paymentMode === 'ONLINE' && !selectedQrCodeId) ||
+                  (completeJobStep === 4 && !isBillAmountZero() && (paymentMode === 'ONLINE' || paymentMode === 'PARTIAL') && (paymentMode === 'ONLINE' ? !selectedQrCodeId : (parseFloat(partialOnlineAmount) > 0 && !selectedQrCodeId))) ||
                   // Step 7 validation: require OTP if step is 7
                   (completeJobStep === 7 && otpInput.join('').length !== 4)
                 }

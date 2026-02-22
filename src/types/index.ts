@@ -127,7 +127,7 @@ export interface Job {
   
   // Financial
   payment_status: 'PENDING' | 'PAID' | 'PARTIAL' | 'REFUNDED';
-  payment_method?: 'CASH' | 'CARD' | 'UPI' | 'BANK_TRANSFER';
+  payment_method?: 'CASH' | 'CARD' | 'UPI' | 'BANK_TRANSFER' | 'PARTIAL';
   payment_amount?: number;
   
   // Documents

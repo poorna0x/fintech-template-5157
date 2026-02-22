@@ -171,9 +171,25 @@ const BillingStats = () => {
       
       jobs.forEach((job: any) => {
         const techId = job.assigned_technician_id;
-        const amount = job.payment_amount || job.actual_cost || 0;
         const paymentMethod = job.payment_method || 'OTHER';
-        
+        let amount = job.payment_amount || job.actual_cost || 0;
+        let cashAmount = 0;
+        let qrAmount = 0;
+        if (paymentMethod === 'PARTIAL') {
+          try {
+            const requirements = typeof job.requirements === 'string' ? JSON.parse(job.requirements) : job.requirements || [];
+            const partialReq = Array.isArray(requirements) ? requirements.find((r: any) => r?.partial_cash_amount != null || r?.partial_online_amount != null) : null;
+            cashAmount = Number(partialReq?.partial_cash_amount) || 0;
+            qrAmount = Number(partialReq?.partial_online_amount) || 0;
+            amount = cashAmount + qrAmount;
+          } catch {
+            amount = job.payment_amount || job.actual_cost || 0;
+          }
+        } else {
+          if (paymentMethod === 'CASH') cashAmount = amount;
+          else if (paymentMethod === 'UPI' || paymentMethod === 'CARD' || paymentMethod === 'BANK_TRANSFER') qrAmount = amount;
+        }
+
         // Technician billing
         if (techId) {
           if (!techTotals[techId]) {
@@ -191,12 +207,9 @@ const BillingStats = () => {
           
           techTotals[techId].totalBilling += amount;
           techTotals[techId].jobCount += 1;
-          
-          if (paymentMethod === 'CASH') {
-            techTotals[techId].cashAmount += amount;
-          } else if (paymentMethod === 'UPI' || paymentMethod === 'CARD') {
-            techTotals[techId].qrAmount += amount;
-          } else {
+          techTotals[techId].cashAmount += paymentMethod === 'PARTIAL' ? cashAmount : (paymentMethod === 'CASH' ? amount : 0);
+          techTotals[techId].qrAmount += paymentMethod === 'PARTIAL' ? qrAmount : (paymentMethod === 'UPI' || paymentMethod === 'CARD' || paymentMethod === 'BANK_TRANSFER' ? amount : 0);
+          if (paymentMethod !== 'PARTIAL' && paymentMethod !== 'CASH' && paymentMethod !== 'UPI' && paymentMethod !== 'CARD' && paymentMethod !== 'BANK_TRANSFER') {
             techTotals[techId].otherAmount += amount;
           }
         }
@@ -210,7 +223,7 @@ const BillingStats = () => {
           const qrPhotos = requirements.find((r: any) => r?.qr_photos);
           const qrCodeName = qrPhotos?.qr_photos?.selected_qr_code_name;
           
-          // Only add to QR totals if QR code name exists
+          // Only add to QR totals if QR code name exists (for PARTIAL, add only online amount to QR)
           if (qrCodeName) {
             if (!qrTotals[qrCodeName]) {
               qrTotals[qrCodeName] = {
@@ -220,12 +233,12 @@ const BillingStats = () => {
                 jobs: []
               };
             }
-            
-            qrTotals[qrCodeName].totalAmount += amount;
+            const amountForQr = paymentMethod === 'PARTIAL' ? qrAmount : amount;
+            qrTotals[qrCodeName].totalAmount += amountForQr;
             qrTotals[qrCodeName].jobCount += 1;
             qrTotals[qrCodeName].jobs.push({
               jobNumber: job.job_number,
-              amount,
+              amount: amountForQr,
               customer: job.customer
             });
           }

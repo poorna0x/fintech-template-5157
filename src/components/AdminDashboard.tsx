@@ -9747,14 +9747,31 @@ const AdminDashboard = () => {
                     }
                   }
 
-                  // When payment method is CASH, clear qr_photos so billing section doesn't still show as QR payment
+                  // When payment method is CASH, clear qr_photos and any partial amounts
                   if (completedJobEditData.paymentMethod === 'CASH') {
                     requirements.forEach((r: any) => {
-                      if (r && typeof r === 'object' && r.qr_photos) delete r.qr_photos;
+                      if (r && typeof r === 'object') {
+                        if (r.qr_photos) delete r.qr_photos;
+                        if (r.partial_cash_amount != null) delete r.partial_cash_amount;
+                        if (r.partial_online_amount != null) delete r.partial_online_amount;
+                      }
                     });
                   }
 
-                  // Update QR photos if QR code name changed (only for non-CASH / online payments)
+                  // Update or add partial amounts when PARTIAL
+                  if (completedJobEditData.paymentMethod === 'PARTIAL') {
+                    const cash = parseFloat(completedJobEditData.partialCashAmount) || 0;
+                    const online = parseFloat(completedJobEditData.partialOnlineAmount) || 0;
+                    let partialIndex = requirements.findIndex((r: any) => r?.partial_cash_amount != null || r?.partial_online_amount != null);
+                    if (partialIndex >= 0) {
+                      requirements[partialIndex].partial_cash_amount = cash;
+                      requirements[partialIndex].partial_online_amount = online;
+                    } else {
+                      requirements.push({ partial_cash_amount: cash, partial_online_amount: online });
+                    }
+                  }
+
+                  // Update QR photos if QR code name changed (only for non-CASH / online / partial payments)
                   if (completedJobEditData.paymentMethod !== 'CASH' && completedJobEditData.qrCodeName) {
                     let qrIndex = requirements.findIndex((r: any) => r?.qr_photos);
                     if (qrIndex >= 0) {
@@ -9795,7 +9812,12 @@ const AdminDashboard = () => {
                   }
 
                   // Prepare update data
-                  const amount = parseFloat(completedJobEditData.amount) || 0;
+                  let amount = parseFloat(completedJobEditData.amount) || 0;
+                  if (completedJobEditData.paymentMethod === 'PARTIAL') {
+                    const cash = parseFloat(completedJobEditData.partialCashAmount) || 0;
+                    const online = parseFloat(completedJobEditData.partialOnlineAmount) || 0;
+                    amount = cash + online;
+                  }
                   const leadCost = parseFloat(completedJobEditData.leadCost) || 0;
                   
                   // Handle completion date

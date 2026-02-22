@@ -83,12 +83,44 @@ const EditCompletedJobDialog: React.FC<EditCompletedJobDialogProps> = ({
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="CASH">Cash</SelectItem>
+                <SelectItem value="ONLINE">Online</SelectItem>
                 <SelectItem value="UPI">UPI</SelectItem>
                 <SelectItem value="CARD">Card</SelectItem>
                 <SelectItem value="BANK_TRANSFER">Bank Transfer</SelectItem>
+                <SelectItem value="PARTIAL">Partial (Cash + Online)</SelectItem>
               </SelectContent>
             </Select>
           </div>
+
+          {/* Partial amounts - only when PARTIAL */}
+          {editData.paymentMethod === 'PARTIAL' && (
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <Label htmlFor="edit-partial-cash">Cash amount (₹)</Label>
+                <Input
+                  id="edit-partial-cash"
+                  type="number"
+                  min={0}
+                  step={0.01}
+                  value={editData.partialCashAmount ?? ''}
+                  onChange={(e) => onEditDataChange({ ...editData, partialCashAmount: e.target.value })}
+                  placeholder="0"
+                />
+              </div>
+              <div>
+                <Label htmlFor="edit-partial-online">Online amount (₹)</Label>
+                <Input
+                  id="edit-partial-online"
+                  type="number"
+                  min={0}
+                  step={0.01}
+                  value={editData.partialOnlineAmount ?? ''}
+                  onChange={(e) => onEditDataChange({ ...editData, partialOnlineAmount: e.target.value })}
+                  placeholder="0"
+                />
+              </div>
+            </div>
+          )}
 
           {/* Lead Source */}
           <div>
@@ -167,7 +199,7 @@ const EditCompletedJobDialog: React.FC<EditCompletedJobDialogProps> = ({
           </div>
 
           {/* QR Code Name (if online payment) - dropdown, fetches list only when opened */}
-          {(editData.paymentMethod === 'UPI' || editData.paymentMethod === 'CARD' || editData.paymentMethod === 'BANK_TRANSFER') && (
+          {(editData.paymentMethod === 'UPI' || editData.paymentMethod === 'CARD' || editData.paymentMethod === 'BANK_TRANSFER' || editData.paymentMethod === 'ONLINE' || editData.paymentMethod === 'PARTIAL') && (
             <div>
               <Label htmlFor="edit-qr-code">QR Code Name</Label>
               <Select
