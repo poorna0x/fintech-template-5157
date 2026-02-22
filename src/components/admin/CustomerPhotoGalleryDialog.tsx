@@ -1,10 +1,8 @@
 import React from 'react';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { Customer } from '@/types';
-import { Camera, Upload, Download, MoreVertical, Image, Trash2 } from 'lucide-react';
-import { toast } from 'sonner';
+import { Camera, Upload, Image, Trash2 } from 'lucide-react';
 
 interface CustomerPhotoGalleryDialogProps {
   open: boolean;
@@ -55,45 +53,8 @@ const CustomerPhotoGalleryDialog: React.FC<CustomerPhotoGalleryDialogProps> = ({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="w-[95vw] sm:w-[90vw] md:w-[85vw] lg:max-w-7xl max-h-[95vh] overflow-y-auto p-4 sm:p-6">
         <DialogHeader className="space-y-3 sm:space-y-2">
-          <DialogTitle className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 sm:gap-4">
-            <div className="flex items-center gap-2">
-              <span className="text-lg sm:text-xl font-semibold">Photo Gallery</span>
-            </div>
-            <div className="flex items-center gap-2 sm:gap-3 flex-wrap">
-              <span className="text-xs sm:text-sm text-gray-500 truncate max-w-[200px] sm:max-w-none">
-                {customer.customer_id || customer.customerId} - {customer.fullName || customer.full_name}
-              </span>
-              <DropdownMenu>
-                <DropdownMenuTrigger asChild>
-                  <Button variant="outline" size="sm" className="h-8 w-8 p-0 sm:h-9 sm:w-auto sm:px-3">
-                    <MoreVertical className="w-4 h-4" />
-                    <span className="hidden sm:inline ml-2">More</span>
-                  </Button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent align="end">
-                  <DropdownMenuItem onClick={() => {
-                    const input = document.createElement('input');
-                    input.type = 'file';
-                    input.multiple = true;
-                    input.accept = 'image/*';
-                    input.onchange = (e) => {
-                      const files = (e.target as HTMLInputElement).files;
-                      if (files) onPhotoUpload(files);
-                    };
-                    input.click();
-                  }}>
-                    <Upload className="w-4 h-4 mr-2" />
-                    Add Photos
-                  </DropdownMenuItem>
-                  <DropdownMenuItem onClick={() => {
-                    toast.info('Download all photos feature coming soon');
-                  }}>
-                    <Download className="w-4 h-4 mr-2" />
-                    Download All
-                  </DropdownMenuItem>
-                </DropdownMenuContent>
-              </DropdownMenu>
-            </div>
+          <DialogTitle className="flex items-center gap-2">
+            <span className="text-lg sm:text-xl font-semibold">Photo Gallery</span>
           </DialogTitle>
           <DialogDescription className="text-xs sm:text-sm">
             View and manage photos for this customer

@@ -9,7 +9,7 @@ import {
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Bell, Search } from 'lucide-react';
-import { format, addMonths } from 'date-fns';
+import { format, addMonths, addDays, startOfDay, endOfDay } from 'date-fns';
 import { db } from '@/lib/supabase';
 import { toast } from 'sonner';
 import { ReminderRow } from '@/components/reminders/RemindersList';
@@ -27,6 +27,7 @@ import {
 import { AddReminderDialog } from './AddReminderDialog';
 
 const RECENT_COMPLETED_DAYS = 7;
+const UPCOMING_DAYS = 7;
 const PAGE_SIZE = 20;
 
 type CustomerLabel = { name: string; customerId: string };
@@ -43,6 +44,7 @@ export function SettingsRemindersDialog({ open, onOpenChange }: SettingsReminder
   const [loading, setLoading] = useState(false);
   const [includeCompleted, setIncludeCompleted] = useState(false);
   const [showAllReminders, setShowAllReminders] = useState(false);
+  const [showUpcomingOnly, setShowUpcomingOnly] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [page, setPage] = useState(1);
   const [editReminder, setEditReminder] = useState<Reminder | null>(null);
@@ -105,19 +107,32 @@ export function SettingsRemindersDialog({ open, onOpenChange }: SettingsReminder
   };
 
   const filteredReminders = useMemo(() => {
+    let list = reminders;
     const q = searchQuery.trim().toLowerCase();
-    if (!q) return reminders;
-    return reminders.filter((r) => {
-      const label =
-        r.entity_type === 'customer' && r.entity_id ? customerLabels[r.entity_id] : null;
-      const matchLabel =
-        label &&
-        (label.name.toLowerCase().includes(q) || label.customerId.toLowerCase().includes(q));
-      const matchTitle =
-        r.title.toLowerCase().includes(q) || (r.notes && r.notes.toLowerCase().includes(q));
-      return !!(matchLabel || matchTitle);
-    });
-  }, [reminders, customerLabels, searchQuery]);
+    if (q) {
+      list = list.filter((r) => {
+        const label =
+          r.entity_type === 'customer' && r.entity_id ? customerLabels[r.entity_id] : null;
+        const matchLabel =
+          label &&
+          (label.name.toLowerCase().includes(q) || label.customerId.toLowerCase().includes(q));
+        const matchTitle =
+          r.title.toLowerCase().includes(q) || (r.notes && r.notes.toLowerCase().includes(q));
+        return !!(matchLabel || matchTitle);
+      });
+    }
+    if (showUpcomingOnly) {
+      const now = new Date();
+      const weekEnd = endOfDay(addDays(now, UPCOMING_DAYS));
+      list = list.filter((r) => {
+        if (r.completed_at) return false;
+        const at = new Date(r.reminder_at).getTime();
+        return at >= startOfDay(now).getTime() && at <= weekEnd.getTime();
+      });
+      list = [...list].sort((a, b) => new Date(a.reminder_at).getTime() - new Date(b.reminder_at).getTime());
+    }
+    return list;
+  }, [reminders, customerLabels, searchQuery, showUpcomingOnly]);
 
   const totalPages = Math.max(1, Math.ceil(filteredReminders.length / PAGE_SIZE));
   const currentPage = Math.min(page, totalPages);
@@ -221,6 +236,18 @@ export function SettingsRemindersDialog({ open, onOpenChange }: SettingsReminder
                   />
                   Show only active reminders
                 </label>
+                <label className="flex items-center gap-2 text-xs sm:text-sm min-h-9">
+                  <input
+                    type="checkbox"
+                    checked={showUpcomingOnly}
+                    onChange={(e) => {
+                      setShowUpcomingOnly(e.target.checked);
+                      setPage(1);
+                    }}
+                    className="rounded"
+                  />
+                  Show upcoming (next {UPCOMING_DAYS} days)
+                </label>
               </div>
               <div className="relative">
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
@@ -252,9 +279,11 @@ export function SettingsRemindersDialog({ open, onOpenChange }: SettingsReminder
                 <p className="text-sm text-muted-foreground">
                   {searchQuery.trim()
                     ? 'No reminders match your search.'
-                    : showAllReminders || !includeCompleted
-                      ? 'No active reminders.'
-                      : `No completed reminders in the last ${RECENT_COMPLETED_DAYS} days.`}
+                    : showUpcomingOnly
+                      ? `No upcoming reminders in the next ${UPCOMING_DAYS} days.`
+                      : showAllReminders || !includeCompleted
+                        ? 'No active reminders.'
+                        : `No completed reminders in the last ${RECENT_COMPLETED_DAYS} days.`}
                 </p>
               ) : (
                 <>
