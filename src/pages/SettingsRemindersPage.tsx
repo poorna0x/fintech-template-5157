@@ -4,7 +4,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { ArrowLeft, Bell, Plus, Pencil, Trash2, Search } from 'lucide-react';
-import { format, addMonths } from 'date-fns';
+import { format, addMonths, subDays, startOfDay } from 'date-fns';
 import { db } from '@/lib/supabase';
 import { toast } from 'sonner';
 import { AddReminderDialog } from '@/components/reminders/AddReminderDialog';
@@ -49,7 +49,7 @@ export default function SettingsRemindersPage() {
       }
       let list = (data as Reminder[]) || [];
       if (includeCompleted) {
-        const cutoff = Date.now() - RECENT_COMPLETED_DAYS * 24 * 60 * 60 * 1000;
+        const cutoff = startOfDay(subDays(new Date(), RECENT_COMPLETED_DAYS)).getTime();
         list = list.filter((r) => r.completed_at && new Date(r.completed_at).getTime() >= cutoff);
         list.sort((a, b) =>
           b.completed_at && a.completed_at

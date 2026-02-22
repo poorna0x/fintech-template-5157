@@ -9,7 +9,7 @@ import {
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Bell, Search } from 'lucide-react';
-import { format, addMonths, addDays, startOfDay, endOfDay } from 'date-fns';
+import { format, addMonths, addDays, subDays, startOfDay, endOfDay } from 'date-fns';
 import { db } from '@/lib/supabase';
 import { toast } from 'sonner';
 import { ReminderRow } from '@/components/reminders/RemindersList';
@@ -44,7 +44,7 @@ export function SettingsRemindersDialog({ open, onOpenChange }: SettingsReminder
   const [loading, setLoading] = useState(false);
   const [includeCompleted, setIncludeCompleted] = useState(false);
   const [showAllReminders, setShowAllReminders] = useState(false);
-  const [showUpcomingOnly, setShowUpcomingOnly] = useState(false);
+  const [showUpcomingOnly, setShowUpcomingOnly] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
   const [page, setPage] = useState(1);
   const [editReminder, setEditReminder] = useState<Reminder | null>(null);
@@ -67,12 +67,10 @@ export function SettingsRemindersDialog({ open, onOpenChange }: SettingsReminder
         list = list.filter((r) => !r.completed_at);
         list.sort((a, b) => new Date(a.reminder_at).getTime() - new Date(b.reminder_at).getTime());
       } else {
-        // Include recent completed: active + completed in last 7 days
-        const cutoff = Date.now() - RECENT_COMPLETED_DAYS * 24 * 60 * 60 * 1000;
+        // Include recent completed: only completed on or after start of day N days ago (no active reminders)
+        const cutoff = startOfDay(subDays(new Date(), RECENT_COMPLETED_DAYS)).getTime();
         list = list.filter(
-          (r) =>
-            !r.completed_at ||
-            (r.completed_at && new Date(r.completed_at).getTime() >= cutoff)
+          (r) => r.completed_at != null && new Date(r.completed_at).getTime() >= cutoff
         );
         list.sort((a, b) => {
           if (a.completed_at && b.completed_at)
@@ -187,14 +185,29 @@ export function SettingsRemindersDialog({ open, onOpenChange }: SettingsReminder
 
   const handleIncludeChange = (checked: boolean) => {
     setIncludeCompleted(checked);
-    if (checked) setShowAllReminders(false);
+    if (checked) {
+      setShowAllReminders(false);
+      setShowUpcomingOnly(false);
+    }
     if (loaded) load({ includeCompleted: checked, showAll: checked ? false : showAllReminders });
   };
 
   const handleShowAllChange = (checked: boolean) => {
     setShowAllReminders(checked);
-    if (checked) setIncludeCompleted(false);
+    if (checked) {
+      setIncludeCompleted(false);
+      setShowUpcomingOnly(false);
+    }
     if (loaded) load({ showAll: checked, includeCompleted: checked ? false : includeCompleted });
+  };
+
+  const handleShowUpcomingChange = (checked: boolean) => {
+    setShowUpcomingOnly(checked);
+    if (checked) {
+      setIncludeCompleted(false);
+      setShowAllReminders(false);
+    }
+    setPage(1);
   };
 
   return (
@@ -240,10 +253,7 @@ export function SettingsRemindersDialog({ open, onOpenChange }: SettingsReminder
                   <input
                     type="checkbox"
                     checked={showUpcomingOnly}
-                    onChange={(e) => {
-                      setShowUpcomingOnly(e.target.checked);
-                      setPage(1);
-                    }}
+                    onChange={(e) => handleShowUpcomingChange(e.target.checked)}
                     className="rounded"
                   />
                   Show upcoming (next {UPCOMING_DAYS} days)
