@@ -45,12 +45,11 @@ const SendMessageDialog: React.FC<SendMessageDialogProps> = ({
     completionLine = 'Your service has been completed successfully.';
   }
   
+  const amountLine = amount > 0 ? `💰 Amount of ₹${amount} has been collected.\n\n` : '';
   const whatsappMessage = `Dear ${customerName},
 
 ✅ ${completionLine}
-💰 Amount of ₹${amount} has been collected.
-
-For any queries or support, please contact us:
+${amountLine}For any queries or support, please contact us:
 📞 Phone: 8884944288
 📧 Email: info@hydrogenro.com
 🌐 Website: https://hydrogenro.com
