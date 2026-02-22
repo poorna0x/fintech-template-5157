@@ -4866,8 +4866,10 @@ const TechnicianDashboard = () => {
                         const paymentAmount = (job as any).payment_amount || (job as any).actual_cost || 0;
                         const paymentMethod = (job as any).payment_method || '';
                         
-                        // Extract QR code info from requirements
+                        // Extract QR code info and partial amounts from requirements
                         let qrCodeInfo: any = null;
+                        let partialCash = 0;
+                        let partialOnline = 0;
                         try {
                           const requirements = (job as any).requirements;
                           if (requirements) {
@@ -4880,6 +4882,11 @@ const TechnicianDashboard = () => {
                               if (qrReq?.qr_photos) {
                                 qrCodeInfo = qrReq.qr_photos;
                               }
+                              const partialReq = reqs.find((r: any) => r?.partial_cash_amount != null || r?.partial_online_amount != null);
+                              if (partialReq) {
+                                partialCash = Number(partialReq.partial_cash_amount) || 0;
+                                partialOnline = Number(partialReq.partial_online_amount) || 0;
+                              }
                             }
                           }
                         } catch (e) {
@@ -4891,7 +4898,7 @@ const TechnicianDashboard = () => {
                         if (paymentMethod === 'CASH') {
                           paymentTypeDisplay = 'Cash';
                         } else if (paymentMethod === 'PARTIAL') {
-                          paymentTypeDisplay = 'Partial (Cash + Online)';
+                          paymentTypeDisplay = `₹${partialCash.toLocaleString('en-IN', { minimumFractionDigits: 0, maximumFractionDigits: 2 })} cash, ₹${partialOnline.toLocaleString('en-IN', { minimumFractionDigits: 0, maximumFractionDigits: 2 })} online`;
                         } else if (qrCodeInfo?.selected_qr_code_name) {
                           paymentTypeDisplay = qrCodeInfo.selected_qr_code_name;
                         } else if (qrCodeInfo?.qr_code_type) {
@@ -4913,10 +4920,14 @@ const TechnicianDashboard = () => {
                                 {paymentMethod && (
                                   <span>
                                     <span className="font-medium text-gray-700">Mode:</span>{' '}
-                                    <span className="text-gray-900">{paymentMethod === 'PARTIAL' ? 'Partial (Cash + Online)' : paymentMethod.replace('_', ' ')}</span>
+                                    <span className="text-gray-900">
+                                      {paymentMethod === 'PARTIAL'
+                                        ? `Partial (Cash + Online): ₹${partialCash.toLocaleString('en-IN', { minimumFractionDigits: 0, maximumFractionDigits: 2 })} cash, ₹${partialOnline.toLocaleString('en-IN', { minimumFractionDigits: 0, maximumFractionDigits: 2 })} online`
+                                        : paymentMethod.replace('_', ' ')}
+                                    </span>
                                   </span>
                                 )}
-                                {paymentTypeDisplay && (
+                                {paymentTypeDisplay && paymentMethod !== 'PARTIAL' && (
                                   <span>
                                     <span className="font-medium text-gray-700">{paymentMethod === 'CASH' ? 'Type:' : 'QR:'}</span>{' '}
                                     <span className="text-gray-900">{paymentTypeDisplay}</span>

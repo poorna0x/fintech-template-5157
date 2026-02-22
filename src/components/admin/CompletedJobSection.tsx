@@ -117,9 +117,14 @@ export const CompletedJobSection: React.FC<CompletedJobSectionProps> = ({
           {/* Payment Mode */}
           {paymentMethod && (
             <div className="text-gray-700 break-words">
-              <span className="text-gray-500 font-medium">Payment Mode:</span> {
-                paymentMethod === 'CASH' ? 'Cash' :
-                paymentMethod === 'PARTIAL' ? 'Partial (Cash + Online)' :
+              <span className="text-gray-500 font-medium">Payment Mode:</span>{' '}
+              {paymentMethod === 'CASH' ? 'Cash' :
+                paymentMethod === 'PARTIAL' ? (() => {
+                  const partialReq = requirements.find((r: any) => r?.partial_cash_amount != null || r?.partial_online_amount != null);
+                  const cash = Number(partialReq?.partial_cash_amount) || 0;
+                  const online = Number(partialReq?.partial_online_amount) || 0;
+                  return `Partial (Cash + Online): ₹${cash.toLocaleString('en-IN', { minimumFractionDigits: 0, maximumFractionDigits: 2 })} cash, ₹${online.toLocaleString('en-IN', { minimumFractionDigits: 0, maximumFractionDigits: 2 })} online`;
+                })() :
                 paymentMethod === 'ONLINE' || paymentMethod === 'UPI' || paymentMethod === 'CARD' || paymentMethod === 'BANK_TRANSFER' ? 'Online' :
                 paymentMethod
               }

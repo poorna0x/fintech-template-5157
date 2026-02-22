@@ -56,7 +56,9 @@ export const CompleteJobDialog: React.FC<CompleteJobDialogProps> = ({
   const [amcIncludesPrefilter, setAmcIncludesPrefilter] = useState<boolean>(false);
   const [amcAdditionalInfo, setAmcAdditionalInfo] = useState<string>('');
   const [hasAMC, setHasAMC] = useState<boolean | null>(null);
-  const [paymentMode, setPaymentMode] = useState<'CASH' | 'ONLINE' | ''>('');
+  const [paymentMode, setPaymentMode] = useState<'CASH' | 'ONLINE' | 'PARTIAL' | ''>('');
+  const [partialCashAmount, setPartialCashAmount] = useState<string>('');
+  const [partialOnlineAmount, setPartialOnlineAmount] = useState<string>('');
   const [billAmountConfirmOpen, setBillAmountConfirmOpen] = useState(false);
   const [customerHasPrefilter, setCustomerHasPrefilter] = useState<boolean | null>(null);
   const [rawWaterTds, setRawWaterTds] = useState<string>('');
@@ -148,6 +150,8 @@ export const CompleteJobDialog: React.FC<CompleteJobDialogProps> = ({
       setAmcAdditionalInfo('');
       setHasAMC(null);
       setPaymentMode('');
+      setPartialCashAmount('');
+      setPartialOnlineAmount('');
       const customerPrefilter = job.customer 
         ? ((job.customer as any).has_prefilter ?? (job.customer as any).hasPrefilter ?? null)
         : null;
@@ -204,6 +208,8 @@ export const CompleteJobDialog: React.FC<CompleteJobDialogProps> = ({
     setAmcAdditionalInfo('');
     setHasAMC(null);
     setPaymentMode('');
+    setPartialCashAmount('');
+    setPartialOnlineAmount('');
     setCustomerHasPrefilter(null);
     setRawWaterTds('');
     setQrCodeType('');
@@ -235,7 +241,7 @@ export const CompleteJobDialog: React.FC<CompleteJobDialogProps> = ({
     }
     
     // Determine payment mode - if bill is zero, payment mode should be empty
-    const finalPaymentMode = isBillAmountZero() ? '' : (paymentMode as 'CASH' | 'ONLINE' | '');
+    const finalPaymentMode = isBillAmountZero() ? '' : (paymentMode as 'CASH' | 'ONLINE' | 'PARTIAL' | '');
     const finalPaymentScreenshot = isBillAmountZero() ? '' : paymentScreenshot;
     const finalQrCodeType = isBillAmountZero() ? '' : qrCodeType;
     const finalSelectedQrCodeId = isBillAmountZero() ? '' : selectedQrCodeId;
@@ -243,12 +249,18 @@ export const CompleteJobDialog: React.FC<CompleteJobDialogProps> = ({
     setIsSubmittingJobCompletion(true);
     
     try {
-      let dbPaymentMethod: 'CASH' | 'CARD' | 'UPI' | 'BANK_TRANSFER' | null = null;
+      let dbPaymentMethod: 'CASH' | 'CARD' | 'UPI' | 'BANK_TRANSFER' | 'PARTIAL' | null = null;
+      let paymentAmount = parseFloat(billAmount) || 0;
       if (!isBillAmountZero()) {
         if (finalPaymentMode === 'CASH') {
           dbPaymentMethod = 'CASH';
         } else if (finalPaymentMode === 'ONLINE') {
           dbPaymentMethod = 'UPI';
+        } else if (finalPaymentMode === 'PARTIAL') {
+          dbPaymentMethod = 'PARTIAL';
+          const cash = parseFloat(partialCashAmount) || 0;
+          const online = parseFloat(partialOnlineAmount) || 0;
+          paymentAmount = cash + online;
         }
       }
       
@@ -275,7 +287,7 @@ export const CompleteJobDialog: React.FC<CompleteJobDialogProps> = ({
         completed_by: completedByTechnicianId,
         completed_at: new Date().toISOString(),
         actual_cost: parseFloat(billAmount) || 0,
-        payment_amount: parseFloat(billAmount) || 0,
+        payment_amount: paymentAmount,
         payment_method: dbPaymentMethod || (isBillAmountZero() ? null : 'CASH'),
       };
 
@@ -330,7 +342,7 @@ export const CompleteJobDialog: React.FC<CompleteJobDialogProps> = ({
         requirements.push({ bill_photos: billPhotos });
       }
 
-      if (!isBillAmountZero() && finalPaymentMode === 'ONLINE' && finalSelectedQrCodeId) {
+      if (!isBillAmountZero() && (finalPaymentMode === 'ONLINE' || finalPaymentMode === 'PARTIAL') && finalSelectedQrCodeId) {
         const qrPhotos: any = {
           qr_code_type: finalQrCodeType,
           selected_qr_code_id: finalSelectedQrCodeId,
@@ -356,6 +368,12 @@ export const CompleteJobDialog: React.FC<CompleteJobDialogProps> = ({
         requirements.push({ qr_photos: qrPhotos });
       }
 
+      if (finalPaymentMode === 'PARTIAL') {
+        const cash = parseFloat(partialCashAmount) || 0;
+        const online = parseFloat(partialOnlineAmount) || 0;
+        requirements.push({ partial_cash_amount: cash, partial_online_amount: online });
+      }
+
       // Only add AMC if it was actually set (hasAMC === true and years > 0)
       const effectiveHasAMC = hasAMC === true && amcYears > 0;
       if (effectiveHasAMC && amcDateGiven && amcEndDate) {
@@ -370,7 +388,7 @@ export const CompleteJobDialog: React.FC<CompleteJobDialogProps> = ({
         });
       }
 
-      if (billPhotos.length > 0 || (!isBillAmountZero() && finalPaymentMode === 'ONLINE' && finalSelectedQrCodeId) || (effectiveHasAMC && amcDateGiven && amcEndDate)) {
+      if (billPhotos.length > 0 || (!isBillAmountZero() && (finalPaymentMode === 'ONLINE' || finalPaymentMode === 'PARTIAL') && finalSelectedQrCodeId) || finalPaymentMode === 'PARTIAL' || (effectiveHasAMC && amcDateGiven && amcEndDate)) {
         updateData.requirements = JSON.stringify(requirements);
       }
 
@@ -620,6 +638,26 @@ export const CompleteJobDialog: React.FC<CompleteJobDialogProps> = ({
       if (paymentMode === 'ONLINE') {
         if (!selectedQrCodeId) {
           toast.error('Please select a QR code');
+          return;
+        }
+      }
+      // If Partial, validate cash + online and QR when online part > 0
+      if (paymentMode === 'PARTIAL') {
+        const cash = parseFloat(partialCashAmount) || 0;
+        const online = parseFloat(partialOnlineAmount) || 0;
+        const bill = parseFloat(billAmount) || 0;
+        if (cash + online <= 0) {
+          toast.error('Please enter cash and/or online amount');
+          return;
+        }
+        const sum = Math.round((cash + online) * 100) / 100;
+        const billRounded = Math.round(bill * 100) / 100;
+        if (Math.abs(sum - billRounded) > 0.01) {
+          toast.error('Cash + Online amount should equal bill amount');
+          return;
+        }
+        if (online > 0 && !selectedQrCodeId) {
+          toast.error('Please select a QR code for the online part');
           return;
         }
       }
@@ -1062,9 +1100,16 @@ export const CompleteJobDialog: React.FC<CompleteJobDialogProps> = ({
                   <Label htmlFor="payment-mode">Payment Mode *</Label>
                   <Select 
                     value={paymentMode} 
-                    onValueChange={(value: 'CASH' | 'ONLINE') => {
+                    onValueChange={(value: 'CASH' | 'ONLINE' | 'PARTIAL') => {
                       setPaymentMode(value);
                       if (value === 'CASH') {
+                        setQrCodeType('');
+                        setSelectedQrCodeId('');
+                        setPaymentScreenshot('');
+                      }
+                      if (value === 'PARTIAL') {
+                        setPartialCashAmount('');
+                        setPartialOnlineAmount('');
                         setQrCodeType('');
                         setSelectedQrCodeId('');
                         setPaymentScreenshot('');
@@ -1077,11 +1122,65 @@ export const CompleteJobDialog: React.FC<CompleteJobDialogProps> = ({
                     <SelectContent>
                       <SelectItem value="CASH">Cash</SelectItem>
                       <SelectItem value="ONLINE">Online</SelectItem>
+                      <SelectItem value="PARTIAL">Partial (Cash + Online)</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
+
+                {paymentMode === 'PARTIAL' && (
+                  <div className="space-y-3 pl-4 border-l-2 border-gray-200">
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <Label htmlFor="partial-cash">Cash amount (₹)</Label>
+                        <Input
+                          id="partial-cash"
+                          type="text"
+                          inputMode="decimal"
+                          placeholder="0"
+                          value={partialCashAmount}
+                          onChange={(e) => {
+                            const v = e.target.value;
+                            setPartialCashAmount(v);
+                            const bill = parseFloat(billAmount) || 0;
+                            if (v !== '' && !/^\s*$/.test(v)) {
+                              const cash = parseFloat(v.replace(/,/g, '')) || 0;
+                              if (!Number.isNaN(cash) && bill >= 0) {
+                                const online = Math.max(0, Math.round((bill - cash) * 100) / 100);
+                                setPartialOnlineAmount(online === Math.floor(online) ? String(Math.floor(online)) : online.toFixed(2));
+                              }
+                            }
+                          }}
+                          className="mt-1"
+                        />
+                      </div>
+                      <div>
+                        <Label htmlFor="partial-online">Online amount (₹)</Label>
+                        <Input
+                          id="partial-online"
+                          type="text"
+                          inputMode="decimal"
+                          placeholder="0"
+                          value={partialOnlineAmount}
+                          onChange={(e) => {
+                            const v = e.target.value;
+                            setPartialOnlineAmount(v);
+                            const bill = parseFloat(billAmount) || 0;
+                            if (v !== '' && !/^\s*$/.test(v)) {
+                              const online = parseFloat(v.replace(/,/g, '')) || 0;
+                              if (!Number.isNaN(online) && bill >= 0) {
+                                const cash = Math.max(0, Math.round((bill - online) * 100) / 100);
+                                setPartialCashAmount(cash === Math.floor(cash) ? String(Math.floor(cash)) : cash.toFixed(2));
+                              }
+                            }
+                          }}
+                          className="mt-1"
+                        />
+                      </div>
+                    </div>
+                  </div>
+                )}
                 
-                {paymentMode === 'ONLINE' && (
+                {(paymentMode === 'ONLINE' || paymentMode === 'PARTIAL') && (
                   <div className="space-y-4 pl-4 border-l-2 border-gray-200">
                     <div>
                       <Label htmlFor="qr-code-type">Select QR Code *</Label>
@@ -1198,8 +1297,8 @@ export const CompleteJobDialog: React.FC<CompleteJobDialogProps> = ({
                 <div>
                   <Label>Payment Screenshot (Optional)</Label>
                   <p className="text-sm text-gray-500 mb-2">
-                    {paymentMode === 'ONLINE' 
-                      ? 'Upload payment confirmation screenshot' 
+                    {paymentMode === 'ONLINE' || paymentMode === 'PARTIAL'
+                      ? 'Upload payment confirmation screenshot (optional)' 
                       : 'Upload payment receipt (optional)'}
                   </p>
                   <ImageUpload
@@ -1454,6 +1553,10 @@ export const CompleteJobDialog: React.FC<CompleteJobDialogProps> = ({
                 // Step 4 validation: only require payment mode if bill amount is not zero
                 (completeJobStep === 4 && !isBillAmountZero() && !paymentMode) || 
                 (completeJobStep === 4 && !isBillAmountZero() && paymentMode === 'ONLINE' && !selectedQrCodeId) ||
+                (completeJobStep === 4 && !isBillAmountZero() && paymentMode === 'PARTIAL' && (
+                  (parseFloat(partialCashAmount) || 0) + (parseFloat(partialOnlineAmount) || 0) <= 0 ||
+                  (parseFloat(partialOnlineAmount) || 0) > 0 && !selectedQrCodeId
+                )) ||
                 // Step 7 validation: require OTP if step is 7
                 (completeJobStep === 7 && otpInput.join('').length !== 4)
               }
