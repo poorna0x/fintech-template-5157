@@ -6378,6 +6378,10 @@ const TechnicianDashboard = () => {
                             setSelectedQrCodeId('');
                             setPaymentScreenshot('');
                           }
+                          if (value === 'PARTIAL') {
+                            setPartialCashAmount('');
+                            setPartialOnlineAmount('');
+                          }
                         }}
                       >
                         <SelectTrigger className="mt-1">
@@ -6393,18 +6397,27 @@ const TechnicianDashboard = () => {
 
                   {(paymentMode === 'PARTIAL') && (
                     <div className="space-y-3 pl-4 border-l-2 border-gray-200">
-                      <p className="text-sm text-gray-600">Enter amounts received by cash and online. For online part, select payment QR below.</p>
                       <div className="grid grid-cols-2 gap-3">
                         <div>
                           <Label htmlFor="partial-cash">Cash amount (₹)</Label>
                           <Input
                             id="partial-cash"
-                            type="number"
-                            min={0}
-                            step={0.01}
+                            type="text"
+                            inputMode="decimal"
                             placeholder="0"
                             value={partialCashAmount}
-                            onChange={(e) => setPartialCashAmount(e.target.value)}
+                            onChange={(e) => {
+                              const v = e.target.value;
+                              setPartialCashAmount(v);
+                              const bill = parseFloat(billAmount) || 0;
+                              if (v !== '' && !/^\s*$/.test(v)) {
+                                const cash = parseFloat(v.replace(/,/g, '')) || 0;
+                                if (!Number.isNaN(cash) && bill >= 0) {
+                                  const online = Math.max(0, Math.round((bill - cash) * 100) / 100);
+                                  setPartialOnlineAmount(online === Math.floor(online) ? String(Math.floor(online)) : online.toFixed(2));
+                                }
+                              }
+                            }}
                             className="mt-1"
                           />
                         </div>
@@ -6412,12 +6425,22 @@ const TechnicianDashboard = () => {
                           <Label htmlFor="partial-online">Online amount (₹)</Label>
                           <Input
                             id="partial-online"
-                            type="number"
-                            min={0}
-                            step={0.01}
+                            type="text"
+                            inputMode="decimal"
                             placeholder="0"
                             value={partialOnlineAmount}
-                            onChange={(e) => setPartialOnlineAmount(e.target.value)}
+                            onChange={(e) => {
+                              const v = e.target.value;
+                              setPartialOnlineAmount(v);
+                              const bill = parseFloat(billAmount) || 0;
+                              if (v !== '' && !/^\s*$/.test(v)) {
+                                const online = parseFloat(v.replace(/,/g, '')) || 0;
+                                if (!Number.isNaN(online) && bill >= 0) {
+                                  const cash = Math.max(0, Math.round((bill - online) * 100) / 100);
+                                  setPartialCashAmount(cash === Math.floor(cash) ? String(Math.floor(cash)) : cash.toFixed(2));
+                                }
+                              }
+                            }}
                             className="mt-1"
                           />
                         </div>
