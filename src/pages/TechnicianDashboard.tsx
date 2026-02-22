@@ -4026,16 +4026,6 @@ const TechnicianDashboard = () => {
               <DropdownMenuContent align="end">
                 <DropdownMenuItem 
                   onClick={() => {
-                    loadAssignedJobs();
-                    loadAssignmentRequests();
-                    toast.success('Refreshing jobs...');
-                  }}
-                >
-                  <RefreshCw className="w-4 h-4 mr-2" />
-                  Refresh
-                </DropdownMenuItem>
-                <DropdownMenuItem 
-                  onClick={() => {
                     setTechnicianIdCardDialogOpen(true);
                   }}
                 >
@@ -4993,26 +4983,6 @@ const TechnicianDashboard = () => {
                             >
                               <Package className="w-3.5 h-3.5 mr-1.5" />
                               Add Parts
-                            </Button>
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              onClick={() => {
-                                const customerId = (job.customer as any)?.id ?? (job as any).customer_id;
-                                if (customerId) {
-                                  setReminderEntity({ type: 'customer', id: customerId });
-                                  const custName = (job.customer as any)?.full_name || (job.customer as any)?.fullName || 'Customer';
-                                  const custCode = (job.customer as any)?.customer_id || (job.customer as any)?.customerId || '';
-                                  setReminderContextLabel(custCode ? `${custName} (${custCode})` : custName);
-                                  setAddReminderDialogOpen(true);
-                                } else {
-                                  toast.error('Customer not found for this job');
-                                }
-                              }}
-                              className="text-xs"
-                            >
-                              <Bell className="w-3.5 h-3.5 mr-1.5" />
-                              Add reminder
                             </Button>
                           </div>
                         );
