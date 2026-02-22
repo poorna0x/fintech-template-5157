@@ -2763,7 +2763,95 @@ export const db = {
       
       return { error };
     }
-  }
+  },
+
+  reminders: {
+    async create(row: {
+      entity_type: 'customer' | 'job' | 'general';
+      entity_id?: string | null;
+      title: string;
+      notes?: string | null;
+      reminder_at: string;
+      created_by?: string | null;
+      interval_type?: 'days' | 'months' | null;
+      interval_value?: number | null;
+    }) {
+      const { data, error } = await supabase
+        .from('reminders')
+        .insert({
+          entity_type: row.entity_type,
+          entity_id: row.entity_id ?? null,
+          title: row.title,
+          notes: row.notes ?? null,
+          reminder_at: row.reminder_at,
+          created_by: row.created_by ?? null,
+          interval_type: row.interval_type ?? null,
+          interval_value: row.interval_value ?? null,
+        })
+        .select()
+        .single();
+      return { data, error };
+    },
+    async getForTodayAndTomorrow() {
+      const today = new Date().toISOString().split('T')[0];
+      const tomorrow = new Date(Date.now() + 86400000).toISOString().split('T')[0];
+      const { data, error } = await supabase
+        .from('reminders')
+        .select('*')
+        .in('reminder_at', [today, tomorrow])
+        .is('completed_at', null)
+        .order('reminder_at', { ascending: true })
+        .order('created_at', { ascending: true });
+      return { data: data || [], error };
+    },
+    async getAll(includeCompleted = false) {
+      let query = supabase
+        .from('reminders')
+        .select('*')
+        .order('reminder_at', { ascending: true })
+        .order('created_at', { ascending: false });
+      if (!includeCompleted) {
+        query = query.is('completed_at', null);
+      }
+      const { data, error } = await query;
+      return { data: data || [], error };
+    },
+    async getByEntity(entityType: 'customer' | 'job' | 'general', entityId: string | null, includeCompleted = false) {
+      if (!entityId) return { data: [], error: null };
+      let query = supabase
+        .from('reminders')
+        .select('*')
+        .eq('entity_type', entityType)
+        .eq('entity_id', entityId)
+        .order('reminder_at', { ascending: true })
+        .order('created_at', { ascending: false });
+      if (!includeCompleted) {
+        query = query.is('completed_at', null);
+      }
+      const { data, error } = await query;
+      return { data: data || [], error };
+    },
+    async update(id: string, updates: {
+      title?: string;
+      notes?: string | null;
+      reminder_at?: string;
+      completed_at?: string | null;
+      interval_type?: 'days' | 'months' | null;
+      interval_value?: number | null;
+    }) {
+      const { data, error } = await supabase
+        .from('reminders')
+        .update(updates)
+        .eq('id', id)
+        .select()
+        .single();
+      return { data, error };
+    },
+    async delete(id: string) {
+      const { error } = await supabase.from('reminders').delete().eq('id', id);
+      return { error };
+    },
+  },
 };
 
 // Utility functions

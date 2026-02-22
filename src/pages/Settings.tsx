@@ -40,6 +40,8 @@ import ImageUpload from '@/components/ImageUpload';
 import { CommonQrCode, invalidateQrCodesCache } from '@/lib/qrCodeManager';
 import JSZip from 'jszip';
 import CallingPage from '@/pages/CallingPage';
+import { RemindersList } from '@/components/reminders/RemindersList';
+import { TodayRemindersPopup } from '@/components/reminders/TodayRemindersPopup';
 
 const Settings = () => {
   const { user, isAdmin, logout } = useAuth();
@@ -1417,6 +1419,9 @@ const Settings = () => {
               </div>
             </CardContent>
           </Card>
+
+          {/* Reminders */}
+          <RemindersList />
 
           {/* GST Invoices */}
           <Card>
@@ -2844,6 +2849,7 @@ const Settings = () => {
           </CardContent>
         </Card>
       </div>
+      <TodayRemindersPopup />
     </div>
   );
 };

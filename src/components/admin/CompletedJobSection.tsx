@@ -391,8 +391,6 @@ export const CompletedJobSection: React.FC<CompletedJobSectionProps> = ({
           )}
         </div>
       </div>
-      
-      {/* Parts Used Dialog */}
       {assignedTechnician && (
         <JobPartsUsedDialog
           open={partsUsedDialogOpen}

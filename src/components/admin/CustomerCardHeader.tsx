@@ -2,7 +2,7 @@ import React from 'react';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
-import { Edit, Plus, Camera, FileText, MoreVertical, Receipt, Star } from 'lucide-react';
+import { Edit, Plus, Camera, FileText, MoreVertical, Receipt, Star, Bell } from 'lucide-react';
 import { Customer } from '@/types';
 import { WhatsAppIcon } from '@/components/WhatsAppIcon';
 
@@ -23,6 +23,8 @@ interface CustomerCardHeaderProps {
   onSetCustomerReportDialogOpen: (open: boolean) => void;
   onSetMoreOptionsDialogOpen: (updater: (prev: Record<string, boolean>) => Record<string, boolean>) => void;
   onViewAMCInfo?: (customer: Customer) => void;
+  onAddReminder?: (customer: Customer) => void;
+  onViewReminders?: (customer: Customer) => void;
 }
 
 export const CustomerCardHeader: React.FC<CustomerCardHeaderProps> = ({
@@ -42,6 +44,8 @@ export const CustomerCardHeader: React.FC<CustomerCardHeaderProps> = ({
   onSetCustomerReportDialogOpen,
   onSetMoreOptionsDialogOpen,
   onViewAMCInfo,
+  onAddReminder,
+  onViewReminders,
 }) => {
   return (
     <div className="bg-gray-50 p-4 border-b border-gray-200">
@@ -151,7 +155,35 @@ export const CustomerCardHeader: React.FC<CustomerCardHeaderProps> = ({
               <div className="grid gap-2 py-4">
                 <Button 
                   variant="outline"
-                  className="w-full justify-start h-auto py-3 px-4"
+                  className="w-full justify-start h-auto py-3 px-4 min-h-[44px]"
+                  onClick={() => {
+                    onSetMoreOptionsDialogOpen(prev => ({ ...prev, [customer.id]: false }));
+                    onAddReminder?.(customer);
+                  }}
+                >
+                  <Bell className="mr-3 h-5 w-5 shrink-0" />
+                  <div className="text-left">
+                    <div className="font-medium">Add reminder</div>
+                    <div className="text-xs text-muted-foreground">Add a reminder for this customer</div>
+                  </div>
+                </Button>
+                <Button 
+                  variant="outline"
+                  className="w-full justify-start h-auto py-3 px-4 min-h-[44px]"
+                  onClick={() => {
+                    onSetMoreOptionsDialogOpen(prev => ({ ...prev, [customer.id]: false }));
+                    onViewReminders?.(customer);
+                  }}
+                >
+                  <Bell className="mr-3 h-5 w-5 shrink-0" />
+                  <div className="text-left">
+                    <div className="font-medium">View reminders</div>
+                    <div className="text-xs text-muted-foreground">See and edit reminders for this customer</div>
+                  </div>
+                </Button>
+                <Button 
+                  variant="outline"
+                  className="w-full justify-start h-auto py-3 px-4 min-h-[44px]"
                   onClick={() => {
                     onSetMoreOptionsDialogOpen(prev => ({ ...prev, [customer.id]: false }));
                     onGenerateBill(customer);
@@ -313,6 +345,14 @@ export const CustomerCardHeader: React.FC<CustomerCardHeaderProps> = ({
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end" className="w-48">
+              <DropdownMenuItem onClick={() => onAddReminder?.(customer)}>
+                <Bell className="mr-2 h-4 w-4" />
+                Add reminder
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => onViewReminders?.(customer)}>
+                <Bell className="mr-2 h-4 w-4" />
+                View reminders
+              </DropdownMenuItem>
               <DropdownMenuItem onClick={() => onGenerateBill(customer)}>
                 <Receipt className="mr-2 h-4 w-4" />
                 Generate Bill

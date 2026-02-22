@@ -108,6 +108,9 @@ import AssignJobDialog from './admin/AssignJobDialog';
 import AddTeamDialog from './admin/AddTeamDialog';
 import RemoveTeamDialog from './admin/RemoveTeamDialog';
 import NewJobDialog from './admin/NewJobDialog';
+import { AddReminderDialog } from './reminders/AddReminderDialog';
+import { TodayRemindersPopup } from './reminders/TodayRemindersPopup';
+import { CustomerRemindersDialog } from './reminders/CustomerRemindersDialog';
 import EditJobDialog from './admin/EditJobDialog';
 import PhoneNumbersDialog from './admin/PhoneNumbersDialog';
 import DescriptionDialog from './admin/DescriptionDialog';
@@ -666,6 +669,10 @@ const AdminDashboard = () => {
   const [completedJobEditData, setCompletedJobEditData] = useState<any>({});
   const [sendMessageDialogOpen, setSendMessageDialogOpen] = useState(false);
   const [selectedJobForMessage, setSelectedJobForMessage] = useState<any | null>(null);
+  const [addReminderDialogOpen, setAddReminderDialogOpen] = useState(false);
+  const [reminderEntity, setReminderEntity] = useState<{ type: 'customer' | 'job' | 'general'; id: string | null }>({ type: 'general', id: null });
+  const [reminderContextLabel, setReminderContextLabel] = useState<string>('');
+  const [viewRemindersCustomer, setViewRemindersCustomer] = useState<Customer | null>(null);
   const [messageSentFilter, setMessageSentFilter] = useState<'all' | 'sent' | 'not_sent'>('not_sent');
   const [statusFilter, setStatusFilter] = useState<'ALL' | 'ONGOING' | 'PENDING' | 'ASSIGNED' | 'EN_ROUTE' | 'IN_PROGRESS' | 'COMPLETED' | 'CANCELLED' | 'RESCHEDULED'>('ONGOING');
   const [loadingCustomerJobs, setLoadingCustomerJobs] = useState<{[customerId: string]: boolean}>({});
@@ -7761,6 +7768,12 @@ const AdminDashboard = () => {
                   onSetCustomerReportDialogOpen={setCustomerReportDialogOpen}
                   onSetMoreOptionsDialogOpen={setMoreOptionsDialogOpen}
                   onViewAMCInfo={handleViewAMCInfo}
+                  onAddReminder={(customer) => {
+                    setReminderEntity({ type: 'customer', id: customer.id });
+                    setReminderContextLabel(`${(customer as any).full_name || customer.fullName} (Customer)`);
+                    setAddReminderDialogOpen(true);
+                  }}
+                  onViewReminders={(customer) => setViewRemindersCustomer(customer)}
                 />
 
                 {/* Contact & Communication - Mobile First */}
@@ -9972,6 +9985,21 @@ const AdminDashboard = () => {
         onOpenChange={setSendMessageDialogOpen}
         job={selectedJobForMessage}
         onMessageSent={handleMessageSent}
+      />
+
+      <AddReminderDialog
+        open={addReminderDialogOpen}
+        onOpenChange={setAddReminderDialogOpen}
+        entity={reminderEntity}
+        contextLabel={reminderContextLabel || undefined}
+      />
+
+      <TodayRemindersPopup />
+
+      <CustomerRemindersDialog
+        open={!!viewRemindersCustomer}
+        onOpenChange={(open) => !open && setViewRemindersCustomer(null)}
+        customer={viewRemindersCustomer}
       />
 
       {/* PIN Dialog */}

@@ -488,6 +488,56 @@ export interface Database {
           text: string;
         }>;
       };
+      reminders: {
+        Row: {
+          id: string;
+          entity_type: 'customer' | 'job' | 'general';
+          entity_id: string | null;
+          title: string;
+          notes: string | null;
+          reminder_at: string;
+          created_by: string | null;
+          created_at: string;
+          completed_at: string | null;
+          interval_type: 'days' | 'months' | null;
+          interval_value: number | null;
+        };
+        Insert: {
+          entity_type?: 'customer' | 'job' | 'general';
+          entity_id?: string | null;
+          title: string;
+          notes?: string | null;
+          reminder_at: string;
+          created_by?: string | null;
+          completed_at?: string | null;
+          interval_type?: 'days' | 'months' | null;
+          interval_value?: number | null;
+        };
+        Update: Partial<{
+          entity_type: string;
+          entity_id: string | null;
+          title: string;
+          notes: string | null;
+          reminder_at: string;
+          completed_at: string | null;
+          interval_type: 'days' | 'months' | null;
+          interval_value: number | null;
+        }>;
+      };
     };
   };
+}
+
+export interface Reminder {
+  id: string;
+  entity_type: 'customer' | 'job' | 'general';
+  entity_id: string | null;
+  title: string;
+  notes: string | null;
+  reminder_at: string;
+  created_by: string | null;
+  created_at: string;
+  completed_at: string | null;
+  interval_type: 'days' | 'months' | null;
+  interval_value: number | null;
 }

@@ -63,6 +63,8 @@ import { saveJobCompletionProgress, getQueuedCompletionForJob } from '@/lib/offl
 import { withTimeout, isSlowNetworkError, isTimeoutError } from '@/lib/networkTimeout';
 import TechnicianInventoryView from '@/components/TechnicianInventoryView';
 import JobPartsUsedDialog from '@/components/admin/JobPartsUsedDialog';
+import { AddReminderDialog } from '@/components/reminders/AddReminderDialog';
+import { TodayRemindersPopup } from '@/components/reminders/TodayRemindersPopup';
 
 // Bangalore areas list for location extraction
 const bangaloreAreas = [
@@ -335,6 +337,9 @@ const TechnicianDashboard = () => {
   const [selectedBillPhotos, setSelectedBillPhotos] = useState<string[]>([]);
   const [partsUsedDialogOpen, setPartsUsedDialogOpen] = useState(false);
   const [selectedJobForParts, setSelectedJobForParts] = useState<Job | null>(null);
+  const [addReminderDialogOpen, setAddReminderDialogOpen] = useState(false);
+  const [reminderEntity, setReminderEntity] = useState<{ type: 'customer' | 'job' | 'general'; id: string | null }>({ type: 'general', id: null });
+  const [reminderContextLabel, setReminderContextLabel] = useState<string>('');
   useEffect(() => {
     registerTechnicianPWA();
     
@@ -4915,7 +4920,7 @@ const TechnicianDashboard = () => {
                         return null;
                       })()}
 
-                      {/* View Bill & Add Parts for Completed Jobs */}
+                      {/* View Bill & Add Parts for Completed Jobs (Add Reminder removed from completed section) */}
                       {statusFilter === 'COMPLETED' && (job.status === 'COMPLETED' || (job as any).status === 'COMPLETED') && (() => {
                         let requirements: any[] = [];
                         try {
@@ -7910,6 +7915,14 @@ const TechnicianDashboard = () => {
           </div>
         </DialogContent>
       </Dialog>
+
+      <AddReminderDialog
+        open={addReminderDialogOpen}
+        onOpenChange={setAddReminderDialogOpen}
+        entity={reminderEntity}
+        contextLabel={reminderContextLabel || undefined}
+      />
+      <TodayRemindersPopup />
 
       {/* Job Parts Used Dialog - technician can add parts for completed jobs */}
       {user && (
