@@ -40,6 +40,7 @@ import ImageUpload from '@/components/ImageUpload';
 import { CommonQrCode, invalidateQrCodesCache } from '@/lib/qrCodeManager';
 import JSZip from 'jszip';
 import CallingPage from '@/pages/CallingPage';
+import { SettingsRemindersDialog } from '@/components/reminders/SettingsRemindersDialog';
 
 const Settings = () => {
   const { user, isAdmin, logout } = useAuth();
@@ -113,6 +114,9 @@ const Settings = () => {
 
   // Calling view state
   const [showCallingPage, setShowCallingPage] = useState(false);
+
+  // Reminders dialog (view/search, no add)
+  const [remindersDialogOpen, setRemindersDialogOpen] = useState(false);
 
   // Load data on component mount
   useEffect(() => {
@@ -1418,7 +1422,7 @@ const Settings = () => {
             </CardContent>
           </Card>
 
-          {/* Reminders - separate page with load-on-click, pagination, search */}
+          {/* Reminders - dialog: recent completed, show all, search */}
           <Card>
             <CardHeader>
               <CardTitle className="flex items-center gap-2 text-lg sm:text-xl">
@@ -1426,20 +1430,24 @@ const Settings = () => {
                 Reminders
               </CardTitle>
               <CardDescription className="text-sm mt-1">
-                View and manage all reminders. Search by customer, paginated list.
+                View and search reminders by customer. Recent completed and show all options.
               </CardDescription>
             </CardHeader>
             <CardContent className="p-4 sm:p-6">
               <Button
                 variant="outline"
                 className="w-full sm:w-auto"
-                onClick={() => navigate('/settings/reminders')}
+                onClick={() => setRemindersDialogOpen(true)}
               >
                 <ListTodo className="w-4 h-4 mr-2" />
                 Open Reminders
               </Button>
             </CardContent>
           </Card>
+          <SettingsRemindersDialog
+            open={remindersDialogOpen}
+            onOpenChange={setRemindersDialogOpen}
+          />
 
           {/* GST Invoices */}
           <Card>

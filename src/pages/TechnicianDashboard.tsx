@@ -6758,6 +6758,29 @@ const TechnicianDashboard = () => {
                       required
                     />
                   </div>
+                  {selectedJobForComplete?.customer && (
+                    <div className="pt-2 border-t border-gray-200">
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        className="text-gray-600 hover:text-gray-900"
+                        onClick={() => {
+                          const customerId = (selectedJobForComplete.customer as any)?.id ?? (selectedJobForComplete as any).customer_id;
+                          if (customerId) {
+                            setReminderEntity({ type: 'customer', id: customerId });
+                            const name = (selectedJobForComplete.customer as any)?.full_name || (selectedJobForComplete.customer as any)?.fullName || 'Customer';
+                            const code = (selectedJobForComplete.customer as any)?.customer_id || (selectedJobForComplete.customer as any)?.customerId || '';
+                            setReminderContextLabel(code ? `${name} (${code})` : name);
+                            setAddReminderDialogOpen(true);
+                          }
+                        }}
+                      >
+                        <Bell className="w-4 h-4 mr-2" />
+                        Set reminder for this customer
+                      </Button>
+                    </div>
+                  )}
                 </div>
               )}
 
