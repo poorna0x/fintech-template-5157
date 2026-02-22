@@ -52,23 +52,20 @@ export function SettingsRemindersDialog({ open, onOpenChange }: SettingsReminder
     const include = overrides?.includeCompleted ?? includeCompleted;
     const showAll = overrides?.showAll ?? showAllReminders;
     setLoading(true);
-    db.reminders.getAll(showAll || include).then(({ data, error }) => {
+    // showAll = only active; include = active + recent completed; neither = active only
+    db.reminders.getAll(include && !showAll).then(({ data, error }) => {
       if (error) {
         setLoading(false);
         toast.error(error.message);
         return;
       }
       let list = (data as Reminder[]) || [];
-      if (showAll) {
-        // Show all: active + completed, no date filter
-        list.sort((a, b) => {
-          if (a.completed_at && b.completed_at)
-            return new Date(b.completed_at).getTime() - new Date(a.completed_at).getTime();
-          if (a.completed_at) return 1;
-          if (b.completed_at) return -1;
-          return new Date(b.reminder_at).getTime() - new Date(a.reminder_at).getTime();
-        });
-      } else if (include) {
+      if (showAll || !include) {
+        // Show only active reminders
+        list = list.filter((r) => !r.completed_at);
+        list.sort((a, b) => new Date(a.reminder_at).getTime() - new Date(b.reminder_at).getTime());
+      } else {
+        // Include recent completed: active + completed in last 7 days
         const cutoff = Date.now() - RECENT_COMPLETED_DAYS * 24 * 60 * 60 * 1000;
         list = list.filter(
           (r) =>
@@ -82,8 +79,6 @@ export function SettingsRemindersDialog({ open, onOpenChange }: SettingsReminder
           if (b.completed_at) return -1;
           return new Date(b.reminder_at).getTime() - new Date(a.reminder_at).getTime();
         });
-      } else {
-        list = list.filter((r) => !r.completed_at);
       }
       setReminders(list);
       const customerIds = [
@@ -224,7 +219,7 @@ export function SettingsRemindersDialog({ open, onOpenChange }: SettingsReminder
                     onChange={(e) => handleShowAllChange(e.target.checked)}
                     className="rounded"
                   />
-                  Show all reminders
+                  Show only active reminders
                 </label>
               </div>
               <div className="relative">
@@ -257,11 +252,9 @@ export function SettingsRemindersDialog({ open, onOpenChange }: SettingsReminder
                 <p className="text-sm text-muted-foreground">
                   {searchQuery.trim()
                     ? 'No reminders match your search.'
-                    : showAllReminders
-                      ? 'No reminders.'
-                      : includeCompleted
-                        ? `No completed reminders in the last ${RECENT_COMPLETED_DAYS} days.`
-                        : 'No active reminders.'}
+                    : showAllReminders || !includeCompleted
+                      ? 'No active reminders.'
+                      : `No completed reminders in the last ${RECENT_COMPLETED_DAYS} days.`}
                 </p>
               ) : (
                 <>
