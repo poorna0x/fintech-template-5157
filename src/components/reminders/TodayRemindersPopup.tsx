@@ -9,9 +9,6 @@ import { useAuth } from '@/contexts/AuthContext';
 import { AddReminderDialog } from './AddReminderDialog';
 import type { Reminder } from '@/types';
 
-// Only set when user clicks "Got it" (marks complete). Close/X does NOT set this, so popup shows again on next load until Got it.
-const SESSION_KEY = 'reminders_popup_gotit_date';
-
 type CustomerLabel = { name: string; customerId: string };
 
 export function TodayRemindersPopup() {
@@ -23,7 +20,7 @@ export function TodayRemindersPopup() {
   const [markingDone, setMarkingDone] = useState(false);
 
   const loadToday = useCallback(() => {
-    const today = new Date().toISOString().split('T')[0];
+    const today = format(new Date(), 'yyyy-MM-dd');
     db.reminders.getForTodayAndTomorrow().then(({ data, error }) => {
       if (error || !data) return;
       const forToday = (data as Reminder[]).filter((r) => r.reminder_at === today);
@@ -44,34 +41,56 @@ export function TodayRemindersPopup() {
     });
   }, []);
 
-  // Show popup when there are today's reminders. Re-runs on every mount (refresh or navigate to admin/settings/technician).
-  // As long as those reminders exist and user hasn't clicked "Got it", popup shows again. Only "Got it" sets SESSION_KEY for today.
+  // Show popup whenever there are reminders for today that are not completed (no sessionStorage; purely data-driven).
   useEffect(() => {
-    const today = new Date().toISOString().split('T')[0];
-    const gotItToday = sessionStorage.getItem(SESSION_KEY);
-    if (gotItToday === today) return;
+    const today = format(new Date(), 'yyyy-MM-dd');
+    let retryTimeoutId: ReturnType<typeof setTimeout> | null = null;
 
-    db.reminders.getForTodayAndTomorrow().then(({ data, error }) => {
-      if (error || !data) return;
-      const forToday = (data as Reminder[]).filter((r) => r.reminder_at === today);
-      if (forToday.length > 0) {
-        setTodayReminders(forToday);
-        setOpen(true);
-        const customerIds = [...new Set(
-          forToday
-            .filter((r) => r.entity_type === 'customer' && r.entity_id)
-            .map((r) => r.entity_id as string)
-        )];
-        const labels: Record<string, CustomerLabel> = {};
-        Promise.all(
-          customerIds.map((id) =>
-            db.customers.getById(id).then(({ data: c }) => {
-              if (c) labels[id] = { name: (c as any).full_name || 'Customer', customerId: (c as any).customer_id || id.slice(0, 8) };
-            })
-          )
-        ).then(() => setCustomerLabels(labels));
-      }
-    });
+    const tryLoad = (isRetry = false) => {
+      db.reminders.getForTodayAndTomorrow().then(({ data, error }) => {
+        if (import.meta.env.DEV) {
+          console.log('[Reminders popup] getForTodayAndTomorrow' + (isRetry ? ' (retry)' : '') + ':', {
+            today,
+            error: error?.message ?? null,
+            dataLength: Array.isArray(data) ? data.length : 0,
+            reminderDates: Array.isArray(data) ? (data as Reminder[]).map((r) => r.reminder_at) : [],
+          });
+        }
+        if (error) {
+          toast.error('Reminders could not be loaded. Check RLS policies for the reminders table.');
+          return;
+        }
+        const list = (data || []) as Reminder[];
+        const forToday = list.filter((r) => r.reminder_at === today);
+        if (forToday.length > 0) {
+          setTodayReminders(forToday);
+          setOpen(true);
+          const customerIds = [...new Set(
+            forToday
+              .filter((r) => r.entity_type === 'customer' && r.entity_id)
+              .map((r) => r.entity_id as string)
+          )];
+          const labels: Record<string, CustomerLabel> = {};
+          Promise.all(
+            customerIds.map((id) =>
+              db.customers.getById(id).then(({ data: c }) => {
+                if (c) labels[id] = { name: (c as any).full_name || 'Customer', customerId: (c as any).customer_id || id.slice(0, 8) };
+              })
+            )
+          ).then(() => setCustomerLabels(labels));
+        } else if (!isRetry && Array.isArray(data) && data.length === 0) {
+          // First attempt returned empty; retry once after delay (session may not have been ready)
+          retryTimeoutId = setTimeout(() => tryLoad(true), 1500);
+        }
+      });
+    };
+
+    // Delay first run so admin dashboard and Supabase session are ready after refresh
+    const initialTimeoutId = setTimeout(() => tryLoad(false), 400);
+    return () => {
+      clearTimeout(initialTimeoutId);
+      if (retryTimeoutId != null) clearTimeout(retryTimeoutId);
+    };
   }, []);
 
   const markOneCompleted = async (r: Reminder) => {
@@ -109,7 +128,6 @@ export function TodayRemindersPopup() {
   const handleGotIt = async () => {
     if (todayReminders.length === 0) {
       setOpen(false);
-      sessionStorage.setItem(SESSION_KEY, new Date().toISOString().split('T')[0]);
       return;
     }
     setMarkingDone(true);
@@ -117,9 +135,8 @@ export function TodayRemindersPopup() {
       for (const r of todayReminders) {
         await markOneCompleted(r);
       }
-      toast.success('Job(s) marked as completed. Popup will not show again today.');
+      toast.success('Reminders marked done. Popup will not show again until there are more reminders for today.');
       setOpen(false);
-      sessionStorage.setItem(SESSION_KEY, new Date().toISOString().split('T')[0]);
     } catch {
       toast.error('Failed to mark some reminders');
     } finally {
@@ -127,8 +144,6 @@ export function TodayRemindersPopup() {
     }
   };
 
-  // Only close the dialog when X or overlay clicked; do NOT set sessionStorage so popup can show again.
-  // SessionStorage is set only when "Got it" is pressed (in handleGotIt), so popup won't show again today only after marking complete.
   return (
     <>
       <Dialog open={open} onOpenChange={setOpen}>
@@ -192,7 +207,7 @@ export function TodayRemindersPopup() {
               {markingDone ? 'Marking...' : 'Got it'}
             </Button>
           </div>
-          <p className="text-xs text-muted-foreground pt-1">&quot;Got it&quot; marks the job as completed (when linked to a job) and stops this popup for today.</p>
+          <p className="text-xs text-muted-foreground pt-1">&quot;Got it&quot; marks the job as completed (when linked to a job) and marks reminders done. The popup will show again whenever there are reminders for today that are not completed.</p>
         </DialogContent>
       </Dialog>
 

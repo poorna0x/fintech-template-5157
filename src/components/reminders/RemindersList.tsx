@@ -24,7 +24,7 @@ const RECENT_COMPLETED_DAYS = 7;
 
 type CustomerLabel = { name: string; customerId: string };
 
-function ReminderRow({
+export function ReminderRow({
   r,
   customerLabel,
   onEdit,

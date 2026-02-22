@@ -2793,8 +2793,12 @@ export const db = {
       return { data, error };
     },
     async getForTodayAndTomorrow() {
-      const today = new Date().toISOString().split('T')[0];
-      const tomorrow = new Date(Date.now() + 86400000).toISOString().split('T')[0];
+      // Use local date so "today" matches reminder_at stored as local date (e.g. from date picker)
+      const now = new Date();
+      const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+      const tomorrowDate = new Date(now);
+      tomorrowDate.setDate(tomorrowDate.getDate() + 1);
+      const tomorrow = `${tomorrowDate.getFullYear()}-${String(tomorrowDate.getMonth() + 1).padStart(2, '0')}-${String(tomorrowDate.getDate()).padStart(2, '0')}`;
       const { data, error } = await supabase
         .from('reminders')
         .select('*')

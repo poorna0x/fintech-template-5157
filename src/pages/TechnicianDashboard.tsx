@@ -64,7 +64,6 @@ import { withTimeout, isSlowNetworkError, isTimeoutError } from '@/lib/networkTi
 import TechnicianInventoryView from '@/components/TechnicianInventoryView';
 import JobPartsUsedDialog from '@/components/admin/JobPartsUsedDialog';
 import { AddReminderDialog } from '@/components/reminders/AddReminderDialog';
-import { TodayRemindersPopup } from '@/components/reminders/TodayRemindersPopup';
 
 // Bangalore areas list for location extraction
 const bangaloreAreas = [
@@ -7922,7 +7921,6 @@ const TechnicianDashboard = () => {
         entity={reminderEntity}
         contextLabel={reminderContextLabel || undefined}
       />
-      <TodayRemindersPopup />
 
       {/* Job Parts Used Dialog - technician can add parts for completed jobs */}
       {user && (

@@ -40,8 +40,6 @@ import ImageUpload from '@/components/ImageUpload';
 import { CommonQrCode, invalidateQrCodesCache } from '@/lib/qrCodeManager';
 import JSZip from 'jszip';
 import CallingPage from '@/pages/CallingPage';
-import { RemindersList } from '@/components/reminders/RemindersList';
-import { TodayRemindersPopup } from '@/components/reminders/TodayRemindersPopup';
 
 const Settings = () => {
   const { user, isAdmin, logout } = useAuth();
@@ -1420,8 +1418,28 @@ const Settings = () => {
             </CardContent>
           </Card>
 
-          {/* Reminders */}
-          <RemindersList />
+          {/* Reminders - separate page with load-on-click, pagination, search */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2 text-lg sm:text-xl">
+                <ListTodo className="w-5 h-5" />
+                Reminders
+              </CardTitle>
+              <CardDescription className="text-sm mt-1">
+                View and manage all reminders. Search by customer, paginated list.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="p-4 sm:p-6">
+              <Button
+                variant="outline"
+                className="w-full sm:w-auto"
+                onClick={() => navigate('/settings/reminders')}
+              >
+                <ListTodo className="w-4 h-4 mr-2" />
+                Open Reminders
+              </Button>
+            </CardContent>
+          </Card>
 
           {/* GST Invoices */}
           <Card>
@@ -2849,7 +2867,6 @@ const Settings = () => {
           </CardContent>
         </Card>
       </div>
-      <TodayRemindersPopup />
     </div>
   );
 };
