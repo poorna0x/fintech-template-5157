@@ -63,6 +63,8 @@ interface CallHistory {
 interface CustomerWithHistory extends Customer {
   lastServiceDate?: string;
   daysSinceService?: number;
+  lastServiceSubType?: string | null;
+  lastServiceType?: string | null;
   lastContacted?: string;
   daysSinceContact?: number;
   lastContactStatus?: string;
@@ -84,6 +86,8 @@ const CallingPage = ({ hideHeader = false, onBack }: CallingPageProps = {}) => {
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
   const [serviceFilter, setServiceFilter] = useState<string>('all');
+  const [serviceHistoryFilter, setServiceHistoryFilter] = useState<string>('all'); // 'all', 'serviced', 'never'
+  const [serviceSubTypeFilter, setServiceSubTypeFilter] = useState<string>('all'); // 'all', specific last service_sub_type
   const [showRecentlyContacted, setShowRecentlyContacted] = useState(false);
   const [recentContactDays, setRecentContactDays] = useState(7); // Don't show if contacted within 7 days
   const [statusFilter, setStatusFilter] = useState<string>('all');
@@ -134,12 +138,30 @@ const CallingPage = ({ hideHeader = false, onBack }: CallingPageProps = {}) => {
 
   useEffect(() => {
     filterCustomers();
-  }, [customers, searchTerm, serviceFilter, showRecentlyContacted, recentContactDays, statusFilter, prefilterFilter]);
+  }, [
+    customers,
+    searchTerm,
+    serviceFilter,
+    serviceHistoryFilter,
+    serviceSubTypeFilter,
+    showRecentlyContacted,
+    recentContactDays,
+    statusFilter,
+    prefilterFilter,
+  ]);
 
   useEffect(() => {
     // Reset to page 1 when filters change
     setCurrentPage(1);
-  }, [searchTerm, serviceFilter, showRecentlyContacted, statusFilter, prefilterFilter]);
+  }, [
+    searchTerm,
+    serviceFilter,
+    serviceHistoryFilter,
+    serviceSubTypeFilter,
+    showRecentlyContacted,
+    statusFilter,
+    prefilterFilter,
+  ]);
 
   useEffect(() => {
     // Calculate paginated customers
@@ -176,10 +198,10 @@ const CallingPage = ({ hideHeader = false, onBack }: CallingPageProps = {}) => {
 
       if (customersError) throw customersError;
 
-      // Get last service dates per customer (only latest completed job per customer)
+      // Get last completed job per customer (latest by completed_at) with type info
       const { data: lastJobsData } = await supabase
         .from('jobs')
-        .select('customer_id, completed_at')
+        .select('customer_id, completed_at, service_type, service_sub_type')
         .eq('status', 'COMPLETED')
         .not('completed_at', 'is', null)
         .order('completed_at', { ascending: false });
@@ -191,10 +213,14 @@ const CallingPage = ({ hideHeader = false, onBack }: CallingPageProps = {}) => {
         .order('contacted_at', { ascending: false });
 
       // Create lookup maps for O(1) access
-      const lastServiceMap = new Map<string, string>();
+      const lastServiceMap = new Map<string, { completed_at: string; service_type?: string | null; service_sub_type?: string | null }>();
       (lastJobsData || []).forEach((job: any) => {
         if (!lastServiceMap.has(job.customer_id)) {
-          lastServiceMap.set(job.customer_id, job.completed_at);
+          lastServiceMap.set(job.customer_id, {
+            completed_at: job.completed_at,
+            service_type: job.service_type || null,
+            service_sub_type: job.service_sub_type || null,
+          });
         }
       });
 
@@ -211,7 +237,8 @@ const CallingPage = ({ hideHeader = false, onBack }: CallingPageProps = {}) => {
       // Process customers efficiently
       const now = new Date().getTime();
       const customersWithHistory: CustomerWithHistory[] = (customersData || []).map((customer: any) => {
-        const lastServiceDate = lastServiceMap.get(customer.id) || customer.last_service_date;
+        const lastJobInfo = lastServiceMap.get(customer.id);
+        const lastServiceDate = lastJobInfo?.completed_at || customer.last_service_date;
         const lastContact = lastContactMap.get(customer.id);
         
         const daysSinceService = lastServiceDate 
@@ -240,6 +267,8 @@ const CallingPage = ({ hideHeader = false, onBack }: CallingPageProps = {}) => {
           rawWaterTds: customer.raw_water_tds ?? 0,
           lastServiceDate,
           daysSinceService,
+          lastServiceSubType: lastJobInfo?.service_sub_type || null,
+          lastServiceType: lastJobInfo?.service_type || null,
           lastContacted: lastContact?.contacted_at || null,
           daysSinceContact,
           lastContactStatus: lastContact?.status || null,
@@ -270,7 +299,7 @@ const CallingPage = ({ hideHeader = false, onBack }: CallingPageProps = {}) => {
       );
     }
 
-    // Filter by service date
+    // Filter by service date window (how long since last service)
     if (serviceFilter !== 'all') {
       const now = new Date();
       filtered = filtered.filter(customer => {
@@ -291,6 +320,29 @@ const CallingPage = ({ hideHeader = false, onBack }: CallingPageProps = {}) => {
           default:
             return true;
         }
+      });
+    }
+
+    // Filter by basic service history (ever serviced vs never)
+    if (serviceHistoryFilter !== 'all') {
+      filtered = filtered.filter(customer => {
+        const hasService = !!customer.lastServiceDate;
+        if (serviceHistoryFilter === 'serviced') {
+          return hasService;
+        }
+        if (serviceHistoryFilter === 'never') {
+          return !hasService;
+        }
+        return true;
+      });
+    }
+
+    // Filter by last service sub type (Installation / Reinstallation / Service, etc.)
+    if (serviceSubTypeFilter !== 'all') {
+      filtered = filtered.filter(customer => {
+        const subType = (customer.lastServiceSubType || '').toUpperCase();
+        if (!subType) return false;
+        return subType === serviceSubTypeFilter.toUpperCase();
       });
     }
 
@@ -724,6 +776,42 @@ const CallingPage = ({ hideHeader = false, onBack }: CallingPageProps = {}) => {
                     <SelectItem value="6months">6-12 Months Ago</SelectItem>
                     <SelectItem value="1year">1+ Year Ago</SelectItem>
                     <SelectItem value="never">Never Serviced</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div>
+                <Label htmlFor="serviceHistoryFilter">Service History</Label>
+                <Select value={serviceHistoryFilter} onValueChange={setServiceHistoryFilter}>
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All Customers</SelectItem>
+                    <SelectItem value="serviced">Customers we have serviced</SelectItem>
+                    <SelectItem value="never">Never serviced (no completed job)</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div>
+                <Label htmlFor="serviceSubTypeFilter">Last Job Type</Label>
+                <Select value={serviceSubTypeFilter} onValueChange={setServiceSubTypeFilter}>
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All Types</SelectItem>
+                    <SelectItem value="Installation">Installation</SelectItem>
+                    <SelectItem value="Reinstallation">Reinstallation</SelectItem>
+                    <SelectItem value="Un-Installation">Un-Installation</SelectItem>
+                    <SelectItem value="Service">Service</SelectItem>
+                    <SelectItem value="Repair">Repair</SelectItem>
+                    <SelectItem value="Maintenance">Maintenance</SelectItem>
+                    <SelectItem value="AMC Service">AMC Service</SelectItem>
+                    <SelectItem value="Inspection">Inspection</SelectItem>
+                    <SelectItem value="Return Complaint">Return Complaint</SelectItem>
+                    <SelectItem value="Other">Other</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
