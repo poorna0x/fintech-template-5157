@@ -14,6 +14,7 @@ interface EditJobFormData {
   serviceSubType: string;
   serviceSubTypeCustom: string;
   description: string;
+  require_otp: boolean;
   scheduledDate: string;
   scheduledTimeSlot: 'MORNING' | 'AFTERNOON' | 'EVENING' | 'CUSTOM' | 'FLEXIBLE';
   scheduledTimeCustom: string;
@@ -67,6 +68,7 @@ const EditJobDialog: React.FC<EditJobDialogProps> = ({
     serviceSubType: 'Installation',
     serviceSubTypeCustom: '',
     description: '',
+    require_otp: false,
     scheduledDate: '',
     scheduledTimeSlot: 'MORNING',
     scheduledTimeCustom: '',
@@ -100,11 +102,12 @@ const EditJobDialog: React.FC<EditJobDialogProps> = ({
         }
       }
       
-      // Extract lead_source, lead_cost, and cost_range from requirements and job
+      // Extract lead_source, lead_cost, cost_range, and OTP from requirements and job
       let leadSource = '';
       let leadSourceCustom = '';
       let leadCost = '0';
       let costAgreed = '';
+      let requireOtp = false;
       
       // Get lead_cost from job (if exists)
       if ((job as any).lead_cost !== undefined && (job as any).lead_cost !== null) {
@@ -159,6 +162,12 @@ const EditJobDialog: React.FC<EditJobDialogProps> = ({
             reqs = JSON.parse(reqs);
           }
           if (Array.isArray(reqs)) {
+            // Detect OTP requirement
+            const otpReq = reqs.find((r: any) => r?.require_otp === true);
+            if (otpReq) {
+              requireOtp = true;
+            }
+
             const req = reqs.find((r: any) => r && typeof r === 'object');
             if (req) {
               if (req.lead_source) {
@@ -171,6 +180,10 @@ const EditJobDialog: React.FC<EditJobDialogProps> = ({
               }
             }
           } else if (reqs && typeof reqs === 'object') {
+            if ((reqs as any).require_otp === true) {
+              requireOtp = true;
+            }
+
             if (reqs.lead_source) {
               const normalized = normalizeLeadSource(reqs.lead_source);
               leadSource = normalized === 'Other' ? 'Other' : normalized;
@@ -206,6 +219,7 @@ const EditJobDialog: React.FC<EditJobDialogProps> = ({
         serviceSubType: isCustomSubType ? 'Custom' : serviceSubType,
         serviceSubTypeCustom: isCustomSubType ? serviceSubType : '',
         description: job.description || '',
+        require_otp: requireOtp,
         scheduledDate: job.scheduled_date || job.scheduledDate || '',
         scheduledTimeSlot: (isCustomTimeSlot ? 'CUSTOM' : (timeSlot || 'MORNING')) as 'MORNING' | 'AFTERNOON' | 'EVENING' | 'CUSTOM' | 'FLEXIBLE',
         scheduledTimeCustom: customTimeValue,
@@ -238,6 +252,7 @@ const EditJobDialog: React.FC<EditJobDialogProps> = ({
       initial.serviceSubType !== editJobFormData.serviceSubType ||
       initial.serviceSubTypeCustom !== editJobFormData.serviceSubTypeCustom ||
       initial.description !== editJobFormData.description ||
+      initial.require_otp !== editJobFormData.require_otp ||
       initial.scheduledDate !== editJobFormData.scheduledDate ||
       initial.scheduledTimeSlot !== editJobFormData.scheduledTimeSlot ||
       initial.scheduledTimeCustom !== editJobFormData.scheduledTimeCustom ||
@@ -286,25 +301,26 @@ const EditJobDialog: React.FC<EditJobDialogProps> = ({
       }
 
       // Get existing requirements or create new one
-      let requirements = (job as any).requirements || [];
-      if (typeof requirements === 'string') {
+      let requirementsArr: any[] = (job as any).requirements || [];
+      if (typeof requirementsArr === 'string') {
         try {
-          requirements = JSON.parse(requirements);
+          requirementsArr = JSON.parse(requirementsArr);
         } catch (e) {
-          requirements = [];
+          requirementsArr = [];
         }
       }
-      if (!Array.isArray(requirements)) {
-        requirements = [requirements];
+      if (!Array.isArray(requirementsArr)) {
+        requirementsArr = [requirementsArr];
       }
       
-      // Update or add lead_source and custom_time
+      // Update or add lead_source and custom_time on a non-OTP requirement object
       const leadSourceValue = editJobFormData.lead_source === 'Other' 
         ? (editJobFormData.lead_source_custom || 'Other')
         : editJobFormData.lead_source;
       
-      // Find existing requirement object or create new one
-      let reqObj = requirements.find((r: any) => r && typeof r === 'object') || {};
+      // Find existing non-OTP requirement object or create new one
+      let leadReqIndex = requirementsArr.findIndex((r: any) => r && typeof r === 'object' && !r.require_otp);
+      let reqObj = leadReqIndex >= 0 ? { ...requirementsArr[leadReqIndex] } : {};
       reqObj.lead_source = leadSourceValue;
       if (editJobFormData.lead_source === 'Other' && editJobFormData.lead_source_custom) {
         reqObj.lead_source_custom = editJobFormData.lead_source_custom;
@@ -319,7 +335,29 @@ const EditJobDialog: React.FC<EditJobDialogProps> = ({
         reqObj.cost_range = editJobFormData.cost_agreed.trim();
       }
       
-      requirements = [reqObj];
+      if (leadReqIndex >= 0) {
+        requirementsArr[leadReqIndex] = reqObj;
+      } else {
+        requirementsArr.unshift(reqObj);
+      }
+
+      // Handle OTP requirement toggle
+      const otpIndex = requirementsArr.findIndex((r: any) => r?.require_otp === true);
+      if (editJobFormData.require_otp) {
+        // If OTP is enabled and doesn't exist, create it
+        if (otpIndex === -1) {
+          const otpCode = Math.floor(1000 + Math.random() * 9000).toString(); // 4-digit OTP
+          requirementsArr.push({
+            require_otp: true,
+            otp_code: otpCode,
+            otp_verified: false
+          });
+        }
+        // If it already exists, keep existing otp_code / state
+      } else if (otpIndex !== -1) {
+        // Remove OTP requirement if toggled off
+        requirementsArr.splice(otpIndex, 1);
+      }
 
       // Calculate estimated_cost from cost_agreed (take first number if range)
       const estimatedCost = editJobFormData.cost_agreed 
@@ -336,7 +374,7 @@ const EditJobDialog: React.FC<EditJobDialogProps> = ({
         scheduled_time_slot: timeSlotValue,
         estimated_cost: estimatedCost,
         lead_cost: leadCostNum,
-        requirements: requirements
+        requirements: requirementsArr
       });
 
       if (error) {
@@ -554,6 +592,19 @@ const EditJobDialog: React.FC<EditJobDialogProps> = ({
               placeholder="Job description and special instructions..."
               rows={3}
             />
+          </div>
+
+          <div className="flex items-center gap-2">
+            <input
+              id="edit-require-otp"
+              type="checkbox"
+              checked={editJobFormData.require_otp}
+              onChange={(e) => setEditJobFormData(prev => ({ ...prev, require_otp: e.target.checked }))}
+              className="rounded"
+            />
+            <Label htmlFor="edit-require-otp" className="cursor-pointer">
+              Require OTP verification for this job
+            </Label>
           </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
