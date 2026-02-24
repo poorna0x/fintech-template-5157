@@ -86,7 +86,7 @@ const CallingPage = ({ hideHeader = false, onBack }: CallingPageProps = {}) => {
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
   const [serviceFilter, setServiceFilter] = useState<string>('all');
-  const [serviceHistoryFilter, setServiceHistoryFilter] = useState<string>('all'); // 'all', 'serviced', 'never'
+  const [serviceHistoryFilter, setServiceHistoryFilter] = useState<string>('serviced'); // 'all', 'serviced', 'never'
   const [serviceSubTypeFilter, setServiceSubTypeFilter] = useState<string>('all'); // 'all', specific last service_sub_type
   const [showRecentlyContacted, setShowRecentlyContacted] = useState(false);
   const [recentContactDays, setRecentContactDays] = useState(7); // Don't show if contacted within 7 days
@@ -378,6 +378,13 @@ const CallingPage = ({ hideHeader = false, onBack }: CallingPageProps = {}) => {
         return true;
       });
     }
+
+    // Sort by days since last service: oldest service first (customers not yet serviced go last)
+    filtered.sort((a, b) => {
+      const aDays = a.daysSinceService != null ? a.daysSinceService : -1;
+      const bDays = b.daysSinceService != null ? b.daysSinceService : -1;
+      return bDays - aDays;
+    });
 
     setFilteredCustomers(filtered);
   };
