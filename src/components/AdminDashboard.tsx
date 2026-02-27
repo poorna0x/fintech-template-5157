@@ -85,7 +85,8 @@ import TechnicianPayments from './TechnicianPayments';
 import BillingStats from './BillingStats';
 import Analytics from './Analytics';
 import InventoryManagement from './InventoryManagement';
-import { generateJobNumber, formatPreferredTimeSlot, mapServiceTypesToDbValue, extractLocationFromAddressString, bangaloreAreas, levenshteinDistance, calculateSimilarity, extractPhotoUrls, parseJobRequirements, getFormattedTimeSlot } from '@/lib/adminUtils';
+import { generateJobNumber, formatPreferredTimeSlot, mapServiceTypesToDbValue, extractLocationFromAddressString, bangaloreAreas, levenshteinDistance, calculateSimilarity, extractPhotoUrls, parseJobRequirements, getFormattedTimeSlot, findLeadSource } from '@/lib/adminUtils';
+import { formatPhoneForWhatsApp } from '@/lib/utils';
 import { StatusBadge } from './admin/StatusBadge';
 import { CustomerCardHeader } from './admin/CustomerCardHeader';
 import { WhatsAppIcon } from './WhatsAppIcon';
@@ -5054,9 +5055,59 @@ const AdminDashboard = () => {
   };
 
   // Handle measure distance for a job - OPTIMIZED: Uses batch API call for all technicians
+  const handleShareJobWhatsApp = (job: Job) => {
+    const assignedTechnicianId = (job as any).assigned_technician_id || job.assignedTechnicianId;
+    if (!assignedTechnicianId) {
+      toast.error('No technician assigned to this job');
+      return;
+    }
+    const technician = technicians.find(t => t.id === assignedTechnicianId);
+    if (!technician?.phone) {
+      toast.error('Technician phone number not found');
+      return;
+    }
+    const customer = (job as any).customer || job.customer;
+    const name = customer?.full_name || customer?.fullName || 'N/A';
+    const phone = customer?.phone || 'N/A';
+    const altPhone = customer?.alternate_phone || customer?.alternatePhone;
+    let requirements: any[] = (job as any).requirements;
+    if (typeof requirements === 'string') {
+      try {
+        requirements = JSON.parse(requirements);
+      } catch {
+        requirements = [];
+      }
+    }
+    if (requirements && !Array.isArray(requirements)) {
+      requirements = requirements && typeof requirements === 'object' ? [requirements] : [];
+    }
+    const leadSource = findLeadSource(requirements || []) || 'N/A';
+    const serviceLocation = (job as any).service_location || job.serviceLocation || {};
+    const lat = serviceLocation?.latitude;
+    const lng = serviceLocation?.longitude;
+    const formattedAddress = serviceLocation?.formattedAddress || serviceLocation?.formatted_address || '';
+    const googleMapLink = (lat != null && lng != null)
+      ? `https://www.google.com/maps?q=${lat},${lng}`
+      : formattedAddress
+        ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(formattedAddress)}`
+        : '';
+    const lines = [
+      `*Job: ${(job as any).job_number || job.jobNumber || job.id}*`,
+      `Name: ${name}`,
+      `Phone: ${phone}`,
+      ...(altPhone ? [`Alt. phone: ${altPhone}`] : []),
+      `Lead source: ${leadSource}`,
+      ...(googleMapLink ? [`Location: ${googleMapLink}`] : []),
+    ];
+    const text = lines.join('\n');
+    const url = `https://wa.me/${formatPhoneForWhatsApp(technician.phone)}?text=${encodeURIComponent(text)}`;
+    window.open(url, '_blank', 'noopener,noreferrer');
+    toast.success('Opening WhatsApp to share job details');
+  };
+
   const handleMeasureDistance = async (job: Job) => {
     setSelectedJobForDistance(job);
-    
+
     console.log('🔍 [AdminDashboard] handleMeasureDistance called for job:', {
       jobId: job.id,
       jobNumber: job.jobNumber || (job as any).job_number
@@ -8632,6 +8683,15 @@ const AdminDashboard = () => {
                                           >
                                             <Navigation className="mr-2 h-4 w-4" />
                                             Measure Distance
+                                          </DropdownMenuItem>
+                                        ) : null;
+                                      })()}
+                                      {(() => {
+                                        const assignedTechnicianId = (job as any).assigned_technician_id || (job as any).assignedTechnicianId;
+                                        return assignedTechnicianId ? (
+                                          <DropdownMenuItem onClick={() => handleShareJobWhatsApp(job)}>
+                                            <MessageSquare className="mr-2 h-4 w-4" />
+                                            Share job in WhatsApp
                                           </DropdownMenuItem>
                                         ) : null;
                                       })()}

@@ -15,6 +15,14 @@
 2. Click "Trigger deploy" > "Deploy site"
 3. Build should now succeed!
 
+## Live site = main only
+
+To make the **live** site deploy only from `main` (no other branch becomes production):
+
+1. **Site settings** → **Build & deploy** → **Continuous deployment**
+2. Set **Production branch** to `main`
+3. Under **Branch deploys**, choose **Only deploy the production branch** (so only pushes to `main` update the live site)
+
 ## Environment Variables Setup
 
 ### IMPORTANT NOTES

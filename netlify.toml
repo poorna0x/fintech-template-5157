@@ -1,5 +1,13 @@
+# Production (live) deploys only when the production branch is pushed.
+# In Netlify: Site settings > Build & deploy > Continuous deployment >
+# set "Production branch" to "main" and enable "Only deploy production branch" if you want live = main only.
+
 [build]
   # Clear cache directories and do fresh install to avoid old cached dependencies
+  command = "rm -rf node_modules/.cache .cache dist && cd netlify/functions && npm install && cd ../.. && npm install && npm run build"
+  publish = "dist"
+
+[context.production]
   command = "rm -rf node_modules/.cache .cache dist && cd netlify/functions && npm install && cd ../.. && npm install && npm run build"
   publish = "dist"
 
