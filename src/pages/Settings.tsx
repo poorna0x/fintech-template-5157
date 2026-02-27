@@ -31,7 +31,8 @@ import {
   FileText,
   LogOut,
   ListTodo,
-  PhoneCall
+  PhoneCall,
+  RefreshCw
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { db, supabase } from '@/lib/supabase';
@@ -1287,13 +1288,27 @@ const Settings = () => {
           {/* Technician Locations */}
           <Card>
             <CardHeader>
-              <CardTitle className="flex items-center gap-2 text-lg sm:text-xl">
-                <MapPin className="w-5 h-5" />
-                Technician Locations
-              </CardTitle>
-              <CardDescription className="text-sm mt-1">
-                View last known location and update time for all technicians
-              </CardDescription>
+              <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3">
+                <div>
+                  <CardTitle className="flex items-center gap-2 text-lg sm:text-xl">
+                    <MapPin className="w-5 h-5" />
+                    Technician Locations
+                  </CardTitle>
+                  <CardDescription className="text-sm mt-1">
+                    View last known location and update time for all technicians
+                  </CardDescription>
+                </div>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => loadTechnicians()}
+                  title="Refresh technician locations"
+                  className="shrink-0"
+                >
+                  <RefreshCw className="w-4 h-4 mr-2" />
+                  Refresh
+                </Button>
+              </div>
             </CardHeader>
             <CardContent className="p-4 sm:p-6">
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">

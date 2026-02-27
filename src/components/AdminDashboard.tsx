@@ -7481,6 +7481,7 @@ const AdminDashboard = () => {
                 title="Refresh data (no full page reload)"
                 onClick={async () => {
                   await loadDashboardData();
+                  await reloadTechnicians();
                   await loadFilteredJobs(statusFilter, currentPage);
                 }}
               >
@@ -7622,6 +7623,7 @@ const AdminDashboard = () => {
               title="Refresh data (no full page reload)"
               onClick={async () => {
                 await loadDashboardData();
+                await reloadTechnicians();
                 await loadFilteredJobs(statusFilter, currentPage);
               }}
             >
@@ -8330,10 +8332,9 @@ const AdminDashboard = () => {
                                     })()}
                                     
                                             {(() => {
-                                      // Get assigned technician info
+                                      // Get assigned technician info (prefer technicians state so refresh shows latest location)
                                       const assignedTechnicianId = (job as any).assigned_technician_id || (job as any).assignedTechnicianId;
-                                      const assignedTechnician = job.assignedTechnician || 
-                                        (assignedTechnicianId ? technicians.find(t => t.id === assignedTechnicianId) : null);
+                                      const assignedTechnician = (assignedTechnicianId ? technicians.find(t => t.id === assignedTechnicianId) : null) || job.assignedTechnician;
                                       
                                       // Get technician name from various possible fields
                                       const technicianName = assignedTechnician?.fullName || 
@@ -8642,10 +8643,9 @@ const AdminDashboard = () => {
                                         Edit Job
                                       </DropdownMenuItem>
                                       {(() => {
-                                        // Use the same logic as the technician name display above
+                                        // Use the same logic as the technician name display above (prefer state for latest location)
                                         const assignedTechnicianId = (job as any).assigned_technician_id || (job as any).assignedTechnicianId;
-                                        const assignedTechnician = job.assignedTechnician || 
-                                          (assignedTechnicianId ? technicians.find(t => t.id === assignedTechnicianId) : null);
+                                        const assignedTechnician = (assignedTechnicianId ? technicians.find(t => t.id === assignedTechnicianId) : null) || job.assignedTechnician;
                                         
                                         // Show reassign option if there's an assigned technician or if status suggests one is assigned
                                         const hasAssignedTechnician = 
