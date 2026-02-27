@@ -5102,6 +5102,8 @@ const AdminDashboard = () => {
     const name = customer?.full_name || customer?.fullName || 'N/A';
     const phone = customer?.phone || 'N/A';
     const altPhone = customer?.alternate_phone || customer?.alternatePhone;
+    const serviceType = (job as any).service_type || job.serviceType || 'N/A';
+    const serviceSubType = (job as any).service_sub_type || job.serviceSubType || '';
     let requirements: any[] = (job as any).requirements;
     if (typeof requirements === 'string') {
       try {
@@ -5123,13 +5125,26 @@ const AdminDashboard = () => {
       : formattedAddress
         ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(formattedAddress)}`
         : '';
+    const serviceAddress = (job as any).service_address || job.serviceAddress || customer?.address || {};
+    const addressParts = [
+      serviceAddress?.visible_address || serviceAddress?.visibleAddress,
+      serviceAddress?.street,
+      serviceAddress?.area,
+      serviceAddress?.city,
+      serviceAddress?.state,
+      serviceAddress?.pincode,
+      serviceAddress?.landmark ? `Landmark: ${serviceAddress.landmark}` : null,
+    ].filter(Boolean);
+    const fullAddressLine = addressParts.length > 0 ? addressParts.join(', ') : (formattedAddress || '');
     const lines = [
       `*Job: ${(job as any).job_number || job.jobNumber || job.id}*`,
+      `Service: ${serviceType}${serviceSubType ? ` - ${serviceSubType}` : ''}`,
       `Name: ${name}`,
       `Phone: ${phone}`,
       ...(altPhone ? [`Alt. phone: ${altPhone}`] : []),
       `Lead source: ${leadSource}`,
       ...(googleMapLink ? [`Location: ${googleMapLink}`] : []),
+      ...(fullAddressLine ? ['', '_Full address:_', fullAddressLine] : []),
     ];
     const text = lines.join('\n');
     const url = `https://wa.me/${formatPhoneForWhatsApp(technician.phone)}?text=${encodeURIComponent(text)}`;
