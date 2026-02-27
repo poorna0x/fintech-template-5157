@@ -21,6 +21,7 @@ interface AMCContract {
   years: number;
   includes_prefilter: boolean;
   additional_info?: string | null;
+  service_period_months?: number | null;
   status: 'ACTIVE' | 'EXPIRED' | 'CANCELLED' | 'RENEWED';
   created_at: string;
   updated_at: string;
@@ -56,6 +57,8 @@ export default function AMCPage() {
   const [editCustomerEmail, setEditCustomerEmail] = useState('');
   const [editCustomerBrand, setEditCustomerBrand] = useState('');
   const [editCustomerModel, setEditCustomerModel] = useState('');
+  const [editServicePeriodKind, setEditServicePeriodKind] = useState<'4' | '6' | 'custom' | 'no_auto'>('4');
+  const [editServicePeriodCustomMonths, setEditServicePeriodCustomMonths] = useState<number>(4);
 
   useEffect(() => {
     loadAMCContracts();
@@ -103,6 +106,23 @@ export default function AMCPage() {
     setEditIncludesPrefilter(amc.includes_prefilter);
     setEditAdditionalInfo(amc.additional_info || '');
     setEditStatus(amc.status);
+    const sp = amc.service_period_months;
+    if (sp == null || sp === undefined) {
+      setEditServicePeriodKind('4');
+      setEditServicePeriodCustomMonths(4);
+    } else if (sp === 0) {
+      setEditServicePeriodKind('no_auto');
+      setEditServicePeriodCustomMonths(4);
+    } else if (sp === 4) {
+      setEditServicePeriodKind('4');
+      setEditServicePeriodCustomMonths(4);
+    } else if (sp === 6) {
+      setEditServicePeriodKind('6');
+      setEditServicePeriodCustomMonths(6);
+    } else {
+      setEditServicePeriodKind('custom');
+      setEditServicePeriodCustomMonths(Math.max(1, sp));
+    }
     // Set customer details
     if (amc.customers) {
       setEditCustomerPhone(amc.customers.phone || '');
@@ -144,6 +164,12 @@ export default function AMCPage() {
     try {
       setIsSaving(true);
       
+      const editServicePeriodMonths =
+        editServicePeriodKind === 'no_auto' ? 0
+          : editServicePeriodKind === '4' ? 4
+          : editServicePeriodKind === '6' ? 6
+          : Math.max(1, editServicePeriodCustomMonths);
+
       // Update AMC contract
       const { error: amcError } = await db.amcContracts.update(selectedAMC.id, {
         start_date: editStartDate,
@@ -151,6 +177,7 @@ export default function AMCPage() {
         years: editYears,
         includes_prefilter: editIncludesPrefilter,
         additional_info: editAdditionalInfo || null,
+        service_period_months: editServicePeriodKind === 'no_auto' ? 0 : editServicePeriodMonths,
         status: editStatus
       });
 
@@ -563,6 +590,35 @@ export default function AMCPage() {
                   placeholder="Enter any additional notes or information..."
                   rows={4}
                 />
+              </div>
+
+              <div className="mt-4">
+                <Label className="text-sm font-medium">AMC service period (auto job creation)</Label>
+                <Select
+                  value={editServicePeriodKind}
+                  onValueChange={(v: '4' | '6' | 'custom' | 'no_auto') => setEditServicePeriodKind(v)}
+                >
+                  <SelectTrigger className="mt-1">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="4">Every 4 months</SelectItem>
+                    <SelectItem value="6">Every 6 months</SelectItem>
+                    <SelectItem value="custom">Custom (months)</SelectItem>
+                    <SelectItem value="no_auto">No auto</SelectItem>
+                  </SelectContent>
+                </Select>
+                {editServicePeriodKind === 'custom' && (
+                  <Input
+                    type="number"
+                    min={1}
+                    max={24}
+                    value={editServicePeriodCustomMonths}
+                    onChange={(e) => setEditServicePeriodCustomMonths(Math.max(1, parseInt(e.target.value, 10) || 1))}
+                    className="mt-1"
+                    placeholder="Months"
+                  />
+                )}
               </div>
             </div>
           </div>

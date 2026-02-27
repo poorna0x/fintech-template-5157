@@ -43,6 +43,56 @@ import JSZip from 'jszip';
 import CallingPage from '@/pages/CallingPage';
 import { SettingsRemindersDialog } from '@/components/reminders/SettingsRemindersDialog';
 
+const STORAGE_KEY_AMC_DEFAULT_SERVICE_PERIOD = 'amc_default_service_period_months';
+
+function AMCDefaultServicePeriodSetting() {
+  const stored = typeof window !== 'undefined' ? localStorage.getItem(STORAGE_KEY_AMC_DEFAULT_SERVICE_PERIOD) : null;
+  const initialNum = stored === null || stored === '' ? 4 : Math.max(0, parseInt(stored, 10) || 4);
+  const [kind, setKind] = useState<'4' | '6' | 'custom' | 'no_auto'>(() => {
+    if (initialNum === 0) return 'no_auto';
+    if (initialNum === 4) return '4';
+    if (initialNum === 6) return '6';
+    return 'custom';
+  });
+  const [customMonths, setCustomMonths] = useState<number>(() => (initialNum > 0 ? initialNum : 4));
+
+  const persist = (value: number) => {
+    localStorage.setItem(STORAGE_KEY_AMC_DEFAULT_SERVICE_PERIOD, String(value));
+  };
+
+  useEffect(() => {
+    const v = kind === 'no_auto' ? 0 : kind === '4' ? 4 : kind === '6' ? 6 : Math.max(1, customMonths);
+    persist(v);
+  }, [kind, customMonths]);
+
+  return (
+    <div className="space-y-3 max-w-xs">
+      <Label className="text-sm font-medium">Default period</Label>
+      <Select value={kind} onValueChange={(v: '4' | '6' | 'custom' | 'no_auto') => setKind(v)}>
+        <SelectTrigger>
+          <SelectValue />
+        </SelectTrigger>
+        <SelectContent>
+          <SelectItem value="4">Every 4 months</SelectItem>
+          <SelectItem value="6">Every 6 months</SelectItem>
+          <SelectItem value="custom">Custom (months)</SelectItem>
+          <SelectItem value="no_auto">No auto</SelectItem>
+        </SelectContent>
+      </Select>
+      {kind === 'custom' && (
+        <Input
+          type="number"
+          min={1}
+          max={24}
+          value={customMonths}
+          onChange={(e) => setCustomMonths(Math.max(1, parseInt(e.target.value, 10) || 1))}
+          placeholder="Months"
+        />
+      )}
+    </div>
+  );
+}
+
 const Settings = () => {
   const { user, isAdmin, logout } = useAuth();
   const navigate = useNavigate();
@@ -1507,6 +1557,22 @@ const Settings = () => {
                 <FileText className="w-4 h-4 mr-2" />
                 Open AMC View
               </Button>
+            </CardContent>
+          </Card>
+
+          {/* AMC default service period */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2 text-lg sm:text-xl">
+                <FileText className="w-5 h-5" />
+                AMC service period (default)
+              </CardTitle>
+              <CardDescription className="text-sm mt-1">
+                Default interval for auto-creating AMC service jobs. Used when creating new AMC contracts if not set per contract. Jobs are due from last service date (or AMC start date if no service yet).
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="p-4 sm:p-6">
+              <AMCDefaultServicePeriodSetting />
             </CardContent>
           </Card>
 

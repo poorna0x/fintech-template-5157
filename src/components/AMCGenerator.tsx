@@ -109,6 +109,21 @@ ${notCoveredWithPreFilter}`;
   const [description, setDescription] = useState('');
   const [isSaving, setIsSaving] = useState(false);
 
+  // AMC service period for auto job creation: 4 months, 6 months, custom, or no auto
+  const getDefaultServicePeriodFromStorage = (): { kind: '4' | '6' | 'custom' | 'no_auto'; customMonths: number } => {
+    if (typeof window === 'undefined') return { kind: '4', customMonths: 4 };
+    const stored = localStorage.getItem('amc_default_service_period_months');
+    if (stored === null || stored === '') return { kind: '4', customMonths: 4 };
+    const n = parseInt(stored, 10);
+    if (Number.isNaN(n) || n <= 0) return { kind: 'no_auto', customMonths: 4 };
+    if (n === 4) return { kind: '4', customMonths: 4 };
+    if (n === 6) return { kind: '6', customMonths: 6 };
+    return { kind: 'custom', customMonths: n };
+  };
+  const defaultServicePeriod = getDefaultServicePeriodFromStorage();
+  const [servicePeriodKind, setServicePeriodKind] = useState<'4' | '6' | 'custom' | 'no_auto'>(defaultServicePeriod.kind);
+  const [servicePeriodCustomMonths, setServicePeriodCustomMonths] = useState<number>(defaultServicePeriod.customMonths);
+
   // Update terms when pre-sediment filtration checkbox changes
   React.useEffect(() => {
     setTerms(generateTerms(includesPreSedimentFiltration));
@@ -281,6 +296,13 @@ ${notCoveredWithPreFilter}`;
         saved_at: new Date().toISOString()
       };
 
+      // Resolve service period months: 0 = no auto
+      const servicePeriodMonths =
+        servicePeriodKind === 'no_auto' ? 0
+          : servicePeriodKind === '4' ? 4
+          : servicePeriodKind === '6' ? 6
+          : Math.max(1, servicePeriodCustomMonths);
+
       // Save AMC contract to database
       const { error: amcError } = await db.amcContracts.create({
         customer_id: customer.id,
@@ -289,7 +311,8 @@ ${notCoveredWithPreFilter}`;
         end_date: endDate,
         years: years,
         includes_prefilter: includesPreSedimentFiltration,
-        additional_info: JSON.stringify(metadata)
+        additional_info: JSON.stringify(metadata),
+        service_period_months: servicePeriodKind === 'no_auto' ? 0 : servicePeriodMonths
       });
 
       if (amcError) {
@@ -986,6 +1009,38 @@ ${notCoveredWithPreFilter}`;
                   <span>Total Amount:</span>
                   <span>₹{totalAmount.toLocaleString()}</span>
                 </div>
+              </div>
+
+              <div className="space-y-2 border-t pt-3">
+                <Label className="text-sm font-medium">AMC service period (auto job creation)</Label>
+                <Select
+                  value={servicePeriodKind}
+                  onValueChange={(v: '4' | '6' | 'custom' | 'no_auto') => setServicePeriodKind(v)}
+                >
+                  <SelectTrigger className="mt-1">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="4">Every 4 months</SelectItem>
+                    <SelectItem value="6">Every 6 months</SelectItem>
+                    <SelectItem value="custom">Custom (months)</SelectItem>
+                    <SelectItem value="no_auto">No auto</SelectItem>
+                  </SelectContent>
+                </Select>
+                {servicePeriodKind === 'custom' && (
+                  <Input
+                    type="number"
+                    min={1}
+                    max={24}
+                    value={servicePeriodCustomMonths}
+                    onChange={(e) => setServicePeriodCustomMonths(Math.max(1, parseInt(e.target.value, 10) || 1))}
+                    className="mt-1"
+                    placeholder="Months"
+                  />
+                )}
+                <p className="text-xs text-gray-500">
+                  Next AMC service job is auto-created from last service date (or AMC start if no service yet).
+                </p>
               </div>
 
               <Button 

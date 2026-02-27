@@ -46,6 +46,7 @@ interface AMCRecord {
   includesPrefilter: boolean;
   additionalNotes?: string;
   amount?: number | string;
+  servicePeriodMonths?: number | null;
   createdAt: string;
   completedAt?: string;
   completedBy?: string;
@@ -71,6 +72,8 @@ const AMCViewPage: React.FC<AMCViewPageProps> = ({ onBack }) => {
     years: 1,
     includesPrefilter: false,
     additionalNotes: '',
+    servicePeriodKind: '4' as '4' | '6' | 'custom' | 'no_auto',
+    servicePeriodCustomMonths: 4,
   });
 
   useEffect(() => {
@@ -152,6 +155,7 @@ const AMCViewPage: React.FC<AMCViewPageProps> = ({ onBack }) => {
             includesPrefilter: amc.includes_prefilter,
             additionalNotes: additionalNotes,
             amount: amcAmount,
+            servicePeriodMonths: (amc as any).service_period_months ?? undefined,
             createdAt: amc.created_at,
             completedAt: null,
             completedBy: null,
@@ -226,12 +230,17 @@ const AMCViewPage: React.FC<AMCViewPageProps> = ({ onBack }) => {
 
   const handleEditAMC = (amc: AMCRecord) => {
     setSelectedAMC(amc);
+    const sp = amc.servicePeriodMonths;
+    const kind = sp == null || sp === undefined ? '4' : sp === 0 ? 'no_auto' : sp === 4 ? '4' : sp === 6 ? '6' : 'custom';
+    const customMonths = (sp != null && sp > 0 && sp !== 4 && sp !== 6) ? sp : 4;
     setEditFormData({
       dateGiven: amc.dateGiven,
       endDate: amc.endDate,
       years: amc.years,
       includesPrefilter: amc.includesPrefilter,
       additionalNotes: amc.additionalNotes || '',
+      servicePeriodKind: kind,
+      servicePeriodCustomMonths: customMonths,
     });
     setEditDialogOpen(true);
   };
@@ -281,13 +290,20 @@ const AMCViewPage: React.FC<AMCViewPageProps> = ({ onBack }) => {
       metadata.description = editFormData.additionalNotes || null;
       metadata.notes = editFormData.additionalNotes || null;
 
+      const servicePeriodMonths =
+        editFormData.servicePeriodKind === 'no_auto' ? 0
+          : editFormData.servicePeriodKind === '4' ? 4
+          : editFormData.servicePeriodKind === '6' ? 6
+          : Math.max(1, editFormData.servicePeriodCustomMonths);
+
       // Update AMC contract
       const { error: updateError } = await db.amcContracts.update(selectedAMC.id, {
         start_date: editFormData.dateGiven,
-          end_date: endDate,
-          years: editFormData.years,
-          includes_prefilter: editFormData.includesPrefilter,
+        end_date: endDate,
+        years: editFormData.years,
+        includes_prefilter: editFormData.includesPrefilter,
         additional_info: JSON.stringify(metadata),
+        service_period_months: editFormData.servicePeriodKind === 'no_auto' ? 0 : servicePeriodMonths,
       });
 
       if (updateError) {
@@ -711,6 +727,41 @@ const AMCViewPage: React.FC<AMCViewPageProps> = ({ onBack }) => {
                     <p className="text-xs text-gray-500 mt-1">
                       Add a description or summary to help identify and understand this AMC contract in the future.
                     </p>
+                  </div>
+                  <div className="col-span-2">
+                    <Label className="text-sm font-medium">AMC service period (auto job creation)</Label>
+                    <Select
+                      value={editFormData.servicePeriodKind}
+                      onValueChange={(v: '4' | '6' | 'custom' | 'no_auto') =>
+                        setEditFormData({ ...editFormData, servicePeriodKind: v })
+                      }
+                    >
+                      <SelectTrigger className="mt-1">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="4">Every 4 months</SelectItem>
+                        <SelectItem value="6">Every 6 months</SelectItem>
+                        <SelectItem value="custom">Custom (months)</SelectItem>
+                        <SelectItem value="no_auto">No auto</SelectItem>
+                      </SelectContent>
+                    </Select>
+                    {editFormData.servicePeriodKind === 'custom' && (
+                      <Input
+                        type="number"
+                        min={1}
+                        max={24}
+                        value={editFormData.servicePeriodCustomMonths}
+                        onChange={(e) =>
+                          setEditFormData({
+                            ...editFormData,
+                            servicePeriodCustomMonths: Math.max(1, parseInt(e.target.value, 10) || 1),
+                          })
+                        }
+                        className="mt-1"
+                        placeholder="Months"
+                      />
+                    )}
                   </div>
                 </div>
                 <div className="flex gap-2 pt-4">

@@ -55,6 +55,23 @@ export const CompleteJobDialog: React.FC<CompleteJobDialogProps> = ({
   const [amcYears, setAmcYears] = useState<number>(0);
   const [amcIncludesPrefilter, setAmcIncludesPrefilter] = useState<boolean>(false);
   const [amcAdditionalInfo, setAmcAdditionalInfo] = useState<string>('');
+  const [amcServicePeriodKind, setAmcServicePeriodKind] = useState<'4' | '6' | 'custom' | 'no_auto'>(() => {
+    if (typeof window === 'undefined') return '4';
+    const stored = localStorage.getItem('amc_default_service_period_months');
+    if (stored === null || stored === '') return '4';
+    const n = parseInt(stored, 10);
+    if (Number.isNaN(n) || n <= 0) return 'no_auto';
+    if (n === 4) return '4';
+    if (n === 6) return '6';
+    return 'custom';
+  });
+  const [amcServicePeriodCustomMonths, setAmcServicePeriodCustomMonths] = useState<number>(() => {
+    if (typeof window === 'undefined') return 4;
+    const stored = localStorage.getItem('amc_default_service_period_months');
+    if (stored === null || stored === '') return 4;
+    const n = parseInt(stored, 10);
+    return Number.isNaN(n) ? 4 : Math.max(1, n);
+  });
   const [hasAMC, setHasAMC] = useState<boolean | null>(null);
   const [paymentMode, setPaymentMode] = useState<'CASH' | 'ONLINE' | 'PARTIAL' | ''>('');
   const [partialCashAmount, setPartialCashAmount] = useState<string>('');
@@ -377,13 +394,19 @@ export const CompleteJobDialog: React.FC<CompleteJobDialogProps> = ({
       // Only add AMC if it was actually set (hasAMC === true and years > 0)
       const effectiveHasAMC = hasAMC === true && amcYears > 0;
       if (effectiveHasAMC && amcDateGiven && amcEndDate) {
+        const servicePeriodMonths =
+          amcServicePeriodKind === 'no_auto' ? 0
+            : amcServicePeriodKind === '4' ? 4
+            : amcServicePeriodKind === '6' ? 6
+            : Math.max(1, amcServicePeriodCustomMonths);
         requirements.push({ 
           amc_info: {
             date_given: amcDateGiven,
             end_date: amcEndDate,
             years: amcYears,
             includes_prefilter: amcIncludesPrefilter,
-            additional_info: amcAdditionalInfo || null
+            additional_info: amcAdditionalInfo || null,
+            service_period_months: amcServicePeriodKind === 'no_auto' ? 0 : servicePeriodMonths
           }
         });
       }
@@ -1087,6 +1110,34 @@ export const CompleteJobDialog: React.FC<CompleteJobDialogProps> = ({
                         rows={2}
                         className="mt-1"
                       />
+                    </div>
+                    <div>
+                      <Label className="text-sm font-medium">AMC service period (auto job creation)</Label>
+                      <Select
+                        value={amcServicePeriodKind}
+                        onValueChange={(v: '4' | '6' | 'custom' | 'no_auto') => setAmcServicePeriodKind(v)}
+                      >
+                        <SelectTrigger className="mt-1">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="4">Every 4 months</SelectItem>
+                          <SelectItem value="6">Every 6 months</SelectItem>
+                          <SelectItem value="custom">Custom (months)</SelectItem>
+                          <SelectItem value="no_auto">No auto</SelectItem>
+                        </SelectContent>
+                      </Select>
+                      {amcServicePeriodKind === 'custom' && (
+                        <Input
+                          type="number"
+                          min={1}
+                          max={24}
+                          value={amcServicePeriodCustomMonths}
+                          onChange={(e) => setAmcServicePeriodCustomMonths(Math.max(1, parseInt(e.target.value, 10) || 1))}
+                          className="mt-1"
+                          placeholder="Months"
+                        />
+                      )}
                     </div>
                   </div>
                 ) : null}

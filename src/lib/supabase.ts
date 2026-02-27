@@ -1477,6 +1477,7 @@ export const db = {
       years: number;
       includes_prefilter: boolean;
       additional_info?: string | null;
+      service_period_months?: number | null;
     }) {
       // First, mark any existing active AMC for this customer as RENEWED or EXPIRED
       const { data: existingAMCs } = await supabase
@@ -1514,6 +1515,7 @@ export const db = {
           years: amc.years,
           includes_prefilter: amc.includes_prefilter,
           additional_info: amc.additional_info || null,
+          service_period_months: amc.service_period_months ?? null,
           status: 'ACTIVE'
         })
         .select()
@@ -1575,6 +1577,7 @@ export const db = {
       years?: number;
       includes_prefilter?: boolean;
       additional_info?: string | null;
+      service_period_months?: number | null;
       status?: 'ACTIVE' | 'EXPIRED' | 'CANCELLED' | 'RENEWED';
     }) {
       const { data, error } = await supabase
@@ -1692,11 +1695,25 @@ export const db = {
       console.log('📋 Sample AMC contract:', activeAMCs[0]);
 
       const today = new Date();
-      const fourMonthsAgo = new Date();
-      fourMonthsAgo.setMonth(today.getMonth() - 4);
-      const fourMonthsAgoStr = fourMonthsAgo.toISOString().split('T')[0];
-      
-      console.log(`📅 Today: ${today.toISOString().split('T')[0]}, 4 months ago: ${fourMonthsAgoStr}`);
+      const todayStr = today.toISOString().split('T')[0];
+
+      // Default AMC service period from settings (localStorage); only in browser
+      const getDefaultServicePeriodMonths = (): number => {
+        if (typeof window === 'undefined') return 4;
+        const stored = localStorage.getItem('amc_default_service_period_months');
+        if (stored === null || stored === '') return 4;
+        const n = parseInt(stored, 10);
+        return Number.isNaN(n) ? 4 : n;
+      };
+      const defaultPeriodMonths = getDefaultServicePeriodMonths();
+      console.log(`📅 Today: ${todayStr}, default service period: ${defaultPeriodMonths} months`);
+
+      // Helper: add months to YYYY-MM-DD, return YYYY-MM-DD
+      const addMonthsToDate = (dateStr: string, months: number): string => {
+        const d = new Date(dateStr + 'T12:00:00');
+        d.setMonth(d.getMonth() + months);
+        return d.toISOString().split('T')[0];
+      };
 
       // Get last completed job for each customer
       const customerIds = activeAMCs.map(amc => amc.customer_id);
@@ -1755,32 +1772,40 @@ export const db = {
           continue;
         }
 
-        // Get last service date (prefer from jobs, then customer record, then AMC start date)
+        // Service period: contract value or app default; 0 = no auto
+        const periodMonths = amc.service_period_months != null ? amc.service_period_months : defaultPeriodMonths;
+        if (periodMonths <= 0) {
+          console.log(`  ⏭️ Skipping - no auto (service_period_months=${amc.service_period_months}, default=${defaultPeriodMonths})`);
+          continue;
+        }
+
+        // Reference date for next due: last service date, else AMC start date (creation)
         const lastServiceDateRaw = lastServiceMap.get(customer.id) || customer.last_service_date || amc.start_date;
-        
-        console.log(`  📅 Last service date raw:`, lastServiceDateRaw);
-        console.log(`  📅 From jobs map:`, lastServiceMap.get(customer.id));
-        console.log(`  📅 From customer:`, customer.last_service_date);
-        console.log(`  📅 From AMC:`, amc.start_date);
-        
-        // Convert to date string (YYYY-MM-DD) if it's a timestamp
-        let lastServiceDate: string | null = null;
+        console.log(`  📅 Last service raw:`, lastServiceDateRaw, `(from job / customer.last_service_date / amc.start_date)`);
+
+        let referenceDateStr: string | null = null;
         if (lastServiceDateRaw) {
           if (typeof lastServiceDateRaw === 'string') {
-            // Extract date part if it's a timestamp (e.g., "2025-06-26 00:00:00+00" -> "2025-06-26")
-            lastServiceDate = lastServiceDateRaw.split('T')[0].split(' ')[0];
+            referenceDateStr = lastServiceDateRaw.split('T')[0].split(' ')[0];
           } else {
-            // If it's a Date object or other format, convert to ISO string and extract date
-            lastServiceDate = new Date(lastServiceDateRaw).toISOString().split('T')[0];
+            referenceDateStr = new Date(lastServiceDateRaw).toISOString().split('T')[0];
           }
         }
-        
-        console.log(`  📅 Extracted date: ${lastServiceDate}`);
-        console.log(`  📅 4 months ago: ${fourMonthsAgoStr}`);
-        console.log(`  ✅ Comparison: ${lastServiceDate} <= ${fourMonthsAgoStr} = ${lastServiceDate && lastServiceDate <= fourMonthsAgoStr}`);
-        
-        // Check if 4 months have passed since last service
-        if (lastServiceDate && lastServiceDate <= fourMonthsAgoStr) {
+        if (!referenceDateStr) {
+          console.log(`  ⏭️ Skipping - no reference date`);
+          continue;
+        }
+
+        const nextDueStr = addMonthsToDate(referenceDateStr, periodMonths);
+        const due = todayStr >= nextDueStr;
+        console.log(`  📅 Reference: ${referenceDateStr}, period: ${periodMonths} months, next due: ${nextDueStr}, due: ${due}`);
+
+        if (!due) {
+          console.log(`  ❌ Skipping - not yet due`);
+          continue;
+        }
+
+        {
           console.log(`  ✅ Will create job for ${customer.customer_id || customer.id}`);
           // Generate job number
           const serviceType = customer.service_type || 'RO';
@@ -1791,8 +1816,8 @@ export const db = {
           scheduledDate.setHours(0, 0, 0, 0);
           const scheduledDateStr = scheduledDate.toISOString().split('T')[0];
 
-          // Format last service date for display
-          const formattedLastServiceDate = new Date(lastServiceDate + 'T00:00:00').toLocaleDateString('en-IN', {
+          // Format reference (last service / AMC start) date for display
+          const formattedLastServiceDate = new Date(referenceDateStr + 'T00:00:00').toLocaleDateString('en-IN', {
             day: 'numeric',
             month: 'short',
             year: 'numeric'
@@ -1825,8 +1850,6 @@ export const db = {
           };
 
           jobsToCreate.push(jobData);
-        } else {
-          console.log(`  ❌ Skipping - date not old enough`);
         }
       }
 
