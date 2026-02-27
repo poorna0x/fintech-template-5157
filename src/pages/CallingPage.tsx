@@ -128,13 +128,15 @@ const CallingPage = ({ hideHeader = false, onBack }: CallingPageProps = {}) => {
     loadCustomers();
   }, []);
 
+  // Lazy-load technicians only when report dialog is opened (saves one DB round-trip on page load)
   useEffect(() => {
+    if (!customerReportDialogOpen || technicians.length > 0) return;
     const loadTechnicians = async () => {
       const { data, error } = await db.technicians.getAll(100);
       if (!error && data) setTechnicians(data);
     };
     loadTechnicians();
-  }, []);
+  }, [customerReportDialogOpen]);
 
   useEffect(() => {
     filterCustomers();
@@ -174,6 +176,7 @@ const CallingPage = ({ hideHeader = false, onBack }: CallingPageProps = {}) => {
     try {
       setLoading(true);
       
+      // Slim select: no address/location (large JSONB) – report dialog doesn't use them
       const { data: customersData, error: customersError } = await supabase
         .from('customers')
         .select(`
@@ -183,8 +186,6 @@ const CallingPage = ({ hideHeader = false, onBack }: CallingPageProps = {}) => {
           phone,
           alternate_phone,
           email,
-          address,
-          location,
           service_type,
           brand,
           model,
@@ -195,35 +196,52 @@ const CallingPage = ({ hideHeader = false, onBack }: CallingPageProps = {}) => {
 
       if (customersError) throw customersError;
 
-      // Get last completed job per customer (latest by completed_at) with type info
-      const { data: lastJobsData } = await supabase
-        .from('jobs')
-        .select('customer_id, completed_at, service_type, service_sub_type')
-        .eq('status', 'COMPLETED')
-        .not('completed_at', 'is', null)
-        .order('completed_at', { ascending: false });
+      // Prefer RPCs (one row per customer) to cut egress; fallback to full table fetch if RPCs missing
+      type JobRow = { customer_id: string; completed_at: string; service_type?: string | null; service_sub_type?: string | null };
+      type ContactRow = { customer_id: string; contacted_at: string; status: string };
+      let lastJobsData: JobRow[] | null = null;
+      let lastContactsData: ContactRow[] | null = null;
 
-      // Get last contact per customer (only latest contact per customer)
-      const { data: lastContactsData } = await supabase
-        .from('call_history')
-        .select('customer_id, contacted_at, status')
-        .order('contacted_at', { ascending: false });
+      const [jobsRes, contactsRes] = await Promise.all([
+        supabase.rpc('get_last_completed_job_per_customer') as Promise<{ data: JobRow[] | null; error: unknown }>,
+        supabase.rpc('get_last_contact_per_customer') as Promise<{ data: ContactRow[] | null; error: unknown }>
+      ]);
 
-      // Create lookup maps for O(1) access
+      if (jobsRes.error) {
+        const fallback = await supabase
+          .from('jobs')
+          .select('customer_id, completed_at, service_type, service_sub_type')
+          .eq('status', 'COMPLETED')
+          .not('completed_at', 'is', null)
+          .order('completed_at', { ascending: false });
+        lastJobsData = fallback.data;
+      } else {
+        lastJobsData = jobsRes.data;
+      }
+      if (contactsRes.error) {
+        const fallback = await supabase
+          .from('call_history')
+          .select('customer_id, contacted_at, status')
+          .order('contacted_at', { ascending: false });
+        lastContactsData = fallback.data;
+      } else {
+        lastContactsData = contactsRes.data;
+      }
+
       const lastServiceMap = new Map<string, { completed_at: string; service_type?: string | null; service_sub_type?: string | null }>();
       (lastJobsData || []).forEach((job: any) => {
-        if (!lastServiceMap.has(job.customer_id)) {
+        if (job.customer_id && !lastServiceMap.has(job.customer_id)) {
           lastServiceMap.set(job.customer_id, {
             completed_at: job.completed_at,
-            service_type: job.service_type || null,
-            service_sub_type: job.service_sub_type || null,
+            service_type: job.service_type ?? null,
+            service_sub_type: job.service_sub_type ?? null,
           });
         }
       });
 
       const lastContactMap = new Map<string, { contacted_at: string; status: string }>();
       (lastContactsData || []).forEach((contact: any) => {
-        if (!lastContactMap.has(contact.customer_id)) {
+        if (contact.customer_id && !lastContactMap.has(contact.customer_id)) {
           lastContactMap.set(contact.customer_id, {
             contacted_at: contact.contacted_at,
             status: contact.status
@@ -254,8 +272,8 @@ const CallingPage = ({ hideHeader = false, onBack }: CallingPageProps = {}) => {
           phone: customer.phone,
           alternatePhone: customer.alternate_phone,
           email: customer.email,
-          address: customer.address,
-          location: customer.location,
+          address: customer.address ?? { street: '', area: '', city: '', state: '', pincode: '' },
+          location: customer.location ?? { latitude: 0, longitude: 0, formattedAddress: '' },
           serviceType: customer.service_type,
           brand: customer.brand,
           model: customer.model,
@@ -399,8 +417,13 @@ const CallingPage = ({ hideHeader = false, onBack }: CallingPageProps = {}) => {
 
       if (error) throw error;
 
-      // Reload customers to update call history
-      await loadCustomers();
+      // Optimistic update: avoid full reload (saves egress and DB load)
+      const now = new Date().toISOString();
+      setCustomers(prev => prev.map(c =>
+        c.id === customerId
+          ? { ...c, lastContacted: now, daysSinceContact: 0, lastContactStatus: status || 'COMPLETED' }
+          : c
+      ));
       toast.success('Call/message recorded');
     } catch (error) {
       console.error('Error recording call:', error);
