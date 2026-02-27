@@ -1615,8 +1615,10 @@ export const db = {
       return { data, error };
     },
 
-    async createAMCServiceJobs() {
-      console.log('🔵 Starting AMC service job creation...');
+    async createAMCServiceJobs(options?: { dryRun?: boolean }) {
+      const dryRun = options?.dryRun === true;
+      if (dryRun) console.log('🔵 [DRY RUN] AMC service job creation preview...');
+      else console.log('🔵 Starting AMC service job creation...');
       
       // Helper function to generate job number
       const generateJobNumber = (serviceType: string) => {
@@ -1754,6 +1756,18 @@ export const db = {
 
       console.log(`🚫 Found ${existingAMCCustomers.size} customers with existing AMC service job (pending/in progress/followup)`);
 
+      // Preview for dry run: list of each active AMC and whether a job would be created
+      type PreviewItem = {
+        customer_id: string;
+        customer_name: string;
+        reference_date: string | null;
+        period_months: number;
+        next_due: string | null;
+        would_create: boolean;
+        skip_reason?: string;
+      };
+      const preview: PreviewItem[] = [];
+
       const jobsToCreate: any[] = [];
       let createdCount = 0;
 
@@ -1761,6 +1775,15 @@ export const db = {
         const customer = amc.customers as any;
         if (!customer) {
           console.log('⚠️ AMC has no customer data:', amc.id);
+          preview.push({
+            customer_id: amc.customer_id || '',
+            customer_name: 'Unknown',
+            reference_date: null,
+            period_months: 0,
+            next_due: null,
+            would_create: false,
+            skip_reason: 'No customer data'
+          });
           continue;
         }
 
@@ -1769,6 +1792,15 @@ export const db = {
         // Skip if already has an AMC service job in PENDING, IN_PROGRESS, FOLLOW_UP, or RESCHEDULED (no duplicate)
         if (existingAMCCustomers.has(customer.id)) {
           console.log(`  ⏭️ Skipping - already has AMC service job (pending / in progress / follow-up)`);
+          preview.push({
+            customer_id: customer.customer_id || customer.id,
+            customer_name: customer.full_name || 'Unknown',
+            reference_date: null,
+            period_months: 0,
+            next_due: null,
+            would_create: false,
+            skip_reason: 'Already has open AMC service job'
+          });
           continue;
         }
 
@@ -1776,6 +1808,15 @@ export const db = {
         const periodMonths = amc.service_period_months != null ? amc.service_period_months : defaultPeriodMonths;
         if (periodMonths <= 0) {
           console.log(`  ⏭️ Skipping - no auto (service_period_months=${amc.service_period_months}, default=${defaultPeriodMonths})`);
+          preview.push({
+            customer_id: customer.customer_id || customer.id,
+            customer_name: customer.full_name || 'Unknown',
+            reference_date: null,
+            period_months: periodMonths,
+            next_due: null,
+            would_create: false,
+            skip_reason: 'No auto (service period is 0 or not set)'
+          });
           continue;
         }
 
@@ -1793,6 +1834,15 @@ export const db = {
         }
         if (!referenceDateStr) {
           console.log(`  ⏭️ Skipping - no reference date`);
+          preview.push({
+            customer_id: customer.customer_id || customer.id,
+            customer_name: customer.full_name || 'Unknown',
+            reference_date: null,
+            period_months: periodMonths,
+            next_due: null,
+            would_create: false,
+            skip_reason: 'No reference date (last service or AMC start)'
+          });
           continue;
         }
 
@@ -1802,8 +1852,26 @@ export const db = {
 
         if (!due) {
           console.log(`  ❌ Skipping - not yet due`);
+          preview.push({
+            customer_id: customer.customer_id || customer.id,
+            customer_name: customer.full_name || 'Unknown',
+            reference_date: referenceDateStr,
+            period_months: periodMonths,
+            next_due: nextDueStr,
+            would_create: false,
+            skip_reason: `Not yet due (next due ${nextDueStr})`
+          });
           continue;
         }
+
+        preview.push({
+          customer_id: customer.customer_id || customer.id,
+          customer_name: customer.full_name || 'Unknown',
+          reference_date: referenceDateStr,
+          period_months: periodMonths,
+          next_due: nextDueStr,
+          would_create: true
+        });
 
         {
           console.log(`  ✅ Will create job for ${customer.customer_id || customer.id}`);
@@ -1854,6 +1922,11 @@ export const db = {
       }
 
       console.log(`\n📦 Total jobs to create: ${jobsToCreate.length}`);
+
+      if (dryRun) {
+        console.log('ℹ️ [DRY RUN] No jobs inserted. Preview:', preview);
+        return { data: null, error: null, created: 0, preview };
+      }
 
       // Create jobs in batch
       if (jobsToCreate.length > 0) {
