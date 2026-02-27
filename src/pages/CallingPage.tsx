@@ -86,7 +86,7 @@ const CallingPage = ({ hideHeader = false, onBack }: CallingPageProps = {}) => {
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
   const [serviceFilter, setServiceFilter] = useState<string>('all');
-  const [serviceHistoryFilter, setServiceHistoryFilter] = useState<string>('serviced'); // 'all', 'serviced', 'never'
+  const [serviceHistoryFilter, setServiceHistoryFilter] = useState<string>('all'); // 'all', 'serviced', 'never'
   const [serviceSubTypeFilter, setServiceSubTypeFilter] = useState<string>('all'); // 'all', specific last service_sub_type
   const [showRecentlyContacted, setShowRecentlyContacted] = useState(false);
   const [recentContactDays, setRecentContactDays] = useState(7); // Don't show if contacted within 7 days
@@ -174,8 +174,6 @@ const CallingPage = ({ hideHeader = false, onBack }: CallingPageProps = {}) => {
     try {
       setLoading(true);
       
-      // Optimized: Load customers with aggregated data using a single query
-      // Get last service date and last contact info in one go
       const { data: customersData, error: customersError } = await supabase
         .from('customers')
         .select(`
@@ -192,7 +190,6 @@ const CallingPage = ({ hideHeader = false, onBack }: CallingPageProps = {}) => {
           model,
           status,
           has_prefilter,
-          raw_water_tds,
           last_service_date
         `);
 
@@ -264,7 +261,7 @@ const CallingPage = ({ hideHeader = false, onBack }: CallingPageProps = {}) => {
           model: customer.model,
           status: customer.status,
           hasPrefilter: customer.has_prefilter ?? null,
-          rawWaterTds: customer.raw_water_tds ?? 0,
+          rawWaterTds: (customer as any).raw_water_tds ?? 0,
           lastServiceDate,
           daysSinceService,
           lastServiceSubType: lastJobInfo?.service_sub_type || null,
@@ -458,13 +455,12 @@ const CallingPage = ({ hideHeader = false, onBack }: CallingPageProps = {}) => {
 
   const generateWhatsAppMessage = (customer: CustomerWithHistory, template: string): string => {
     const daysSinceService = customer.daysSinceService;
-    const months = daysSinceService ? Math.floor(daysSinceService / 30) : null;
     
     switch (template) {
       case 'service_due':
         let message = `Hi ${customer.fullName},\n\n`;
-        if (daysSinceService) {
-          message += `We noticed it's been ${months && months > 0 ? `${months} month${months > 1 ? 's' : ''}` : `${daysSinceService} day${daysSinceService > 1 ? 's' : ''}`} since your last RO service.\n\n`;
+        if (daysSinceService != null && daysSinceService > 0) {
+          message += `We noticed it's been ${formatDaysAgo(daysSinceService)} since your last RO service.\n\n`;
         }
         message += `Your RO water purifier service is due. We're here to help maintain your RO in top condition.\n\n`;
         message += `Would you like to schedule a service? Please reply to this message or call us at 8884944288.\n\n`;
@@ -635,6 +631,28 @@ const CallingPage = ({ hideHeader = false, onBack }: CallingPageProps = {}) => {
       month: 'short',
       year: 'numeric'
     });
+  };
+
+  /** Format days as "3 months 10 days" (< 12 months) or "1 year 2 months" (>= 12 months) */
+  const formatDaysAgo = (days: number): string => {
+    if (days < 30) {
+      return days === 1 ? '1 day' : `${days} days`;
+    }
+    if (days < 365) {
+      const months = Math.floor(days / 30);
+      const rem = days % 30;
+      const m = months === 1 ? 'month' : 'months';
+      if (rem === 0) return `${months} ${m}`;
+      const d = rem === 1 ? 'day' : 'days';
+      return `${months} ${m} ${rem} ${d}`;
+    }
+    const years = Math.floor(days / 365);
+    const rem = days % 365;
+    const months = Math.floor(rem / 30);
+    const y = years === 1 ? 'year' : 'years';
+    if (months === 0) return `${years} ${y}`;
+    const m = months === 1 ? 'month' : 'months';
+    return `${years} ${y} ${months} ${m}`;
   };
 
   const getServiceBadgeColor = (days?: number | null) => {
@@ -884,6 +902,7 @@ const CallingPage = ({ hideHeader = false, onBack }: CallingPageProps = {}) => {
                   </SelectContent>
                 </Select>
               </div>
+
             </div>
           </CardContent>
         </Card>
@@ -920,6 +939,7 @@ const CallingPage = ({ hideHeader = false, onBack }: CallingPageProps = {}) => {
             <Card>
               <CardContent className="p-8 text-center">
                 <p className="text-gray-500">No customers found matching your filters.</p>
+                <p className="text-sm text-gray-400 mt-2">Try setting Service History to &quot;All Customers&quot;.</p>
               </CardContent>
             </Card>
           ) : (
@@ -966,7 +986,7 @@ const CallingPage = ({ hideHeader = false, onBack }: CallingPageProps = {}) => {
                             {customer.daysSinceContact !== null && customer.daysSinceContact !== undefined && customer.daysSinceContact < recentContactDays && (
                               <Badge className="bg-yellow-100 text-yellow-800">
                                 <Clock className="w-3 h-3 mr-1" />
-                                Contacted {customer.daysSinceContact} day{customer.daysSinceContact !== 1 ? 's' : ''} ago
+                                Contacted {formatDaysAgo(customer.daysSinceContact)} ago
                               </Badge>
                             )}
                           </div>
@@ -997,7 +1017,7 @@ const CallingPage = ({ hideHeader = false, onBack }: CallingPageProps = {}) => {
                                 Last Service: {formatDate(customer.lastServiceDate)}
                                 {customer.daysSinceService !== null && customer.daysSinceService !== undefined && (
                                   <Badge className={`ml-2 ${getServiceBadgeColor(customer.daysSinceService)} text-white text-xs`}>
-                                    {customer.daysSinceService} days ago
+                                    {formatDaysAgo(customer.daysSinceService)} ago
                                   </Badge>
                                 )}
                               </span>
@@ -1008,7 +1028,7 @@ const CallingPage = ({ hideHeader = false, onBack }: CallingPageProps = {}) => {
                                 <span className="text-gray-500">
                                   Last Contacted: {formatDate(customer.lastContacted)}
                                   {customer.daysSinceContact !== null && customer.daysSinceContact !== undefined && (
-                                    <span className="ml-2">({customer.daysSinceContact} days ago)</span>
+                                    <span className="ml-2">({formatDaysAgo(customer.daysSinceContact)} ago)</span>
                                   )}
                                 </span>
                                 {customer.lastContactStatus && getStatusBadge(customer.lastContactStatus)}
