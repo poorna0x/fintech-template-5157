@@ -258,7 +258,7 @@ const TechnicianLocation = () => {
       },
       {
         enableHighAccuracy: false, // Set to false for faster response - GPS can be very slow on mobile/PWA
-        timeout: 25000, // 25s - balance between slow phones and not failing too soon
+        timeout: 60000, // Increased to 60 seconds for mobile/PWA - GPS can take longer on mobile devices
         maximumAge: 300000, // 5 minutes - use cached location if available (helps with timeout issues)
       }
     );
