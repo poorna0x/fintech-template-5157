@@ -213,7 +213,8 @@ const AdminDashboard = () => {
   // Ref to store calculateDistanceAndTime function to avoid circular dependency
   const calculateDistanceAndTimeRef = useRef<((origin: { lat: number; lng: number }, destination: { lat: number; lng: number }, customerId: string) => Promise<void>) | null>(null);
   
-  // Handle view change
+  // Preserve scroll position when WhatsApp dialog opens after assign/reassign (so page doesn't jump to top)
+  const scrollPositionBeforeWhatsAppRef = useRef(0);
   const handleViewChange = (view: 'dashboard' | 'payments' | 'billing' | 'analytics' | 'inventory') => {
     setCurrentView(view);
   };
@@ -1357,6 +1358,19 @@ const AdminDashboard = () => {
       loadFilteredJobs(statusFilter, 1);
     }
   }, [completedDateFilter, statusFilter, loadFilteredJobs, isInitialLoad]);
+
+  // Restore scroll position when WhatsApp dialog opens (after assign/reassign) so page doesn't jump to top
+  useEffect(() => {
+    if (whatsappDialogOpen && scrollPositionBeforeWhatsAppRef.current > 0) {
+      const saved = scrollPositionBeforeWhatsAppRef.current;
+      const id = requestAnimationFrame(() => {
+        requestAnimationFrame(() => {
+          window.scrollTo(0, saved);
+        });
+      });
+      return () => cancelAnimationFrame(id);
+    }
+  }, [whatsappDialogOpen]);
 
   // Load customer history function - defined early for use in useEffect
   const loadCustomerHistory = useCallback(async (customerId: string) => {
@@ -4735,6 +4749,9 @@ const AdminDashboard = () => {
   const handleSaveJobAssignment = async () => {
     if (!jobToAssign || !selectedTechnicianId) return;
 
+    // Save scroll position so we can restore after refresh (page stays where user was)
+    const scrollY = window.scrollY;
+
     try {
       const { error } = await db.jobs.update(jobToAssign.id, {
         assigned_technician_id: selectedTechnicianId,
@@ -4762,6 +4779,7 @@ const AdminDashboard = () => {
       
       // Show WhatsApp dialog
       if (assignedTechnician && assignedTechnician.phone) {
+        scrollPositionBeforeWhatsAppRef.current = scrollY;
         const serviceSubType = (jobToAssign as any).service_sub_type || jobToAssign.serviceSubType || 'Service';
         const customerName = (jobToAssign.customer as any)?.full_name || (jobToAssign.customer as any)?.fullName || 'Customer';
         setWhatsappTechnician({
@@ -4776,8 +4794,13 @@ const AdminDashboard = () => {
       setJobToAssign(null);
       setSelectedTechnicianId('');
 
-      // Refresh jobs data
+      // Refresh jobs data then restore scroll so page stays where user was
       await loadFilteredJobs(statusFilter, currentPage);
+      requestAnimationFrame(() => {
+        requestAnimationFrame(() => {
+          window.scrollTo(0, scrollY);
+        });
+      });
     } catch (error) {
       toast.error('Failed to assign job');
     }
@@ -4936,6 +4959,9 @@ const AdminDashboard = () => {
   const handleReassignSubmit = async () => {
     if (!jobToReassign || !selectedTechnicianForReassign) return;
 
+    // Save scroll position so we can restore after refresh (page stays where user was)
+    const scrollY = window.scrollY;
+
     try {
       const { error } = await db.jobs.update(jobToReassign.id, {
         assigned_technician_id: selectedTechnicianForReassign
@@ -4960,6 +4986,7 @@ const AdminDashboard = () => {
       // Show WhatsApp dialog
       const reassignedTechnician = technicians.find(t => t.id === selectedTechnicianForReassign);
       if (reassignedTechnician && reassignedTechnician.phone) {
+        scrollPositionBeforeWhatsAppRef.current = scrollY;
         const serviceSubType = (jobToReassign as any).service_sub_type || jobToReassign.serviceSubType || 'Service';
         const customerName = (jobToReassign.customer as any)?.full_name || (jobToReassign.customer as any)?.fullName || 'Customer';
         setWhatsappTechnician({
@@ -4974,8 +5001,13 @@ const AdminDashboard = () => {
       setJobToReassign(null);
       setSelectedTechnicianForReassign('');
       
-      // Reload jobs to ensure consistency
+      // Reload jobs to ensure consistency then restore scroll so page stays where user was
       await loadFilteredJobs(statusFilter, currentPage);
+      requestAnimationFrame(() => {
+        requestAnimationFrame(() => {
+          window.scrollTo(0, scrollY);
+        });
+      });
     } catch (error: any) {
       console.error('Reassign job exception:', error);
       toast.error(`Failed to reassign job: ${error?.message || 'Unknown error'}`);
