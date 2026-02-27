@@ -1,5 +1,5 @@
-const STATIC_CACHE = 'technician-static-v2';
-const RUNTIME_CACHE = 'technician-runtime-v2';
+const STATIC_CACHE = 'technician-static-v1';
+const RUNTIME_CACHE = 'technician-runtime-v1';
 const OFFLINE_FALLBACK = '/technician';
 const PRECACHE_URLS = [
   '/',
@@ -7,22 +7,20 @@ const PRECACHE_URLS = [
   '/technician/login'
 ];
 
-// Longer timeout for slow mobile networks (e.g. Samsung on cellular)
-const NAVIGATE_TIMEOUT_MS = 20000;
-
 self.addEventListener('install', (event) => {
   event.waitUntil(
     caches.open(STATIC_CACHE)
-      .then((cache) => {
-        // Precache best-effort: do not fail install on slow/flaky mobile network
-        return cache.addAll(PRECACHE_URLS).catch((err) => {
-          console.warn('[Technician PWA] Precache failed (e.g. slow network), SW will still activate:', err);
-        });
-      })
+      .then((cache) => cache.addAll(PRECACHE_URLS))
       .then(() => {
+        // Don't automatically skip waiting - wait for user to close all tabs
+        // This prevents automatic page refresh
         console.log('[Technician PWA] Service worker installed, waiting for activation');
       })
+      .catch((error) => {
+        console.error('[Technician PWA] Install failed:', error);
+      })
   );
+  // Don't call skipWaiting() to prevent automatic refresh
 });
 
 self.addEventListener('activate', (event) => {
@@ -89,11 +87,12 @@ self.addEventListener('fetch', (event) => {
     event.respondWith(
       Promise.race([
         fetch(request),
-        new Promise((_, reject) =>
-          setTimeout(() => reject(new Error('Request timeout')), NAVIGATE_TIMEOUT_MS)
+        new Promise((_, reject) => 
+          setTimeout(() => reject(new Error('Request timeout')), 10000)
         )
       ])
         .then((response) => {
+          // Only cache successful HTML responses
           if (response.ok && response.headers.get('content-type')?.includes('text/html')) {
             const copy = response.clone();
             caches.open(RUNTIME_CACHE).then((cache) => cache.put(request, copy));
@@ -102,16 +101,16 @@ self.addEventListener('fetch', (event) => {
         })
         .catch(async () => {
           const cachedResponse = await caches.match(request);
-          if (cachedResponse) return cachedResponse;
+          if (cachedResponse) {
+            return cachedResponse;
+          }
           if (isTechnicianPath) {
             const offlineResponse = await caches.match(OFFLINE_FALLBACK);
-            if (offlineResponse) return offlineResponse;
+            if (offlineResponse) {
+              return offlineResponse;
+            }
           }
-          return caches.match('/') || new Response('Offline – try again when you have connection.', {
-            status: 503,
-            statusText: 'Service Unavailable',
-            headers: { 'Content-Type': 'text/plain; charset=utf-8' }
-          });
+          return caches.match('/') || Response.error();
         })
     );
     return;
@@ -121,8 +120,8 @@ self.addEventListener('fetch', (event) => {
     event.respondWith(
       Promise.race([
         fetch(request),
-        new Promise((_, reject) =>
-          setTimeout(() => reject(new Error('Request timeout')), NAVIGATE_TIMEOUT_MS)
+        new Promise((_, reject) => 
+          setTimeout(() => reject(new Error('Request timeout')), 10000)
         )
       ])
         .then((response) => {
