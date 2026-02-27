@@ -76,9 +76,9 @@ export const supabase = createClient<Database>(buildTimeUrl, buildTimeKey, {
       //   });
       // }
       
-      // Add timeout to prevent hanging requests in PWA
+      // Add timeout to prevent hanging requests in PWA (45s helps on slow mobile data)
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 30000); // 30 second timeout
+      const timeoutId = setTimeout(() => controller.abort(), 45000); // 45 second timeout
 
       return fetch(url, {
         ...options,

@@ -490,12 +490,20 @@ const TechnicianDashboard = () => {
       
       if (error) {
         console.error('Error loading assigned jobs:', error);
-        // Retry on network errors (up to 2 retries)
-        if (retryCount < 2 && (error.message.includes('fetch') || error.message.includes('network') || error.message.includes('Failed to fetch') || error.message.includes('timeout') || error.message.includes('AbortError'))) {
+        const isRetryable = retryCount < 2 && (
+          error.message.includes('fetch') || error.message.includes('network') ||
+          error.message.includes('Failed to fetch') || error.message.includes('timeout') ||
+          error.message.includes('AbortError') || error.message.includes('connection')
+        );
+        if (isRetryable) {
           console.log(`Retrying loadAssignedJobs (attempt ${retryCount + 1}/2)...`);
-          await new Promise(resolve => setTimeout(resolve, 1000 * (retryCount + 1))); // Exponential backoff
+          await new Promise(resolve => setTimeout(resolve, 1000 * (retryCount + 1)));
           return loadAssignedJobs(retryCount + 1);
         }
+        toast.error(
+          'Could not load jobs. If you\'re on mobile data, try moving to a better signal or use Wi‑Fi, then pull to refresh.',
+          { duration: 6000 }
+        );
         throw new Error(error.message);
       }
 
@@ -633,41 +641,18 @@ const TechnicianDashboard = () => {
     }
   }, [completeJobStep, completeDialogOpen]);
 
-  // Load QR codes function (extracted so it can be called manually)
-  const loadQrCodes = useCallback(async () => {
-      // Only load if user is a technician
-      if (!user) {
-        console.log('⚠️ No user found, skipping QR code load');
-        return;
-      }
+  // Load QR codes function (extracted so it can be called manually); retries on network/timeout for mobile data
+  const loadQrCodes = useCallback(async (retryCount = 0) => {
+      if (!user || user.role !== 'technician') return;
 
-      if (user.role !== 'technician') {
-        console.log('⚠️ User is not a technician, skipping QR code load. Role:', user.role);
-        return;
-      }
-
-      // Get technician ID - use technicianId if available, otherwise use user.id
       const technicianId = user.technicianId || user.id;
-      console.log('✅ Loading QR codes for technician:', { 
-        userId: user.id, 
-        technicianId: user.technicianId, 
-        usingId: technicianId,
-        email: user.email,
-        fullName: user.fullName
-      });
 
       try {
-        // Check cache first (for mobile)
         if (shouldUseCache()) {
           const cachedCommon = getCachedQrCodes();
-          if (cachedCommon) {
-            setCommonQrCodes(cachedCommon);
-          }
-          
+          if (cachedCommon) setCommonQrCodes(cachedCommon);
         }
 
-        // Always fetch from database (cache will be updated)
-        // OPTIMIZATION: Limit technicians fetch. Common QR (non-payment) from technician_common_qr.
         const [commonResult, allTechniciansResult, technicianCommonQrResult] = await Promise.all([
           db.commonQrCodes.getAll(),
           db.technicians.getAll(100),
@@ -797,34 +782,32 @@ const TechnicianDashboard = () => {
             filteredTechnicians: filteredTechnicians.map(tech => tech.fullName)
           });
         }
-      } catch (error) {
+      } catch (error: any) {
         console.error('Error loading QR codes:', error);
+        const msg = error?.message || '';
+        const isRetryable = retryCount < 2 && (
+          msg.includes('fetch') || msg.includes('network') || msg.includes('Failed to fetch') ||
+          msg.includes('timeout') || msg.includes('AbortError') || msg.includes('connection')
+        );
+        if (isRetryable) {
+          await new Promise(r => setTimeout(r, 1000 * (retryCount + 1)));
+          return loadQrCodes(retryCount + 1);
+        }
       }
     }, [user]);
 
-  // Load QR codes on mount and when user changes
+  // Load QR codes after a short delay so jobs/assignment requests get priority (helps on slow mobile data)
   useEffect(() => {
-    console.log('🔍 QR Code useEffect triggered', { 
-      hasUser: !!user, 
-      userRole: user?.role,
-      userId: user?.id,
-      technicianId: user?.technicianId,
-      loading: loading
-    });
+    if (loading || !user) return;
 
-    // Wait for auth to finish loading
-    if (loading) {
-      console.log('⏳ Auth still loading, waiting...');
-      return;
-    }
-
-    // Always try to load if user exists and auth is done loading (will check role inside)
-    if (user) {
-      console.log('🚀 Calling loadQrCodes, user:', { id: user.id, role: user.role });
-      loadQrCodes();
-    } else {
-      console.log('⚠️ No user, not loading QR codes');
-    }
+    const delayMs = 2500;
+    const t = setTimeout(() => {
+      if (user.role === 'technician') {
+        console.log('🚀 Deferred loadQrCodes (after', delayMs, 'ms)');
+        loadQrCodes();
+      }
+    }, delayMs);
+    return () => clearTimeout(t);
   }, [user, loading, loadQrCodes]);
 
   // Track app visibility to show notifications when app becomes active and refresh QR codes
@@ -1012,7 +995,7 @@ const TechnicianDashboard = () => {
               supabase.removeChannel(testChannel);
               resolve(false);
             }
-          }, 3000); // 3 second timeout
+          }, 2000); // 2s - fail fast on mobile data so we use polling sooner
 
           testChannel
             .subscribe((status) => {
@@ -1477,7 +1460,7 @@ const TechnicianDashboard = () => {
       },
       {
         enableHighAccuracy: false, // Set to false for faster response (less accurate but more reliable)
-        timeout: 60000, // Increased to 60 seconds for mobile/PWA - GPS can take longer on mobile devices
+        timeout: 25000, // 25s - balance between slow phones and not failing too soon
         maximumAge: 300000 // 5 minutes - use cached location if available (helps with timeout issues)
       }
     );
@@ -1602,13 +1585,14 @@ const TechnicianDashboard = () => {
     
     console.log('✅ [TechnicianDashboard] Location tracking ENABLED - setting up periodic updates');
 
-    // Update location immediately on mount (only if page is visible)
-    if (!document.hidden) {
-      console.log('🔄 [TechnicianDashboard] Page visible on mount - triggering initial location update');
-      getCurrentLocation();
-    } else {
-      console.log('⏸️ [TechnicianDashboard] Page hidden on mount - skipping initial location update');
-    }
+    // Defer first location request so dashboard and job list can load first (avoids slow first paint on phones)
+    const initialDelayMs = 2500;
+    const initialDelay = setTimeout(() => {
+      if (!document.hidden) {
+        console.log('🔄 [TechnicianDashboard] Deferred initial location update (after', initialDelayMs, 'ms)');
+        getCurrentLocation();
+      }
+    }, initialDelayMs);
 
     // Then update every 5 minutes - ONLY if page is visible
     const locationInterval = setInterval(() => {
@@ -1679,6 +1663,7 @@ const TechnicianDashboard = () => {
     window.addEventListener('locationTrackingChanged', handleLocationTrackingChanged as EventListener);
 
     return () => {
+      clearTimeout(initialDelay);
       clearInterval(locationInterval);
       document.removeEventListener('visibilitychange', handleVisibilityChange);
       window.removeEventListener('storage', handleStorageChange);
@@ -1839,10 +1824,14 @@ const TechnicianDashboard = () => {
       const { data, error } = await db.jobAssignmentRequests.getPendingByTechnicianId(user.technicianId);
       
       if (error) {
-        // Retry on network errors (up to 2 retries)
-        if (retryCount < 2 && (error.message.includes('fetch') || error.message.includes('network') || error.message.includes('Failed to fetch'))) {
+        const isRetryable = retryCount < 2 && (
+          error.message.includes('fetch') || error.message.includes('network') ||
+          error.message.includes('Failed to fetch') || error.message.includes('timeout') ||
+          error.message.includes('AbortError') || error.message.includes('connection')
+        );
+        if (isRetryable) {
           console.log(`Retrying loadAssignmentRequests (attempt ${retryCount + 1}/2)...`);
-          await new Promise(resolve => setTimeout(resolve, 1000 * (retryCount + 1))); // Exponential backoff
+          await new Promise(resolve => setTimeout(resolve, 1000 * (retryCount + 1)));
           return loadAssignmentRequests(retryCount + 1);
         }
         throw new Error(error.message);
