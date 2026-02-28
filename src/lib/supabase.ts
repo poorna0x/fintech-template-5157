@@ -1617,9 +1617,18 @@ export const db = {
 
     async createAMCServiceJobs(options?: { dryRun?: boolean }) {
       const dryRun = options?.dryRun === true;
+      const isDev = typeof import.meta !== 'undefined' && import.meta.env?.DEV;
       if (dryRun) console.log('🔵 [DRY RUN] AMC service job creation preview...');
-      else console.log('🔵 Starting AMC service job creation...');
-      
+      else if (isDev) console.log('🔵 Starting AMC service job creation...');
+
+      // Batch IN clauses to avoid URL/query limits (~200–300 IDs per request)
+      const BATCH_SIZE = 200;
+      const chunk = <T>(arr: T[], size: number): T[][] => {
+        const out: T[][] = [];
+        for (let i = 0; i < arr.length; i += size) out.push(arr.slice(i, i + size));
+        return out;
+      };
+
       // Helper function to generate job number
       const generateJobNumber = (serviceType: string) => {
         const prefix = serviceType === 'RO' ? 'RO' : 'WS';
@@ -1628,73 +1637,50 @@ export const db = {
         return `${prefix}${timestamp}${random}`;
       };
 
-      // Get all active AMC contracts first (without nested select to avoid RLS issues)
-      console.log('🔍 Fetching AMC contracts...');
-      
-      // Check authentication status
       const { data: { user }, error: authError } = await supabase.auth.getUser();
-      console.log('🔍 Auth user:', user?.id);
-      console.log('🔍 Auth error:', authError);
-      console.log('🔍 Auth role:', user ? 'authenticated' : 'not authenticated');
+      if (authError || !user) {
+        if (isDev) console.warn('AMC job creation: not authenticated', authError);
+        return { data: null, error: authError || new Error('Not authenticated'), created: 0 };
+      }
       
       // Try with RLS bypass or check if we can access the table
       const { data: activeAMCsRaw, error: amcError } = await supabase
         .from('amc_contracts')
         .select('*')
         .eq('status', 'ACTIVE');
-      
-      console.log('🔍 Query error:', amcError);
-      console.log('🔍 Query result:', activeAMCsRaw);
-      console.log('🔍 Query result length:', activeAMCsRaw?.length);
-      
-      // If RLS is blocking, try without status filter to see if we can access the table at all
-      if (!activeAMCsRaw || activeAMCsRaw.length === 0) {
-        const { data: allAMCs, error: allError } = await supabase
-          .from('amc_contracts')
-          .select('id, status, customer_id')
-          .limit(5);
-        console.log('🔍 All AMCs (no filter):', allAMCs);
-        console.log('🔍 All AMCs error:', allError);
-      }
 
       if (amcError) {
         console.error('❌ Error fetching AMC contracts:', amcError);
         return { data: null, error: amcError, created: 0 };
       }
 
-      console.log('📦 Raw AMC contracts (without nested select):', activeAMCsRaw);
-      console.log('📦 AMC contracts count:', activeAMCsRaw?.length);
-
       if (!activeAMCsRaw || activeAMCsRaw.length === 0) {
-        console.log('ℹ️ No active AMC contracts found');
+        if (isDev) console.log('ℹ️ No active AMC contracts found');
         return { data: [], error: null, created: 0 };
       }
 
-      // Get customer IDs from AMC contracts
-      const amcCustomerIds = activeAMCsRaw.map(amc => amc.customer_id);
-      console.log('👥 Customer IDs from AMCs:', amcCustomerIds);
+      const amcCustomerIds = [...new Set(activeAMCsRaw.map(amc => amc.customer_id).filter(Boolean))] as string[];
 
-      // Fetch customers separately
-      const { data: customersData, error: customersError } = await supabase
-        .from('customers')
-        .select('id, customer_id, full_name, phone, email, address, location, service_type, brand, model, last_service_date')
-        .in('id', amcCustomerIds);
-
-      if (customersError) {
-        console.error('❌ Error fetching customers:', customersError);
-        return { data: null, error: customersError, created: 0 };
+      // Fetch customers in batches (avoids large IN clauses when AMCs are 1000+)
+      const customerIdChunks = chunk(amcCustomerIds, BATCH_SIZE);
+      let customersData: any[] = [];
+      for (const ids of customerIdChunks) {
+        const { data, error: customersError } = await supabase
+          .from('customers')
+          .select('id, customer_id, full_name, phone, email, address, location, service_type, brand, model, last_service_date')
+          .in('id', ids);
+        if (customersError) {
+          console.error('❌ Error fetching customers:', customersError);
+          return { data: null, error: customersError, created: 0 };
+        }
+        customersData = customersData.concat(data || []);
       }
-
-      console.log('👥 Fetched customers:', customersData?.length);
 
       // Combine AMC contracts with customer data
       const activeAMCs = activeAMCsRaw.map(amc => ({
         ...amc,
         customers: customersData?.find(c => c.id === amc.customer_id) || null
       }));
-
-      console.log(`📋 Found ${activeAMCs.length} active AMC contracts with customer data`);
-      console.log('📋 Sample AMC contract:', activeAMCs[0]);
 
       const today = new Date();
       const todayStr = today.toISOString().split('T')[0];
@@ -1708,7 +1694,6 @@ export const db = {
         return Number.isNaN(n) ? 4 : n;
       };
       const defaultPeriodMonths = getDefaultServicePeriodMonths();
-      console.log(`📅 Today: ${todayStr}, default service period: ${defaultPeriodMonths} months`);
 
       // Helper: add months to YYYY-MM-DD, return YYYY-MM-DD
       const addMonthsToDate = (dateStr: string, months: number): string => {
@@ -1717,44 +1702,36 @@ export const db = {
         return d.toISOString().split('T')[0];
       };
 
-      // Get last completed job for each customer
-      const customerIds = activeAMCs.map(amc => amc.customer_id);
-      const { data: lastJobs, error: jobsError } = await supabase
-        .from('jobs')
-        .select('customer_id, completed_at, service_sub_type')
-        .in('customer_id', customerIds)
-        .eq('status', 'COMPLETED')
-        .not('completed_at', 'is', null)
-        .order('completed_at', { ascending: false });
-
-      if (jobsError) {
-        console.warn('Error fetching last jobs:', jobsError);
+      // Get last completed job per customer (batched for scale)
+      const customerIds = [...new Set(activeAMCs.map(amc => amc.customer_id).filter(Boolean))] as string[];
+      const lastServiceMap = new Map<string, string>();
+      const jobChunks = chunk(customerIds, BATCH_SIZE);
+      for (const ids of jobChunks) {
+        const { data: lastJobs, error: jobsError } = await supabase
+          .from('jobs')
+          .select('customer_id, completed_at, service_sub_type')
+          .in('customer_id', ids)
+          .eq('status', 'COMPLETED')
+          .not('completed_at', 'is', null)
+          .order('completed_at', { ascending: false });
+        if (!jobsError && lastJobs) {
+          lastJobs.forEach((job: any) => {
+            if (!lastServiceMap.has(job.customer_id)) lastServiceMap.set(job.customer_id, job.completed_at);
+          });
+        }
       }
 
-      // Create a map of customer_id to last service date
-      const lastServiceMap = new Map<string, string>();
-      (lastJobs || []).forEach((job: any) => {
-        if (!lastServiceMap.has(job.customer_id)) {
-          lastServiceMap.set(job.customer_id, job.completed_at);
-        }
-      });
-
-      console.log(`📊 Found ${lastServiceMap.size} customers with completed jobs`);
-
-      // Check for existing AMC service jobs that are not yet completed/denied — do not create a new one
-      // Skip if customer already has PENDING, ASSIGNED, EN_ROUTE, IN_PROGRESS, FOLLOW_UP, or RESCHEDULED AMC job
-      const { data: existingAMCJobs } = await supabase
-        .from('jobs')
-        .select('customer_id')
-        .in('customer_id', customerIds)
-        .eq('service_sub_type', 'AMC Service')
-        .in('status', ['PENDING', 'ASSIGNED', 'EN_ROUTE', 'IN_PROGRESS', 'FOLLOW_UP', 'RESCHEDULED']);
-
-      const existingAMCCustomers = new Set(
-        (existingAMCJobs || []).map((job: any) => job.customer_id)
-      );
-
-      console.log(`🚫 Found ${existingAMCCustomers.size} customers with existing AMC service job (pending/in progress/followup)`);
+      // Existing AMC service jobs (batched) — skip creating if customer already has one open
+      const existingAMCCustomers = new Set<string>();
+      for (const ids of jobChunks) {
+        const { data: existingAMCJobs } = await supabase
+          .from('jobs')
+          .select('customer_id')
+          .in('customer_id', ids)
+          .eq('service_sub_type', 'AMC Service')
+          .in('status', ['PENDING', 'ASSIGNED', 'EN_ROUTE', 'IN_PROGRESS', 'FOLLOW_UP', 'RESCHEDULED']);
+        (existingAMCJobs || []).forEach((job: any) => existingAMCCustomers.add(job.customer_id));
+      }
 
       // Preview for dry run: list of each active AMC and whether a job would be created
       type PreviewItem = {
@@ -1787,11 +1764,11 @@ export const db = {
           continue;
         }
 
-        console.log(`\n🔍 Processing customer: ${customer.customer_id || customer.id}`);
+        if (isDev) console.log(`\n🔍 Processing customer: ${customer.customer_id || customer.id}`);
 
         // Skip if already has an AMC service job in PENDING, IN_PROGRESS, FOLLOW_UP, or RESCHEDULED (no duplicate)
         if (existingAMCCustomers.has(customer.id)) {
-          console.log(`  ⏭️ Skipping - already has AMC service job (pending / in progress / follow-up)`);
+          if (isDev) console.log(`  ⏭️ Skipping - already has AMC service job (pending / in progress / follow-up)`);
           preview.push({
             customer_id: customer.customer_id || customer.id,
             customer_name: customer.full_name || 'Unknown',
@@ -1807,7 +1784,7 @@ export const db = {
         // Service period: contract value or app default; 0 = no auto
         const periodMonths = amc.service_period_months != null ? amc.service_period_months : defaultPeriodMonths;
         if (periodMonths <= 0) {
-          console.log(`  ⏭️ Skipping - no auto (service_period_months=${amc.service_period_months}, default=${defaultPeriodMonths})`);
+          if (isDev) console.log(`  ⏭️ Skipping - no auto (service_period_months=${amc.service_period_months}, default=${defaultPeriodMonths})`);
           preview.push({
             customer_id: customer.customer_id || customer.id,
             customer_name: customer.full_name || 'Unknown',
@@ -1822,7 +1799,7 @@ export const db = {
 
         // Reference date for next due: last service date, else AMC start date (creation)
         const lastServiceDateRaw = lastServiceMap.get(customer.id) || customer.last_service_date || amc.start_date;
-        console.log(`  📅 Last service raw:`, lastServiceDateRaw, `(from job / customer.last_service_date / amc.start_date)`);
+        if (isDev) console.log(`  📅 Last service raw:`, lastServiceDateRaw, `(from job / customer.last_service_date / amc.start_date)`);
 
         let referenceDateStr: string | null = null;
         if (lastServiceDateRaw) {
@@ -1833,7 +1810,7 @@ export const db = {
           }
         }
         if (!referenceDateStr) {
-          console.log(`  ⏭️ Skipping - no reference date`);
+          if (isDev) console.log(`  ⏭️ Skipping - no reference date`);
           preview.push({
             customer_id: customer.customer_id || customer.id,
             customer_name: customer.full_name || 'Unknown',
@@ -1848,10 +1825,10 @@ export const db = {
 
         const nextDueStr = addMonthsToDate(referenceDateStr, periodMonths);
         const due = todayStr >= nextDueStr;
-        console.log(`  📅 Reference: ${referenceDateStr}, period: ${periodMonths} months, next due: ${nextDueStr}, due: ${due}`);
+        if (isDev) console.log(`  📅 Reference: ${referenceDateStr}, period: ${periodMonths} months, next due: ${nextDueStr}, due: ${due}`);
 
         if (!due) {
-          console.log(`  ❌ Skipping - not yet due`);
+          if (isDev) console.log(`  ❌ Skipping - not yet due`);
           preview.push({
             customer_id: customer.customer_id || customer.id,
             customer_name: customer.full_name || 'Unknown',
@@ -1874,7 +1851,7 @@ export const db = {
         });
 
         {
-          console.log(`  ✅ Will create job for ${customer.customer_id || customer.id}`);
+          if (isDev) console.log(`  ✅ Will create job for ${customer.customer_id || customer.id}`);
           // Generate job number
           const serviceType = customer.service_type || 'RO';
           const jobNumber = generateJobNumber(serviceType);
@@ -1921,16 +1898,16 @@ export const db = {
         }
       }
 
-      console.log(`\n📦 Total jobs to create: ${jobsToCreate.length}`);
+      if (isDev) console.log(`\n📦 Total jobs to create: ${jobsToCreate.length}`);
 
       if (dryRun) {
-        console.log('ℹ️ [DRY RUN] No jobs inserted. Preview:', preview);
+        if (isDev) console.log('ℹ️ [DRY RUN] No jobs inserted. Preview:', preview);
         return { data: null, error: null, created: 0, preview };
       }
 
       // Create jobs in batch
       if (jobsToCreate.length > 0) {
-        console.log(`💾 Creating ${jobsToCreate.length} jobs...`);
+        if (isDev) console.log(`💾 Creating ${jobsToCreate.length} jobs...`);
         const { data: createdJobsData, error: createError } = await supabase
           .from('jobs')
           .insert(jobsToCreate)
@@ -1942,11 +1919,11 @@ export const db = {
         }
 
         createdCount = createdJobsData?.length || 0;
-        console.log(`✅ Successfully created ${createdCount} AMC service jobs`);
+        if (isDev) console.log(`✅ Successfully created ${createdCount} AMC service jobs`);
         return { data: createdJobsData, error: null, created: createdCount };
       }
 
-      console.log('ℹ️ No jobs to create');
+      if (isDev) console.log('ℹ️ No jobs to create');
       return { data: [], error: null, created: 0 };
     }
   },
@@ -2904,12 +2881,13 @@ export const db = {
         .order('created_at', { ascending: true });
       return { data: data || [], error };
     },
-    async getAll(includeCompleted = false) {
+    async getAll(includeCompleted = false, limitCount = 1000) {
       let query = supabase
         .from('reminders')
         .select('*')
         .order('reminder_at', { ascending: true })
-        .order('created_at', { ascending: false });
+        .order('created_at', { ascending: false })
+        .limit(Math.min(limitCount, 2000));
       if (!includeCompleted) {
         query = query.is('completed_at', null);
       }
