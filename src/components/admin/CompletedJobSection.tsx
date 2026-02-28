@@ -125,6 +125,23 @@ export const CompletedJobSection: React.FC<CompletedJobSectionProps> = ({
               }
             </div>
           )}
+          {/* Partial payment breakdown: show how much cash and how much online */}
+          {paymentMethod === 'PARTIAL' && requirements && Array.isArray(requirements) && (() => {
+            const partialReq = requirements.find((r: any) => r?.partial_cash_amount != null || r?.partial_online_amount != null);
+            const cash = Number(partialReq?.partial_cash_amount) || 0;
+            const online = Number(partialReq?.partial_online_amount) || 0;
+            if (cash > 0 || online > 0) {
+              return (
+                <div className="text-gray-700 break-words">
+                  <span className="text-gray-500 font-medium">Payment:</span>{' '}
+                  {cash > 0 && <span>₹{cash.toLocaleString('en-IN', { minimumFractionDigits: 0, maximumFractionDigits: 2 })} cash</span>}
+                  {cash > 0 && online > 0 && <span>, </span>}
+                  {online > 0 && <span>₹{online.toLocaleString('en-IN', { minimumFractionDigits: 0, maximumFractionDigits: 2 })} online</span>}
+                </div>
+              );
+            }
+            return null;
+          })()}
           
           {/* Lead Source */}
           <div className="text-gray-700 break-words">
