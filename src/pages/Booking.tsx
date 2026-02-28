@@ -22,7 +22,7 @@ import BehavioralTracker from '@/components/BehavioralTracker';
 import SecurityStatus from '@/components/SecurityStatus';
 import { useSecurity } from '@/contexts/SecurityContext';
 import DraggableMap from '@/components/DraggableMap';
-import { removePlusCode } from '@/lib/maps';
+import { removePlusCode, haversineKm } from '@/lib/maps';
 
 declare global {
   interface Window {
@@ -1169,7 +1169,8 @@ const Booking: React.FC = () => {
       // Check if customer already exists by phone number
       let customer;
       let isExistingCustomer = false;
-      
+      let keepPreviousLocation = false; // true when existing customer and new location is same or within 2 km
+
       let existingCustomer = null;
       let findError = null;
       
@@ -1197,28 +1198,52 @@ const Booking: React.FC = () => {
       }
       
       if (existingCustomer) {
-        // Customer exists, update their information
+        // Customer exists — update their information
         isExistingCustomer = true;
-        const updateData = {
+
+        // Same or within 2 km: keep previous address/location (don't overwrite)
+        const existingLoc = (existingCustomer as any).location;
+        const existingLat = existingLoc?.latitude ?? existingLoc?.lat;
+        const existingLng = existingLoc?.longitude ?? existingLoc?.lng;
+        const newLat = formData.coordinates?.lat ?? 0;
+        const newLng = formData.coordinates?.lng ?? 0;
+        const hasExistingCoords =
+          typeof existingLat === 'number' &&
+          typeof existingLng === 'number' &&
+          (existingLat !== 0 || existingLng !== 0);
+        const hasNewCoords =
+          typeof newLat === 'number' &&
+          typeof newLng === 'number' &&
+          (newLat !== 0 || newLng !== 0);
+        const keepPreviousLocationValue =
+          hasExistingCoords &&
+          hasNewCoords &&
+          haversineKm(existingLat, existingLng, newLat, newLng) <= 2;
+        keepPreviousLocation = keepPreviousLocationValue;
+
+        const updateData: Record<string, unknown> = {
           full_name: formData.fullName,
           email: formData.email,
           alternate_phone: formData.alternatePhone,
-          address: {
+          preferred_time_slot: (formData.preferredTime === 'FIRST_HALF' ? 'MORNING' : formData.preferredTime === 'SECOND_HALF' ? 'AFTERNOON' : 'CUSTOM') as 'MORNING' | 'AFTERNOON' | 'EVENING' | 'CUSTOM',
+          custom_time: formData.preferredTime === 'CUSTOM' && formData.preferredTimeCustom ? formData.preferredTimeCustom : null,
+          updated_at: new Date().toISOString(),
+        };
+
+        if (!keepPreviousLocationValue) {
+          updateData.address = {
             street: formData.address,
             area: 'Bangalore',
             city: 'Bangalore',
             state: 'Karnataka',
             pincode: '560001',
-          },
-          location: {
+          };
+          updateData.location = {
             latitude: formData.coordinates.lat,
             longitude: formData.coordinates.lng,
             formattedAddress: (() => {
-              // Clean the address - remove any URL prefixes
               let cleanAddress = formData.address || '';
-              // Remove localhost URLs
               if (cleanAddress.includes('localhost') || cleanAddress.includes('127.0.0.1')) {
-                // Extract just the address part after the URL
                 const match = cleanAddress.match(/localhost[:\d]*\/(.+)/i);
                 if (match) {
                   cleanAddress = decodeURIComponent(match[1].replace(/\+/g, ' '));
@@ -1226,7 +1251,6 @@ const Booking: React.FC = () => {
                   cleanAddress = '';
                 }
               }
-              // Remove any http/https URLs
               if (cleanAddress.startsWith('http://') || cleanAddress.startsWith('https://')) {
                 return '';
               }
@@ -1235,15 +1259,12 @@ const Booking: React.FC = () => {
             googleLocation: formData.coordinates.lat !== 0 && formData.coordinates.lng !== 0
               ? `https://www.google.com/maps/place/${formData.coordinates.lat},${formData.coordinates.lng}`
               : null
-          },
-          preferred_time_slot: (formData.preferredTime === 'FIRST_HALF' ? 'MORNING' : formData.preferredTime === 'SECOND_HALF' ? 'AFTERNOON' : 'CUSTOM') as 'MORNING' | 'AFTERNOON' | 'EVENING' | 'CUSTOM',
-          custom_time: formData.preferredTime === 'CUSTOM' && formData.preferredTimeCustom ? formData.preferredTimeCustom : null,
-          updated_at: new Date().toISOString(),
-        };
-        
+          };
+        }
+
         let updatedCustomer = null;
         let updateError = null;
-        
+
         try {
           const result = await db.customers.update((existingCustomer as any).id, updateData);
           updatedCustomer = result.data;
@@ -1371,7 +1392,59 @@ const Booking: React.FC = () => {
         customer = newCustomer;
       }
 
-      // Create job record
+      // Create job record (use existing customer address/location when same or within 2 km)
+      const custAddr = keepPreviousLocation && customer ? (customer as any).address : null;
+      const custLoc = keepPreviousLocation && customer ? (customer as any).location : null;
+      const jobServiceAddress = custAddr
+        ? {
+            street: removePlusCode(custAddr.street || custAddr.visible_address || ''),
+            area: custAddr.area || 'Bangalore',
+            city: custAddr.city || 'Bangalore',
+            state: custAddr.state || 'Karnataka',
+            pincode: custAddr.pincode || '560001',
+          }
+        : {
+            street: removePlusCode(formData.address),
+            area: 'Bangalore',
+            city: 'Bangalore',
+            state: 'Karnataka',
+            pincode: '560001',
+          };
+      const jobServiceLocation = custLoc &&
+        (typeof (custLoc.latitude ?? custLoc.lat) === 'number') &&
+        (typeof (custLoc.longitude ?? custLoc.lng) === 'number')
+        ? {
+            latitude: custLoc.latitude ?? custLoc.lat,
+            longitude: custLoc.longitude ?? custLoc.lng,
+            formattedAddress: custLoc.formattedAddress || custLoc.formatted_address || '',
+            googleLocation: custLoc.googleLocation || custLoc.google_location ||
+              `https://www.google.com/maps/place/${custLoc.latitude ?? custLoc.lat},${custLoc.longitude ?? custLoc.lng}`,
+          }
+        : {
+            latitude: formData.coordinates.lat,
+            longitude: formData.coordinates.lng,
+            formattedAddress: (() => {
+              let cleanAddress = formData.address || '';
+              if (cleanAddress.includes('localhost') || cleanAddress.includes('127.0.0.1')) {
+                const match = cleanAddress.match(/localhost[:\d]*\/(.+)/i);
+                if (match) {
+                  cleanAddress = decodeURIComponent(match[1].replace(/\+/g, ' '));
+                } else {
+                  cleanAddress = '';
+                }
+              }
+              if (cleanAddress.startsWith('http://') || cleanAddress.startsWith('https://')) {
+                return '';
+              }
+              return cleanAddress;
+            })(),
+            googleLocation: formData.coordinates.lat !== 0 && formData.coordinates.lng !== 0
+              ? `https://www.google.com/maps/place/${formData.coordinates.lat},${formData.coordinates.lng}`
+              : (formData.googleMapsLink && formData.googleMapsLink.includes('google.com/maps')
+                  ? formData.googleMapsLink
+                  : null)
+          };
+
       const jobData = {
         job_number: generateJobNumber(formData.serviceType),
         customer_id: customer.id,
@@ -1386,42 +1459,9 @@ const Booking: React.FC = () => {
         scheduled_date: formData.serviceDate ? new Date(formData.serviceDate).toISOString().split('T')[0] : new Date().toISOString().split('T')[0],
         scheduled_time_slot: (formData.preferredTime === 'FIRST_HALF' ? 'MORNING' : formData.preferredTime === 'SECOND_HALF' ? 'AFTERNOON' : 'MORNING') as 'MORNING' | 'AFTERNOON' | 'EVENING',
         estimated_duration: 120,
-        service_address: {
-          street: removePlusCode(formData.address),
-          area: 'Bangalore',
-          city: 'Bangalore',
-          state: 'Karnataka',
-          pincode: '560001',
-        },
-        service_location: {
-          latitude: formData.coordinates.lat,
-          longitude: formData.coordinates.lng,
-          formattedAddress: (() => {
-            // Clean the address - remove any URL prefixes
-            let cleanAddress = formData.address || '';
-            // Remove localhost URLs
-            if (cleanAddress.includes('localhost') || cleanAddress.includes('127.0.0.1')) {
-              // Extract just the address part after the URL
-              const match = cleanAddress.match(/localhost[:\d]*\/(.+)/i);
-              if (match) {
-                cleanAddress = decodeURIComponent(match[1].replace(/\+/g, ' '));
-              } else {
-                cleanAddress = '';
-              }
-            }
-            // Remove any http/https URLs
-            if (cleanAddress.startsWith('http://') || cleanAddress.startsWith('https://')) {
-              return '';
-            }
-            return cleanAddress;
-          })(),
-          googleLocation: formData.coordinates.lat !== 0 && formData.coordinates.lng !== 0
-            ? `https://www.google.com/maps/place/${formData.coordinates.lat},${formData.coordinates.lng}`
-            : (formData.googleMapsLink && formData.googleMapsLink.includes('google.com/maps') 
-                ? formData.googleMapsLink 
-                : null)
-        },
-        requirements: [{ 
+        service_address: jobServiceAddress,
+        service_location: jobServiceLocation,
+        requirements: [{
           lead_source: 'Website',
           custom_time: formData.preferredTime === 'CUSTOM' && formData.preferredTimeCustom ? formData.preferredTimeCustom : null
         }],
@@ -1435,6 +1475,13 @@ const Booking: React.FC = () => {
         throw new Error(jobError.message);
       }
 
+      const displayAddress = keepPreviousLocation && customer
+        ? (jobServiceLocation?.formattedAddress || jobServiceAddress.street || (customer as any).address?.street || formData.address)
+        : formData.address;
+      const displayMapsLink = keepPreviousLocation && customer && jobServiceLocation
+        ? (jobServiceLocation.googleLocation || formData.googleMapsLink)
+        : formData.googleMapsLink;
+
       // Send confirmation email (non-blocking for faster response)
       emailService.sendBookingConfirmation({
           customerName: formData.fullName,
@@ -1446,7 +1493,7 @@ const Booking: React.FC = () => {
           model: formData.modelName || 'Not specified',
           scheduledDate: formData.serviceDate ? formData.serviceDate : new Date().toISOString().split('T')[0],
           scheduledTimeSlot: formData.preferredTime,
-          serviceAddress: formData.address,
+          serviceAddress: displayAddress,
           phone: formData.phone,
       }).catch(error => {
         console.error('Email sending failed:', error);
@@ -1463,8 +1510,8 @@ const Booking: React.FC = () => {
         service: formData.service === 'Other' ? formData.customService : formData.service,
         brandName: formData.brandName || 'Not specified',
         modelName: formData.modelName || 'Not specified',
-        address: formData.address,
-        googleMapsLink: formData.googleMapsLink,
+        address: displayAddress,
+        googleMapsLink: displayMapsLink,
         serviceDate: formData.serviceDate,
         preferredTime: formData.preferredTime,
         preferredTimeCustom: formData.preferredTimeCustom,
