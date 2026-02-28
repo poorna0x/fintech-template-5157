@@ -110,7 +110,17 @@ export const calculateSimilarity = (str1: string, str2: string): number => {
 };
 
 // Bangalore areas list for address autocomplete
+// Include spelling variations (K.R Puram / KR Puram / Krishnarajapuram, J.P Nagar / JP Nagar) so suggestions match
 export const bangaloreAreas = [
+  // Name variations (same place, different spellings – so autocomplete finds them)
+  'Krishnarajapuram', 'K.R Puram', 'K R Puram', 'K.R. Puram', 'KR Puram',
+  'J.P Nagar', 'J P Nagar', 'J.P. Nagar', 'JP Nagar',
+  'R.T Nagar', 'R T Nagar', 'RT Nagar',
+  'H.S.R Layout', 'H S R Layout', 'HSR Layout', 'HSR',
+  'B.T.M Layout', 'B T M Layout', 'BTM Layout', 'BTM',
+  'C.V Raman Nagar', 'CV Raman Nagar',
+  'G.B Palya', 'G.B. Palya', 'GB Palya', 'GB palya',
+  'R.R Nagar', 'R R Nagar', 'RR Nagar',
   // Popular Areas
   'Bansawadi', 'Koramangala', 'Whitefield', 'Indiranagar', 'HSR', 'BTM', 'JP Nagar',
   'Malleshwaram', 'Rajajinagar', 'Vijayanagar', 'Basavanagudi', 'Banashankari', 'Jayanagar',
@@ -286,7 +296,42 @@ export const bangaloreAreas = [
   'Varthur Kodi', 'Varthur Road', 'Vasanthnagar', 'Vidhana Soudha', 'Vidyaranyapura',
   'Vijaya Bank Layout', 'Vijaya Nagar', 'Vijayanagar', 'Vijayanagar Extension',
   'Whitefield', 'Whitefield Main Road', 'Whitefield Road', 'Wilson Garden',
-  'Yelahanka', 'Yelahanka New Town', 'Yeshwanthpur', 'Yeshwanthpur Industrial'
+  'Yelahanka', 'Yelahanka New Town', 'Yeshwanthpur', 'Yeshwanthpur Industrial',
+  // More common Bengaluru names (variations and frequently used)
+  'Jayanagar 4th Block', 'Jayanagar 3rd Block', 'Jayanagar 1st Block', 'Jayanagar 9th Block',
+  'Koramangala 1st Block', 'Koramangala 4th Block', 'Koramangala 5th Block', 'Koramangala 6th Block',
+  'Indiranagar 1st Stage', 'Indiranagar 2nd Stage', 'Indiranagar 12th Main',
+  'HSR Layout Sector 1', 'HSR Layout Sector 2', 'HSR Layout Sector 3', 'HSR Layout Sector 4',
+  'HSR Layout Sector 5', 'HSR Layout Sector 6', 'HSR Layout Sector 7',
+  'Bannerghatta', 'Bannerghatta Road', 'Jigani', 'Anekal', 'Hulimavu', 'Arekere', 'Begur',
+  'Kaikondrahalli', 'Kasavanahalli', 'Somasundarapalya', 'Madivala', 'Madiwala',
+  'Srinagar', 'Padmanabhanagar', 'Uttarahalli', 'Girinagar', 'Kumaraswamy Layout',
+  'Tavarekere', 'Hosa Road', 'Singasandra', 'Bommasandra Industrial', 'Electronic City Phase 1',
+  'Electronic City Phase 2', 'Konanakunte', 'Doddakallasandra', 'Lakkasandra', 'Ejipura',
+  'Koramangala Inner Ring Road', 'Silk Board', 'Central Silk Board', 'BTM Ring Road',
+  'Sarjapur Road', 'Outer Ring Road', 'ORR', 'Bellandur Outer Ring Road',
+  'Kadugodi', 'Whitefield Road', 'ITPL Road', 'Varthur Road', 'Sarjapur',
+  'Hoodi Circle', 'Hope Farm Junction', 'Kundalahalli Gate', 'Marathahalli Bridge',
+  'Tin Factory', 'Baiyappanahalli', 'Benniganahalli', 'K R Puram Railway Station',
+  'Kasturi Nagar', 'Ramamurthy Nagar', 'Banaswadi', 'HBR Layout', 'Kalyan Nagar',
+  'Sahakara Nagar', 'Mathikere', 'Yeshwanthpur', 'Peenya', 'Rajajinagar', 'Malleshwaram',
+  'Seshadripuram', 'Chamrajpet', 'Chickpet', 'Gandhinagar', 'Majestic', 'City Market',
+  'Shivajinagar', 'Frazer Town', 'Cox Town', 'Cooke Town', 'Austin Town', 'Richards Town',
+  'Murphy Town', 'Benson Town', 'Cunningham Road', 'Lavelle Road', 'Residency Road',
+  'MG Road', 'Brigade Road', 'Commercial Street', 'Church Street', 'St Marks Road',
+  'Jeevan Bheema Nagar', 'Jeevan Bima Nagar', 'Pulikeshi Nagar', 'Kammanahalli',
+  'Bharathi Nagar', 'Bharath Nagar', 'Thippasandra', 'Murugeshpalya', 'Adugodi',
+  'Ashok Nagar', 'Shanti Nagar', 'Wilson Garden', 'Richmond Town', 'Cubbon Park',
+  'Vidhana Soudha', 'Cantonment', 'Ulsoor', 'Domlur', 'HAL 2nd Stage', 'HAL 3rd Stage',
+  'Nagavara', 'Thanisandra', 'Hennur', 'Horamavu', 'Kothanur', 'Bagalur', 'Jakkur',
+  'Vidyaranyapura', 'MS Palya', 'Byatarayanapura', 'Doddaballapur', 'Chikkaballapur',
+  'Devanahalli', 'Hoskote', 'Hosur', 'Nelamangala', 'Tumkur', 'Tumkuru', 'Ramanagara',
+  'Ramanagaram', 'Magadi', 'Bidadi', 'Kolar', 'Channasandra', 'Raghavendra Nagar',
+  'Shakambari Nagar', 'Nandini Layout', 'Mahalakshmi Layout', 'Kengeri', 'Rajarajeshwari Nagar',
+  'Nayandahalli', 'Kumbalgodu', 'Uttarahalli Hobli', 'Jalahalli', 'Dasarahalli',
+  'Nagasandra', 'Peenya Industrial', 'Rajajinagar Industrial', 'Basaveshwara Nagar',
+  'Vijayanagar Extension', 'Attiguppe', 'Gokula', 'Sanjay Nagar', 'Nagarbhavi',
+  'Vidyaranyapura', 'Yelahanka New Town', 'Jakkur', 'Sahakar Nagar'
 ];
 
 // Extract photo URLs from various formats
