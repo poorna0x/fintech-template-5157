@@ -218,6 +218,7 @@ const TechnicianDashboard = () => {
   const [confirmStartWorkDialog, setConfirmStartWorkDialog] = useState<{open: boolean, job: Job | null}>({open: false, job: null});
   const [confirmCompleteJobDialog, setConfirmCompleteJobDialog] = useState<{open: boolean, job: Job | null}>({open: false, job: null});
   const [statusFilter, setStatusFilter] = useState<'ONGOING' | 'PENDING' | 'ASSIGNED' | 'IN_PROGRESS' | 'COMPLETED' | 'CANCELLED' | 'RESCHEDULED'>('ONGOING');
+  const [completedDateFilter, setCompletedDateFilter] = useState<'today' | 'yesterday'>('today');
   const [selectedJob, setSelectedJob] = useState<Job | null>(null);
   const [jobNotes, setJobNotes] = useState('');
   const [isUpdating, setIsUpdating] = useState(false);
@@ -1645,32 +1646,27 @@ const TechnicianDashboard = () => {
         return deniedDate >= today && deniedDate < tomorrow;
       });
     } else if (statusFilter === 'COMPLETED') {
-      // Filter completed jobs - only show today's completed jobs completed BY this technician
-      const today = new Date();
-      const todayStart = new Date(today);
-      todayStart.setHours(0, 0, 0, 0);
-      const todayEnd = new Date(today);
-      todayEnd.setHours(23, 59, 59, 999);
-      
+      // Filter completed jobs - show today's or yesterday's completed jobs by this technician
+      const now = new Date();
+      const targetDay = new Date(now.getFullYear(), now.getMonth(), now.getDate() + (completedDateFilter === 'yesterday' ? -1 : 0));
+      const rY = targetDay.getFullYear(), rM = targetDay.getMonth(), rD = targetDay.getDate();
+
       filtered = filtered.filter(job => {
         const status = (job as any).status || job.status;
         if (status !== 'COMPLETED') return false;
-        
-        // Only show jobs completed by this technician (not just assigned to them)
-        const completedBy = (job as any).completed_by;
-        if (!completedBy) return false;
-        
-        // Check if this technician completed it
-        if (completedBy !== user?.technicianId && completedBy !== user?.id) {
-          return false;
-        }
-        
-        // Check if completed today
-        const completedAt = (job as any).completed_at || job.completedAt;
+
+        const completedBy = (job as any).completed_by || (job as any).completedBy;
+        const assignedToMe = (job as any).assigned_technician_id === user?.technicianId ||
+          ((job as any).team_members && Array.isArray((job as any).team_members) && (job as any).team_members.includes(user?.technicianId));
+        if (!completedBy && !assignedToMe) return false;
+        if (completedBy && completedBy !== user?.technicianId && completedBy !== user?.id) return false;
+
+        const completedAt = (job as any).completed_at || job.completedAt || (job as any).end_time || (job as any).endTime;
         if (!completedAt) return false;
-        
+
         const completedDate = new Date(completedAt);
-        return completedDate >= todayStart && completedDate <= todayEnd;
+        const cY = completedDate.getFullYear(), cM = completedDate.getMonth(), cD = completedDate.getDate();
+        return cY === rY && cM === rM && cD === rD;
       });
     } else if (statusFilter !== 'ALL') {
       filtered = filtered.filter(job => {
@@ -1682,6 +1678,14 @@ const TechnicianDashboard = () => {
     // Sort jobs: Follow-up jobs scheduled for today first, then NEW jobs, then IN_PROGRESS/EN_ROUTE, then others
     // Only sort if we loaded from database (not when updating status in place)
     if (!shouldPreserveOrderRef.current) {
+      if (statusFilter === 'COMPLETED') {
+        // Fast path: sort completed jobs by completed_at descending (newest first)
+        filtered.sort((a, b) => {
+          const ta = new Date((a as any).completed_at || (a as any).end_time || (a as any).completedAt || (a as any).endTime || 0).getTime();
+          const tb = new Date((b as any).completed_at || (b as any).end_time || (b as any).completedAt || (b as any).endTime || 0).getTime();
+          return tb - ta;
+        });
+      } else {
       filtered.sort((a, b) => {
       const statusA = (a as any).status || a.status;
       const statusB = (b as any).status || b.status;
@@ -1740,19 +1744,14 @@ const TechnicianDashboard = () => {
       const createdB = new Date((b as any).created_at || b.createdAt || 0).getTime();
       return createdB - createdA;
       });
+      }
     }
     
     // Reset the flag after processing
     shouldPreserveOrderRef.current = false;
 
-    console.log(`🎯 Filtered jobs for display (filter: ${statusFilter}): ${filtered.length} jobs`, {
-      totalJobs: jobs.length,
-      filter: statusFilter,
-      filteredCount: filtered.length
-    });
-
     setFilteredJobs(filtered);
-  }, [jobs, statusFilter, seenJobs]);
+  }, [jobs, statusFilter, seenJobs, completedDateFilter, user?.technicianId, user?.id]);
 
   const loadAssignmentRequests = async (retryCount = 0) => {
     if (!user?.technicianId) return;
@@ -3895,17 +3894,41 @@ const TechnicianDashboard = () => {
   }).length;
   // Count only today's completed jobs
   const today = new Date();
-  const todayStart = new Date(today);
-  todayStart.setHours(0, 0, 0, 0);
-  const todayEnd = new Date(today);
-  todayEnd.setHours(23, 59, 59, 999);
+  const yesterdayStart = new Date(today);
+  yesterdayStart.setDate(yesterdayStart.getDate() - 1);
+  yesterdayStart.setHours(0, 0, 0, 0);
+  const todayY = today.getFullYear(), todayM = today.getMonth(), todayD = today.getDate();
+  const yesterdayY = yesterdayStart.getFullYear(), yesterdayM = yesterdayStart.getMonth(), yesterdayD = yesterdayStart.getDate();
   const completedCount = jobs.filter(job => {
     if (job.status !== 'COMPLETED') return false;
-    const completedAt = (job as any).completed_at || job.completedAt;
+    const completedBy = (job as any).completed_by || (job as any).completedBy;
+    const assignedToMe = (job as any).assigned_technician_id === user?.technicianId ||
+      ((job as any).team_members && Array.isArray((job as any).team_members) && (job as any).team_members.includes(user?.technicianId));
+    if (!completedBy && !assignedToMe) return false;
+    if (completedBy && completedBy !== user?.technicianId && completedBy !== user?.id) return false;
+    const completedAt = (job as any).completed_at || job.completedAt || (job as any).end_time || (job as any).endTime;
     if (!completedAt) return false;
     const completedDate = new Date(completedAt);
-    return completedDate >= todayStart && completedDate <= todayEnd;
+    const cY = completedDate.getFullYear(), cM = completedDate.getMonth(), cD = completedDate.getDate();
+    return cY === todayY && cM === todayM && cD === todayD;
   }).length;
+  const yesterdayCompletedCount = jobs.filter(job => {
+    if (job.status !== 'COMPLETED') return false;
+    const completedBy = (job as any).completed_by || (job as any).completedBy;
+    const assignedToMe = (job as any).assigned_technician_id === user?.technicianId ||
+      ((job as any).team_members && Array.isArray((job as any).team_members) && (job as any).team_members.includes(user?.technicianId));
+    if (!completedBy && !assignedToMe) return false;
+    if (completedBy && completedBy !== user?.technicianId && completedBy !== user?.id) return false;
+    const completedAt = (job as any).completed_at || job.completedAt || (job as any).end_time || (job as any).endTime;
+    if (!completedAt) return false;
+    const completedDate = new Date(completedAt);
+    const cY = completedDate.getFullYear(), cM = completedDate.getMonth(), cD = completedDate.getDate();
+    return cY === yesterdayY && cM === yesterdayM && cD === yesterdayD;
+  }).length;
+  // Bottom Completed tab badge: show count for the selected day when on Completed tab, else today's count
+  const completedTabCount = statusFilter === 'COMPLETED' && completedDateFilter === 'yesterday'
+    ? yesterdayCompletedCount
+    : completedCount;
 
   // Only show loading screen on initial load if we have no jobs and are actually loading
   // This prevents the flash when app opens with cached data or quick loads
@@ -4329,6 +4352,32 @@ const TechnicianDashboard = () => {
              statusFilter === 'COMPLETED' ? 'Your Completed Jobs' :
              `Your ${statusFilter} Jobs`}
           </h2>
+            {statusFilter === 'COMPLETED' && (
+              <div className="flex gap-2 mb-2">
+                <button
+                  type="button"
+                  onClick={() => setCompletedDateFilter('today')}
+                  className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
+                    completedDateFilter === 'today'
+                      ? 'bg-primary text-primary-foreground'
+                      : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+                  }`}
+                >
+                  Today
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setCompletedDateFilter('yesterday')}
+                  className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
+                    completedDateFilter === 'yesterday'
+                      ? 'bg-primary text-primary-foreground'
+                      : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+                  }`}
+                >
+                  Yesterday
+                </button>
+              </div>
+            )}
             <p className="text-xs text-gray-500 mb-3">
               {statusFilter === 'ONGOING' 
                 ? `Showing ${filteredJobs.length} ongoing jobs (pending, assigned, in-progress)`
@@ -4336,6 +4385,8 @@ const TechnicianDashboard = () => {
                 ? `Showing ${filteredJobs.length} follow-up jobs`
                 : statusFilter === 'CANCELLED'
                 ? `Showing ${filteredJobs.length} denied jobs (today only)`
+                : statusFilter === 'COMPLETED'
+                ? `Showing ${filteredJobs.length} completed jobs (${completedDateFilter})`
                 : `Showing ${filteredJobs.length} ${statusFilter.toLowerCase().replace('_', ' ')} jobs`
               }
             </p>
@@ -4356,7 +4407,7 @@ const TechnicianDashboard = () => {
                     : statusFilter === 'CANCELLED'
                     ? 'You have no denied jobs today.'
                     : statusFilter === 'COMPLETED'
-                    ? 'You have no completed jobs.'
+                    ? `You have no completed jobs for ${completedDateFilter}.`
                     : 'You have no jobs at the moment.'}
                 </p>
               </CardContent>
@@ -7037,7 +7088,7 @@ const TechnicianDashboard = () => {
               {/* Completed Button */}
               <button
                 type="button"
-                onClick={() => setStatusFilter('COMPLETED')}
+                onClick={() => { setStatusFilter('COMPLETED'); setCompletedDateFilter('today'); }}
                 className={`flex flex-col items-center justify-center gap-1 py-2 px-1 rounded-lg transition-all duration-200 ${
                   statusFilter === 'COMPLETED'
                     ? 'bg-green-600 text-white shadow-md'
@@ -7047,7 +7098,7 @@ const TechnicianDashboard = () => {
                 <CheckCircle className={`h-5 w-5 ${statusFilter === 'COMPLETED' ? 'text-white' : 'text-green-400'}`} />
                 <span className="text-xs font-medium">Completed</span>
                 <span className={`text-xs font-bold ${statusFilter === 'COMPLETED' ? 'text-green-100' : 'text-gray-400'}`}>
-                  {completedCount}
+                  {completedTabCount}
                 </span>
               </button>
             </div>
