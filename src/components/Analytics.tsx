@@ -1024,7 +1024,7 @@ const Analytics = () => {
         ...baseData,
         totalBilling: periodBilling, // Use period-specific billing
         averageBill: periodAverageBill, // Use period-specific average
-        totalJobs: jobs.length, // Use period-specific job count
+        totalJobs: completedJobs.length, // Show completed count (jobs completed in period)
         completedJobs: completedJobs.length, // Use period-specific completed jobs
         deniedJobs: jobs.filter((j: any) => j && (j.status === 'DENIED' || j.status === 'CANCELLED')).length,
         pendingJobs: jobs.filter((j: any) => j && j.status === 'PENDING').length,
@@ -1210,11 +1210,12 @@ const Analytics = () => {
           <CardHeader className="pb-3">
             <CardTitle className="text-sm font-medium text-gray-600 flex items-center gap-2">
               <BarChart3 className="w-4 h-4" />
-              Total Jobs
+              Jobs Completed
             </CardTitle>
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold text-gray-900">{analytics.totalJobs}</div>
+            <div className="text-xs text-gray-500 mt-1">completed in period</div>
           </CardContent>
         </Card>
         
