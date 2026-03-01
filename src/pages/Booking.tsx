@@ -9,6 +9,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Progress } from '@/components/ui/progress';
 import { Alert, AlertDescription } from '@/components/ui/alert';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
 import { toast } from 'sonner';
 import { ChevronLeft, ChevronRight, MapPin, Camera, Upload, Check, Phone, Mail, User, Home, Clock, Wrench, Loader2, Search, Navigation, X, ExternalLink } from 'lucide-react';
 import { db } from '@/lib/supabase';
@@ -62,6 +63,8 @@ interface FormData {
 
 const Booking: React.FC = () => {
   const [currentStep, setCurrentStep] = useState(1);
+  const [locationTipPopupOpen, setLocationTipPopupOpen] = useState(false);
+  const hasShownLocationTipRef = useRef(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isDragOver, setIsDragOver] = useState(false);
   const [isLoadingLocation, setIsLoadingLocation] = useState(false);
@@ -620,6 +623,13 @@ const Booking: React.FC = () => {
     };
   }, [currentStep]);
 
+  // Show location tip popup once when user reaches Service Location step
+  useEffect(() => {
+    if (currentStep === 3 && !hasShownLocationTipRef.current) {
+      hasShownLocationTipRef.current = true;
+      setLocationTipPopupOpen(true);
+    }
+  }, [currentStep]);
 
   // Get current location handler
   const handleGetCurrentLocation = () => {
@@ -1824,6 +1834,24 @@ const Booking: React.FC = () => {
               <h3 className="text-xl font-semibold text-foreground">Service Location</h3>
               <p className="text-muted-foreground">Where should we come?</p>
             </div>
+
+            <Dialog open={locationTipPopupOpen} onOpenChange={setLocationTipPopupOpen}>
+              <DialogContent className="sm:max-w-md">
+                <DialogHeader>
+                  <DialogTitle className="flex items-center gap-2 text-lg">
+                    <span>💡</span> Location tip
+                  </DialogTitle>
+                  <DialogDescription asChild>
+                    <p className="text-foreground/90 leading-relaxed pt-1">
+                      Can&apos;t find your exact spot? Search for a nearby landmark or tap &quot;Use Current Location&quot; — don&apos;t worry, we&apos;ll confirm the location with you before we come. 😊
+                    </p>
+                  </DialogDescription>
+                </DialogHeader>
+                <Button onClick={() => setLocationTipPopupOpen(false)} className="mt-2">
+                  Got it
+                </Button>
+              </DialogContent>
+            </Dialog>
             
             <div className="space-y-4">
               <div>
