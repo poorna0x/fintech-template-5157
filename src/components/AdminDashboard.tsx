@@ -8533,12 +8533,18 @@ const AdminDashboard = () => {
                                       if (requirements && typeof requirements === 'object' && !Array.isArray(requirements)) {
                                         // Check if it has lead_source directly
                                         if (requirements.lead_source) {
+                                          const ls = requirements.lead_source;
+                                          const bookedAt = (job as any).created_at || (job as any).createdAt;
+                                          const isWebsite = ls === 'Website';
                                           return (
                                             <div className="flex items-start gap-2 sm:items-center">
                                               <Tag className="w-4 h-4 text-gray-400 flex-shrink-0 mt-0.5 sm:mt-0" />
                                               <div className="min-w-0 flex-1">
                                                 <div className="text-xs text-gray-500">Lead Source</div>
-                                                <div className="font-medium text-gray-900 break-words">{requirements.lead_source}</div>
+                                                <div className="font-medium text-gray-900 break-words">{ls}</div>
+                                                {isWebsite && bookedAt && (
+                                                  <div className="text-xs text-gray-500 mt-0.5">Booked at: {new Date(bookedAt).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })}</div>
+                                                )}
                                               </div>
                                             </div>
                                           );
@@ -8577,7 +8583,6 @@ const AdminDashboard = () => {
                                         }
                                       }
                                       
-                                      // Don't show lead source if it's "Website"
                                       if (leadSource && leadSource !== 'Website') {
                                         return (
                                           <div className="flex items-start gap-2 sm:items-center">
@@ -8588,6 +8593,23 @@ const AdminDashboard = () => {
                                             </div>
                                           </div>
                                         );
+                                      }
+                                      if (leadSource === 'Website') {
+                                        const bookedAt = (job as any).created_at || (job as any).createdAt;
+                                        if (bookedAt) {
+                                          const d = new Date(bookedAt);
+                                          const formatted = d.toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' });
+                                          return (
+                                            <div className="flex items-start gap-2 sm:items-center">
+                                              <Tag className="w-4 h-4 text-gray-400 flex-shrink-0 mt-0.5 sm:mt-0" />
+                                              <div className="min-w-0 flex-1">
+                                                <div className="text-xs text-gray-500">Lead Source</div>
+                                                <div className="font-medium text-gray-900 break-words">Website</div>
+                                                <div className="text-xs text-gray-500 mt-0.5">Booked at: {formatted}</div>
+                                              </div>
+                                            </div>
+                                          );
+                                        }
                                       }
                                       return null;
                                     })()}

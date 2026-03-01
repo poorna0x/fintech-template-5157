@@ -7667,7 +7667,6 @@ const TechnicianDashboard = () => {
                                   }
                                 }
                                 
-                                // Don't show lead source if it's "Website" (same as admin dashboard)
                                 if (leadSource && leadSource !== 'Website') {
                                   return (
                                     <div className="flex items-center gap-2">
@@ -7675,6 +7674,18 @@ const TechnicianDashboard = () => {
                                       <span className="text-sm text-gray-900">{leadSource}</span>
                                     </div>
                                   );
+                                }
+                                if (leadSource === 'Website') {
+                                  const bookedAt = (job as any).created_at || (job as any).createdAt;
+                                  if (bookedAt) {
+                                    const formatted = new Date(bookedAt).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' });
+                                    return (
+                                      <div className="flex items-center gap-2">
+                                        <span className="text-sm font-medium text-gray-700 w-32">Booked at:</span>
+                                        <span className="text-sm text-gray-900">{formatted}</span>
+                                      </div>
+                                    );
+                                  }
                                 }
                                 return null;
                               })()}
