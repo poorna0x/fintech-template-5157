@@ -98,7 +98,7 @@ interface AnalyticsData {
   };
 }
 
-type PeriodOption = '7d' | '30d' | 'thisWeek' | 'thisMonth' | '3m' | '6m' | '1y' | 'all' | 'custom';
+type PeriodOption = '7d' | '30d' | 'thisWeek' | 'thisMonth' | 'previousMonth' | '3m' | '6m' | '1y' | 'all' | 'custom';
 
 // Helper function to format currency with commas and without .00 when it's zero
 const formatCurrency = (amount: number): string => {
@@ -159,6 +159,13 @@ const Analytics = () => {
         // Start of current month (1st)
         startDate.setDate(1);
         // End of current month (last day)
+        endDate = new Date(startDate.getFullYear(), startDate.getMonth() + 1, 0);
+        endDate.setHours(23, 59, 59, 999);
+        break;
+      case 'previousMonth':
+        // First day of previous month to last day of previous month
+        startDate.setMonth(startDate.getMonth() - 1);
+        startDate.setDate(1);
         endDate = new Date(startDate.getFullYear(), startDate.getMonth() + 1, 0);
         endDate.setHours(23, 59, 59, 999);
         break;
@@ -1125,6 +1132,7 @@ const Analytics = () => {
       case '30d': return 'Last 30 Days';
       case 'thisWeek': return 'This Week';
       case 'thisMonth': return 'This Month';
+      case 'previousMonth': return 'Previous Month';
       case '3m': return 'Last 3 Months';
       case '6m': return 'Last 6 Months';
       case '1y': return 'Last Year';
@@ -1155,6 +1163,7 @@ const Analytics = () => {
               <SelectContent>
                 <SelectItem value="thisWeek">This Week</SelectItem>
                 <SelectItem value="thisMonth">This Month</SelectItem>
+                <SelectItem value="previousMonth">Previous Month</SelectItem>
                 <SelectItem value="7d">Last 7 Days</SelectItem>
                 <SelectItem value="30d">Last 30 Days</SelectItem>
                 <SelectItem value="3m">Last 3 Months</SelectItem>

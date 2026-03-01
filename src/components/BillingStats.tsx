@@ -39,7 +39,7 @@ interface LeadTypeBilling {
   jobCount: number;
 }
 
-type DateFilter = 'today' | 'thismonth' | 'last30days' | 'year' | 'all' | 'range';
+type DateFilter = 'today' | 'thismonth' | 'previousmonth' | 'last30days' | 'year' | 'all' | 'range';
 
 // Helper function to get today's date in local timezone (YYYY-MM-DD format)
 const getTodayLocalDate = () => {
@@ -96,6 +96,12 @@ const BillingStats = () => {
       case 'thismonth':
         start = new Date(end.getFullYear(), end.getMonth(), 1);
         start.setHours(0, 0, 0, 0);
+        break;
+      case 'previousmonth':
+        start = new Date(end.getFullYear(), end.getMonth() - 1, 1);
+        start.setHours(0, 0, 0, 0);
+        end = new Date(start.getFullYear(), start.getMonth() + 1, 0);
+        end.setHours(23, 59, 59, 999);
         break;
       case 'last30days':
         start.setDate(start.getDate() - 30);
@@ -338,6 +344,7 @@ const BillingStats = () => {
               <SelectContent>
                 <SelectItem value="today">Today</SelectItem>
                 <SelectItem value="thismonth">This Month</SelectItem>
+                <SelectItem value="previousmonth">Previous Month</SelectItem>
                 <SelectItem value="last30days">Last 30 Days</SelectItem>
                 <SelectItem value="year">This Year</SelectItem>
                 <SelectItem value="range">Date Range</SelectItem>
@@ -620,6 +627,8 @@ const BillingStats = () => {
                 ? new Date(selectedDate).toLocaleDateString()
                 : dateFilter === 'thismonth'
                 ? 'This month'
+                : dateFilter === 'previousmonth'
+                ? 'Previous month'
                 : dateFilter === 'last30days'
                 ? 'Last 30 days'
                 : dateFilter === 'year'
