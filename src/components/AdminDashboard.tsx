@@ -7848,9 +7848,17 @@ const AdminDashboard = () => {
                 if (!followUpDate) return false;
                 return followUpDate.startsWith(todayDateStr);
               });
-              
+              // Check if this customer has any job with lead source Website
+              const hasWebsiteLead = allJobs.some(job => {
+                const reqs = (job as any).requirements;
+                const arr = Array.isArray(reqs) ? reqs : reqs && typeof reqs === 'object' ? [reqs] : [];
+                return findLeadSource(arr) === 'Website';
+              });
+              const borderClass = hasTodayFollowup ? 'border-orange-400 border-2' : hasWebsiteLead ? 'border-red-400 border-2' : 'border-gray-300';
+              const hoverBorderClass = hasWebsiteLead ? 'hover:border-green-400' : 'hover:border-gray-400';
+
               return (
-                <Card key={customer.id} className={`bg-white border ${hasTodayFollowup ? 'border-orange-400 border-2' : 'border-gray-300'} hover:border-gray-400 hover:shadow-md transition-all duration-200 overflow-hidden mb-6 rounded-lg group`}>
+                <Card key={customer.id} className={`bg-white border ${borderClass} ${hoverBorderClass} hover:shadow-md transition-all duration-200 overflow-hidden mb-6 rounded-lg group`}>
                 <CustomerCardHeader
                   customer={customer}
                   customerAMCStatus={customerAMCStatus}
