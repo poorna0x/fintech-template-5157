@@ -1836,15 +1836,16 @@ const Booking: React.FC = () => {
             </div>
 
             <Dialog open={locationTipPopupOpen} onOpenChange={setLocationTipPopupOpen}>
-              <DialogContent className="sm:max-w-md">
+              <DialogContent className="sm:max-w-md bg-sky-50 dark:bg-sky-950/40 border-sky-200 dark:border-sky-800">
                 <DialogHeader>
                   <DialogTitle className="flex items-center gap-2 text-lg">
                     <span>💡</span> Location tip
                   </DialogTitle>
                   <DialogDescription asChild>
-                    <p className="text-foreground/90 leading-relaxed pt-1">
-                      Can&apos;t find your exact spot? Search for a nearby landmark or tap &quot;Use Current Location&quot; — don&apos;t worry, we&apos;ll confirm the location with you before we come. 😊
-                    </p>
+                    <div className="text-foreground/90 leading-relaxed pt-1 space-y-2">
+                      <p>Can&apos;t find your exact spot? Search for a nearby landmark or tap &quot;Use Current Location&quot;. That&apos;s okay — we&apos;ll confirm the location with you before we come.</p>
+                      <p className="text-sm font-medium text-primary">At the bottom, please share your purifier photo too.</p>
+                    </div>
                   </DialogDescription>
                 </DialogHeader>
                 <Button onClick={() => setLocationTipPopupOpen(false)} className="mt-2">
