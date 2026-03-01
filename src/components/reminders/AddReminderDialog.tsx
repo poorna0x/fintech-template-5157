@@ -7,7 +7,7 @@ import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Calendar } from '@/components/ui/calendar';
 import { Calendar as CalendarIcon } from 'lucide-react';
-import { format } from 'date-fns';
+import { format, addMonths } from 'date-fns';
 import { cn } from '@/lib/utils';
 import { db } from '@/lib/supabase';
 import { toast } from 'sonner';
@@ -82,12 +82,12 @@ export function AddReminderDialog({
 
     setSaving(true);
     try {
-      // For repeating reminders: first reminder is today (date picker is ignored). When editing, keep existing reminder_at so the cycle is unchanged.
+      // For new interval reminders: you only select interval — first reminder = today + X months (no date picker). When they mark it done, next = that date + X months. When editing, keep existing reminder_at.
       const reminderAt =
-        intervalType && !isEdit
-          ? format(new Date(), 'yyyy-MM-dd')
-          : isEdit && editReminder && intervalType
-            ? (editReminder.reminder_at ?? format(date, 'yyyy-MM-dd'))
+        isEdit && editReminder && intervalType
+          ? (editReminder.reminder_at ?? format(date, 'yyyy-MM-dd'))
+          : intervalType && !isEdit
+            ? format(addMonths(new Date(), intervalValue ?? 0), 'yyyy-MM-dd')
             : format(date, 'yyyy-MM-dd');
       if (isEdit && editReminder) {
         const { error } = await db.reminders.update(editReminder.id, {
@@ -211,7 +211,7 @@ export function AddReminderDialog({
             </div>
             {repeatType === 'months' && (
               <p className="text-xs text-muted-foreground">
-                First reminder: today. When you mark it done (Got it), the next reminder will be created for today + {repeatValueStr.trim() || '?'} months, then every {repeatValueStr.trim() || '?'} months after that.
+                First reminder: in {repeatValueStr.trim() || '?'} months from today. When you mark it done (Got it), the next will be {repeatValueStr.trim() || '?'} months after that, and so on.
               </p>
             )}
           </div>
