@@ -39,7 +39,7 @@ interface LeadTypeBilling {
   jobCount: number;
 }
 
-type DateFilter = 'today' | 'thismonth' | 'previousmonth' | 'last30days' | 'year' | 'all' | 'range';
+type DateFilter = 'today' | 'thismonth' | 'previousmonth' | 'custommonth' | 'last30days' | 'year' | 'all' | 'range';
 
 // Helper function to get today's date in local timezone (YYYY-MM-DD format)
 const getTodayLocalDate = () => {
@@ -64,6 +64,7 @@ const BillingStats = () => {
   const [selectedDate, setSelectedDate] = useState(() => getTodayLocalDate());
   const [startDate, setStartDate] = useState(() => getTodayLocalDate());
   const [endDate, setEndDate] = useState(() => getTodayLocalDate());
+  const [customMonthValue, setCustomMonthValue] = useState<string>(''); // YYYY-MM for Custom month
   const [qrCodeBilling, setQrCodeBilling] = useState<QRCodeBilling[]>([]);
   const [technicianBilling, setTechnicianBilling] = useState<TechnicianBilling[]>([]);
   const [leadTypeBilling, setLeadTypeBilling] = useState<LeadTypeBilling[]>([]);
@@ -78,7 +79,7 @@ const BillingStats = () => {
 
   useEffect(() => {
     loadBillingStats();
-  }, [dateFilter, selectedDate, startDate, endDate]);
+  }, [dateFilter, selectedDate, startDate, endDate, customMonthValue]);
 
   const getDateRange = (): { startDate: Date; endDate: Date } => {
     let end = new Date();
@@ -102,6 +103,22 @@ const BillingStats = () => {
         start.setHours(0, 0, 0, 0);
         end = new Date(start.getFullYear(), start.getMonth() + 1, 0);
         end.setHours(23, 59, 59, 999);
+        break;
+      case 'custommonth':
+        if (customMonthValue) {
+          const [y, m] = customMonthValue.split('-').map(Number);
+          if (y && m) {
+            start = new Date(y, m - 1, 1);
+            start.setHours(0, 0, 0, 0);
+            end = new Date(y, m, 0);
+            end.setHours(23, 59, 59, 999);
+          }
+        } else {
+          start = new Date(end.getFullYear(), end.getMonth(), 1);
+          start.setHours(0, 0, 0, 0);
+          end = new Date(start.getFullYear(), start.getMonth() + 1, 0);
+          end.setHours(23, 59, 59, 999);
+        }
         break;
       case 'last30days':
         start.setDate(start.getDate() - 30);
@@ -345,6 +362,7 @@ const BillingStats = () => {
                 <SelectItem value="today">Today</SelectItem>
                 <SelectItem value="thismonth">This Month</SelectItem>
                 <SelectItem value="previousmonth">Previous Month</SelectItem>
+                <SelectItem value="custommonth">Custom month</SelectItem>
                 <SelectItem value="last30days">Last 30 Days</SelectItem>
                 <SelectItem value="year">This Year</SelectItem>
                 <SelectItem value="range">Date Range</SelectItem>
@@ -385,6 +403,15 @@ const BillingStats = () => {
                 />
               </div>
             </div>
+          )}
+          {dateFilter === 'custommonth' && (
+            <Input
+              type="month"
+              value={customMonthValue}
+              onChange={(e) => setCustomMonthValue(e.target.value)}
+              className="w-[160px]"
+              max={new Date().toISOString().slice(0, 7)}
+            />
           )}
         </div>
       </div>
@@ -629,6 +656,10 @@ const BillingStats = () => {
                 ? 'This month'
                 : dateFilter === 'previousmonth'
                 ? 'Previous month'
+                : dateFilter === 'custommonth' && customMonthValue
+                ? new Date(customMonthValue + '-01').toLocaleDateString('en-IN', { month: 'short', year: 'numeric' })
+                : dateFilter === 'custommonth'
+                ? 'This month (select month to change)'
                 : dateFilter === 'last30days'
                 ? 'Last 30 days'
                 : dateFilter === 'year'

@@ -5,6 +5,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { db, supabase } from '@/lib/supabase';
+import { getTotalSalaryForCalendarMonth } from '@/lib/technicianSalaryForPeriod';
 import { toast } from 'sonner';
 import {
   BarChart3,
@@ -98,7 +99,7 @@ interface AnalyticsData {
   };
 }
 
-type PeriodOption = '7d' | '30d' | 'thisWeek' | 'thisMonth' | 'previousMonth' | '3m' | '6m' | '1y' | 'all' | 'custom';
+type PeriodOption = '7d' | '30d' | 'thisWeek' | 'thisMonth' | 'previousMonth' | 'customMonth' | '3m' | '6m' | '1y' | 'all' | 'custom';
 
 // Helper function to format currency with commas and without .00 when it's zero
 const formatCurrency = (amount: number): string => {
@@ -115,10 +116,11 @@ const Analytics = () => {
   const [period, setPeriod] = useState<PeriodOption>('thisMonth');
   const [customStartDate, setCustomStartDate] = useState<string>('');
   const [customEndDate, setCustomEndDate] = useState<string>('');
+  const [customMonthValue, setCustomMonthValue] = useState<string>(''); // YYYY-MM for Custom month
 
   useEffect(() => {
     loadAnalytics();
-  }, [period, customStartDate, customEndDate]);
+  }, [period, customStartDate, customEndDate, customMonthValue]);
 
   const getDateRange = (): { startDate: Date | null; endDate: Date | null } => {
     let endDate = new Date();
@@ -135,6 +137,14 @@ const Analytics = () => {
       start.setHours(0, 0, 0, 0);
       const end = new Date(customEndDate);
       end.setHours(23, 59, 59, 999);
+      return { startDate: start, endDate: end };
+    }
+
+    if (period === 'customMonth' && customMonthValue) {
+      const [y, m] = customMonthValue.split('-').map(Number);
+      if (!y || !m) return { startDate: null, endDate: null };
+      const start = new Date(y, m - 1, 1, 0, 0, 0, 0);
+      const end = new Date(y, m, 0, 23, 59, 59, 999);
       return { startDate: start, endDate: end };
     }
     
@@ -279,91 +289,63 @@ const Analytics = () => {
           totalBusinessExpenses = businessExpenses.reduce((sum: number, exp: any) => sum + Number(exp.amount || 0), 0);
         }
 
-        // Calculate salary expenses from technician payments
-        // Total salary paid = sum of (base salary + commissions + extra commissions - advances) for all technicians
-        // We'll calculate from technician payments and base salaries
-        try {
-          // Get all technicians
-          const { data: allTechnicians } = await db.technicians.getAll(100);
-          
-          if (allTechnicians && startDate && endDate) {
-            // Get technician payments for the period
-            const { data: paymentsData } = await supabase
-              .from('technician_payments')
-              .select('*')
-              .gte('created_at', startDate.toISOString())
-              .lte('created_at', endDate.toISOString());
-            
-            // Get technician advances (these reduce salary)
-            const { data: advancesData } = await db.technicianAdvances.getAll();
-            const { data: extraCommissionsData } = await db.technicianExtraCommissions.getAll();
-            
-            // Calculate total salary for each technician
-            let totalSalaryPaid = 0;
-            const salaryBreakdown: { name: string; id: string; amount: number; base: number; commissions: number; extra: number; advances: number }[] = [];
-
-            // Exclude this technician from "Total Salary" and from profit (by employee_id, e.g. TECH851703400)
-            const EXCLUDED_EMPLOYEE_ID = 'TECH851703400'; // Srujan
-
-            allTechnicians.forEach((tech: any) => {
-              const techId = tech.id;
-              const techName = tech.name ?? tech.full_name ?? techId;
-              const employeeId = tech.employee_id ?? tech.employeeId ?? '';
-              const monthlyBaseSalary = (tech.salary && typeof tech.salary === 'object' && (tech.salary as any).baseSalary) 
-                ? (tech.salary as any).baseSalary 
-                : 8000; // Default
-              
-              // Get payments, advances, extra commissions for this technician in period
-              const techPayments = (paymentsData || []).filter((p: any) => p.technician_id === techId);
-              const techAdvances = (advancesData || []).filter((a: any) => {
-                if (a.technician_id !== techId) return false;
-                const advDate = new Date(a.advance_date);
-                return advDate >= startDate && advDate <= endDate;
-              });
-              const techExtraCommissions = (extraCommissionsData || []).filter((ec: any) => {
-                if (ec.technician_id !== techId) return false;
-                const ecDate = new Date(ec.commission_date);
-                return ecDate >= startDate && ecDate <= endDate;
-              });
-              
-              // Calculate salary components (base pro-rated by period up to today)
-              const baseSalary = getProRatedBaseSalary(monthlyBaseSalary, startDate, endDate);
-              const commissions = techPayments.reduce((sum: number, p: any) => sum + (p.commission_amount || 0), 0);
-              const extraCommissions = techExtraCommissions.reduce((sum: number, ec: any) => sum + (ec.amount || 0), 0);
-              const advances = techAdvances.reduce((sum: number, a: any) => sum + (a.amount || 0), 0);
-              
-              const techTotalSalary = baseSalary + commissions + extraCommissions - advances;
-              const amount = Math.max(0, techTotalSalary);
-              totalSalaryIncludingAll += amount;
-
-              if (employeeId === EXCLUDED_EMPLOYEE_ID) {
-                console.log('[Analytics Salary] EXCLUDED from Total Salary:', techName, employeeId, techId);
-                return; // Skip: not included in Total Salary / profit
-              }
-
-              totalSalaryPaid += amount;
-              salaryBreakdown.push({
-                name: techName,
-                id: techId,
-                amount,
-                base: baseSalary,
-                commissions,
-                extra: extraCommissions,
-                advances,
-              });
-            });
-
-            totalSalaryDeductions = totalSalaryPaid;
-            // Break down Total Salary so you can see how the total is made up
-            console.log('[Analytics Salary] BREAKDOWN — Total Salary: ₹' + totalSalaryPaid.toLocaleString('en-IN'));
-            salaryBreakdown.forEach((b) => {
-              console.log(`  ${b.name} (${b.id}): ₹${b.amount.toLocaleString('en-IN')} = base ₹${b.base.toLocaleString('en-IN')} + comm ₹${b.commissions.toLocaleString('en-IN')} + extra ₹${b.extra.toLocaleString('en-IN')} − adv ₹${b.advances.toLocaleString('en-IN')}`);
-            });
-            console.log('[Analytics Salary] TOTAL: ₹' + totalSalaryPaid.toLocaleString('en-IN'));
-            console.table(salaryBreakdown.map((b) => ({ Technician: b.name, ID: b.id, Amount: b.amount, Base: b.base, Commissions: b.commissions, Extra: b.extra, Advances: b.advances })));
+        // Total Salary: for This month / Previous month / Custom month use same figure as Payments section
+        const usePaymentsSalary = (period === 'thisMonth' || period === 'previousMonth' || period === 'customMonth') && startDate && endDate;
+        if (usePaymentsSalary) {
+          try {
+            const year = startDate.getFullYear();
+            const month = startDate.getMonth() + 1; // 1-12
+            const result = await getTotalSalaryForCalendarMonth(year, month);
+            totalSalaryDeductions = result.totalSalary;
+            totalSalaryIncludingAll = result.totalSalaryIncludingAll;
+          } catch (e) {
+            console.error('Error loading salary from Payments logic:', e);
           }
-        } catch (e) {
-          console.error('Error calculating salary deductions:', e);
+        } else {
+          // Other periods: calculate from technician payments (pro-rated base, no holiday logic)
+          try {
+            const { data: allTechnicians } = await db.technicians.getAll(100);
+            if (allTechnicians && startDate && endDate) {
+              const { data: paymentsData } = await supabase
+                .from('technician_payments')
+                .select('*')
+                .gte('created_at', startDate.toISOString())
+                .lte('created_at', endDate.toISOString());
+              const { data: advancesData } = await db.technicianAdvances.getAll();
+              const { data: extraCommissionsData } = await db.technicianExtraCommissions.getAll();
+              let totalSalaryPaid = 0;
+              const EXCLUDED_EMPLOYEE_ID = 'TECH851703400';
+              allTechnicians.forEach((tech: any) => {
+                const techId = tech.id;
+                const employeeId = tech.employee_id ?? tech.employeeId ?? '';
+                const monthlyBaseSalary = (tech.salary && typeof tech.salary === 'object' && (tech.salary as any).baseSalary)
+                  ? (tech.salary as any).baseSalary
+                  : 8000;
+                const techPayments = (paymentsData || []).filter((p: any) => p.technician_id === techId);
+                const techAdvances = (advancesData || []).filter((a: any) => {
+                  if (a.technician_id !== techId) return false;
+                  const advDate = new Date(a.advance_date);
+                  return advDate >= startDate && advDate <= endDate;
+                });
+                const techExtraCommissions = (extraCommissionsData || []).filter((ec: any) => {
+                  if (ec.technician_id !== techId) return false;
+                  const ecDate = new Date(ec.commission_date);
+                  return ecDate >= startDate && ecDate <= endDate;
+                });
+                const baseSalary = getProRatedBaseSalary(monthlyBaseSalary, startDate, endDate);
+                const commissions = techPayments.reduce((sum: number, p: any) => sum + (p.commission_amount || 0), 0);
+                const extraCommissions = techExtraCommissions.reduce((sum: number, ec: any) => sum + (ec.amount || 0), 0);
+                const advances = techAdvances.reduce((sum: number, a: any) => sum + (a.amount || 0), 0);
+                const amount = Math.max(0, baseSalary + commissions + extraCommissions - advances);
+                totalSalaryIncludingAll += amount;
+                if (employeeId === EXCLUDED_EMPLOYEE_ID) return;
+                totalSalaryPaid += amount;
+              });
+              totalSalaryDeductions = totalSalaryPaid;
+            }
+          } catch (e) {
+            console.error('Error calculating salary deductions:', e);
+          }
         }
       }
       
@@ -1133,6 +1115,9 @@ const Analytics = () => {
       case 'thisWeek': return 'This Week';
       case 'thisMonth': return 'This Month';
       case 'previousMonth': return 'Previous Month';
+      case 'customMonth': return customMonthValue
+        ? new Date(customMonthValue + '-01').toLocaleDateString('en-IN', { month: 'short', year: 'numeric' })
+        : 'Custom month';
       case '3m': return 'Last 3 Months';
       case '6m': return 'Last 6 Months';
       case '1y': return 'Last Year';
@@ -1164,6 +1149,7 @@ const Analytics = () => {
                 <SelectItem value="thisWeek">This Week</SelectItem>
                 <SelectItem value="thisMonth">This Month</SelectItem>
                 <SelectItem value="previousMonth">Previous Month</SelectItem>
+                <SelectItem value="customMonth">Custom month</SelectItem>
                 <SelectItem value="7d">Last 7 Days</SelectItem>
                 <SelectItem value="30d">Last 30 Days</SelectItem>
                 <SelectItem value="3m">Last 3 Months</SelectItem>
@@ -1195,12 +1181,27 @@ const Analytics = () => {
               />
             </div>
           )}
+          {period === 'customMonth' && (
+            <Input
+              type="month"
+              value={customMonthValue}
+              onChange={(e) => setCustomMonthValue(e.target.value)}
+              className="w-[160px]"
+              max={new Date().toISOString().slice(0, 7)}
+            />
+          )}
         </div>
       </div>
       
       {period === 'custom' && (!customStartDate || !customEndDate) && (
         <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-3 text-sm text-yellow-800">
           Please select both start and end dates to view custom range analytics.
+        </div>
+      )}
+
+      {period === 'customMonth' && !customMonthValue && (
+        <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-3 text-sm text-yellow-800">
+          Please select a month to view analytics.
         </div>
       )}
 
@@ -1847,8 +1848,10 @@ const Analytics = () => {
                   <div className="flex justify-between gap-2 items-center min-w-0">
                     <span className="text-gray-600 truncate">Total Salary (all salary including):</span>
                     <span className="font-semibold text-red-600 shrink-0 tabular-nums">
-                      ₹ {formatCurrency(analytics.totalSalaryDeductions || 0)}
-                      {analytics.totalSalaryIncludingAll != null && analytics.totalSalaryIncludingAll !== (analytics.totalSalaryDeductions ?? 0) && (
+                      ₹ {formatCurrency(Math.max(0, analytics.totalSalaryDeductions ?? 0))}
+                      {analytics.totalSalaryIncludingAll != null &&
+                        analytics.totalSalaryIncludingAll > 0 &&
+                        analytics.totalSalaryIncludingAll !== (analytics.totalSalaryDeductions ?? 0) && (
                         <> (₹ {formatCurrency(analytics.totalSalaryIncludingAll)})</>
                       )}
                     </span>
