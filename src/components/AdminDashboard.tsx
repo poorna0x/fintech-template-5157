@@ -7365,9 +7365,9 @@ const AdminDashboard = () => {
     );
   }
 
-  // Show AMC View page if requested
+  // Show AMC View page if requested (wait for session so first fetch has auth)
   if (showAMCViewPage) {
-    return <AMCViewPage onBack={handleHideAMCView} />;
+    return <AMCViewPageGate onBack={handleHideAMCView} />;
   }
 
   // Show different views based on currentView state

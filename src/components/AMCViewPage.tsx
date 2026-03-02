@@ -20,13 +20,16 @@ import {
   XCircle,
   Clock,
   Edit,
-  Trash2
+  Trash2,
+  RefreshCw,
+  LogIn
 } from 'lucide-react';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { db } from '@/lib/supabase';
+import { db, supabase } from '@/lib/supabase';
 import { toast } from 'sonner';
 import AdminHeader from './AdminHeader';
+import { useAuth } from '@/contexts/AuthContext';
 
 interface AMCRecord {
   id: string;
@@ -57,6 +60,7 @@ interface AMCViewPageProps {
 }
 
 const AMCViewPage: React.FC<AMCViewPageProps> = ({ onBack }) => {
+  const { user } = useAuth();
   const [amcRecords, setAmcRecords] = useState<AMCRecord[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
@@ -83,7 +87,8 @@ const AMCViewPage: React.FC<AMCViewPageProps> = ({ onBack }) => {
   const loadAMCRecords = async () => {
     try {
       setLoading(true);
-      // Load AMC contracts from the amc_contracts table
+      // Ensure Supabase client has session from storage before first request (avoids 0 rows when session wasn't attached yet)
+      await supabase.auth.getSession();
       const { data: amcContracts, error } = await db.amcContracts.getAll(1000, 0);
 
       if (error) {
@@ -358,6 +363,34 @@ const AMCViewPage: React.FC<AMCViewPageProps> = ({ onBack }) => {
     );
   }
 
+  // Only show "sign in" when the app has no user (e.g. edge case). If you're signed in as admin, we always show the normal AMC view.
+  if (!user) {
+    return (
+      <div className="min-h-screen bg-gray-50">
+        <AdminHeader />
+        <div className="container mx-auto px-4 py-4 sm:py-8">
+          <Button variant="ghost" size="sm" onClick={onBack} className="text-gray-600 hover:text-gray-900 -ml-2 mb-4">
+            <ArrowLeft className="w-4 h-4 mr-1" />
+            Back
+          </Button>
+          <Card className="max-w-lg mx-auto mt-8">
+            <CardContent className="p-8 text-center">
+              <LogIn className="w-12 h-12 text-amber-500 mx-auto mb-4" />
+              <h3 className="text-lg font-semibold text-gray-900 mb-2">Sign in to view AMC contracts</h3>
+              <p className="text-gray-600 text-sm mb-4">
+                Sign in with your admin account to view AMC contracts.
+              </p>
+              <Button onClick={() => window.location.reload()} variant="default">
+                <RefreshCw className="w-4 h-4 mr-2" />
+                Reload and sign in
+              </Button>
+            </CardContent>
+          </Card>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen bg-gray-50">
       <AdminHeader />
@@ -423,11 +456,20 @@ const AMCViewPage: React.FC<AMCViewPageProps> = ({ onBack }) => {
             <CardContent className="p-12 text-center">
               <FileText className="w-12 h-12 text-gray-400 mx-auto mb-4" />
               <h3 className="text-lg font-medium text-gray-900 mb-2">No AMC records found</h3>
-              <p className="text-gray-600">
+              <p className="text-gray-600 mb-4">
                 {searchTerm || statusFilter !== 'ALL'
                   ? 'Try adjusting your search or filters'
                   : 'No AMC agreements have been created yet'}
               </p>
+              {!searchTerm && statusFilter === 'ALL' && (
+                <p className="text-sm text-gray-500 mb-4 max-w-md mx-auto">
+                  If you see AMC contracts on another device (e.g. your phone), sign in with the <strong>same admin account</strong> on this device. Each browser or incognito window has its own sign-in.
+                </p>
+              )}
+              <Button variant="outline" onClick={() => loadAMCRecords()}>
+                <RefreshCw className="w-4 h-4 mr-2" />
+                Retry
+              </Button>
             </CardContent>
           </Card>
         ) : (

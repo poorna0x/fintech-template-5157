@@ -642,64 +642,6 @@ const BillingStats = () => {
           </div>
         </CardContent>
       </Card>
-
-      {/* Revenue & Profit Summary */}
-      <Card className="border-2 border-blue-200 bg-blue-50/30">
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2 text-lg">
-            <DollarSign className="w-5 h-5" />
-            Revenue & Profit Summary
-            <span className="text-sm font-normal text-gray-500">
-              ({dateFilter === 'today'
-                ? new Date(selectedDate).toLocaleDateString()
-                : dateFilter === 'thismonth'
-                ? 'This month'
-                : dateFilter === 'previousmonth'
-                ? 'Previous month'
-                : dateFilter === 'custommonth' && customMonthValue
-                ? new Date(customMonthValue + '-01').toLocaleDateString('en-IN', { month: 'short', year: 'numeric' })
-                : dateFilter === 'custommonth'
-                ? 'This month (select month to change)'
-                : dateFilter === 'last30days'
-                ? 'Last 30 days'
-                : dateFilter === 'year'
-                ? `Year ${new Date().getFullYear()}`
-                : dateFilter === 'range'
-                ? `${new Date(startDate).toLocaleDateString()} – ${new Date(endDate).toLocaleDateString()}`
-                : 'All time'})
-            </span>
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="space-y-4">
-            <div className="flex justify-between items-center">
-              <span className="text-gray-700 font-medium">Total Revenue</span>
-              <span className="text-xl font-bold text-green-600">₹ {formatCurrency(summary.revenue)}</span>
-            </div>
-            <div className="border-t pt-3 space-y-2 text-sm text-gray-600">
-              <div className="flex justify-between">
-                <span>− 10% Commission</span>
-                <span className="font-medium text-red-600">₹ {formatCurrency(summary.commission10)}</span>
-              </div>
-              <div className="flex justify-between">
-                <span>− Spare Parts</span>
-                <span className="font-medium text-red-600">₹ {formatCurrency(summary.sparePartsCost)}</span>
-              </div>
-              <div className="flex justify-between">
-                <span>− Lead Cost</span>
-                <span className="font-medium text-red-600">₹ {formatCurrency(summary.leadCost)}</span>
-              </div>
-            </div>
-            <div className="border-t pt-3 flex justify-between items-center">
-              <span className="font-semibold text-gray-800">Profit</span>
-              <span className={`text-2xl font-bold ${summary.profit >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-                ₹ {formatCurrency(summary.profit)}
-              </span>
-            </div>
-            <p className="text-xs text-gray-500">Profit = Revenue − 10% commission − spare parts − lead cost</p>
-          </div>
-        </CardContent>
-      </Card>
     </div>
   );
 };
