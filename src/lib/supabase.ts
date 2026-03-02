@@ -808,6 +808,19 @@ export const db = {
       const { data, error } = await query;
       return { data, error };
     },
+
+    /** Slim list for dropdowns: id, full_name, phone, employee_id, status only (no *). */
+    async getList(limit?: number) {
+      let query = supabase
+        .from('technicians')
+        .select('id, full_name, phone, employee_id, status')
+        .order('created_at', { ascending: false });
+      if (limit && limit > 0) {
+        query = query.limit(limit);
+      }
+      const { data, error } = await query;
+      return { data, error };
+    },
     
     async getAvailable() {
       const { data, error } = await supabase

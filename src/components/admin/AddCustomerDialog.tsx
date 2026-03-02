@@ -132,7 +132,7 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
         setLoadingTechnicians(true);
         try {
           // OPTIMIZATION: Limit technicians fetch
-          const { data, error } = await db.technicians.getAll(100);
+          const { data, error } = await db.technicians.getList(100);
           if (error) {
             console.error('Error loading technicians:', error);
           } else {

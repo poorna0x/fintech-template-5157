@@ -270,7 +270,7 @@ const TechnicianPayments = () => {
       }
       
       // OPTIMIZATION: Limit technicians fetch
-      const { data: techsData, error: techsError } = await db.technicians.getAll(100);
+      const { data: techsData, error: techsError } = await db.technicians.getList(100);
       if (techsError) throw techsError;
       setTechnicians(techsData || []);
 

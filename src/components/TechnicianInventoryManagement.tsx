@@ -97,7 +97,7 @@ const TechnicianInventoryManagement: React.FC<TechnicianInventoryManagementProps
     }
 
     try {
-      const { data, error } = await db.technicians.getAll();
+      const { data, error } = await db.technicians.getList();
       if (error) throw error;
       const techData = data || [];
       setTechnicians(techData);
