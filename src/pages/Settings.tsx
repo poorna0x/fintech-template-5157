@@ -1182,6 +1182,24 @@ const Settings = () => {
         tables.push({ name: 'admin_todos', data: adminTodos || [] });
       }
 
+      const { data: reminders, error: remindersError } = await db.reminders.getAll(true, 10000);
+      if (remindersError) {
+        console.error('Error fetching reminders:', remindersError);
+        toast.error(`Failed to fetch reminders: ${remindersError.message}`);
+      } else {
+        tables.push({ name: 'reminders', data: reminders || [] });
+      }
+
+      const { data: technicianCommonQr, error: technicianCommonQrError } = await supabase
+        .from('technician_common_qr')
+        .select('*');
+      if (technicianCommonQrError) {
+        console.error('Error fetching technician common QR:', technicianCommonQrError);
+        toast.error(`Failed to fetch technician common QR: ${technicianCommonQrError.message}`);
+      } else {
+        tables.push({ name: 'technician_common_qr', data: technicianCommonQr || [] });
+      }
+
       // Create ZIP file with all CSV files
       const zip = new JSZip();
       
@@ -2016,8 +2034,10 @@ const Settings = () => {
                   <li>Notifications</li>
                   <li>Parts Inventory</li>
                   <li>Product QR Codes</li>
+                  <li>Reminders</li>
                   <li>Service Areas</li>
                   <li>Tax Invoices</li>
+                  <li>Technician Common QR</li>
                   <li>Technician Advances</li>
                   <li>Technician Expenses</li>
                   <li>Technician Extra Commissions</li>
