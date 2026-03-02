@@ -1131,17 +1131,12 @@ const AdminDashboard = () => {
     }
   }, [pageSize, deniedDateFilter, completedDateFilter]);
 
-  // Reload follow-up jobs when status filter changes to RESCHEDULED
+  // Reload follow-up jobs for glow when status filter changes to RESCHEDULED (minimal: today/tomorrow only)
   useEffect(() => {
     if (statusFilter === 'RESCHEDULED') {
-      // OPTIMIZATION: Use pagination with reasonable limit instead of 1000
-      db.jobs.getByStatusPaginated(['FOLLOW_UP', 'RESCHEDULED'], 1, 100).then(result => {
-        if (result.data) {
-          setAllFollowUpJobs(result.data);
-        }
-      }).catch(() => {
-        // Silently fail
-      });
+      db.jobs.getFollowUpForGlow().then(({ data }) => {
+        if (data) setAllFollowUpJobs(data as Job[]);
+      }).catch(() => {});
     }
   }, [statusFilter]);
 
@@ -1253,12 +1248,8 @@ const AdminDashboard = () => {
       Promise.all([
         loadBrandsAndModels(),
         loadFilteredJobs(statusFilter, currentPage),
-        // OPTIMIZATION: Reduce limit for follow-up jobs (100 instead of 1000)
-        // This is just for the glow effect in stats card, we don't need all 1000
-        db.jobs.getByStatusPaginated(['FOLLOW_UP', 'RESCHEDULED'], 1, 100).then(result => {
-          if (result.data) {
-            setAllFollowUpJobs(result.data);
-          }
+        db.jobs.getFollowUpForGlow().then(({ data }) => {
+          if (data) setAllFollowUpJobs(data as Job[]);
         }).catch(() => {
           setAllFollowUpJobs([]);
         })
@@ -5692,14 +5683,10 @@ const AdminDashboard = () => {
             : 'Follow-up scheduled successfully'
       );
       
-      // Reload all follow-up jobs to update glow effect
-      db.jobs.getByStatusPaginated(['FOLLOW_UP', 'RESCHEDULED'], 1, 1000).then(result => {
-        if (result.data) {
-          setAllFollowUpJobs(result.data);
-        }
-      }).catch(() => {
-        // Silently fail
-      });
+      // Reload follow-up jobs for glow (minimal: today/tomorrow only)
+      db.jobs.getFollowUpForGlow().then(({ data }) => {
+        if (data) setAllFollowUpJobs(data as Job[]);
+      }).catch(() => {});
       
       // Reload filtered jobs if currently viewing follow-up jobs to show updated date
       if (statusFilter === 'RESCHEDULED') {

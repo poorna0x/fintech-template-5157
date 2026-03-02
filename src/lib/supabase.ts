@@ -701,6 +701,21 @@ export const db = {
       };
     },
 
+    /** Minimal fetch for follow-up glow: only jobs with follow_up_date today or tomorrow. Returns id, status, follow_up_date only. */
+    async getFollowUpForGlow() {
+      const now = new Date();
+      const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0, 0);
+      const dayAfterTomorrow = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 2, 0, 0, 0, 0);
+      const { data, error } = await supabase
+        .from('jobs')
+        .select('id, status, follow_up_date')
+        .in('status', ['FOLLOW_UP', 'RESCHEDULED'])
+        .gte('follow_up_date', todayStart.toISOString())
+        .lt('follow_up_date', dayAfterTomorrow.toISOString())
+        .limit(200);
+      return { data: data || [], error };
+    },
+
     /** Analytics only: selective columns (no before_photos, after_photos, service_address, etc.). Same aggregates, lower egress. */
     async getForAnalytics(limit: number = 5000) {
       const cols = [

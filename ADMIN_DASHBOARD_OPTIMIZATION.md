@@ -144,13 +144,31 @@ Ranked by impact (when run × payload size):
 | # | Where | Call | Issue |
 |---|--------|------|--------|
 | 1 | **Settings – Export** | `db.jobs.getAll(undefined, false)` | Left as-is: used once a month; user needs full data for export. No change. |
-| 2 | **AdminDashboard** | `getByStatusPaginated(['FOLLOW_UP','RESCHEDULED'], 1, 1000)` | Up to **1000** rows (full job + customer) for glow effect. |
+| 2 | **AdminDashboard – Follow-up glow** | **Done** | Now uses `jobs.getFollowUpForGlow()` – only today/tomorrow, columns `id, status, follow_up_date`. No more 1000 full rows. |
 | 3 | **Analytics** | **Done** | Now uses `db.jobs.getForAnalytics(5000)` – selective columns only (no photos/address). Same exact aggregates, lower egress. |
 | 4 | **getOngoing** | Done | Now has `.limit(100)`. |
 | 5 | **TechnicianInventoryManagement** | `db.technicians.getAll()` | **No limit.** |
 | 6 | **getByStatusPaginated** (list) | 20/page but `*` + customer | Heavy per-row; selective columns would help. |
 
 Other: Settings export also does customers(10k), amcContracts(100k), technicianPayments.getAll() (no limit), etc. `useDashboardData` hook loads customers(1000) but hook is not used by AdminDashboard.
+
+## Remaining optimizations (egress + scale)
+
+**Egress (in order of impact):**
+
+1. **Follow-up glow (AdminDashboard)** – `getByStatusPaginated(['FOLLOW_UP','RESCHEDULED'], 1, 1000)` fetches 1000 full rows. Reduce to 100–200 or add a “list” select (no photos/requirements) for this call so glow still works with less data.
+2. **Job list selective columns** – For `getByStatusPaginated` and `getOngoing`, add a “list” select: only columns needed for cards (id, job_number, status, scheduled_date, customer_id, assigned_technician_id, completed_at, end_time, follow_up_date, denied_at + customer fields). Omit before_photos, after_photos, requirements, service_address, service_location. Fetch full job when user opens detail or photo gallery. Same UX, much smaller payload per row.
+3. **TechnicianInventoryManagement** – `db.technicians.getAll()` has no limit. Add `.limit(500)` (or pass limit) so it doesn’t grow unbounded.
+4. **Technicians list select** – Where only dropdown/list is needed, use a slim select (e.g. id, full_name, phone) instead of `*` for technicians.
+5. **Optional: jobs.getByCustomerId** – For photo gallery/report, could split into “jobs list for customer” (no photos) + “photos for job” when gallery opens, if you need to trim egress there later.
+
+**Scalability (architecture / ease to scale):**
+
+6. **Pagination everywhere** – Any “getAll” that can grow (technicians, AMC, etc.) should take a limit or use pagination so the app behaves well with 10k+ rows.
+7. **Default limit in jobs.getAll** – In supabase, if `jobs.getAll(undefined, false)` is ever called (e.g. from another screen), default to a safe limit (e.g. 5000) so no caller accidentally fetches unbounded jobs.
+8. **Split AdminDashboard** – File is very large; split by view (Dashboard, Billing, Analytics, Inventory) and use React.lazy + Suspense so only the active view loads. Improves initial load and maintainability.
+9. **Cache** – Short-lived in-memory (or sessionStorage) cache for technicians, job counts, or other rarely changing data so switching tabs doesn’t refetch every time. Invalidate on create/update/delete.
+10. **DB indexes** – Ensure indexes on jobs(status), jobs(created_at), jobs(completed_at), jobs(customer_id), customers(phone), etc., so list and filter queries stay fast as data grows.
 
 ## Expected Performance Improvements
 
