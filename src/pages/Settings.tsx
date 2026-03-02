@@ -974,7 +974,7 @@ const Settings = () => {
 
       // OPTIMIZATION: For export, fetch jobs without nested customer data to reduce payload
       // Customer data is already in the customers table, no need to duplicate
-      const { data: jobs, error: jobsError } = await db.jobs.getAll(undefined, false);
+      const { data: jobs, error: jobsError } = await db.jobs.getAll(-1, false);
       if (jobsError) {
         console.error('Error fetching jobs:', jobsError);
         toast.error(`Failed to fetch jobs: ${jobsError.message}`);

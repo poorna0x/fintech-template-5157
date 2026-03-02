@@ -164,8 +164,8 @@ Other: Settings export also does customers(10k), amcContracts(100k), technicianP
 
 **Scalability (architecture / ease to scale):**
 
-6. **Pagination everywhere** – Any “getAll” that can grow (technicians, AMC, etc.) should take a limit or use pagination so the app behaves well with 10k+ rows.
-7. **Default limit in jobs.getAll** – In supabase, if `jobs.getAll(undefined, false)` is ever called (e.g. from another screen), default to a safe limit (e.g. 5000) so no caller accidentally fetches unbounded jobs.
+6. **Pagination everywhere** – Any “getAll” **Done.** Default limits: jobs.getAll(5000), customers(1000), technicians(500), getList(500); Settings export jobs.getAll(500000, false). Other getAll have default limits 500–10000.
+7. **Default limit in jobs.getAll** – **Done.** Default 5000 when limit not provided; Settings export passes 500000.
 8. **Split AdminDashboard** – File is very large; split by view (Dashboard, Billing, Analytics, Inventory) and use React.lazy + Suspense so only the active view loads. Improves initial load and maintainability.
 9. **Cache** – Short-lived in-memory (or sessionStorage) cache for technicians, job counts, or other rarely changing data so switching tabs doesn’t refetch every time. Invalidate on create/update/delete.
 10. **DB indexes** – Ensure indexes on jobs(status), jobs(created_at), jobs(completed_at), jobs(customer_id), customers(phone), etc., so list and filter queries stay fast as data grows.

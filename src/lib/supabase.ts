@@ -168,17 +168,12 @@ export const db = {
     },
     
     async getAll(limit?: number) {
-      let query = supabase
+      const effectiveLimit = limit != null && limit > 0 ? limit : 1000;
+      const { data, error } = await supabase
         .from('customers')
         .select('*')
-        .order('created_at', { ascending: false });
-      
-      // Add limit if provided to reduce data transfer
-      if (limit && limit > 0) {
-        query = query.limit(limit);
-      }
-      
-      const { data, error } = await query;
+        .order('created_at', { ascending: false })
+        .limit(effectiveLimit);
       return { data, error };
     },
 
@@ -345,11 +340,11 @@ export const db = {
       
       query = query.order('created_at', { ascending: false });
       
-      // Add limit if provided to reduce data transfer
-      if (limit && limit > 0) {
-        query = query.limit(limit);
+      // Default limit 5000 to avoid unbounded fetch. Pass -1 for no limit (export only).
+      if (limit !== -1) {
+        const effectiveLimit = limit != null && limit > 0 ? limit : 5000;
+        query = query.limit(effectiveLimit);
       }
-      
       const { data, error } = await query;
       return { data, error };
     },
@@ -836,30 +831,23 @@ export const db = {
     },
     
     async getAll(limit?: number) {
-      let query = supabase
+      const effectiveLimit = limit != null && limit > 0 ? limit : 500;
+      const { data, error } = await supabase
         .from('technicians')
         .select('*')
-        .order('created_at', { ascending: false });
-      
-      // Add limit if provided to reduce data transfer
-      if (limit && limit > 0) {
-        query = query.limit(limit);
-      }
-      
-      const { data, error } = await query;
+        .order('created_at', { ascending: false })
+        .limit(effectiveLimit);
       return { data, error };
     },
 
     /** Slim list for dropdowns: id, full_name, phone, employee_id, status only (no *). */
     async getList(limit?: number) {
-      let query = supabase
+      const effectiveLimit = limit != null && limit > 0 ? limit : 500;
+      const { data, error } = await supabase
         .from('technicians')
         .select('id, full_name, phone, employee_id, status')
-        .order('created_at', { ascending: false });
-      if (limit && limit > 0) {
-        query = query.limit(limit);
-      }
-      const { data, error } = await query;
+        .order('created_at', { ascending: false })
+        .limit(effectiveLimit);
       return { data, error };
     },
     
@@ -1158,12 +1146,12 @@ export const db = {
       return { data, error };
     },
     
-    async getAll() {
+    async getAll(limit: number = 500) {
       const { data, error } = await supabase
         .from('common_qr_codes')
         .select('*')
-        .order('created_at', { ascending: false });
-      
+        .order('created_at', { ascending: false })
+        .limit(limit);
       return { data, error };
     },
 
@@ -1215,11 +1203,12 @@ export const db = {
         .single();
       return { data, error };
     },
-    async getAll() {
+    async getAll(limit: number = 500) {
       const { data, error } = await supabase
         .from('technician_common_qr')
         .select('*')
-        .order('created_at', { ascending: false });
+        .order('created_at', { ascending: false })
+        .limit(limit);
       return { data, error };
     },
     async update(id: string, updates: { name?: string; qr_code_url?: string }) {
@@ -1264,12 +1253,12 @@ export const db = {
       return { data, error };
     },
     
-    async getAll() {
+    async getAll(limit: number = 500) {
       const { data, error } = await supabase
         .from('product_qr_codes')
         .select('*')
-        .order('created_at', { ascending: false });
-      
+        .order('created_at', { ascending: false })
+        .limit(limit);
       return { data, error };
     },
     
@@ -1493,7 +1482,7 @@ export const db = {
 
   // Technician Payments operations
   technicianPayments: {
-    async getAll() {
+    async getAll(limit: number = 10000) {
       const { data, error } = await supabase
         .from('technician_payments')
         .select(`
@@ -1515,8 +1504,8 @@ export const db = {
             status
           )
         `)
-        .order('created_at', { ascending: false });
-      
+        .order('created_at', { ascending: false })
+        .limit(limit);
       return { data, error };
     },
 
@@ -2031,16 +2020,15 @@ export const db = {
 
   // Technician expenses operations
   technicianExpenses: {
-    async getAll(technicianId?: string) {
+    async getAll(technicianId?: string, limit: number = 5000) {
       let query = supabase
         .from('technician_expenses')
         .select('*')
-        .order('expense_date', { ascending: false });
-      
+        .order('expense_date', { ascending: false })
+        .limit(limit);
       if (technicianId) {
         query = query.eq('technician_id', technicianId);
       }
-      
       const { data, error } = await query;
       return { data, error };
     },
@@ -2078,16 +2066,15 @@ export const db = {
 
   // Technician advances operations
   technicianAdvances: {
-    async getAll(technicianId?: string) {
+    async getAll(technicianId?: string, limit: number = 5000) {
       let query = supabase
         .from('technician_advances')
         .select('*')
-        .order('advance_date', { ascending: false });
-      
+        .order('advance_date', { ascending: false })
+        .limit(limit);
       if (technicianId) {
         query = query.eq('technician_id', technicianId);
       }
-      
       const { data, error } = await query;
       return { data, error };
     },
@@ -2125,16 +2112,15 @@ export const db = {
 
   // Technician extra commissions operations
   technicianExtraCommissions: {
-    async getAll(technicianId?: string) {
+    async getAll(technicianId?: string, limit: number = 5000) {
       let query = supabase
         .from('technician_extra_commissions')
         .select('*')
-        .order('commission_date', { ascending: false });
-      
+        .order('commission_date', { ascending: false })
+        .limit(limit);
       if (technicianId) {
         query = query.eq('technician_id', technicianId);
       }
-      
       const { data, error } = await query;
       return { data, error };
     },
@@ -2172,24 +2158,21 @@ export const db = {
 
   // Technician holidays operations
   technicianHolidays: {
-    async getAll(technicianId?: string, startDate?: string, endDate?: string) {
+    async getAll(technicianId?: string, startDate?: string, endDate?: string, limit: number = 2000) {
       let query = supabase
         .from('technician_holidays')
         .select('*')
-        .order('holiday_date', { ascending: false });
-      
+        .order('holiday_date', { ascending: false })
+        .limit(limit);
       if (technicianId) {
         query = query.eq('technician_id', technicianId);
       }
-      
       if (startDate) {
         query = query.gte('holiday_date', startDate);
       }
-      
       if (endDate) {
         query = query.lte('holiday_date', endDate);
       }
-      
       const { data, error } = await query;
       return { data, error };
     },
@@ -2227,20 +2210,18 @@ export const db = {
 
   // Business expenses operations
   businessExpenses: {
-    async getAll(startDate?: string, endDate?: string) {
+    async getAll(startDate?: string, endDate?: string, limit: number = 5000) {
       let query = supabase
         .from('business_expenses')
         .select('*')
-        .order('expense_date', { ascending: false });
-      
+        .order('expense_date', { ascending: false })
+        .limit(limit);
       if (startDate) {
         query = query.gte('expense_date', startDate);
       }
-      
       if (endDate) {
         query = query.lte('expense_date', endDate);
       }
-      
       const { data, error } = await query;
       return { data, error };
     },
@@ -2568,24 +2549,24 @@ export const db = {
       return { data, error };
     },
 
-    async getAll() {
+    async getAll(limit: number = 5000) {
       const { data, error } = await supabase
         .from('call_history')
         .select('*')
-        .order('contacted_at', { ascending: false });
-      
+        .order('contacted_at', { ascending: false })
+        .limit(limit);
       return { data, error };
     }
   },
 
   // Admin Todos operations
   adminTodos: {
-    async getAll() {
+    async getAll(limit: number = 2000) {
       const { data, error } = await supabase
         .from('admin_todos')
         .select('*')
-        .order('created_at', { ascending: false });
-      
+        .order('created_at', { ascending: false })
+        .limit(limit);
       return { data, error };
     },
 
@@ -2611,13 +2592,12 @@ export const db = {
 
   // Inventory operations
   inventory: {
-    async getAll() {
-      // Only select needed fields to reduce egress
+    async getAll(limit: number = 2000) {
       const { data, error } = await supabase
         .from('inventory')
         .select('id, product_name, code, price, quantity, created_at, updated_at')
-        .order('created_at', { ascending: false });
-      
+        .order('created_at', { ascending: false })
+        .limit(limit);
       return { data, error };
     },
 
@@ -2691,8 +2671,7 @@ export const db = {
 
   // Technician Inventory operations
   technicianInventory: {
-    async getAll() {
-      // Only select needed fields to reduce egress
+    async getAll(limit: number = 5000) {
       const { data, error } = await supabase
         .from('technician_inventory')
         .select(`
@@ -2705,13 +2684,12 @@ export const db = {
           technician:technicians(id, full_name, employee_id),
           inventory:inventory(id, product_name, code)
         `)
-        .order('created_at', { ascending: false });
-      
+        .order('created_at', { ascending: false })
+        .limit(limit);
       return { data, error };
     },
 
     async getByTechnician(technicianId: string) {
-      // Only select needed fields to reduce egress
       const { data, error } = await supabase
         .from('technician_inventory')
         .select(`
