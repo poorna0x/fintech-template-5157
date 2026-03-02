@@ -104,15 +104,15 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
   const locationManuallyEditedRef = useRef(false);
   const [step5JobData, setStep5JobData] = useState({
     service_type: 'RO' as 'RO' | 'SOFTENER',
-    service_sub_type: 'Service', // Default to 'Service' instead of 'Installation'
+    service_sub_type: '', // Not selected by default; compulsory
     service_sub_type_custom: '',
     scheduled_date: '',
     scheduled_time_slot: 'MORNING' as 'MORNING' | 'AFTERNOON' | 'EVENING' | 'CUSTOM',
     scheduled_time_custom: '',
     description: '',
-    lead_source: 'Direct call', // Default to 'Direct call'
+    lead_source: '', // Not selected by default; compulsory
     lead_source_custom: '',
-    lead_cost: '0', // Default lead cost
+    lead_cost: '0',
     priority: 'MEDIUM' as 'LOW' | 'MEDIUM' | 'HIGH' | 'URGENT',
     assigned_technician_id: '', // Add technician assignment field
     require_otp: false
@@ -670,6 +670,16 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
           return;
         }
         
+        if (!step5JobData.service_sub_type || step5JobData.service_sub_type.trim() === '') {
+          toast.error('Please select a service sub type');
+          return;
+        }
+
+        if (step5JobData.service_sub_type === 'Custom' && (!step5JobData.service_sub_type_custom || step5JobData.service_sub_type_custom.trim() === '')) {
+          toast.error('Please enter a custom service sub type');
+          return;
+        }
+
         if (!step5JobData.lead_source || step5JobData.lead_source.trim() === '') {
           toast.error('Please select a lead source');
           return;
@@ -688,11 +698,6 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
         const leadCostNum = parseFloat(step5JobData.lead_cost);
         if (isNaN(leadCostNum) || leadCostNum < 0) {
           toast.error('Lead cost must be a valid number');
-          return;
-        }
-
-        if (step5JobData.service_sub_type === 'Custom' && (!step5JobData.service_sub_type_custom || step5JobData.service_sub_type_custom.trim() === '')) {
-          toast.error('Please enter a custom service sub type');
           return;
         }
 
@@ -972,13 +977,13 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
       setShouldCreateJob(true); // Reset to true (default)
       setStep5JobData({
         service_type: 'RO' as 'RO' | 'SOFTENER',
-        service_sub_type: 'Service', // Reset to 'Service' (default)
+        service_sub_type: '', // Not selected by default
         service_sub_type_custom: '',
         scheduled_date: '',
         scheduled_time_slot: 'MORNING' as 'MORNING' | 'AFTERNOON' | 'EVENING' | 'CUSTOM',
         scheduled_time_custom: '',
         description: '',
-        lead_source: 'Direct call', // Reset to 'Direct call' (default)
+        lead_source: '', // Not selected by default
         lead_source_custom: '',
         lead_cost: '0',
         priority: 'MEDIUM' as 'LOW' | 'MEDIUM' | 'HIGH' | 'URGENT',
@@ -1503,17 +1508,18 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
                     </div>
 
                     <div className="space-y-2">
-                      <Label htmlFor="step5_service_sub_type">Service Sub Type</Label>
+                      <Label htmlFor="step5_service_sub_type">Service Sub Type *</Label>
                       <Select
-                        value={step5JobData.service_sub_type}
+                        value={step5JobData.service_sub_type || undefined}
                         onValueChange={(value) => setStep5JobData(prev => ({ 
                           ...prev, 
                           service_sub_type: value === 'Custom' ? 'Custom' : value,
                           service_sub_type_custom: value === 'Custom' ? prev.service_sub_type_custom : ''
                         }))}
+                        required
                       >
                         <SelectTrigger>
-                          <SelectValue />
+                          <SelectValue placeholder="Select service sub type" />
                         </SelectTrigger>
                         <SelectContent>
                           <SelectItem value="Service">Service</SelectItem>
@@ -1590,7 +1596,7 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
                     <div className="space-y-2">
                       <Label htmlFor="step5_lead_source">Lead Source *</Label>
                       <Select
-                        value={step5JobData.lead_source || 'Direct call'}
+                        value={step5JobData.lead_source || undefined}
                         onValueChange={(value) => {
                           const selectedLeadSource = value === 'Other' ? 'Other' : value;
                           // Get default lead cost
@@ -1778,7 +1784,7 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
             ) : (
               <Button 
                 onClick={handleCreateCustomer}
-                disabled={isCreating || (shouldCreateJob && (!step5JobData.scheduled_date || !step5JobData.lead_source || !step5JobData.lead_cost || (step5JobData.lead_source === 'Other' && !step5JobData.lead_source_custom) || (step5JobData.service_sub_type === 'Custom' && !step5JobData.service_sub_type_custom) || (step5JobData.scheduled_time_slot === 'CUSTOM' && !step5JobData.scheduled_time_custom)))}
+                disabled={isCreating || (shouldCreateJob && (!step5JobData.scheduled_date || !step5JobData.service_sub_type || (step5JobData.service_sub_type === 'Custom' && !step5JobData.service_sub_type_custom) || !step5JobData.lead_source || !step5JobData.lead_cost || (step5JobData.lead_source === 'Other' && !step5JobData.lead_source_custom) || (step5JobData.scheduled_time_slot === 'CUSTOM' && !step5JobData.scheduled_time_custom)))}
                 className="bg-green-600 hover:bg-green-700 w-full sm:w-auto text-sm"
               >
                 {isCreating ? (
