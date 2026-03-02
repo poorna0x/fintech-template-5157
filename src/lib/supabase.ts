@@ -701,8 +701,23 @@ export const db = {
       };
     },
 
-    // Get ongoing jobs (PENDING, ASSIGNED, IN_PROGRESS) - no pagination needed as they're usually fewer
-    async getOngoing() {
+    /** Analytics only: selective columns (no before_photos, after_photos, service_address, etc.). Same aggregates, lower egress. */
+    async getForAnalytics(limit: number = 5000) {
+      const cols = [
+        'id', 'status', 'created_at', 'completed_at', 'end_time', 'requirements',
+        'assigned_technician_id', 'assigned_by', 'payment_amount', 'actual_cost', 'lead_cost',
+        'service_type', 'service_sub_type', 'payment_method', 'job_number'
+      ].join(', ');
+      const { data, error } = await supabase
+        .from('jobs')
+        .select(cols)
+        .order('created_at', { ascending: false })
+        .limit(limit);
+      return { data: data || [], error };
+    },
+
+    // Get ongoing jobs (PENDING, ASSIGNED, IN_PROGRESS). Limit 100 to cap egress if count grows.
+    async getOngoing(limit: number = 100) {
       const { data, error } = await supabase
         .from('jobs')
         .select(`
@@ -735,7 +750,8 @@ export const db = {
           )
         `)
         .in('status', ['PENDING', 'ASSIGNED', 'EN_ROUTE', 'IN_PROGRESS'])
-        .order('created_at', { ascending: false });
+        .order('created_at', { ascending: false })
+        .limit(limit);
       
       return { data: data || [], error };
     }

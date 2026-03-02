@@ -115,6 +115,43 @@ After removing full customer load and deriving customers from jobs:
 - **Customer Report / Edit / Bill / etc.**: These open for a customer you already selected from the list (or from Recent Accounts). They still work; the only difference is you can only open them for customers who are in the current list (derived + search + appended).
 - **Counts like "Showing X customers"**: X is the number in the **current view** (filtered list), not total customers in the database. So it reflects the derived/search list size.
 
+## Where high egress is consumed (next optimizations)
+
+1. **`db.jobs.getOngoing()`** – **Highest impact**
+   - Used for **ALL** and **ONGOING** tabs; has **no limit**.
+   - Fetches every ongoing job with `*` (includes heavy columns: `before_photos`, `after_photos`, `requirements`, `service_address`, `service_location`) plus full nested `customer`.
+   - With 100–500+ ongoing jobs, this dominates egress on load/refresh.
+   - **Next step:** Add a limit (e.g. 100–200) and/or paginate (reuse same pattern as `getByStatusPaginated`). Optionally add a “list” variant that selects only columns needed for cards (exclude `before_photos`, `after_photos`, `requirements`) and fetch full job when opening detail/photo gallery.
+
+2. **`db.jobs.getByStatusPaginated()`** (COMPLETED / CANCELLED / RESCHEDULED)
+   - Already paginated (e.g. 20 per page) but each row is still `*` + full customer (including heavy job columns).
+   - **Next step:** For list view, select only job columns needed for cards (e.g. `id`, `job_number`, `status`, `scheduled_date`, `completed_at`, `end_time`, `customer_id`, `assigned_technician_id`, `follow_up_date`, `denied_at`) and customer fields; omit `before_photos`, `after_photos`, `requirements`, `service_address`, `service_location` from list query. Fetch full job when user opens detail or photo gallery.
+
+3. **`db.technicians.getAll(100)`**
+   - 100 rows with `select('*')`. Usually smaller than jobs; lower priority than (1)–(2).
+   - **Next step:** If only used for dropdowns, use a “list” select (e.g. `id`, `full_name`, `phone`) or lazy-load when Assign Job dialog opens.
+
+4. **`db.jobs.getByCustomerId()`** (photo gallery / report)
+   - Fetches all jobs for one customer with `*` when opening gallery or report. Per-action, not on every load; only matters if many jobs per customer.
+   - **Next step:** Optional: exclude `before_photos`/`after_photos` from this query and fetch photos in a separate call when gallery opens (if you ever need to reduce egress there).
+
+**Recommended order:** (1) add limit/pagination to `getOngoing`, then (2) selective columns for job list queries.
+
+## Max egress audit (full codebase)
+
+Ranked by impact (when run × payload size):
+
+| # | Where | Call | Issue |
+|---|--------|------|--------|
+| 1 | **Settings – Export** | `db.jobs.getAll(undefined, false)` | Left as-is: used once a month; user needs full data for export. No change. |
+| 2 | **AdminDashboard** | `getByStatusPaginated(['FOLLOW_UP','RESCHEDULED'], 1, 1000)` | Up to **1000** rows (full job + customer) for glow effect. |
+| 3 | **Analytics** | **Done** | Now uses `db.jobs.getForAnalytics(5000)` – selective columns only (no photos/address). Same exact aggregates, lower egress. |
+| 4 | **getOngoing** | Done | Now has `.limit(100)`. |
+| 5 | **TechnicianInventoryManagement** | `db.technicians.getAll()` | **No limit.** |
+| 6 | **getByStatusPaginated** (list) | 20/page but `*` + customer | Heavy per-row; selective columns would help. |
+
+Other: Settings export also does customers(10k), amcContracts(100k), technicianPayments.getAll() (no limit), etc. `useDashboardData` hook loads customers(1000) but hook is not used by AdminDashboard.
+
 ## Expected Performance Improvements
 
 - **Initial Load Time**: 50-70% reduction

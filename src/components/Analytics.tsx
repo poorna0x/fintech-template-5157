@@ -349,9 +349,8 @@ const Analytics = () => {
         }
       }
       
-      // OPTIMIZATION: Fetch jobs without nested customer data and with reasonable limit
-      // For analytics, we typically don't need ALL historical jobs
-      const { data: jobsData, error: jobsError } = await db.jobs.getAll(5000, false);
+      // OPTIMIZATION: Fetch only columns needed for analytics (no photos/address) – exact same aggregates, lower egress
+      const { data: jobsData, error: jobsError } = await db.jobs.getForAnalytics(5000);
       if (jobsError || !jobsData) {
         console.error('Error loading jobs for detailed analytics:', jobsError);
         setAnalytics(baseData);
