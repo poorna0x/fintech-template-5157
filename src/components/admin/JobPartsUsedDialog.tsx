@@ -301,8 +301,8 @@ const JobPartsUsedDialog: React.FC<JobPartsUsedDialogProps> = ({
   return (
     <>
       <Dialog open={open} onOpenChange={onOpenChange}>
-        <DialogContent className="w-[calc(100%-2rem)] max-w-4xl max-h-[90vh] overflow-y-auto sm:max-h-[85vh] p-4 sm:p-6">
-          <DialogHeader>
+        <DialogContent className="w-[calc(100%-2rem)] max-w-4xl max-h-[90vh] flex flex-col overflow-hidden p-4 sm:p-6 sm:max-h-[85vh] [&>button]:shrink-0 [&>button]:z-10 [&>button]:!top-[max(1rem,env(safe-area-inset-top,0px))]">
+          <DialogHeader className="shrink-0">
             <DialogTitle className="flex items-center gap-2">
               <Package className="w-5 h-5" />
               Parts Used for Job
@@ -312,7 +312,7 @@ const JobPartsUsedDialog: React.FC<JobPartsUsedDialogProps> = ({
             </DialogDescription>
           </DialogHeader>
 
-          <div className="space-y-4">
+          <div className="flex-1 min-h-0 overflow-y-auto space-y-4 -mx-1 px-1">
             {/* Add Part Button */}
             <div className="flex justify-end">
               <Button onClick={handleAddPart} size="sm">
@@ -399,7 +399,7 @@ const JobPartsUsedDialog: React.FC<JobPartsUsedDialogProps> = ({
           setInventorySearchQuery('');
         }
       }}>
-        <DialogContent className="w-[calc(100%-2rem)] max-w-md sm:max-w-lg p-4 sm:p-6 max-h-[90vh] overflow-hidden [&>div]:min-w-0">
+        <DialogContent className="w-[calc(100%-2rem)] max-w-md sm:max-w-lg p-4 sm:p-6 max-h-[90vh] overflow-hidden [&>div]:min-w-0 flex flex-col [&>button]:shrink-0 [&>button]:z-10 [&>button]:!top-[max(1rem,env(safe-area-inset-top,0px))]">
           <div className="flex flex-col min-h-0 min-w-0 gap-4 flex-1 max-w-full">
           <DialogHeader className="space-y-1.5 shrink-0">
             <DialogTitle className="text-base sm:text-lg">Add Part Used</DialogTitle>
@@ -462,6 +462,15 @@ const JobPartsUsedDialog: React.FC<JobPartsUsedDialogProps> = ({
                 </div>
               )}
             </div>
+          </div>
+          <div className="shrink-0 pt-3 border-t mt-2">
+            <Button
+              variant="outline"
+              className="w-full sm:w-auto"
+              onClick={() => setAddPartDialogOpen(false)}
+            >
+              Done
+            </Button>
           </div>
           </div>
         </DialogContent>
