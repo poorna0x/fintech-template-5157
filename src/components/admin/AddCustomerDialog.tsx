@@ -58,8 +58,11 @@ interface AddCustomerDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   customers: Customer[];
-  onCustomerCreated: () => Promise<void>;
+  /** Called after customer (and optional job) created. Pass the created customer so the parent can append to list (e.g. when no job created). */
+  onCustomerCreated: (newCustomer?: any) => Promise<void>;
   onExistingCustomerFound?: (customer: Customer) => void;
+  /** When provided, runs before allowing Next from step 1; only proceed if no duplicate. Call runs on blur (phone/email) and on Next. */
+  onCheckExistingCustomer?: (phone: string, email?: string) => Promise<Customer | null>;
 }
 
 const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
@@ -67,7 +70,8 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
   onOpenChange,
   customers,
   onCustomerCreated,
-  onExistingCustomerFound
+  onExistingCustomerFound,
+  onCheckExistingCustomer
 }) => {
   const [currentStep, setCurrentStep] = useState(1);
   const [formErrors, setFormErrors] = useState<{[key: string]: string}>({});
@@ -96,6 +100,7 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
   const [modelSuggestions, setModelSuggestions] = useState<string[]>([]);
   const [showBrandSuggestions, setShowBrandSuggestions] = useState(false);
   const [showModelSuggestions, setShowModelSuggestions] = useState(false);
+  const [duplicateFoundOnBlur, setDuplicateFoundOnBlur] = useState<Customer | null>(null);
   const locationManuallyEditedRef = useRef(false);
   const [step5JobData, setStep5JobData] = useState({
     service_type: 'RO' as 'RO' | 'SOFTENER',
@@ -116,6 +121,10 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
   // Load technicians for assignment
   const [technicians, setTechnicians] = useState<any[]>([]);
   const [loadingTechnicians, setLoadingTechnicians] = useState(false);
+
+  useEffect(() => {
+    if (open) setDuplicateFoundOnBlur(null);
+  }, [open]);
 
   useEffect(() => {
     const loadTechnicians = async () => {
@@ -198,20 +207,17 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
   };
 
   const checkExistingCustomer = (phone: string, email?: string): Customer | null => {
-    const existingByPhone = customers.find(customer => 
-      customer.phone === phone || 
+    const existingByPhone = customers.find(customer =>
+      customer.phone === phone ||
       customer.alternate_phone === phone
     );
-    
     if (existingByPhone) return existingByPhone;
-    
     if (email && email.trim()) {
-      const existingByEmail = customers.find(customer => 
+      const existingByEmail = customers.find(customer =>
         customer.email?.toLowerCase() === email.toLowerCase()
       );
       if (existingByEmail) return existingByEmail;
     }
-    
     return null;
   };
 
@@ -257,17 +263,24 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
     return Object.keys(errors).length === 0;
   };
 
-  const nextStep = () => {
-    if (validateStep(currentStep)) {
-      if (currentStep === 1) {
+  const nextStep = async () => {
+    if (!validateStep(currentStep)) return;
+    if (currentStep === 1) {
+      if (onCheckExistingCustomer) {
+        const existing = await onCheckExistingCustomer(addFormData.phone, addFormData.email);
+        if (existing) {
+          onExistingCustomerFound?.(existing);
+          return;
+        }
+      } else {
         const existing = checkExistingCustomer(addFormData.phone, addFormData.email);
         if (existing && onExistingCustomerFound) {
           onExistingCustomerFound(existing);
           return;
         }
       }
-      setCurrentStep(prev => Math.min(prev + 1, 5));
     }
+    setCurrentStep(prev => Math.min(prev + 1, 5));
   };
 
   const prevStep = () => {
@@ -955,6 +968,7 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
       });
       setCurrentStep(1);
       setFormErrors({});
+      setDuplicateFoundOnBlur(null);
       setShouldCreateJob(true); // Reset to true (default)
       setStep5JobData({
         service_type: 'RO' as 'RO' | 'SOFTENER',
@@ -972,8 +986,8 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
         require_otp: false
       });
 
-      // Call onCustomerCreated only once at the end
-      await onCustomerCreated();
+      // Call onCustomerCreated with the new customer so parent can append to list (e.g. when no job created)
+      await onCustomerCreated(newCustomer ?? undefined);
     } catch (error) {
       toast.error('Failed to create customer');
     } finally {
@@ -1036,13 +1050,24 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
                   <Input
                     id="add_phone"
                     value={addFormData.phone}
-                    onChange={(e) => handlePhoneChange(e.target.value)}
+                    onChange={(e) => { handlePhoneChange(e.target.value); setDuplicateFoundOnBlur(null); }}
+                    onBlur={async () => {
+                      if (onCheckExistingCustomer && (addFormData.phone?.trim() || addFormData.email?.trim())) {
+                        const existing = await onCheckExistingCustomer(addFormData.phone, addFormData.email);
+                        setDuplicateFoundOnBlur(existing ?? null);
+                      } else {
+                        setDuplicateFoundOnBlur(null);
+                      }
+                    }}
                     placeholder="Enter 10-digit phone number"
                     className={`text-sm ${formErrors.phone ? 'border-red-500' : ''}`}
                     required
                   />
                   {formErrors?.phone && (
                     <p className="text-xs text-red-500">{formErrors.phone}</p>
+                  )}
+                  {duplicateFoundOnBlur && (
+                    <p className="text-xs text-amber-600">A customer with this number or email already exists.</p>
                   )}
                 </div>
 
@@ -1067,7 +1092,15 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
                   id="add_email"
                   type="email"
                   value={addFormData.email}
-                  onChange={(e) => handleAddFormChange('email', e.target.value)}
+                  onChange={(e) => { handleAddFormChange('email', e.target.value); setDuplicateFoundOnBlur(null); }}
+                  onBlur={async () => {
+                    if (onCheckExistingCustomer && (addFormData.phone?.trim() || addFormData.email?.trim())) {
+                      const existing = await onCheckExistingCustomer(addFormData.phone, addFormData.email);
+                      setDuplicateFoundOnBlur(existing ?? null);
+                    } else {
+                      setDuplicateFoundOnBlur(null);
+                    }
+                  }}
                   placeholder="Enter email address"
                   className={`text-sm ${formErrors.email ? 'border-red-500' : ''}`}
                 />

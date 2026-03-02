@@ -182,13 +182,29 @@ export const db = {
       return { data, error };
     },
 
-    async search(query: string) {
-      const { data, error } = await supabase
+    async search(query: string, limit: number = 100) {
+      let q = supabase
         .from('customers')
         .select('*')
         .or(`customer_id.ilike.%${query}%,full_name.ilike.%${query}%,phone.ilike.%${query}%,email.ilike.%${query}%`)
         .order('created_at', { ascending: false });
-      
+      if (limit > 0) q = q.limit(limit);
+      const { data, error } = await q;
+      return { data, error };
+    },
+
+    /** Scoped fetch: customers created today (local date). Use instead of loading all customers. Limit default 100. */
+    async getCreatedToday(limit: number = 100) {
+      const d = new Date();
+      const start = new Date(d.getFullYear(), d.getMonth(), d.getDate(), 0, 0, 0, 0);
+      const end = new Date(d.getFullYear(), d.getMonth(), d.getDate(), 23, 59, 59, 999);
+      const { data, error } = await supabase
+        .from('customers')
+        .select('*')
+        .gte('customer_since', start.toISOString())
+        .lte('customer_since', end.toISOString())
+        .order('customer_since', { ascending: false })
+        .limit(limit);
       return { data, error };
     },
 

@@ -143,6 +143,7 @@ const AdminDashboard = () => {
   const [searchTerm, setSearchTerm] = useState('');
   const [searchQuery, setSearchQuery] = useState(''); // For the input field
   const [isSearching, setIsSearching] = useState(false);
+  const [searchResults, setSearchResults] = useState<Customer[] | null>(null); // API search results (find any customer in DB)
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [customerToDelete, setCustomerToDelete] = useState<Customer | null>(null);
   const [editingCustomer, setEditingCustomer] = useState<Customer | null>(null);
@@ -596,6 +597,8 @@ const AdminDashboard = () => {
   const [isCreating, setIsCreating] = useState(false);
   const [shouldCreateJob, setShouldCreateJob] = useState(false);
   const [recentAccountsDialogOpen, setRecentAccountsDialogOpen] = useState(false);
+  const [recentAccountsToday, setRecentAccountsToday] = useState<Customer[]>([]);
+  const [loadingRecentAccounts, setLoadingRecentAccounts] = useState(false);
   const [step5JobData, setStep5JobData] = useState({
     service_type: 'RO' as 'RO' | 'SOFTENER',
     service_sub_type: 'Installation',
@@ -1196,23 +1199,16 @@ const AdminDashboard = () => {
         // Silently fail - auth check failed, skip AMC job creation
       });
       
-      // OPTIMIZATION: Parallelize all independent data loading operations
-      // OPTIMIZATION: Use reasonable limits to reduce data transfer (Supabase free tier)
-      // For admin dashboard, we typically don't need ALL customers/technicians at once
-      // Limit to 1000 customers and 100 technicians (adjust based on your needs)
-      const [customersResult, techniciansResult, amcContractsResult, jobCountsResult] = await Promise.all([
-        db.customers.getAll(1000), // Limit to 1000 most recent customers
-        db.technicians.getAll(100), // Limit to 100 technicians (should be enough for most cases)
-        // Load AMC contracts in parallel
+      // Don't load all customers – list comes from jobs (useEffect below). Duplicate check uses a single query when user adds customer.
+      const [techniciansResult, amcContractsResult, jobCountsResult] = await Promise.all([
+        db.technicians.getAll(100),
         supabase
-        .from('amc_contracts')
-        .select('customer_id, status')
+          .from('amc_contracts')
+          .select('customer_id, status')
           .eq('status', 'ACTIVE'),
-        // Load job counts in parallel
         db.jobs.getCounts()
       ]);
-      
-      // Process AMC contracts
+
       const amcStatusMap: Record<string, boolean> = {};
       if (amcContractsResult.data) {
         amcContractsResult.data.forEach((amc: any) => {
@@ -1221,26 +1217,14 @@ const AdminDashboard = () => {
       }
       setCustomerAMCStatus(amcStatusMap);
 
-      // Process job counts
       if (jobCountsResult.data) {
         setJobCounts(jobCountsResult.data);
       }
 
-      // Log errors for debugging
-      if (customersResult.error) {
-        toast.error(`Failed to load customers: ${customersResult.error.message}`);
-      }
       if (techniciansResult.error) {
         console.error('Failed to load technicians:', techniciansResult.error);
       }
 
-      if (customersResult.data) {
-        const transformedCustomers = customersResult.data.map(transformCustomerData);
-        setCustomers(transformedCustomers);
-      } else {
-        setCustomers([]);
-      }
-      
       if (techniciansResult.data) {
         const transformedTechnicians = techniciansResult.data.map(transformTechnicianData);
         console.log('📊 Loaded technicians with locations:', {
@@ -1331,6 +1315,39 @@ const AdminDashboard = () => {
       }
     }
   }, [isInitialLoad, jobs, lastCheckedJobId]);
+
+  // Derive customers from loaded jobs only (no full customer load)
+  const deriveCustomersFromJobs = (jobsList: Job[]) => {
+    const seen = new Set<string>();
+    const list: Customer[] = [];
+    for (const job of jobsList) {
+      const raw = (job as any).customer || job.customer;
+      if (!raw?.id) continue;
+      if (seen.has(raw.id)) continue;
+      seen.add(raw.id);
+      list.push(transformCustomerData(raw));
+    }
+    return list;
+  };
+  useEffect(() => {
+    setCustomers(deriveCustomersFromJobs(jobs));
+  }, [jobs]);
+
+  // Recent Accounts: scoped fetch when dialog opens (large-scale pattern – no full customer load)
+  useEffect(() => {
+    if (!recentAccountsDialogOpen) return;
+    setLoadingRecentAccounts(true);
+    db.customers.getCreatedToday(100)
+      .then(({ data, error }) => {
+        if (error) {
+          console.error('Error fetching recent accounts:', error);
+          setRecentAccountsToday([]);
+        } else {
+          setRecentAccountsToday((data || []).map((row: any) => transformCustomerData(row)));
+        }
+      })
+      .finally(() => setLoadingRecentAccounts(false));
+  }, [recentAccountsDialogOpen]);
 
   // Reload jobs when filter changes (but not on initial load)
   useEffect(() => {
@@ -2901,22 +2918,27 @@ const AdminDashboard = () => {
     setAddDialogOpen(true);
   };
 
-  // Function to check if customer already exists
-  const checkExistingCustomer = (phone: string, email?: string): Customer | null => {
-    const existingByPhone = customers.find(customer => 
-      customer.phone === phone || 
-      customer.alternate_phone === phone
-    );
-    
-    if (existingByPhone) return existingByPhone;
-    
-    if (email && email.trim()) {
-      const existingByEmail = customers.find(customer => 
-        customer.email?.toLowerCase() === email.toLowerCase()
-      );
-      if (existingByEmail) return existingByEmail;
+  // Check if a customer with this phone or email already exists – single query, no need to load all customers.
+  const checkExistingCustomer = async (phone: string, email?: string): Promise<Customer | null> => {
+    const formattedPhone = phone ? formatPhoneNumber(phone) : '';
+    if (formattedPhone) {
+      const { data: byPhone } = await db.customers.getByPhone(formattedPhone);
+      if (byPhone) return transformCustomerData(byPhone);
+      const { data: byAlt } = await supabase
+        .from('customers')
+        .select('*')
+        .eq('alternate_phone', formattedPhone)
+        .maybeSingle();
+      if (byAlt) return transformCustomerData(byAlt);
     }
-    
+    if (email && email.trim()) {
+      const { data: byEmail } = await supabase
+        .from('customers')
+        .select('*')
+        .ilike('email', email.trim())
+        .maybeSingle();
+      if (byEmail) return transformCustomerData(byEmail);
+    }
     return null;
   };
 
@@ -3030,8 +3052,15 @@ const AdminDashboard = () => {
         toast.success(`Customer ${newCustomer.customer_id || newCustomer.customerId} created successfully!`);
       }
 
-      // Refresh customers list
       await loadDashboardData();
+      if (result) {
+        setCustomers((prev) => {
+          const transformed = transformCustomerData(result);
+          const idx = prev.findIndex((c) => c.id === result.id);
+          if (idx >= 0) return prev.map((c, i) => (i === idx ? transformed : c));
+          return [...prev, transformed];
+        });
+      }
 
       // If should create job, create it now
       if (shouldCreateJob && result) {
@@ -4488,19 +4517,17 @@ const AdminDashboard = () => {
     return Object.keys(errors).length === 0;
   };
 
-  const nextStep = () => {
-    if (validateStep(currentStep)) {
-      // Check for existing customer only when moving from step 1
-      if (currentStep === 1) {
-        const existing = checkExistingCustomer(addFormData.phone, addFormData.email);
-        if (existing) {
-          setExistingCustomer(existing);
-          setOverrideDialogOpen(true);
-          return;
-        }
+  const nextStep = async () => {
+    if (!validateStep(currentStep)) return;
+    if (currentStep === 1) {
+      const existing = await checkExistingCustomer(addFormData.phone, addFormData.email);
+      if (existing) {
+        setExistingCustomer(existing);
+        setOverrideDialogOpen(true);
+        return;
       }
-      setCurrentStep(prev => Math.min(prev + 1, 5));
     }
+    setCurrentStep(prev => Math.min(prev + 1, 5));
   };
 
   const prevStep = () => {
@@ -4586,22 +4613,29 @@ const AdminDashboard = () => {
     return normalized;
   };
 
-  const handleSearch = () => {
-    // Trim the search query
+  const handleSearch = async () => {
     const trimmedQuery = searchQuery.trim();
     setIsSearching(true);
     setSearchTerm(trimmedQuery);
-    // Update searchQuery to trimmed version
     setSearchQuery(trimmedQuery);
-    // Small delay to show loading state
-    setTimeout(() => {
-      setIsSearching(false);
-    }, 300);
+    if (trimmedQuery) {
+      const { data, error } = await db.customers.search(trimmedQuery);
+      if (error) {
+        toast.error('Search failed');
+        setSearchResults([]);
+      } else {
+        setSearchResults((data || []).map((row: any) => transformCustomerData(row)));
+      }
+    } else {
+      setSearchResults(null);
+    }
+    setIsSearching(false);
   };
 
   const handleClearSearch = () => {
     setSearchQuery('');
     setSearchTerm('');
+    setSearchResults(null);
   };
 
   const handleSearchKeyPress = (e: React.KeyboardEvent) => {
@@ -6784,39 +6818,15 @@ const AdminDashboard = () => {
   };
 
 
-  // Filter data based on search term (case insensitive)
-  // Search by name, phone, email, and customer ID only
-  const filteredCustomers = customers.filter(customer => {
-    if (!searchTerm.trim()) return true; // Show all customers if search is empty
-    
-    const searchLower = searchTerm.toLowerCase().trim();
-    const searchTermClean = searchTerm.trim();
-    
-    // Normalize search term for phone number comparison
-    const normalizedSearchPhone = normalizePhoneNumber(searchTermClean);
-    
-    // Normalize customer phone numbers
-    const normalizedCustomerPhone = normalizePhoneNumber(customer.phone);
-    const normalizedAlternatePhone = normalizePhoneNumber(customer.alternatePhone || customer.alternate_phone);
-    
-    return (
-      // Customer ID search
-      (customer.customerId || customer.customer_id)?.toLowerCase().includes(searchLower) ||
-      // Name search
-      (customer.fullName || customer.full_name)?.toLowerCase().includes(searchLower) ||
-      // Phone search - compare normalized versions (handles spaces and +91 prefix)
-      (normalizedSearchPhone && normalizedCustomerPhone && normalizedCustomerPhone.includes(normalizedSearchPhone)) ||
-      (normalizedSearchPhone && normalizedAlternatePhone && normalizedAlternatePhone.includes(normalizedSearchPhone)) ||
-      // Also check original phone with spaces (for partial matches)
-      customer.phone?.includes(searchTermClean) ||
-      (customer.alternatePhone || customer.alternate_phone)?.includes(searchTermClean) ||
-      // Email search
-      customer.email?.toLowerCase().includes(searchLower)
-    );
-  });
+  // When user has searched, use API results (find any customer in DB); otherwise use derived list (customers with jobs)
+  const baseCustomers = searchTerm.trim() ? (searchResults ?? []) : customers;
 
+  // Filter data based on search term when NOT using API search (empty search = use all derived customers)
+  const filteredCustomers = searchTerm.trim()
+    ? baseCustomers
+    : customers;
 
-    // Helper function to get completion date for a job
+  // Helper function to get completion date for a job
   const getJobCompletionDate = (job: Job): number => {
     const completedAt = (job as any).completed_at || job.completedAt;
     const endTime = (job as any).end_time || job.endTime;
@@ -6832,8 +6842,8 @@ const AdminDashboard = () => {
     return new Date(job.createdAt).getTime();
   };
 
-    // Group all customers with their jobs (no filtering by status)
-  const customersWithJobs = customers.map(customer => {
+  // Group customers with their jobs (uses baseCustomers so search results get their jobs from current view)
+  const customersWithJobs = baseCustomers.map(customer => {
     const customerJobs = jobs
       .filter(job => {
         // Check both possible field names for customer ID
@@ -6881,8 +6891,8 @@ const AdminDashboard = () => {
       // Note: jobs array is paginated, so if there are multiple pages, 
       // we only see customers from the current page. This is intentional for performance.
       // Also filter out customers that have been deleted (verify customer still exists)
-      const existingCustomerIds = new Set(customers.map(c => c.id));
-      
+      const existingCustomerIds = new Set(baseCustomers.map(c => c.id));
+
       jobs.forEach(job => {
         const customer = (job as any).customer || job.customer;
         if (!customer) {
@@ -7004,13 +7014,13 @@ const AdminDashboard = () => {
       if (jobs.length > 0 && jobs.some(j => ['FOLLOW_UP', 'RESCHEDULED'].includes(j.status))) {
         const customerMap = new Map<string, { customer: Customer; allJobs: Job[] }>();
         // Filter out customers that have been deleted (verify customer still exists)
-        const existingCustomerIds = new Set(customers.map(c => c.id));
-        
+        const existingCustomerIds = new Set(baseCustomers.map(c => c.id));
+
         jobs.forEach(job => {
           const customer = (job as any).customer || job.customer;
           if (!customer) return;
           const customerId = customer.id;
-          
+
           // IMPORTANT: Filter out customers that have been deleted
           if (!existingCustomerIds.has(customerId)) {
             if (import.meta.env.DEV) {
@@ -8872,7 +8882,15 @@ const AdminDashboard = () => {
         open={addDialogOpen}
         onOpenChange={setAddDialogOpen}
         customers={customers}
-        onCustomerCreated={loadDashboardData}
+        onCustomerCreated={async (newCustomer) => {
+          await loadDashboardData();
+          // Append new customer if not already in list (e.g. created without job), so they appear in list and Recent Accounts
+          if (newCustomer) {
+            const transformed = transformCustomerData(newCustomer);
+            setCustomers(prev => (prev.some(c => c.id === transformed.id) ? prev : [...prev, transformed]));
+          }
+        }}
+        onCheckExistingCustomer={checkExistingCustomer}
         onExistingCustomerFound={(customer) => {
           setExistingCustomer(customer);
           setOverrideDialogOpen(true);
@@ -10163,7 +10181,7 @@ const AdminDashboard = () => {
 
       {/* PIN Dialog */}
 
-      {/* Recent Accounts Dialog */}
+      {/* Recent Accounts Dialog – scoped fetch when opened (no full customer list) */}
       <Dialog open={recentAccountsDialogOpen} onOpenChange={setRecentAccountsDialogOpen}>
         <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
@@ -10174,34 +10192,17 @@ const AdminDashboard = () => {
           </DialogHeader>
           
           <div className="space-y-4">
-            {customers
-              .filter(customer => {
-                const customerSince = (customer as any).customerSince || (customer as any).customer_since;
-                if (!customerSince) return false;
-                const createdDate = new Date(customerSince);
-                const today = new Date();
-                return createdDate.toDateString() === today.toDateString();
-              })
-              .length === 0 ? (
+            {loadingRecentAccounts ? (
+              <div className="text-center py-8 text-gray-500">
+                <p>Loading…</p>
+              </div>
+            ) : recentAccountsToday.length === 0 ? (
               <div className="text-center py-8 text-gray-500">
                 <p>No accounts created today.</p>
               </div>
             ) : (
               <div className="space-y-2">
-                {customers
-                  .filter(customer => {
-                    const customerSince = (customer as any).customerSince || (customer as any).customer_since;
-                    if (!customerSince) return false;
-                    const createdDate = new Date(customerSince);
-                    const today = new Date();
-                    return createdDate.toDateString() === today.toDateString();
-                  })
-                  .sort((a, b) => {
-                    const dateA = new Date((a as any).customerSince || (a as any).customer_since || 0);
-                    const dateB = new Date((b as any).customerSince || (b as any).customer_since || 0);
-                    return dateB.getTime() - dateA.getTime(); // Most recent first
-                  })
-                  .map((customer) => (
+                {recentAccountsToday.map((customer) => (
                     <div
                       key={customer.id}
                       className="border border-gray-300 rounded-lg p-4 hover:bg-gray-50 transition-colors"
