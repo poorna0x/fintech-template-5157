@@ -148,7 +148,7 @@ Ranked by impact (when run × payload size):
 | 3 | **Analytics** | **Done** | Now uses `db.jobs.getForAnalytics(5000)` – selective columns only (no photos/address). Same exact aggregates, lower egress. |
 | 4 | **getOngoing** | Done | Now has `.limit(100)`. |
 | 5 | **TechnicianInventoryManagement** | **Done** | Now uses `db.technicians.getList()` – slim columns only (id, full_name, phone, employee_id, status). |
-| 6 | **getByStatusPaginated** (list) | 20/page but `*` + customer | Heavy per-row; selective columns would help. |
+| 6 | **getByStatusPaginated** (list) | **Done** | Uses listOnly select (slim job + customer) when called with 5th arg true. |
 
 Other: Settings export also does customers(10k), amcContracts(100k), technicianPayments.getAll() (no limit), etc. `useDashboardData` hook loads customers(1000) but hook is not used by AdminDashboard.
 
@@ -157,7 +157,7 @@ Other: Settings export also does customers(10k), amcContracts(100k), technicianP
 **Egress (in order of impact):**
 
 1. **Follow-up glow (AdminDashboard)** – `getByStatusPaginated(['FOLLOW_UP','RESCHEDULED'], 1, 1000)` fetches 1000 full rows. Reduce to 100–200 or add a “list” select (no photos/requirements) for this call so glow still works with less data.
-2. **Job list selective columns** – For `getByStatusPaginated` and `getOngoing`, add a “list” select: only columns needed for cards (id, job_number, status, scheduled_date, customer_id, assigned_technician_id, completed_at, end_time, follow_up_date, denied_at + customer fields). Omit before_photos, after_photos, requirements, service_address, service_location. Fetch full job when user opens detail or photo gallery. Same UX, much smaller payload per row.
+2. **Job list selective columns** – **Done.** Added `getOngoingForList(limit)` and `getByStatusPaginated(..., listOnly: true)`. List selects only job columns needed for cards (excludes before_photos, after_photos, requirements, service_address, service_location). AdminDashboard and useJobs use these for list loading. Deny/Complete/Move-to-ongoing dialogs always fetch full job via `getById` when opening so requirements and photos are available.
 3. **TechnicianInventoryManagement** – Now uses `db.technicians.getList()` (slim columns). Optional: pass a limit (e.g. 500) to getList() if technician count can grow very large.
 4. **Technicians list select** – **Done.** Added `technicians.getList(limit?)`; used in AddCustomerDialog, TechnicianInventoryManagement, TechnicianPayments, CallingPage. Dashboard still uses getAll(100) where full object (e.g. current_location, qrCode) is required.
 5. **Optional: jobs.getByCustomerId** – For photo gallery/report, could split into “jobs list for customer” (no photos) + “photos for job” when gallery opens, if you need to trim egress there later.

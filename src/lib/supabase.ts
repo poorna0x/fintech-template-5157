@@ -581,16 +581,12 @@ export const db = {
       }
     },
 
-    // Get jobs by status with pagination
-    async getByStatusPaginated(statuses: string[], page: number = 1, pageSize: number = 20, dateFilter?: string) {
+    // Get jobs by status with pagination. listOnly=true uses slim columns (no before_photos, after_photos, requirements, service_address, service_location).
+    async getByStatusPaginated(statuses: string[], page: number = 1, pageSize: number = 20, dateFilter?: string, listOnly?: boolean) {
       const from = (page - 1) * pageSize;
       const to = from + pageSize - 1;
-      
-      let query = supabase
-        .from('jobs')
-        .select(`
-          *,
-          customer:customers(
+      const jobListCols = 'id, job_number, status, scheduled_date, scheduled_time_slot, completed_at, end_time, created_at, updated_at, customer_id, assigned_technician_id, follow_up_date, denied_at, denial_reason, denied_by, service_type, service_sub_type, brand, model, assigned_date, payment_status, description, team_members, completed_by';
+      const customerCols = `customer:customers(
             id,
             customer_id,
             full_name,
@@ -615,8 +611,13 @@ export const db = {
             raw_water_tds,
             created_at,
             updated_at
-          )
-        `, { count: 'exact' });
+          )`;
+      const selectClause = listOnly
+        ? `${jobListCols}, ${customerCols}`
+        : `*, ${customerCols}`;
+      let query = supabase
+        .from('jobs')
+        .select(selectClause, { count: 'exact' });
       
       // If date filter is provided, filter by date based on status
       if (dateFilter) {
@@ -769,7 +770,47 @@ export const db = {
         .limit(limit);
       
       return { data: data || [], error };
-    }
+    },
+
+    /** List-only: same as getOngoing but excludes before_photos, after_photos, requirements, service_address, service_location. Use for list/cards; fetch full job (getById) when opening detail/complete/deny/photos. */
+    async getOngoingForList(limit: number = 100) {
+      const jobListCols = 'id, job_number, status, scheduled_date, scheduled_time_slot, completed_at, end_time, created_at, updated_at, customer_id, assigned_technician_id, follow_up_date, denied_at, denial_reason, denied_by, service_type, service_sub_type, brand, model, assigned_date, payment_status, description, team_members, completed_by';
+      const { data, error } = await supabase
+        .from('jobs')
+        .select(`
+          ${jobListCols},
+          customer:customers(
+            id,
+            customer_id,
+            full_name,
+            phone,
+            email,
+            alternate_phone,
+            visible_address,
+            address,
+            location,
+            service_type,
+            brand,
+            model,
+            installation_date,
+            warranty_expiry,
+            status,
+            customer_since,
+            last_service_date,
+            notes,
+            preferred_time_slot,
+            preferred_language,
+            has_prefilter,
+            raw_water_tds,
+            created_at,
+            updated_at
+          )
+        `)
+        .in('status', ['PENDING', 'ASSIGNED', 'EN_ROUTE', 'IN_PROGRESS'])
+        .order('created_at', { ascending: false })
+        .limit(limit);
+      return { data: data || [], error };
+    },
   },
   
   // Technician operations

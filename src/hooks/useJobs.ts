@@ -43,16 +43,16 @@ export const useJobs = (pageSize: number = 20) => {
       setLoading(true);
       
       if (filter === 'ALL') {
-        // For ALL, we need customers with their jobs - load ongoing jobs only for display
-        const { data, error } = await db.jobs.getOngoing();
+        // For ALL, we need customers with their jobs - load ongoing jobs only for display (list-only = smaller payload)
+        const { data, error } = await db.jobs.getOngoingForList();
         if (error) {
           setJobs([]);
         } else {
           setJobs(data || []);
         }
       } else if (filter === 'ONGOING') {
-        // Load all ongoing jobs (usually not too many)
-        const { data, error } = await db.jobs.getOngoing();
+        // Load all ongoing jobs (list-only = smaller payload)
+        const { data, error } = await db.jobs.getOngoingForList();
         if (error) {
           setJobs([]);
         } else {
@@ -61,11 +61,10 @@ export const useJobs = (pageSize: number = 20) => {
           setTotalPages(1);
         }
       } else if (filter === 'COMPLETED' || filter === 'CANCELLED') {
-        // Use pagination for completed and denied jobs
+        // Use pagination for completed and denied jobs (list-only = smaller payload)
         const statuses = filter === 'COMPLETED' ? ['COMPLETED'] : ['DENIED', 'CANCELLED'];
-        // Pass date filter for completed or denied jobs
         const dateFilter = filter === 'COMPLETED' ? completedDateFilter : deniedDateFilter;
-        const { data, error, count, totalPages: pages } = await db.jobs.getByStatusPaginated(statuses, page, pageSize, dateFilter);
+        const { data, error, count, totalPages: pages } = await db.jobs.getByStatusPaginated(statuses, page, pageSize, dateFilter, true);
         if (error) {
           setJobs([]);
         } else {
@@ -74,8 +73,8 @@ export const useJobs = (pageSize: number = 20) => {
           setTotalPages(pages || 0);
         }
       } else if (filter === 'RESCHEDULED') {
-        // Load follow-up jobs (usually not too many)
-        const { data, error, count, totalPages: pages } = await db.jobs.getByStatusPaginated(['FOLLOW_UP', 'RESCHEDULED'], page, pageSize);
+        // Load follow-up jobs (list-only = smaller payload)
+        const { data, error, count, totalPages: pages } = await db.jobs.getByStatusPaginated(['FOLLOW_UP', 'RESCHEDULED'], page, pageSize, undefined, true);
         if (error) {
           setJobs([]);
         } else {

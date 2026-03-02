@@ -1083,16 +1083,15 @@ const AdminDashboard = () => {
       setLoading(true);
       
       if (filter === 'ALL') {
-        // For ALL, we need customers with their jobs - load ongoing jobs only for display
-        const { data, error } = await db.jobs.getOngoing();
+        // For ALL, load ongoing jobs for display (list-only = smaller payload; fetch full job when opening detail/complete/deny)
+        const { data, error } = await db.jobs.getOngoingForList();
         if (error) {
           setJobs([]);
         } else {
           setJobs(data || []);
         }
       } else if (filter === 'ONGOING') {
-        // Load all ongoing jobs (usually not too many)
-        const { data, error } = await db.jobs.getOngoing();
+        const { data, error } = await db.jobs.getOngoingForList();
         if (error) {
           setJobs([]);
         } else {
@@ -1101,11 +1100,9 @@ const AdminDashboard = () => {
           setTotalPages(1);
         }
       } else if (filter === 'COMPLETED' || filter === 'CANCELLED') {
-        // Use pagination for completed and denied jobs
         const statuses = filter === 'COMPLETED' ? ['COMPLETED'] : ['DENIED', 'CANCELLED'];
-        // Pass date filter for completed or denied jobs
         const dateFilter = filter === 'COMPLETED' ? completedDateFilter : (filter === 'CANCELLED' ? deniedDateFilter : undefined);
-        const { data, error, count, totalPages: pages } = await db.jobs.getByStatusPaginated(statuses, page, pageSize, dateFilter);
+        const { data, error, count, totalPages: pages } = await db.jobs.getByStatusPaginated(statuses, page, pageSize, dateFilter, true);
         if (error) {
           setJobs([]);
         } else {
@@ -1114,8 +1111,7 @@ const AdminDashboard = () => {
           setTotalPages(pages || 0);
         }
       } else if (filter === 'RESCHEDULED') {
-        // Load follow-up jobs (usually not too many)
-        const { data, error, count, totalPages: pages } = await db.jobs.getByStatusPaginated(['FOLLOW_UP', 'RESCHEDULED'], page, pageSize);
+        const { data, error, count, totalPages: pages } = await db.jobs.getByStatusPaginated(['FOLLOW_UP', 'RESCHEDULED'], page, pageSize, undefined, true);
         if (error) {
           setJobs([]);
         } else {
@@ -1545,7 +1541,7 @@ const AdminDashboard = () => {
 
     const checkForNewJobs = async () => {
       try {
-        const { data: newJobs, error } = await db.jobs.getByStatusPaginated(['PENDING'], 1, 5);
+        const { data: newJobs, error } = await db.jobs.getByStatusPaginated(['PENDING'], 1, 5, undefined, true);
         if (error || !newJobs || newJobs.length === 0) {
           if (newJobs && newJobs.length === 0) setLastCheckedJobId(null);
           return;
@@ -5702,16 +5698,20 @@ const AdminDashboard = () => {
   };
 
   // Handle moving follow-up job to ongoing
-  const handleMoveToOngoing = (job: Job) => {
-    // Set default values to current date and time
+  const handleMoveToOngoing = async (job: Job) => {
+    // Fetch full job so we have requirements for custom time slot update (list data omits requirements)
+    let jobToUse = job;
+    try {
+      const { data: fullJob, error } = await db.jobs.getById(job.id);
+      if (!error && fullJob) jobToUse = fullJob as Job;
+    } catch (e) {
+      console.error('Error fetching job for move to ongoing:', e);
+    }
     const now = new Date();
     const today = getTodayLocalDate();
     const currentHour = now.getHours();
-    
-    // Determine time slot based on current time
     let defaultTimeSlot: 'MORNING' | 'AFTERNOON' | 'EVENING' | 'CUSTOM' = 'MORNING';
-    let defaultTime = '09:00'; // Default to 9 AM for MORNING
-    
+    let defaultTime = '09:00';
     if (currentHour >= 5 && currentHour < 12) {
       defaultTimeSlot = 'MORNING';
       defaultTime = '09:00';
@@ -5725,11 +5725,10 @@ const AdminDashboard = () => {
       defaultTimeSlot = 'CUSTOM';
       defaultTime = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
     }
-    
     setMoveToOngoingDate(today);
     setMoveToOngoingTimeSlot(defaultTimeSlot);
     setMoveToOngoingCustomTime(defaultTimeSlot === 'CUSTOM' ? defaultTime : '');
-    setSelectedJobForMoveToOngoing(job);
+    setSelectedJobForMoveToOngoing(jobToUse);
     setMoveToOngoingDialogOpen(true);
   };
 
@@ -5784,11 +5783,10 @@ const AdminDashboard = () => {
         customTimeInRequirements = moveToOngoingCustomTime;
       }
       
-      // Get current requirements to preserve existing data
-      const currentJob = jobs.find(j => j.id === selectedJobForMoveToOngoing.id);
+      // Get current requirements to preserve existing data (use selected job — we fetched full job when opening dialog)
+      const currentJob = selectedJobForMoveToOngoing;
       let requirements: any[] = [];
       try {
-        // Handle requirements - could be array, object, or JSON string
         const reqData = currentJob?.requirements || (currentJob as any)?.requirements;
         if (reqData) {
           if (typeof reqData === 'string') {
@@ -5956,20 +5954,16 @@ const AdminDashboard = () => {
 
   // Handle job denial
   const handleDenyJob = async (job: Job) => {
-    // Fetch full job data with customer if not already loaded
+    // Always fetch full job (list data may omit requirements, etc.) so deny dialog and message_sent update have everything
     let jobWithCustomer = job;
-    if (!job.customer || !(job.customer as any)?.full_name && !job.customer?.fullName) {
-      try {
-        const { data: fullJob, error } = await db.jobs.getById(job.id);
-        if (!error && fullJob) {
-          jobWithCustomer = fullJob as Job;
-        }
-      } catch (error) {
-        console.error('Error fetching job details:', error);
-        // Continue with the job data we have
+    try {
+      const { data: fullJob, error } = await db.jobs.getById(job.id);
+      if (!error && fullJob) {
+        jobWithCustomer = fullJob as Job;
       }
+    } catch (error) {
+      console.error('Error fetching job details:', error);
     }
-    
     setSelectedJobForDeny(jobWithCustomer);
     setDenyReason('');
     setDenyDialogOpen(true);
@@ -6120,20 +6114,16 @@ const AdminDashboard = () => {
 
   // Handle job completion - first show technician selection
   const handleCompleteJob = async (job: Job) => {
-    // Fetch full job data with customer if not already loaded
+    // Always fetch full job (list data omits before_photos, after_photos, requirements) so CompleteJobDialog has everything
     let jobWithCustomer = job;
-    if (!job.customer || !job.serviceType) {
-      try {
-        const { data: fullJob, error } = await db.jobs.getById(job.id);
-        if (!error && fullJob) {
-          jobWithCustomer = fullJob as Job;
-        }
-      } catch (error) {
-        console.error('Error fetching job details:', error);
-        // Continue with the job data we have
+    try {
+      const { data: fullJob, error } = await db.jobs.getById(job.id);
+      if (!error && fullJob) {
+        jobWithCustomer = fullJob as Job;
       }
+    } catch (error) {
+      console.error('Error fetching job details:', error);
     }
-    
     setSelectedJobForComplete(jobWithCustomer);
     setSelectedTechnicianForComplete('');
     setTechnicianSelectDialogOpen(true);
