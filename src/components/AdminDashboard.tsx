@@ -9062,17 +9062,13 @@ const AdminDashboard = () => {
               A customer with this phone number or email already exists:
               <br />
               <br />
-              <strong>Customer ID:</strong> {(existingCustomer as any)?.customer_id}
+              <strong>Customer ID:</strong> {(existingCustomer as any)?.customer_id ?? (existingCustomer as any)?.customerId ?? '—'}
               <br />
-              <strong>Name:</strong> {(existingCustomer as any)?.full_name}
+              <strong>Name:</strong> {(existingCustomer as any)?.full_name ?? (existingCustomer as any)?.fullName ?? '—'}
               <br />
-              <strong>Phone:</strong> {(existingCustomer as any)?.phone}
-              {existingCustomer?.email && (
-                <>
-                  <br />
-                  <strong>Email:</strong> {existingCustomer.email}
-                </>
-              )}
+              <strong>Phone:</strong> {existingCustomer?.phone ?? '—'}
+              <br />
+              <strong>Email:</strong> {existingCustomer?.email ?? '—'}
               <br />
               <br />
               Do you want to continue and update this existing customer with the new information?
