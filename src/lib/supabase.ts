@@ -140,6 +140,16 @@ export const db = {
       
       return { data, error };
     },
+
+    /** Batch fetch by UUIDs – one query instead of N. Use for labels (id, full_name, customer_id). */
+    async getByIds(ids: string[]) {
+      if (!ids?.length) return { data: [] as { id: string; full_name: string | null; customer_id: string | null }[], error: null };
+      const { data, error } = await supabase
+        .from('customers')
+        .select('id, full_name, customer_id')
+        .in('id', ids);
+      return { data: data || [], error };
+    },
     
     async getByPhone(phone: string) {
       const { data, error } = await supabase

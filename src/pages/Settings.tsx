@@ -953,7 +953,26 @@ const Settings = () => {
     URL.revokeObjectURL(url);
   };
 
-  // Function to download all table data
+  // Paginate through a table (Supabase default max is 1000 per request) so we get ALL rows.
+  const fetchAllFromTable = async (tableName: string, orderBy = 'id'): Promise<{ data: any[]; error: any }> => {
+    const PAGE = 1000;
+    let from = 0;
+    const all: any[] = [];
+    while (true) {
+      const { data, error } = await supabase
+        .from(tableName)
+        .select('*')
+        .order(orderBy, { ascending: true })
+        .range(from, from + PAGE - 1);
+      if (error) return { data: [], error };
+      all.push(...(data || []));
+      if (!data || data.length < PAGE) break;
+      from += PAGE;
+    }
+    return { data: all, error: null };
+  };
+
+  // Function to download all table data (paginated so we get every row)
   const handleDownloadAllData = async () => {
     setIsDownloading(true);
 
@@ -961,243 +980,186 @@ const Settings = () => {
       const timestamp = new Date().toISOString().split('T')[0];
       const tables: { name: string; data: any[] }[] = [];
 
-      // Fetch all tables
-      // For export, we need all data, but still reasonable to have a safety limit
-      // If you have more than 10k customers, consider pagination
-      const { data: customers, error: customersError } = await db.customers.getAll(10000);
+      const { data: customers, error: customersError } = await fetchAllFromTable('customers', 'created_at');
       if (customersError) {
-        console.error('Error fetching customers:', customersError);
         toast.error(`Failed to fetch customers: ${customersError.message}`);
       } else {
-        tables.push({ name: 'customers', data: customers || [] });
+        tables.push({ name: 'customers', data: customers });
       }
 
-      // OPTIMIZATION: For export, fetch jobs without nested customer data to reduce payload
-      // Customer data is already in the customers table, no need to duplicate
-      const { data: jobs, error: jobsError } = await db.jobs.getAll(undefined, false);
+      const { data: jobs, error: jobsError } = await fetchAllFromTable('jobs', 'created_at');
       if (jobsError) {
-        console.error('Error fetching jobs:', jobsError);
         toast.error(`Failed to fetch jobs: ${jobsError.message}`);
       } else {
-        tables.push({ name: 'jobs', data: jobs || [] });
+        tables.push({ name: 'jobs', data: jobs });
       }
 
-      // For export, limit technicians (shouldn't be more than a few hundred)
-      const { data: technicians, error: techniciansError } = await db.technicians.getAll(500);
+      const { data: technicians, error: techniciansError } = await fetchAllFromTable('technicians', 'created_at');
       if (techniciansError) {
-        console.error('Error fetching technicians:', techniciansError);
         toast.error(`Failed to fetch technicians: ${techniciansError.message}`);
       } else {
-        tables.push({ name: 'technicians', data: technicians || [] });
+        tables.push({ name: 'technicians', data: technicians });
       }
 
-      const taxInvoicesResult = await db.taxInvoices.getAll(100000, 0);
-      if (taxInvoicesResult.error) {
-        console.error('Error fetching tax invoices:', taxInvoicesResult.error);
-        toast.error(`Failed to fetch tax invoices: ${taxInvoicesResult.error.message}`);
+      const { data: taxInvoices, error: taxInvoicesError } = await fetchAllFromTable('tax_invoices', 'created_at');
+      if (taxInvoicesError) {
+        toast.error(`Failed to fetch tax invoices: ${taxInvoicesError.message}`);
       } else {
-        tables.push({ name: 'tax_invoices', data: taxInvoicesResult.data || [] });
+        tables.push({ name: 'tax_invoices', data: taxInvoices });
       }
 
-      const { data: technicianPayments, error: technicianPaymentsError } = await db.technicianPayments.getAll();
+      const { data: technicianPayments, error: technicianPaymentsError } = await fetchAllFromTable('technician_payments', 'created_at');
       if (technicianPaymentsError) {
-        console.error('Error fetching technician payments:', technicianPaymentsError);
         toast.error(`Failed to fetch technician payments: ${technicianPaymentsError.message}`);
       } else {
-        tables.push({ name: 'technician_payments', data: technicianPayments || [] });
+        tables.push({ name: 'technician_payments', data: technicianPayments });
       }
 
-      const amcContractsResult = await db.amcContracts.getAll(100000, 0);
-      if (amcContractsResult.error) {
-        console.error('Error fetching AMC contracts:', amcContractsResult.error);
-        toast.error(`Failed to fetch AMC contracts: ${amcContractsResult.error.message}`);
+      const { data: amcContracts, error: amcContractsError } = await fetchAllFromTable('amc_contracts', 'created_at');
+      if (amcContractsError) {
+        toast.error(`Failed to fetch AMC contracts: ${amcContractsError.message}`);
       } else {
-        tables.push({ name: 'amc_contracts', data: amcContractsResult.data || [] });
+        tables.push({ name: 'amc_contracts', data: amcContracts });
       }
 
-      const { data: commonQrCodes, error: commonQrCodesError } = await db.commonQrCodes.getAll();
+      const { data: commonQrCodes, error: commonQrCodesError } = await fetchAllFromTable('common_qr_codes', 'created_at');
       if (commonQrCodesError) {
-        console.error('Error fetching common QR codes:', commonQrCodesError);
         toast.error(`Failed to fetch common QR codes: ${commonQrCodesError.message}`);
       } else {
-        tables.push({ name: 'common_qr_codes', data: commonQrCodes || [] });
+        tables.push({ name: 'common_qr_codes', data: commonQrCodes });
       }
 
-      const { data: productQrCodes, error: productQrCodesError } = await db.productQrCodes.getAll();
+      const { data: productQrCodes, error: productQrCodesError } = await fetchAllFromTable('product_qr_codes', 'created_at');
       if (productQrCodesError) {
-        console.error('Error fetching product QR codes:', productQrCodesError);
         toast.error(`Failed to fetch product QR codes: ${productQrCodesError.message}`);
       } else {
-        tables.push({ name: 'product_qr_codes', data: productQrCodes || [] });
+        tables.push({ name: 'product_qr_codes', data: productQrCodes });
       }
 
-      // Fetch additional tables directly from Supabase
-      const { data: jobAssignmentRequests, error: jobAssignmentRequestsError } = await supabase
-        .from('job_assignment_requests')
-        .select('*');
+      const { data: jobAssignmentRequests, error: jobAssignmentRequestsError } = await fetchAllFromTable('job_assignment_requests', 'created_at');
       if (jobAssignmentRequestsError) {
-        console.error('Error fetching job assignment requests:', jobAssignmentRequestsError);
         toast.error(`Failed to fetch job assignment requests: ${jobAssignmentRequestsError.message}`);
       } else {
-        tables.push({ name: 'job_assignment_requests', data: jobAssignmentRequests || [] });
+        tables.push({ name: 'job_assignment_requests', data: jobAssignmentRequests });
       }
 
-      const { data: technicianExpenses, error: technicianExpensesError } = await supabase
-        .from('technician_expenses')
-        .select('*');
+      const { data: technicianExpenses, error: technicianExpensesError } = await fetchAllFromTable('technician_expenses', 'created_at');
       if (technicianExpensesError) {
-        console.error('Error fetching technician expenses:', technicianExpensesError);
         toast.error(`Failed to fetch technician expenses: ${technicianExpensesError.message}`);
       } else {
-        tables.push({ name: 'technician_expenses', data: technicianExpenses || [] });
+        tables.push({ name: 'technician_expenses', data: technicianExpenses });
       }
 
-      const { data: technicianAdvances, error: technicianAdvancesError } = await supabase
-        .from('technician_advances')
-        .select('*');
+      const { data: technicianAdvances, error: technicianAdvancesError } = await fetchAllFromTable('technician_advances', 'created_at');
       if (technicianAdvancesError) {
-        console.error('Error fetching technician advances:', technicianAdvancesError);
         toast.error(`Failed to fetch technician advances: ${technicianAdvancesError.message}`);
       } else {
-        tables.push({ name: 'technician_advances', data: technicianAdvances || [] });
+        tables.push({ name: 'technician_advances', data: technicianAdvances });
       }
 
-      const { data: technicianExtraCommissions, error: technicianExtraCommissionsError } = await supabase
-        .from('technician_extra_commissions')
-        .select('*');
+      const { data: technicianExtraCommissions, error: technicianExtraCommissionsError } = await fetchAllFromTable('technician_extra_commissions', 'created_at');
       if (technicianExtraCommissionsError) {
-        console.error('Error fetching technician extra commissions:', technicianExtraCommissionsError);
         toast.error(`Failed to fetch technician extra commissions: ${technicianExtraCommissionsError.message}`);
       } else {
-        tables.push({ name: 'technician_extra_commissions', data: technicianExtraCommissions || [] });
+        tables.push({ name: 'technician_extra_commissions', data: technicianExtraCommissions });
       }
 
-      const { data: technicianHolidays, error: technicianHolidaysError } = await supabase
-        .from('technician_holidays')
-        .select('*');
+      const { data: technicianHolidays, error: technicianHolidaysError } = await fetchAllFromTable('technician_holidays', 'created_at');
       if (technicianHolidaysError) {
-        console.error('Error fetching technician holidays:', technicianHolidaysError);
         toast.error(`Failed to fetch technician holidays: ${technicianHolidaysError.message}`);
       } else {
-        tables.push({ name: 'technician_holidays', data: technicianHolidays || [] });
+        tables.push({ name: 'technician_holidays', data: technicianHolidays });
       }
 
-      const { data: callHistory, error: callHistoryError } = await db.callHistory.getAll();
+      const { data: callHistory, error: callHistoryError } = await fetchAllFromTable('call_history', 'contacted_at');
       if (callHistoryError) {
-        console.error('Error fetching call history:', callHistoryError);
         toast.error(`Failed to fetch call history: ${callHistoryError.message}`);
       } else {
-        tables.push({ name: 'call_history', data: callHistory || [] });
+        tables.push({ name: 'call_history', data: callHistory });
       }
 
-      const { data: adminUsers, error: adminUsersError } = await supabase
-        .from('admin_users')
-        .select('*');
+      const { data: adminUsers, error: adminUsersError } = await fetchAllFromTable('admin_users', 'id');
       if (adminUsersError) {
-        console.error('Error fetching admin users:', adminUsersError);
         toast.error(`Failed to fetch admin users: ${adminUsersError.message}`);
       } else {
-        tables.push({ name: 'admin_users', data: adminUsers || [] });
+        tables.push({ name: 'admin_users', data: adminUsers });
       }
 
-      const { data: followUps, error: followUpsError } = await supabase
-        .from('follow_ups')
-        .select('*');
+      const { data: followUps, error: followUpsError } = await fetchAllFromTable('follow_ups', 'created_at');
       if (followUpsError) {
-        console.error('Error fetching follow-ups:', followUpsError);
         toast.error(`Failed to fetch follow-ups: ${followUpsError.message}`);
       } else {
-        tables.push({ name: 'follow_ups', data: followUps || [] });
+        tables.push({ name: 'follow_ups', data: followUps });
       }
 
-      const { data: notifications, error: notificationsError } = await supabase
-        .from('notifications')
-        .select('*');
+      const { data: notifications, error: notificationsError } = await fetchAllFromTable('notifications', 'created_at');
       if (notificationsError) {
-        console.error('Error fetching notifications:', notificationsError);
         toast.error(`Failed to fetch notifications: ${notificationsError.message}`);
       } else {
-        tables.push({ name: 'notifications', data: notifications || [] });
+        tables.push({ name: 'notifications', data: notifications });
       }
 
-      const { data: partsInventory, error: partsInventoryError } = await supabase
-        .from('parts_inventory')
-        .select('*');
+      const { data: partsInventory, error: partsInventoryError } = await fetchAllFromTable('parts_inventory', 'id');
       if (partsInventoryError) {
-        console.error('Error fetching parts inventory:', partsInventoryError);
         toast.error(`Failed to fetch parts inventory: ${partsInventoryError.message}`);
       } else {
-        tables.push({ name: 'parts_inventory', data: partsInventory || [] });
+        tables.push({ name: 'parts_inventory', data: partsInventory });
       }
 
-      const { data: serviceAreas, error: serviceAreasError } = await supabase
-        .from('service_areas')
-        .select('*');
+      const { data: serviceAreas, error: serviceAreasError } = await fetchAllFromTable('service_areas', 'id');
       if (serviceAreasError) {
-        console.error('Error fetching service areas:', serviceAreasError);
         toast.error(`Failed to fetch service areas: ${serviceAreasError.message}`);
       } else {
-        tables.push({ name: 'service_areas', data: serviceAreas || [] });
+        tables.push({ name: 'service_areas', data: serviceAreas });
       }
 
-      const { data: businessExpenses, error: businessExpensesError } = await db.businessExpenses.getAll();
+      const { data: businessExpenses, error: businessExpensesError } = await fetchAllFromTable('business_expenses', 'expense_date');
       if (businessExpensesError) {
-        console.error('Error fetching business expenses:', businessExpensesError);
         toast.error(`Failed to fetch business expenses: ${businessExpensesError.message}`);
       } else {
-        tables.push({ name: 'business_expenses', data: businessExpenses || [] });
+        tables.push({ name: 'business_expenses', data: businessExpenses });
       }
 
-      const { data: inventory, error: inventoryError } = await db.inventory.getAll();
+      const { data: inventory, error: inventoryError } = await fetchAllFromTable('inventory', 'created_at');
       if (inventoryError) {
-        console.error('Error fetching inventory:', inventoryError);
         toast.error(`Failed to fetch inventory: ${inventoryError.message}`);
       } else {
-        tables.push({ name: 'inventory', data: inventory || [] });
+        tables.push({ name: 'inventory', data: inventory });
       }
 
-      const { data: technicianInventory, error: technicianInventoryError } = await db.technicianInventory.getAll();
+      const { data: technicianInventory, error: technicianInventoryError } = await fetchAllFromTable('technician_inventory', 'created_at');
       if (technicianInventoryError) {
-        console.error('Error fetching technician inventory:', technicianInventoryError);
         toast.error(`Failed to fetch technician inventory: ${technicianInventoryError.message}`);
       } else {
-        tables.push({ name: 'technician_inventory', data: technicianInventory || [] });
+        tables.push({ name: 'technician_inventory', data: technicianInventory });
       }
 
-      const { data: jobPartsUsed, error: jobPartsUsedError } = await supabase
-        .from('job_parts_used')
-        .select('*');
+      const { data: jobPartsUsed, error: jobPartsUsedError } = await fetchAllFromTable('job_parts_used', 'created_at');
       if (jobPartsUsedError) {
-        console.error('Error fetching job parts used:', jobPartsUsedError);
         toast.error(`Failed to fetch job parts used: ${jobPartsUsedError.message}`);
       } else {
-        tables.push({ name: 'job_parts_used', data: jobPartsUsed || [] });
+        tables.push({ name: 'job_parts_used', data: jobPartsUsed });
       }
 
-      const { data: adminTodos, error: adminTodosError } = await db.adminTodos.getAll();
+      const { data: adminTodos, error: adminTodosError } = await fetchAllFromTable('admin_todos', 'created_at');
       if (adminTodosError) {
-        console.error('Error fetching admin todos:', adminTodosError);
         toast.error(`Failed to fetch admin todos: ${adminTodosError.message}`);
       } else {
-        tables.push({ name: 'admin_todos', data: adminTodos || [] });
+        tables.push({ name: 'admin_todos', data: adminTodos });
       }
 
-      const { data: reminders, error: remindersError } = await db.reminders.getAll(true, 10000);
+      const { data: reminders, error: remindersError } = await fetchAllFromTable('reminders', 'reminder_at');
       if (remindersError) {
-        console.error('Error fetching reminders:', remindersError);
         toast.error(`Failed to fetch reminders: ${remindersError.message}`);
       } else {
-        tables.push({ name: 'reminders', data: reminders || [] });
+        tables.push({ name: 'reminders', data: reminders });
       }
 
-      const { data: technicianCommonQr, error: technicianCommonQrError } = await supabase
-        .from('technician_common_qr')
-        .select('*');
+      const { data: technicianCommonQr, error: technicianCommonQrError } = await fetchAllFromTable('technician_common_qr', 'created_at');
       if (technicianCommonQrError) {
-        console.error('Error fetching technician common QR:', technicianCommonQrError);
         toast.error(`Failed to fetch technician common QR: ${technicianCommonQrError.message}`);
       } else {
-        tables.push({ name: 'technician_common_qr', data: technicianCommonQr || [] });
+        tables.push({ name: 'technician_common_qr', data: technicianCommonQr });
       }
 
       // Create ZIP file with all CSV files

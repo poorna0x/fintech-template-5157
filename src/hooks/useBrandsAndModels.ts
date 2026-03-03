@@ -14,25 +14,29 @@ export const useBrandsAndModels = () => {
           .select('brand')
           .not('brand', 'is', null)
           .neq('brand', '')
-          .neq('brand', 'Not specified'),
+          .neq('brand', 'Not specified')
+          .limit(1000),
         supabase
           .from('jobs')
           .select('brand')
           .not('brand', 'is', null)
           .neq('brand', '')
-          .neq('brand', 'Not specified'),
+          .neq('brand', 'Not specified')
+          .limit(1000),
         supabase
           .from('customers')
           .select('model')
           .not('model', 'is', null)
           .neq('model', '')
-          .neq('model', 'Not specified'),
+          .neq('model', 'Not specified')
+          .limit(1000),
         supabase
           .from('jobs')
           .select('model')
           .not('model', 'is', null)
           .neq('model', '')
           .neq('model', 'Not specified')
+          .limit(1000)
       ]);
       
       // Only process if all queries succeeded

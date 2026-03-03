@@ -141,13 +141,12 @@ export function RemindersList() {
       setReminders(list);
       const customerIds = [...new Set(list.filter((r) => r.entity_type === 'customer' && r.entity_id).map((r) => r.entity_id as string))];
       const labels: Record<string, CustomerLabel> = {};
-      Promise.all(
-        customerIds.map((id) =>
-          db.customers.getById(id).then(({ data: c }) => {
-            if (c) labels[id] = { name: (c as any).full_name || 'Customer', customerId: (c as any).customer_id || id.slice(0, 8) };
-          })
-        )
-      ).then(() => setCustomerLabels(labels));
+      db.customers.getByIds(customerIds).then(({ data: customers }) => {
+        (customers || []).forEach((c: any) => {
+          if (c?.id) labels[c.id] = { name: c.full_name || 'Customer', customerId: c.customer_id || c.id.slice(0, 8) };
+        });
+        setCustomerLabels(labels);
+      });
       setLoading(false);
     });
   };
