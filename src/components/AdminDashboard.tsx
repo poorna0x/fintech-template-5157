@@ -336,95 +336,51 @@ const AdminDashboard = () => {
     }
   }, [authLoading]);
 
-  // Listen for auth state changes directly from Supabase
+  // When user becomes available, stop waiting
   useEffect(() => {
-    // If user becomes available, stop waiting immediately
-    if (user) {
-      setWaitingForAuth(false);
-      return;
-    }
+    if (user) setWaitingForAuth(false);
+  }, [user]);
 
-    // If auth is still loading, don't check session yet
-    if (authLoading) {
-      setWaitingForAuth(false);
-      return;
-    }
+  // One-time session check on mount when auth is ready and no user yet (no polling)
+  useEffect(() => {
+    if (user || authLoading) return;
 
-    // User is null and auth is not loading - check if session exists
-    let attempts = 0;
-    const maxAttempts = 10; // 1 second max (10 * 100ms) - faster response
-    let intervalId: NodeJS.Timeout | null = null;
     let isCleanedUp = false;
-    
-    const checkSession = async () => {
-      // Don't check if user became available or component unmounted
-      if (user || isCleanedUp) {
-        if (intervalId) clearInterval(intervalId);
-        return;
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      if (isCleanedUp) return;
+      if (session?.user) {
+        setWaitingForAuth(true);
+        console.log('✅ [AdminDashboard] Session found, waiting for AuthContext update...');
       }
+    }).catch((error) => {
+      console.error('Error checking session:', error);
+      if (!isCleanedUp) setWaitingForAuth(false);
+    });
 
-      attempts++;
-      
-      try {
-        const { data: { session } } = await supabase.auth.getSession();
-        if (session?.user) {
-          // Session exists - wait for AuthContext to update
-          setWaitingForAuth(true);
-          console.log('✅ [AdminDashboard] Session found, waiting for AuthContext update...');
-          
-          // Stop checking after max attempts - AuthContext should have updated by then
-          if (attempts >= maxAttempts) {
-            if (intervalId) clearInterval(intervalId);
-            setWaitingForAuth(false);
-            console.warn('[AdminDashboard] Max attempts reached but user state not updated');
-          }
-        } else if (attempts >= maxAttempts) {
-          // No session after max attempts - show login
-          if (intervalId) clearInterval(intervalId);
-          setWaitingForAuth(false);
-        }
-      } catch (error) {
-        console.error('Error checking session:', error);
-        if (attempts >= maxAttempts) {
-          if (intervalId) clearInterval(intervalId);
-          setWaitingForAuth(false);
-        }
-      }
-    };
-    
-    // Start checking immediately, then every 100ms
-    checkSession();
-    intervalId = setInterval(checkSession, 100);
-    
-    // Safety timeout - always stop after 1.5 seconds
     const safetyTimeout = setTimeout(() => {
-      if (intervalId) clearInterval(intervalId);
       setWaitingForAuth(false);
       console.warn('[AdminDashboard] Safety timeout reached, stopping auth check');
     }, 1500);
-    
+
     return () => {
       isCleanedUp = true;
-      if (intervalId) clearInterval(intervalId);
       clearTimeout(safetyTimeout);
     };
   }, [user, authLoading]);
 
-  // Additional effect: Listen to Supabase auth state changes directly
+  // Listen to Supabase auth state changes (replaces polling; handles sign-in, refresh, initial session)
   useEffect(() => {
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
       console.log('[AdminDashboard] Auth state changed:', event, session?.user?.email);
-      
-      if (event === 'SIGNED_IN' && session?.user) {
-        // User just signed in - stop waiting immediately and force re-check
+
+      if (event === 'INITIAL_SESSION' && session?.user) {
+        setWaitingForAuth(true);
+      } else if (event === 'SIGNED_IN' && session?.user) {
         setWaitingForAuth(false);
         console.log('✅ [AdminDashboard] SIGNED_IN event detected');
-        // The user state should update from AuthContext, which will trigger re-render
       } else if (event === 'SIGNED_OUT') {
-        // User signed out - stop waiting
         setWaitingForAuth(false);
       } else if (event === 'TOKEN_REFRESHED' && session?.user) {
-        // Token refreshed - ensure user state is updated
         setWaitingForAuth(false);
         console.log('✅ [AdminDashboard] TOKEN_REFRESHED event detected');
       }
