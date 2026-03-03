@@ -9418,7 +9418,21 @@ const AdminDashboard = () => {
         onOpenChange={setEditJobDialogOpen}
         job={jobToEdit}
         onJobUpdated={(updatedJob) => {
-          setJobs(prev => prev.map(j => j.id === updatedJob.id ? updatedJob : j));
+          if (!updatedJob?.id) {
+            setJobToEdit(null);
+            return;
+          }
+          setJobs(prev => prev.map(j => {
+            if (j.id !== updatedJob.id) return j;
+            return { ...j, ...updatedJob };
+          }));
+          const customerId = (jobToEdit as any)?.customer_id ?? (jobToEdit as any)?.customerId ?? (jobToEdit as any)?.customer?.id;
+          if (customerId) {
+            setCustomerJobs(prev => ({
+              ...prev,
+              [customerId]: (prev[customerId] || []).map(j => j.id === updatedJob.id ? { ...j, ...updatedJob } : j),
+            }));
+          }
           setJobToEdit(null);
         }}
       />
