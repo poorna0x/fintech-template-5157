@@ -1290,19 +1290,31 @@ const TechnicianDashboard = () => {
     }
   }, [currentLocation, jobs, assignmentRequests]);
 
-  // Periodic refresh to catch changes from other technicians
+  // Realtime for assignment requests — no 5s polling; refresh when requests change
   useEffect(() => {
     if (!user?.technicianId) return;
 
-    const interval = setInterval(() => {
-      // Only refresh if there are pending assignment requests
-      if (assignmentRequests.length > 0) {
-        loadAssignmentRequests();
-      }
-    }, 5000); // Check every 5 seconds
+    const technicianId = user.technicianId;
+    const channel = supabase
+      .channel(`technician-assignment-requests-${technicianId}`)
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'job_assignment_requests',
+          filter: `technician_id=eq.${technicianId}`,
+        },
+        () => {
+          loadAssignmentRequests();
+        }
+      )
+      .subscribe();
 
-    return () => clearInterval(interval);
-  }, [user?.technicianId, assignmentRequests.length]);
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [user?.technicianId]);
 
   // Polling: 5s when realtime is down; 30s when realtime is up (sync team_members + unassignments not in filtered channel)
   useEffect(() => {
