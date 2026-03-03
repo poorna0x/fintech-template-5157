@@ -14,6 +14,7 @@ interface InventoryItem {
   id: string;
   product_name: string;
   code: string | null;
+  price?: number;
 }
 
 interface TechnicianInventoryItem {
@@ -63,20 +64,16 @@ const JobPartsUsedDialog: React.FC<JobPartsUsedDialogProps> = ({
     return () => clearTimeout(timer);
   }, [inventorySearchQuery]);
 
-  // Load technician inventory
+  // Load technician inventory (updates cache; used for initial load and background revalidate)
   const loadTechnicianInventory = useCallback(async () => {
     if (!technician?.id) return;
 
     try {
-      // Always fetch fresh data when dialog opens to ensure we have all items
       const { data, error } = await db.technicianInventory.getByTechnician(technician.id);
       if (error) throw error;
       const inventoryData = data || [];
       setTechnicianInventory(inventoryData);
-      
-      // Update cache
-      const cacheKey = `tech_inventory_${technician.id}`;
-      inventoryCache.set(cacheKey, inventoryData);
+      inventoryCache.set(`tech_inventory_${technician.id}`, inventoryData);
     } catch (error) {
       console.error('Error loading technician inventory:', error);
       toast.error('Failed to load technician inventory');
@@ -97,18 +94,24 @@ const JobPartsUsedDialog: React.FC<JobPartsUsedDialogProps> = ({
     }
   }, [job?.id]);
 
-  // Load data when dialog opens
+  // Load data when dialog opens (use cache for tech inventory when valid to avoid extra query)
   useEffect(() => {
     if (open && job && technician) {
       setLoading(true);
-      Promise.all([
-        loadTechnicianInventory(),
-        loadPartsUsed()
-      ]).finally(() => {
-        setLoading(false);
-      });
+      const cacheKey = `tech_inventory_${technician.id}`;
+      const cached = inventoryCache.get<TechnicianInventoryItem[]>(cacheKey);
+      if (cached && cached.length >= 0) {
+        setTechnicianInventory(cached);
+        loadPartsUsed().finally(() => setLoading(false));
+        // Revalidate in background so cache stays fresh
+        loadTechnicianInventory();
+      } else {
+        Promise.all([
+          loadTechnicianInventory(),
+          loadPartsUsed()
+        ]).finally(() => setLoading(false));
+      }
     } else if (!open) {
-      // Reset state when dialog closes to free memory
       setTechnicianInventory([]);
       setPartsUsed([]);
       setMainInventoryItems([]);
@@ -211,7 +214,7 @@ const JobPartsUsedDialog: React.FC<JobPartsUsedDialogProps> = ({
     setAddPartDialogOpen(true);
   };
 
-  // Quick add part with qty 1 (called from + button)
+  // Quick add part with qty 1 (called from + button) — price from cache when possible, optimistic update
   const handleQuickAddPart = async (inventoryId: string) => {
     if (!job?.id || !technician?.id) return;
 
@@ -221,21 +224,38 @@ const JobPartsUsedDialog: React.FC<JobPartsUsedDialogProps> = ({
       return;
     }
 
-    try {
+    // Price from cache/map when available to avoid getById per click
+    let currentPrice = 0;
+    const cachedInv = inventoryMap.get(inventoryId) as InventoryItem | undefined;
+    if (cachedInv?.price != null) {
+      currentPrice = Number(cachedInv.price);
+    } else {
       const { data: inventoryData, error: invError } = await db.inventory.getById(inventoryId);
       if (invError) throw invError;
-      const currentPrice = inventoryData?.price ? Number(inventoryData.price) : 0;
+      currentPrice = inventoryData?.price ? Number(inventoryData.price) : 0;
+    }
 
-      const existingPart = partsUsed.find(p => p.inventory_id === inventoryId);
+    const existingPart = partsUsed.find(p => p.inventory_id === inventoryId);
 
+    try {
       if (existingPart) {
         const newQuantity = existingPart.quantity_used + 1;
-        const { error: updateError } = await db.jobPartsUsed.update(existingPart.id, {
+        const { data: updatedPart, error: updateError } = await db.jobPartsUsed.update(existingPart.id, {
           quantity_used: newQuantity
         });
         if (updateError) throw updateError;
+
+        const newTechQuantity = techItem.quantity - 1;
+        const { error: updateTechError } = await db.technicianInventory.update(techItem.id, {
+          quantity: newTechQuantity
+        });
+        if (updateTechError) throw updateTechError;
+
+        // Optimistic update: no refetch
+        setPartsUsed(prev => prev.map(p => p.id === existingPart.id ? (updatedPart || p) : p));
+        setTechnicianInventory(prev => prev.map(i => i.id === techItem.id ? { ...i, quantity: newTechQuantity } : i));
       } else {
-        const { error: createError } = await db.jobPartsUsed.create({
+        const { data: newPart, error: createError } = await db.jobPartsUsed.create({
           job_id: job.id,
           technician_id: technician.id,
           inventory_id: inventoryId,
@@ -243,37 +263,35 @@ const JobPartsUsedDialog: React.FC<JobPartsUsedDialogProps> = ({
           price_at_time_of_use: currentPrice
         });
         if (createError) throw createError;
+
+        const newTechQuantity = techItem.quantity - 1;
+        const { error: updateTechError } = await db.technicianInventory.update(techItem.id, {
+          quantity: newTechQuantity
+        });
+        if (updateTechError) throw updateTechError;
+
+        // Optimistic update: no refetch
+        if (newPart) setPartsUsed(prev => [newPart, ...prev]);
+        setTechnicianInventory(prev => prev.map(i => i.id === techItem.id ? { ...i, quantity: newTechQuantity } : i));
       }
 
-      const newTechQuantity = techItem.quantity - 1;
-      const { error: updateTechError } = await db.technicianInventory.update(techItem.id, {
-        quantity: newTechQuantity
-      });
-      if (updateTechError) throw updateTechError;
-
       toast.success('Part added (1 qty)');
-      inventoryCache.clear(`tech_inventory_${technician.id}`);
-      await loadTechnicianInventory();
-      await loadPartsUsed();
     } catch (error: any) {
       console.error('Error quick adding part:', error);
       toast.error(error?.message || 'Failed to add part');
     }
   };
 
-  // Handle delete part
+  // Handle delete part — optimistic update, no refetch
   const handleDeletePart = async (partId: string, inventoryId: string, quantityUsed: number) => {
     if (!technician?.id) return;
 
+    const techItem = technicianInventory.find(i => i.inventory_id === inventoryId);
+
     try {
-      // Find technician inventory item
-      const techItem = technicianInventory.find(i => i.inventory_id === inventoryId);
-      
-      // Delete the part
       const { error: deleteError } = await db.jobPartsUsed.delete(partId);
       if (deleteError) throw deleteError;
 
-      // Add back to technician inventory
       if (techItem) {
         const newQuantity = techItem.quantity + quantityUsed;
         const { error: updateError } = await db.technicianInventory.update(techItem.id, {
@@ -282,12 +300,11 @@ const JobPartsUsedDialog: React.FC<JobPartsUsedDialogProps> = ({
         if (updateError) throw updateError;
       }
 
+      setPartsUsed(prev => prev.filter(p => p.id !== partId));
+      if (techItem) {
+        setTechnicianInventory(prev => prev.map(i => i.id === techItem.id ? { ...i, quantity: techItem.quantity + quantityUsed } : i));
+      }
       toast.success('Part removed and added back to technician inventory');
-      
-      // Clear cache and reload
-      inventoryCache.clear(`tech_inventory_${technician.id}`);
-      await loadTechnicianInventory();
-      await loadPartsUsed();
     } catch (error: any) {
       console.error('Error deleting part:', error);
       toast.error(error?.message || 'Failed to delete part');
