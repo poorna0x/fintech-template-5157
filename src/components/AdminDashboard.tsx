@@ -1570,43 +1570,50 @@ const AdminDashboard = () => {
     };
   }, [isInitialLoad, isPollingEnabled, lastCheckedJobId]);
 
-  // Admin: no realtime — poll every 30s for new completions and play sound (reduces list_changes WAL load)
+  // Admin: realtime for job completion only — play sound when a job is completed (no polling)
   useEffect(() => {
     if (isInitialLoad) return;
 
-    let seeded = false;
-    const POLL_MS = 30000;
-
-    const checkCompletedForSound = async () => {
+    // One-time seed: mark currently completed jobs so we don't play sound for them on connect
+    const seedCompletedIds = async () => {
       try {
         const { data: completed, error } = await db.jobs.getByStatusPaginated(['COMPLETED'], 1, 15);
-        if (error || !completed?.length) return;
-        if (!seeded) {
+        if (!error && completed?.length) {
           completed.forEach((j: any) => jobIdsCompletedByAdminRef.current.add(j.id));
-          seeded = true;
-          return;
-        }
-        const now = Date.now();
-        const recentMs = 60000;
-        for (const j of completed as any[]) {
-          const completedAt = j.completed_at || j.end_time;
-          if (!completedAt) continue;
-          const t = new Date(completedAt).getTime();
-          if (now - t > recentMs) continue;
-          if (jobIdsCompletedByAdminRef.current.has(j.id)) continue;
-          jobIdsCompletedByAdminRef.current.add(j.id);
-          playNotificationSound();
         }
       } catch {
         // ignore
       }
     };
+    const seedTimeout = setTimeout(seedCompletedIds, 2000);
 
-    const interval = setInterval(checkCompletedForSound, POLL_MS);
-    const t0 = setTimeout(checkCompletedForSound, 3000);
+    const channel = supabase
+      .channel('admin-job-completed')
+      .on(
+        'postgres_changes',
+        {
+          event: 'UPDATE',
+          schema: 'public',
+          table: 'jobs',
+          filter: 'status=eq.COMPLETED',
+        },
+        (payload: { new: Record<string, unknown> }) => {
+          const row = payload.new as { id: string; completed_at?: string | null; end_time?: string | null };
+          if (jobIdsCompletedByAdminRef.current.has(row.id)) return;
+          const completedAt = row.completed_at || row.end_time;
+          if (completedAt) {
+            const t = new Date(completedAt).getTime();
+            if (Date.now() - t > 60000) return; // older than 60s, skip (e.g. late delivery)
+          }
+          jobIdsCompletedByAdminRef.current.add(row.id);
+          playNotificationSound();
+        }
+      )
+      .subscribe();
+
     return () => {
-      clearInterval(interval);
-      clearTimeout(t0);
+      clearTimeout(seedTimeout);
+      supabase.removeChannel(channel);
     };
   }, [isInitialLoad, playNotificationSound]);
 
