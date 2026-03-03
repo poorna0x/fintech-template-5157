@@ -9,11 +9,6 @@ interface ImportMetaEnv {
   readonly VITE_CLOUDINARY_CLOUD_NAME?: string
   readonly VITE_CLOUDINARY_UPLOAD_PRESET?: string
   readonly VITE_CLOUDINARY_API_KEY?: string
-  readonly VITE_CASHFREE_APP_ID?: string
-  readonly VITE_CASHFREE_SECRET_KEY?: string
-  readonly VITE_CASHFREE_ENVIRONMENT?: string
-  readonly VITE_CASHFREE_RETURN_URL?: string
-  readonly VITE_CASHFREE_NOTIFY_URL?: string
 }
 
 interface ImportMeta {

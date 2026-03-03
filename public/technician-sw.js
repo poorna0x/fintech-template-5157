@@ -55,7 +55,6 @@ self.addEventListener('fetch', (event) => {
     url.pathname.includes('/api/') ||
     url.hostname.includes('supabase.co') ||
     url.hostname.includes('cloudinary.com') ||
-    url.hostname.includes('cashfree.com') ||
     url.hostname.includes('bigdatacloud.net') ||
     url.hostname.includes('api-bdc.io') ||
     url.hostname.includes('nominatim.openstreetmap.org') ||

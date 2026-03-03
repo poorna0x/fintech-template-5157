@@ -1,26 +1,11 @@
 {
-  "name": "ro-business-payment-api",
+  "name": "ro-business-api",
   "version": "1.0.0",
-  "description": "Payment API for RO Business CRM",
-  "main": "payment.js",
+  "description": "API utilities for RO Business (e.g. send-email serverless handler)",
   "scripts": {
-    "start": "node payment.js",
-    "dev": "nodemon payment.js"
+    "start": "echo 'No standalone server. Use Netlify/Vercel for serverless deployment.'"
   },
-  "dependencies": {
-    "express": "^4.18.2",
-    "cors": "^2.8.5",
-    "dotenv": "^16.3.1"
-  },
-  "devDependencies": {
-    "nodemon": "^3.0.1"
-  },
-  "keywords": [
-    "payment",
-    "cashfree",
-    "api",
-    "ro-business"
-  ],
+  "keywords": ["api", "ro-business"],
   "author": "RO Business CRM",
   "license": "MIT"
 }

@@ -25,13 +25,6 @@ const PrivacyPolicy = lazy(() => import("./pages/PrivacyPolicy"));
 const TermsOfService = lazy(() => import("./pages/TermsOfService"));
 const RefundPolicy = lazy(() => import("./pages/RefundPolicy"));
 const CookiePolicy = lazy(() => import("./pages/CookiePolicy"));
-const PaymentTest = lazy(() => import("./components/PaymentTest"));
-const PaymentTestSimple = lazy(() => import("./components/PaymentTestSimple"));
-const PaymentRequest = lazy(() => import("./pages/PaymentRequest"));
-const CustomerPayment = lazy(() => import("./pages/CustomerPayment"));
-const PaymentSuccess = lazy(() => import("./pages/PaymentSuccess"));
-const PaymentWebhook = lazy(() => import("./pages/PaymentWebhook"));
-
 // New SEO pages
 const Services = lazy(() => import("./pages/Services"));
 const About = lazy(() => import("./pages/About"));
@@ -110,12 +103,6 @@ const App = () => (
                   <Route path="/terms-of-service" element={<TermsOfService />} />
                   <Route path="/refund-policy" element={<RefundPolicy />} />
                   <Route path="/cookie-policy" element={<CookiePolicy />} />
-                  <Route path="/payment-test" element={<PaymentTest />} />
-                  <Route path="/payment-test-simple" element={<PaymentTestSimple />} />
-                  <Route path="/payment-request" element={<PaymentRequest />} />
-                  <Route path="/pay" element={<CustomerPayment />} />
-                  <Route path="/payment/success" element={<PaymentSuccess />} />
-                  <Route path="/payment/webhook" element={<PaymentWebhook />} />
                   
                   {/* SEO Pages */}
                   <Route path="/services" element={<Services />} />

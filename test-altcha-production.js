@@ -1,5 +1,5 @@
 // Test ALTCHA in production for admin, technician, and booking pages
-const https = require('https');
+import https from 'https';
 
 const BASE_URL = 'https://hydrogenro.com';
 

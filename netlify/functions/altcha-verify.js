@@ -38,11 +38,10 @@ try {
 // This is a placeholder only - NEVER use in production without env var
 const HMAC_KEY = process.env.ALTCHA_HMAC_KEY || 'PLACEHOLDER-DO-NOT-USE-IN-PRODUCTION-GENERATE-REAL-KEY';
 
-// SECURITY: Warn if using placeholder key in production
-if (process.env.CONTEXT === 'production' && HMAC_KEY === 'PLACEHOLDER-DO-NOT-USE-IN-PRODUCTION-GENERATE-REAL-KEY') {
-  console.error('⚠️ SECURITY WARNING: Using placeholder HMAC key in production!');
-  console.error('⚠️ Set ALTCHA_HMAC_KEY environment variable in Netlify dashboard');
-  console.error('⚠️ Generate key with: openssl rand -hex 32');
+// SECURITY: In production, refuse to run with placeholder key
+const isPlaceholderKey = HMAC_KEY === 'PLACEHOLDER-DO-NOT-USE-IN-PRODUCTION-GENERATE-REAL-KEY';
+if (process.env.CONTEXT === 'production' && isPlaceholderKey) {
+  console.error('⚠️ SECURITY: ALTCHA disabled - set ALTCHA_HMAC_KEY in Netlify (openssl rand -hex 32)');
 }
 
 // Simple in-memory store for challenges (in production, use Redis or database)
@@ -327,6 +326,18 @@ async function handlePost(event, corsHeaders) {
 exports.handler = async (event, context) => {
   const requestOrigin = event.headers.origin || event.headers.Origin;
   const corsHeaders = getCorsHeaders(requestOrigin);
+
+  // SECURITY: In production, refuse to run with placeholder HMAC key
+  if (process.env.CONTEXT === 'production' && isPlaceholderKey) {
+    return {
+      statusCode: 503,
+      headers: addSecurityHeaders({ ...corsHeaders, 'Content-Type': 'application/json' }),
+      body: JSON.stringify({
+        error: 'Verification service unavailable',
+        message: 'ALTCHA is not configured. Set ALTCHA_HMAC_KEY in Netlify environment.',
+      }),
+    };
+  }
 
   // Handle CORS preflight
   if (event.httpMethod === 'OPTIONS') {

@@ -56,8 +56,8 @@ const initialColumns: Column[] = [
     tasks: [
       {
         id: 't5',
-        title: 'API integration with payment gateway',
-        description: 'Connect payment processor and test transactions',
+        title: 'API integration',
+        description: 'Connect external APIs and test integrations',
         tag: { color: 'blue', label: 'Development' },
         dueDate: 'May 18',
         assignees: 1,

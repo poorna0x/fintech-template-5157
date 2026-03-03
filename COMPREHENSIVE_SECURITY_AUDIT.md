@@ -134,10 +134,7 @@ const supabaseAnonKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...';
 - ✅ Error sanitization
 
 ### Payment Processing
-- ✅ Payment gateway credentials in env vars
-- ✅ No sensitive payment data in localStorage
-- ✅ Secure payment flow (Cashfree)
-- ⚠️ Test credentials in config (acceptable for sandbox)
+- Payment gateway: removed from project (not in use).
 
 ### File Handling
 - ✅ Image upload validation
