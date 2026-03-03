@@ -910,291 +910,116 @@ const TechnicianDashboard = () => {
     };
   }, [user]);
 
-  // Set up realtime subscription for new job assignments
+  // Single realtime channel with server-side filter (assigned_technician_id=me) to cut list_changes WAL load
   useEffect(() => {
     if (!user?.technicianId) return;
 
-    console.log('🔔 Setting up realtime subscription for technician:', user.technicianId);
-
-    let channel: ReturnType<typeof supabase.channel>;
+    const technicianId = user.technicianId;
+    let channel: ReturnType<typeof supabase.channel> | null = null;
+    let retryTimeoutId: ReturnType<typeof setTimeout> | null = null;
     let retryCount = 0;
     const maxRetries = 3;
-    const retryDelay = 2000; // 2 seconds
+    const retryDelay = 2000;
+    const isMounted = { current: true };
 
-    // Check if realtime is available by testing a simple subscription
-    const checkRealtimeAvailable = async () => {
-      try {
-        // Try to create a test channel and see if it connects
-        const testChannel = supabase.channel('realtime-test');
-        let connectionTested = false;
-        
-        const testPromise = new Promise<boolean>((resolve) => {
-          const timeout = setTimeout(() => {
-            if (!connectionTested) {
-              connectionTested = true;
-              testChannel.unsubscribe();
-              supabase.removeChannel(testChannel);
-              resolve(false);
-            }
-          }, 3000); // 3 second timeout
-
-          testChannel
-            .subscribe((status) => {
-              if (status === 'SUBSCRIBED' && !connectionTested) {
-                connectionTested = true;
-                clearTimeout(timeout);
-                testChannel.unsubscribe();
-                supabase.removeChannel(testChannel);
-                resolve(true);
-              } else if (status === 'CHANNEL_ERROR' && !connectionTested) {
-                connectionTested = true;
-                clearTimeout(timeout);
-                testChannel.unsubscribe();
-                supabase.removeChannel(testChannel);
-                resolve(false);
-              }
-            });
-        });
-
-        const isAvailable = await testPromise;
-        return isAvailable;
-      } catch (error) {
-        console.error('Error checking realtime availability:', error);
-        return false;
-      }
-    };
-
-    const setupSubscription = async () => {
-      // Check if realtime is available first
-      const realtimeAvailable = await checkRealtimeAvailable();
-      
-      if (!realtimeAvailable) {
-        console.warn('⚠️ Realtime service appears to be unavailable. Using polling mode.');
-        setRealtimeConnected(false);
-        return; // Don't try to subscribe if realtime is not available
-      }
-
-      console.log('✅ Realtime service is available, setting up subscription...');
-      // Remove existing channel if any
+    const setupSubscription = () => {
+      if (!isMounted.current) return;
       if (channel) {
         try {
           supabase.removeChannel(channel);
-        } catch (e) {
-          console.warn('Error removing channel:', e);
-        }
+        } catch (_) {}
+        channel = null;
       }
 
-      // Create a channel that listens to ALL job updates (no filter)
-      // We'll check relevance in the handler to support unassignment, reassignment, and team members
       channel = supabase
-        .channel(`technician-jobs-${user.technicianId}`)
+        .channel(`technician-jobs-${technicianId}`)
         .on(
           'postgres_changes',
           {
             event: 'UPDATE',
             schema: 'public',
             table: 'jobs',
-            // No filter - listen to all job updates to handle unassignment, reassignment, and team changes
+            filter: `assigned_technician_id=eq.${technicianId}`,
           },
         async (payload) => {
-          console.log('📨 Realtime update received:', payload);
+          if (!isMounted.current) return;
           const updatedJob = payload.new as any;
-          const oldJob = payload.old as any;
-          
-          // Skip if this job is already being processed (use ref for synchronous check)
-          if (processingJobsRef.current.has(updatedJob.id)) {
-            console.log('⚠️ Job already being processed, skipping duplicate realtime update:', updatedJob.id);
-            return;
-          }
-          
-          // Helper function to check if a job is relevant to this technician (should be in their list)
-          const isJobRelevantToMe = (job: any) => {
-            if (!job) return false;
-            // Check if assigned to this technician
-            if (job.assigned_technician_id === user.technicianId) return true;
-            // Check if this technician is in team_members
-            const teamMembers = job.team_members || [];
-            if (Array.isArray(teamMembers) && teamMembers.includes(user.technicianId)) return true;
-            return false;
-          };
-          
-          // Check if job should be in list based on NEW state
-          const shouldBeInList = isJobRelevantToMe(updatedJob);
-          const isCompleted = updatedJob.status === 'COMPLETED';
-          
-          // Get current jobs state synchronously from ref
-          const currentJobsState = jobsRef.current;
-          const jobInList = currentJobsState.find(j => j.id === updatedJob.id);
-          const isInList = !!jobInList;
-          
-          console.log('🔍 Realtime update analysis:', {
-            jobId: updatedJob.id,
-            isInList,
-            shouldBeInList,
-            isCompleted,
-            assignedToMe: updatedJob.assigned_technician_id === user.technicianId,
-            inTeam: Array.isArray(updatedJob.team_members) && updatedJob.team_members.includes(user.technicianId),
-            oldAssignedId: oldJob?.assigned_technician_id,
-            newAssignedId: updatedJob.assigned_technician_id,
-            myTechnicianId: user.technicianId
-          });
-          
-          // Case 1: Job should NOT be in list (unassigned, removed from team, or completed by someone else)
-          if (!shouldBeInList || isCompleted) {
-            if (isInList) {
-              console.log('🗑️ Removing job from list (unassigned/removed/completed):', updatedJob.id);
-              setJobs(prev => {
-                const filtered = prev.filter(j => j.id !== updatedJob.id);
-                jobsRef.current = filtered; // Update ref
-                return filtered;
-              });
-            }
-            return; // Done - no need to add or update
-          }
-          
-          // Case 2: Job should be in list but isn't - add it (new assignment or team addition)
-          if (!isInList) {
-            console.log('✅ Job should be in list but is not - fetching and adding:', updatedJob.id);
-            
-            // Mark as processing to prevent duplicate fetches
-            processingJobsRef.current.add(updatedJob.id);
-            
-            // Fetch full job details
-            try {
-              const { data: fullJob, error } = await db.jobs.getById(updatedJob.id);
-              if (!error && fullJob) {
-                setJobs(prev => {
-                  // Double-check it's still not in list (race condition protection)
-                  const stillNotInList = !prev.some(j => j.id === fullJob.id);
-                  if (stillNotInList) {
-                    console.log('✅ Adding new job to list:', fullJob.id);
-                    const updated = [fullJob, ...prev]; // Add to top
-                    jobsRef.current = updated; // Update ref
-                    return updated;
-                  }
-                  return prev;
-                });
-              } else {
-                console.error('Error fetching job details:', error);
-              }
-            } catch (error) {
-              console.error('Error fetching new job details:', error);
-            } finally {
-              // Remove from processing set
-              processingJobsRef.current.delete(updatedJob.id);
-            }
-            return;
-          }
-          
-          // Case 3: Job is in list and should be - update it
-          console.log('🔄 Updating existing job in list:', updatedJob.id);
-          
-          // Mark as processing
+          if (processingJobsRef.current.has(updatedJob.id)) return;
+
           processingJobsRef.current.add(updatedJob.id);
-          
-          // Fetch full job details
           try {
             const { data: fullJob, error } = await db.jobs.getById(updatedJob.id);
-            if (!error && fullJob) {
-              setJobs(prev => {
-                const index = prev.findIndex(j => j.id === fullJob.id);
-                if (index >= 0) {
-                  // Update existing job in place
-                  const updated = [...prev];
-                  updated[index] = fullJob;
-                  shouldPreserveOrderRef.current = true; // Preserve order
-                  jobsRef.current = updated; // Update ref
-                  console.log('✅ Job updated in UI');
-                  return updated;
-                }
-                // Job was removed while fetching - don't add it back
-                return prev;
+            if (!isMounted.current) return;
+            if (error || !fullJob) {
+              processingJobsRef.current.delete(updatedJob.id);
+              return;
+            }
+            const currentJobsState = jobsRef.current;
+            const jobInList = currentJobsState.find((j) => j.id === updatedJob.id);
+            if (updatedJob.status === 'COMPLETED') {
+              if (jobInList) {
+                setJobs((prev) => {
+                  const filtered = prev.filter((j) => j.id !== updatedJob.id);
+                  jobsRef.current = filtered;
+                  return filtered;
+                });
+              }
+            } else if (!jobInList) {
+              setJobs((prev) => {
+                if (prev.some((j) => j.id === fullJob.id)) return prev;
+                const next = [fullJob, ...prev];
+                jobsRef.current = next;
+                return next;
               });
             } else {
-              console.error('Error fetching job details for update:', error);
+              setJobs((prev) => {
+                const idx = prev.findIndex((j) => j.id === fullJob.id);
+                if (idx < 0) return prev;
+                const next = [...prev];
+                next[idx] = fullJob;
+                shouldPreserveOrderRef.current = true;
+                jobsRef.current = next;
+                return next;
+              });
             }
-          } catch (error) {
-            console.error('Error updating job in UI:', error);
           } finally {
-            // Remove from processing set
             processingJobsRef.current.delete(updatedJob.id);
           }
         }
       )
         .subscribe((status, err) => {
+          if (!isMounted.current) return;
           if (err) {
-            console.error('❌ Realtime subscription error:', err);
-            console.error('Error details:', JSON.stringify(err, null, 2));
-            console.error('Error type:', err?.constructor?.name);
-            console.error('Error message:', err?.message);
             if (retryCount < maxRetries) {
               retryCount++;
-              console.log(`🔄 Retrying realtime subscription (${retryCount}/${maxRetries})...`);
-              setTimeout(() => {
-                setupSubscription();
-              }, retryDelay);
-              } else {
-                console.error('❌ Realtime failed after all retries. This might be a WebSocket connection issue.');
-                console.error('💡 Possible causes:');
-                console.error('   1. WebSocket connections blocked by firewall/network');
-                console.error('   2. Supabase Realtime service might be down');
-                console.error('   3. Check Supabase dashboard for Realtime service status');
-                console.log('📡 Falling back to polling mode - checking for new jobs every 10 seconds');
-                // Realtime unavailable - using polling silently
-              }
-          } else {
-            console.log('✅ Realtime subscription status:', status);
-            if (status === 'SUBSCRIBED') {
-              console.log('🎉 Successfully subscribed to realtime updates for jobs');
-                retryCount = 0; // Reset retry count on success
-                setRealtimeConnected(true); // Mark realtime as connected
-            } else if (status === 'CHANNEL_ERROR') {
-              console.error('❌ Channel error - WebSocket connection failed');
-              console.error('This usually means the WebSocket cannot connect to Supabase Realtime server');
-              setRealtimeConnected(false); // Mark as not connected
-              if (retryCount < maxRetries) {
-                retryCount++;
-                console.log(`🔄 Retrying realtime subscription (${retryCount}/${maxRetries})...`);
-                setTimeout(() => {
-                  setupSubscription();
-                }, retryDelay);
-              } else {
-                console.error('💡 Realtime service is not available. Using polling mode instead.');
-                console.error('💡 To enable realtime:');
-                console.error('   1. Go to Supabase Dashboard → Settings → API');
-                console.error('   2. Check if Realtime is enabled for your project');
-                console.error('   3. Some projects require explicit Realtime enablement');
-                setRealtimeConnected(false); // Ensure polling mode is active
-                // Realtime unavailable - using polling silently
-              }
-            } else if (status === 'TIMED_OUT') {
-              console.error('❌ Realtime subscription timed out');
-              if (retryCount < maxRetries) {
-                retryCount++;
-                setTimeout(() => {
-                  setupSubscription();
-                }, retryDelay);
-              } else {
-                // Realtime connection timed out - using polling silently
-              }
-            } else if (status === 'CLOSED') {
-              // CLOSED status is normal - happens during cleanup or when connection closes
-              // Don't log as warning, just silently handle it
-              // Don't retry on CLOSED - it's usually intentional cleanup
+              retryTimeoutId = setTimeout(setupSubscription, retryDelay);
             } else {
-              console.log('Realtime status:', status);
+              setRealtimeConnected(false);
+            }
+            return;
+          }
+          if (status === 'SUBSCRIBED') {
+            retryCount = 0;
+            setRealtimeConnected(true);
+          } else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
+            setRealtimeConnected(false);
+            if (retryCount < maxRetries) {
+              retryCount++;
+              retryTimeoutId = setTimeout(setupSubscription, retryDelay);
             }
           }
         });
     };
 
-    // Initial setup
     setupSubscription();
 
     return () => {
-      console.log('🧹 Cleaning up realtime subscription');
+      isMounted.current = false;
+      if (retryTimeoutId) clearTimeout(retryTimeoutId);
       if (channel) {
-        supabase.removeChannel(channel);
+        try {
+          supabase.removeChannel(channel);
+        } catch (_) {}
       }
     };
   }, [user?.technicianId]);
@@ -1479,24 +1304,12 @@ const TechnicianDashboard = () => {
     return () => clearInterval(interval);
   }, [user?.technicianId, assignmentRequests.length]);
 
-  // Polling fallback for new jobs (when realtime fails)
+  // Polling: 5s when realtime is down; 30s when realtime is up (sync team_members + unassignments not in filtered channel)
   useEffect(() => {
     if (!user?.technicianId) return;
-    
-    // Only poll if realtime is not connected
-    if (realtimeConnected) {
-      console.log('✅ Realtime is connected, skipping polling');
-      return;
-    }
 
-    console.log('📡 Realtime not connected, starting polling fallback (every 5 seconds)');
-    
-    // Poll every 5 seconds to check for new job assignments (faster when realtime is unavailable)
-    const pollInterval = setInterval(() => {
-      // Check for newly assigned jobs
-      loadAssignedJobs();
-    }, 5000); // Check every 5 seconds for faster detection
-
+    const intervalMs = realtimeConnected ? 30000 : 5000;
+    const pollInterval = setInterval(() => loadAssignedJobs(), intervalMs);
     return () => clearInterval(pollInterval);
   }, [user?.technicianId, realtimeConnected]);
 

@@ -1544,7 +1544,7 @@ const AdminDashboard = () => {
 
 
 
-  // Poll for new jobs - no sound (sound only on job completion via realtime below)
+  // Poll for new jobs - no sound (sound only on completion via polling below)
   useEffect(() => {
     if (isInitialLoad || !isPollingEnabled) return;
 
@@ -1562,7 +1562,7 @@ const AdminDashboard = () => {
       }
     };
 
-    const interval = setInterval(checkForNewJobs, 10000);
+    const interval = setInterval(checkForNewJobs, 30000);
     const timeout = setTimeout(checkForNewJobs, 2000);
     return () => {
       clearInterval(interval);
@@ -1570,36 +1570,43 @@ const AdminDashboard = () => {
     };
   }, [isInitialLoad, isPollingEnabled, lastCheckedJobId]);
 
-  // Realtime only: play sound when technician completes a job (status -> COMPLETED)
+  // Admin: no realtime — poll every 30s for new completions and play sound (reduces list_changes WAL load)
   useEffect(() => {
     if (isInitialLoad) return;
 
-    const channel = supabase
-      .channel('job-completion-notifications')
-      .on(
-        'postgres_changes',
-        {
-          event: 'UPDATE',
-          schema: 'public',
-          table: 'jobs'
-        },
-        (payload) => {
-          const oldStatus = payload.old?.status;
-          const newStatus = payload.new?.status;
-          const jobId = payload.new?.id as string | undefined;
+    let seeded = false;
+    const POLL_MS = 30000;
 
-          if (oldStatus !== 'COMPLETED' && newStatus === 'COMPLETED') {
-            if (jobId && jobIdsCompletedByAdminRef.current.has(jobId)) return;
-            playNotificationSound();
-          }
+    const checkCompletedForSound = async () => {
+      try {
+        const { data: completed, error } = await db.jobs.getByStatusPaginated(['COMPLETED'], 1, 15);
+        if (error || !completed?.length) return;
+        if (!seeded) {
+          completed.forEach((j: any) => jobIdsCompletedByAdminRef.current.add(j.id));
+          seeded = true;
+          return;
         }
-      )
-      .subscribe((status) => {
-        if (import.meta.env.DEV) console.log('Job completion realtime:', status);
-      });
+        const now = Date.now();
+        const recentMs = 60000;
+        for (const j of completed as any[]) {
+          const completedAt = j.completed_at || j.end_time;
+          if (!completedAt) continue;
+          const t = new Date(completedAt).getTime();
+          if (now - t > recentMs) continue;
+          if (jobIdsCompletedByAdminRef.current.has(j.id)) continue;
+          jobIdsCompletedByAdminRef.current.add(j.id);
+          playNotificationSound();
+        }
+      } catch {
+        // ignore
+      }
+    };
 
+    const interval = setInterval(checkCompletedForSound, POLL_MS);
+    const t0 = setTimeout(checkCompletedForSound, 3000);
     return () => {
-      supabase.removeChannel(channel);
+      clearInterval(interval);
+      clearTimeout(t0);
     };
   }, [isInitialLoad, playNotificationSound]);
 
@@ -9801,7 +9808,7 @@ const AdminDashboard = () => {
         onLoadQrCodes={loadQrCodes}
         selectedTechnicianId={selectedTechnicianForComplete}
         onJobCompleted={async (completedJobId?: string) => {
-          // Mark this job as completed by admin so realtime handler doesn't play sound for it
+          // Mark this job as completed by admin so polling handler doesn't play sound for it
           if (completedJobId) {
             jobIdsCompletedByAdminRef.current.add(completedJobId);
             setTimeout(() => {
