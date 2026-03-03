@@ -1544,31 +1544,33 @@ const AdminDashboard = () => {
 
 
 
-  // Poll for new jobs - no sound (sound only on completion via polling below)
+  // Realtime for new jobs — refresh list when a job is inserted (no 30s poll)
   useEffect(() => {
     if (isInitialLoad || !isPollingEnabled) return;
 
-    const checkForNewJobs = async () => {
-      try {
-        const { data: newJobs, error } = await db.jobs.getByStatusPaginated(['PENDING'], 1, 5);
-        if (error || !newJobs || newJobs.length === 0) {
-          if (newJobs && newJobs.length === 0) setLastCheckedJobId(null);
-          return;
+    const channel = supabase
+      .channel('admin-new-jobs')
+      .on(
+        'postgres_changes',
+        {
+          event: 'INSERT',
+          schema: 'public',
+          table: 'jobs',
+        },
+        (payload: { new: Record<string, unknown> }) => {
+          const row = payload.new as { id: string; status?: string };
+          if (row.id) setLastCheckedJobId(row.id);
+          // Refresh current view so new job appears (e.g. in ONGOING if PENDING)
+          loadFilteredJobs(statusFilter, 1);
+          loadJobCounts();
         }
-        const mostRecentJob = newJobs[0] as any;
-        const mostRecentJobId = mostRecentJob?.id;
-        if (mostRecentJobId) setLastCheckedJobId(mostRecentJobId);
-      } catch (error) {
-      }
-    };
+      )
+      .subscribe();
 
-    const interval = setInterval(checkForNewJobs, 30000);
-    const timeout = setTimeout(checkForNewJobs, 2000);
     return () => {
-      clearInterval(interval);
-      clearTimeout(timeout);
+      supabase.removeChannel(channel);
     };
-  }, [isInitialLoad, isPollingEnabled, lastCheckedJobId]);
+  }, [isInitialLoad, isPollingEnabled, statusFilter, loadFilteredJobs, loadJobCounts]);
 
   // Admin: realtime for job completion only — play sound when a job is completed (no polling)
   useEffect(() => {
