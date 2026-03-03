@@ -796,21 +796,39 @@ const TechnicianDashboard = () => {
     };
   }, [user?.technicianId, loadAssignedJobs, user, loadQrCodes]);
 
-  // Periodic refresh of QR codes (every 30 seconds) to catch visibility setting changes
+  // Realtime for QR codes — refetch only when common_qr_codes, technician_common_qr, or this technician's row changes (no 30s poll)
   useEffect(() => {
-    if (!user || user.role !== 'technician') {
-      return;
-    }
+    if (!user || user.role !== 'technician') return;
+    const technicianId = user.technicianId || user.id;
 
-    const interval = setInterval(() => {
-      console.log('🔄 Periodic QR code refresh...');
-      loadQrCodes();
-    }, 30000); // Refresh every 30 seconds
+    const channel = supabase
+      .channel(`technician-qr-codes-${technicianId}`)
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'common_qr_codes' },
+        () => loadQrCodes()
+      )
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'technician_common_qr' },
+        () => loadQrCodes()
+      )
+      .on(
+        'postgres_changes',
+        {
+          event: 'UPDATE',
+          schema: 'public',
+          table: 'technicians',
+          filter: `id=eq.${technicianId}`,
+        },
+        () => loadQrCodes()
+      )
+      .subscribe();
 
     return () => {
-      clearInterval(interval);
+      supabase.removeChannel(channel);
     };
-  }, [user, loadQrCodes]);
+  }, [user?.id, user?.technicianId, user?.role]);
 
   // Setup offline photo upload retry mechanism
   useEffect(() => {
