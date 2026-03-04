@@ -48,6 +48,7 @@ import { Customer } from '@/types';
 import { formatPhoneForWhatsApp } from '@/lib/utils';
 import CustomerPhotoGalleryDialog from '@/components/admin/CustomerPhotoGalleryDialog';
 import CustomerReportDialog from '@/components/admin/CustomerReportDialog';
+import PhotoViewerDialog from '@/components/admin/PhotoViewerDialog';
 
 interface CallHistory {
   id: string;
@@ -113,6 +114,9 @@ const CallingPage = ({ hideHeader = false, onBack }: CallingPageProps = {}) => {
   const [customerReportDialogOpen, setCustomerReportDialogOpen] = useState(false);
   const [selectedCustomerForReport, setSelectedCustomerForReport] = useState<Customer | null>(null);
   const [technicians, setTechnicians] = useState<any[]>([]);
+  const [reportPhotoViewerOpen, setReportPhotoViewerOpen] = useState(false);
+  const [reportSelectedPhoto, setReportSelectedPhoto] = useState<{ url: string; index: number; total: number } | null>(null);
+  const [reportSelectedBillPhotos, setReportSelectedBillPhotos] = useState<string[] | null>(null);
 
   // Redirect to admin login if not authenticated or not admin (only if standalone page)
   useEffect(() => {
@@ -1402,6 +1406,56 @@ const CallingPage = ({ hideHeader = false, onBack }: CallingPageProps = {}) => {
           if (!open) {
             setSelectedCustomerForReport(null);
           }
+        }}
+        onPhotoClick={(url, index, total) => {
+          setReportSelectedBillPhotos(null);
+          setReportSelectedPhoto({ url, index, total });
+          setReportPhotoViewerOpen(true);
+        }}
+        onBillPhotosClick={(photos, index) => {
+          setReportSelectedBillPhotos(photos);
+          setReportSelectedPhoto({ url: photos[index], index, total: photos.length });
+          setReportPhotoViewerOpen(true);
+        }}
+      />
+
+      {/* Photo viewer for report images (payment/bill click-to-view) */}
+      <PhotoViewerDialog
+        open={reportPhotoViewerOpen}
+        onOpenChange={setReportPhotoViewerOpen}
+        selectedPhoto={reportSelectedPhoto}
+        selectedBillPhotos={reportSelectedBillPhotos}
+        selectedJobPhotos={null}
+        onPrevious={() => {
+          if (!reportSelectedPhoto || !reportSelectedBillPhotos || reportSelectedBillPhotos.length <= 1) return;
+          const newIndex = reportSelectedPhoto.index > 0 ? reportSelectedPhoto.index - 1 : reportSelectedBillPhotos.length - 1;
+          setReportSelectedPhoto({
+            url: reportSelectedBillPhotos[newIndex],
+            index: newIndex,
+            total: reportSelectedBillPhotos.length
+          });
+        }}
+        onNext={() => {
+          if (!reportSelectedPhoto || !reportSelectedBillPhotos || reportSelectedBillPhotos.length <= 1) return;
+          const newIndex = reportSelectedPhoto.index < reportSelectedBillPhotos.length - 1 ? reportSelectedPhoto.index + 1 : 0;
+          setReportSelectedPhoto({
+            url: reportSelectedBillPhotos[newIndex],
+            index: newIndex,
+            total: reportSelectedBillPhotos.length
+          });
+        }}
+        onDownload={(photoUrl, photoIndex) => {
+          const link = document.createElement('a');
+          link.href = photoUrl;
+          link.download = `photo-${photoIndex + 1}.jpg`;
+          link.target = '_blank';
+          link.rel = 'noopener noreferrer';
+          link.click();
+        }}
+        onClose={() => {
+          setReportPhotoViewerOpen(false);
+          setReportSelectedPhoto(null);
+          setReportSelectedBillPhotos(null);
         }}
       />
     </div>
