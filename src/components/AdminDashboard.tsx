@@ -3907,49 +3907,10 @@ const AdminDashboard = () => {
               }, 500);
             }
           } else {
-            // No jobs found, create a new job for this customer
-            const jobData = {
-              job_number: `RO-${new Date().getFullYear()}-${String(Date.now()).slice(-6)}`,
-              customer_id: customer.id,
-              service_type: 'RO' as const,
-              service_sub_type: 'Photo Upload',
-              brand: 'N/A',
-              model: 'N/A',
-              scheduled_date: getTodayLocalDate(),
-              scheduled_time_slot: 'MORNING' as const,
-              estimated_duration: 0,
-              service_address: customer.address || {},
-              service_location: customer.location || { latitude: 0, longitude: 0, formattedAddress: '' },
-              status: 'PENDING' as const,
-              priority: 'LOW' as const,
-              description: 'Customer photo upload',
-              requirements: [],
-              estimated_cost: 0,
-              payment_status: 'PENDING' as const,
-              before_photos: uploadedPhotos,
-            };
-
-            const { error: createError } = await db.jobs.create(jobData as any);
-            if (createError) {
-              console.error('Failed to create job for photo upload:', createError);
-              toast.warning(`Photos uploaded but failed to save to database: ${createError.message || 'Unknown error'}`);
-            } else {
-              toast.success(`${uploadedPhotos.length} photo(s) uploaded and saved successfully!`);
-              // Reload photos to ensure we have the latest from database, but keep existing photos
-              const currentPhotos = customerPhotos[customerId] || [];
-              await loadCustomerPhotos(customerId);
-              // Ensure uploaded photos are still visible after reload
-              setTimeout(() => {
-                setCustomerPhotos(prev => {
-                  const existing = prev[customerId] || [];
-                  const allPhotos = [...new Set([...uploadedPhotos, ...existing])];
-                  return {
-                    ...prev,
-                    [customerId]: allPhotos
-                  };
-                });
-              }, 500);
-            }
+            // No jobs found — don't auto-create a job (only create on "New Job" or when customer books online)
+            toast.info(
+              `${uploadedPhotos.length} photo(s) uploaded and shown here, but this customer has no jobs so they weren't saved to a job. Create a job via "New Job" or have the customer book online to attach photos.`
+            );
           }
         } catch (error) {
           console.error('Error saving photos to database:', error);
