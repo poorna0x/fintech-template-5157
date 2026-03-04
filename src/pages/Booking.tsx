@@ -438,7 +438,19 @@ const Booking: React.FC = () => {
     if (field === 'email') {
       processedValue = value.toLowerCase().trim();
     }
-    
+
+    // Full name: first letter of each word auto caps (don't trim end so space before next word is kept)
+    if (field === 'fullName' && typeof value === 'string') {
+      const normalized = value.replace(/^\s+/, '').replace(/\s+/g, ' ');
+      processedValue = normalized
+        .split(' ')
+        .filter(Boolean)
+        .map((word) => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
+        .join(' ')
+        // Restore trailing space if user had one (so "John " stays so they can type "Doe")
+        + (value.replace(/\s+$/, '') !== value ? ' ' : '');
+    }
+
     setFormData(prev => ({ ...prev, [field]: processedValue }));
     
     // Clear validation when user starts typing
