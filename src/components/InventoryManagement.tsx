@@ -446,15 +446,16 @@ const InventoryManagement: React.FC<InventoryManagementProps> = ({ onBack }) => 
         const { error: setError } = await db.inventoryBundles.setItems(editingBundleId, bundleItems.map(i => ({ inventory_id: i.inventory_id, quantity: i.quantity })));
         if (setError) throw setError;
         toast.success('Bundle updated');
+        setBundles(prev => prev.map(b => b.id === editingBundleId ? { ...b, name: bundleName.trim(), description: bundleDescription.trim() || null } : b));
       } else {
         const { data: created, error: createError } = await db.inventoryBundles.create({ name: bundleName.trim(), description: bundleDescription.trim() || undefined });
         if (createError || !created) throw createError || new Error('Create failed');
         const { error: setError } = await db.inventoryBundles.setItems(created.id, bundleItems.map(i => ({ inventory_id: i.inventory_id, quantity: i.quantity })));
         if (setError) throw setError;
         toast.success('Bundle created');
+        setBundles(prev => [...(prev || []), { id: created.id, name: bundleName.trim(), description: bundleDescription.trim() || null }]);
       }
       setBundleDialogOpen(false);
-      loadBundles();
     } catch (e: any) {
       toast.error(e?.message || 'Failed to save bundle');
     }
