@@ -6502,15 +6502,12 @@ const AdminDashboard = () => {
         throw new Error('Customer not found');
       }
 
-      // Get all jobs for this customer
-      const { data: customerJobs, error: jobsError } = await db.jobs.getByCustomerId(customer.id);
+      // Get all jobs for this customer (may be empty if photos were added without a job)
+      const { data: customerJobsData, error: jobsError } = await db.jobs.getByCustomerId(customer.id);
       if (jobsError) {
         throw new Error(jobsError.message);
       }
-
-      if (!customerJobs || customerJobs.length === 0) {
-        throw new Error('No jobs found for this customer');
-      }
+      const customerJobs = customerJobsData || [];
 
       let photoFound = false;
       const photoUrl = customerPhotoToDelete.photoUrl;
@@ -6651,6 +6648,21 @@ const AdminDashboard = () => {
           if (updateError) {
             console.error(`Error updating job ${job.id}:`, updateError);
           }
+        }
+      }
+
+      // If photo wasn't found in any job, check customer-level photos (photos added without a job)
+      if (!photoFound) {
+        const customerPhotosList = Array.isArray((customer as any).photos) ? (customer as any).photos : [];
+        const customerPhotoIndex = customerPhotosList.findIndex((p: any) => normalizeUrl(extractPhotoUrl(p)) === normalizedPhotoUrl);
+        if (customerPhotoIndex !== -1) {
+          const updatedCustomerPhotos = customerPhotosList.filter((_: any, i: number) => i !== customerPhotoIndex);
+          const { error: updateError } = await db.customers.update(customer.id, { photos: updatedCustomerPhotos } as any);
+          if (updateError) {
+            console.error('Error updating customer photos:', updateError);
+            throw new Error(updateError.message || 'Failed to remove photo from customer');
+          }
+          photoFound = true;
         }
       }
 
