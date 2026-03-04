@@ -23,12 +23,16 @@ const AddressDialog: React.FC<AddressDialogProps> = ({
   customerDistances,
   onCalculateDistance
 }) => {
+  // Only render dialogs that are actually open (avoids mounting many dialogs when e.g. search has many results)
+  const openCustomerIds = Object.keys(open).filter((id) => open[id]);
+  const customersToRender = customers.filter((c) => openCustomerIds.includes(c.id));
+
   return (
     <>
-      {customers.map((customer) => (
+      {customersToRender.map((customer) => (
         <Dialog
           key={customer.id}
-          open={open[customer.id] || false}
+          open={true}
           onOpenChange={(isOpen) => {
             onOpenChange({ ...open, [customer.id]: isOpen });
           }}

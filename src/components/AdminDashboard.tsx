@@ -9777,7 +9777,7 @@ const AdminDashboard = () => {
       <AddressDialog
         open={addressDialogOpen}
         onOpenChange={setAddressDialogOpen}
-        customers={customers}
+        customers={baseCustomers}
         currentLocation={currentLocation}
         customerDistances={customerDistances}
         onCalculateDistance={async (customer) => {
