@@ -3632,6 +3632,10 @@ const AdminDashboard = () => {
           return url !== null && url !== '' && (url.startsWith('http://') || url.startsWith('https://'));
         });
       };
+
+      // Customer-level photos (saved without a job)
+      const customerPhotosList = Array.isArray((customer as any).photos) ? (customer as any).photos : [];
+      extractPhotoUrls(customerPhotosList).forEach(url => photoSet.add(url));
       
       if (jobs && jobs.length > 0) {
         console.log(`Loading photos from ${jobs.length} job(s) for customer ${customerId}`);
@@ -3907,10 +3911,23 @@ const AdminDashboard = () => {
               }, 500);
             }
           } else {
-            // No jobs found — don't auto-create a job (only create on "New Job" or when customer books online)
-            toast.info(
-              `${uploadedPhotos.length} photo(s) uploaded and shown here, but this customer has no jobs so they weren't saved to a job. Create a job via "New Job" or have the customer book online to attach photos.`
-            );
+            // No jobs — save as customer photos (normal photos not tied to a job)
+            const existingPhotos = Array.isArray((customer as any).photos) ? (customer as any).photos : [];
+            const combined = [...existingPhotos, ...uploadedPhotos];
+            const { error: updateError } = await db.customers.update(customer.id, { photos: combined } as any);
+            if (updateError) {
+              console.error('Failed to save customer photos:', updateError);
+              toast.warning(`Photos uploaded but couldn't save to customer: ${updateError.message || 'Unknown error'}. Run add-customer-photos.sql in Supabase if you added the column.`);
+            } else {
+              toast.success(`${uploadedPhotos.length} photo(s) uploaded and saved to customer.`);
+              await loadCustomerPhotos(customerId);
+              setTimeout(() => {
+                setCustomerPhotos(prev => ({
+                  ...prev,
+                  [customerId]: [...new Set([...uploadedPhotos, ...(prev[customerId] || [])])]
+                }));
+              }, 500);
+            }
           }
         } catch (error) {
           console.error('Error saving photos to database:', error);
