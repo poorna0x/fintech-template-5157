@@ -2166,7 +2166,8 @@ export const db = {
 
   // Technician extra commissions operations
   technicianExtraCommissions: {
-    async getAll(technicianId?: string) {
+    /** technicianId optional. startDate/endDate in YYYY-MM-DD for analytics (DB-side filter, less egress). */
+    async getAll(technicianId?: string, startDate?: string, endDate?: string) {
       let query = supabase
         .from('technician_extra_commissions')
         .select('*')
@@ -2174,6 +2175,12 @@ export const db = {
       
       if (technicianId) {
         query = query.eq('technician_id', technicianId);
+      }
+      if (startDate) {
+        query = query.gte('commission_date', startDate);
+      }
+      if (endDate) {
+        query = query.lte('commission_date', endDate);
       }
       
       const { data, error } = await query;

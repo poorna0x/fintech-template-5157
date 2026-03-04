@@ -49,8 +49,8 @@ export async function getTotalSalaryForCalendarMonth(
       .select('*')
       .gte('created_at', startDate.toISOString())
       .lte('created_at', endDate.toISOString()),
-    db.technicianAdvances.getAll(),
-    db.technicianExtraCommissions.getAll(),
+    db.technicianAdvances.getAll(undefined, periodStartStr, periodEndStr),
+    db.technicianExtraCommissions.getAll(undefined, periodStartStr, periodEndStr),
     db.technicianHolidays.getAll(undefined, periodStartStr, periodEndStr),
   ]);
 
