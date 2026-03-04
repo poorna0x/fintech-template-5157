@@ -71,7 +71,7 @@ interface AnalyticsData {
   totalTechnicianExpenses?: number;
   totalTechnicianAdvances?: number;
   totalBusinessExpenses?: number;
-  totalSparePartsCost?: number; // Cost of parts used on jobs (from job_parts_used × inventory price)
+  totalSparePartsCost?: number; // Cost of parts used on jobs (from jobs.parts_cost_total)
   totalSalaryDeductions?: number; // From technician payments (base salary deductions)
   totalSalaryIncludingAll?: number; // Same but including excluded technician(s), for display in brackets
   totalExpenses?: number; // Sum of all expenses
@@ -388,20 +388,8 @@ const Analytics = () => {
         jobs = allJobs;
       }
 
-      // Spare parts cost: parts used on completed jobs in period (quantity × price_at_time_of_use)
-      // Uses stored historical price for accuracy, falls back to current inventory price if not stored
-      const completedJobIds = completedJobs.map((j: any) => j.id).filter(Boolean);
-      if (completedJobIds.length > 0) {
-        const { data: partsUsedData } = await db.jobPartsUsed.getWithPriceByJobIds(completedJobIds);
-        totalSparePartsCost = (partsUsedData || []).reduce((sum: number, row: any) => {
-          const qty = Number(row.quantity_used) || 0;
-          // Use stored price_at_time_of_use if available, otherwise fallback to current inventory price
-          const price = row.price_at_time_of_use !== null && row.price_at_time_of_use !== undefined
-            ? Number(row.price_at_time_of_use)
-            : (Number(row.inventory?.price) ?? 0);
-          return sum + qty * price;
-        }, 0);
-      }
+      // Spare parts cost: sum denormalized parts_cost_total from completed jobs in period
+      totalSparePartsCost = completedJobs.reduce((sum: number, j: any) => sum + (Number(j.parts_cost_total) || 0), 0);
 
       // Lead Source Breakdown with Service Type details and lead costs
       const leadSourceMap: Record<string, { 

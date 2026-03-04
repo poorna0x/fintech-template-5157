@@ -320,6 +320,7 @@ const JobPartsUsedDialog: React.FC<JobPartsUsedDialogProps> = ({
         }
       }
       setAddBundleDialogOpen(false);
+      await db.jobPartsUsed.recalculateAndUpdateJobPartsCost(job.id);
       toast.success(`Bundle applied: ${items.length} part(s) added. Technician and main inventory updated.`);
     } catch (e: any) {
       toast.error(e?.message || 'Failed to apply bundle');
@@ -395,6 +396,7 @@ const JobPartsUsedDialog: React.FC<JobPartsUsedDialogProps> = ({
         setTechnicianInventory(prev => prev.map(i => i.id === techItem.id ? { ...i, quantity: newTechQuantity } : i));
       }
 
+      await db.jobPartsUsed.recalculateAndUpdateJobPartsCost(job.id);
       toast.success('Part added (1 qty). Technician and main inventory updated.');
     } catch (error: any) {
       console.error('Error quick adding part:', error);
@@ -424,6 +426,7 @@ const JobPartsUsedDialog: React.FC<JobPartsUsedDialogProps> = ({
       if (techItem) {
         setTechnicianInventory(prev => prev.map(i => i.id === techItem.id ? { ...i, quantity: techItem.quantity + quantityUsed } : i));
       }
+      if (job?.id) await db.jobPartsUsed.recalculateAndUpdateJobPartsCost(job.id);
       toast.success('Part removed and added back to technician inventory');
     } catch (error: any) {
       console.error('Error deleting part:', error);

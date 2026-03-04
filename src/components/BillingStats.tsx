@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Input } from '@/components/ui/input';
-import { db, supabase } from '@/lib/supabase';
+import { supabase } from '@/lib/supabase';
 import { toast } from 'sonner';
 import { DollarSign, QrCode, TrendingUp, User, Calendar, Filter } from 'lucide-react';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -162,6 +162,7 @@ const BillingStats = () => {
           status,
           assigned_technician_id,
           lead_cost,
+          parts_cost_total,
           technician:technicians(
             id,
             full_name,
@@ -303,19 +304,7 @@ const BillingStats = () => {
       // Summary: revenue - (10% commission + spare parts + lead cost) = profit
       const revenue = jobs.reduce((sum: number, j: any) => sum + (Number(j.payment_amount) || Number(j.actual_cost) || 0), 0);
       const leadCost = jobs.reduce((sum: number, j: any) => sum + (Number(j.lead_cost) || 0), 0);
-      const jobIds = jobs.map((j: any) => j.id).filter(Boolean);
-      let sparePartsCost = 0;
-      if (jobIds.length > 0) {
-        const { data: partsUsed } = await db.jobPartsUsed.getWithPriceByJobIds(jobIds);
-        sparePartsCost = (partsUsed || []).reduce((s: number, row: any) => {
-          const qty = Number(row.quantity_used) || 0;
-          // Use stored price_at_time_of_use if available, otherwise fallback to current inventory price
-          const price = row.price_at_time_of_use !== null && row.price_at_time_of_use !== undefined
-            ? Number(row.price_at_time_of_use)
-            : (Number(row.inventory?.price) ?? 0);
-          return s + qty * price;
-        }, 0);
-      }
+      const sparePartsCost = jobs.reduce((sum: number, j: any) => sum + (Number(j.parts_cost_total) || 0), 0);
       const commission10 = revenue * 0.1;
       const profit = revenue - commission10 - sparePartsCost - leadCost;
       setSummary({ revenue, leadCost, sparePartsCost, commission10, profit });

@@ -730,7 +730,7 @@ export const db = {
     async getForAnalytics(limit: number = 5000) {
       const cols = [
         'id', 'status', 'created_at', 'completed_at', 'end_time', 'requirements',
-        'assigned_technician_id', 'assigned_by', 'payment_amount', 'actual_cost', 'lead_cost',
+        'assigned_technician_id', 'assigned_by', 'payment_amount', 'actual_cost', 'lead_cost', 'parts_cost_total',
         'service_type', 'service_sub_type', 'payment_method', 'job_number'
       ].join(', ');
       const { data, error } = await supabase
@@ -2999,6 +2999,24 @@ export const db = {
         .eq('id', id);
       
       return { error };
+    },
+
+    /** Recompute total parts cost for a job and update jobs.parts_cost_total. Call after create/update/delete of job_parts_used. */
+    async recalculateAndUpdateJobPartsCost(jobId: string): Promise<{ error: any }> {
+      const { data: rows, error: fetchError } = await this.getWithPriceByJobIds([jobId]);
+      if (fetchError) return { error: fetchError };
+      const total = (rows || []).reduce((sum: number, row: any) => {
+        const qty = Number(row.quantity_used) || 0;
+        const price = row.price_at_time_of_use !== null && row.price_at_time_of_use !== undefined
+          ? Number(row.price_at_time_of_use)
+          : (Number((row as any).inventory?.price) ?? 0);
+        return sum + qty * price;
+      }, 0);
+      const { error: updateError } = await supabase
+        .from('jobs')
+        .update({ parts_cost_total: total })
+        .eq('id', jobId);
+      return { error: updateError };
     }
   },
 

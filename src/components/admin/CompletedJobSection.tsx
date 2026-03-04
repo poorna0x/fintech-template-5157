@@ -63,16 +63,19 @@ export const CompletedJobSection: React.FC<CompletedJobSectionProps> = ({
     db.jobPartsUsed.getByJob(job.id).then(({ data }) => {
       const cost = (data || []).reduce((sum: number, row: any) => {
         const qty = Number(row.quantity_used) || 0;
-        const price = Number(row.inventory?.price) ?? 0;
+        const price = row.price_at_time_of_use != null ? Number(row.price_at_time_of_use) : (Number((row as any).inventory?.price) ?? 0);
         return sum + qty * price;
       }, 0);
       setSparePartsCost(cost);
     });
   };
 
+  const jobPartsTotal = (job as any).parts_cost_total;
+  const hasPartsCostTotal = jobPartsTotal !== undefined && jobPartsTotal !== null && typeof jobPartsTotal === 'number';
+
   useEffect(() => {
-    fetchSparePartsCost();
-  }, [job?.id, job?.status]);
+    if (!hasPartsCostTotal) fetchSparePartsCost();
+  }, [job?.id, job?.status, hasPartsCostTotal]);
 
   if (job.status !== 'COMPLETED') return null;
 
@@ -80,7 +83,8 @@ export const CompletedJobSection: React.FC<CompletedJobSectionProps> = ({
   const leadCost = Number((job as any).lead_cost) || 0;
   const billAmount = Number(actualCost || paymentAmount) || 0;
   const commission10 = billAmount * 0.1;
-  const profit = billAmount - sparePartsCost - leadCost - commission10;
+  const sparePartsCostDisplay = hasPartsCostTotal ? Number(jobPartsTotal) : sparePartsCost;
+  const profit = billAmount - sparePartsCostDisplay - leadCost - commission10;
   const showProfit = billAmount > 0;
   
   // Find assigned technician
@@ -163,7 +167,7 @@ export const CompletedJobSection: React.FC<CompletedJobSectionProps> = ({
                 ₹{profit.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
               </span>
               <span className="text-xs text-gray-500 ml-1">
-                (Amount − spare parts ₹{sparePartsCost.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} − lead ₹{leadCost.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} − 10% commission ₹{commission10.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })})
+                (Amount − spare parts ₹{sparePartsCostDisplay.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} − lead ₹{leadCost.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} − 10% commission ₹{commission10.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })})
               </span>
             </div>
           )}
