@@ -8,7 +8,7 @@ import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from '@/components/ui/command';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Package, Plus, Search, Check, ChevronsUpDown, RefreshCw, ArrowUpCircle, X } from 'lucide-react';
-import { db } from '@/lib/supabase';
+import { db, supabase } from '@/lib/supabase';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
 import { inventoryCache, debounce } from '@/lib/inventoryCache';
@@ -161,6 +161,30 @@ const TechnicianInventoryView: React.FC<TechnicianInventoryViewProps> = ({ techn
     inventoryCache.clear(`tech_inventory_${technicianId}`);
     await loadMyInventory(true);
     setInventoryLoaded(true);
+  }, [technicianId, loadMyInventory]);
+
+  // Realtime: when technician_inventory changes (e.g. top-up "Add to Inventory" or admin assign), refresh list
+  useEffect(() => {
+    if (!technicianId) return;
+    const channel = supabase
+      .channel(`technician-inventory-${technicianId}`)
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'technician_inventory',
+          filter: `technician_id=eq.${technicianId}`,
+        },
+        () => {
+          inventoryCache.clear(`tech_inventory_${technicianId}`);
+          loadMyInventory(true);
+        }
+      )
+      .subscribe();
+    return () => {
+      supabase.removeChannel(channel);
+    };
   }, [technicianId, loadMyInventory]);
 
   // Load main inventory only when dialog opens (lazy loading)
@@ -584,8 +608,8 @@ const TechnicianInventoryView: React.FC<TechnicianInventoryViewProps> = ({ techn
         open={topUpDialogOpen}
         onOpenChange={setTopUpDialogOpen}
         onSuccess={() => {
-          loadMyInventory(true);
           setInventoryLoaded(true);
+          // List updates via realtime subscription on technician_inventory; no refetch needed
         }}
       />
     </div>
