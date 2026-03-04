@@ -243,51 +243,92 @@ const Analytics = () => {
       setLoading(true);
       const { startDate, endDate } = getDateRange();
       
-      const { data: baseData, error } = await db.stats.getAnalytics();
-      
-      if (error) {
-        console.error('Error loading analytics:', error);
-        toast.error('Failed to load analytics');
-        return;
-      }
-
-      // Load expenses for the period
       let totalTechnicianExpenses = 0;
       let totalTechnicianAdvances = 0;
       let totalBusinessExpenses = 0;
       let totalSparePartsCost = 0;
       let totalSalaryDeductions = 0;
       let totalSalaryIncludingAll = 0;
+      let advancesForSalary: any[] | null = null;
+      let baseData: any = null;
+
+      const startStr = startDate?.toISOString().split('T')[0];
+      const endStr = endDate?.toISOString().split('T')[0];
 
       if (startDate && endDate) {
-        // Load technician expenses
-        const { data: techExpenses, error: techExpensesError } = await db.technicianExpenses.getAll();
-        if (!techExpensesError && techExpenses) {
-          const filteredExpenses = techExpenses.filter((exp: any) => {
-            const expDate = new Date(exp.expense_date);
-            return expDate >= startDate && expDate <= endDate;
-          });
-          totalTechnicianExpenses = filteredExpenses.reduce((sum: number, exp: any) => sum + Number(exp.amount || 0), 0);
+        // Parallel fetch: only in-range data (no getAnalytics = no full-table scans). Technicians + payments in range + jobs in range + expenses in range.
+        const startISO = startDate.toISOString();
+        const endISO = endDate.toISOString();
+        const [
+          techniciansRes,
+          jobsInRangeResult,
+          { data: techExpenses },
+          { data: techAdvances },
+          { data: businessExpenses },
+          paymentsInRangeRes
+        ] = await Promise.all([
+          db.technicians.getAll(100),
+          db.jobs.getForAnalyticsInRange(startDate, endDate),
+          db.technicianExpenses.getAll(undefined, startStr, endStr),
+          db.technicianAdvances.getAll(undefined, startStr, endStr),
+          db.businessExpenses.getAll(startStr, endStr),
+          supabase
+            .from('technician_payments')
+            .select('technician_id, commission_amount, payment_status')
+            .gte('created_at', startISO)
+            .lte('created_at', endISO)
+        ]);
+
+        if (jobsInRangeResult.error || !jobsInRangeResult.data) {
+          console.error('Error loading jobs for detailed analytics:', jobsInRangeResult.error);
+          setAnalytics({});
+          return;
         }
 
-        // Load technician advances
-        const { data: techAdvances, error: techAdvancesError } = await db.technicianAdvances.getAll();
-        if (!techAdvancesError && techAdvances) {
-          const filteredAdvances = techAdvances.filter((adv: any) => {
-            const advDate = new Date(adv.advance_date);
-            return advDate >= startDate && advDate <= endDate;
-          });
-          totalTechnicianAdvances = filteredAdvances.reduce((sum: number, adv: any) => sum + Number(adv.amount || 0), 0);
-        }
-
-        // Load business expenses
-        const { data: businessExpenses, error: businessExpensesError } = await db.businessExpenses.getAll(
-          startDate.toISOString().split('T')[0],
-          endDate.toISOString().split('T')[0]
+        const jobsForBase = jobsInRangeResult.data || [];
+        const technicians = techniciansRes.data || [];
+        const payments = paymentsInRangeRes.data || [];
+        const totalJobsCount = jobsForBase.length;
+        const completedCount = jobsForBase.filter((j: any) => j.status === 'COMPLETED').length;
+        const deniedCount = jobsForBase.filter((j: any) => j.status === 'DENIED' || j.status === 'CANCELLED').length;
+        const pendingCount = jobsForBase.filter((j: any) => j.status === 'PENDING').length;
+        const assignedCount = jobsForBase.filter((j: any) => j.status === 'ASSIGNED').length;
+        const inProgressCount = jobsForBase.filter((j: any) => j.status === 'IN_PROGRESS').length;
+        const completedWithPayment = jobsForBase.filter((j: any) =>
+          j.status === 'COMPLETED' && (j.payment_amount || j.actual_cost)
         );
-        if (!businessExpensesError && businessExpenses) {
-          totalBusinessExpenses = businessExpenses.reduce((sum: number, exp: any) => sum + Number(exp.amount || 0), 0);
-        }
+        const periodBillingSum = completedWithPayment.reduce((s: number, j: any) => s + (Number(j.payment_amount) || Number(j.actual_cost) || 0), 0);
+        baseData = {
+          totalJobs: totalJobsCount,
+          completedJobs: completedCount,
+          deniedJobs: deniedCount,
+          pendingJobs: pendingCount,
+          assignedJobs: assignedCount,
+          inProgressJobs: inProgressCount,
+          totalBilling: periodBillingSum,
+          averageBill: completedWithPayment.length > 0 ? periodBillingSum / completedWithPayment.length : 0,
+          technicianStats: technicians.map((tech: any) => {
+            const techJobs = jobsForBase.filter((j: any) => j.assigned_technician_id === tech.id);
+            const techPayments = payments.filter((p: any) => p.technician_id === tech.id);
+            const totalEarnings = techPayments.filter((p: any) => p.payment_status === 'PAID').reduce((s: number, p: any) => s + (Number(p.commission_amount) || 0), 0);
+            const pendingEarnings = techPayments.filter((p: any) => p.payment_status === 'PENDING').reduce((s: number, p: any) => s + (Number(p.commission_amount) || 0), 0);
+            return {
+              id: tech.id,
+              name: tech.full_name,
+              totalJobs: techJobs.length,
+              completedJobs: techJobs.filter((j: any) => j.status === 'COMPLETED').length,
+              totalEarnings,
+              pendingEarnings
+            };
+          }),
+          completionRate: totalJobsCount > 0 ? (completedCount / totalJobsCount) * 100 : 0,
+          denialRate: totalJobsCount > 0 ? (deniedCount / totalJobsCount) * 100 : 0
+        };
+
+        totalTechnicianExpenses = (techExpenses || []).reduce((sum: number, exp: any) => sum + Number(exp.amount || 0), 0);
+        totalTechnicianAdvances = (techAdvances || []).reduce((sum: number, adv: any) => sum + Number(adv.amount || 0), 0);
+        totalBusinessExpenses = (businessExpenses || []).reduce((sum: number, exp: any) => sum + Number(exp.amount || 0), 0);
+        advancesForSalary = techAdvances || null;
 
         // Total Salary: for This month / Previous month / Custom month use same figure as Payments section
         const usePaymentsSalary = (period === 'thisMonth' || period === 'previousMonth' || period === 'customMonth') && startDate && endDate;
@@ -302,17 +343,21 @@ const Analytics = () => {
             console.error('Error loading salary from Payments logic:', e);
           }
         } else {
-          // Other periods: calculate from technician payments (pro-rated base, no holiday logic)
+          // Other periods: use already-fetched advances in range; fetch technicians + payments + extra commissions
           try {
             const { data: allTechnicians } = await db.technicians.getAll(100);
             if (allTechnicians && startDate && endDate) {
-              const { data: paymentsData } = await supabase
-                .from('technician_payments')
-                .select('*')
-                .gte('created_at', startDate.toISOString())
-                .lte('created_at', endDate.toISOString());
-              const { data: advancesData } = await db.technicianAdvances.getAll();
-              const { data: extraCommissionsData } = await db.technicianExtraCommissions.getAll();
+              const [paymentsRes, extraCommissionsRes] = await Promise.all([
+                supabase
+                  .from('technician_payments')
+                  .select('*')
+                  .gte('created_at', startDate.toISOString())
+                  .lte('created_at', endDate.toISOString()),
+                db.technicianExtraCommissions.getAll()
+              ]);
+              const paymentsData = paymentsRes.data || [];
+              const extraCommissionsData = extraCommissionsRes.data || [];
+              const advancesData = advancesForSalary || [];
               let totalSalaryPaid = 0;
               const EXCLUDED_EMPLOYEE_ID = 'TECH851703400';
               allTechnicians.forEach((tech: any) => {
@@ -322,11 +367,7 @@ const Analytics = () => {
                   ? (tech.salary as any).baseSalary
                   : 8000;
                 const techPayments = (paymentsData || []).filter((p: any) => p.technician_id === techId);
-                const techAdvances = (advancesData || []).filter((a: any) => {
-                  if (a.technician_id !== techId) return false;
-                  const advDate = new Date(a.advance_date);
-                  return advDate >= startDate && advDate <= endDate;
-                });
+                const techAdvancesForTech = (advancesData || []).filter((a: any) => a.technician_id === techId);
                 const techExtraCommissions = (extraCommissionsData || []).filter((ec: any) => {
                   if (ec.technician_id !== techId) return false;
                   const ecDate = new Date(ec.commission_date);
@@ -335,7 +376,7 @@ const Analytics = () => {
                 const baseSalary = getProRatedBaseSalary(monthlyBaseSalary, startDate, endDate);
                 const commissions = techPayments.reduce((sum: number, p: any) => sum + (p.commission_amount || 0), 0);
                 const extraCommissions = techExtraCommissions.reduce((sum: number, ec: any) => sum + (ec.amount || 0), 0);
-                const advances = techAdvances.reduce((sum: number, a: any) => sum + (a.amount || 0), 0);
+                const advances = techAdvancesForTech.reduce((sum: number, a: any) => sum + (a.amount || 0), 0);
                 const amount = Math.max(0, baseSalary + commissions + extraCommissions - advances);
                 totalSalaryIncludingAll += amount;
                 if (employeeId === EXCLUDED_EMPLOYEE_ID) return;
@@ -347,32 +388,29 @@ const Analytics = () => {
             console.error('Error calculating salary deductions:', e);
           }
         }
-      }
-      
-      // OPTIMIZATION: When date range exists, fetch only jobs in range (DB-side filter = less egress). Else fetch capped list.
-      let jobs: any[] = [];
-      let completedJobs: any[] = [];
 
-      if (startDate && endDate) {
-        const { data: jobsInRange, error: jobsError } = await db.jobs.getForAnalyticsInRange(startDate, endDate);
-        if (jobsError || !jobsInRange) {
-          console.error('Error loading jobs for detailed analytics:', jobsError);
-          setAnalytics(baseData);
-          return;
-        }
-        const allInRange = Array.isArray(jobsInRange) ? jobsInRange : [];
-        completedJobs = allInRange.filter((j: any) => j && j.status === 'COMPLETED');
-        jobs = allInRange;
+        const allInRange = Array.isArray(jobsInRangeResult.data) ? jobsInRangeResult.data : [];
+        var jobs = allInRange;
+        var completedJobs = allInRange.filter((j: any) => j && j.status === 'COMPLETED');
       } else {
-        const { data: jobsData, error: jobsError } = await db.jobs.getForAnalytics(5000);
-        if (jobsError || !jobsData) {
-          console.error('Error loading jobs for detailed analytics:', jobsError);
-          setAnalytics(baseData);
+        const [analyticsRes, jobsRes] = await Promise.all([
+          db.stats.getAnalytics(),
+          db.jobs.getForAnalytics(5000)
+        ]);
+        baseData = analyticsRes.data;
+        if (analyticsRes.error) {
+          console.error('Error loading analytics:', analyticsRes.error);
+          toast.error('Failed to load analytics');
           return;
         }
-        const allJobs = Array.isArray(jobsData) ? jobsData : [];
-        completedJobs = allJobs.filter((j: any) => j && j.status === 'COMPLETED');
-        jobs = allJobs;
+        if (jobsRes.error || !jobsRes.data) {
+          console.error('Error loading jobs for detailed analytics:', jobsRes.error);
+          setAnalytics(baseData || {});
+          return;
+        }
+        const allJobsList = Array.isArray(jobsRes.data) ? jobsRes.data : [];
+        var jobs = allJobsList;
+        var completedJobs = allJobsList.filter((j: any) => j && j.status === 'COMPLETED');
       }
 
       const allJobs = jobs;

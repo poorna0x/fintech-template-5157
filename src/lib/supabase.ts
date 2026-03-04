@@ -2058,7 +2058,8 @@ export const db = {
 
   // Technician expenses operations
   technicianExpenses: {
-    async getAll(technicianId?: string) {
+    /** technicianId optional. startDate/endDate in YYYY-MM-DD for analytics (DB-side filter, less egress). */
+    async getAll(technicianId?: string, startDate?: string, endDate?: string) {
       let query = supabase
         .from('technician_expenses')
         .select('*')
@@ -2066,6 +2067,12 @@ export const db = {
       
       if (technicianId) {
         query = query.eq('technician_id', technicianId);
+      }
+      if (startDate) {
+        query = query.gte('expense_date', startDate);
+      }
+      if (endDate) {
+        query = query.lte('expense_date', endDate);
       }
       
       const { data, error } = await query;
@@ -2105,7 +2112,8 @@ export const db = {
 
   // Technician advances operations
   technicianAdvances: {
-    async getAll(technicianId?: string) {
+    /** technicianId optional. startDate/endDate in YYYY-MM-DD for analytics (DB-side filter, less egress). */
+    async getAll(technicianId?: string, startDate?: string, endDate?: string) {
       let query = supabase
         .from('technician_advances')
         .select('*')
@@ -2113,6 +2121,12 @@ export const db = {
       
       if (technicianId) {
         query = query.eq('technician_id', technicianId);
+      }
+      if (startDate) {
+        query = query.gte('advance_date', startDate);
+      }
+      if (endDate) {
+        query = query.lte('advance_date', endDate);
       }
       
       const { data, error } = await query;

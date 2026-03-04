@@ -217,10 +217,6 @@ const AdminDashboard = () => {
   // Preserve scroll position when WhatsApp dialog opens after assign/reassign (so page doesn't jump to top)
   const scrollPositionBeforeWhatsAppRef = useRef(0);
   const handleViewChange = (view: 'dashboard' | 'payments' | 'billing' | 'analytics' | 'inventory') => {
-    if (view === 'analytics') {
-      setAnalyticsConfirmOpen(true);
-      return;
-    }
     setCurrentView(view);
   };
 
@@ -573,7 +569,6 @@ const AdminDashboard = () => {
   });
   const [existingCustomer, setExistingCustomer] = useState<Customer | null>(null);
   const [overrideDialogOpen, setOverrideDialogOpen] = useState(false);
-  const [analyticsConfirmOpen, setAnalyticsConfirmOpen] = useState(false);
   const [shouldUpdateExisting, setShouldUpdateExisting] = useState(false);
   const [customerJobs, setCustomerJobs] = useState<{[customerId: string]: Job[]}>({});
   
@@ -8873,29 +8868,6 @@ const AdminDashboard = () => {
               setCurrentStep(2);
             }}>
               Update Existing
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
-
-      {/* Confirm before opening Analytics (egress) */}
-      <AlertDialog open={analyticsConfirmOpen} onOpenChange={setAnalyticsConfirmOpen}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Open Analytics?</AlertDialogTitle>
-            <AlertDialogDescription>
-              Analytics loads data from the database and may use egress. Do you want to open Analytics?
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction
-              onClick={() => {
-                setCurrentView('analytics');
-                setAnalyticsConfirmOpen(false);
-              }}
-            >
-              Open Analytics
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
