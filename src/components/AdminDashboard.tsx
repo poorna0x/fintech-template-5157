@@ -1204,9 +1204,8 @@ const AdminDashboard = () => {
         setTechnicians([]);
       }
 
-      // OPTIMIZATION: Load brands/models and jobs in parallel (non-blocking)
-      // Brands/models can load in background while jobs load
-      Promise.all([
+      // Load brands/models and jobs in parallel; await so loading stays true until done (avoids double refresh blink)
+      await Promise.all([
         loadBrandsAndModels(),
         loadFilteredJobs(statusFilter, currentPage),
         db.jobs.getFollowUpForGlow().then(({ data }) => {
@@ -1214,10 +1213,7 @@ const AdminDashboard = () => {
         }).catch(() => {
           setAllFollowUpJobs([]);
         })
-      ]).catch((error) => {
-        console.error('Error loading secondary data:', error);
-      });
-
+      ]);
     } catch (error) {
       toast.error(`Failed to load dashboard data: ${error instanceof Error ? error.message : 'Unknown error'}`);
     } finally {
@@ -7483,8 +7479,6 @@ const AdminDashboard = () => {
                 title="Refresh data (no full page reload)"
                 onClick={async () => {
                   await loadDashboardData();
-                  await reloadTechnicians();
-                  await loadFilteredJobs(statusFilter, currentPage);
                 }}
               >
                 <RefreshCw className="w-4 h-4" />
@@ -7625,8 +7619,6 @@ const AdminDashboard = () => {
               title="Refresh data (no full page reload)"
               onClick={async () => {
                 await loadDashboardData();
-                await reloadTechnicians();
-                await loadFilteredJobs(statusFilter, currentPage);
               }}
             >
               <RefreshCw className="w-4 h-4" />
