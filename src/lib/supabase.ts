@@ -1691,6 +1691,19 @@ export const db = {
       if (dryRun) console.log('🔵 [DRY RUN] AMC service job creation preview...');
       else if (isDev) console.log('🔵 Starting AMC service job creation...');
 
+      // Throttle: run at most once per hour on refresh to avoid heavy work every time (admin mount/refresh)
+      const AMC_THROTTLE_MS = 60 * 60 * 1000; // 1 hour
+      if (!dryRun && typeof window !== 'undefined') {
+        const lastRun = window.localStorage.getItem('amc_service_jobs_last_run');
+        if (lastRun) {
+          const elapsed = Date.now() - parseInt(lastRun, 10);
+          if (!Number.isNaN(elapsed) && elapsed < AMC_THROTTLE_MS) {
+            if (isDev) console.log('ℹ️ AMC job creation skipped (throttled, last run < 1h ago)');
+            return { data: [], error: null, created: 0 };
+          }
+        }
+      }
+
       // Batch IN clauses to avoid URL/query limits (~200–300 IDs per request)
       const BATCH_SIZE = 200;
       const chunk = <T>(arr: T[], size: number): T[][] => {
@@ -1990,10 +2003,12 @@ export const db = {
 
         createdCount = createdJobsData?.length || 0;
         if (isDev) console.log(`✅ Successfully created ${createdCount} AMC service jobs`);
+        if (typeof window !== 'undefined') window.localStorage.setItem('amc_service_jobs_last_run', String(Date.now()));
         return { data: createdJobsData, error: null, created: createdCount };
       }
 
       if (isDev) console.log('ℹ️ No jobs to create');
+      if (typeof window !== 'undefined') window.localStorage.setItem('amc_service_jobs_last_run', String(Date.now()));
       return { data: [], error: null, created: 0 };
     }
   },

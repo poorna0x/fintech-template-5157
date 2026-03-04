@@ -40,19 +40,54 @@ export function TodayRemindersPopup() {
     });
   }, []);
 
-  // Show popup whenever there are reminders for today that are not completed (no sessionStorage; purely data-driven).
+  // Show popup whenever there are reminders for today. Cache result 5 min to avoid refetch on every refresh.
+  const REMINDERS_CACHE_TTL_MS = 5 * 60 * 1000; // 5 min
+  const REMINDERS_CACHE_KEY = 'reminders_today_cache';
+
   useEffect(() => {
     const today = format(new Date(), 'yyyy-MM-dd');
     let retryTimeoutId: ReturnType<typeof setTimeout> | null = null;
 
+    const applyReminders = (forToday: Reminder[], list: Reminder[]) => {
+      if (forToday.length > 0) {
+        setTodayReminders(forToday);
+        setOpen(true);
+        const customerIds = [...new Set(
+          forToday
+            .filter((r) => r.entity_type === 'customer' && r.entity_id)
+            .map((r) => r.entity_id as string)
+        )];
+        const labels: Record<string, CustomerLabel> = {};
+        db.customers.getByIds(customerIds).then(({ data: customers }) => {
+          (customers || []).forEach((c: any) => {
+            if (c?.id) labels[c.id] = { name: c.full_name || 'Customer', customerId: c.customer_id || c.id.slice(0, 8) };
+          });
+          setCustomerLabels(labels);
+        });
+      }
+    };
+
     const tryLoad = (isRetry = false) => {
+      const cached = typeof sessionStorage !== 'undefined' ? sessionStorage.getItem(REMINDERS_CACHE_KEY) : null;
+      if (cached && !isRetry) {
+        try {
+          const { date, data: list, fetchedAt } = JSON.parse(cached) as { date: string; data: Reminder[]; fetchedAt: number };
+          if (date === today && Date.now() - fetchedAt < REMINDERS_CACHE_TTL_MS && Array.isArray(list)) {
+            const forToday = list.filter((r) => r.reminder_at === today);
+            applyReminders(forToday, list);
+            return;
+          }
+        } catch {
+          // ignore invalid cache
+        }
+      }
+
       db.reminders.getForTodayAndTomorrow().then(({ data, error }) => {
         if (import.meta.env.DEV) {
           console.log('[Reminders popup] getForTodayAndTomorrow' + (isRetry ? ' (retry)' : '') + ':', {
             today,
             error: error?.message ?? null,
             dataLength: Array.isArray(data) ? data.length : 0,
-            reminderDates: Array.isArray(data) ? (data as Reminder[]).map((r) => r.reminder_at) : [],
           });
         }
         if (error) {
@@ -60,30 +95,17 @@ export function TodayRemindersPopup() {
           return;
         }
         const list = (data || []) as Reminder[];
+        if (typeof sessionStorage !== 'undefined') {
+          sessionStorage.setItem(REMINDERS_CACHE_KEY, JSON.stringify({ date: today, data: list, fetchedAt: Date.now() }));
+        }
         const forToday = list.filter((r) => r.reminder_at === today);
-        if (forToday.length > 0) {
-          setTodayReminders(forToday);
-          setOpen(true);
-          const customerIds = [...new Set(
-            forToday
-              .filter((r) => r.entity_type === 'customer' && r.entity_id)
-              .map((r) => r.entity_id as string)
-          )];
-          const labels: Record<string, CustomerLabel> = {};
-          db.customers.getByIds(customerIds).then(({ data: customers }) => {
-            (customers || []).forEach((c: any) => {
-              if (c?.id) labels[c.id] = { name: c.full_name || 'Customer', customerId: c.customer_id || c.id.slice(0, 8) };
-            });
-            setCustomerLabels(labels);
-          });
-        } else if (!isRetry && Array.isArray(data) && data.length === 0) {
-          // First attempt returned empty; retry once after delay (session may not have been ready)
+        applyReminders(forToday, list);
+        if (forToday.length === 0 && !isRetry && list.length === 0) {
           retryTimeoutId = setTimeout(() => tryLoad(true), 1500);
         }
       });
     };
 
-    // Delay first run so admin dashboard and Supabase session are ready after refresh
     const initialTimeoutId = setTimeout(() => tryLoad(false), 400);
     return () => {
       clearTimeout(initialTimeoutId);
@@ -107,6 +129,7 @@ export function TodayRemindersPopup() {
       toast.error(error.message);
       return;
     }
+    if (typeof sessionStorage !== 'undefined') sessionStorage.removeItem('reminders_today_cache');
     if (r.interval_type === 'months' && r.interval_value) {
       const base = new Date(r.reminder_at);
       const nextDate = addMonths(base, r.interval_value);
@@ -227,6 +250,7 @@ export function TodayRemindersPopup() {
         editReminder={rescheduleReminder || undefined}
         onSaved={() => {
           setRescheduleReminder(null);
+          if (typeof sessionStorage !== 'undefined') sessionStorage.removeItem('reminders_today_cache');
           loadToday();
         }}
       />
