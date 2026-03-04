@@ -95,10 +95,10 @@ class CloudinaryService {
     formData.append('upload_preset', activeConfig.uploadPreset);
     formData.append('folder', folder);
     
-    // Note: For unsigned uploads, only these parameters are allowed:
-    // upload_preset, callback, public_id, folder, asset_folder, tags, context, 
-    // metadata, face_coordinates, custom_coordinates, source, filename_override, 
-    // manifest_transformation, manifest_json, template, template_vars, regions, public_id_prefix
+    // Timeout so a slow/hanging request fails instead of leaving the UI stuck (user had to refresh)
+    const UPLOAD_TIMEOUT_MS = 30_000; // 30 seconds max
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), UPLOAD_TIMEOUT_MS);
 
     try {
       const response = await fetch(
@@ -108,8 +108,10 @@ class CloudinaryService {
           body: formData,
           mode: 'cors',
           credentials: 'omit',
+          signal: controller.signal,
         }
       );
+      clearTimeout(timeoutId);
 
       if (!response.ok) {
         const errorText = await response.text();
@@ -179,15 +181,16 @@ class CloudinaryService {
         bytes: result.bytes,
       };
     } catch (error) {
-      // Handle specific error types
+      clearTimeout(timeoutId);
+      if (error instanceof Error && error.name === 'AbortError') {
+        throw new Error('Upload timed out. Check your connection and try again, or use a smaller photo.');
+      }
       if (error instanceof TypeError && error.message.includes('Failed to fetch')) {
         throw new Error('Network error: Unable to connect to Cloudinary. Please check your internet connection and try again.');
       }
-      
       if (error instanceof Error && error.message.includes('CORS')) {
         throw new Error('CORS error: Please check your Cloudinary configuration and upload preset settings.');
       }
-      
       throw new Error(`Failed to upload image: ${error instanceof Error ? error.message : 'Unknown error'}`);
     }
   }
