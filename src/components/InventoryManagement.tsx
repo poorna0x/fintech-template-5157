@@ -7,7 +7,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from '@/components/ui/alert-dialog';
 import { Pagination, PaginationContent, PaginationItem, PaginationLink, PaginationNext, PaginationPrevious, PaginationEllipsis } from '@/components/ui/pagination';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { ShoppingCart, Plus, Edit, Trash2, Search, X, RefreshCw, User } from 'lucide-react';
+import { ShoppingCart, Plus, Edit, Trash2, Search, X, RefreshCw, User, Package } from 'lucide-react';
 import { db } from '@/lib/supabase';
 import { toast } from 'sonner';
 import { inventoryCache } from '@/lib/inventoryCache';
@@ -49,6 +49,21 @@ const InventoryManagement: React.FC<InventoryManagementProps> = ({ onBack }) => 
   const suggestionsRef = useRef<HTMLDivElement>(null);
   const itemsPerPage = 50; // Show 50 items per page for better performance
 
+  // Bundles state
+  const [bundles, setBundles] = useState<{ id: string; name: string; description: string | null }[]>([]);
+  const [bundlesLoaded, setBundlesLoaded] = useState(false);
+  const [bundleDialogOpen, setBundleDialogOpen] = useState(false);
+  const [editingBundleId, setEditingBundleId] = useState<string | null>(null);
+  const [bundleName, setBundleName] = useState('');
+  const [bundleDescription, setBundleDescription] = useState('');
+  const [bundleItems, setBundleItems] = useState<{ inventory_id: string; quantity: number; product_name?: string; code?: string | null }[]>([]);
+  const [bundleItemInventoryId, setBundleItemInventoryId] = useState('');
+  const [bundleItemQty, setBundleItemQty] = useState('1');
+  const [bundleDialogInventory, setBundleDialogInventory] = useState<InventoryItem[]>([]);
+  const [bundleDialogInventoryLoading, setBundleDialogInventoryLoading] = useState(false);
+  const [bundleSearchQuery, setBundleSearchQuery] = useState('');
+  const [debouncedBundleSearch, setDebouncedBundleSearch] = useState('');
+
   // Cache duration: 30 seconds - reload only if data is stale
   const CACHE_DURATION = 30000;
 
@@ -61,6 +76,34 @@ const InventoryManagement: React.FC<InventoryManagementProps> = ({ onBack }) => 
 
     return () => clearTimeout(timer);
   }, [searchQuery]);
+
+  // Debounce bundle dialog search
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedBundleSearch(bundleSearchQuery), 300);
+    return () => clearTimeout(t);
+  }, [bundleSearchQuery]);
+
+  // Load inventory when bundle dialog opens (no need to load main inventory tab first)
+  useEffect(() => {
+    if (!bundleDialogOpen) return;
+    setBundleDialogInventoryLoading(true);
+    const cacheKey = 'inventory_items';
+    const cached = inventoryCache.get<InventoryItem[]>(cacheKey);
+    if (cached && cached.length >= 0) {
+      setBundleDialogInventory(cached);
+      setBundleDialogInventoryLoading(false);
+    } else {
+      db.inventory.getAll()
+        .then(({ data, error }) => {
+          if (!error && data) {
+            setBundleDialogInventory(data);
+            inventoryCache.set(cacheKey, data);
+          }
+          setBundleDialogInventoryLoading(false);
+        })
+        .catch(() => setBundleDialogInventoryLoading(false));
+    }
+  }, [bundleDialogOpen]);
 
   // Load inventory with caching - only reload if cache is stale
   const loadInventory = useCallback(async (forceReload = false) => {
@@ -305,6 +348,129 @@ const InventoryManagement: React.FC<InventoryManagementProps> = ({ onBack }) => 
     }
   };
 
+  const loadBundles = useCallback(async () => {
+    try {
+      const { data, error } = await db.inventoryBundles.getAll();
+      if (error) throw error;
+      setBundles(data || []);
+      setBundlesLoaded(true);
+    } catch (e) {
+      console.error('Error loading bundles:', e);
+      toast.error('Failed to load bundles');
+    }
+  }, []);
+
+  const handleOpenAddBundle = () => {
+    setEditingBundleId(null);
+    setBundleName('');
+    setBundleDescription('');
+    setBundleItems([]);
+    setBundleSearchQuery('');
+    setDebouncedBundleSearch('');
+    setBundleDialogOpen(true);
+  };
+
+  const handleOpenEditBundle = async (id: string) => {
+    const { data, error } = await db.inventoryBundles.getByIdWithItems(id);
+    if (error || !data) {
+      toast.error('Failed to load bundle');
+      return;
+    }
+    setEditingBundleId(id);
+    setBundleName(data.name);
+    setBundleDescription(data.description || '');
+    setBundleItems((data.items || []).map((it: any) => ({
+      inventory_id: it.inventory_id,
+      quantity: it.quantity,
+      product_name: it.inventory?.product_name,
+      code: it.inventory?.code ?? null
+    })));
+    setBundleSearchQuery('');
+    setDebouncedBundleSearch('');
+    setBundleDialogOpen(true);
+  };
+
+  const handleAddBundleItem = () => {
+    if (!bundleItemInventoryId || !bundleItemQty || parseInt(bundleItemQty, 10) < 1) return;
+    const item = bundleDialogInventory.find(i => i.id === bundleItemInventoryId) || inventoryItems.find(i => i.id === bundleItemInventoryId);
+    if (!item) return;
+    const qty = parseInt(bundleItemQty, 10);
+    setBundleItems(prev => {
+      const existing = prev.find(p => p.inventory_id === bundleItemInventoryId);
+      if (existing) {
+        return prev.map(p => p.inventory_id === bundleItemInventoryId ? { ...p, quantity: p.quantity + qty } : p);
+      }
+      return [...prev, { inventory_id: bundleItemInventoryId, quantity: qty, product_name: item.product_name, code: item.code }];
+    });
+    setBundleItemInventoryId('');
+    setBundleItemQty('1');
+  };
+
+  const handleAddBundleItemFromSearch = (item: InventoryItem, qty: number = 1) => {
+    setBundleItems(prev => {
+      const existing = prev.find(p => p.inventory_id === item.id);
+      if (existing) {
+        return prev.map(p => p.inventory_id === item.id ? { ...p, quantity: p.quantity + qty } : p);
+      }
+      return [...prev, { inventory_id: item.id, quantity: qty, product_name: item.product_name, code: item.code }];
+    });
+  };
+
+  const handleRemoveBundleItem = (inventoryId: string) => {
+    setBundleItems(prev => prev.filter(p => p.inventory_id !== inventoryId));
+  };
+
+  const filteredBundleDialogInventory = useMemo(() => {
+    if (!debouncedBundleSearch.trim()) return bundleDialogInventory;
+    const q = debouncedBundleSearch.toLowerCase().trim();
+    return bundleDialogInventory.filter(
+      (i) =>
+        i.product_name?.toLowerCase().includes(q) ||
+        (i.code && i.code.toLowerCase().includes(q))
+    );
+  }, [bundleDialogInventory, debouncedBundleSearch]);
+
+  const handleSaveBundle = async () => {
+    if (!bundleName.trim()) {
+      toast.error('Enter bundle name');
+      return;
+    }
+    if (bundleItems.length === 0) {
+      toast.error('Add at least one item to the bundle');
+      return;
+    }
+    try {
+      if (editingBundleId) {
+        const { error: updateError } = await db.inventoryBundles.update(editingBundleId, { name: bundleName.trim(), description: bundleDescription.trim() || undefined });
+        if (updateError) throw updateError;
+        const { error: setError } = await db.inventoryBundles.setItems(editingBundleId, bundleItems.map(i => ({ inventory_id: i.inventory_id, quantity: i.quantity })));
+        if (setError) throw setError;
+        toast.success('Bundle updated');
+      } else {
+        const { data: created, error: createError } = await db.inventoryBundles.create({ name: bundleName.trim(), description: bundleDescription.trim() || undefined });
+        if (createError || !created) throw createError || new Error('Create failed');
+        const { error: setError } = await db.inventoryBundles.setItems(created.id, bundleItems.map(i => ({ inventory_id: i.inventory_id, quantity: i.quantity })));
+        if (setError) throw setError;
+        toast.success('Bundle created');
+      }
+      setBundleDialogOpen(false);
+      loadBundles();
+    } catch (e: any) {
+      toast.error(e?.message || 'Failed to save bundle');
+    }
+  };
+
+  const handleDeleteBundle = async (id: string) => {
+    try {
+      const { error } = await db.inventoryBundles.delete(id);
+      if (error) throw error;
+      toast.success('Bundle deleted');
+      setBundles(prev => prev.filter(b => b.id !== id));
+    } catch (e: any) {
+      toast.error(e?.message || 'Failed to delete bundle');
+    }
+  };
+
   const handleDeleteInventory = async (id: string) => {
     try {
       const { error } = await db.inventory.delete(id);
@@ -341,12 +507,16 @@ const InventoryManagement: React.FC<InventoryManagementProps> = ({ onBack }) => 
 
   return (
     <div className="space-y-6">
-      {/* Tabs for Main Inventory and Technician Inventory */}
+      {/* Tabs for Main Inventory, Bundles, and Technician Inventory */}
       <Tabs defaultValue="main" className="w-full">
-        <TabsList className="grid w-full grid-cols-2">
+        <TabsList className="grid w-full grid-cols-3">
           <TabsTrigger value="main" className="flex items-center gap-2">
             <ShoppingCart className="w-4 h-4" />
             Main Inventory
+          </TabsTrigger>
+          <TabsTrigger value="bundles" className="flex items-center gap-2" onClick={() => !bundlesLoaded && loadBundles()}>
+            <Package className="w-4 h-4" />
+            Bundles
           </TabsTrigger>
           <TabsTrigger value="technician" className="flex items-center gap-2">
             <User className="w-4 h-4" />
@@ -768,11 +938,175 @@ const InventoryManagement: React.FC<InventoryManagementProps> = ({ onBack }) => 
       </Dialog>
         </TabsContent>
 
+        {/* Bundles Tab */}
+        <TabsContent value="bundles" className="space-y-6">
+          <Card>
+            <CardHeader>
+              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+                <div>
+                  <CardTitle className="flex items-center gap-2 text-lg sm:text-xl">
+                    <Package className="w-5 h-5" />
+                    Part Bundles
+                  </CardTitle>
+                  <p className="text-sm text-gray-600 mt-1">
+                    Create bundles to add multiple job parts at once when recording parts used.
+                  </p>
+                </div>
+                <Button onClick={handleOpenAddBundle} className="bg-blue-600 hover:bg-blue-700">
+                  <Plus className="w-4 h-4 mr-2" />
+                  Add Bundle
+                </Button>
+              </div>
+            </CardHeader>
+            <CardContent>
+              {!bundlesLoaded ? (
+                <div className="text-center py-8 text-gray-500">Switch to this tab to load bundles.</div>
+              ) : bundles.length === 0 ? (
+                <div className="text-center py-8 text-gray-500">
+                  <Package className="w-12 h-12 mx-auto mb-2 text-gray-400" />
+                  <p>No bundles yet.</p>
+                  <p className="text-sm mt-2">Create a bundle to quickly add a set of parts to a job.</p>
+                </div>
+              ) : (
+                <div className="border rounded-lg overflow-hidden">
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="border-b bg-gray-50">
+                        <th className="text-left p-3 font-medium">Name</th>
+                        <th className="text-left p-3 font-medium">Description</th>
+                        <th className="text-right p-3 font-medium">Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {bundles.map((b) => (
+                        <tr key={b.id} className="border-b last:border-b-0">
+                          <td className="p-3 font-medium">{b.name}</td>
+                          <td className="p-3 text-gray-600">{b.description || '—'}</td>
+                          <td className="p-3 text-right">
+                            <div className="flex justify-end gap-1">
+                              <Button variant="ghost" size="sm" onClick={() => handleOpenEditBundle(b.id)}>
+                                <Edit className="w-4 h-4" />
+                              </Button>
+                              <AlertDialog>
+                                <AlertDialogTrigger asChild>
+                                  <Button variant="ghost" size="sm" className="text-red-600 hover:text-red-700">
+                                    <Trash2 className="w-4 h-4" />
+                                  </Button>
+                                </AlertDialogTrigger>
+                                <AlertDialogContent>
+                                  <AlertDialogHeader>
+                                    <AlertDialogTitle>Delete bundle</AlertDialogTitle>
+                                    <AlertDialogDescription>Delete &quot;{b.name}&quot;? This cannot be undone.</AlertDialogDescription>
+                                  </AlertDialogHeader>
+                                  <AlertDialogFooter>
+                                    <AlertDialogCancel>Cancel</AlertDialogCancel>
+                                    <AlertDialogAction onClick={() => handleDeleteBundle(b.id)} className="bg-red-600 hover:bg-red-700">Delete</AlertDialogAction>
+                                  </AlertDialogFooter>
+                                </AlertDialogContent>
+                              </AlertDialog>
+                            </div>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </TabsContent>
+
         {/* Technician Inventory Tab */}
         <TabsContent value="technician" className="space-y-6">
           <TechnicianInventoryManagement />
         </TabsContent>
       </Tabs>
+
+      {/* Add/Edit Bundle Dialog */}
+      <Dialog open={bundleDialogOpen} onOpenChange={setBundleDialogOpen}>
+        <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>{editingBundleId ? 'Edit' : 'Add'} Bundle</DialogTitle>
+            <DialogDescription>Name the bundle and add parts with quantities. These can be added to a job in one step.</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <div className="space-y-2">
+              <Label>Bundle name *</Label>
+              <Input value={bundleName} onChange={(e) => setBundleName(e.target.value)} placeholder="e.g. RO Service Kit" />
+            </div>
+            <div className="space-y-2">
+              <Label>Description (optional)</Label>
+              <Input value={bundleDescription} onChange={(e) => setBundleDescription(e.target.value)} placeholder="Short description" />
+            </div>
+            <div className="space-y-2">
+              <Label>Add parts</Label>
+              <div className="relative">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none" />
+                <Input
+                  placeholder="Search by product name or code..."
+                  value={bundleSearchQuery}
+                  onChange={(e) => setBundleSearchQuery(e.target.value)}
+                  className="pl-9 h-9 text-sm"
+                />
+              </div>
+              {bundleDialogInventoryLoading ? (
+                <p className="text-sm text-gray-500 py-3">Loading products...</p>
+              ) : bundleDialogInventory.length === 0 ? (
+                <p className="text-sm text-gray-500 py-3">No products in inventory. Add products in Main Inventory first.</p>
+              ) : (
+                <div className="border rounded-lg overflow-hidden max-h-[220px] overflow-y-auto">
+                  {filteredBundleDialogInventory.length === 0 ? (
+                    <div className="py-6 text-center text-sm text-gray-500">No products match your search.</div>
+                  ) : (
+                    filteredBundleDialogInventory.map((item) => (
+                      <div
+                        key={item.id}
+                        className="flex items-center gap-2 px-3 py-2 border-b last:border-b-0 bg-background hover:bg-muted/50"
+                      >
+                        <div className="min-w-0 flex-1">
+                          <span className="text-sm font-medium truncate block">{item.product_name}</span>
+                          {item.code && <span className="text-xs text-gray-500 truncate block">Code: {item.code}</span>}
+                        </div>
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="default"
+                          className="h-8 w-8 min-w-[2rem] shrink-0"
+                          onClick={() => handleAddBundleItemFromSearch(item, 1)}
+                          title="Add 1 to bundle"
+                        >
+                          <Plus className="w-4 h-4" />
+                        </Button>
+                      </div>
+                    ))
+                  )}
+                </div>
+              )}
+              {bundleItems.length > 0 && (
+                <div className="mt-3">
+                  <Label className="text-xs text-gray-600">Items in this bundle</Label>
+                  <ul className="border rounded-lg divide-y mt-1">
+                    {bundleItems.map((item) => (
+                      <li key={item.inventory_id} className="flex items-center justify-between px-3 py-2">
+                        <span className="text-sm">{item.product_name}{item.code ? ` (${item.code})` : ''} × {item.quantity}</span>
+                        <Button type="button" variant="ghost" size="sm" className="text-red-600" onClick={() => handleRemoveBundleItem(item.inventory_id)}>
+                          <X className="w-4 h-4" />
+                        </Button>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setBundleDialogOpen(false)}>Cancel</Button>
+            <Button onClick={handleSaveBundle} disabled={!bundleName.trim() || bundleItems.length === 0} className="bg-blue-600 hover:bg-blue-700">
+              {editingBundleId ? 'Update' : 'Create'} Bundle
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 };

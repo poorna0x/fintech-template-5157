@@ -2673,6 +2673,85 @@ export const db = {
     }
   },
 
+  // Inventory Bundles (predefined part sets for quick add to jobs)
+  inventoryBundles: {
+    async getAll() {
+      const { data, error } = await supabase
+        .from('inventory_bundles')
+        .select('id, name, description, created_at, updated_at')
+        .order('name', { ascending: true });
+      return { data: data || [], error };
+    },
+
+    async getByIdWithItems(id: string) {
+      const { data: bundle, error: bundleError } = await supabase
+        .from('inventory_bundles')
+        .select('id, name, description, created_at, updated_at')
+        .eq('id', id)
+        .single();
+      if (bundleError || !bundle) return { data: null, error: bundleError };
+      const { data: items, error: itemsError } = await supabase
+        .from('inventory_bundle_items')
+        .select(`
+          id,
+          bundle_id,
+          inventory_id,
+          quantity,
+          inventory:inventory(id, product_name, code, price)
+        `)
+        .eq('bundle_id', id);
+      if (itemsError) return { data: null, error: itemsError };
+      return { data: { ...bundle, items: items || [] }, error: null };
+    },
+
+    async create(bundle: { name: string; description?: string }) {
+      const { data, error } = await supabase
+        .from('inventory_bundles')
+        .insert({ name: bundle.name, description: bundle.description || null })
+        .select()
+        .single();
+      return { data, error };
+    },
+
+    async update(id: string, updates: { name?: string; description?: string }) {
+      const { data, error } = await supabase
+        .from('inventory_bundles')
+        .update(updates)
+        .eq('id', id)
+        .select()
+        .single();
+      return { data, error };
+    },
+
+    async delete(id: string) {
+      const { error } = await supabase.from('inventory_bundles').delete().eq('id', id);
+      return { error };
+    },
+
+    async setItems(bundleId: string, items: { inventory_id: string; quantity: number }[]) {
+      const { error: delError } = await supabase.from('inventory_bundle_items').delete().eq('bundle_id', bundleId);
+      if (delError) return { error: delError };
+      if (items.length === 0) return { error: null };
+      const rows = items.map(({ inventory_id, quantity }) => ({ bundle_id: bundleId, inventory_id, quantity }));
+      const { error: insertError } = await supabase.from('inventory_bundle_items').insert(rows);
+      return { error: insertError };
+    },
+
+    async getItems(bundleId: string) {
+      const { data, error } = await supabase
+        .from('inventory_bundle_items')
+        .select(`
+          id,
+          bundle_id,
+          inventory_id,
+          quantity,
+          inventory:inventory(id, product_name, code, price)
+        `)
+        .eq('bundle_id', bundleId);
+      return { data: data || [], error };
+    }
+  },
+
   // Technician Inventory operations
   technicianInventory: {
     async getAll() {

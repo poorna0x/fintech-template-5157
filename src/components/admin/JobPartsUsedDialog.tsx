@@ -4,7 +4,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from '@/components/ui/alert-dialog';
-import { Package, Plus, Search, Trash2 } from 'lucide-react';
+import { Package, Plus, Search, Trash2, Layers } from 'lucide-react';
 import { db } from '@/lib/supabase';
 import { toast } from 'sonner';
 import { inventoryCache } from '@/lib/inventoryCache';
@@ -52,9 +52,12 @@ const JobPartsUsedDialog: React.FC<JobPartsUsedDialogProps> = ({
   const [technicianInventory, setTechnicianInventory] = useState<TechnicianInventoryItem[]>([]);
   const [partsUsed, setPartsUsed] = useState<JobPartUsed[]>([]);
   const [addPartDialogOpen, setAddPartDialogOpen] = useState(false);
+  const [addBundleDialogOpen, setAddBundleDialogOpen] = useState(false);
+  const [bundles, setBundles] = useState<{ id: string; name: string; description: string | null }[]>([]);
   const [inventorySearchQuery, setInventorySearchQuery] = useState('');
   const [debouncedSearchQuery, setDebouncedSearchQuery] = useState('');
   const [loading, setLoading] = useState(true);
+  const [applyingBundle, setApplyingBundle] = useState(false);
 
   // Debounce search query
   useEffect(() => {
@@ -118,8 +121,18 @@ const JobPartsUsedDialog: React.FC<JobPartsUsedDialogProps> = ({
       setMainInventoryLoaded(false);
       setInventorySearchQuery('');
       setDebouncedSearchQuery('');
+      setAddBundleDialogOpen(false);
     }
   }, [open, job?.id, technician?.id, loadTechnicianInventory, loadPartsUsed]);
+
+  // Load bundles when Add Bundle dialog opens
+  useEffect(() => {
+    if (addBundleDialogOpen) {
+      db.inventoryBundles.getAll().then(({ data, error }) => {
+        if (!error && data) setBundles(data);
+      });
+    }
+  }, [addBundleDialogOpen]);
 
   // Load main inventory items only when needed (lazy load for fallback)
   const [mainInventoryItems, setMainInventoryItems] = useState<InventoryItem[]>([]);
@@ -208,10 +221,111 @@ const JobPartsUsedDialog: React.FC<JobPartsUsedDialogProps> = ({
     return filtered;
   }, [technicianInventory, debouncedSearchQuery, inventoryMap]);
 
+  // Deduct from main inventory (warehouse). Returns error message if insufficient.
+  const deductMainInventory = async (inventoryId: string, quantity: number): Promise<string | null> => {
+    const { data: mainItem, error: fetchErr } = await db.inventory.getById(inventoryId);
+    if (fetchErr || !mainItem) return 'Could not load main inventory';
+    const current = Number((mainItem as any).quantity ?? 0);
+    if (current < quantity) return `Main inventory has ${current}, need ${quantity}`;
+    const { error: updateErr } = await db.inventory.update(inventoryId, { quantity: current - quantity });
+    return updateErr ? updateErr.message : null;
+  };
+
   // Handle add part - opens dialog with search
   const handleAddPart = () => {
     setInventorySearchQuery('');
     setAddPartDialogOpen(true);
+  };
+
+  // Apply bundle: add all bundle items to job; deduct from technician AND main inventory. Price at time of use stored per part. All-or-nothing if insufficient stock.
+  const handleApplyBundle = async (bundleId: string) => {
+    if (!job?.id || !technician?.id) return;
+    setApplyingBundle(true);
+    try {
+      const { data: bundleData, error: bundleError } = await db.inventoryBundles.getByIdWithItems(bundleId);
+      if (bundleError || !bundleData?.items?.length) {
+        toast.error('Failed to load bundle or bundle is empty');
+        setApplyingBundle(false);
+        return;
+      }
+      const items = bundleData.items as { inventory_id: string; quantity: number; inventory?: { id: string; price?: number } }[];
+      const short: string[] = [];
+      for (const it of items) {
+        const techItem = technicianInventory.find(i => i.inventory_id === it.inventory_id);
+        const need = it.quantity;
+        const have = techItem?.quantity ?? 0;
+        if (have < need) {
+          const name = techItem?.inventory?.product_name || it.inventory_id;
+          short.push(`${name}: tech has ${have}, need ${need}`);
+        }
+      }
+      if (short.length > 0) {
+        toast.error(`Insufficient technician stock: ${short.join('; ')}`);
+        setApplyingBundle(false);
+        return;
+      }
+      // Check main inventory has enough for all items
+      for (const it of items) {
+        const { data: mainItem } = await db.inventory.getById(it.inventory_id);
+        const mainQty = mainItem ? Number((mainItem as any).quantity ?? 0) : 0;
+        if (mainQty < it.quantity) {
+          const name = inventoryMap.get(it.inventory_id)?.product_name || it.inventory_id;
+          short.push(`${name}: main has ${mainQty}, need ${it.quantity}`);
+        }
+      }
+      if (short.length > 0) {
+        toast.error(`Insufficient main inventory: ${short.join('; ')}`);
+        setApplyingBundle(false);
+        return;
+      }
+      const priceMap = new Map<string, number>();
+      for (const it of items) {
+        const inv = inventoryMap.get(it.inventory_id) as InventoryItem | undefined;
+        if (inv?.price != null) priceMap.set(it.inventory_id, Number(inv.price));
+        else {
+          const { data: invData } = await db.inventory.getById(it.inventory_id);
+          priceMap.set(it.inventory_id, invData?.price ? Number(invData.price) : 0);
+        }
+      }
+      for (const it of items) {
+        const techItem = technicianInventory.find(i => i.inventory_id === it.inventory_id)!;
+        const existingPart = partsUsed.find(p => p.inventory_id === it.inventory_id);
+        const price = priceMap.get(it.inventory_id) ?? 0;
+        const err = await deductMainInventory(it.inventory_id, it.quantity);
+        if (err) {
+          toast.error(`Main inventory: ${err}`);
+          setApplyingBundle(false);
+          return;
+        }
+        if (existingPart) {
+          const newQty = existingPart.quantity_used + it.quantity;
+          await db.jobPartsUsed.update(existingPart.id, { quantity_used: newQty });
+          const newTechQty = techItem.quantity - it.quantity;
+          await db.technicianInventory.update(techItem.id, { quantity: newTechQty });
+          setPartsUsed(prev => prev.map(p => p.id === existingPart.id ? { ...p, quantity_used: newQty } : p));
+          setTechnicianInventory(prev => prev.map(i => i.id === techItem.id ? { ...i, quantity: newTechQty } : i));
+        } else {
+          const { data: newPart, error: createErr } = await db.jobPartsUsed.create({
+            job_id: job.id,
+            technician_id: technician.id,
+            inventory_id: it.inventory_id,
+            quantity_used: it.quantity,
+            price_at_time_of_use: price
+          });
+          if (createErr) throw createErr;
+          const newTechQty = techItem.quantity - it.quantity;
+          await db.technicianInventory.update(techItem.id, { quantity: newTechQty });
+          if (newPart) setPartsUsed(prev => [newPart, ...prev]);
+          setTechnicianInventory(prev => prev.map(i => i.id === techItem.id ? { ...i, quantity: newTechQty } : i));
+        }
+      }
+      setAddBundleDialogOpen(false);
+      toast.success(`Bundle applied: ${items.length} part(s) added. Technician and main inventory updated.`);
+    } catch (e: any) {
+      toast.error(e?.message || 'Failed to apply bundle');
+    } finally {
+      setApplyingBundle(false);
+    }
   };
 
   // Quick add part with qty 1 (called from + button) — price from cache when possible, optimistic update
@@ -238,6 +352,12 @@ const JobPartsUsedDialog: React.FC<JobPartsUsedDialogProps> = ({
     const existingPart = partsUsed.find(p => p.inventory_id === inventoryId);
 
     try {
+      // Deduct from main inventory (warehouse) as well
+      const mainErr = await deductMainInventory(inventoryId, 1);
+      if (mainErr) {
+        toast.error(`Main inventory: ${mainErr}`);
+        return;
+      }
       if (existingPart) {
         const newQuantity = existingPart.quantity_used + 1;
         const { data: updatedPart, error: updateError } = await db.jobPartsUsed.update(existingPart.id, {
@@ -275,7 +395,7 @@ const JobPartsUsedDialog: React.FC<JobPartsUsedDialogProps> = ({
         setTechnicianInventory(prev => prev.map(i => i.id === techItem.id ? { ...i, quantity: newTechQuantity } : i));
       }
 
-      toast.success('Part added (1 qty)');
+      toast.success('Part added (1 qty). Technician and main inventory updated.');
     } catch (error: any) {
       console.error('Error quick adding part:', error);
       toast.error(error?.message || 'Failed to add part');
@@ -324,17 +444,21 @@ const JobPartsUsedDialog: React.FC<JobPartsUsedDialogProps> = ({
               <Package className="w-5 h-5" />
               Parts Used for Job
             </DialogTitle>
-            <DialogDescription>
-              Manage parts used for this job. Parts will be automatically deducted from {technician.fullName || technician.full_name}'s inventory.
+<DialogDescription>
+            Manage parts used for this job. Each part (or bundle) is deducted from the technician&apos;s inventory and from main inventory. Price at time of use is stored per part. Top-up still works per item as before.
             </DialogDescription>
           </DialogHeader>
 
           <div className="flex-1 min-h-0 overflow-y-auto space-y-4 -mx-1 px-1">
-            {/* Add Part Button */}
-            <div className="flex justify-end">
+            {/* Add Part / Add Bundle */}
+            <div className="flex justify-end gap-2">
               <Button onClick={handleAddPart} size="sm">
                 <Plus className="w-4 h-4 mr-2" />
                 Add Part
+              </Button>
+              <Button onClick={() => setAddBundleDialogOpen(true)} size="sm" variant="outline">
+                <Layers className="w-4 h-4 mr-2" />
+                Add Bundle
               </Button>
             </div>
 
@@ -489,6 +613,43 @@ const JobPartsUsedDialog: React.FC<JobPartsUsedDialogProps> = ({
               Done
             </Button>
           </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Add Bundle Dialog */}
+      <Dialog open={addBundleDialogOpen} onOpenChange={setAddBundleDialogOpen}>
+        <DialogContent className="max-w-md max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Layers className="w-5 h-5" />
+              Add Bundle
+            </DialogTitle>
+            <DialogDescription>
+              Select a bundle to add all its parts to this job. Parts are deducted from {technician?.fullName || technician?.full_name}'s inventory.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="py-2">
+            {bundles.length === 0 ? (
+              <p className="text-sm text-gray-500 py-4 text-center">No bundles defined. Create bundles in Inventory → Bundles.</p>
+            ) : (
+              <ul className="space-y-2">
+                {bundles.map((b) => (
+                  <li key={b.id}>
+                    <Button
+                      variant="outline"
+                      className="w-full justify-start"
+                      onClick={() => handleApplyBundle(b.id)}
+                      disabled={applyingBundle}
+                    >
+                      <Package className="w-4 h-4 mr-2" />
+                      {b.name}
+                      {applyingBundle ? ' ...' : ''}
+                    </Button>
+                  </li>
+                ))}
+              </ul>
+            )}
           </div>
         </DialogContent>
       </Dialog>
