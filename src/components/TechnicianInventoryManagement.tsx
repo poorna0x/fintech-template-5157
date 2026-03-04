@@ -10,7 +10,7 @@ import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from '@/components/ui/command';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { User, Plus, Edit, Trash2, Package, Search, Check, ChevronsUpDown, X, RefreshCw, ArrowUpCircle } from 'lucide-react';
-import { db } from '@/lib/supabase';
+import { db, supabase } from '@/lib/supabase';
 import TechnicianTopUpDialog from '@/components/TechnicianTopUpDialog';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
@@ -189,6 +189,30 @@ const TechnicianInventoryManagement: React.FC<TechnicianInventoryManagementProps
       setLoading(false);
     }
   }, [selectedTechnicianId]);
+
+  // Realtime: when technician_inventory changes (admin assign, tech top-up), refresh current list (no manual refresh needed)
+  useEffect(() => {
+    const channel = supabase
+      .channel('admin-technician-inventory')
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'technician_inventory' },
+        () => {
+          if (!selectedTechnicianId) return;
+          if (selectedTechnicianId !== ASSIGN_ALL_TECHNICIANS) {
+            inventoryCache.clear(`tech_inventory_${selectedTechnicianId}`);
+            loadTechnicianInventory(selectedTechnicianId, true);
+          } else {
+            inventoryCache.clear('all_tech_inventory');
+            loadTechnicianInventory(undefined, true);
+          }
+        }
+      )
+      .subscribe();
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [selectedTechnicianId, loadTechnicianInventory]);
 
   // Filter technician inventory based on selected technician and item search (using debounced query)
   const filteredInventory = useMemo(() => {

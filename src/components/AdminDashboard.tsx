@@ -1516,9 +1516,12 @@ const AdminDashboard = () => {
         (payload: { new: Record<string, unknown> }) => {
           const row = payload.new as { id: string; status?: string };
           if (row.id) setLastCheckedJobId(row.id);
-          // Refresh current view so new job appears (e.g. in ONGOING if PENDING)
+          // Optimistic count: new jobs are typically PENDING (counted in ongoing). Skip loadJobCounts() to save 4 count queries per new job.
+          const status = (row.status || 'PENDING') as string;
+          if (['PENDING', 'ASSIGNED', 'EN_ROUTE', 'IN_PROGRESS'].includes(status)) {
+            setJobCounts((prev) => ({ ...prev, ongoing: (prev.ongoing || 0) + 1 }));
+          }
           loadFilteredJobs(statusFilter, 1);
-          loadJobCounts();
         }
       )
       .subscribe();

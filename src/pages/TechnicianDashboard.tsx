@@ -1334,11 +1334,11 @@ const TechnicianDashboard = () => {
     };
   }, [user?.technicianId]);
 
-  // Polling: 5s when realtime is down; 30s when realtime is up (sync team_members + unassignments not in filtered channel)
+  // Polling: 5s when realtime is down; 60s when realtime is up (sync team_members + unassignments; less egress when realtime connected)
   useEffect(() => {
     if (!user?.technicianId) return;
 
-    const intervalMs = realtimeConnected ? 30000 : 5000;
+    const intervalMs = realtimeConnected ? 60000 : 5000;
     const pollInterval = setInterval(() => loadAssignedJobs(), intervalMs);
     return () => clearInterval(pollInterval);
   }, [user?.technicianId, realtimeConnected]);
