@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -58,6 +58,33 @@ const JobPartsUsedDialog: React.FC<JobPartsUsedDialogProps> = ({
   const [debouncedSearchQuery, setDebouncedSearchQuery] = useState('');
   const [loading, setLoading] = useState(true);
   const [applyingBundle, setApplyingBundle] = useState(false);
+
+  const recalcTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const pendingRecalcJobIdRef = useRef<string | null>(null);
+
+  const RECALC_DEBOUNCE_MS = 180;
+
+  const scheduleRecalcJobPartsCost = useCallback((jobId: string) => {
+    pendingRecalcJobIdRef.current = jobId;
+    if (recalcTimeoutRef.current) clearTimeout(recalcTimeoutRef.current);
+    recalcTimeoutRef.current = setTimeout(() => {
+      db.jobPartsUsed.recalculateAndUpdateJobPartsCost(jobId).catch(() => {});
+      pendingRecalcJobIdRef.current = null;
+      recalcTimeoutRef.current = null;
+    }, RECALC_DEBOUNCE_MS);
+  }, []);
+
+  const flushPendingRecalc = useCallback(() => {
+    if (recalcTimeoutRef.current) {
+      clearTimeout(recalcTimeoutRef.current);
+      recalcTimeoutRef.current = null;
+    }
+    const jobId = pendingRecalcJobIdRef.current;
+    if (jobId) {
+      pendingRecalcJobIdRef.current = null;
+      db.jobPartsUsed.recalculateAndUpdateJobPartsCost(jobId).catch(() => {});
+    }
+  }, []);
 
   // Debounce search query
   useEffect(() => {
@@ -124,6 +151,12 @@ const JobPartsUsedDialog: React.FC<JobPartsUsedDialogProps> = ({
       setAddBundleDialogOpen(false);
     }
   }, [open, job?.id, technician?.id, loadTechnicianInventory, loadPartsUsed]);
+
+  // Flush pending recalc when dialog closes so job parts_cost_total is up to date
+  useEffect(() => {
+    if (!open) flushPendingRecalc();
+    return () => flushPendingRecalc();
+  }, [open, flushPendingRecalc]);
 
   // Load bundles when Add Bundle dialog opens
   useEffect(() => {
@@ -222,10 +255,21 @@ const JobPartsUsedDialog: React.FC<JobPartsUsedDialogProps> = ({
   }, [technicianInventory, debouncedSearchQuery, inventoryMap]);
 
   // Deduct from main inventory (warehouse). Returns error message if insufficient.
-  const deductMainInventory = async (inventoryId: string, quantity: number): Promise<string | null> => {
-    const { data: mainItem, error: fetchErr } = await db.inventory.getById(inventoryId);
-    if (fetchErr || !mainItem) return 'Could not load main inventory';
-    const current = Number((mainItem as any).quantity ?? 0);
+  // If existingMainItem is provided (e.g. from a prior getById for price), skip the fetch to avoid double getById.
+  const deductMainInventory = async (
+    inventoryId: string,
+    quantity: number,
+    existingMainItem?: { quantity?: number } | null
+  ): Promise<string | null> => {
+    let current: number;
+    const existingQty = existingMainItem != null ? (existingMainItem as any).quantity : undefined;
+    if (existingMainItem != null && (existingQty !== undefined && existingQty !== null && !Number.isNaN(Number(existingQty)))) {
+      current = Number(existingQty);
+    } else {
+      const { data: mainItem, error: fetchErr } = await db.inventory.getById(inventoryId);
+      if (fetchErr || !mainItem) return 'Could not load main inventory';
+      current = Number((mainItem as any).quantity ?? 0);
+    }
     if (current < quantity) return `Main inventory has ${current}, need ${quantity}`;
     const { error: updateErr } = await db.inventory.update(inventoryId, { quantity: current - quantity });
     return updateErr ? updateErr.message : null;
@@ -320,7 +364,7 @@ const JobPartsUsedDialog: React.FC<JobPartsUsedDialogProps> = ({
         }
       }
       setAddBundleDialogOpen(false);
-      await db.jobPartsUsed.recalculateAndUpdateJobPartsCost(job.id);
+      scheduleRecalcJobPartsCost(job.id);
       toast.success(`Bundle applied: ${items.length} part(s) added. Technician and main inventory updated.`);
     } catch (e: any) {
       toast.error(e?.message || 'Failed to apply bundle');
@@ -339,8 +383,9 @@ const JobPartsUsedDialog: React.FC<JobPartsUsedDialogProps> = ({
       return;
     }
 
-    // Price from cache/map when available to avoid getById per click
+    // Single getById when price not cached; reuse result for main-inventory deduct to avoid double fetch
     let currentPrice = 0;
+    let mainItemForDeduct: { quantity?: number } | null = null;
     const cachedInv = inventoryMap.get(inventoryId) as InventoryItem | undefined;
     if (cachedInv?.price != null) {
       currentPrice = Number(cachedInv.price);
@@ -348,13 +393,14 @@ const JobPartsUsedDialog: React.FC<JobPartsUsedDialogProps> = ({
       const { data: inventoryData, error: invError } = await db.inventory.getById(inventoryId);
       if (invError) throw invError;
       currentPrice = inventoryData?.price ? Number(inventoryData.price) : 0;
+      mainItemForDeduct = inventoryData as { quantity?: number };
     }
 
     const existingPart = partsUsed.find(p => p.inventory_id === inventoryId);
 
     try {
-      // Deduct from main inventory (warehouse) as well
-      const mainErr = await deductMainInventory(inventoryId, 1);
+      // Deduct from main inventory (reuse mainItemForDeduct when we have it)
+      const mainErr = await deductMainInventory(inventoryId, 1, mainItemForDeduct);
       if (mainErr) {
         toast.error(`Main inventory: ${mainErr}`);
         return;
@@ -396,7 +442,7 @@ const JobPartsUsedDialog: React.FC<JobPartsUsedDialogProps> = ({
         setTechnicianInventory(prev => prev.map(i => i.id === techItem.id ? { ...i, quantity: newTechQuantity } : i));
       }
 
-      await db.jobPartsUsed.recalculateAndUpdateJobPartsCost(job.id);
+      scheduleRecalcJobPartsCost(job.id);
       toast.success('Part added (1 qty). Technician and main inventory updated.');
     } catch (error: any) {
       console.error('Error quick adding part:', error);
@@ -426,7 +472,7 @@ const JobPartsUsedDialog: React.FC<JobPartsUsedDialogProps> = ({
       if (techItem) {
         setTechnicianInventory(prev => prev.map(i => i.id === techItem.id ? { ...i, quantity: techItem.quantity + quantityUsed } : i));
       }
-      if (job?.id) await db.jobPartsUsed.recalculateAndUpdateJobPartsCost(job.id);
+      if (job?.id) scheduleRecalcJobPartsCost(job.id);
       toast.success('Part removed and added back to technician inventory');
     } catch (error: any) {
       console.error('Error deleting part:', error);
