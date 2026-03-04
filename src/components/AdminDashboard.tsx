@@ -4751,9 +4751,10 @@ const AdminDashboard = () => {
           assignedTechnician.id
         );
         await sendNotification(notification);
+      } else {
+        toast.success(`Job assigned to ${assignedTechnician?.fullName || 'technician'} for ${(jobToAssign.customer as any)?.full_name || (jobToAssign.customer as any)?.fullName || 'customer'}`);
       }
 
-      toast.success('Job assigned successfully');
       setAssignJobDialogOpen(false);
       
       // Show WhatsApp dialog

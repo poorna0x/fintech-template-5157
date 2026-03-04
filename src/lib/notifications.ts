@@ -107,8 +107,8 @@ export const showToastNotification = (data: NotificationData): void => {
       case 'job_assigned':
         return {
           type: 'success' as const,
-          title: 'New Job Assigned!',
-          description: data.message
+          title: data.message,
+          description: undefined
         };
       case 'job_completed':
         return {
@@ -194,7 +194,7 @@ export const createJobAssignedNotification = (
 ): NotificationData => ({
   type: 'job_assigned',
   title: 'New Job Assigned',
-  message: `Job #${jobNumber} assigned to ${technicianName} for ${customerName}`,
+  message: `Job assigned to ${technicianName} for ${customerName}`,
   jobId,
   technicianId,
   customerName,
