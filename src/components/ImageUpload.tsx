@@ -276,12 +276,12 @@ const ImageUpload: React.FC<ImageUploadProps> = ({
               name: file.name,
             });
 
-            toast.success('Image uploaded', { duration: 2000 });
+            toast.success('Photo uploaded', { duration: 3000 });
 
           } catch (uploadError: any) {
             // Upload failed - photo is already saved in localStorage, so it's safe
-            // No toast needed - will retry automatically from local storage
             console.warn(`Upload failed for ${file.name}, but photo is saved locally:`, uploadError);
+            toast.error(`Upload failed for ${file.name}. You can try again or complete without it.`);
             // Photo remains in localStorage - will be retried automatically
           }
 

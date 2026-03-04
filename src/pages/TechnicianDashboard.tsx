@@ -373,6 +373,8 @@ const TechnicianDashboard = () => {
   const [isSubmittingJobCompletion, setIsSubmittingJobCompletion] = useState(false);
   const [isBillPhotosUploading, setIsBillPhotosUploading] = useState(false);
   const [isPaymentScreenshotUploading, setIsPaymentScreenshotUploading] = useState(false);
+  const [optionalCompletionPhotos, setOptionalCompletionPhotos] = useState<string[]>([]);
+  const [isOptionalCompletionPhotosUploading, setIsOptionalCompletionPhotosUploading] = useState(false);
 
   // Phone popup state
   const [phonePopupOpen, setPhonePopupOpen] = useState(false);
@@ -1896,6 +1898,7 @@ const TechnicianDashboard = () => {
       setBillAmount('');
       setBillPhotos([]);
       setPaymentPhotos([]);
+      setOptionalCompletionPhotos([]);
       // Set default AMC date to today
       const today = new Date().toISOString().split('T')[0];
       setAmcDateGiven(today);
@@ -2717,6 +2720,15 @@ const TechnicianDashboard = () => {
         setIsSubmittingJobCompletion(false);
         return;
       }
+
+      // Wait for optional completion photos (when job had zero photos) to finish uploading
+      const optionalUploaded = optionalCompletionPhotos.filter((u): u is string => !!u && typeof u === 'string' && (u.startsWith('http://') || u.startsWith('https://')));
+      const optionalNonUploaded = optionalCompletionPhotos.filter(u => u && typeof u === 'string' && !u.startsWith('http://') && !u.startsWith('https://'));
+      if (optionalNonUploaded.length > 0) {
+        toast.error(`Please wait for ${optionalNonUploaded.length} optional photo(s) to finish uploading before completing the job.`);
+        setIsSubmittingJobCompletion(false);
+        return;
+      }
       
       // Check payment screenshot if ONLINE payment
       console.log('📸 Payment screenshot check:', {
@@ -2961,6 +2973,14 @@ const TechnicianDashboard = () => {
           console.warn('⚠️ No photos to add to after_photos');
         }
 
+        // When job had zero photos and technician added optional photos, store in job.images
+        const optionalUploadedForSave = optionalCompletionPhotos.filter((u): u is string => !!u && typeof u === 'string' && (u.startsWith('http://') || u.startsWith('https://')));
+        if (optionalUploadedForSave.length > 0) {
+          const existingImages = Array.isArray(latestJobData?.images) ? latestJobData.images : [];
+          updateData.images = [...existingImages, ...optionalUploadedForSave];
+          console.log('✅ Added optional completion photos to job.images:', optionalUploadedForSave.length);
+        }
+
         // Add AMC info for reference (technician provides this, admin will create official AMC)
         // Only add if years > 0 (0 years means no AMC)
         const effectiveHasAMC = hasAMC === true && amcYears > 0;
@@ -3118,6 +3138,7 @@ const TechnicianDashboard = () => {
         setCompleteJobStep(1);
         setBillAmount('');
         setBillPhotos([]);
+        setOptionalCompletionPhotos([]);
         setAmcDateGiven(new Date().toISOString().split('T')[0]);
         setAmcEndDate('');
         setAmcYears(0);
@@ -3274,24 +3295,36 @@ const TechnicianDashboard = () => {
     });
   };
 
-  // Helper function to get all photos for a customer from all their jobs
+  // True when job has no existing photos (before, after, images) - used to show optional "Add photo" at top of dialog
+  const jobHasZeroExistingPhotos = useMemo(() => {
+    if (!selectedJobForComplete) return false;
+    const before = Array.isArray(selectedJobForComplete.before_photos || (selectedJobForComplete as any).beforePhotos) ? (selectedJobForComplete.before_photos || (selectedJobForComplete as any).beforePhotos) : [];
+    const after = Array.isArray(selectedJobForComplete.after_photos || (selectedJobForComplete as any).afterPhotos) ? (selectedJobForComplete.after_photos || (selectedJobForComplete as any).afterPhotos) : [];
+    const images = Array.isArray((selectedJobForComplete as any).images) ? (selectedJobForComplete as any).images : [];
+    const existing = [...extractPhotoUrls(before), ...extractPhotoUrls(after), ...extractPhotoUrls(images)];
+    return existing.length === 0;
+  }, [selectedJobForComplete]);
+
+  // Helper function to get all photos for a customer (from jobs + customer-level photos without a job)
   const getAllCustomerPhotos = async (customerId: string): Promise<string[]> => {
     try {
       setLoadingCustomerPhotos(true);
       
-      // First, check if customerId is customer_id (string) or UUID
-      // If it's customer_id, we need to get the customer's UUID first
+      // First, check if customerId is customer_id (string) or UUID - get customer for UUID and for customer.photos
       let customerUuid = customerId;
+      let customerRecord: any = null;
       
-      // Check if it looks like a customer_id (starts with 'C' and has numbers) or is a UUID
       if (customerId && customerId.startsWith('C') && customerId.length < 36) {
-        // It's a customer_id, need to get UUID
         const { data: customer, error: customerError } = await db.customers.getByCustomerId(customerId);
         if (customerError || !customer) {
           console.error('Error fetching customer:', customerError);
           return [];
         }
         customerUuid = customer.id;
+        customerRecord = customer;
+      } else {
+        const { data: customer, error: customerError } = await db.customers.getById(customerId);
+        if (!customerError && customer) customerRecord = customer;
       }
       
       const { data: customerJobs, error } = await db.jobs.getByCustomerId(customerUuid);
@@ -3443,6 +3476,17 @@ const TechnicianDashboard = () => {
               // Ignore parse errors
               console.error('Error parsing requirements:', e);
             }
+          }
+        });
+      }
+      
+      // Add customer-level photos (photos added without a job) - show at top (high timestamp)
+      if (customerRecord && Array.isArray((customerRecord as any).photos) && (customerRecord as any).photos.length > 0) {
+        const customerPhotos = extractPhotoUrls((customerRecord as any).photos);
+        const noJobTimestamp = Date.now(); // Show as recent
+        customerPhotos.forEach(url => {
+          if (!photoMap.has(url) || photoMap.get(url)! < noJobTimestamp) {
+            photoMap.set(url, noJobTimestamp);
           }
         });
       }
@@ -5717,6 +5761,7 @@ const TechnicianDashboard = () => {
             setCompleteJobStep(1);
             setBillAmount('');
             setBillPhotos([]);
+            setOptionalCompletionPhotos([]);
             const today = new Date().toISOString().split('T')[0];
             setAmcDateGiven(today);
             setAmcEndDate('');
@@ -5758,7 +5803,7 @@ const TechnicianDashboard = () => {
             {/* Scrollable Content - iOS Safari fix for scrolling */}
             <div 
               id="complete-job-scroll-container"
-              className="flex-1 overflow-y-auto px-6 py-4"
+              className="flex-1 overflow-y-auto px-4 sm:px-6 py-3 sm:py-4"
               style={{
                 WebkitOverflowScrolling: 'touch',
                 touchAction: 'pan-y',
@@ -5768,8 +5813,39 @@ const TechnicianDashboard = () => {
               }}
             >
               {selectedJobForComplete && (
-                <div className="p-3 bg-gray-50 rounded-lg mb-4">
-                  <div className="text-sm font-medium text-gray-900">
+                <>
+                  {/* Optional "Add photo" - separate from steps, shown when job has no existing photos */}
+                  {jobHasZeroExistingPhotos && (
+                    <div className="rounded-xl border border-amber-200 bg-amber-50/90 p-3 sm:p-4 mb-4 w-full max-w-full">
+                      <div className="flex flex-col gap-2 sm:gap-3">
+                        <div className="flex items-start gap-2">
+                          <Camera className="w-4 h-4 sm:w-5 sm:h-5 text-amber-700 flex-shrink-0 mt-0.5" />
+                          <div>
+                            <p className="text-xs sm:text-sm font-medium text-amber-900 leading-snug">
+                              This job has no photos yet
+                            </p>
+                          </div>
+                        </div>
+                        <div className="min-w-0 w-full">
+                          <ImageUpload
+                            onImagesChange={(images) => setOptionalCompletionPhotos(images)}
+                            initialImages={optionalCompletionPhotos}
+                            onUploadStateChange={setIsOptionalCompletionPhotosUploading}
+                            maxImages={5}
+                            folder="job-photos"
+                            title=""
+                            description=""
+                            maxWidth={1024}
+                            quality={0.5}
+                            aggressiveCompression={true}
+                          />
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                <div className="p-3 sm:p-4 bg-gray-50 rounded-lg mb-4">
+                  <div className="text-xs sm:text-sm font-medium text-gray-900">
                     Job: {(selectedJobForComplete as any).job_number || selectedJobForComplete.jobNumber}
                   </div>
                   <div className="text-sm text-gray-600">
@@ -5784,6 +5860,7 @@ const TechnicianDashboard = () => {
                     }
                   </div>
                 </div>
+                </>
               )}
               
               {/* Step Indicator - Fixed horizontal scroll and border clipping */}
@@ -6611,6 +6688,7 @@ const TechnicianDashboard = () => {
                     setCompleteJobStep(1);
                     setBillAmount('');
                     setBillPhotos([]);
+                    setOptionalCompletionPhotos([]);
                     const today = new Date().toISOString().split('T')[0];
                     setAmcDateGiven(today);
                     setAmcEndDate('');
@@ -6683,7 +6761,7 @@ const TechnicianDashboard = () => {
                 disabled={
                   isSubmittingJobCompletion ||
                   // Only check upload states on final step (step 6) - allow proceeding on steps 2 and 5
-                  (completeJobStep === 6 && (isBillPhotosUploading || isPaymentScreenshotUploading)) ||
+                  (completeJobStep === 6 && (isBillPhotosUploading || isPaymentScreenshotUploading || isOptionalCompletionPhotosUploading)) ||
                   // Step 6 validation: Raw water TDS required for RO jobs
                   (completeJobStep === 6 && !isSoftenerService() && !rawWaterTds.trim()) ||
                   // Step 4 validation: only require payment mode if bill amount is not zero
@@ -6693,10 +6771,10 @@ const TechnicianDashboard = () => {
                   (completeJobStep === 7 && otpInput.join('').length !== 4)
                 }
               >
-                {isSubmittingJobCompletion || (completeJobStep === 6 && (isBillPhotosUploading || isPaymentScreenshotUploading)) ? (
+                {isSubmittingJobCompletion || (completeJobStep === 6 && (isBillPhotosUploading || isPaymentScreenshotUploading || isOptionalCompletionPhotosUploading)) ? (
                   <>
                     <RefreshCw className="w-4 h-4 mr-2 animate-spin" />
-                    {completeJobStep === 6 && (isBillPhotosUploading || isPaymentScreenshotUploading)
+                    {completeJobStep === 6 && (isBillPhotosUploading || isPaymentScreenshotUploading || isOptionalCompletionPhotosUploading)
                       ? 'Waiting for uploads...' 
                       : completeJobStep === 6 
                         ? 'Submitting...' 
