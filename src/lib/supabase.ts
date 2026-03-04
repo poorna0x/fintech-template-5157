@@ -1691,14 +1691,14 @@ export const db = {
       if (dryRun) console.log('🔵 [DRY RUN] AMC service job creation preview...');
       else if (isDev) console.log('🔵 Starting AMC service job creation...');
 
-      // Throttle: run at most once per hour on refresh to avoid heavy work every time (admin mount/refresh)
-      const AMC_THROTTLE_MS = 60 * 60 * 1000; // 1 hour
+      // Throttle: run at most once per 6 hours on refresh to avoid heavy work every time (admin mount/refresh)
+      const AMC_THROTTLE_MS = 6 * 60 * 60 * 1000; // 6 hours
       if (!dryRun && typeof window !== 'undefined') {
         const lastRun = window.localStorage.getItem('amc_service_jobs_last_run');
         if (lastRun) {
           const elapsed = Date.now() - parseInt(lastRun, 10);
           if (!Number.isNaN(elapsed) && elapsed < AMC_THROTTLE_MS) {
-            if (isDev) console.log('ℹ️ AMC job creation skipped (throttled, last run < 1h ago)');
+            if (isDev) console.log('ℹ️ AMC job creation skipped (throttled, last run < 6h ago)');
             return { data: [], error: null, created: 0 };
           }
         }

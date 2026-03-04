@@ -40,8 +40,8 @@ export function TodayRemindersPopup() {
     });
   }, []);
 
-  // Show popup whenever there are reminders for today. Cache result 5 min to avoid refetch on every refresh.
-  const REMINDERS_CACHE_TTL_MS = 5 * 60 * 1000; // 5 min
+  // Show popup whenever there are reminders for today. Cache result 6h to avoid refetch on every refresh.
+  const REMINDERS_CACHE_TTL_MS = 6 * 60 * 60 * 1000; // 6 hours
   const REMINDERS_CACHE_KEY = 'reminders_today_cache';
 
   useEffect(() => {
