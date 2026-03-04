@@ -741,6 +741,49 @@ export const db = {
       return { data: data || [], error };
     },
 
+    /**
+     * Analytics in date range: fetches only jobs in range (DB-side filter). Much less egress than getForAnalytics + JS filter.
+     * - Completed jobs: completion date (end_time or completed_at) in [startDate, endDate]
+     * - Other jobs: created_at in [startDate, endDate]
+     */
+    async getForAnalyticsInRange(startDate: Date, endDate: Date) {
+      const cols = [
+        'id', 'status', 'created_at', 'completed_at', 'end_time', 'requirements',
+        'assigned_technician_id', 'assigned_by', 'payment_amount', 'actual_cost', 'lead_cost', 'parts_cost_total',
+        'service_type', 'service_sub_type', 'payment_method', 'job_number'
+      ].join(', ');
+      const startISO = startDate.toISOString();
+      const endISO = endDate.toISOString();
+
+      const [completedRes, otherRes] = await Promise.all([
+        supabase
+          .from('jobs')
+          .select(cols)
+          .eq('status', 'COMPLETED')
+          .or(`and(end_time.gte.${startISO},end_time.lte.${endISO}),and(end_time.is.null,completed_at.gte.${startISO},completed_at.lte.${endISO})`)
+          .order('created_at', { ascending: false }),
+        supabase
+          .from('jobs')
+          .select(cols)
+          .neq('status', 'COMPLETED')
+          .gte('created_at', startISO)
+          .lte('created_at', endISO)
+          .order('created_at', { ascending: false })
+      ]);
+
+      if (completedRes.error) return { data: [], error: completedRes.error };
+      if (otherRes.error) return { data: [], error: otherRes.error };
+
+      const completed = completedRes.data || [];
+      const other = otherRes.data || [];
+      const combined = [...completed, ...other].sort((a: any, b: any) => {
+        const aAt = a.created_at || '';
+        const bAt = b.created_at || '';
+        return bAt.localeCompare(aAt);
+      });
+      return { data: combined, error: null };
+    },
+
     // Get ongoing jobs (PENDING, ASSIGNED, IN_PROGRESS). Limit 100 to cap egress if count grows.
     async getOngoing(limit: number = 100) {
       const { data, error } = await supabase

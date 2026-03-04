@@ -349,44 +349,33 @@ const Analytics = () => {
         }
       }
       
-      // OPTIMIZATION: Fetch only columns needed for analytics (no photos/address) – exact same aggregates, lower egress
-      const { data: jobsData, error: jobsError } = await db.jobs.getForAnalytics(5000);
-      if (jobsError || !jobsData) {
-        console.error('Error loading jobs for detailed analytics:', jobsError);
-        setAnalytics(baseData);
-        return;
-      }
-      
-      let allJobs = Array.isArray(jobsData) ? jobsData : [];
-      
-      // Filter jobs by date range based on their status
-      // - Completed jobs: filter by completion date (when they were finished)
-      // - Other jobs: filter by creation date (when they were created)
+      // OPTIMIZATION: When date range exists, fetch only jobs in range (DB-side filter = less egress). Else fetch capped list.
       let jobs: any[] = [];
       let completedJobs: any[] = [];
-      
+
       if (startDate && endDate) {
-        // First, get all completed jobs filtered by completion date
-        completedJobs = allJobs.filter((j: any) => {
-          if (!j || j.status !== 'COMPLETED') return false;
-          const completedDate = j.end_time || j.completed_at || j.completedAt;
-          return isDateInRange(completedDate, startDate, endDate);
-        });
-        
-        // Then, get all other jobs filtered by creation date
-        const otherJobs = allJobs.filter((j: any) => {
-          if (!j || j.status === 'COMPLETED') return false;
-          const jobDate = j.created_at || j.createdAt;
-          return isDateInRange(jobDate, startDate, endDate);
-        });
-        
-        // Combine completed jobs (by completion date) and other jobs (by creation date)
-        jobs = [...completedJobs, ...otherJobs];
+        const { data: jobsInRange, error: jobsError } = await db.jobs.getForAnalyticsInRange(startDate, endDate);
+        if (jobsError || !jobsInRange) {
+          console.error('Error loading jobs for detailed analytics:', jobsError);
+          setAnalytics(baseData);
+          return;
+        }
+        const allInRange = Array.isArray(jobsInRange) ? jobsInRange : [];
+        completedJobs = allInRange.filter((j: any) => j && j.status === 'COMPLETED');
+        jobs = allInRange;
       } else {
-        // No date filter - get all jobs
+        const { data: jobsData, error: jobsError } = await db.jobs.getForAnalytics(5000);
+        if (jobsError || !jobsData) {
+          console.error('Error loading jobs for detailed analytics:', jobsError);
+          setAnalytics(baseData);
+          return;
+        }
+        const allJobs = Array.isArray(jobsData) ? jobsData : [];
         completedJobs = allJobs.filter((j: any) => j && j.status === 'COMPLETED');
         jobs = allJobs;
       }
+
+      const allJobs = jobs;
 
       // Spare parts cost: sum denormalized parts_cost_total from completed jobs in period
       totalSparePartsCost = completedJobs.reduce((sum: number, j: any) => sum + (Number(j.parts_cost_total) || 0), 0);
