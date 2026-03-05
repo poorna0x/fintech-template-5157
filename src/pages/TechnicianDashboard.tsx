@@ -931,7 +931,9 @@ const TechnicianDashboard = () => {
     };
   }, [user]);
 
-  // Single realtime channel with server-side filter (assigned_technician_id=me) to cut list_changes WAL load
+  // Realtime: listen to ALL job UPDATEs (no filter) so we receive assign, unassign, and team_members changes.
+  // Handler uses only payload.new: if job should not be in list (unassigned, removed from team, completed) → remove;
+  // if should be in list but not in list → add; if in list → update. (Restored from pre-81f2946 behavior.)
   useEffect(() => {
     if (!user?.technicianId) return;
 
@@ -942,6 +944,14 @@ const TechnicianDashboard = () => {
     const maxRetries = 3;
     const retryDelay = 2000;
     const isMounted = { current: true };
+
+    const isJobRelevantToMe = (job: any) => {
+      if (!job) return false;
+      if (job.assigned_technician_id === technicianId) return true;
+      const teamMembers = job.team_members || [];
+      if (Array.isArray(teamMembers) && teamMembers.includes(technicianId)) return true;
+      return false;
+    };
 
     const setupSubscription = () => {
       if (!isMounted.current) return;
@@ -960,12 +970,30 @@ const TechnicianDashboard = () => {
             event: 'UPDATE',
             schema: 'public',
             table: 'jobs',
-            filter: `assigned_technician_id=eq.${technicianId}`,
+            // No filter - receive all job updates so unassign (new row has assigned_technician_id !== me) is handled
           },
         async (payload) => {
           if (!isMounted.current) return;
           const updatedJob = payload.new as any;
           if (processingJobsRef.current.has(updatedJob.id)) return;
+
+          const shouldBeInList = isJobRelevantToMe(updatedJob);
+          const isCompleted = updatedJob.status === 'COMPLETED';
+          const currentJobsState = jobsRef.current;
+          const jobInList = currentJobsState.find((j) => j.id === updatedJob.id);
+          const isInList = !!jobInList;
+
+          // Case 1: Job should NOT be in list (unassigned, removed from team, or completed)
+          if (!shouldBeInList || isCompleted) {
+            if (isInList) {
+              setJobs((prev) => {
+                const filtered = prev.filter((j) => j.id !== updatedJob.id);
+                jobsRef.current = filtered;
+                return filtered;
+              });
+            }
+            return;
+          }
 
           processingJobsRef.current.add(updatedJob.id);
           try {
@@ -975,17 +1003,8 @@ const TechnicianDashboard = () => {
               processingJobsRef.current.delete(updatedJob.id);
               return;
             }
-            const currentJobsState = jobsRef.current;
-            const jobInList = currentJobsState.find((j) => j.id === updatedJob.id);
-            if (updatedJob.status === 'COMPLETED') {
-              if (jobInList) {
-                setJobs((prev) => {
-                  const filtered = prev.filter((j) => j.id !== updatedJob.id);
-                  jobsRef.current = filtered;
-                  return filtered;
-                });
-              }
-            } else if (!jobInList) {
+            // Case 2: Job should be in list but isn't - add it
+            if (!isInList) {
               setJobs((prev) => {
                 if (prev.some((j) => j.id === fullJob.id)) return prev;
                 const next = [fullJob, ...prev];
@@ -993,6 +1012,7 @@ const TechnicianDashboard = () => {
                 return next;
               });
             } else {
+              // Case 3: Job is in list and should be - update it
               setJobs((prev) => {
                 const idx = prev.findIndex((j) => j.id === fullJob.id);
                 if (idx < 0) return prev;
@@ -1337,11 +1357,11 @@ const TechnicianDashboard = () => {
     };
   }, [user?.technicianId]);
 
-  // Polling: 5s when realtime is down; 60s when realtime is up (sync team_members + unassignments; less egress when realtime connected)
+  // Polling: 5s when realtime is down; 30s when realtime is up (sync team_members; realtime handles assign/unassign with no filter)
   useEffect(() => {
     if (!user?.technicianId) return;
 
-    const intervalMs = realtimeConnected ? 60000 : 5000;
+    const intervalMs = realtimeConnected ? 30000 : 5000;
     const pollInterval = setInterval(() => loadAssignedJobs(), intervalMs);
     return () => clearInterval(pollInterval);
   }, [user?.technicianId, realtimeConnected]);
