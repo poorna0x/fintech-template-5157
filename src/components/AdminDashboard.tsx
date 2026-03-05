@@ -8505,7 +8505,7 @@ const AdminDashboard = () => {
                                                 <div className="text-xs text-gray-500">Lead Source</div>
                                                 <div className="font-medium text-gray-900 break-words">{ls}</div>
                                                 {isWebsite && bookedAt && (
-                                                  <div className="text-xs text-gray-500 mt-0.5">Booked at: {new Date(bookedAt).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })}</div>
+                                                  <div className="text-xs text-gray-500 mt-0.5">Booked at: {new Date(bookedAt).toLocaleString('en-IN', { day: 'numeric', month: 'short', year: 'numeric', hour: 'numeric', minute: '2-digit', hour12: true })}</div>
                                                 )}
                                               </div>
                                             </div>
@@ -8560,7 +8560,7 @@ const AdminDashboard = () => {
                                         const bookedAt = (job as any).created_at || (job as any).createdAt;
                                         if (bookedAt) {
                                           const d = new Date(bookedAt);
-                                          const formatted = d.toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' });
+                                          const formatted = d.toLocaleString('en-IN', { day: 'numeric', month: 'short', year: 'numeric', hour: 'numeric', minute: '2-digit', hour12: true });
                                           return (
                                             <div className="flex items-start gap-2 sm:items-center">
                                               <Tag className="w-4 h-4 text-gray-400 flex-shrink-0 mt-0.5 sm:mt-0" />

@@ -7644,7 +7644,7 @@ const TechnicianDashboard = () => {
                                 if (leadSource === 'Website') {
                                   const bookedAt = (job as any).created_at || (job as any).createdAt;
                                   if (bookedAt) {
-                                    const formatted = new Date(bookedAt).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' });
+                                    const formatted = new Date(bookedAt).toLocaleString('en-IN', { day: 'numeric', month: 'short', year: 'numeric', hour: 'numeric', minute: '2-digit', hour12: true });
                                     return (
                                       <div className="flex items-center gap-2">
                                         <span className="text-sm font-medium text-gray-700 w-32">Booked at:</span>
