@@ -2,7 +2,6 @@ import React, { useState, useRef, useEffect, useCallback } from 'react';
 import Header from '@/components/Header';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { DatePicker } from '@/components/ui/date-picker';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -1492,8 +1491,24 @@ const Booking: React.FC = () => {
         payment_status: 'PENDING' as const,
       };
 
-      const { data: job, error: jobError } = await db.jobs.create(jobData as any);
-      
+      // Retry once on connection-like failures (transient network/Supabase issues)
+      const isConnectionLikeError = (err: any) => {
+        const msg = (err?.message || String(err)).toLowerCase();
+        return msg.includes('failed to fetch') || msg.includes('network') || msg.includes('connect') || msg.includes('err_name_not_resolved') || msg.includes('unavailable');
+      };
+      let job: any = null;
+      let jobError: any = null;
+      for (let attempt = 0; attempt < 2; attempt++) {
+        const result = await db.jobs.create(jobData as any);
+        job = result.data;
+        jobError = result.error;
+        if (!jobError) break;
+        if (attempt === 0 && isConnectionLikeError(jobError)) {
+          await new Promise((r) => setTimeout(r, 1500));
+          continue;
+        }
+        break;
+      }
       if (jobError) {
         throw new Error(jobError.message);
       }
@@ -2240,11 +2255,22 @@ const Booking: React.FC = () => {
             <div className="space-y-4">
               <div>
                 <Label htmlFor="serviceDate">Service Date *</Label>
-                <DatePicker
-                  value={formData.serviceDate || undefined}
-                  onChange={(v) => v && handleInputChange('serviceDate', v)}
-                  placeholder="Pick date"
-                  className="mt-1"
+                <Input
+                  id="serviceDate"
+                  type="date"
+                  value={formData.serviceDate}
+                  onChange={(e) => handleInputChange('serviceDate', e.target.value)}
+                  min={new Date().toISOString().split('T')[0]}
+                  className={`mt-1 text-left ${
+                    showValidation && !formData.serviceDate
+                      ? 'border-2 border-black dark:border-white'
+                      : ''
+                  }`}
+                  style={{
+                    WebkitAppearance: 'none',
+                    appearance: 'none',
+                    fontSize: '16px', // Prevents zoom on iOS
+                  }}
                 />
               </div>
               
