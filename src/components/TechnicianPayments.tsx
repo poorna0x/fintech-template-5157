@@ -281,6 +281,27 @@ const TechnicianPayments = () => {
   const [businessExpensesViewed, setBusinessExpensesViewed] = useState(false);
   const [loadingBusinessExpenses, setLoadingBusinessExpenses] = useState(false);
 
+  // Other expenses (same pattern as business expenses - load only when View clicked)
+  const [otherExpenses, setOtherExpenses] = useState<Array<{
+    id: string;
+    amount: number;
+    description: string;
+    expense_date: string;
+    category?: string;
+    notes?: string;
+  }>>([]);
+  const [otherExpenseDialogOpen, setOtherExpenseDialogOpen] = useState(false);
+  const [editingOtherExpense, setEditingOtherExpense] = useState<any>(null);
+  const [otherExpenseFormData, setOtherExpenseFormData] = useState({
+    amount: '',
+    description: '',
+    expense_date: new Date().toISOString().split('T')[0],
+    category: 'OTHER',
+    notes: ''
+  });
+  const [otherExpensesViewed, setOtherExpensesViewed] = useState(false);
+  const [loadingOtherExpenses, setLoadingOtherExpenses] = useState(false);
+
   /** Refetch only business expenses (e.g. after add/edit/delete or when user clicks View). */
   const loadBusinessExpensesOnly = useCallback(async () => {
     const { startDate, endDate } = getMonthlyDateRange();
@@ -297,6 +318,23 @@ const TechnicianPayments = () => {
     await loadBusinessExpensesOnly();
     setLoadingBusinessExpenses(false);
   }, [loadBusinessExpensesOnly]);
+
+  /** Refetch only other expenses. */
+  const loadOtherExpensesOnly = useCallback(async () => {
+    const { startDate, endDate } = getMonthlyDateRange();
+    const periodStartStr = startDate.toISOString().split('T')[0];
+    const periodEndStr = endDate.toISOString().split('T')[0];
+    const { data, error } = await db.otherExpenses.getAll(periodStartStr, periodEndStr);
+    if (!error) setOtherExpenses(data || []);
+  }, [getMonthlyDateRange]);
+
+  /** Load other expenses when user clicks View. */
+  const handleViewOtherExpenses = useCallback(async () => {
+    setOtherExpensesViewed(true);
+    setLoadingOtherExpenses(true);
+    await loadOtherExpensesOnly();
+    setLoadingOtherExpenses(false);
+  }, [loadOtherExpensesOnly]);
 
   /** Heavy load: salary breakdowns. Only call when user needs to see the table (lazy) or after period change if already loaded. */
   const loadSalaryBreakdownData = useCallback(async (showLoading: boolean = true) => {
@@ -535,6 +573,16 @@ const TechnicianPayments = () => {
     loadBusinessExpensesOnly().then(() => setLoadingBusinessExpenses(false));
   }, [selectedPeriod, selectedPastMonth, businessExpensesViewed, loadBusinessExpensesOnly]);
 
+  const prevOtherPeriodRef = useRef({ selectedPeriod, selectedPastMonth });
+  useEffect(() => {
+    if (!otherExpensesViewed) return;
+    const same = prevOtherPeriodRef.current.selectedPeriod === selectedPeriod && prevOtherPeriodRef.current.selectedPastMonth === selectedPastMonth;
+    prevOtherPeriodRef.current = { selectedPeriod, selectedPastMonth };
+    if (same) return;
+    setLoadingOtherExpenses(true);
+    loadOtherExpensesOnly().then(() => setLoadingOtherExpenses(false));
+  }, [selectedPeriod, selectedPastMonth, otherExpensesViewed, loadOtherExpensesOnly]);
+
   const prevPeriodRef = useRef({ selectedPeriod, selectedPastMonth });
   useEffect(() => {
     if (!salaryDataLoaded) return;
@@ -701,6 +749,72 @@ const TechnicianPayments = () => {
       if (businessExpensesViewed) await loadBusinessExpensesOnly();
     } catch (error: any) {
       toast.error('Failed to delete business expense: ' + error.message);
+    }
+  };
+
+  // Other expense handlers
+  const handleAddOtherExpense = () => {
+    setEditingOtherExpense(null);
+    setOtherExpenseFormData({
+      amount: '',
+      description: '',
+      expense_date: new Date().toISOString().split('T')[0],
+      category: 'OTHER',
+      notes: ''
+    });
+    setOtherExpenseDialogOpen(true);
+  };
+
+  const handleEditOtherExpense = (expense: any) => {
+    setEditingOtherExpense(expense);
+    setOtherExpenseFormData({
+      amount: expense.amount.toString(),
+      description: expense.description,
+      expense_date: expense.expense_date.split('T')[0],
+      category: expense.category || 'OTHER',
+      notes: expense.notes || ''
+    });
+    setOtherExpenseDialogOpen(true);
+  };
+
+  const handleSaveOtherExpense = async () => {
+    try {
+      if (!otherExpenseFormData.amount || !otherExpenseFormData.description) {
+        toast.error('Please fill in all required fields');
+        return;
+      }
+      const expenseData = {
+        amount: parseFloat(otherExpenseFormData.amount),
+        description: otherExpenseFormData.description,
+        expense_date: otherExpenseFormData.expense_date,
+        category: otherExpenseFormData.category,
+        notes: otherExpenseFormData.notes || null
+      };
+      if (editingOtherExpense) {
+        const { error } = await db.otherExpenses.update(editingOtherExpense.id, expenseData);
+        if (error) throw error;
+        toast.success('Other expense updated');
+      } else {
+        const { error } = await db.otherExpenses.create(expenseData);
+        if (error) throw error;
+        toast.success('Other expense added');
+      }
+      setOtherExpenseDialogOpen(false);
+      if (otherExpensesViewed) await loadOtherExpensesOnly();
+    } catch (error: any) {
+      toast.error('Failed to save other expense: ' + error.message);
+    }
+  };
+
+  const handleDeleteOtherExpense = async (id: string) => {
+    if (!confirm('Are you sure you want to delete this other expense?')) return;
+    try {
+      const { error } = await db.otherExpenses.delete(id);
+      if (error) throw error;
+      toast.success('Other expense deleted');
+      if (otherExpensesViewed) await loadOtherExpensesOnly();
+    } catch (error: any) {
+      toast.error('Failed to delete other expense: ' + error.message);
     }
   };
 
@@ -3049,6 +3163,194 @@ const TechnicianPayments = () => {
               className="bg-red-600 hover:bg-red-700"
             >
               {editingBusinessExpense ? 'Update' : 'Add'} Expense
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Other Expenses Section - same style as Business Expenses, load only when user clicks View */}
+      <Card className="mt-8">
+        <CardHeader>
+          <div className="flex items-center justify-between">
+            <div>
+              <CardTitle className="flex items-center gap-2">
+                <TrendingDown className="w-5 h-5" />
+                Other Expenses
+              </CardTitle>
+              <CardDescription>
+                Track other / miscellaneous expenses (separate from business expenses)
+              </CardDescription>
+            </div>
+            <Button onClick={handleAddOtherExpense} size="sm" disabled={loading}>
+              <Plus className="w-4 h-4 mr-2" />
+              Add Expense
+            </Button>
+          </div>
+        </CardHeader>
+        <CardContent>
+          {!otherExpensesViewed ? (
+            <div className="flex flex-col items-center justify-center py-12 text-center">
+              <TrendingDown className="w-12 h-12 text-gray-400 mb-2" />
+              <p className="text-gray-600 font-medium">Other expenses not loaded</p>
+              <p className="text-sm text-gray-500 mt-1 mb-4">You can add expenses above without loading the list.</p>
+              <Button onClick={handleViewOtherExpenses} disabled={loadingOtherExpenses}>
+                <Eye className="w-4 h-4 mr-2" />
+                {loadingOtherExpenses ? 'Loading...' : 'View other expenses'}
+              </Button>
+            </div>
+          ) : loadingOtherExpenses ? (
+            <div className="flex items-center justify-center py-12">
+              <RefreshCw className="w-8 h-8 animate-spin text-gray-400" />
+              <span className="ml-2 text-gray-600">Loading other expenses...</span>
+            </div>
+          ) : otherExpenses.length === 0 ? (
+            <div className="text-center py-8 text-gray-500">
+              <TrendingDown className="w-12 h-12 mx-auto mb-2 text-gray-400" />
+              <p>No other expenses recorded yet.</p>
+            </div>
+          ) : (
+            <>
+              <div className="overflow-x-auto">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Date</TableHead>
+                      <TableHead>Description</TableHead>
+                      <TableHead>Category</TableHead>
+                      <TableHead className="text-right">Amount</TableHead>
+                      <TableHead className="text-right">Actions</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {otherExpenses.map((expense) => (
+                      <TableRow key={expense.id}>
+                        <TableCell>
+                          {new Date(expense.expense_date).toLocaleDateString('en-IN')}
+                        </TableCell>
+                        <TableCell className="font-medium">{expense.description}</TableCell>
+                        <TableCell>
+                          <Badge variant="outline">{expense.category || 'OTHER'}</Badge>
+                        </TableCell>
+                        <TableCell className="text-right font-semibold text-red-600">
+                          ₹ {formatCurrency(expense.amount)}
+                        </TableCell>
+                        <TableCell className="text-right">
+                          <div className="flex justify-end gap-2">
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => handleEditOtherExpense(expense)}
+                            >
+                              <Edit className="w-4 h-4" />
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => handleDeleteOtherExpense(expense.id)}
+                              className="text-red-600 hover:text-red-700"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </Button>
+                          </div>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
+              <div className="mt-4 pt-4 border-t">
+                <div className="flex justify-between items-center">
+                  <span className="font-semibold text-gray-700">Total Other Expenses:</span>
+                  <span className="text-xl font-bold text-red-600">
+                    ₹ {formatCurrency(otherExpenses.reduce((sum, e) => sum + e.amount, 0))}
+                  </span>
+                </div>
+              </div>
+            </>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* Other Expense Dialog */}
+      <Dialog open={otherExpenseDialogOpen} onOpenChange={setOtherExpenseDialogOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>
+              {editingOtherExpense ? 'Edit Other Expense' : 'Add Other Expense'}
+            </DialogTitle>
+            <DialogDescription>
+              Record an other / miscellaneous expense
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <div>
+              <Label htmlFor="other-amount">Amount *</Label>
+              <Input
+                id="other-amount"
+                type="number"
+                step="0.01"
+                value={otherExpenseFormData.amount}
+                onChange={(e) => setOtherExpenseFormData({ ...otherExpenseFormData, amount: e.target.value })}
+                placeholder="Enter amount"
+              />
+            </div>
+            <div>
+              <Label htmlFor="other-description">Description *</Label>
+              <Input
+                id="other-description"
+                value={otherExpenseFormData.description}
+                onChange={(e) => setOtherExpenseFormData({ ...otherExpenseFormData, description: e.target.value })}
+                placeholder="Enter description"
+              />
+            </div>
+            <div>
+              <Label htmlFor="other-expense_date">Date *</Label>
+              <DatePicker
+                value={otherExpenseFormData.expense_date || undefined}
+                onChange={(v) => v && setOtherExpenseFormData({ ...otherExpenseFormData, expense_date: v })}
+                placeholder="Pick date"
+                className="mt-1"
+              />
+            </div>
+            <div>
+              <Label htmlFor="other-category">Category</Label>
+              <Select
+                value={otherExpenseFormData.category}
+                onValueChange={(value) => setOtherExpenseFormData({ ...otherExpenseFormData, category: value })}
+              >
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="PERSONAL">Personal</SelectItem>
+                  <SelectItem value="TRAVEL">Travel</SelectItem>
+                  <SelectItem value="SUPPLIES">Supplies</SelectItem>
+                  <SelectItem value="MISC">Miscellaneous</SelectItem>
+                  <SelectItem value="OTHER">Other</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <Label htmlFor="other-notes">Notes</Label>
+              <Textarea
+                id="other-notes"
+                value={otherExpenseFormData.notes}
+                onChange={(e) => setOtherExpenseFormData({ ...otherExpenseFormData, notes: e.target.value })}
+                placeholder="Additional notes (optional)"
+                rows={3}
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setOtherExpenseDialogOpen(false)}>
+              Cancel
+            </Button>
+            <Button
+              onClick={handleSaveOtherExpense}
+              disabled={!otherExpenseFormData.amount || !otherExpenseFormData.description}
+              className="bg-red-600 hover:bg-red-700"
+            >
+              {editingOtherExpense ? 'Update' : 'Add'} Expense
             </Button>
           </DialogFooter>
         </DialogContent>

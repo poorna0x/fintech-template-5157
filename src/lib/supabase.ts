@@ -2354,6 +2354,49 @@ export const db = {
     }
   },
 
+  // Other expenses operations (same pattern as business expenses)
+  otherExpenses: {
+    async getAll(startDate?: string, endDate?: string) {
+      let query = supabase
+        .from('other_expenses')
+        .select('*')
+        .order('expense_date', { ascending: false });
+
+      if (startDate) {
+        query = query.gte('expense_date', startDate);
+      }
+      if (endDate) {
+        query = query.lte('expense_date', endDate);
+      }
+      const { data, error } = await query;
+      return { data, error };
+    },
+    async create(expense: any) {
+      const { data, error } = await supabase
+        .from('other_expenses')
+        .insert(expense)
+        .select()
+        .single();
+      return { data, error };
+    },
+    async update(id: string, updates: any) {
+      const { data, error } = await supabase
+        .from('other_expenses')
+        .update(updates)
+        .eq('id', id)
+        .select()
+        .single();
+      return { data, error };
+    },
+    async delete(id: string) {
+      const { error } = await supabase
+        .from('other_expenses')
+        .delete()
+        .eq('id', id);
+      return { error };
+    }
+  },
+
   // Stats operations
   stats: {
     async getBillingByCustomer() {
