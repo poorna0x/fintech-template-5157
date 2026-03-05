@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Button } from '@/components/ui/button';
@@ -227,11 +227,12 @@ const TechnicianPayments = () => {
   const [editingJobCommission, setEditingJobCommission] = useState<{jobId: string; commissionPercentage: number} | null>(null);
   const [editingJobAmount, setEditingJobAmount] = useState<{jobId: string; amount: number} | null>(null);
 
-  useEffect(() => {
-    loadData();
-  }, [selectedPeriod, selectedPastMonth]);
+  // Lazy load: salary breakdown only when needed (not when only adding business/technician expense)
+  const [salaryDataLoaded, setSalaryDataLoaded] = useState(false);
+  const [loadingSalaryBreakdowns, setLoadingSalaryBreakdowns] = useState(false);
+  const salarySectionRef = useRef<HTMLDivElement>(null);
 
-  const getMonthlyDateRange = () => {
+  const getMonthlyDateRange = useCallback(() => {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
     
@@ -239,275 +240,171 @@ const TechnicianPayments = () => {
     let endDate: Date;
     
     if (selectedPeriod === 'pastMonth') {
-      // Past month: 1st to last day of selected month (paid on 10th of next month)
       const [year, month] = selectedPastMonth.split('-').map(Number);
-      const selectedMonthIndex = month - 1; // JavaScript months are 0-indexed
-      
-      // Start: 1st of selected month
+      const selectedMonthIndex = month - 1;
       startDate = new Date(year, selectedMonthIndex, 1, 0, 0, 0, 0);
-      
-      // End: Last day of selected month (30th or 31st)
-      endDate = new Date(year, selectedMonthIndex + 1, 0, 23, 59, 59, 999); // Day 0 = last day of previous month
+      endDate = new Date(year, selectedMonthIndex + 1, 0, 23, 59, 59, 999);
     } else {
-      // Current period: Always from 1st to end of current month
       const currentMonth = today.getMonth();
       const currentYear = today.getFullYear();
-      
-      // Start: 1st of current month
       startDate = new Date(currentYear, currentMonth, 1, 0, 0, 0, 0);
-      
-      // End: Last day of current month (30th or 31st)
       endDate = new Date(currentYear, currentMonth + 1, 0, 23, 59, 59, 999);
     }
     
     return { startDate, endDate };
+  }, [selectedPeriod, selectedPastMonth]);
+
+  const formatDateString = (date: Date): string => {
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const day = String(date.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
   };
 
-
-  const loadData = async (showLoading: boolean = true) => {
+  /** Minimal initial load: only technicians + period. No business expenses or salary data. */
+  const loadTechniciansOnly = useCallback(async () => {
     try {
-      if (showLoading) {
-        setLoading(true);
-      }
-      
-      // OPTIMIZATION: Limit technicians fetch
-      const { data: techsData, error: techsError } = await db.technicians.getList(100);
-      if (techsError) throw techsError;
-      setTechnicians(techsData || []);
-
-      // Get monthly date range based on selected period
+      setLoading(true);
       const { startDate, endDate } = getMonthlyDateRange();
-      
-      // Store commission period for display
       setCommissionPeriod({ start: startDate, end: endDate });
+      const techsResult = await db.technicians.getList(100);
+      if (techsResult.error) throw techsResult.error;
+      setTechnicians(techsResult.data || []);
+    } catch (error: any) {
+      console.error('Error loading initial data:', error);
+      toast.error('Failed to load: ' + error.message);
+    } finally {
+      setLoading(false);
+    }
+  }, [getMonthlyDateRange]);
 
-      // Load payments for selected period
-      const { data: paymentsData, error: paymentsError } = await supabase
-        .from('technician_payments')
-        .select(`
-          *,
-          technician:technicians(
-            id,
-            full_name,
-            employee_id
-          ),
-          job:jobs(
-            id,
-            job_number
-          )
-        `)
-        .gte('created_at', startDate.toISOString())
-        .lte('created_at', endDate.toISOString());
-      
-      if (paymentsError) throw paymentsError;
+  const [businessExpensesViewed, setBusinessExpensesViewed] = useState(false);
+  const [loadingBusinessExpenses, setLoadingBusinessExpenses] = useState(false);
 
-      // Load expenses, advances, and extra commissions for all technicians
-      const { data: expensesData, error: expensesError } = await db.technicianExpenses.getAll();
-      if (expensesError) throw expensesError;
+  /** Refetch only business expenses (e.g. after add/edit/delete or when user clicks View). */
+  const loadBusinessExpensesOnly = useCallback(async () => {
+    const { startDate, endDate } = getMonthlyDateRange();
+    const periodStartStr = startDate.toISOString().split('T')[0];
+    const periodEndStr = endDate.toISOString().split('T')[0];
+    const { data, error } = await db.businessExpenses.getAll(periodStartStr, periodEndStr);
+    if (!error) setBusinessExpenses(data || []);
+  }, [getMonthlyDateRange]);
 
-      const { data: advancesData, error: advancesError } = await db.technicianAdvances.getAll();
-      if (advancesError) throw advancesError;
+  /** Load business expenses and mark section as viewed. Call when user clicks "View" on business expenses. */
+  const handleViewBusinessExpenses = useCallback(async () => {
+    setBusinessExpensesViewed(true);
+    setLoadingBusinessExpenses(true);
+    await loadBusinessExpensesOnly();
+    setLoadingBusinessExpenses(false);
+  }, [loadBusinessExpensesOnly]);
 
-      const { data: extraCommissionsData, error: extraCommissionsError } = await db.technicianExtraCommissions.getAll();
-      if (extraCommissionsError) {
-        console.error('❌ Error loading extra commissions:', extraCommissionsError);
-        throw extraCommissionsError;
-      }
-      console.log('📊 Loaded Extra Commissions:', extraCommissionsData?.length || 0, 'records');
+  /** Heavy load: salary breakdowns. Only call when user needs to see the table (lazy) or after period change if already loaded. */
+  const loadSalaryBreakdownData = useCallback(async (showLoading: boolean = true) => {
+    const techs = technicians;
+    if (!techs.length) return;
+    try {
+      if (showLoading) setLoadingSalaryBreakdowns(true);
+      const { startDate, endDate } = getMonthlyDateRange();
+      setCommissionPeriod({ start: startDate, end: endDate });
+      const periodStartStr = formatDateString(startDate);
+      const periodEndStr = formatDateString(endDate);
 
-      // Load business expenses
-      const { data: businessExpensesData, error: businessExpensesError } = await db.businessExpenses.getAll(
-        startDate.toISOString().split('T')[0],
-        endDate.toISOString().split('T')[0]
-      );
-      if (businessExpensesError) {
-        console.error('❌ Error loading business expenses:', businessExpensesError);
-        // Don't throw - business expenses are optional
-      } else {
-        setBusinessExpenses(businessExpensesData || []);
-      }
-      if (extraCommissionsData && extraCommissionsData.length > 0) {
-        console.log('📋 Extra Commissions Details:', extraCommissionsData.map((ec: any) => ({
-          id: ec.id,
-          technician_id: ec.technician_id,
-          amount: ec.amount,
-          description: ec.description,
-          date: ec.commission_date
-        })));
-        // Check for specific amount (₹60) to help debug
-        const sixtyRupeeCommissions = extraCommissionsData.filter((ec: any) => ec.amount === 60);
-        if (sixtyRupeeCommissions.length > 0) {
-          console.log('🔍 Found ₹60 extra commissions:', sixtyRupeeCommissions.map((ec: any) => ({
-            id: ec.id,
-            technician_id: ec.technician_id,
-            amount: ec.amount,
-            description: ec.description
-          })));
-        }
-      } else {
-        console.warn('⚠️ No extra commissions found in database at all!');
-      }
+      const [
+        paymentsRes,
+        expensesRes,
+        advancesRes,
+        extraCommissionsRes,
+        holidaysRes,
+        completedJobsRes
+      ] = await Promise.all([
+        supabase.from('technician_payments').select(`*, technician:technicians(id, full_name, employee_id), job:jobs(id, job_number)`)
+          .gte('created_at', startDate.toISOString()).lte('created_at', endDate.toISOString()),
+        db.technicianExpenses.getAll(undefined, periodStartStr, periodEndStr),
+        db.technicianAdvances.getAll(undefined, periodStartStr, periodEndStr),
+        db.technicianExtraCommissions.getAll(undefined, periodStartStr, periodEndStr),
+        db.technicianHolidays.getAll(undefined, periodStartStr, periodEndStr),
+        supabase.from('jobs').select('id, assigned_technician_id, end_time, completed_at, actual_cost, payment_amount')
+          .eq('status', 'COMPLETED').not('end_time', 'is', null)
+          .gte('end_time', startDate.toISOString()).lte('end_time', endDate.toISOString())
+      ]);
 
-      // Load holidays for all technicians in the period
-      const { data: holidaysData, error: holidaysError } = await db.technicianHolidays.getAll(
-        undefined,
-        startDate.toISOString().split('T')[0],
-        endDate.toISOString().split('T')[0]
-      );
-      if (holidaysError) throw holidaysError;
+      if (paymentsRes.error) throw paymentsRes.error;
+      if (expensesRes.error) throw expensesRes.error;
+      if (advancesRes.error) throw advancesRes.error;
+      if (extraCommissionsRes.error) throw extraCommissionsRes.error;
+      if (holidaysRes.error) throw holidaysRes.error;
+      if (completedJobsRes.error) throw completedJobsRes.error;
 
-      // Load completed jobs to detect holidays (days with no jobs) and calculate daily billing
-      const { data: completedJobsData, error: completedJobsError } = await supabase
-        .from('jobs')
-        .select('id, assigned_technician_id, end_time, completed_at, actual_cost, payment_amount')
-        .eq('status', 'COMPLETED')
-        .not('end_time', 'is', null)
-        .gte('end_time', startDate.toISOString())
-        .lte('end_time', endDate.toISOString());
-      
-      if (completedJobsError) throw completedJobsError;
-      setCompletedJobs(completedJobsData || []);
+      const paymentsData = paymentsRes.data || [];
+      const expensesData = expensesRes.data || [];
+      const advancesData = advancesRes.data || [];
+      const extraCommissionsData = extraCommissionsRes.data || [];
+      const holidaysData = holidaysRes.data || [];
+      const completedJobsData = completedJobsRes.data || [];
+      setCompletedJobs(completedJobsData);
 
-      // Calculate number of months in the selected period
-      // Both current cycle and past month are always 1 month (1st to last day of month)
-      const monthsInPeriod = selectedPeriod === 'current' || selectedPeriod === 'pastMonth' ? 1 : 1;
+      const todayForHolidays = new Date();
+      todayForHolidays.setHours(0, 0, 0, 0);
+      const todayStrForHolidays = formatDateString(todayForHolidays);
 
-      // Log all technicians' basic salaries from their profiles
-      console.log('📊 All Technicians Basic Salaries from Profile:');
-      (techsData || []).forEach((tech: any) => {
-        const salaryData = tech.salary;
-        const baseSalary = (salaryData && typeof salaryData === 'object' && (salaryData as any).baseSalary) 
-          ? (salaryData as any).baseSalary 
-          : 'NOT SET (using default 8000)';
-        console.log(`  👤 ${tech.full_name} (${tech.employee_id}): Base Salary = INR ${baseSalary}`, {
-          salaryField: salaryData,
-          baseSalaryValue: (salaryData as any)?.baseSalary,
-          salaryType: typeof salaryData
-        });
-      });
-      console.log('---');
-
-      // Calculate breakdown for each technician
-      const breakdowns: TechnicianSalaryBreakdown[] = (techsData || []).map((tech: any) => {
+      const breakdowns: TechnicianSalaryBreakdown[] = techs.map((tech: any) => {
         const techId = tech.id;
-        // Get base salary from technician profile - salary is stored as JSONB
-        // Access salary.baseSalary directly from technician profile
-        const monthlyBaseSalary = (tech.salary && typeof tech.salary === 'object' && (tech.salary as any).baseSalary) 
-          ? (tech.salary as any).baseSalary 
-          : 8000; // Default 8000 if not found
-        
-        // Period is always 1 month (1st to last day of month), so periodBaseSalary = monthlyBaseSalary
-        const periodBaseSalary = monthlyBaseSalary; // Always 1 month period
-        console.log(`💰 ${tech.full_name}: Monthly=${monthlyBaseSalary}, Period=${periodBaseSalary} (1 month)`);
-        const dailyBaseSalary = monthlyBaseSalary / 30; // 266.67 per day
-        const expectedWorkingDays = 26;
+        const monthlyBaseSalary = (tech.salary && typeof tech.salary === 'object' && (tech.salary as any).baseSalary) ? (tech.salary as any).baseSalary : 8000;
+        const periodBaseSalary = monthlyBaseSalary;
+        const dailyBaseSalary = monthlyBaseSalary / 30;
         const allowedHolidays = 4;
 
-        // Get payments for this technician (only from current month cycle)
-        const techPayments = (paymentsData || []).filter((p: TechnicianPayment) => p.technician_id === techId);
-        
-        // Calculate commission from technician_payments table (uses stored commission_percentage per job)
-        // Get all payments for this technician in the period
-        const techPaymentsForCommission = (paymentsData || []).filter((p: TechnicianPayment) => p.technician_id === techId);
-        
-        // Also get completed jobs to calculate commission for jobs without payment records
-        const techCompletedJobsForCommission = (completedJobsData || []).filter((j: any) => j.assigned_technician_id === techId);
-        
-        // Calculate commission: use stored commission_amount from payments, or calculate 10% default for jobs without payment records
-        let totalCommission = techPaymentsForCommission.reduce((sum: number, payment: TechnicianPayment) => {
-          return sum + (payment.commission_amount || 0);
-        }, 0);
-        
-        // For jobs without payment records, calculate 10% default commission
-        const jobsWithPayments = new Set(techPaymentsForCommission.map(p => p.job_id));
-        const jobsWithoutPayments = techCompletedJobsForCommission.filter(j => !jobsWithPayments.has(j.id));
-        const defaultCommission = jobsWithoutPayments.reduce((sum: number, job: any) => {
+        const techPayments = paymentsData.filter((p: TechnicianPayment) => p.technician_id === techId);
+        const techPaymentsForCommission = paymentsData.filter((p: TechnicianPayment) => p.technician_id === techId);
+        const techCompletedJobsForCommission = completedJobsData.filter((j: any) => j.assigned_technician_id === techId);
+
+        let totalCommission = techPaymentsForCommission.reduce((sum: number, payment: TechnicianPayment) => sum + (payment.commission_amount || 0), 0);
+        const jobsWithPayments = new Set(techPaymentsForCommission.map((p: TechnicianPayment) => p.job_id));
+        const jobsWithoutPayments = techCompletedJobsForCommission.filter((j: any) => !jobsWithPayments.has(j.id));
+        totalCommission += jobsWithoutPayments.reduce((sum: number, job: any) => {
           const billAmount = parseFloat(job.actual_cost || job.payment_amount || 0);
-          return sum + (billAmount * 0.10); // 10% default
+          return sum + (billAmount * 0.10);
         }, 0);
-        
-        totalCommission += defaultCommission;
-        
-        // Calculate total bill amount for display
+
         const totalBillAmount = techCompletedJobsForCommission.reduce((sum: number, job: any) => {
-          const billAmount = parseFloat(job.actual_cost || job.payment_amount || 0);
-          return sum + billAmount;
+          return sum + parseFloat(job.actual_cost || job.payment_amount || 0);
         }, 0);
-        
-        console.log(`💰 ${tech.full_name}: Total Bill = ${totalBillAmount}, Total Commission = ${totalCommission} (${techPaymentsForCommission.length} with custom %, ${jobsWithoutPayments.length} with default 10%)`);
-        
-        // Get expenses for this technician - filter by current cycle date range
-        // Use local date formatting to avoid timezone issues
-        const formatDateString = (date: Date): string => {
-          const year = date.getFullYear();
-          const month = String(date.getMonth() + 1).padStart(2, '0');
-          const day = String(date.getDate()).padStart(2, '0');
-          return `${year}-${month}-${day}`;
-        };
-        const periodStartStr = formatDateString(startDate);
-        const periodEndStr = formatDateString(endDate);
-        const techExpenses = (expensesData || []).filter((e: TechnicianExpense) => {
+
+        const techExpenses = expensesData.filter((e: TechnicianExpense) => {
           if (e.technician_id !== techId) return false;
-          const expenseDate = e.expense_date.split('T')[0];
-          return expenseDate >= periodStartStr && expenseDate <= periodEndStr;
+          const d = e.expense_date.split('T')[0];
+          return d >= periodStartStr && d <= periodEndStr;
         });
         const totalExpenses = techExpenses.reduce((sum, e) => sum + (e.amount || 0), 0);
 
-        // Get advances for this technician - filter by selected period (same as expenses)
-        // Advance taken in Dec is deducted from Dec salary only; when viewing Jan, show only Jan advances
-        const techAdvances = (advancesData || []).filter((a: TechnicianAdvance) => {
+        const techAdvances = advancesData.filter((a: TechnicianAdvance) => {
           if (a.technician_id !== techId) return false;
-          const advanceDate = (a as any).advance_date?.split?.('T')[0] ?? (a as any).advance_date;
-          return advanceDate >= periodStartStr && advanceDate <= periodEndStr;
+          const d = (a as any).advance_date?.split?.('T')[0] ?? (a as any).advance_date;
+          return d >= periodStartStr && d <= periodEndStr;
         });
         const totalAdvances = techAdvances.reduce((sum, a) => sum + (a.amount || 0), 0);
-        
-        // Get extra commissions for this technician - filter by selected period date range
-        // Extra commissions should only show for the selected month (current or past month)
-        const techExtraCommissions = (extraCommissionsData || []).filter((ec: TechnicianExtraCommission) => {
+
+        const techExtraCommissions = extraCommissionsData.filter((ec: TechnicianExtraCommission) => {
           if (ec.technician_id !== techId) return false;
-          const commissionDate = ec.commission_date.split('T')[0];
-          return commissionDate >= periodStartStr && commissionDate <= periodEndStr;
+          const d = ec.commission_date.split('T')[0];
+          return d >= periodStartStr && d <= periodEndStr;
         });
         const totalExtraCommission = techExtraCommissions.reduce((sum, ec) => sum + (ec.amount || 0), 0);
-        console.log(`💰 ${tech.full_name} (ID: ${techId}): Extra Commissions = ${techExtraCommissions.length} records, Total = ₹${totalExtraCommission}`);
-        
-        // Debug: Log all extra commissions and their technician IDs to find mismatches
-        if (techExtraCommissions.length === 0 && (extraCommissionsData || []).length > 0) {
-          console.warn(`⚠️ No extra commissions found for ${tech.full_name} (ID: ${techId})`);
-          console.log('📋 All extra commissions in database:', (extraCommissionsData || []).map((ec: any) => ({
-            id: ec.id,
-            technician_id: ec.technician_id,
-            amount: ec.amount,
-            description: ec.description,
-            date: ec.commission_date
-          })));
-        }
 
-        // Get holidays for this technician
-        const techHolidays = (holidaysData || []).filter((h: TechnicianHoliday) => h.technician_id === techId);
-        
-        // Detect holidays: days with no completed jobs
-        const techCompletedJobs = (completedJobsData || []).filter((j: any) => j.assigned_technician_id === techId);
-        const workingDays = new Set<string>();
+        const techHolidays = holidaysData.filter((h: TechnicianHoliday) => h.technician_id === techId);
+        const techCompletedJobs = completedJobsData.filter((j: any) => j.assigned_technician_id === techId);
+        const datesWithJobs = new Set<string>();
+        const dailyBillingForHolidays = new Map<string, number>();
         techCompletedJobs.forEach((job: any) => {
-          // Use end_time if available, otherwise completed_at
           const completionDate = job.end_time || job.completed_at;
           if (completionDate) {
-            // Use local date formatting to avoid timezone issues
-            const jobDateObj = new Date(completionDate);
-            const jobDate = formatDateString(jobDateObj);
-            workingDays.add(jobDate);
+            const jobDate = formatDateString(new Date(completionDate));
+            datesWithJobs.add(jobDate);
+            const billAmount = parseFloat(job.actual_cost || job.payment_amount || 0);
+            dailyBillingForHolidays.set(jobDate, (dailyBillingForHolidays.get(jobDate) || 0) + billAmount);
           }
         });
 
-        // Get today's date for filtering (only count holidays up to today, not future dates)
-        // formatDateString is already defined above for expenses/advances filtering
-        const todayForHolidays = new Date();
-        todayForHolidays.setHours(0, 0, 0, 0);
-        const todayStrForHolidays = formatDateString(todayForHolidays);
-
-        // Generate all dates in the period UP TO TODAY ONLY (not future dates)
         const allDates: string[] = [];
         const currentDate = new Date(startDate);
         currentDate.setHours(0, 0, 0, 0);
@@ -515,183 +412,83 @@ const TechnicianPayments = () => {
         cutoffDate.setHours(0, 0, 0, 0);
         const startDateStr = formatDateString(startDate);
         const todayStr = formatDateString(todayForHolidays);
-        
         while (currentDate <= cutoffDate) {
-          const dateStr = formatDateString(currentDate);
-          // Only include dates within the period and up to today
-          if (dateStr >= startDateStr && dateStr <= todayStr) {
-            allDates.push(dateStr);
-          }
+          const dateStr = formatDateString(new Date(currentDate));
+          if (dateStr >= startDateStr && dateStr <= todayStr) allDates.push(dateStr);
           currentDate.setDate(currentDate.getDate() + 1);
         }
 
-        // Track dates with ANY completed jobs (even with ₹0 bill amount)
-        const datesWithJobs = new Set<string>(); // dates that have any completed jobs
-        const dailyBillingForHolidays = new Map<string, number>(); // date -> total bill amount
-        techCompletedJobs.forEach((job: any) => {
-          const completionDate = job.end_time || job.completed_at;
-          if (completionDate) {
-            const jobDateObj = new Date(completionDate);
-            const jobDate = formatDateString(jobDateObj);
-            datesWithJobs.add(jobDate); // Track that this date has at least one job
-            const billAmount = parseFloat(job.actual_cost || job.payment_amount || 0);
-            dailyBillingForHolidays.set(jobDate, (dailyBillingForHolidays.get(jobDate) || 0) + billAmount);
-          }
-        });
-
-        // Find holidays: dates with NO jobs at all (ONLY up to today, not future dates)
-        // BUT exclude dates that have been manually marked as present (have a "present" override)
-        // NOTE: If there are ANY completed jobs on a date (even ₹0), it's considered present
         const autoDetectedHolidays: string[] = [];
         allDates.forEach(date => {
-          // Only count holidays for dates up to today (not future dates)
           const hasJobsOnDate = datesWithJobs.has(date);
-          // Auto-detect as absent ONLY if: there are NO jobs at all on this date
-          // If there are ANY jobs (even ₹0), it's considered present
           if (date <= todayStrForHolidays && !hasJobsOnDate) {
-            // Check if holiday already exists in database
             const existingHoliday = techHolidays.find(h => h.holiday_date.split('T')[0] === date);
-            // Only auto-detect as absent if:
-            // 1. No manual holiday exists OR the holiday is not a "present override" marker (MARKED_AS_PRESENT)
-            // 2. There are NO jobs at all on this date
-            // Note: If user manually marks as present (MARKED_AS_PRESENT), we won't auto-detect it
-            if (!existingHoliday || existingHoliday.reason !== 'MARKED_AS_PRESENT') {
-              autoDetectedHolidays.push(date);
-            }
+            if (!existingHoliday || existingHoliday.reason !== 'MARKED_AS_PRESENT') autoDetectedHolidays.push(date);
           }
         });
 
-        // Combine manual and auto-detected holidays
-        // IMPORTANT: Only count holidays up to today AND within the period, filter out future dates
-        // EXCLUDE holidays with reason "MARKED_AS_PRESENT" (present override markers)
         const allHolidayDates = new Set<string>();
-        // periodStartStr is already declared above for expenses/advances filtering
         techHolidays.forEach(h => {
           const holidayDate = h.holiday_date.split('T')[0];
-          // Only include holidays up to today AND within the period
-          // EXCLUDE present override markers (MARKED_AS_PRESENT)
           const endDateStr = formatDateString(endDate);
-          if (holidayDate <= todayStrForHolidays && holidayDate >= periodStartStr && holidayDate <= endDateStr) {
-            // Don't count present override markers as holidays
-            if (h.reason !== 'MARKED_AS_PRESENT') {
-              allHolidayDates.add(holidayDate);
-            }
+          if (holidayDate <= todayStrForHolidays && holidayDate >= periodStartStr && holidayDate <= endDateStr && h.reason !== 'MARKED_AS_PRESENT') {
+            allHolidayDates.add(holidayDate);
           }
         });
         autoDetectedHolidays.forEach(date => {
-          // Double check date is within period and up to today
-          if (date >= periodStartStr && date <= todayStrForHolidays) {
-            allHolidayDates.add(date);
-          }
+          if (date >= periodStartStr && date <= todayStrForHolidays) allHolidayDates.add(date);
         });
-        
-        // Calculate holidays for the entire cycle (not per month)
-        // IMPORTANT: First 4 holidays per cycle are FREE (no deduction)
-        // Only holidays beyond 4 per cycle reduce base salary
-        // If technician used LESS than 4 leaves, add unused leave amount to basic
+
         const totalHolidays = allHolidayDates.size;
         const extraHolidays = Math.max(0, totalHolidays - allowedHolidays);
         const holidayDeduction = extraHolidays * dailyBaseSalary;
-        
-        // Calculate unused leave bonus: if used less than 4 leaves, add the unused amount
         const unusedLeaves = Math.max(0, allowedHolidays - totalHolidays);
         const unusedLeaveBonus = unusedLeaves * dailyBaseSalary;
-        
-        // Adjusted base salary: periodBaseSalary - holidayDeduction + unusedLeaveBonus
         const adjustedBaseSalary = periodBaseSalary - holidayDeduction + unusedLeaveBonus;
 
-        // Create holiday records for display (include auto-detected ones)
-        // EXCLUDE present override markers (MARKED_AS_PRESENT) from display
         const displayHolidays: TechnicianHoliday[] = techHolidays.filter(h => h.reason !== 'MARKED_AS_PRESENT');
         autoDetectedHolidays.forEach(date => {
-          displayHolidays.push({
-            id: `auto-${date}`,
-            technician_id: techId,
-            holiday_date: date,
-            is_manual: false,
-            reason: 'No completed jobs - auto-detected as absent'
-          });
+          displayHolidays.push({ id: `auto-${date}`, technician_id: techId, holiday_date: date, is_manual: false, reason: 'No completed jobs - auto-detected as absent' });
         });
         displayHolidays.sort((a, b) => new Date(b.holiday_date).getTime() - new Date(a.holiday_date).getTime());
-
-        // Get only absent days (extra holidays beyond 4 per cycle) for display
-        const absentDays: TechnicianHoliday[] = [];
-        if (extraHolidays > 0) {
-          // Sort all holidays by date descending and take the extra ones (beyond 4 allowed)
-          const sortedHolidays = displayHolidays
-            .filter(h => allHolidayDates.has(h.holiday_date.split('T')[0]))
-            .sort((a, b) => new Date(b.holiday_date).getTime() - new Date(a.holiday_date).getTime())
-            .slice(0, extraHolidays); // Take only the extra holidays beyond 4
-          absentDays.push(...sortedHolidays);
-        }
+        const absentDays: TechnicianHoliday[] = extraHolidays > 0
+          ? displayHolidays.filter(h => allHolidayDates.has(h.holiday_date.split('T')[0])).sort((a, b) => new Date(b.holiday_date).getTime() - new Date(a.holiday_date).getTime()).slice(0, extraHolidays)
+          : [];
         absentDays.sort((a, b) => new Date(b.holiday_date).getTime() - new Date(a.holiday_date).getTime());
-        
-        // Calculate daily breakdown: billing per day
-        const dailyBilling = new Map<string, number>(); // date -> total bill amount
+
+        const dailyBilling = new Map<string, number>();
         techCompletedJobs.forEach((job: any) => {
           const completionDate = job.end_time || job.completed_at;
           if (completionDate) {
-            // Use local date formatting to avoid timezone issues
-            const jobDateObj = new Date(completionDate);
-            const jobDate = formatDateString(jobDateObj);
+            const jobDate = formatDateString(new Date(completionDate));
             const billAmount = parseFloat(job.actual_cost || job.payment_amount || 0);
             dailyBilling.set(jobDate, (dailyBilling.get(jobDate) || 0) + billAmount);
           }
         });
 
-        // Create daily breakdown array - only show dates up to today (not future dates)
-        // todayStr is already defined above as formatDateString(todayForHolidays)
-        
         const dailyBreakdown: DailyBreakdown[] = allDates
-          .filter(date => date <= todayStr) // Only show dates up to today (exclude future dates)
+          .filter(date => date <= todayStr)
           .map(date => {
             const billAmount = dailyBilling.get(date) || 0;
             const hasJobsOnDate = datesWithJobs.has(date);
-            
-            // Check for manual overrides
-            const presentOverride = techHolidays.find(h => 
-              h.holiday_date.split('T')[0] === date && h.reason === 'MARKED_AS_PRESENT'
-            );
-            const manualAbsentHoliday = techHolidays.find(h => 
-              h.holiday_date.split('T')[0] === date && 
-              h.reason !== 'MARKED_AS_PRESENT' && 
-              h.is_manual === true
-            );
-            
-            // Determine attendance status with priority:
-            // 1. Present override (MARKED_AS_PRESENT) - FORCE PRESENT
-            // 2. Manual absent holiday - FORCE ABSENT
-            // 3. Auto-detection: absent if no jobs, present if any jobs exist
+            const presentOverride = techHolidays.find(h => h.holiday_date.split('T')[0] === date && h.reason === 'MARKED_AS_PRESENT');
+            const manualAbsentHoliday = techHolidays.find(h => h.holiday_date.split('T')[0] === date && h.reason !== 'MARKED_AS_PRESENT' && h.is_manual === true);
             let isAbsent: boolean;
-            if (presentOverride) {
-              // Present override marker exists - FORCE PRESENT
-              isAbsent = false;
-            } else if (manualAbsentHoliday) {
-              // Manual absent holiday exists - FORCE ABSENT
-              isAbsent = true;
-            } else {
-              // Auto-detection: absent only if no jobs at all
-              // If ANY jobs exist (even ₹0), it's present
-              isAbsent = !hasJobsOnDate && allHolidayDates.has(date);
-            }
-            
-            return {
-              date,
-              billAmount,
-              isAbsent
-            };
+            if (presentOverride) isAbsent = false;
+            else if (manualAbsentHoliday) isAbsent = true;
+            else isAbsent = !hasJobsOnDate && allHolidayDates.has(date);
+            return { date, billAmount, isAbsent };
           })
           .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
-        
-        // Calculate total salary: adjustedBaseSalary + commission + extraCommission - advances
+
         const totalSalary = adjustedBaseSalary + totalCommission + totalExtraCommission - totalAdvances;
-        
+
         return {
           technicianId: techId,
           technicianName: tech.full_name || 'Unknown',
           employeeId: tech.employee_id || '',
-          baseSalary: monthlyBaseSalary, // Monthly base salary
-          periodBaseSalary: periodBaseSalary, // Period base salary
+          baseSalary: monthlyBaseSalary,
+          periodBaseSalary,
           adjustedBaseSalary,
           totalCommission,
           totalExtraCommission,
@@ -704,24 +501,60 @@ const TechnicianPayments = () => {
           unusedLeaveBonus,
           holidayDeduction,
           totalSalary,
-          totalBillAmount, // Total billing done by this technician
+          totalBillAmount,
           payments: techPayments,
           expenses: techExpenses,
           advances: techAdvances,
           extraCommissions: techExtraCommissions,
-          holidays: absentDays, // Show only absent days (extra holidays beyond 4 per month)
+          holidays: absentDays,
           dailyBreakdown
         };
       });
 
       setSalaryBreakdowns(breakdowns);
+      setSalaryDataLoaded(true);
     } catch (error: any) {
-      console.error('Error loading data:', error);
-      toast.error('Failed to load data: ' + error.message);
+      console.error('Error loading salary data:', error);
+      toast.error('Failed to load salary data: ' + error.message);
     } finally {
-      setLoading(false);
+      if (showLoading) setLoadingSalaryBreakdowns(false);
     }
-  };
+  }, [technicians, getMonthlyDateRange]);
+
+  useEffect(() => {
+    loadTechniciansOnly();
+  }, [selectedPeriod, selectedPastMonth, loadTechniciansOnly]);
+
+  const prevBusinessPeriodRef = useRef({ selectedPeriod, selectedPastMonth });
+  useEffect(() => {
+    if (!businessExpensesViewed) return;
+    const same = prevBusinessPeriodRef.current.selectedPeriod === selectedPeriod && prevBusinessPeriodRef.current.selectedPastMonth === selectedPastMonth;
+    prevBusinessPeriodRef.current = { selectedPeriod, selectedPastMonth };
+    if (same) return;
+    setLoadingBusinessExpenses(true);
+    loadBusinessExpensesOnly().then(() => setLoadingBusinessExpenses(false));
+  }, [selectedPeriod, selectedPastMonth, businessExpensesViewed, loadBusinessExpensesOnly]);
+
+  const prevPeriodRef = useRef({ selectedPeriod, selectedPastMonth });
+  useEffect(() => {
+    if (!salaryDataLoaded) return;
+    const same = prevPeriodRef.current.selectedPeriod === selectedPeriod && prevPeriodRef.current.selectedPastMonth === selectedPastMonth;
+    prevPeriodRef.current = { selectedPeriod, selectedPastMonth };
+    if (same) return;
+    loadSalaryBreakdownData(false);
+  }, [selectedPeriod, selectedPastMonth, salaryDataLoaded, loadSalaryBreakdownData]);
+
+
+  /** Full refresh: technicians + period; salary/business only if user had viewed them. */
+  const loadData = useCallback(async (showLoading: boolean = true) => {
+    await loadTechniciansOnly();
+    if (salaryDataLoaded) await loadSalaryBreakdownData(showLoading);
+    if (businessExpensesViewed) {
+      setLoadingBusinessExpenses(true);
+      await loadBusinessExpensesOnly();
+      setLoadingBusinessExpenses(false);
+    }
+  }, [loadTechniciansOnly, loadSalaryBreakdownData, loadBusinessExpensesOnly, salaryDataLoaded, businessExpensesViewed]);
 
   const handleAddExpense = (technicianId?: string) => {
     const techId = technicianId || selectedTechnician;
@@ -782,7 +615,7 @@ const TechnicianPayments = () => {
       }
 
       setExpenseDialogOpen(false);
-      await loadData();
+      if (salaryDataLoaded) await loadSalaryBreakdownData(false);
     } catch (error: any) {
       toast.error('Failed to save expense: ' + error.message);
     }
@@ -795,7 +628,7 @@ const TechnicianPayments = () => {
       const { error } = await db.technicianExpenses.delete(id);
       if (error) throw error;
       toast.success('Expense deleted');
-      await loadData();
+      if (salaryDataLoaded) await loadSalaryBreakdownData(false);
     } catch (error: any) {
       toast.error('Failed to delete expense: ' + error.message);
     }
@@ -852,7 +685,7 @@ const TechnicianPayments = () => {
       }
 
       setBusinessExpenseDialogOpen(false);
-      await loadData();
+      if (businessExpensesViewed) await loadBusinessExpensesOnly();
     } catch (error: any) {
       toast.error('Failed to save business expense: ' + error.message);
     }
@@ -865,7 +698,7 @@ const TechnicianPayments = () => {
       const { error } = await db.businessExpenses.delete(id);
       if (error) throw error;
       toast.success('Business expense deleted');
-      await loadData();
+      if (businessExpensesViewed) await loadBusinessExpensesOnly();
     } catch (error: any) {
       toast.error('Failed to delete business expense: ' + error.message);
     }
@@ -933,7 +766,7 @@ const TechnicianPayments = () => {
       }
 
       setAdvanceDialogOpen(false);
-      await loadData();
+      if (salaryDataLoaded) await loadSalaryBreakdownData(false);
     } catch (error: any) {
       toast.error('Failed to save advance: ' + error.message);
     }
@@ -946,7 +779,7 @@ const TechnicianPayments = () => {
       const { error } = await db.technicianAdvances.delete(id);
       if (error) throw error;
       toast.success('Advance deleted');
-      await loadData();
+      if (salaryDataLoaded) await loadSalaryBreakdownData(false);
     } catch (error: any) {
       toast.error('Failed to delete advance: ' + error.message);
     }
@@ -1023,7 +856,7 @@ const TechnicianPayments = () => {
       }
 
       setExtraCommissionDialogOpen(false);
-      await loadData();
+      if (salaryDataLoaded) await loadSalaryBreakdownData(false);
     } catch (error: any) {
       toast.error('Failed to save extra commission: ' + error.message);
     }
@@ -1036,7 +869,7 @@ const TechnicianPayments = () => {
       const { error } = await db.technicianExtraCommissions.delete(id);
       if (error) throw error;
       toast.success('Extra commission deleted');
-      await loadData();
+      if (salaryDataLoaded) await loadSalaryBreakdownData(false);
     } catch (error: any) {
       toast.error('Failed to delete extra commission: ' + error.message);
     }
@@ -1099,7 +932,7 @@ const TechnicianPayments = () => {
       }
 
       setHolidayDialogOpen(false);
-      await loadData();
+      if (salaryDataLoaded) await loadSalaryBreakdownData(false);
     } catch (error: any) {
       toast.error('Failed to save holiday: ' + error.message);
     }
@@ -1118,7 +951,7 @@ const TechnicianPayments = () => {
       const { error } = await db.technicianHolidays.delete(holiday.id);
       if (error) throw error;
       toast.success('Leave deleted');
-      await loadData();
+      if (salaryDataLoaded) await loadSalaryBreakdownData(false);
     } catch (error: any) {
       toast.error('Failed to delete leave: ' + error.message);
     }
@@ -1636,12 +1469,68 @@ const TechnicianPayments = () => {
               })()}
             </div>
           )}
+          <div className="flex flex-wrap gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => {
+                setEditingExpense(null);
+                setExpenseFormData({ technician_id: '', amount: '', description: '', expense_date: new Date().toISOString().split('T')[0], category: 'OTHER', notes: '' });
+                setExpenseDialogOpen(true);
+              }}
+              disabled={loading || technicians.length === 0}
+            >
+              <Plus className="w-4 h-4 mr-2" />
+              Add technician expense
+            </Button>
+            <Button variant="outline" size="sm" onClick={handleAddBusinessExpense} disabled={loading}>
+              <Plus className="w-4 h-4 mr-2" />
+              Add business expense
+            </Button>
+          </div>
         </div>
       </div>
 
-      {/* Technician Salary Breakdowns */}
-      <div className="space-y-6">
-        {salaryBreakdowns.map((breakdown) => (
+      {/* Technician Salary Breakdowns - load only when user clicks View */}
+      <div ref={salarySectionRef} className="space-y-6">
+        {loadingSalaryBreakdowns && (
+          <div className="flex items-center justify-center py-12">
+            <RefreshCw className="w-8 h-8 animate-spin text-gray-400" />
+            <span className="ml-2 text-gray-600">Loading salary breakdowns...</span>
+          </div>
+        )}
+        {!loadingSalaryBreakdowns && !salaryDataLoaded && (
+          <Card className="relative overflow-hidden">
+            <div className="blur-sm select-none pointer-events-none">
+              <CardHeader className="bg-gray-50 border-b">
+                <CardTitle className="text-lg">Technician 1</CardTitle>
+                <p className="text-sm text-gray-600">Employee ID: EMP001</p>
+                <div className="flex gap-6 mt-2">
+                  <div className="text-2xl font-bold text-blue-600">₹ 45,200</div>
+                  <div className="text-2xl font-bold text-green-600">₹ 28,500</div>
+                </div>
+              </CardHeader>
+              <CardContent className="p-6">
+                <div className="grid grid-cols-5 gap-4 mb-4">
+                  {[8000, 4200, 500, 1200, 2000].map((n, i) => (
+                    <div key={i} className="bg-gray-100 p-3 rounded-lg h-16" />
+                  ))}
+                </div>
+                <div className="h-24 bg-gray-100 rounded-lg" />
+              </CardContent>
+            </div>
+            <div className="absolute inset-0 flex flex-col items-center justify-center bg-white/80 backdrop-blur-[2px]">
+              <DollarSign className="w-14 h-14 text-gray-400 mb-3" />
+              <p className="text-gray-600 font-medium">Salary breakdown not loaded</p>
+              <p className="text-sm text-gray-500 mt-1 mb-4">Add expenses above without loading this data.</p>
+              <Button onClick={() => loadSalaryBreakdownData(true)} disabled={!technicians.length || loadingSalaryBreakdowns}>
+                <Eye className="w-4 h-4 mr-2" />
+                View salary breakdown
+              </Button>
+            </div>
+          </Card>
+        )}
+        {!loadingSalaryBreakdowns && salaryDataLoaded && salaryBreakdowns.map((breakdown) => (
           <Card key={breakdown.technicianId} className="overflow-hidden">
             <CardHeader className="bg-gray-50 border-b">
               <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
@@ -2976,7 +2865,7 @@ const TechnicianPayments = () => {
         </DialogContent>
       </Dialog>
 
-      {/* Business Expenses Section */}
+      {/* Business Expenses Section - load only when user clicks View */}
       <Card className="mt-8">
         <CardHeader>
           <div className="flex items-center justify-between">
@@ -2989,77 +2878,126 @@ const TechnicianPayments = () => {
                 Track general business expenses (not tied to specific technicians)
               </CardDescription>
             </div>
-            <Button onClick={handleAddBusinessExpense} size="sm">
+            <Button onClick={handleAddBusinessExpense} size="sm" disabled={loading}>
               <Plus className="w-4 h-4 mr-2" />
               Add Expense
             </Button>
           </div>
         </CardHeader>
         <CardContent>
-          {businessExpenses.length === 0 ? (
+          {!businessExpensesViewed ? (
+            <div className="space-y-4">
+              <div className="blur-sm select-none pointer-events-none">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Date</TableHead>
+                      <TableHead>Description</TableHead>
+                      <TableHead>Category</TableHead>
+                      <TableHead className="text-right">Amount</TableHead>
+                      <TableHead className="text-right">Actions</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {[
+                      { date: '05/03/2025', desc: 'Office supplies', cat: 'OFFICE', amt: '2,500' },
+                      { date: '01/03/2025', desc: 'Marketing campaign', cat: 'MARKETING', amt: '5,000' },
+                      { date: '28/02/2025', desc: 'Utilities', cat: 'UTILITIES', amt: '3,200' },
+                    ].map((row, i) => (
+                      <TableRow key={i}>
+                        <TableCell>{row.date}</TableCell>
+                        <TableCell className="font-medium">{row.desc}</TableCell>
+                        <TableCell><Badge variant="outline">{row.cat}</Badge></TableCell>
+                        <TableCell className="text-right text-red-600">₹ {row.amt}</TableCell>
+                        <TableCell className="text-right">—</TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+                <div className="mt-4 pt-4 border-t flex justify-between">
+                  <span className="font-semibold text-gray-700">Total:</span>
+                  <span className="text-xl font-bold text-red-600">₹ 10,700</span>
+                </div>
+              </div>
+              <div className="flex flex-col items-center justify-center py-6 border border-dashed border-gray-200 rounded-lg bg-gray-50/50">
+                <TrendingDown className="w-10 h-10 text-gray-400 mb-2" />
+                <p className="text-gray-600 font-medium">Business expenses not loaded</p>
+                <p className="text-sm text-gray-500 mt-1 mb-4">You can add expenses above without loading the list.</p>
+                <Button onClick={handleViewBusinessExpenses} disabled={loadingBusinessExpenses}>
+                  <Eye className="w-4 h-4 mr-2" />
+                  {loadingBusinessExpenses ? 'Loading...' : 'View business expenses'}
+                </Button>
+              </div>
+            </div>
+          ) : loadingBusinessExpenses ? (
+            <div className="flex items-center justify-center py-12">
+              <RefreshCw className="w-8 h-8 animate-spin text-gray-400" />
+              <span className="ml-2 text-gray-600">Loading business expenses...</span>
+            </div>
+          ) : businessExpenses.length === 0 ? (
             <div className="text-center py-8 text-gray-500">
               <TrendingDown className="w-12 h-12 mx-auto mb-2 text-gray-400" />
               <p>No business expenses recorded yet.</p>
             </div>
           ) : (
-            <div className="overflow-x-auto">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Date</TableHead>
-                    <TableHead>Description</TableHead>
-                    <TableHead>Category</TableHead>
-                    <TableHead className="text-right">Amount</TableHead>
-                    <TableHead className="text-right">Actions</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {businessExpenses.map((expense) => (
-                    <TableRow key={expense.id}>
-                      <TableCell>
-                        {new Date(expense.expense_date).toLocaleDateString('en-IN')}
-                      </TableCell>
-                      <TableCell className="font-medium">{expense.description}</TableCell>
-                      <TableCell>
-                        <Badge variant="outline">{expense.category || 'OTHER'}</Badge>
-                      </TableCell>
-                      <TableCell className="text-right font-semibold text-red-600">
-                        ₹ {formatCurrency(expense.amount)}
-                      </TableCell>
-                      <TableCell className="text-right">
-                        <div className="flex justify-end gap-2">
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => handleEditBusinessExpense(expense)}
-                          >
-                            <Edit className="w-4 h-4" />
-                          </Button>
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => handleDeleteBusinessExpense(expense.id)}
-                            className="text-red-600 hover:text-red-700"
-                          >
-                            <Trash2 className="w-4 h-4" />
-                          </Button>
-                        </div>
-                      </TableCell>
+            <>
+              <div className="overflow-x-auto">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Date</TableHead>
+                      <TableHead>Description</TableHead>
+                      <TableHead>Category</TableHead>
+                      <TableHead className="text-right">Amount</TableHead>
+                      <TableHead className="text-right">Actions</TableHead>
                     </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </div>
-          )}
-          {businessExpenses.length > 0 && (
-            <div className="mt-4 pt-4 border-t">
-              <div className="flex justify-between items-center">
-                <span className="font-semibold text-gray-700">Total Business Expenses:</span>
-                <span className="text-xl font-bold text-red-600">
-                  ₹ {formatCurrency(businessExpenses.reduce((sum, e) => sum + e.amount, 0))}
-                </span>
+                  </TableHeader>
+                  <TableBody>
+                    {businessExpenses.map((expense) => (
+                      <TableRow key={expense.id}>
+                        <TableCell>
+                          {new Date(expense.expense_date).toLocaleDateString('en-IN')}
+                        </TableCell>
+                        <TableCell className="font-medium">{expense.description}</TableCell>
+                        <TableCell>
+                          <Badge variant="outline">{expense.category || 'OTHER'}</Badge>
+                        </TableCell>
+                        <TableCell className="text-right font-semibold text-red-600">
+                          ₹ {formatCurrency(expense.amount)}
+                        </TableCell>
+                        <TableCell className="text-right">
+                          <div className="flex justify-end gap-2">
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => handleEditBusinessExpense(expense)}
+                            >
+                              <Edit className="w-4 h-4" />
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => handleDeleteBusinessExpense(expense.id)}
+                              className="text-red-600 hover:text-red-700"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </Button>
+                          </div>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
               </div>
-            </div>
+              <div className="mt-4 pt-4 border-t">
+                <div className="flex justify-between items-center">
+                  <span className="font-semibold text-gray-700">Total Business Expenses:</span>
+                  <span className="text-xl font-bold text-red-600">
+                    ₹ {formatCurrency(businessExpenses.reduce((sum, e) => sum + e.amount, 0))}
+                  </span>
+                </div>
+              </div>
+            </>
           )}
         </CardContent>
       </Card>
