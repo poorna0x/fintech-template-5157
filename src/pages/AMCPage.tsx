@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { DatePicker } from '@/components/ui/date-picker';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -512,12 +513,18 @@ export default function AMCPage() {
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <Label htmlFor="startDate">Start Date *</Label>
-                  <Input
-                    id="startDate"
-                    type="date"
-                    value={editStartDate}
-                    onChange={(e) => handleStartDateChange(e.target.value)}
-                  />
+                  <div className="flex items-center gap-2 mt-1">
+                    <DatePicker
+                      value={editStartDate || undefined}
+                      onChange={(v) => v && handleStartDateChange(v)}
+                      placeholder="Pick date"
+                    />
+                    {editStartDate && (
+                      <span className="text-sm text-muted-foreground">
+                        {new Date(editStartDate + 'T12:00:00').toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
+                      </span>
+                    )}
+                  </div>
                 </div>
                 
                 <div>
@@ -542,12 +549,18 @@ export default function AMCPage() {
               
               <div className="mt-4">
                 <Label htmlFor="endDate">End Date *</Label>
-                <Input
-                  id="endDate"
-                  type="date"
-                  value={editEndDate}
-                  onChange={(e) => setEditEndDate(e.target.value)}
-                />
+                <div className="flex items-center gap-2 mt-1">
+                  <DatePicker
+                    value={editEndDate || undefined}
+                    onChange={(v) => v && setEditEndDate(v)}
+                    placeholder="Pick date"
+                  />
+                  {editEndDate && (
+                    <span className="text-sm text-muted-foreground">
+                      {new Date(editEndDate + 'T12:00:00').toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
+                    </span>
+                  )}
+                </div>
               </div>
               
               <div className="mt-4">

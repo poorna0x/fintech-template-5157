@@ -2,6 +2,7 @@ import React, { useState, useRef, useEffect, useCallback } from 'react';
 import Header from '@/components/Header';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { DatePicker } from '@/components/ui/date-picker';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -2239,23 +2240,18 @@ const Booking: React.FC = () => {
             <div className="space-y-4">
               <div>
                 <Label htmlFor="serviceDate">Service Date *</Label>
-                <Input
-                  id="serviceDate"
-                  type="date"
-                  value={formData.serviceDate}
-                  onChange={(e) => handleInputChange('serviceDate', e.target.value)}
-                  min={new Date().toISOString().split('T')[0]}
-                  className={`mt-1 text-left ${
-                    showValidation && !formData.serviceDate 
-                      ? 'border-2 border-black dark:border-white' 
-                      : ''
-                  }`}
-                  style={{
-                    WebkitAppearance: 'none',
-                    appearance: 'none',
-                    fontSize: '16px' // Prevents zoom on iOS
-                  }}
-                />
+                <div className="mt-1 flex items-center gap-2">
+                  <DatePicker
+                    value={formData.serviceDate || undefined}
+                    onChange={(v) => v && handleInputChange('serviceDate', v)}
+                    placeholder="Pick date"
+                  />
+                  {formData.serviceDate && (
+                    <span className="text-sm text-muted-foreground">
+                      {new Date(formData.serviceDate + 'T12:00:00').toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
+                    </span>
+                  )}
+                </div>
               </div>
               
               <div>

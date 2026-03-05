@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { DatePicker } from '@/components/ui/date-picker';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -274,12 +275,18 @@ export default function BillGenerator({ customer, onPrint }: BillGeneratorProps)
               </div>
               <div>
                 <Label htmlFor="billDate">Bill Date</Label>
-                <Input
-                  id="billDate"
-                  type="date"
-                  value={billDate}
-                  onChange={(e) => setBillDate(e.target.value)}
-                />
+                <div className="flex items-center gap-2">
+                  <DatePicker
+                    value={billDate}
+                    onChange={(v) => v && setBillDate(v)}
+                    placeholder="Pick date"
+                  />
+                  {billDate && (
+                    <span className="text-sm text-muted-foreground">
+                      {new Date(billDate + 'T12:00:00').toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
+                    </span>
+                  )}
+                </div>
               </div>
             </div>
           </CardContent>

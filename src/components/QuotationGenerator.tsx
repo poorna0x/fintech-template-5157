@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { DatePicker } from '@/components/ui/date-picker';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -346,12 +347,18 @@ export default function QuotationGenerator({ customer, onPrint }: QuotationGener
               </div>
               <div>
                 <Label htmlFor="quotationDate">Quotation Date</Label>
-                <Input
-                  id="quotationDate"
-                  type="date"
-                  value={quotationDate}
-                  onChange={(e) => setQuotationDate(e.target.value)}
-                />
+                <div className="flex items-center gap-2">
+                  <DatePicker
+                    value={quotationDate}
+                    onChange={(v) => v && setQuotationDate(v)}
+                    placeholder="Pick date"
+                  />
+                  {quotationDate && (
+                    <span className="text-sm text-muted-foreground">
+                      {new Date(quotationDate + 'T12:00:00').toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
+                    </span>
+                  )}
+                </div>
               </div>
               <div className="sm:col-span-2">
                 <Label htmlFor="gstOption">GST Option</Label>

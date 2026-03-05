@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { DatePicker } from '@/components/ui/date-picker';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Upload } from 'lucide-react';
@@ -483,13 +484,18 @@ const NewJobDialog: React.FC<NewJobDialogProps> = ({
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div className="space-y-2">
                   <Label htmlFor="job_scheduled_date">Scheduled Date</Label>
-                  <Input
-                    id="job_scheduled_date"
-                    type="date"
-                    value={newJobFormData.scheduled_date}
-                    onChange={(e) => handleFormChange('scheduled_date', e.target.value)}
-                    min={new Date().toISOString().split('T')[0]}
-                  />
+                  <div className="flex items-center gap-2">
+                    <DatePicker
+                      value={newJobFormData.scheduled_date || undefined}
+                      onChange={(v) => v && handleFormChange('scheduled_date', v)}
+                      placeholder="Pick date"
+                    />
+                    {newJobFormData.scheduled_date && (
+                      <span className="text-sm text-muted-foreground">
+                        {new Date(newJobFormData.scheduled_date + 'T12:00:00').toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
+                      </span>
+                    )}
+                  </div>
                 </div>
 
                 <div className="space-y-2">

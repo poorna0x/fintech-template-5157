@@ -5,6 +5,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
+import { DatePicker } from '@/components/ui/date-picker';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from '@/components/ui/dialog';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
@@ -5556,14 +5557,18 @@ const TechnicianDashboard = () => {
             <div className="space-y-4 py-4">
               <div>
                 <Label htmlFor="ongoing-date">Scheduled Date *</Label>
-                <Input
-                  id="ongoing-date"
-                  type="date"
-                  value={moveToOngoingDate}
-                  onChange={(e) => setMoveToOngoingDate(e.target.value)}
-                  className="mt-1"
-                  required
-                />
+                <div className="mt-1 flex items-center gap-2">
+                  <DatePicker
+                    value={moveToOngoingDate || undefined}
+                    onChange={(v) => v && setMoveToOngoingDate(v)}
+                    placeholder="Pick date"
+                  />
+                  {moveToOngoingDate && (
+                    <span className="text-sm text-muted-foreground">
+                      {new Date(moveToOngoingDate + 'T12:00:00').toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
+                    </span>
+                  )}
+                </div>
               </div>
               <div>
                 <Label htmlFor="ongoing-time-slot">Time Slot *</Label>
@@ -6126,24 +6131,30 @@ const TechnicianDashboard = () => {
                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
                             <Label htmlFor="amc-start-date" className="text-sm font-medium">AMC Start Date</Label>
-                    <Input
-                          id="amc-start-date"
-                          type="date"
-                          value={amcDateGiven}
-                      onChange={(e) => {
-                            const date = e.target.value;
-                            setAmcDateGiven(date);
-                            if (date && amcYears > 0) {
-                              const endDate = new Date(date);
-                              endDate.setFullYear(endDate.getFullYear() + amcYears);
-                              endDate.setDate(endDate.getDate() - 1);
-                              setAmcEndDate(endDate.toISOString().split('T')[0]);
-                            } else {
-                              setAmcEndDate('');
-                            }
-                          }}
-                          className="mt-1"
-                        />
+                            <div className="mt-1 flex items-center gap-2">
+                              <DatePicker
+                                value={amcDateGiven || undefined}
+                                onChange={(date) => {
+                                  if (date) {
+                                    setAmcDateGiven(date);
+                                    if (amcYears > 0) {
+                                      const endDate = new Date(date + 'T12:00:00');
+                                      endDate.setFullYear(endDate.getFullYear() + amcYears);
+                                      endDate.setDate(endDate.getDate() - 1);
+                                      setAmcEndDate(endDate.toISOString().split('T')[0]);
+                                    } else {
+                                      setAmcEndDate('');
+                                    }
+                                  }
+                                }}
+                                placeholder="Pick date"
+                              />
+                              {amcDateGiven && (
+                                <span className="text-sm text-muted-foreground">
+                                  {new Date(amcDateGiven + 'T12:00:00').toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
+                                </span>
+                              )}
+                            </div>
                       </div>
                       <div>
                         <Label htmlFor="amc-years" className="text-sm font-medium">Number of Years</Label>

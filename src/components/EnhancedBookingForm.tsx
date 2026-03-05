@@ -1,9 +1,10 @@
 import React, { useState } from 'react';
-import { useForm } from 'react-hook-form';
+import { useForm, Controller } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { DatePicker } from '@/components/ui/date-picker';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -809,12 +810,23 @@ const EnhancedBookingForm = () => {
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div>
                     <Label htmlFor="preferredDate">Preferred Date *</Label>
-                    <Input
-                      id="preferredDate"
-                      type="date"
-                      {...register('preferredDate')}
-                      min={new Date().toISOString().split('T')[0]}
-                      className={errors.preferredDate ? 'border-red-500' : ''}
+                    <Controller
+                      name="preferredDate"
+                      control={control}
+                      render={({ field }) => (
+                        <div className="flex items-center gap-2">
+                          <DatePicker
+                            value={field.value || undefined}
+                            onChange={(v) => field.onChange(v ?? '')}
+                            placeholder="Pick date"
+                          />
+                          {field.value && (
+                            <span className="text-sm text-muted-foreground">
+                              {new Date(field.value + 'T12:00:00').toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
+                            </span>
+                          )}
+                        </div>
+                      )}
                     />
                     {errors.preferredDate && (
                       <p className="text-sm text-red-500 mt-1">{errors.preferredDate.message}</p>

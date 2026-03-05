@@ -3,6 +3,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Input } from '@/components/ui/input';
+import { DatePicker } from '@/components/ui/date-picker';
 import { Label } from '@/components/ui/label';
 import { db, supabase } from '@/lib/supabase';
 import { getTotalSalaryForCalendarMonth } from '@/lib/technicianSalaryForPeriod';
@@ -1139,23 +1140,32 @@ const Analytics = () => {
           </div>
           
           {period === 'custom' && (
-            <div className="flex items-center gap-2">
-              <Input
-                type="date"
-                value={customStartDate}
-                onChange={(e) => setCustomStartDate(e.target.value)}
-                className="w-[150px]"
-                placeholder="Start date"
-              />
+            <div className="flex items-center gap-2 flex-wrap">
+              <div className="flex items-center gap-2">
+                <DatePicker
+                  value={customStartDate}
+                  onChange={(v) => v && setCustomStartDate(v)}
+                  placeholder="Start date"
+                />
+                {customStartDate && (
+                  <span className="text-sm text-muted-foreground">
+                    {new Date(customStartDate + 'T12:00:00').toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
+                  </span>
+                )}
+              </div>
               <span className="text-gray-500">to</span>
-              <Input
-                type="date"
-                value={customEndDate}
-                onChange={(e) => setCustomEndDate(e.target.value)}
-                className="w-[150px]"
-                placeholder="End date"
-                max={new Date().toISOString().split('T')[0]}
-              />
+              <div className="flex items-center gap-2">
+                <DatePicker
+                  value={customEndDate}
+                  onChange={(v) => v && setCustomEndDate(v)}
+                  placeholder="End date"
+                />
+                {customEndDate && (
+                  <span className="text-sm text-muted-foreground">
+                    {new Date(customEndDate + 'T12:00:00').toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
+                  </span>
+                )}
+              </div>
             </div>
           )}
           {period === 'customMonth' && (

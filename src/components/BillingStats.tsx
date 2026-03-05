@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Input } from '@/components/ui/input';
+import { DatePicker } from '@/components/ui/date-picker';
 import { supabase } from '@/lib/supabase';
 import { toast } from 'sonner';
 import { DollarSign, QrCode, TrendingUp, User, Calendar, Filter } from 'lucide-react';
@@ -362,34 +363,45 @@ const BillingStats = () => {
           {dateFilter === 'today' && (
             <div className="flex items-center gap-2">
               <Calendar className="w-4 h-4 text-gray-500" />
-              <Input
-                type="date"
-                value={selectedDate}
-                onChange={(e) => setSelectedDate(e.target.value)}
-                className="w-auto"
-              />
+              <div className="flex items-center gap-2">
+                <DatePicker
+                  value={selectedDate}
+                  onChange={(v) => v && setSelectedDate(v)}
+                  placeholder="Pick date"
+                />
+                {selectedDate && (
+                  <span className="text-sm text-muted-foreground">
+                    {new Date(selectedDate + 'T12:00:00').toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
+                  </span>
+                )}
+              </div>
             </div>
           )}
           {dateFilter === 'range' && (
             <div className="flex items-center gap-2 flex-wrap">
               <Calendar className="w-4 h-4 text-gray-500" />
               <div className="flex items-center gap-2">
-                <Input
-                  type="date"
+                <DatePicker
                   value={startDate}
-                  onChange={(e) => setStartDate(e.target.value)}
-                  className="w-auto"
-                  max={endDate}
+                  onChange={(v) => v && setStartDate(v)}
+                  placeholder="Start date"
                 />
+                {startDate && (
+                  <span className="text-sm text-muted-foreground">
+                    {new Date(startDate + 'T12:00:00').toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
+                  </span>
+                )}
                 <span className="text-gray-500">to</span>
-                <Input
-                  type="date"
+                <DatePicker
                   value={endDate}
-                  onChange={(e) => setEndDate(e.target.value)}
-                  className="w-auto"
-                  min={startDate}
-                  max={new Date().toISOString().split('T')[0]}
+                  onChange={(v) => v && setEndDate(v)}
+                  placeholder="End date"
                 />
+                {endDate && (
+                  <span className="text-sm text-muted-foreground">
+                    {new Date(endDate + 'T12:00:00').toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
+                  </span>
+                )}
               </div>
             </div>
           )}

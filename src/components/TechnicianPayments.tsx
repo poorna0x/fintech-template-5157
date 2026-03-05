@@ -4,6 +4,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
+import { DatePicker } from '@/components/ui/date-picker';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
@@ -2249,12 +2250,18 @@ const TechnicianPayments = () => {
             </div>
             <div>
               <Label htmlFor="holiday-date">Leave Date *</Label>
-              <Input
-                id="holiday-date"
-                type="date"
-                value={holidayFormData.holiday_date}
-                onChange={(e) => setHolidayFormData({ ...holidayFormData, holiday_date: e.target.value })}
-              />
+              <div className="flex items-center gap-2 mt-1">
+                <DatePicker
+                  value={holidayFormData.holiday_date || undefined}
+                  onChange={(v) => v && setHolidayFormData({ ...holidayFormData, holiday_date: v })}
+                  placeholder="Pick date"
+                />
+                {holidayFormData.holiday_date && (
+                  <span className="text-sm text-muted-foreground">
+                    {new Date(holidayFormData.holiday_date + 'T12:00:00').toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
+                  </span>
+                )}
+              </div>
             </div>
             <div>
               <Label htmlFor="holiday-reason">Reason</Label>
@@ -2396,12 +2403,18 @@ const TechnicianPayments = () => {
             </div>
             <div>
               <Label htmlFor="extra-commission-date">Commission Date</Label>
-              <Input
-                id="extra-commission-date"
-                type="date"
-                value={extraCommissionFormData.commission_date}
-                onChange={(e) => setExtraCommissionFormData({ ...extraCommissionFormData, commission_date: e.target.value })}
-              />
+              <div className="flex items-center gap-2 mt-1">
+                <DatePicker
+                  value={extraCommissionFormData.commission_date || undefined}
+                  onChange={(v) => v && setExtraCommissionFormData({ ...extraCommissionFormData, commission_date: v })}
+                  placeholder="Pick date"
+                />
+                {extraCommissionFormData.commission_date && (
+                  <span className="text-sm text-muted-foreground">
+                    {new Date(extraCommissionFormData.commission_date + 'T12:00:00').toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
+                  </span>
+                )}
+              </div>
             </div>
             <div>
               <Label htmlFor="extra-commission-payment-method">Payment Method</Label>
@@ -2503,12 +2516,18 @@ const TechnicianPayments = () => {
             </div>
             <div>
               <Label htmlFor="expense-date">Date</Label>
-              <Input
-                id="expense-date"
-                type="date"
-                value={expenseFormData.expense_date}
-                onChange={(e) => setExpenseFormData({ ...expenseFormData, expense_date: e.target.value })}
-              />
+              <div className="flex items-center gap-2 mt-1">
+                <DatePicker
+                  value={expenseFormData.expense_date || undefined}
+                  onChange={(v) => v && setExpenseFormData({ ...expenseFormData, expense_date: v })}
+                  placeholder="Pick date"
+                />
+                {expenseFormData.expense_date && (
+                  <span className="text-sm text-muted-foreground">
+                    {new Date(expenseFormData.expense_date + 'T12:00:00').toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
+                  </span>
+                )}
+              </div>
             </div>
             <div>
               <Label htmlFor="expense-category">Category</Label>
@@ -2856,12 +2875,18 @@ const TechnicianPayments = () => {
             </div>
             <div>
               <Label htmlFor="advance-date">Date</Label>
-              <Input
-                id="advance-date"
-                type="date"
-                value={advanceFormData.advance_date}
-                onChange={(e) => setAdvanceFormData({ ...advanceFormData, advance_date: e.target.value })}
-              />
+              <div className="flex items-center gap-2 mt-1">
+                <DatePicker
+                  value={advanceFormData.advance_date || undefined}
+                  onChange={(v) => v && setAdvanceFormData({ ...advanceFormData, advance_date: v })}
+                  placeholder="Pick date"
+                />
+                {advanceFormData.advance_date && (
+                  <span className="text-sm text-muted-foreground">
+                    {new Date(advanceFormData.advance_date + 'T12:00:00').toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
+                  </span>
+                )}
+              </div>
             </div>
             <div>
               <Label htmlFor="advance-payment-method">Payment Method</Label>
@@ -3097,12 +3122,18 @@ const TechnicianPayments = () => {
             </div>
             <div>
               <Label htmlFor="expense_date">Date *</Label>
-              <Input
-                id="expense_date"
-                type="date"
-                value={businessExpenseFormData.expense_date}
-                onChange={(e) => setBusinessExpenseFormData({ ...businessExpenseFormData, expense_date: e.target.value })}
-              />
+              <div className="flex items-center gap-2 mt-1">
+                <DatePicker
+                  value={businessExpenseFormData.expense_date || undefined}
+                  onChange={(v) => v && setBusinessExpenseFormData({ ...businessExpenseFormData, expense_date: v })}
+                  placeholder="Pick date"
+                />
+                {businessExpenseFormData.expense_date && (
+                  <span className="text-sm text-muted-foreground">
+                    {new Date(businessExpenseFormData.expense_date + 'T12:00:00').toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
+                  </span>
+                )}
+              </div>
             </div>
             <div>
               <Label htmlFor="category">Category</Label>

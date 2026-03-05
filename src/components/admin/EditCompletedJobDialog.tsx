@@ -3,6 +3,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
 import { Input } from '@/components/ui/input';
+import { DatePicker } from '@/components/ui/date-picker';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
 import { Job, Technician } from '@/types';
@@ -232,27 +233,43 @@ const EditCompletedJobDialog: React.FC<EditCompletedJobDialogProps> = ({
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <Label htmlFor="amc-start-date">Start Date</Label>
-                  <Input
-                    id="amc-start-date"
-                    type="date"
-                    value={editData.amcInfo?.date_given ? new Date(editData.amcInfo.date_given).toISOString().split('T')[0] : ''}
-                    onChange={(e) => {
-                      const amcInfo = { ...editData.amcInfo, date_given: e.target.value };
-                      onEditDataChange({ ...editData, amcInfo });
-                    }}
-                  />
+                  <div className="flex items-center gap-2 mt-1">
+                    <DatePicker
+                      value={editData.amcInfo?.date_given ? new Date(editData.amcInfo.date_given).toISOString().split('T')[0] : undefined}
+                      onChange={(v) => {
+                        if (v) {
+                          const amcInfo = { ...editData.amcInfo, date_given: v };
+                          onEditDataChange({ ...editData, amcInfo });
+                        }
+                      }}
+                      placeholder="Pick date"
+                    />
+                    {editData.amcInfo?.date_given && (
+                      <span className="text-sm text-muted-foreground">
+                        {new Date(editData.amcInfo.date_given).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
+                      </span>
+                    )}
+                  </div>
                 </div>
                 <div>
                   <Label htmlFor="amc-end-date">End Date</Label>
-                  <Input
-                    id="amc-end-date"
-                    type="date"
-                    value={editData.amcInfo?.end_date ? new Date(editData.amcInfo.end_date).toISOString().split('T')[0] : ''}
-                    onChange={(e) => {
-                      const amcInfo = { ...editData.amcInfo, end_date: e.target.value };
-                      onEditDataChange({ ...editData, amcInfo });
-                    }}
-                  />
+                  <div className="flex items-center gap-2 mt-1">
+                    <DatePicker
+                      value={editData.amcInfo?.end_date ? new Date(editData.amcInfo.end_date).toISOString().split('T')[0] : undefined}
+                      onChange={(v) => {
+                        if (v) {
+                          const amcInfo = { ...editData.amcInfo, end_date: v };
+                          onEditDataChange({ ...editData, amcInfo });
+                        }
+                      }}
+                      placeholder="Pick date"
+                    />
+                    {editData.amcInfo?.end_date && (
+                      <span className="text-sm text-muted-foreground">
+                        {new Date(editData.amcInfo.end_date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
+                      </span>
+                    )}
+                  </div>
                 </div>
               </div>
               <div className="grid grid-cols-2 gap-3">
@@ -329,31 +346,35 @@ const EditCompletedJobDialog: React.FC<EditCompletedJobDialogProps> = ({
             <div className="grid grid-cols-2 gap-3 mt-2">
               <div>
                 <Label htmlFor="edit-completion-date" className="text-sm">Date</Label>
-                <Input
-                  id="edit-completion-date"
-                  type="date"
-                  value={editData.completedDate || ''}
-                  onChange={(e) => {
-                    const dateValue = e.target.value;
-                    // If time is already set, preserve it
-                    const existingCompletedAt = editData.completedAt ? new Date(editData.completedAt) : new Date();
-                    if (dateValue) {
-                      const newDate = new Date(dateValue);
-                      newDate.setHours(existingCompletedAt.getHours());
-                      newDate.setMinutes(existingCompletedAt.getMinutes());
-                      newDate.setSeconds(existingCompletedAt.getSeconds());
-                      const timeStr = editData.completedTime || existingCompletedAt.toTimeString().slice(0, 5);
-                      onEditDataChange({ 
-                        ...editData, 
-                        completedDate: dateValue,
-                        completedTime: timeStr,
-                        completedAt: newDate.toISOString()
-                      });
-                    } else {
-                      onEditDataChange({ ...editData, completedDate: '', completedAt: null });
-                    }
-                  }}
-                />
+                <div className="flex items-center gap-2 mt-1">
+                  <DatePicker
+                    value={editData.completedDate || undefined}
+                    onChange={(dateValue) => {
+                      if (dateValue) {
+                        const existingCompletedAt = editData.completedAt ? new Date(editData.completedAt) : new Date();
+                        const newDate = new Date(dateValue + 'T12:00:00');
+                        newDate.setHours(existingCompletedAt.getHours());
+                        newDate.setMinutes(existingCompletedAt.getMinutes());
+                        newDate.setSeconds(existingCompletedAt.getSeconds());
+                        const timeStr = editData.completedTime || existingCompletedAt.toTimeString().slice(0, 5);
+                        onEditDataChange({ 
+                          ...editData, 
+                          completedDate: dateValue,
+                          completedTime: timeStr,
+                          completedAt: newDate.toISOString()
+                        });
+                      } else {
+                        onEditDataChange({ ...editData, completedDate: '', completedAt: null });
+                      }
+                    }}
+                    placeholder="Pick date"
+                  />
+                  {editData.completedDate && (
+                    <span className="text-sm text-muted-foreground">
+                      {new Date(editData.completedDate + 'T12:00:00').toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
+                    </span>
+                  )}
+                </div>
               </div>
               <div>
                 <Label htmlFor="edit-completion-time" className="text-sm">Time</Label>

@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { DatePicker } from '@/components/ui/date-picker';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -407,24 +408,34 @@ const AMC = () => {
                   <div className="grid grid-cols-2 gap-4">
                     <div>
                       <Label htmlFor="agreementPeriodFrom" className="text-sm text-muted-foreground mb-2 block">Start Date *</Label>
-                      <Input
-                        id="agreementPeriodFrom"
-                        type="date"
-                        value={formData.agreementPeriodFrom}
-                        onChange={(e) => handleStartDateChange(e.target.value)}
-                        className="border-0 border-b border-border rounded-none px-0 py-2 focus:border-primary"
-                      />
+                      <div className="flex items-center gap-2">
+                        <DatePicker
+                          value={formData.agreementPeriodFrom || undefined}
+                          onChange={(v) => v && handleStartDateChange(v)}
+                          placeholder="Pick date"
+                        />
+                        {formData.agreementPeriodFrom && (
+                          <span className="text-sm text-muted-foreground">
+                            {new Date(formData.agreementPeriodFrom + 'T12:00:00').toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
+                          </span>
+                        )}
+                      </div>
                     </div>
                     <div>
                       <Label htmlFor="agreementPeriodTo" className="text-sm text-muted-foreground mb-2 block">End Date</Label>
-                      <Input
-                        id="agreementPeriodTo"
-                        type="date"
-                        value={formData.agreementPeriodTo}
-                        onChange={(e) => handleInputChange('agreementPeriodTo', e.target.value)}
-                        readOnly
-                        className="border-0 border-b border-border rounded-none px-0 py-2 focus:border-primary"
-                      />
+                      <div className="flex items-center gap-2">
+                        <DatePicker
+                          value={formData.agreementPeriodTo || undefined}
+                          onChange={(v) => v && handleInputChange('agreementPeriodTo', v)}
+                          placeholder="Pick date"
+                          disabled
+                        />
+                        {formData.agreementPeriodTo && (
+                          <span className="text-sm text-muted-foreground">
+                            {new Date(formData.agreementPeriodTo + 'T12:00:00').toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
+                          </span>
+                        )}
+                      </div>
                     </div>
                   </div>
                   <div>

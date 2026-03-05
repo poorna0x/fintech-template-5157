@@ -1,6 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { DatePicker } from '@/components/ui/date-picker';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -869,15 +870,18 @@ const BookingSection = () => {
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div>
                           <Label htmlFor="date">Preferred Date *</Label>
-                      <Input
-                        id="date"
-                        type="date"
-                        value={formData.preferredDate}
-                        onChange={(e) => handleInputChange('preferredDate', e.target.value)}
-                        min={new Date().toISOString().split('T')[0]}
-                        className="force-visible-border focus:border-primary focus:ring-2 focus:ring-primary p-3 shadow-sm mx-1"
-                        required
-                      />
+                      <div className="flex items-center gap-2">
+                        <DatePicker
+                          value={formData.preferredDate || undefined}
+                          onChange={(v) => v && handleInputChange('preferredDate', v)}
+                          placeholder="Pick date"
+                        />
+                        {formData.preferredDate && (
+                          <span className="text-sm text-muted-foreground">
+                            {new Date(formData.preferredDate + 'T12:00:00').toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
+                          </span>
+                        )}
+                      </div>
                     </div>
                     <div>
                           <Label htmlFor="time">Preferred Time *</Label>

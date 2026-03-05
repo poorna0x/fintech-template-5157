@@ -14,7 +14,11 @@
     "test:cors": "node test-cors-production.js"
   },
   "dependencies": {
+    "@emotion/react": "^11.14.0",
+    "@emotion/styled": "^11.14.1",
     "@hookform/resolvers": "^3.9.0",
+    "@mui/material": "^7.3.8",
+    "@mui/x-date-pickers": "^8.27.2",
     "@radix-ui/react-accordion": "^1.2.0",
     "@radix-ui/react-alert-dialog": "^1.1.1",
     "@radix-ui/react-aspect-ratio": "^1.1.0",
@@ -54,6 +58,7 @@
     "clsx": "^2.1.1",
     "cmdk": "^1.0.0",
     "date-fns": "^3.6.0",
+    "dayjs": "^1.11.19",
     "dompurify": "^3.3.0",
     "embla-carousel-react": "^8.3.0",
     "i18next": "^25.5.2",

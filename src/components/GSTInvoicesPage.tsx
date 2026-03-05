@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
+import { DatePicker } from '@/components/ui/date-picker';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
@@ -925,12 +926,18 @@ export default function GSTInvoicesPage() {
               <div className="flex flex-col sm:flex-row gap-2 items-end mb-3">
                 <div className="flex-1 w-full sm:w-auto">
                   <Label className="mb-1 block text-xs">Select Date</Label>
-                  <Input
-                    type="date"
-                    value={bulkDownloadDate}
-                    onChange={(e) => setBulkDownloadDate(e.target.value)}
-                    className="w-full"
-                  />
+                  <div className="flex items-center gap-2">
+                    <DatePicker
+                      value={bulkDownloadDate}
+                      onChange={(v) => v && setBulkDownloadDate(v)}
+                      placeholder="Pick date"
+                    />
+                    {bulkDownloadDate && (
+                      <span className="text-sm text-muted-foreground">
+                        {new Date(bulkDownloadDate + 'T12:00:00').toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
+                      </span>
+                    )}
+                  </div>
                 </div>
               </div>
             )}
@@ -940,23 +947,33 @@ export default function GSTInvoicesPage() {
               <div className="flex flex-col sm:flex-row gap-2 items-end mb-3">
                 <div className="flex-1 w-full sm:w-auto">
                   <Label className="mb-1 block text-xs">Start Date</Label>
-                  <Input
-                    type="date"
-                    value={bulkDownloadStartDate}
-                    onChange={(e) => setBulkDownloadStartDate(e.target.value)}
-                    className="w-full"
-                    max={bulkDownloadEndDate || undefined}
-                  />
+                  <div className="flex items-center gap-2">
+                    <DatePicker
+                      value={bulkDownloadStartDate}
+                      onChange={(v) => v && setBulkDownloadStartDate(v)}
+                      placeholder="Start date"
+                    />
+                    {bulkDownloadStartDate && (
+                      <span className="text-sm text-muted-foreground">
+                        {new Date(bulkDownloadStartDate + 'T12:00:00').toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
+                      </span>
+                    )}
+                  </div>
                 </div>
                 <div className="flex-1 w-full sm:w-auto">
                   <Label className="mb-1 block text-xs">End Date</Label>
-                  <Input
-                    type="date"
-                    value={bulkDownloadEndDate}
-                    onChange={(e) => setBulkDownloadEndDate(e.target.value)}
-                    className="w-full"
-                    min={bulkDownloadStartDate || undefined}
-                  />
+                  <div className="flex items-center gap-2">
+                    <DatePicker
+                      value={bulkDownloadEndDate}
+                      onChange={(v) => v && setBulkDownloadEndDate(v)}
+                      placeholder="End date"
+                    />
+                    {bulkDownloadEndDate && (
+                      <span className="text-sm text-muted-foreground">
+                        {new Date(bulkDownloadEndDate + 'T12:00:00').toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
+                      </span>
+                    )}
+                  </div>
                 </div>
               </div>
             )}
@@ -1220,25 +1237,43 @@ export default function GSTInvoicesPage() {
               <div className="flex flex-col sm:flex-row gap-2 mt-2">
                 <div className="flex-1">
                   <Label className="mb-1 block text-xs">Start Date</Label>
-                  <Input
-                    type="date"
-                    value={startDate}
-                    onChange={(e) => {
-                      setStartDate(e.target.value);
-                      setCurrentPage(1);
-                    }}
-                  />
+                  <div className="flex items-center gap-2">
+                    <DatePicker
+                      value={startDate}
+                      onChange={(v) => {
+                        if (v) {
+                          setStartDate(v);
+                          setCurrentPage(1);
+                        }
+                      }}
+                      placeholder="Start date"
+                    />
+                    {startDate && (
+                      <span className="text-sm text-muted-foreground">
+                        {new Date(startDate + 'T12:00:00').toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
+                      </span>
+                    )}
+                  </div>
                 </div>
                 <div className="flex-1">
                   <Label className="mb-1 block text-xs">End Date</Label>
-                  <Input
-                    type="date"
-                    value={endDate}
-                    onChange={(e) => {
-                      setEndDate(e.target.value);
-                      setCurrentPage(1);
-                    }}
-                  />
+                  <div className="flex items-center gap-2">
+                    <DatePicker
+                      value={endDate}
+                      onChange={(v) => {
+                        if (v) {
+                          setEndDate(v);
+                          setCurrentPage(1);
+                        }
+                      }}
+                      placeholder="End date"
+                    />
+                    {endDate && (
+                      <span className="text-sm text-muted-foreground">
+                        {new Date(endDate + 'T12:00:00').toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
+                      </span>
+                    )}
+                  </div>
                 </div>
                 {(startDate || endDate) && (
                   <Button

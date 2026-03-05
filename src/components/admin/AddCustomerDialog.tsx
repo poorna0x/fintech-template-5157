@@ -2,6 +2,7 @@ import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { DatePicker } from '@/components/ui/date-picker';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -1539,13 +1540,18 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
 
                     <div className="space-y-2">
                       <Label htmlFor="step5_scheduled_date">Scheduled Date</Label>
-                      <Input
-                        id="step5_scheduled_date"
-                        type="date"
-                        value={step5JobData.scheduled_date}
-                        onChange={(e) => setStep5JobData(prev => ({ ...prev, scheduled_date: e.target.value }))}
-                        min={new Date().toISOString().split('T')[0]}
-                      />
+                      <div className="flex items-center gap-2">
+                        <DatePicker
+                          value={step5JobData.scheduled_date || undefined}
+                          onChange={(v) => v && setStep5JobData(prev => ({ ...prev, scheduled_date: v }))}
+                          placeholder="Pick date"
+                        />
+                        {step5JobData.scheduled_date && (
+                          <span className="text-sm text-muted-foreground">
+                            {new Date(step5JobData.scheduled_date + 'T12:00:00').toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
+                          </span>
+                        )}
+                      </div>
                     </div>
 
                     <div className="space-y-2">

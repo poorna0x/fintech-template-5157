@@ -3,6 +3,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { DatePicker } from '@/components/ui/date-picker';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
@@ -1045,19 +1046,23 @@ export const CompleteJobDialog: React.FC<CompleteJobDialogProps> = ({
                   <div className="space-y-4">
                     <div>
                       <Label htmlFor="amc-date-given">AMC Date of Agreement *</Label>
-                      <Input
-                        id="amc-date-given"
-                        type="date"
-                        value={amcDateGiven}
-                        onChange={(e) => {
-                          setAmcDateGiven(e.target.value);
-                          if (e.target.value && amcYears > 0) {
-                            calculateAMCEndDate(e.target.value, amcYears);
-                          }
-                        }}
-                        className="mt-1"
-                        max={getTodayLocalDate()}
-                      />
+                      <div className="mt-1 flex items-center gap-2">
+                        <DatePicker
+                          value={amcDateGiven || undefined}
+                          onChange={(v) => {
+                            if (v) {
+                              setAmcDateGiven(v);
+                              if (amcYears > 0) calculateAMCEndDate(v, amcYears);
+                            }
+                          }}
+                          placeholder="Pick date"
+                        />
+                        {amcDateGiven && (
+                          <span className="text-sm text-muted-foreground">
+                            {new Date(amcDateGiven + 'T12:00:00').toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
+                          </span>
+                        )}
+                      </div>
                     </div>
                     <div>
                       <Label htmlFor="amc-years">Number of Years *</Label>
@@ -1080,15 +1085,19 @@ export const CompleteJobDialog: React.FC<CompleteJobDialogProps> = ({
                     </div>
                     <div>
                       <Label htmlFor="amc-end-date">AMC End Date *</Label>
-                      <Input
-                        id="amc-end-date"
-                        type="date"
-                        value={amcEndDate}
-                        onChange={(e) => setAmcEndDate(e.target.value)}
-                        className="mt-1"
-                        min={amcDateGiven}
-                        readOnly
-                      />
+                      <div className="mt-1 flex items-center gap-2">
+                        <DatePicker
+                          value={amcEndDate || undefined}
+                          onChange={(v) => v && setAmcEndDate(v)}
+                          placeholder="Pick date"
+                          disabled
+                        />
+                        {amcEndDate && (
+                          <span className="text-sm text-muted-foreground">
+                            {new Date(amcEndDate + 'T12:00:00').toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
+                          </span>
+                        )}
+                      </div>
                     </div>
                     <div className="flex items-center space-x-2">
                       <input

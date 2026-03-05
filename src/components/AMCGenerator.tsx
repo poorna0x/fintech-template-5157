@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import DOMPurify from 'dompurify';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { DatePicker } from '@/components/ui/date-picker';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -492,12 +493,18 @@ ${notCoveredWithPreFilter}`;
                 </div>
                 <div>
                   <Label htmlFor="billDate">Agreement Date *</Label>
-                  <Input
-                    id="billDate"
-                    type="date"
-                    value={billDate}
-                    onChange={(e) => setBillDate(e.target.value)}
-                  />
+                  <div className="flex items-center gap-2 mt-1">
+                    <DatePicker
+                      value={billDate}
+                      onChange={(v) => v && setBillDate(v)}
+                      placeholder="Pick date"
+                    />
+                    {billDate && (
+                      <span className="text-sm text-muted-foreground">
+                        {new Date(billDate + 'T12:00:00').toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
+                      </span>
+                    )}
+                  </div>
                 </div>
               </div>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
@@ -520,21 +527,33 @@ ${notCoveredWithPreFilter}`;
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
                       <div>
                         <Label htmlFor="customFromDate">From Date</Label>
-                        <Input
-                          id="customFromDate"
-                          type="date"
-                          value={customFromDate}
-                          onChange={(e) => setCustomFromDate(e.target.value)}
-                        />
+                        <div className="flex items-center gap-2 mt-1">
+                          <DatePicker
+                            value={customFromDate}
+                            onChange={(v) => v && setCustomFromDate(v)}
+                            placeholder="Pick date"
+                          />
+                          {customFromDate && (
+                            <span className="text-sm text-muted-foreground">
+                              {new Date(customFromDate + 'T12:00:00').toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
+                            </span>
+                          )}
+                        </div>
                       </div>
                       <div>
                         <Label htmlFor="customToDate">To Date</Label>
-                        <Input
-                          id="customToDate"
-                          type="date"
-                          value={customToDate}
-                          onChange={(e) => setCustomToDate(e.target.value)}
-                        />
+                        <div className="flex items-center gap-2 mt-1">
+                          <DatePicker
+                            value={customToDate}
+                            onChange={(v) => v && setCustomToDate(v)}
+                            placeholder="Pick date"
+                          />
+                          {customToDate && (
+                            <span className="text-sm text-muted-foreground">
+                              {new Date(customToDate + 'T12:00:00').toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
+                            </span>
+                          )}
+                        </div>
                       </div>
                     </div>
                   </div>

@@ -5,6 +5,7 @@ import AdminHeader from '@/components/AdminHeader';
 import AdminLogin from '@/components/AdminLogin';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
+import { DatePicker } from '@/components/ui/date-picker';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
@@ -7655,49 +7656,45 @@ const AdminDashboard = () => {
 
         {/* Date Filter for Denied Jobs */}
         {statusFilter === 'CANCELLED' && (
-          <div className="mb-4 flex items-center gap-3 flex-wrap">
-            <Label htmlFor="denied-date-filter" className="text-sm font-medium text-gray-700">
-              Show denied jobs for:
-            </Label>
-            <Input
-              id="denied-date-filter"
-              type="date"
-              value={deniedDateFilter}
-              onChange={(e) => setDeniedDateFilter(e.target.value)}
-              className="max-w-[200px]"
-            />
+          <div className="mb-4">
+            <div className="inline-flex flex-wrap items-center gap-2 rounded-lg border border-border bg-muted/30 px-3 py-2">
+              <Label className="text-sm font-medium text-muted-foreground shrink-0">
+                Show denied jobs for
+              </Label>
+              <DatePicker
+                value={deniedDateFilter}
+                onChange={(v) => setDeniedDateFilter(v ?? getTodayLocalDate())}
+                placeholder="Pick date"
+              />
               <Button
                 variant="outline"
                 size="sm"
-                onClick={() => {
-                  setDeniedDateFilter(getTodayLocalDate());
-                }}
+                className="shrink-0"
+                onClick={() => setDeniedDateFilter(getTodayLocalDate())}
               >
                 Today
               </Button>
+            </div>
           </div>
         )}
 
         {/* Date Filter for Completed Jobs */}
         {statusFilter === 'COMPLETED' && (
-          <div className="mb-4 space-y-3">
-            <div className="flex items-center gap-3 flex-wrap">
-              <Label htmlFor="completed-date-filter" className="text-sm font-medium text-gray-700">
-                Show completed jobs for:
+          <div className="mb-4">
+            <div className="inline-flex flex-wrap items-center gap-2 rounded-lg border border-border bg-muted/30 px-3 py-2">
+              <Label className="text-sm font-medium text-muted-foreground shrink-0">
+                Show completed jobs for
               </Label>
-              <Input
-                id="completed-date-filter"
-                type="date"
+              <DatePicker
                 value={completedDateFilter}
-                onChange={(e) => setCompletedDateFilter(e.target.value)}
-                className="max-w-[200px]"
+                onChange={(v) => setCompletedDateFilter(v ?? getTodayLocalDate())}
+                placeholder="Pick date"
               />
               <Button
                 variant="outline"
                 size="sm"
-                onClick={() => {
-                  setCompletedDateFilter(getTodayLocalDate());
-                }}
+                className="shrink-0"
+                onClick={() => setCompletedDateFilter(getTodayLocalDate())}
               >
                 Today
               </Button>
@@ -9569,14 +9566,18 @@ const AdminDashboard = () => {
             <div className="space-y-4 py-4">
               <div>
                 <Label htmlFor="admin-ongoing-date">Scheduled Date *</Label>
-                <Input
-                  id="admin-ongoing-date"
-                  type="date"
-                  value={moveToOngoingDate}
-                  onChange={(e) => setMoveToOngoingDate(e.target.value)}
-                  className="mt-1"
-                  required
-                />
+                <div className="mt-1 flex items-center gap-2">
+                  <DatePicker
+                    value={moveToOngoingDate}
+                    onChange={(v) => v && setMoveToOngoingDate(v)}
+                    placeholder="Pick date"
+                  />
+                  {moveToOngoingDate && (
+                    <span className="text-sm text-muted-foreground">
+                      {new Date(moveToOngoingDate + 'T12:00:00').toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
+                    </span>
+                  )}
+                </div>
               </div>
               <div>
                 <Label htmlFor="admin-ongoing-time-slot">Time Slot *</Label>

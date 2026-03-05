@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { DatePicker } from '@/components/ui/date-picker';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -547,12 +548,18 @@ const EditJobDialog: React.FC<EditJobDialogProps> = ({
 
             <div>
               <Label htmlFor="edit-scheduled-date">Scheduled Date</Label>
-              <Input
-                id="edit-scheduled-date"
-                type="date"
-                value={editJobFormData.scheduledDate}
-                onChange={(e) => setEditJobFormData(prev => ({ ...prev, scheduledDate: e.target.value }))}
-              />
+              <div className="flex items-center gap-2">
+                <DatePicker
+                  value={editJobFormData.scheduledDate || undefined}
+                  onChange={(v) => v && setEditJobFormData(prev => ({ ...prev, scheduledDate: v }))}
+                  placeholder="Pick date"
+                />
+                {editJobFormData.scheduledDate && (
+                  <span className="text-sm text-muted-foreground">
+                    {new Date(editJobFormData.scheduledDate + 'T12:00:00').toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
+                  </span>
+                )}
+              </div>
             </div>
 
             <div>
