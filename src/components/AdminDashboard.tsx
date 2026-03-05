@@ -389,10 +389,10 @@ const AdminDashboard = () => {
   }, []);
 
   
-  // Brand and model data - Comprehensive list of popular RO and Softener brands in India
+  // Brand and model data - Comprehensive list of popular RO and Softener brands in India (including local: Aqua Grand, Aqua Smart, Dolphin, etc.)
   const brandData = {
     'K': ['Kent'],
-    'A': ['Aquaguard', 'AO Smith', 'Aqua Fresh'],
+    'A': ['Aquaguard', 'AO Smith', 'Aqua Fresh', 'Aqua Grand', 'Aqua Smart', 'Aquasure'],
     'P': ['Pureit', 'Protek'],
     'L': ['Livpure', 'LG'],
     'B': ['Blue Star'],
@@ -400,7 +400,11 @@ const AdminDashboard = () => {
     'E': ['Eureka Forbes'],
     'S': ['Samsung', 'Supreme'],
     'W': ['Whirlpool'],
-    'H': ['Havells', 'Hindware']
+    'H': ['Havells', 'Hindware', 'Hi-Tech'],
+    'D': ['Dolphin'],
+    'V': ['V-Guard'],
+    'I': ['iSpring'],
+    'N': ['Nasaka']
   };
 
   const modelData = {
@@ -490,6 +494,56 @@ const AdminDashboard = () => {
       'Eureka Forbes': [
         'Aquaguard RO + UV',
         'Aquaguard RO + UV + UF'
+      ],
+      'Aqua Grand': [
+        'Aqua Grand RO 8 L',
+        'Aqua Grand RO+UV 10 L',
+        'Aqua Grand RO+UV+UF',
+        'Aqua Grand Deluxe',
+        'Aqua Grand Prime'
+      ],
+      'Aqua Smart': [
+        'Aqua Smart RO 7 L',
+        'Aqua Smart RO+UV 8 L',
+        'Aqua Smart RO+UV+UF',
+        'Aqua Smart Pro',
+        'Aqua Smart Elite'
+      ],
+      'Dolphin': [
+        'Dolphin RO 8 L',
+        'Dolphin RO+UV',
+        'Dolphin RO+UV+UF',
+        'Dolphin Premium',
+        'Dolphin Smart RO'
+      ],
+      'Aquasure': [
+        'Aquasure RO 7 L',
+        'Aquasure RO+UV+UF',
+        'Aquasure Amrit',
+        'Aquasure from Aquaguard'
+      ],
+      'V-Guard': [
+        'V-Guard Zen RO',
+        'V-Guard Rocean RO+UV+UF',
+        'V-Guard Bliss RO',
+        'V-Guard Smart RO'
+      ],
+      'iSpring': [
+        'iSpring RCC7',
+        'iSpring RO500',
+        'iSpring RO+UV models'
+      ],
+      'Nasaka': [
+        'Nasaka RO 8 L',
+        'Nasaka RO+UV',
+        'Nasaka RO+UV+UF',
+        'Nasaka Mineral RO'
+      ],
+      'Hi-Tech': [
+        'Hi-Tech RO 7 L',
+        'Hi-Tech RO+UV',
+        'Hi-Tech RO+UV+UF',
+        'Hi-Tech Alkaline RO'
       ]
     },
     'SOFTENER': {
