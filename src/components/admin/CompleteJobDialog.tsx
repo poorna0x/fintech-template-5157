@@ -1046,8 +1046,7 @@ export const CompleteJobDialog: React.FC<CompleteJobDialogProps> = ({
                   <div className="space-y-4">
                     <div>
                       <Label htmlFor="amc-date-given">AMC Date of Agreement *</Label>
-                      <div className="mt-1 flex items-center gap-2">
-                        <DatePicker
+                      <DatePicker
                           value={amcDateGiven || undefined}
                           onChange={(v) => {
                             if (v) {
@@ -1056,13 +1055,8 @@ export const CompleteJobDialog: React.FC<CompleteJobDialogProps> = ({
                             }
                           }}
                           placeholder="Pick date"
+                          className="mt-1"
                         />
-                        {amcDateGiven && (
-                          <span className="text-sm text-muted-foreground">
-                            {new Date(amcDateGiven + 'T12:00:00').toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
-                          </span>
-                        )}
-                      </div>
                     </div>
                     <div>
                       <Label htmlFor="amc-years">Number of Years *</Label>
@@ -1085,19 +1079,13 @@ export const CompleteJobDialog: React.FC<CompleteJobDialogProps> = ({
                     </div>
                     <div>
                       <Label htmlFor="amc-end-date">AMC End Date *</Label>
-                      <div className="mt-1 flex items-center gap-2">
-                        <DatePicker
+                      <DatePicker
                           value={amcEndDate || undefined}
                           onChange={(v) => v && setAmcEndDate(v)}
                           placeholder="Pick date"
                           disabled
+                          className="mt-1"
                         />
-                        {amcEndDate && (
-                          <span className="text-sm text-muted-foreground">
-                            {new Date(amcEndDate + 'T12:00:00').toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
-                          </span>
-                        )}
-                      </div>
                     </div>
                     <div className="flex items-center space-x-2">
                       <input

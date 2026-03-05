@@ -814,18 +814,11 @@ const EnhancedBookingForm = () => {
                       name="preferredDate"
                       control={control}
                       render={({ field }) => (
-                        <div className="flex items-center gap-2">
-                          <DatePicker
-                            value={field.value || undefined}
-                            onChange={(v) => field.onChange(v ?? '')}
-                            placeholder="Pick date"
-                          />
-                          {field.value && (
-                            <span className="text-sm text-muted-foreground">
-                              {new Date(field.value + 'T12:00:00').toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
-                            </span>
-                          )}
-                        </div>
+                        <DatePicker
+                          value={field.value || undefined}
+                          onChange={(v) => field.onChange(v ?? '')}
+                          placeholder="Pick date"
+                        />
                       )}
                     />
                     {errors.preferredDate && (

@@ -761,18 +761,12 @@ export default function TaxInvoiceGenerator({ customer, onPrint, onTaxInvoiceSav
               </div>
               <div>
                 <Label htmlFor="billDate">Invoice Date</Label>
-                <div className="flex items-center gap-2 mt-1">
-                  <DatePicker
+                <DatePicker
                     value={billDate}
                     onChange={(v) => v && setBillDate(v)}
                     placeholder="Pick date"
+                    className="mt-1"
                   />
-                  {billDate && (
-                    <span className="text-sm text-muted-foreground">
-                      {new Date(billDate + 'T12:00:00').toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
-                    </span>
-                  )}
-                </div>
               </div>
               <div>
                 <Label htmlFor="placeOfSupply">Place of Supply (State)</Label>
@@ -889,18 +883,12 @@ export default function TaxInvoiceGenerator({ customer, onPrint, onTaxInvoiceSav
             {/* Payment Due Date */}
             <div className="border-t pt-4 mt-4">
               <Label htmlFor="paymentDueDate">Payment Due Date (Optional)</Label>
-              <div className="flex items-center gap-2 mt-1">
-                <DatePicker
-                  value={paymentDueDate}
-                  onChange={(v) => setPaymentDueDate(v ?? '')}
-                  placeholder="Pick date"
-                />
-                {paymentDueDate && (
-                  <span className="text-sm text-muted-foreground">
-                    {new Date(paymentDueDate + 'T12:00:00').toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
-                  </span>
-                )}
-              </div>
+              <DatePicker
+                value={paymentDueDate}
+                onChange={(v) => setPaymentDueDate(v ?? '')}
+                placeholder="Pick date"
+                className="mt-1"
+              />
             </div>
           </CardContent>
         </Card>
@@ -1529,18 +1517,11 @@ export default function TaxInvoiceGenerator({ customer, onPrint, onTaxInvoiceSav
                   <Label htmlFor="signatureDate" className="text-sm font-medium mb-2 block">
                     Signature Date (Below Seal)
                   </Label>
-                  <div className="flex items-center gap-2">
-                    <DatePicker
-                      value={signatureDate}
-                      onChange={(v) => v && setSignatureDate(v)}
-                      placeholder="Pick date"
-                    />
-                    {signatureDate && (
-                      <span className="text-sm text-muted-foreground">
-                        {new Date(signatureDate + 'T12:00:00').toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
-                      </span>
-                    )}
-                  </div>
+                  <DatePicker
+                    value={signatureDate}
+                    onChange={(v) => v && setSignatureDate(v)}
+                    placeholder="Pick date"
+                  />
                   <p className="text-xs text-gray-500 mt-2">
                     This date will appear below the seal/signature. Defaults to invoice date but can be customized.
                   </p>
@@ -1613,18 +1594,11 @@ export default function TaxInvoiceGenerator({ customer, onPrint, onTaxInvoiceSav
                       <Label htmlFor="dscSignatureDate" className="text-sm font-medium mb-2 block">
                         DSC Signature Date
                       </Label>
-                      <div className="flex items-center gap-2">
-                        <DatePicker
-                          value={signatureDate}
-                          onChange={(v) => v && setSignatureDate(v)}
-                          placeholder="Pick date"
-                        />
-                        {signatureDate && (
-                          <span className="text-sm text-muted-foreground">
-                            {new Date(signatureDate + 'T12:00:00').toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
-                          </span>
-                        )}
-                      </div>
+                      <DatePicker
+                        value={signatureDate}
+                        onChange={(v) => v && setSignatureDate(v)}
+                        placeholder="Pick date"
+                      />
                       <p className="text-xs text-gray-500 mt-2">
                         Date that will appear in the DSC signature section. Defaults to invoice date.
                       </p>

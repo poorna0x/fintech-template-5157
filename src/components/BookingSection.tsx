@@ -870,18 +870,11 @@ const BookingSection = () => {
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div>
                           <Label htmlFor="date">Preferred Date *</Label>
-                      <div className="flex items-center gap-2">
-                        <DatePicker
-                          value={formData.preferredDate || undefined}
-                          onChange={(v) => v && handleInputChange('preferredDate', v)}
-                          placeholder="Pick date"
-                        />
-                        {formData.preferredDate && (
-                          <span className="text-sm text-muted-foreground">
-                            {new Date(formData.preferredDate + 'T12:00:00').toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
-                          </span>
-                        )}
-                      </div>
+                      <DatePicker
+                        value={formData.preferredDate || undefined}
+                        onChange={(v) => v && handleInputChange('preferredDate', v)}
+                        placeholder="Pick date"
+                      />
                     </div>
                     <div>
                           <Label htmlFor="time">Preferred Time *</Label>

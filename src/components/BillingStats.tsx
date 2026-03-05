@@ -363,18 +363,11 @@ const BillingStats = () => {
           {dateFilter === 'today' && (
             <div className="flex items-center gap-2">
               <Calendar className="w-4 h-4 text-gray-500" />
-              <div className="flex items-center gap-2">
-                <DatePicker
-                  value={selectedDate}
-                  onChange={(v) => v && setSelectedDate(v)}
-                  placeholder="Pick date"
-                />
-                {selectedDate && (
-                  <span className="text-sm text-muted-foreground">
-                    {new Date(selectedDate + 'T12:00:00').toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
-                  </span>
-                )}
-              </div>
+              <DatePicker
+                value={selectedDate}
+                onChange={(v) => v && setSelectedDate(v)}
+                placeholder="Pick date"
+              />
             </div>
           )}
           {dateFilter === 'range' && (
@@ -386,22 +379,12 @@ const BillingStats = () => {
                   onChange={(v) => v && setStartDate(v)}
                   placeholder="Start date"
                 />
-                {startDate && (
-                  <span className="text-sm text-muted-foreground">
-                    {new Date(startDate + 'T12:00:00').toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
-                  </span>
-                )}
                 <span className="text-gray-500">to</span>
                 <DatePicker
                   value={endDate}
                   onChange={(v) => v && setEndDate(v)}
                   placeholder="End date"
                 />
-                {endDate && (
-                  <span className="text-sm text-muted-foreground">
-                    {new Date(endDate + 'T12:00:00').toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
-                  </span>
-                )}
               </div>
             </div>
           )}

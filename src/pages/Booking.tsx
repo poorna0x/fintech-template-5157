@@ -2240,18 +2240,12 @@ const Booking: React.FC = () => {
             <div className="space-y-4">
               <div>
                 <Label htmlFor="serviceDate">Service Date *</Label>
-                <div className="mt-1 flex items-center gap-2">
-                  <DatePicker
-                    value={formData.serviceDate || undefined}
-                    onChange={(v) => v && handleInputChange('serviceDate', v)}
-                    placeholder="Pick date"
-                  />
-                  {formData.serviceDate && (
-                    <span className="text-sm text-muted-foreground">
-                      {new Date(formData.serviceDate + 'T12:00:00').toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
-                    </span>
-                  )}
-                </div>
+                <DatePicker
+                  value={formData.serviceDate || undefined}
+                  onChange={(v) => v && handleInputChange('serviceDate', v)}
+                  placeholder="Pick date"
+                  className="mt-1"
+                />
               </div>
               
               <div>

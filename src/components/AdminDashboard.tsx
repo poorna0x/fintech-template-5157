@@ -9566,18 +9566,12 @@ const AdminDashboard = () => {
             <div className="space-y-4 py-4">
               <div>
                 <Label htmlFor="admin-ongoing-date">Scheduled Date *</Label>
-                <div className="mt-1 flex items-center gap-2">
-                  <DatePicker
+                <DatePicker
                     value={moveToOngoingDate}
                     onChange={(v) => v && setMoveToOngoingDate(v)}
                     placeholder="Pick date"
+                    className="mt-1"
                   />
-                  {moveToOngoingDate && (
-                    <span className="text-sm text-muted-foreground">
-                      {new Date(moveToOngoingDate + 'T12:00:00').toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
-                    </span>
-                  )}
-                </div>
               </div>
               <div>
                 <Label htmlFor="admin-ongoing-time-slot">Time Slot *</Label>

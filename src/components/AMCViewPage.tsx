@@ -698,8 +698,7 @@ const AMCViewPage: React.FC<AMCViewPageProps> = ({ onBack }) => {
                 <div className="grid grid-cols-2 gap-4">
                   <div>
                     <Label htmlFor="edit-date-given">Start Date *</Label>
-                    <div className="mt-1 flex items-center gap-2">
-                      <DatePicker
+                    <DatePicker
                         value={editFormData.dateGiven || undefined}
                         onChange={(newDate) => {
                           setEditFormData({
@@ -709,13 +708,8 @@ const AMCViewPage: React.FC<AMCViewPageProps> = ({ onBack }) => {
                           });
                         }}
                         placeholder="Pick date"
+                        className="mt-1"
                       />
-                      {editFormData.dateGiven && (
-                        <span className="text-sm text-muted-foreground">
-                          {new Date(editFormData.dateGiven + 'T12:00:00').toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
-                        </span>
-                      )}
-                    </div>
                   </div>
                   <div>
                     <Label htmlFor="edit-years">Duration (Years) *</Label>
@@ -737,18 +731,12 @@ const AMCViewPage: React.FC<AMCViewPageProps> = ({ onBack }) => {
                   </div>
                   <div className="col-span-2">
                     <Label htmlFor="edit-end-date">End Date</Label>
-                    <div className="mt-1 flex items-center gap-2">
-                      <DatePicker
+                    <DatePicker
                         value={editFormData.endDate || undefined}
                         onChange={(v) => setEditFormData({ ...editFormData, endDate: v })}
                         placeholder="Pick date"
+                        className="mt-1"
                       />
-                      {editFormData.endDate && (
-                        <span className="text-sm text-muted-foreground">
-                          {new Date(editFormData.endDate + 'T12:00:00').toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
-                        </span>
-                      )}
-                    </div>
                     <p className="text-xs text-gray-500 mt-1">
                       Automatically calculated from start date and duration. You can override it manually.
                     </p>

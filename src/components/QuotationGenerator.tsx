@@ -347,18 +347,11 @@ export default function QuotationGenerator({ customer, onPrint }: QuotationGener
               </div>
               <div>
                 <Label htmlFor="quotationDate">Quotation Date</Label>
-                <div className="flex items-center gap-2">
-                  <DatePicker
+                <DatePicker
                     value={quotationDate}
                     onChange={(v) => v && setQuotationDate(v)}
                     placeholder="Pick date"
                   />
-                  {quotationDate && (
-                    <span className="text-sm text-muted-foreground">
-                      {new Date(quotationDate + 'T12:00:00').toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
-                    </span>
-                  )}
-                </div>
               </div>
               <div className="sm:col-span-2">
                 <Label htmlFor="gstOption">GST Option</Label>

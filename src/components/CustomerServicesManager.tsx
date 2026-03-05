@@ -271,35 +271,21 @@ const CustomerServicesManager: React.FC<CustomerServicesManagerProps> = ({
             {/* Installation Date */}
             <div className="space-y-2">
               <Label htmlFor="installation_date">Installation Date</Label>
-              <div className="flex items-center gap-2">
-                <DatePicker
-                  value={serviceFormData.installationDate || undefined}
-                  onChange={(v) => v && setServiceFormData(prev => ({ ...prev, installationDate: v }))}
-                  placeholder="Pick date"
-                />
-                {serviceFormData.installationDate && (
-                  <span className="text-sm text-muted-foreground">
-                    {new Date(serviceFormData.installationDate + 'T12:00:00').toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
-                  </span>
-                )}
-              </div>
+              <DatePicker
+                value={serviceFormData.installationDate || undefined}
+                onChange={(v) => v && setServiceFormData(prev => ({ ...prev, installationDate: v }))}
+                placeholder="Pick date"
+              />
             </div>
 
             {/* Warranty Expiry */}
             <div className="space-y-2">
               <Label htmlFor="warranty_expiry">Warranty Expiry</Label>
-              <div className="flex items-center gap-2">
-                <DatePicker
-                  value={serviceFormData.warrantyExpiry || undefined}
-                  onChange={(v) => v && setServiceFormData(prev => ({ ...prev, warrantyExpiry: v }))}
-                  placeholder="Pick date"
-                />
-                {serviceFormData.warrantyExpiry && (
-                  <span className="text-sm text-muted-foreground">
-                    {new Date(serviceFormData.warrantyExpiry + 'T12:00:00').toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
-                  </span>
-                )}
-              </div>
+              <DatePicker
+                value={serviceFormData.warrantyExpiry || undefined}
+                onChange={(v) => v && setServiceFormData(prev => ({ ...prev, warrantyExpiry: v }))}
+                placeholder="Pick date"
+              />
             </div>
 
             {/* Status */}

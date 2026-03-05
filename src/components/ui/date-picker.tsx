@@ -1,6 +1,5 @@
 import * as React from "react";
 import dayjs, { type Dayjs } from "dayjs";
-import { Calendar } from "lucide-react";
 import { LocalizationProvider } from "@mui/x-date-pickers/LocalizationProvider";
 import { AdapterDayjs } from "@mui/x-date-pickers/AdapterDayjs";
 import { StaticDatePicker } from "@mui/x-date-pickers/StaticDatePicker";
@@ -25,6 +24,12 @@ function toDayjs(value: string | undefined): Dayjs | null {
   return d.isValid() ? d : null;
 }
 
+function formatDisplayDate(value: string | undefined): string {
+  if (!value) return "";
+  const d = new Date(value + "T12:00:00");
+  return isNaN(d.getTime()) ? "" : d.toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" });
+}
+
 export function DatePicker({
   value,
   onChange,
@@ -34,6 +39,7 @@ export function DatePicker({
 }: DatePickerProps) {
   const [open, setOpen] = React.useState(false);
   const dayjsValue = toDayjs(value);
+  const displayText = formatDisplayDate(value) || placeholder;
 
   return (
     <Popover open={open} onOpenChange={setOpen}>
@@ -43,10 +49,10 @@ export function DatePicker({
           variant="outline"
           size="sm"
           disabled={disabled}
-          className={cn("h-9 w-9 shrink-0 p-0", className)}
+          className={cn("min-w-[120px] justify-start font-normal", !value && "text-muted-foreground", className)}
           aria-label={placeholder}
         >
-          <Calendar className="h-4 w-4" />
+          {displayText}
         </Button>
       </PopoverTrigger>
       <PopoverContent className="w-auto p-0" align="start">

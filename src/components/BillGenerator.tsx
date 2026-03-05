@@ -275,18 +275,11 @@ export default function BillGenerator({ customer, onPrint }: BillGeneratorProps)
               </div>
               <div>
                 <Label htmlFor="billDate">Bill Date</Label>
-                <div className="flex items-center gap-2">
-                  <DatePicker
+                <DatePicker
                     value={billDate}
                     onChange={(v) => v && setBillDate(v)}
                     placeholder="Pick date"
                   />
-                  {billDate && (
-                    <span className="text-sm text-muted-foreground">
-                      {new Date(billDate + 'T12:00:00').toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
-                    </span>
-                  )}
-                </div>
               </div>
             </div>
           </CardContent>

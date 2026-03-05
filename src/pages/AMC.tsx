@@ -408,34 +408,20 @@ const AMC = () => {
                   <div className="grid grid-cols-2 gap-4">
                     <div>
                       <Label htmlFor="agreementPeriodFrom" className="text-sm text-muted-foreground mb-2 block">Start Date *</Label>
-                      <div className="flex items-center gap-2">
-                        <DatePicker
+                      <DatePicker
                           value={formData.agreementPeriodFrom || undefined}
                           onChange={(v) => v && handleStartDateChange(v)}
                           placeholder="Pick date"
                         />
-                        {formData.agreementPeriodFrom && (
-                          <span className="text-sm text-muted-foreground">
-                            {new Date(formData.agreementPeriodFrom + 'T12:00:00').toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
-                          </span>
-                        )}
-                      </div>
                     </div>
                     <div>
                       <Label htmlFor="agreementPeriodTo" className="text-sm text-muted-foreground mb-2 block">End Date</Label>
-                      <div className="flex items-center gap-2">
-                        <DatePicker
+                      <DatePicker
                           value={formData.agreementPeriodTo || undefined}
                           onChange={(v) => v && handleInputChange('agreementPeriodTo', v)}
                           placeholder="Pick date"
                           disabled
                         />
-                        {formData.agreementPeriodTo && (
-                          <span className="text-sm text-muted-foreground">
-                            {new Date(formData.agreementPeriodTo + 'T12:00:00').toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
-                          </span>
-                        )}
-                      </div>
                     </div>
                   </div>
                   <div>

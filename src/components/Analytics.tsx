@@ -1141,31 +1141,17 @@ const Analytics = () => {
           
           {period === 'custom' && (
             <div className="flex items-center gap-2 flex-wrap">
-              <div className="flex items-center gap-2">
-                <DatePicker
-                  value={customStartDate}
-                  onChange={(v) => v && setCustomStartDate(v)}
-                  placeholder="Start date"
-                />
-                {customStartDate && (
-                  <span className="text-sm text-muted-foreground">
-                    {new Date(customStartDate + 'T12:00:00').toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
-                  </span>
-                )}
-              </div>
+              <DatePicker
+                value={customStartDate}
+                onChange={(v) => v && setCustomStartDate(v)}
+                placeholder="Start date"
+              />
               <span className="text-gray-500">to</span>
-              <div className="flex items-center gap-2">
-                <DatePicker
-                  value={customEndDate}
-                  onChange={(v) => v && setCustomEndDate(v)}
-                  placeholder="End date"
-                />
-                {customEndDate && (
-                  <span className="text-sm text-muted-foreground">
-                    {new Date(customEndDate + 'T12:00:00').toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
-                  </span>
-                )}
-              </div>
+              <DatePicker
+                value={customEndDate}
+                onChange={(v) => v && setCustomEndDate(v)}
+                placeholder="End date"
+              />
             </div>
           )}
           {period === 'customMonth' && (

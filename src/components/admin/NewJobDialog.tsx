@@ -484,18 +484,11 @@ const NewJobDialog: React.FC<NewJobDialogProps> = ({
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div className="space-y-2">
                   <Label htmlFor="job_scheduled_date">Scheduled Date</Label>
-                  <div className="flex items-center gap-2">
-                    <DatePicker
-                      value={newJobFormData.scheduled_date || undefined}
-                      onChange={(v) => v && handleFormChange('scheduled_date', v)}
-                      placeholder="Pick date"
-                    />
-                    {newJobFormData.scheduled_date && (
-                      <span className="text-sm text-muted-foreground">
-                        {new Date(newJobFormData.scheduled_date + 'T12:00:00').toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
-                      </span>
-                    )}
-                  </div>
+                  <DatePicker
+                    value={newJobFormData.scheduled_date || undefined}
+                    onChange={(v) => v && handleFormChange('scheduled_date', v)}
+                    placeholder="Pick date"
+                  />
                 </div>
 
                 <div className="space-y-2">

@@ -513,18 +513,12 @@ export default function AMCPage() {
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <Label htmlFor="startDate">Start Date *</Label>
-                  <div className="flex items-center gap-2 mt-1">
-                    <DatePicker
-                      value={editStartDate || undefined}
-                      onChange={(v) => v && handleStartDateChange(v)}
-                      placeholder="Pick date"
-                    />
-                    {editStartDate && (
-                      <span className="text-sm text-muted-foreground">
-                        {new Date(editStartDate + 'T12:00:00').toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
-                      </span>
-                    )}
-                  </div>
+                  <DatePicker
+                    value={editStartDate || undefined}
+                    onChange={(v) => v && handleStartDateChange(v)}
+                    placeholder="Pick date"
+                    className="mt-1"
+                  />
                 </div>
                 
                 <div>
@@ -549,18 +543,12 @@ export default function AMCPage() {
               
               <div className="mt-4">
                 <Label htmlFor="endDate">End Date *</Label>
-                <div className="flex items-center gap-2 mt-1">
-                  <DatePicker
-                    value={editEndDate || undefined}
-                    onChange={(v) => v && setEditEndDate(v)}
-                    placeholder="Pick date"
-                  />
-                  {editEndDate && (
-                    <span className="text-sm text-muted-foreground">
-                      {new Date(editEndDate + 'T12:00:00').toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
-                    </span>
-                  )}
-                </div>
+                <DatePicker
+                  value={editEndDate || undefined}
+                  onChange={(v) => v && setEditEndDate(v)}
+                  placeholder="Pick date"
+                  className="mt-1"
+                />
               </div>
               
               <div className="mt-4">

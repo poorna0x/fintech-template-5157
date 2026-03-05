@@ -548,18 +548,11 @@ const EditJobDialog: React.FC<EditJobDialogProps> = ({
 
             <div>
               <Label htmlFor="edit-scheduled-date">Scheduled Date</Label>
-              <div className="flex items-center gap-2">
-                <DatePicker
-                  value={editJobFormData.scheduledDate || undefined}
-                  onChange={(v) => v && setEditJobFormData(prev => ({ ...prev, scheduledDate: v }))}
-                  placeholder="Pick date"
-                />
-                {editJobFormData.scheduledDate && (
-                  <span className="text-sm text-muted-foreground">
-                    {new Date(editJobFormData.scheduledDate + 'T12:00:00').toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
-                  </span>
-                )}
-              </div>
+              <DatePicker
+                value={editJobFormData.scheduledDate || undefined}
+                onChange={(v) => v && setEditJobFormData(prev => ({ ...prev, scheduledDate: v }))}
+                placeholder="Pick date"
+              />
             </div>
 
             <div>
