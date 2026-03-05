@@ -1134,9 +1134,8 @@ const Analytics = () => {
         }
       });
       const locationStats = Object.entries(locationMap)
-        .filter(([locationKey]) => locationKey !== '__unknown__')
         .map(([locationKey, rec]) => {
-          const displayName = Object.entries(rec.displayNameCounts).sort((a, b) => b[1] - a[1])[0]?.[0] ?? locationKey;
+          const displayName = Object.entries(rec.displayNameCounts).sort((a, b) => b[1] - a[1])[0]?.[0] ?? (locationKey === '__unknown__' ? 'Unknown' : locationKey);
           return {
             locationKey,
             displayName,
