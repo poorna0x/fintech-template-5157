@@ -980,13 +980,12 @@ const TechnicianDashboard = () => {
           if (processingJobsRef.current.has(updatedJob.id)) return;
 
           const shouldBeInList = isJobRelevantToMe(updatedJob);
-          const isCompleted = updatedJob.status === 'COMPLETED';
           const currentJobsState = jobsRef.current;
           const jobInList = currentJobsState.find((j) => j.id === updatedJob.id);
           const isInList = !!jobInList;
 
-          // Case 1: Job should NOT be in list (unassigned, removed from team, or completed)
-          if (!shouldBeInList || isCompleted) {
+          // Case 1: Job should NOT be in list (unassigned or removed from team). Do not remove completed jobs — they stay in list for Completed tab.
+          if (!shouldBeInList) {
             if (isInList) {
               setJobs((prev) => {
                 const filtered = prev.filter((j) => j.id !== updatedJob.id);
