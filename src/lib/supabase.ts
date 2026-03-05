@@ -729,7 +729,7 @@ export const db = {
     /** Analytics only: selective columns (no before_photos, after_photos, service_address, etc.). Same aggregates, lower egress. */
     async getForAnalytics(limit: number = 5000) {
       const cols = [
-        'id', 'status', 'created_at', 'completed_at', 'end_time', 'requirements',
+        'id', 'customer_id', 'status', 'created_at', 'completed_at', 'end_time', 'requirements',
         'assigned_technician_id', 'assigned_by', 'payment_amount', 'actual_cost', 'lead_cost', 'parts_cost_total',
         'service_type', 'service_sub_type', 'payment_method', 'job_number'
       ].join(', ');
@@ -748,7 +748,7 @@ export const db = {
      */
     async getForAnalyticsInRange(startDate: Date, endDate: Date) {
       const cols = [
-        'id', 'status', 'created_at', 'completed_at', 'end_time', 'requirements',
+        'id', 'customer_id', 'status', 'created_at', 'completed_at', 'end_time', 'requirements',
         'assigned_technician_id', 'assigned_by', 'payment_amount', 'actual_cost', 'lead_cost', 'parts_cost_total',
         'service_type', 'service_sub_type', 'payment_method', 'job_number'
       ].join(', ');
@@ -782,6 +782,36 @@ export const db = {
         return bAt.localeCompare(aAt);
       });
       return { data: combined, error: null };
+    },
+
+    /**
+     * Jobs created in range only (minimal columns). Used for return-complaints so we don't need full getForAnalytics.
+     */
+    async getJobsCreatedInRange(startDate: Date, endDate: Date) {
+      const cols = 'id,customer_id,status,created_at,service_sub_type,assigned_technician_id,end_time,completed_at,job_number';
+      const startISO = startDate.toISOString();
+      const endISO = endDate.toISOString();
+      const { data, error } = await supabase
+        .from('jobs')
+        .select(cols)
+        .gte('created_at', startISO)
+        .lte('created_at', endISO)
+        .order('created_at', { ascending: false });
+      return { data: data || [], error };
+    },
+
+    /**
+     * Completed jobs only, minimal columns. For return-complaints lookup (find previous completed job per customer). Lower egress than getForAnalytics.
+     */
+    async getCompletedJobsForReturnComplaintLookup(limit: number = 5000) {
+      const cols = 'id,customer_id,assigned_technician_id,end_time,completed_at';
+      const { data, error } = await supabase
+        .from('jobs')
+        .select(cols)
+        .eq('status', 'COMPLETED')
+        .order('end_time', { ascending: false })
+        .limit(limit);
+      return { data: data || [], error };
     },
 
     // Get ongoing jobs (PENDING, ASSIGNED, IN_PROGRESS). Limit 100 to cap egress if count grows.
