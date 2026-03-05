@@ -5813,8 +5813,8 @@ const TechnicianDashboard = () => {
             >
               {selectedJobForComplete && (
                 <>
-                  {/* Optional "Add photo" - separate from steps, shown when job has no existing photos */}
-                  {jobHasZeroExistingPhotos && (
+                  {/* Optional "Add photo" - only in step 1 when job has no existing photos; once user proceeds or skips, it does not show in later steps */}
+                  {completeJobStep === 1 && jobHasZeroExistingPhotos && (
                     <div className="rounded-xl border border-amber-200 bg-amber-50/90 p-3 sm:p-4 mb-4 w-full max-w-full">
                       <div className="flex flex-col gap-2 sm:gap-3">
                         <div className="flex items-start gap-2">
