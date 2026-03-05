@@ -58,6 +58,7 @@ const JobPartsUsedDialog: React.FC<JobPartsUsedDialogProps> = ({
   const [debouncedSearchQuery, setDebouncedSearchQuery] = useState('');
   const [loading, setLoading] = useState(true);
   const [applyingBundle, setApplyingBundle] = useState(false);
+  const [addPartInventoryLoading, setAddPartInventoryLoading] = useState(false);
 
   const recalcTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pendingRecalcJobIdRef = useRef<string | null>(null);
@@ -124,23 +125,11 @@ const JobPartsUsedDialog: React.FC<JobPartsUsedDialogProps> = ({
     }
   }, [job?.id]);
 
-  // Load data when dialog opens (use cache for tech inventory when valid to avoid extra query)
+  // Load only parts used when main dialog opens (technician inventory is lazy-loaded when Add Part / Add Bundle is opened)
   useEffect(() => {
     if (open && job && technician) {
       setLoading(true);
-      const cacheKey = `tech_inventory_${technician.id}`;
-      const cached = inventoryCache.get<TechnicianInventoryItem[]>(cacheKey);
-      if (cached && cached.length >= 0) {
-        setTechnicianInventory(cached);
-        loadPartsUsed().finally(() => setLoading(false));
-        // Revalidate in background so cache stays fresh
-        loadTechnicianInventory();
-      } else {
-        Promise.all([
-          loadTechnicianInventory(),
-          loadPartsUsed()
-        ]).finally(() => setLoading(false));
-      }
+      loadPartsUsed().finally(() => setLoading(false));
     } else if (!open) {
       setTechnicianInventory([]);
       setPartsUsed([]);
@@ -149,8 +138,26 @@ const JobPartsUsedDialog: React.FC<JobPartsUsedDialogProps> = ({
       setInventorySearchQuery('');
       setDebouncedSearchQuery('');
       setAddBundleDialogOpen(false);
+      setAddPartInventoryLoading(false);
     }
-  }, [open, job?.id, technician?.id, loadTechnicianInventory, loadPartsUsed]);
+  }, [open, job?.id, technician?.id, loadPartsUsed]);
+
+  // Lazy-load technician inventory only when Add Part or Add Bundle dialog opens (reduces load when user only views parts)
+  useEffect(() => {
+    if (!(addPartDialogOpen || addBundleDialogOpen) || !technician?.id) return;
+
+    const cacheKey = `tech_inventory_${technician.id}`;
+    const cached = inventoryCache.get<TechnicianInventoryItem[]>(cacheKey);
+
+    if (cached && cached.length >= 0) {
+      setTechnicianInventory(cached);
+      loadTechnicianInventory(); // revalidate in background
+      return;
+    }
+
+    setAddPartInventoryLoading(true);
+    loadTechnicianInventory().finally(() => setAddPartInventoryLoading(false));
+  }, [addPartDialogOpen, addBundleDialogOpen, technician?.id, loadTechnicianInventory]);
 
   // Flush pending recalc when dialog closes so job parts_cost_total is up to date
   useEffect(() => {
@@ -519,11 +526,6 @@ const JobPartsUsedDialog: React.FC<JobPartsUsedDialogProps> = ({
                 <Package className="w-12 h-12 mx-auto mb-2 text-gray-400" />
                 <p>No parts added yet.</p>
                 <p className="text-sm mt-2">Click "Add Part" to add parts used for this job.</p>
-                {technicianInventory.length === 0 && (
-                  <p className="text-xs mt-2 text-orange-600">
-                    Note: Technician has no inventory items. They need to add items first.
-                  </p>
-                )}
               </div>
             ) : (
               <div className="border rounded-lg overflow-x-auto">
@@ -608,7 +610,11 @@ const JobPartsUsedDialog: React.FC<JobPartsUsedDialogProps> = ({
               />
             </div>
             <div className="rounded-lg border flex-1 min-h-0 min-w-0 flex flex-col overflow-hidden w-full">
-              {filteredInventoryItems.length === 0 ? (
+              {addPartInventoryLoading ? (
+                <div className="py-8 px-4 text-center text-sm text-gray-500">
+                  Loading parts...
+                </div>
+              ) : filteredInventoryItems.length === 0 ? (
                 <div className="py-8 px-4 text-center text-sm text-gray-500">
                   {technicianInventory.length === 0
                     ? 'No parts in technician inventory.'
@@ -679,7 +685,9 @@ const JobPartsUsedDialog: React.FC<JobPartsUsedDialogProps> = ({
             </DialogDescription>
           </DialogHeader>
           <div className="py-2">
-            {bundles.length === 0 ? (
+            {addPartInventoryLoading ? (
+              <p className="text-sm text-gray-500 py-4 text-center">Loading technician inventory...</p>
+            ) : bundles.length === 0 ? (
               <p className="text-sm text-gray-500 py-4 text-center">No bundles defined. Create bundles in Inventory → Bundles.</p>
             ) : (
               <ul className="space-y-2">
