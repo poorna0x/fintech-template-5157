@@ -276,6 +276,11 @@ const ImageUpload: React.FC<ImageUploadProps> = ({
               name: file.name,
             });
 
+            // Notify parent after each successful upload so parent state is updated even if user navigates away before all uploads finish
+            const currentList = [...uploadedImages, ...newImages];
+            setUploadedImages(currentList);
+            onImagesChange(currentList.map(img => img.url));
+
             toast.success('Photo uploaded', { duration: 3000 });
 
           } catch (uploadError: any) {
@@ -292,12 +297,7 @@ const ImageUpload: React.FC<ImageUploadProps> = ({
         }
       }
 
-      // Update state with successfully uploaded images
-      if (newImages.length > 0) {
-        const updatedImages = [...uploadedImages, ...newImages];
-        setUploadedImages(updatedImages);
-        onImagesChange(updatedImages.map(img => img.url));
-      }
+      // State and parent already updated after each successful upload above (so photos persist even if user navigates away)
 
       // Only show success message if photos were uploaded successfully
       // Failed photos are saved to localStorage and will retry automatically (no toast needed)

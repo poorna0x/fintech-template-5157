@@ -775,10 +775,14 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
         googleLocation = `https://www.google.com/maps/place/${latitude},${longitude}`;
       }
       
-      // Collect all photos from all service types
+      // Collect all photos from all service types (only include uploaded URLs)
       const allPhotos: string[] = [];
       Object.values(addFormData.photos).forEach(photoArray => {
-        allPhotos.push(...photoArray);
+        (photoArray || []).forEach((url: string) => {
+          if (typeof url === 'string' && (url.startsWith('http://') || url.startsWith('https://'))) {
+            allPhotos.push(url);
+          }
+        });
       });
 
       const customerData = {
