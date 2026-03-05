@@ -801,6 +801,76 @@ export const db = {
     },
 
     /**
+     * Job locations for heat map: id, created_at, service_location, and customer address (for area/one-word fallback).
+     * Optional date range (created_at). Limit 3000. Use service_location lat/lng when present; else geocode address.area.
+     */
+    async getJobLocationsForHeatmap(startDate?: Date, endDate?: Date) {
+      const select = 'id,created_at,service_location,customer:customers(address)';
+      let query = supabase
+        .from('jobs')
+        .select(select)
+        .order('created_at', { ascending: false })
+        .limit(3000);
+      if (startDate) {
+        query = query.gte('created_at', startDate.toISOString());
+      }
+      if (endDate) {
+        query = query.lte('created_at', endDate.toISOString());
+      }
+      const { data, error } = await query;
+      return { data: data || [], error };
+    },
+
+    /**
+     * Jobs in range (or all) with customer location and TDS for Analytics "Top locations".
+     * Same date logic as getForAnalyticsInRange when startDate/endDate provided; when omitted, returns up to 5000 jobs (no date filter).
+     */
+    async getJobsWithCustomerLocationInRange(startDate?: Date, endDate?: Date) {
+      const cols = 'id,customer_id,status,created_at,completed_at,end_time,service_sub_type,payment_amount,actual_cost,job_number';
+      const select = `${cols},customer:customers(visible_address,raw_water_tds,address)`;
+      const limit = 5000;
+
+      if (startDate && endDate) {
+        const startISO = startDate.toISOString();
+        const endISO = endDate.toISOString();
+        const [completedRes, otherRes] = await Promise.all([
+          supabase
+            .from('jobs')
+            .select(select)
+            .eq('status', 'COMPLETED')
+            .or(`and(end_time.gte.${startISO},end_time.lte.${endISO}),and(end_time.is.null,completed_at.gte.${startISO},completed_at.lte.${endISO})`)
+            .order('created_at', { ascending: false })
+            .limit(limit),
+          supabase
+            .from('jobs')
+            .select(select)
+            .neq('status', 'COMPLETED')
+            .gte('created_at', startISO)
+            .lte('created_at', endISO)
+            .order('created_at', { ascending: false })
+            .limit(limit)
+        ]);
+        if (completedRes.error) return { data: [], error: completedRes.error };
+        if (otherRes.error) return { data: [], error: otherRes.error };
+        const completed = completedRes.data || [];
+        const other = otherRes.data || [];
+        const combined = [...completed, ...other].sort((a: any, b: any) => {
+          const aAt = a.created_at || '';
+          const bAt = b.created_at || '';
+          return bAt.localeCompare(aAt);
+        });
+        return { data: combined, error: null };
+      }
+
+      const { data, error } = await supabase
+        .from('jobs')
+        .select(select)
+        .order('created_at', { ascending: false })
+        .limit(limit);
+      return { data: data || [], error };
+    },
+
+    /**
      * Completed jobs only, minimal columns. For return-complaints lookup (find previous completed job per customer). Lower egress than getForAnalytics.
      */
     async getCompletedJobsForReturnComplaintLookup(limit: number = 5000) {

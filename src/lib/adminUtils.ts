@@ -433,8 +433,8 @@ export const findLeadSource = (requirements: any[]): string | null => {
   return leadSource;
 };
 
-// Normalize string for comparison - handles variations like "J.P Nagar" vs "JP Nagar"
-const normalizeForComparison = (str: string): string => {
+// Normalize string for comparison - handles variations like "J.P Nagar" vs "JP Nagar" (exported for Analytics location grouping)
+export const normalizeForComparison = (str: string): string => {
   return str
     .toLowerCase()
     .replace(/\./g, '') // Remove dots (J.P -> JP)

@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Input } from '@/components/ui/input';
@@ -20,8 +20,12 @@ import {
   Calendar,
   Filter,
   Settings,
-  Loader2
+  Loader2,
+  MapPin
 } from 'lucide-react';
+import { normalizeForComparison } from '@/lib/adminUtils';
+import { Search } from 'lucide-react';
+import { Button } from '@/components/ui/button';
 
 interface AnalyticsData {
   totalJobs: number;
@@ -99,6 +103,15 @@ interface AnalyticsData {
     }>;
     dailyStats: Array<{ date: string; jobs: number; revenue: number }>;
   };
+  locationStats?: Array<{
+    locationKey: string;
+    displayName: string;
+    jobCount: number;
+    totalRevenue: number;
+    serviceTypeBreakdown: Record<string, number>; // Only 'Installation' and 'Service'
+    avgTds: number | null;
+    avgCallBilling: number;
+  }>;
 }
 
 type PeriodOption = '7d' | '30d' | 'thisWeek' | 'thisMonth' | 'previousMonth' | 'customMonth' | '3m' | '6m' | '1y' | 'all' | 'custom';
@@ -112,6 +125,13 @@ const formatCurrency = (amount: number): string => {
   return formatted.endsWith('.00') ? formatted.slice(0, -3) : formatted;
 };
 
+// Map service_sub_type to Installation (install/reinstall/uninstall) or Service
+const toInstallationOrService = (st: string): 'Installation' | 'Service' => {
+  const s = (st || '').toLowerCase();
+  if (/installation|reinstallation|uninstallation|re.?install|un.?install/.test(s)) return 'Installation';
+  return 'Service';
+};
+
 const Analytics = () => {
   const [analytics, setAnalytics] = useState<AnalyticsData | null>(null);
   const [loading, setLoading] = useState(true);
@@ -120,6 +140,8 @@ const Analytics = () => {
   const [customStartDate, setCustomStartDate] = useState<string>('');
   const [customEndDate, setCustomEndDate] = useState<string>('');
   const [customMonthValue, setCustomMonthValue] = useState<string>(''); // YYYY-MM for Custom month
+  const [locationSearch, setLocationSearch] = useState('');
+  const [loadingLocationStats, setLoadingLocationStats] = useState(false);
 
   useEffect(() => {
     loadAnalytics();
@@ -856,8 +878,8 @@ const Analytics = () => {
       const periodAverageBill = completedJobs.length > 0
         ? periodBilling / completedJobs.length
         : 0;
-      
-      // Enhance analytics data
+
+      // Enhance analytics data (Top locations loaded on demand via Load button)
       setAnalytics({
         ...baseData,
         totalBilling: periodBilling, // Use period-specific billing
@@ -1063,6 +1085,74 @@ const Analytics = () => {
       toast.error('Failed to load return complaints');
     } finally {
       setReturnComplaintsLoading(false);
+    }
+  };
+
+  const loadTopLocations = async () => {
+    setLoadingLocationStats(true);
+    try {
+      const { startDate, endDate } = getDateRange();
+      const { data: locationJobs, error } = await db.jobs.getJobsWithCustomerLocationInRange(startDate ?? undefined, endDate ?? undefined);
+      if (error) throw error;
+      const jobs = locationJobs || [];
+      const locationMap: Record<string, {
+        displayNameCounts: Record<string, number>;
+        jobCount: number;
+        totalRevenue: number;
+        installation: number;
+        service: number;
+        tdsSum: number;
+        tdsCount: number;
+      }> = {};
+      jobs.forEach((row: any) => {
+        const cust = row.customer;
+        const locStr = (cust?.visible_address ?? (cust?.address && (typeof cust.address === 'object' ? (cust.address as any).visible_address ?? (cust.address as any).area : null)) ?? '').trim();
+        const key = locStr ? normalizeForComparison(locStr) : '__unknown__';
+        const displayName = locStr || 'Unknown';
+        if (!locationMap[key]) {
+          locationMap[key] = {
+            displayNameCounts: {},
+            jobCount: 0,
+            totalRevenue: 0,
+            installation: 0,
+            service: 0,
+            tdsSum: 0,
+            tdsCount: 0
+          };
+        }
+        const rec = locationMap[key];
+        rec.displayNameCounts[displayName] = (rec.displayNameCounts[displayName] || 0) + 1;
+        rec.jobCount += 1;
+        rec.totalRevenue += Number(row.payment_amount || row.actual_cost || 0);
+        const bucket = toInstallationOrService(row.service_sub_type || row.serviceSubType || '');
+        if (bucket === 'Installation') rec.installation += 1;
+        else rec.service += 1;
+        const tds = cust?.raw_water_tds != null ? Number(cust.raw_water_tds) : null;
+        if (tds != null && !isNaN(tds) && tds > 0) {
+          rec.tdsSum += tds;
+          rec.tdsCount += 1;
+        }
+      });
+      const locationStats = Object.entries(locationMap)
+        .map(([locationKey, rec]) => {
+          const displayName = Object.entries(rec.displayNameCounts).sort((a, b) => b[1] - a[1])[0]?.[0] ?? (locationKey === '__unknown__' ? 'Unknown' : locationKey);
+          return {
+            locationKey,
+            displayName,
+            jobCount: rec.jobCount,
+            totalRevenue: rec.totalRevenue,
+            serviceTypeBreakdown: { Installation: rec.installation, Service: rec.service },
+            avgTds: rec.tdsCount > 0 ? Math.round((rec.tdsSum / rec.tdsCount) * 10) / 10 : null,
+            avgCallBilling: rec.jobCount > 0 ? rec.totalRevenue / rec.jobCount : 0
+          };
+        })
+        .sort((a, b) => b.jobCount - a.jobCount);
+      setAnalytics((prev) => (prev ? { ...prev, locationStats } : prev));
+      if (locationStats.length === 0) toast.info('No job locations found for this period.');
+    } catch (e: any) {
+      toast.error('Failed to load top locations: ' + (e?.message || 'Unknown error'));
+    } finally {
+      setLoadingLocationStats(false);
     }
   };
 
@@ -1566,6 +1656,106 @@ const Analytics = () => {
           </CardContent>
         </Card>
       )}
+
+      {/* Top locations - load on demand */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <MapPin className="w-5 h-5" />
+            Top locations
+          </CardTitle>
+          <CardDescription>
+            Jobs by one-word location (e.g. KR Puram, JP Nagar). Installation includes Installation, Reinstallation, Uninstallation; all other types count as Service. Click Load to fetch for the selected period.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <Button
+            onClick={loadTopLocations}
+            disabled={loadingLocationStats}
+            variant="outline"
+          >
+            {loadingLocationStats ? (
+              <>
+                <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                Loading...
+              </>
+            ) : (
+              'Load top locations'
+            )}
+          </Button>
+          {analytics.locationStats && analytics.locationStats.length > 0 && (
+            <>
+              <div className="relative max-w-sm">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                <Input
+                  placeholder="Search location..."
+                  value={locationSearch}
+                  onChange={(e) => setLocationSearch(e.target.value)}
+                  className="pl-9"
+                />
+              </div>
+              {(() => {
+                const searchNorm = locationSearch.trim() ? normalizeForComparison(locationSearch.trim()) : '';
+                const filtered = searchNorm
+                  ? analytics.locationStats.filter(
+                      (loc) =>
+                        loc.locationKey.includes(searchNorm) ||
+                        loc.displayName.toLowerCase().includes(locationSearch.trim().toLowerCase())
+                    )
+                  : analytics.locationStats;
+                return (
+                  <div className="overflow-x-auto">
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead>Location</TableHead>
+                          <TableHead className="text-right">Jobs</TableHead>
+                          <TableHead className="text-right">Installation</TableHead>
+                          <TableHead className="text-right">Service</TableHead>
+                          <TableHead className="text-right">Avg TDS (ppm)</TableHead>
+                          <TableHead className="text-right">Avg call billing</TableHead>
+                          <TableHead className="text-right">Revenue</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {filtered.length === 0 ? (
+                          <TableRow>
+                            <TableCell colSpan={7} className="text-center text-gray-500 py-6">
+                              {locationSearch.trim() ? 'No locations match your search.' : 'No location data.'}
+                            </TableCell>
+                          </TableRow>
+                        ) : (
+                          filtered.map((loc) => (
+                            <TableRow key={loc.locationKey}>
+                              <TableCell className="font-medium">{loc.displayName}</TableCell>
+                              <TableCell className="text-right">{loc.jobCount}</TableCell>
+                              <TableCell className="text-right">
+                                {loc.serviceTypeBreakdown?.Installation ?? '—'}
+                              </TableCell>
+                              <TableCell className="text-right">
+                                {loc.serviceTypeBreakdown?.Service ?? '—'}
+                              </TableCell>
+                              <TableCell className="text-right">
+                                {loc.avgTds != null ? loc.avgTds : '—'}
+                              </TableCell>
+                              <TableCell className="text-right">
+                                ₹ {formatCurrency(loc.avgCallBilling ?? 0)}
+                              </TableCell>
+                              <TableCell className="text-right font-medium text-green-600">
+                                ₹ {formatCurrency(loc.totalRevenue)}
+                              </TableCell>
+                            </TableRow>
+                          ))
+                        )}
+                      </TableBody>
+                    </Table>
+                  </div>
+                );
+              })()}
+            </>
+          )}
+        </CardContent>
+      </Card>
 
       {/* Softener Section */}
       {analytics.softenerData && (
