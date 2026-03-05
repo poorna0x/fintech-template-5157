@@ -2886,48 +2886,14 @@ const TechnicianPayments = () => {
         </CardHeader>
         <CardContent>
           {!businessExpensesViewed ? (
-            <div className="space-y-4">
-              <div className="blur-sm select-none pointer-events-none">
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Date</TableHead>
-                      <TableHead>Description</TableHead>
-                      <TableHead>Category</TableHead>
-                      <TableHead className="text-right">Amount</TableHead>
-                      <TableHead className="text-right">Actions</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {[
-                      { date: '05/03/2025', desc: 'Office supplies', cat: 'OFFICE', amt: '2,500' },
-                      { date: '01/03/2025', desc: 'Marketing campaign', cat: 'MARKETING', amt: '5,000' },
-                      { date: '28/02/2025', desc: 'Utilities', cat: 'UTILITIES', amt: '3,200' },
-                    ].map((row, i) => (
-                      <TableRow key={i}>
-                        <TableCell>{row.date}</TableCell>
-                        <TableCell className="font-medium">{row.desc}</TableCell>
-                        <TableCell><Badge variant="outline">{row.cat}</Badge></TableCell>
-                        <TableCell className="text-right text-red-600">₹ {row.amt}</TableCell>
-                        <TableCell className="text-right">—</TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-                <div className="mt-4 pt-4 border-t flex justify-between">
-                  <span className="font-semibold text-gray-700">Total:</span>
-                  <span className="text-xl font-bold text-red-600">₹ 10,700</span>
-                </div>
-              </div>
-              <div className="flex flex-col items-center justify-center py-6 border border-dashed border-gray-200 rounded-lg bg-gray-50/50">
-                <TrendingDown className="w-10 h-10 text-gray-400 mb-2" />
-                <p className="text-gray-600 font-medium">Business expenses not loaded</p>
-                <p className="text-sm text-gray-500 mt-1 mb-4">You can add expenses above without loading the list.</p>
-                <Button onClick={handleViewBusinessExpenses} disabled={loadingBusinessExpenses}>
-                  <Eye className="w-4 h-4 mr-2" />
-                  {loadingBusinessExpenses ? 'Loading...' : 'View business expenses'}
-                </Button>
-              </div>
+            <div className="flex flex-col items-center justify-center py-12 text-center">
+              <TrendingDown className="w-12 h-12 text-gray-400 mb-2" />
+              <p className="text-gray-600 font-medium">Business expenses not loaded</p>
+              <p className="text-sm text-gray-500 mt-1 mb-4">You can add expenses above without loading the list.</p>
+              <Button onClick={handleViewBusinessExpenses} disabled={loadingBusinessExpenses}>
+                <Eye className="w-4 h-4 mr-2" />
+                {loadingBusinessExpenses ? 'Loading...' : 'View business expenses'}
+              </Button>
             </div>
           ) : loadingBusinessExpenses ? (
             <div className="flex items-center justify-center py-12">
