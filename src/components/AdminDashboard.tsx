@@ -7657,19 +7657,20 @@ const AdminDashboard = () => {
         {/* Date Filter for Denied Jobs */}
         {statusFilter === 'CANCELLED' && (
           <div className="mb-4">
-            <div className="inline-flex flex-wrap items-center gap-2 rounded-lg border border-border bg-muted/30 px-3 py-2">
-              <Label className="text-sm font-medium text-muted-foreground shrink-0">
+            <div className="inline-flex flex-nowrap items-center gap-1.5 rounded-lg border border-border bg-muted/30 px-2 py-1.5 overflow-x-auto min-w-0 max-w-full">
+              <Label className="text-sm font-medium text-muted-foreground shrink-0 whitespace-nowrap">
                 Show denied jobs for
               </Label>
               <DatePicker
                 value={deniedDateFilter}
                 onChange={(v) => setDeniedDateFilter(v ?? getTodayLocalDate())}
                 placeholder="Pick date"
+                className="shrink-0"
               />
               <Button
                 variant="outline"
                 size="sm"
-                className="shrink-0"
+                className="shrink-0 whitespace-nowrap"
                 onClick={() => setDeniedDateFilter(getTodayLocalDate())}
               >
                 Today
@@ -7681,19 +7682,20 @@ const AdminDashboard = () => {
         {/* Date Filter for Completed Jobs */}
         {statusFilter === 'COMPLETED' && (
           <div className="mb-4">
-            <div className="inline-flex flex-wrap items-center gap-2 rounded-lg border border-border bg-muted/30 px-3 py-2">
-              <Label className="text-sm font-medium text-muted-foreground shrink-0">
+            <div className="inline-flex flex-nowrap items-center gap-1.5 rounded-lg border border-border bg-muted/30 px-2 py-1.5 overflow-x-auto min-w-0 max-w-full">
+              <Label className="text-sm font-medium text-muted-foreground shrink-0 whitespace-nowrap">
                 Show completed jobs for
               </Label>
               <DatePicker
                 value={completedDateFilter}
                 onChange={(v) => setCompletedDateFilter(v ?? getTodayLocalDate())}
                 placeholder="Pick date"
+                className="shrink-0"
               />
               <Button
                 variant="outline"
                 size="sm"
-                className="shrink-0"
+                className="shrink-0 whitespace-nowrap"
                 onClick={() => setCompletedDateFilter(getTodayLocalDate())}
               >
                 Today
