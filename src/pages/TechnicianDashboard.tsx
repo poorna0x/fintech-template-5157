@@ -381,6 +381,8 @@ const TechnicianDashboard = () => {
   const [phonePopupOpen, setPhonePopupOpen] = useState(false);
   const [selectedCustomerPhone, setSelectedCustomerPhone] = useState<{phone: string, alternate_phone?: string, full_name?: string} | null>(null);
 
+  // Header 3-dot menu → centered options dialog
+  const [headerOptionsDialogOpen, setHeaderOptionsDialogOpen] = useState(false);
   // Technician ID Card QR Code Dialog
   const [technicianIdCardDialogOpen, setTechnicianIdCardDialogOpen] = useState(false);
   const [inventoryDialogOpen, setInventoryDialogOpen] = useState(false);
@@ -3866,49 +3868,73 @@ const TechnicianDashboard = () => {
             </div>
           </div>
           
-          {/* Settings Button on Right */}
+          {/* 3-dot menu on Right — opens centered options dialog */}
           <div className="flex items-center ml-auto z-50">
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button
-                  variant="outline"
-                  size="sm"
-                >
-                  <Settings className="w-4 h-4" />
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end">
-                <DropdownMenuItem 
-                  onClick={() => {
-                    setTechnicianIdCardDialogOpen(true);
-                  }}
-                >
-                  <QrCode className="w-4 h-4 mr-2" />
-                  Show ID Card QR
-                </DropdownMenuItem>
-                <DropdownMenuItem 
-                  onClick={() => {
-                    setInventoryDialogOpen(true);
-                  }}
-                >
-                  <Package className="w-4 h-4 mr-2" />
-                  My Inventory
-                </DropdownMenuItem>
-                <DropdownMenuItem 
-                  onClick={() => setCommonQrDialogOpen(true)}
-                >
-                  <QrCode className="w-4 h-4 mr-2" />
-                  Common QR
-                </DropdownMenuItem>
-                <DropdownMenuItem onClick={logout}>
-                  <LogOut className="w-4 h-4 mr-2" />
-                  Logout
-                </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setHeaderOptionsDialogOpen(true)}
+            >
+              <MoreVertical className="w-4 h-4" />
+            </Button>
           </div>
         </header>
       </div>
+
+      {/* Centered options dialog (convenience on mobile) */}
+      <Dialog open={headerOptionsDialogOpen} onOpenChange={setHeaderOptionsDialogOpen}>
+        <DialogContent className="sm:max-w-sm gap-0 p-0 overflow-hidden">
+          <DialogHeader className="p-4 pb-2">
+            <DialogTitle className="text-center">Options</DialogTitle>
+          </DialogHeader>
+          <div className="flex flex-col p-2 pb-4">
+            <Button
+              variant="ghost"
+              className="justify-start h-12 px-4 text-base"
+              onClick={() => {
+                setHeaderOptionsDialogOpen(false);
+                setTechnicianIdCardDialogOpen(true);
+              }}
+            >
+              <QrCode className="w-5 h-5 mr-3" />
+              Show ID Card QR
+            </Button>
+            <Button
+              variant="ghost"
+              className="justify-start h-12 px-4 text-base"
+              onClick={() => {
+                setHeaderOptionsDialogOpen(false);
+                setInventoryDialogOpen(true);
+              }}
+            >
+              <Package className="w-5 h-5 mr-3" />
+              My Inventory
+            </Button>
+            <Button
+              variant="ghost"
+              className="justify-start h-12 px-4 text-base"
+              onClick={() => {
+                setHeaderOptionsDialogOpen(false);
+                setCommonQrDialogOpen(true);
+              }}
+            >
+              <QrCode className="w-5 h-5 mr-3" />
+              Common QR
+            </Button>
+            <Button
+              variant="ghost"
+              className="justify-start h-12 px-4 text-base text-red-600 hover:text-red-700 hover:bg-red-50"
+              onClick={() => {
+                setHeaderOptionsDialogOpen(false);
+                logout();
+              }}
+            >
+              <LogOut className="w-5 h-5 mr-3" />
+              Logout
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
 
       {/* Location Error Banner */}
       {locationError && (
