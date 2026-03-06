@@ -1,6 +1,5 @@
 // Netlify Function: delete image from Cloudinary using server-side API secret
-// Keeps CLOUDINARY_API_SECRET out of the client bundle
-const crypto = require('crypto');
+// Uses Basic Auth (no signature) to avoid encoding/whitespace issues
 const { getCorsHeaders, isOriginAllowed } = require('./cors-helper');
 const { addSecurityHeaders } = require('./security-headers');
 
@@ -20,11 +19,10 @@ function getCloudinaryConfig(useSecondary) {
   return cloudName && apiKey && apiSecret ? { cloudName, apiKey, apiSecret } : null;
 }
 
-function generateSignature(params, apiSecret) {
-  const sortedKeys = Object.keys(params).sort();
-  const paramString = sortedKeys.map(key => `${key}=${params[key]}`).join('&');
-  const message = paramString + apiSecret;
-  return crypto.createHash('sha1').update(message).digest('hex');
+// Use Basic Auth (no signature) - recommended for server-side; avoids signature encoding issues
+function buildAuthHeader(apiKey, apiSecret) {
+  const credentials = Buffer.from(`${apiKey}:${apiSecret}`).toString('base64');
+  return `Basic ${credentials}`;
 }
 
 exports.handler = async (event, context) => {
@@ -74,21 +72,18 @@ exports.handler = async (event, context) => {
   const id = rawPublicId.trim();
 
   const tryDestroyWithConfig = async (idToTry, config) => {
-    const timestamp = Math.round(Date.now() / 1000);
-    const signatureParams = { public_id: idToTry, timestamp, invalidate: 'true' };
-    const signature = generateSignature(signatureParams, config.apiSecret);
     const formBody = new URLSearchParams({
       public_id: idToTry,
-      api_key: config.apiKey,
-      timestamp: String(timestamp),
       invalidate: 'true',
-      signature,
     }).toString();
     const response = await fetch(
       `https://api.cloudinary.com/v1_1/${config.cloudName}/image/destroy`,
       {
         method: 'POST',
-        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        headers: {
+          'Content-Type': 'application/x-www-form-urlencoded',
+          'Authorization': buildAuthHeader(config.apiKey, config.apiSecret),
+        },
         body: formBody,
       }
     );
