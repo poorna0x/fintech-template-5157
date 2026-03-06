@@ -106,6 +106,10 @@ exports.handler = async (event, context) => {
         body: JSON.stringify({ deleted: false, error: 'Cloudinary delete not configured (set CLOUDINARY_* in Netlify env, then redeploy)' }),
       };
     }
+    // Safe debug: confirm which cloud we're using (no secrets logged)
+    if (process.env.NODE_ENV !== 'production') {
+      console.log('[cloudinary-delete] cloud:', config.cloudName, 'apiKey length:', config.apiKey.length, 'apiSecret length:', config.apiSecret.length);
+    }
 
     let result = await tryDestroyWithConfig(id, config);
     if (process.env.NODE_ENV !== 'production') {
