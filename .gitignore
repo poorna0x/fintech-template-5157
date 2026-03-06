@@ -16,6 +16,7 @@ dist-ssr
 .env
 .env.local
 .env.*.local
+netlify-env
 *env*.txt
 *ENV*.txt
 netlify-env*.txt

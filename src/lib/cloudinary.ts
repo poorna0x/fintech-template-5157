@@ -1,6 +1,18 @@
 // Cloudinary service for image uploads
 // This handles image uploads for the booking form
 
+/** Base URL for Netlify cloudinary-delete function (dev uses 8888 so secret stays server-side) */
+function getCloudinaryDeleteFunctionUrl(): string {
+  const path = '/.netlify/functions/cloudinary-delete';
+  if (import.meta.env.DEV && typeof window !== 'undefined') {
+    const hostname = window.location.hostname;
+    const isLocalNetwork = /^(192\.168\.|10\.|172\.(1[6-9]|2[0-9]|3[01])\.)/.test(hostname);
+    const base = isLocalNetwork ? `http://${hostname}:8888` : 'http://localhost:8888';
+    return `${base}${path}`;
+  }
+  return path;
+}
+
 export interface CloudinaryUploadResult {
   public_id: string;
   secure_url: string;
@@ -257,7 +269,8 @@ class CloudinaryService {
       
       // Clean up test image (only if API key is available)
       if (this.config.apiKey) {
-        await this.deleteImage(result.public_id);
+        const del = await this.deleteImage(result.public_id);
+        if (!del.success) return;
       }
       
       return { valid: true };
@@ -301,89 +314,27 @@ class CloudinaryService {
     return hexHash;
   }
 
-  // Delete image from Cloudinary
-  async deleteImage(publicId: string, useSecondary: boolean = false): Promise<boolean> {
-    const activeConfig = useSecondary && this.secondaryConfig ? this.secondaryConfig : this.config;
-    
-    if (!activeConfig.apiKey) {
-      console.warn('Cloudinary API key not configured. Cannot delete image.');
-      return false;
-    }
-
+  /** Delete image via Netlify function. Returns { success, error } so UI can show the real failure reason. */
+  async deleteImage(publicId: string, useSecondary: boolean = false): Promise<{ success: boolean; error?: string }> {
+    const functionUrl = getCloudinaryDeleteFunctionUrl();
     try {
-      const timestamp = Math.round(new Date().getTime() / 1000);
-      
-      // Parameters for signature generation (EXCLUDE api_key - it's not part of signature)
-      const signatureParams: Record<string, string | number> = {
-        public_id: publicId,
-        timestamp: timestamp,
-        invalidate: 'true', // Invalidate CDN cache
-      };
-
-      // Add signature if API secret is available (required for deletion)
-      if (!activeConfig.apiSecret) {
-        console.warn('⚠️ API secret not configured. Cloudinary deletion requires API secret for security.');
-        console.warn('💡 Add VITE_CLOUDINARY_API_SECRET to your environment variables.');
-        console.warn('💡 Photo will be removed from database but will remain in Cloudinary storage.');
-        // Return false but don't throw - allow database deletion to proceed
-        return false;
-      }
-
-      // Generate signature for authenticated deletion (from signatureParams only, excluding api_key)
-      const signature = await this.generateSignature(signatureParams, activeConfig.apiSecret);
-      
-      // Request parameters (include api_key in request but NOT in signature)
-      const params: Record<string, string | number> = {
-        public_id: publicId,
-        api_key: activeConfig.apiKey,
-        timestamp: timestamp,
-        invalidate: 'true',
-        signature: signature,
-      };
-
-      // Cloudinary destroy API requires URL-encoded form data (application/x-www-form-urlencoded)
-      const formBody = Object.keys(params)
-        .map(key => `${encodeURIComponent(key)}=${encodeURIComponent(String(params[key]))}`)
-        .join('&');
-
-      const response = await fetch(
-        `https://api.cloudinary.com/v1_1/${activeConfig.cloudName}/image/destroy`,
-        {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/x-www-form-urlencoded',
-          },
-          body: formBody,
-        }
-      );
-
-      const result = await response.json();
-      
-      console.log('Cloudinary delete response:', {
-        status: response.status,
-        result: result,
-        publicId: publicId,
-        hasSecret: !!activeConfig.apiSecret
+      const response = await fetch(functionUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ publicId: publicId.trim(), useSecondary }),
       });
-      
-      if (response.ok && result.result === 'ok') {
-        console.log(`✅ Successfully deleted image from Cloudinary: ${publicId}`);
-        return true;
-      } else {
-        const errorMsg = result.error?.message || JSON.stringify(result);
-        console.warn(`⚠️ Cloudinary deletion failed for ${publicId}:`, errorMsg);
-        console.warn('Response details:', { status: response.status, result });
-        
-        // If signature is missing and we got an auth error, suggest adding API secret
-        if (result.error?.message?.includes('signature') || result.error?.message?.includes('authentication')) {
-          console.warn('💡 Tip: Add VITE_CLOUDINARY_API_SECRET to enable secure deletion');
-        }
-        
-        return false;
+      const data = await response.json().catch(() => ({}));
+      if (response.ok && data.deleted === true) {
+        console.log(`✅ Deleted image from Cloudinary: ${publicId}`);
+        return { success: true };
       }
+      const errMsg = data.error || (response.status === 503 ? 'Cloudinary not configured (set CLOUDINARY_* in Netlify env)' : `HTTP ${response.status}`);
+      console.warn(`⚠️ Cloudinary delete failed for ${publicId}:`, errMsg);
+      return { success: false, error: errMsg };
     } catch (error) {
+      const errMsg = error instanceof Error ? error.message : 'Network or request failed';
       console.error('Error deleting image from Cloudinary:', error);
-      return false;
+      return { success: false, error: errMsg };
     }
   }
 

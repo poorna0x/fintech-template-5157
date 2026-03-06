@@ -33,9 +33,9 @@ export class CloudinaryStorageAdapter implements IStorageService {
   }
 
   async deleteImage(identifier: string): Promise<boolean> {
-    // Extract public_id from URL if needed
     const publicId = this.extractIdentifier(identifier) || identifier;
-    return cloudinaryService.deleteImage(publicId, false);
+    const result = await cloudinaryService.deleteImage(publicId, false);
+    return result.success;
   }
 
   getOptimizedUrl(url: string, options?: {

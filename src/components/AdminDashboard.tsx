@@ -6445,22 +6445,24 @@ const AdminDashboard = () => {
 
       // Delete from Cloudinary if it's a Cloudinary URL
       let cloudinaryDeleted = false;
+      let cloudinaryErrorMsg: string | undefined;
       try {
         const publicIdInfo = cloudinaryService.extractPublicId(photoToDelete.photoUrl);
         if (publicIdInfo) {
-          const deleted = await cloudinaryService.deleteImage(publicIdInfo.publicId, publicIdInfo.useSecondary);
-          if (deleted) {
+          const result = await cloudinaryService.deleteImage(publicIdInfo.publicId, publicIdInfo.useSecondary);
+          if (result.success) {
             console.log(`✅ Photo deleted from Cloudinary: ${publicIdInfo.publicId}`);
             cloudinaryDeleted = true;
           } else {
-            console.warn(`⚠️ Failed to delete photo from Cloudinary: ${publicIdInfo.publicId}`);
+            cloudinaryErrorMsg = result.error;
+            console.warn(`⚠️ Failed to delete photo from Cloudinary: ${publicIdInfo.publicId}`, result.error);
           }
         } else {
           console.warn('Could not extract public_id from URL:', photoToDelete.photoUrl);
         }
       } catch (cloudinaryError) {
+        cloudinaryErrorMsg = cloudinaryError instanceof Error ? cloudinaryError.message : 'Request failed';
         console.error('Error deleting photo from Cloudinary:', cloudinaryError);
-        // Continue even if Cloudinary deletion fails - photo is already removed from database
       }
 
       // Update the job in the database
@@ -6508,7 +6510,7 @@ const AdminDashboard = () => {
       if (cloudinaryDeleted) {
         toast.success('Photo deleted successfully from both database and Cloudinary');
       } else {
-        toast.success('Photo removed from database. Note: Cloudinary deletion may have failed - check console for details.');
+        toast.success(cloudinaryErrorMsg ? `Photo removed from database. Cloudinary: ${cloudinaryErrorMsg}` : 'Photo removed from database. Cloudinary delete failed.');
       }
       setDeletePhotoDialogOpen(false);
       setPhotoToDelete(null);
@@ -6719,20 +6721,23 @@ const AdminDashboard = () => {
 
       // Delete from Cloudinary if it's a Cloudinary URL (always attempt, even if not found in DB)
       let cloudinaryDeleted = false;
+      let cloudinaryErrorMsg: string | undefined;
       try {
         const publicIdInfo = cloudinaryService.extractPublicId(photoUrl);
         if (publicIdInfo) {
-          const deleted = await cloudinaryService.deleteImage(publicIdInfo.publicId, publicIdInfo.useSecondary);
-          if (deleted) {
+          const result = await cloudinaryService.deleteImage(publicIdInfo.publicId, publicIdInfo.useSecondary);
+          if (result.success) {
             console.log(`✅ Photo deleted from Cloudinary: ${publicIdInfo.publicId}`);
             cloudinaryDeleted = true;
           } else {
-            console.warn(`⚠️ Failed to delete photo from Cloudinary: ${publicIdInfo.publicId}`);
+            cloudinaryErrorMsg = result.error;
+            console.warn(`⚠️ Failed to delete photo from Cloudinary: ${publicIdInfo.publicId}`, result.error);
           }
         } else {
           console.warn('Could not extract public_id from URL:', photoUrl);
         }
       } catch (cloudinaryError) {
+        cloudinaryErrorMsg = cloudinaryError instanceof Error ? cloudinaryError.message : 'Request failed';
         console.error('Error deleting photo from Cloudinary:', cloudinaryError);
       }
 
@@ -6805,10 +6810,10 @@ const AdminDashboard = () => {
       // Show appropriate success message
       if (cloudinaryDeleted) {
         toast.success('Photo deleted successfully from both database and Cloudinary');
-      } else if (photoFound) {
-        toast.success('Photo removed from database. Note: Cloudinary deletion requires API secret configuration.');
+      } else if (photoFound || !cloudinaryErrorMsg) {
+        toast.success(cloudinaryErrorMsg ? `Photo removed from database. Cloudinary: ${cloudinaryErrorMsg}` : 'Photo removed from database.');
       } else {
-        toast.warning('Photo removed from UI. May still exist in Cloudinary if API secret is not configured.');
+        toast.warning(`Photo removed from UI. Cloudinary: ${cloudinaryErrorMsg}`);
       }
       
       setDeleteCustomerPhotoDialogOpen(false);
