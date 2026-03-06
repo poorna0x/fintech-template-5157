@@ -344,57 +344,29 @@ class CloudinaryService {
   }
 
   // Extract public_id from Cloudinary URL
+  // URL format: .../image/upload/v1234567890/ro-service/filename.jpg or .../image/upload/ro-service/filename.jpg
   extractPublicId(url: string): { publicId: string; useSecondary: boolean } | null {
     if (!url || typeof url !== 'string') return null;
     
-    // Match Cloudinary URL pattern: https://res.cloudinary.com/{cloudName}/image/upload/{path}
     const match = url.match(/res\.cloudinary\.com\/([^\/]+)\/image\/upload\/(.+)/);
     if (match) {
       const cloudName = match[1];
-      const pathAfterUpload = match[2];
-      
-      // Check if it's secondary account
+      const pathAfterUpload = match[2].split('?')[0]; // Remove query params
       const useSecondary = this.secondaryConfig?.cloudName === cloudName;
       
-      // Split path and filter out transformations
-      // Transformations are like: v1234567890, w_500, h_500, c_fill, etc.
-      const parts = pathAfterUpload.split('/');
-      const validParts: string[] = [];
+      const parts = pathAfterUpload.split('/').filter(Boolean);
+      if (parts.length === 0) return null;
       
-      for (const part of parts) {
-        const cleanPart = part.split('?')[0]; // Remove query params
-        
-        // Skip transformations:
-        // - Version: v1234567890
-        // - Dimensions/effects: w_500, h_500, c_fill, q_auto, f_auto, etc.
-        // - Any part containing underscore (likely transformation)
-        if (cleanPart.match(/^v\d+$/) || cleanPart.includes('_') || cleanPart.match(/^[a-z]\d/)) {
-          continue;
-        }
-        
-        validParts.push(cleanPart);
-      }
+      // First part may be version (v1234567890) - not part of public_id
+      const startIndex = parts[0].match(/^v\d+$/) ? 1 : 0;
+      const pathParts = parts.slice(startIndex);
+      if (pathParts.length === 0) return null;
       
-      if (validParts.length === 0) {
-        console.warn(`Could not extract valid public_id from URL: ${url}`);
-        return null;
-      }
+      // public_id = folder/file (no version), strip extension
+      let publicId = pathParts.join('/').replace(/\.[^.]+$/, '');
       
-      // Join parts to get full public_id (including folder path)
-      let publicId = validParts.join('/');
-      
-      // Remove file extension
-      publicId = publicId.replace(/\.[^.]+$/, '');
-      
-      console.log(`Extracted public_id: ${url} -> ${publicId} (secondary: ${useSecondary})`);
-      
-      return {
-        publicId: publicId,
-        useSecondary: useSecondary || false
-      };
+      return { publicId, useSecondary: useSecondary || false };
     }
-    
-    console.warn(`Could not extract public_id from URL: ${url}`);
     return null;
   }
 }
