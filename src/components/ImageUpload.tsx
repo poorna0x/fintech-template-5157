@@ -184,12 +184,10 @@ const ImageUpload: React.FC<ImageUploadProps> = ({
         }
 
         try {
-          // STEP 1: ALWAYS save to localStorage first (never lose the photo)
+          // Compression settings (used for compress + queue metadata for retry)
           let compressionWidth = maxWidth;
           let compressionQuality: number;
           const fileSizeMB = file.size / (1024 * 1024);
-          
-          // Determine compression settings
           if (aggressiveCompression) {
             if (quality && quality < 0.4) {
               compressionWidth = 800;
@@ -214,41 +212,31 @@ const ImageUpload: React.FC<ImageUploadProps> = ({
             }
           }
 
-          // Save to localStorage FIRST (before any upload attempt)
-          // Retry logic is built into queuePhoto, but we'll handle it gracefully here too
+          setUploadProgress(prev => ({ ...prev, [fileId]: 10 }));
+
+          // STEP 1: Compress first (fast path: no heavy base64 of original file before upload)
+          const compressedFile = await compressImage(file, compressionWidth, compressionQuality, true);
+          setUploadProgress(prev => ({ ...prev, [fileId]: 30 }));
+
+          // STEP 2: Save compressed file to localStorage (much smaller than original → faster queue write)
           let queuedPhotoId: string | null = null;
           try {
-            queuedPhotoId = await queuePhoto(file, folder, {
+            queuedPhotoId = await queuePhoto(compressedFile, folder, {
               maxWidth: compressionWidth,
               quality: compressionQuality,
               aggressiveCompression,
               useSecondaryAccount,
+              alreadyCompressed: true,
             });
-            
-            // Only log success if we got a real ID (not temp)
             if (queuedPhotoId && !queuedPhotoId.startsWith('temp_')) {
-            console.log('✅ Photo saved to local storage:', file.name);
-            } else {
-              console.warn('⚠️ Photo not saved to localStorage (temp ID), but continuing with upload');
+              console.log('✅ Photo saved to local storage:', file.name);
             }
           } catch (saveError: any) {
-            console.error('Failed to save photo to localStorage after retries:', saveError);
-            // Don't show error immediately - the photo might still work
-            // Only show error if it's a critical issue
             if (saveError?.message?.includes('QuotaExceededError') || saveError?.code === 22 || saveError?.message?.includes('full')) {
               toast.error('Storage full. Please free up space and try again.');
-            } else {
-              // Continue anyway - the upload might still work
-              console.warn('Photo not saved to queue, but continuing with upload attempt');
             }
-            // Continue with upload - don't block
+            // Continue with upload
           }
-
-          setUploadProgress(prev => ({ ...prev, [fileId]: 10 }));
-
-          // STEP 2: Compress the image
-          const compressedFile = await compressImage(file, compressionWidth, compressionQuality, true);
-          setUploadProgress(prev => ({ ...prev, [fileId]: 30 }));
 
           // STEP 3: Try to upload to Cloudinary
           let uploadResult;
@@ -256,7 +244,7 @@ const ImageUpload: React.FC<ImageUploadProps> = ({
             uploadResult = await cloudinaryService.uploadImage(compressedFile, folder, useSecondaryAccount);
             setUploadProgress(prev => ({ ...prev, [fileId]: 100 }));
 
-            // STEP 4: Upload successful - remove from localStorage
+            // Upload successful - remove from localStorage
             if (queuedPhotoId) {
               removeQueuedPhoto(queuedPhotoId);
               console.log('✅ Photo uploaded and removed from local storage:', file.name);

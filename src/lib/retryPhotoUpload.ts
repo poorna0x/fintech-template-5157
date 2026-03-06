@@ -24,9 +24,9 @@ const processQueuedPhoto = async (photo: QueuedPhoto): Promise<boolean> => {
     // Convert data URL back to File
     const file = dataURLToFile(photo.fileData, photo.fileName);
     
-    // Compress if needed (using stored settings)
+    // Use as-is if already compressed (queued after compress in ImageUpload); otherwise compress
     let fileToUpload = file;
-    if (photo.maxWidth || photo.quality) {
+    if (!photo.alreadyCompressed && (photo.maxWidth || photo.quality)) {
       const compressionWidth = photo.maxWidth || 1280;
       const compressionQuality = photo.quality || 0.7;
       fileToUpload = await compressImage(file, compressionWidth, compressionQuality, true);

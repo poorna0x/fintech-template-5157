@@ -10,6 +10,8 @@ export interface QueuedPhoto {
   quality?: number;
   aggressiveCompression?: boolean;
   useSecondaryAccount?: boolean;
+  /** If true, fileData is already compressed; retry should upload as-is without re-compressing */
+  alreadyCompressed?: boolean;
   timestamp: number;
   retryCount: number;
   jobId?: string; // Optional: associate with a job
@@ -84,6 +86,8 @@ export const queuePhoto = async (
     useSecondaryAccount?: boolean;
     jobId?: string;
     photoType?: 'bill' | 'before' | 'after' | 'payment' | 'other';
+    /** Set true when queueing an already-compressed file (faster retry, no re-compress) */
+    alreadyCompressed?: boolean;
   } = {}
 ): Promise<string> => {
   // Retry logic for localStorage issues (common on mobile devices)
@@ -110,6 +114,7 @@ export const queuePhoto = async (
         quality: options.quality,
         aggressiveCompression: options.aggressiveCompression,
         useSecondaryAccount: options.useSecondaryAccount,
+        alreadyCompressed: options.alreadyCompressed,
         timestamp: Date.now(),
         retryCount: 0,
         jobId: options.jobId,
