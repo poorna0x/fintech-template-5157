@@ -376,6 +376,8 @@ const TechnicianDashboard = () => {
   const [isPaymentScreenshotUploading, setIsPaymentScreenshotUploading] = useState(false);
   const [optionalCompletionPhotos, setOptionalCompletionPhotos] = useState<string[]>([]);
   const [isOptionalCompletionPhotosUploading, setIsOptionalCompletionPhotosUploading] = useState(false);
+  const [extraPhotosStep6, setExtraPhotosStep6] = useState<string[]>([]);
+  const [isExtraPhotosStep6Uploading, setIsExtraPhotosStep6Uploading] = useState(false);
 
   // Phone popup state
   const [phonePopupOpen, setPhonePopupOpen] = useState(false);
@@ -2751,6 +2753,14 @@ const TechnicianDashboard = () => {
         setIsSubmittingJobCompletion(false);
         return;
       }
+      // Wait for extra photos (step 6) to finish uploading
+      const extraStep6Uploaded = extraPhotosStep6.filter((u): u is string => !!u && typeof u === 'string' && (u.startsWith('http://') || u.startsWith('https://')));
+      const extraStep6NonUploaded = extraPhotosStep6.filter(u => u && typeof u === 'string' && !u.startsWith('http://') && !u.startsWith('https://'));
+      if (extraStep6NonUploaded.length > 0) {
+        toast.error(`Please wait for ${extraStep6NonUploaded.length} photo(s) to finish uploading before completing the job.`);
+        setIsSubmittingJobCompletion(false);
+        return;
+      }
       
       // Check payment screenshot if ONLINE payment
       console.log('📸 Payment screenshot check:', {
@@ -2995,12 +3005,14 @@ const TechnicianDashboard = () => {
           console.warn('⚠️ No photos to add to after_photos');
         }
 
-        // When job had zero photos and technician added optional photos, store in job.images
+        // When job had zero photos and technician added optional photos, plus any extra photos at step 6 → store in job.images
         const optionalUploadedForSave = optionalCompletionPhotos.filter((u): u is string => !!u && typeof u === 'string' && (u.startsWith('http://') || u.startsWith('https://')));
-        if (optionalUploadedForSave.length > 0) {
+        const extraStep6ForSave = extraPhotosStep6.filter((u): u is string => !!u && typeof u === 'string' && (u.startsWith('http://') || u.startsWith('https://')));
+        const allExtraImages = [...optionalUploadedForSave, ...extraStep6ForSave];
+        if (allExtraImages.length > 0) {
           const existingImages = Array.isArray(latestJobData?.images) ? latestJobData.images : [];
-          updateData.images = [...existingImages, ...optionalUploadedForSave];
-          console.log('✅ Added optional completion photos to job.images:', optionalUploadedForSave.length);
+          updateData.images = [...existingImages, ...allExtraImages];
+          console.log('✅ Added optional + step-6 photos to job.images:', allExtraImages.length);
         }
 
         // Add AMC info for reference (technician provides this, admin will create official AMC)
@@ -3161,6 +3173,7 @@ const TechnicianDashboard = () => {
         setBillAmount('');
         setBillPhotos([]);
         setOptionalCompletionPhotos([]);
+        setExtraPhotosStep6([]);
         setAmcDateGiven(new Date().toISOString().split('T')[0]);
         setAmcEndDate('');
         setAmcYears(0);
@@ -5806,6 +5819,7 @@ const TechnicianDashboard = () => {
             setBillAmount('');
             setBillPhotos([]);
             setOptionalCompletionPhotos([]);
+            setExtraPhotosStep6([]);
             const today = new Date().toISOString().split('T')[0];
             setAmcDateGiven(today);
             setAmcEndDate('');
@@ -6602,11 +6616,30 @@ const TechnicianDashboard = () => {
                 </div>
               )}
 
-              {/* Step 6: Prefilter Question - only show if not softener service */}
+              {/* Step 6: Prefilter Question (RO) or final step (softener) */}
               {completeJobStep === 6 && isSoftenerService() && (
                 <div className="space-y-4">
-                  <div className="text-center py-8">
-                    <p className="text-gray-600">Completing job...</p>
+                  <div className="text-center py-4">
+                    <p className="text-gray-600">Review and complete below.</p>
+                  </div>
+                  <div className="rounded-xl border border-gray-200 bg-gray-50/80 dark:bg-gray-800/50 p-3 sm:p-4">
+                    <div className="flex items-center gap-2 mb-2">
+                      <Camera className="w-4 h-4 text-gray-600" />
+                      <span className="text-sm font-medium text-gray-700 dark:text-gray-300">Add more photos (optional)</span>
+                    </div>
+                    <p className="text-xs text-gray-500 dark:text-gray-400 mb-3">Store in job photos for this completion.</p>
+                    <ImageUpload
+                      onImagesChange={setExtraPhotosStep6}
+                      initialImages={extraPhotosStep6}
+                      onUploadStateChange={setIsExtraPhotosStep6Uploading}
+                      maxImages={5}
+                      folder="ro-service"
+                      title=""
+                      description=""
+                      maxWidth={1024}
+                      quality={0.5}
+                      aggressiveCompression={true}
+                    />
                   </div>
                 </div>
               )}
@@ -6700,6 +6733,25 @@ const TechnicianDashboard = () => {
                       </Button>
                     </div>
                   )}
+                  <div className="rounded-xl border border-gray-200 bg-gray-50/80 dark:bg-gray-800/50 p-3 sm:p-4 pt-4">
+                    <div className="flex items-center gap-2 mb-2">
+                      <Camera className="w-4 h-4 text-gray-600" />
+                      <span className="text-sm font-medium text-gray-700 dark:text-gray-300">Add more photos (optional)</span>
+                    </div>
+                    <p className="text-xs text-gray-500 dark:text-gray-400 mb-3">Store in job photos for this completion.</p>
+                    <ImageUpload
+                      onImagesChange={setExtraPhotosStep6}
+                      initialImages={extraPhotosStep6}
+                      onUploadStateChange={setIsExtraPhotosStep6Uploading}
+                      maxImages={5}
+                      folder="ro-service"
+                      title=""
+                      description=""
+                      maxWidth={1024}
+                      quality={0.5}
+                      aggressiveCompression={true}
+                    />
+                  </div>
                 </div>
               )}
 
@@ -6733,6 +6785,7 @@ const TechnicianDashboard = () => {
                     setBillAmount('');
                     setBillPhotos([]);
                     setOptionalCompletionPhotos([]);
+                    setExtraPhotosStep6([]);
                     const today = new Date().toISOString().split('T')[0];
                     setAmcDateGiven(today);
                     setAmcEndDate('');
@@ -6805,7 +6858,7 @@ const TechnicianDashboard = () => {
                 disabled={
                   isSubmittingJobCompletion ||
                   // Only check upload states on final step (step 6) - allow proceeding on steps 2 and 5
-                  (completeJobStep === 6 && (isBillPhotosUploading || isPaymentScreenshotUploading || isOptionalCompletionPhotosUploading)) ||
+                  (completeJobStep === 6 && (isBillPhotosUploading || isPaymentScreenshotUploading || isOptionalCompletionPhotosUploading || isExtraPhotosStep6Uploading)) ||
                   // Step 6 validation: Raw water TDS required for RO jobs
                   (completeJobStep === 6 && !isSoftenerService() && !rawWaterTds.trim()) ||
                   // Step 4 validation: only require payment mode if bill amount is not zero
@@ -6815,10 +6868,10 @@ const TechnicianDashboard = () => {
                   (completeJobStep === 7 && otpInput.join('').length !== 4)
                 }
               >
-                {isSubmittingJobCompletion || (completeJobStep === 6 && (isBillPhotosUploading || isPaymentScreenshotUploading || isOptionalCompletionPhotosUploading)) ? (
+                {isSubmittingJobCompletion || (completeJobStep === 6 && (isBillPhotosUploading || isPaymentScreenshotUploading || isOptionalCompletionPhotosUploading || isExtraPhotosStep6Uploading)) ? (
                   <>
                     <RefreshCw className="w-4 h-4 mr-2 animate-spin" />
-                    {completeJobStep === 6 && (isBillPhotosUploading || isPaymentScreenshotUploading || isOptionalCompletionPhotosUploading)
+                    {completeJobStep === 6 && (isBillPhotosUploading || isPaymentScreenshotUploading || isOptionalCompletionPhotosUploading || isExtraPhotosStep6Uploading)
                       ? 'Waiting for uploads...' 
                       : completeJobStep === 6 
                         ? 'Submitting...' 
