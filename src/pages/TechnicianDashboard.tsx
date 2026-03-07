@@ -382,6 +382,8 @@ const TechnicianDashboard = () => {
   // Phone popup state
   const [phonePopupOpen, setPhonePopupOpen] = useState(false);
   const [selectedCustomerPhone, setSelectedCustomerPhone] = useState<{phone: string, alternate_phone?: string, full_name?: string} | null>(null);
+  const [whatsappNumberDialogOpen, setWhatsappNumberDialogOpen] = useState(false);
+  const [selectedCustomerForWhatsApp, setSelectedCustomerForWhatsApp] = useState<{phone: string, alternate_phone?: string, full_name?: string} | null>(null);
 
   // Header 3-dot menu → centered options dialog
   const [headerOptionsDialogOpen, setHeaderOptionsDialogOpen] = useState(false);
@@ -3266,6 +3268,18 @@ const TechnicianDashboard = () => {
     window.open(whatsappUrl, '_blank', 'noopener,noreferrer');
   };
 
+  // Open WhatsApp: if customer has alternate number, show "which number?" dialog; else open directly
+  const handleSendMessageClick = (phone: string, alternatePhone?: string, fullName?: string) => {
+    if (!phone?.trim()) return;
+    const alt = alternatePhone?.trim();
+    if (alt && alt !== phone) {
+      setSelectedCustomerForWhatsApp({ phone, alternate_phone: alt, full_name: fullName });
+      setWhatsappNumberDialogOpen(true);
+    } else {
+      handleWhatsAppClick(phone);
+    }
+  };
+
   // Helper function to format address for display
   const formatAddressForDisplay = (address: any) => {
     if (!address) return 'Address not available';
@@ -4212,7 +4226,12 @@ const TechnicianDashboard = () => {
                                           onClick={(e) => {
                                             e.stopPropagation();
                                             e.preventDefault();
-                                            handleWhatsAppClick(customer.phone || '');
+                                            markJobAsSeen(job.id);
+                                            handleSendMessageClick(
+                                              customer.phone || '',
+                                              (customer as any)?.alternate_phone || (customer as any)?.alternatePhone,
+                                              (customer as any)?.full_name || (customer as any)?.fullName
+                                            );
                                           }}
                                           className="cursor-pointer"
                                         >
@@ -5114,7 +5133,12 @@ const TechnicianDashboard = () => {
                                     onClick={(e) => {
                                       e.stopPropagation();
                                       markJobAsSeen(job.id);
-                                      handleWhatsAppClick(job.customer?.phone || '');
+                                      const c = job.customer as any;
+                                      handleSendMessageClick(
+                                        c?.phone || '',
+                                        c?.alternate_phone || c?.alternatePhone,
+                                        c?.full_name || c?.fullName
+                                      );
                                     }}
                                     className="cursor-pointer"
                                   >
@@ -6944,6 +6968,58 @@ const TechnicianDashboard = () => {
           </DialogContent>
         </Dialog>
 
+        {/* Send message (WhatsApp) – choose number when customer has alternate */}
+        <Dialog open={whatsappNumberDialogOpen} onOpenChange={setWhatsappNumberDialogOpen}>
+          <DialogContent className="sm:max-w-md">
+            <DialogHeader>
+              <DialogTitle>Send message to which number?</DialogTitle>
+              <DialogDescription>
+                {selectedCustomerForWhatsApp?.full_name ? `Choose number for ${selectedCustomerForWhatsApp.full_name}` : 'Choose which number to open in WhatsApp'}
+              </DialogDescription>
+            </DialogHeader>
+            <div className="space-y-3 py-2">
+              {selectedCustomerForWhatsApp?.phone && (
+                <div className="flex items-center justify-between p-4 bg-gray-50 rounded-lg border border-gray-200">
+                  <div>
+                    <div className="font-semibold text-gray-900">{selectedCustomerForWhatsApp.phone}</div>
+                    <div className="text-sm text-blue-600 font-medium">Primary Number</div>
+                  </div>
+                  <Button
+                    onClick={() => {
+                      handleWhatsAppClick(selectedCustomerForWhatsApp.phone);
+                      setWhatsappNumberDialogOpen(false);
+                      setSelectedCustomerForWhatsApp(null);
+                    }}
+                  >
+                    Send Message
+                  </Button>
+                </div>
+              )}
+              {selectedCustomerForWhatsApp?.alternate_phone && (
+                <div className="flex items-center justify-between p-4 bg-gray-50 rounded-lg border border-gray-200">
+                  <div>
+                    <div className="font-semibold text-gray-900">{selectedCustomerForWhatsApp.alternate_phone}</div>
+                    <div className="text-sm text-gray-600 font-medium">Alternate Number</div>
+                  </div>
+                  <Button
+                    onClick={() => {
+                      handleWhatsAppClick(selectedCustomerForWhatsApp.alternate_phone!);
+                      setWhatsappNumberDialogOpen(false);
+                      setSelectedCustomerForWhatsApp(null);
+                    }}
+                  >
+                    Send Message
+                  </Button>
+                </div>
+              )}
+            </div>
+            <div className="flex justify-end pt-4 border-t">
+              <Button variant="outline" onClick={() => { setWhatsappNumberDialogOpen(false); setSelectedCustomerForWhatsApp(null); }}>
+                Cancel
+              </Button>
+            </div>
+          </DialogContent>
+        </Dialog>
 
         {/* Photos Dialog */}
         <Dialog open={photosDialogOpen} onOpenChange={setPhotosDialogOpen}>
