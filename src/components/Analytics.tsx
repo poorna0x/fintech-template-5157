@@ -67,6 +67,7 @@ interface AnalyticsData {
     count: number; 
     amount: number;
     leadCost: number;
+    spareCost: number;
     serviceTypes: Array<{ serviceType: string; count: number; amount: number }>;
   }>;
   serviceTypeBreakdown?: Array<{ serviceType: string; count: number; amount: number }>;
@@ -445,7 +446,8 @@ const Analytics = () => {
       const leadSourceMap: Record<string, { 
         count: number; 
         amount: number; 
-        leadCost: number; // Total lead cost for this source
+        leadCost: number;
+        spareCost: number; // Parts cost for jobs from this source
         displayName: string;
         serviceTypes: Record<string, { count: number; amount: number }>;
       }> = {};
@@ -548,6 +550,7 @@ const Analytics = () => {
           // Get lead_cost from job
           const leadCost = Number((job as any).lead_cost || 0);
           
+          const spareCost = Number(job.parts_cost_total) || 0;
           if (!leadSourceMap[normalizedKey]) {
             // Use canonical name if available, otherwise use trimmed source
             const canonicalName = getCanonicalName(normalizedKey, trimmedSource);
@@ -555,6 +558,7 @@ const Analytics = () => {
               count: 0, 
               amount: 0,
               leadCost: 0,
+              spareCost: 0,
               displayName: canonicalName,
               serviceTypes: {}
             };
@@ -562,6 +566,7 @@ const Analytics = () => {
           leadSourceMap[normalizedKey].count += 1;
           leadSourceMap[normalizedKey].amount += amount;
           leadSourceMap[normalizedKey].leadCost += leadCost;
+          leadSourceMap[normalizedKey].spareCost += spareCost;
           
           // Track service sub-type within this lead source (Installation, Service, Reinstallation, etc.)
           if (!leadSourceMap[normalizedKey].serviceTypes[serviceType]) {
@@ -901,6 +906,7 @@ const Analytics = () => {
             count: stats.count, 
             amount: stats.amount,
             leadCost: stats.leadCost,
+            spareCost: stats.spareCost,
             serviceTypes: Object.entries(stats.serviceTypes)
               .map(([serviceType, serviceStats]) => ({ serviceType, ...serviceStats }))
               .sort((a, b) => b.amount - a.amount)
@@ -1501,26 +1507,34 @@ const Analytics = () => {
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="space-y-6">
+            <div className="space-y-5">
               {analytics.leadSourceBreakdown.map((leadSource, index) => (
-                <div key={index} className="border-b border-gray-200 last:border-b-0 pb-6 last:pb-0">
-                  <div className="mb-4">
-                    <div className="flex items-center justify-between mb-2">
-                      <h3 className="text-lg font-semibold text-gray-900">{leadSource.leadType}</h3>
-                      <div className="text-right">
-                        <div className="text-sm text-gray-500">Total: {leadSource.count} jobs</div>
-                        <div className="text-lg font-bold text-green-600">
-                          ₹ {formatCurrency(leadSource.amount)}
-                        </div>
-                        <div className="text-sm font-semibold text-orange-600 mt-1">
-                          Lead Cost: ₹ {formatCurrency(leadSource.leadCost || 0)}
-                        </div>
-                      </div>
+                <div
+                  key={index}
+                  className="rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900/50 p-4 sm:p-5 shadow-sm"
+                >
+                  <h3 className="text-base font-semibold text-gray-900 dark:text-gray-100 mb-3">{leadSource.leadType}</h3>
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-4">
+                    <div className="rounded-lg bg-gray-50 dark:bg-gray-800/50 px-3 py-2 border border-gray-100 dark:border-gray-700/50">
+                      <div className="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide">Jobs</div>
+                      <div className="text-lg font-semibold text-gray-900 dark:text-gray-100">{leadSource.count}</div>
+                    </div>
+                    <div className="rounded-lg bg-gray-50 dark:bg-gray-800/50 px-3 py-2 border border-gray-100 dark:border-gray-700/50">
+                      <div className="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide">Billing</div>
+                      <div className="text-lg font-semibold text-green-600 dark:text-green-500">₹ {formatCurrency(leadSource.amount)}</div>
+                    </div>
+                    <div className="rounded-lg bg-gray-50 dark:bg-gray-800/50 px-3 py-2 border border-gray-100 dark:border-gray-700/50">
+                      <div className="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide">Lead Cost</div>
+                      <div className="text-lg font-semibold text-orange-600 dark:text-orange-500">₹ {formatCurrency(leadSource.leadCost || 0)}</div>
+                    </div>
+                    <div className="rounded-lg bg-gray-50 dark:bg-gray-800/50 px-3 py-2 border border-gray-100 dark:border-gray-700/50">
+                      <div className="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide">Spare Cost</div>
+                      <div className="text-lg font-semibold text-blue-600 dark:text-blue-500">₹ {formatCurrency(leadSource.spareCost ?? 0)}</div>
                     </div>
                   </div>
                   
                   {leadSource.serviceTypes && leadSource.serviceTypes.length > 0 && (
-                    <div className="ml-4">
+                    <div className="mt-2 ml-0 sm:ml-2">
                       <div className="text-sm font-medium text-gray-700 mb-2">Service Type Breakdown:</div>
                       <div className="overflow-x-auto">
                         <Table>
