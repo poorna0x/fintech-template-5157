@@ -201,6 +201,8 @@ const TechnicianDashboard = () => {
   const lastJobIdsRef = useRef<Set<string>>(new Set()); // Track job IDs from last active session
   const hasJobsRef = useRef<boolean>(false); // Track if we have loaded jobs at least once
   const shouldPreserveOrderRef = useRef<boolean>(false); // Track if we should preserve job order (true when updating status, false when loading from DB)
+  const lastCompletedJobIdsOrderRef = useRef<string[]>([]); // Completed tab: preserve list order when only job data changes (e.g. add parts)
+  const lastCompletedDateFilterRef = useRef<'today' | 'yesterday'>('today'); // so we re-sort when switching today/yesterday
   const jobsRef = useRef<Job[]>([]); // Track current jobs state for synchronous access in realtime handler
   // Load seenJobs from localStorage on mount
   const [seenJobs, setSeenJobs] = useState<Set<string>>(() => {
@@ -1547,16 +1549,32 @@ const TechnicianDashboard = () => {
     }
 
     // Sort jobs: Follow-up jobs scheduled for today first, then NEW jobs, then IN_PROGRESS/EN_ROUTE, then others
-    // Only sort if we loaded from database (not when updating status in place)
-    if (!shouldPreserveOrderRef.current) {
-      if (statusFilter === 'COMPLETED') {
-        // Fast path: sort completed jobs by completed_at descending (newest first)
+    // Completed tab: preserve visual order when only job data changes (e.g. add parts, then close dialog)
+    const didSort = !shouldPreserveOrderRef.current;
+    if (statusFilter === 'COMPLETED') {
+      if (completedDateFilter !== lastCompletedDateFilterRef.current) {
+        lastCompletedDateFilterRef.current = completedDateFilter;
+        lastCompletedJobIdsOrderRef.current = [];
+      }
+      const currentIds = filtered.map((j) => j.id);
+      const lastOrder = lastCompletedJobIdsOrderRef.current;
+      const sameSetOfJobs =
+        lastOrder.length === currentIds.length &&
+        currentIds.every((id) => lastOrder.includes(id));
+      if (sameSetOfJobs && lastOrder.length > 0) {
+        // Same jobs (e.g. one updated in place) – keep previous order so list doesn’t jump
+        const orderMap = new Map(lastOrder.map((id, i) => [id, i]));
+        filtered.sort((a, b) => (orderMap.get(a.id) ?? 0) - (orderMap.get(b.id) ?? 0));
+      } else {
+        // New/removed job or first load – sort by completed_at descending
         filtered.sort((a, b) => {
           const ta = new Date((a as any).completed_at || (a as any).end_time || (a as any).completedAt || (a as any).endTime || 0).getTime();
           const tb = new Date((b as any).completed_at || (b as any).end_time || (b as any).completedAt || (b as any).endTime || 0).getTime();
           return tb - ta;
         });
-      } else {
+        lastCompletedJobIdsOrderRef.current = filtered.map((j) => j.id);
+      }
+    } else if (didSort) {
       filtered.sort((a, b) => {
       const statusA = (a as any).status || a.status;
       const statusB = (b as any).status || b.status;
@@ -1615,11 +1633,9 @@ const TechnicianDashboard = () => {
       const createdB = new Date((b as any).created_at || b.createdAt || 0).getTime();
       return createdB - createdA;
       });
-      }
     }
-    
-    // Reset the flag after processing
-    shouldPreserveOrderRef.current = false;
+    // Only reset preserve-order flag when we actually sorted (so in-place updates e.g. add parts keep list order)
+    if (didSort) shouldPreserveOrderRef.current = false;
 
     setFilteredJobs(filtered);
   }, [jobs, statusFilter, seenJobs, completedDateFilter, user?.technicianId, user?.id]);
