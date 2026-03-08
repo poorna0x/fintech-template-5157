@@ -379,6 +379,7 @@ const TechnicianDashboard = () => {
   const [optionalCompletionPhotos, setOptionalCompletionPhotos] = useState<string[]>([]);
   const [isOptionalCompletionPhotosUploading, setIsOptionalCompletionPhotosUploading] = useState(false);
   const [extraPhotosStep6, setExtraPhotosStep6] = useState<string[]>([]);
+  const [dontSendMessageToCustomer, setDontSendMessageToCustomer] = useState(false);
   const [isExtraPhotosStep6Uploading, setIsExtraPhotosStep6Uploading] = useState(false);
 
   // Phone popup state
@@ -3051,6 +3052,10 @@ const TechnicianDashboard = () => {
           console.log('✅ Added AMC info (reference) to requirements:', amcInfo);
         }
 
+        if (dontSendMessageToCustomer) {
+          requirements.push({ dont_send_message: true });
+        }
+
         // Always update requirements (even if empty) to ensure job is marked as completed
         // Job completion should succeed even if photos aren't uploaded yet
         updateData.requirements = JSON.stringify(requirements);
@@ -3192,6 +3197,7 @@ const TechnicianDashboard = () => {
         setBillPhotos([]);
         setOptionalCompletionPhotos([]);
         setExtraPhotosStep6([]);
+        setDontSendMessageToCustomer(false);
         setAmcDateGiven(new Date().toISOString().split('T')[0]);
         setAmcEndDate('');
         setAmcYears(0);
@@ -5860,6 +5866,7 @@ const TechnicianDashboard = () => {
             setBillPhotos([]);
             setOptionalCompletionPhotos([]);
             setExtraPhotosStep6([]);
+            setDontSendMessageToCustomer(false);
             const today = new Date().toISOString().split('T')[0];
             setAmcDateGiven(today);
             setAmcEndDate('');
@@ -6771,6 +6778,15 @@ const TechnicianDashboard = () => {
                         <Bell className="w-4 h-4 mr-2" />
                         Set reminder for this customer
                       </Button>
+                      <label className="flex items-center gap-2 cursor-pointer mt-2">
+                        <input
+                          type="checkbox"
+                          checked={dontSendMessageToCustomer}
+                          onChange={(e) => setDontSendMessageToCustomer(e.target.checked)}
+                          className="h-4 w-4 rounded border-gray-300 text-gray-900 focus:ring-gray-500"
+                        />
+                        <span className="text-sm text-gray-700 dark:text-gray-300">Don&apos;t send message to customer</span>
+                      </label>
                     </div>
                   )}
                   <div className="rounded-xl border border-gray-200 bg-gray-50/80 dark:bg-gray-800/50 p-3 sm:p-4 pt-4">
@@ -6826,6 +6842,7 @@ const TechnicianDashboard = () => {
                     setBillPhotos([]);
                     setOptionalCompletionPhotos([]);
                     setExtraPhotosStep6([]);
+                    setDontSendMessageToCustomer(false);
                     const today = new Date().toISOString().split('T')[0];
                     setAmcDateGiven(today);
                     setAmcEndDate('');

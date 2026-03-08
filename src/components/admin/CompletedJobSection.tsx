@@ -1,6 +1,16 @@
 import React, { useState, useEffect } from 'react';
 import { CheckCircle, Edit, Package, Bell } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
 import { Job, Technician } from '@/types';
 import { WhatsAppIcon } from '../WhatsAppIcon';
 import { findLeadSource } from '@/lib/adminUtils';
@@ -57,6 +67,7 @@ export const CompletedJobSection: React.FC<CompletedJobSectionProps> = ({
 }) => {
   const [partsUsedDialogOpen, setPartsUsedDialogOpen] = useState(false);
   const [sparePartsCost, setSparePartsCost] = useState<number>(0);
+  const [sendMessageConfirmOpen, setSendMessageConfirmOpen] = useState(false);
 
   const fetchSparePartsCost = () => {
     if (!job?.id || job.status !== 'COMPLETED') return;
@@ -97,6 +108,8 @@ export const CompletedJobSection: React.FC<CompletedJobSectionProps> = ({
     return false;
   });
   const messageSentAt = requirements.find((r: any) => r?.message_sent_at)?.message_sent_at;
+  const dontSendMessage = requirements.some((r: any) => r?.dont_send_message === true);
+  const customerName = (job as any).customer?.full_name || (job as any).customer?.fullName || 'customer';
   
   // Extract OTP information
   const otpRequirement = requirements.find((r: any) => r?.require_otp === true);
@@ -389,10 +402,7 @@ export const CompletedJobSection: React.FC<CompletedJobSectionProps> = ({
           <Button
             size="sm"
             variant="outline"
-            onClick={() => {
-              setSelectedJobForMessage(job);
-              setSendMessageDialogOpen(true);
-            }}
+            onClick={() => setSendMessageConfirmOpen(true)}
             className="text-xs flex-1 sm:flex-none"
           >
             <WhatsAppIcon className="w-3 h-3 mr-1" />
@@ -424,6 +434,31 @@ export const CompletedJobSection: React.FC<CompletedJobSectionProps> = ({
           )}
         </div>
       </div>
+
+      <AlertDialog open={sendMessageConfirmOpen} onOpenChange={setSendMessageConfirmOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Send WhatsApp message?</AlertDialogTitle>
+            <AlertDialogDescription>
+              {dontSendMessage
+                ? `Technician requested not to send message to ${customerName}. Send anyway?`
+                : `Send completion message to ${customerName} via WhatsApp?`}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => {
+                setSelectedJobForMessage(job);
+                setSendMessageDialogOpen(true);
+                setSendMessageConfirmOpen(false);
+              }}
+            >
+              Send
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
       
       {/* Parts Used Dialog */}
       {assignedTechnician && (
