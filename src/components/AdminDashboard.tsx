@@ -732,6 +732,7 @@ const AdminDashboard = () => {
   const [whatsappTechnician, setWhatsappTechnician] = useState<{name: string, phone: string} | null>(null);
   const [whatsappServiceSubType, setWhatsappServiceSubType] = useState<string>('');
   const [whatsappCustomerName, setWhatsappCustomerName] = useState<string>('');
+  const [whatsappLocation, setWhatsappLocation] = useState<string>('');
   const [jobToEdit, setJobToEdit] = useState<Job | null>(null);
   const [editJobDialogOpen, setEditJobDialogOpen] = useState(false);
   const [photoToDelete, setPhotoToDelete] = useState<{jobId: string, photoIndex: number, photoUrl: string} | null>(null);
@@ -4812,12 +4813,16 @@ const AdminDashboard = () => {
         scrollPositionBeforeWhatsAppRef.current = scrollY;
         const serviceSubType = (jobToAssign as any).service_sub_type || jobToAssign.serviceSubType || 'Service';
         const customerName = (jobToAssign.customer as any)?.full_name || (jobToAssign.customer as any)?.fullName || 'Customer';
+        const addr = (jobToAssign as any).service_address || (jobToAssign.customer as any)?.address;
+        const vis = (jobToAssign.customer as any)?.visible_address;
+        const locationWord = (vis && String(vis).trim()) ? String(vis).trim().split(/\s+/)[0] : (addr?.area || addr?.city || '');
         setWhatsappTechnician({
           name: assignedTechnician.fullName,
           phone: assignedTechnician.phone
         });
         setWhatsappServiceSubType(serviceSubType);
         setWhatsappCustomerName(customerName);
+        setWhatsappLocation(locationWord || '');
         setWhatsappDialogOpen(true);
       }
       
@@ -5019,12 +5024,16 @@ const AdminDashboard = () => {
         scrollPositionBeforeWhatsAppRef.current = scrollY;
         const serviceSubType = (jobToReassign as any).service_sub_type || jobToReassign.serviceSubType || 'Service';
         const customerName = (jobToReassign.customer as any)?.full_name || (jobToReassign.customer as any)?.fullName || 'Customer';
+        const addr = (jobToReassign as any).service_address || (jobToReassign.customer as any)?.address;
+        const vis = (jobToReassign.customer as any)?.visible_address;
+        const locationWord = (vis && String(vis).trim()) ? String(vis).trim().split(/\s+/)[0] : (addr?.area || addr?.city || '');
         setWhatsappTechnician({
           name: reassignedTechnician.fullName,
           phone: reassignedTechnician.phone
         });
         setWhatsappServiceSubType(serviceSubType);
         setWhatsappCustomerName(customerName);
+        setWhatsappLocation(locationWord || '');
         setWhatsappDialogOpen(true);
       }
       
@@ -10164,6 +10173,7 @@ const AdminDashboard = () => {
           technicianPhone={whatsappTechnician.phone}
           serviceSubType={whatsappServiceSubType}
           customerName={whatsappCustomerName}
+          location={whatsappLocation}
         />
       )}
 
