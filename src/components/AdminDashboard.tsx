@@ -68,7 +68,7 @@ import {
 import { db, supabase } from '@/lib/supabase';
 import { registerAdminPWA, disablePWA } from '@/lib/pwa';
 import { Customer, Job, Technician } from '@/types';
-import { cloudinaryService, compressImage } from '@/lib/cloudinary';
+import { cloudinaryService, compressImage, validateImageFile } from '@/lib/cloudinary';
 import { toast } from 'sonner';
 import { isIOS, isPWA, shouldUseFileInputFallback, requestCameraAccess, createVideoElement, checkCameraPermission } from '@/lib/cameraUtils';
 import { getCachedQrCodes, cacheQrCodes, shouldUseCache, CommonQrCode } from '@/lib/qrCodeManager';
@@ -3821,24 +3821,16 @@ const AdminDashboard = () => {
     setIsCompressingImage(true);
     const customerId = selectedCustomerForPhotos.customer_id || selectedCustomerForPhotos.customerId;
     
-    // Create thumbnails immediately for preview
+    // Create thumbnails immediately for preview (use stable id per file index for correct lookup in loop)
     const thumbnailMap: {[key: string]: {url: string, uploading: boolean}} = {};
     const fileArray = Array.from(files);
-    
+    const uploadTimestamp = Date.now();
+
     fileArray.forEach((file, index) => {
-      // Validate file type
-      if (!file.type.startsWith('image/')) {
-        return;
-      }
-      
-      // Validate file size (10MB limit)
-      if (file.size > 10 * 1024 * 1024) {
-        return;
-      }
-      
+      if (!validateImageFile(file).valid) return;
       // Create thumbnail URL
       const thumbnailUrl = URL.createObjectURL(file);
-      const thumbnailId = `uploading-${Date.now()}-${index}`;
+      const thumbnailId = `uploading-${uploadTimestamp}-${index}`;
       thumbnailMap[thumbnailId] = { url: thumbnailUrl, uploading: true };
     });
     
@@ -3850,20 +3842,13 @@ const AdminDashboard = () => {
       
       for (let i = 0; i < files.length; i++) {
         const file = files[i];
-        
-        // Validate file type
-        if (!file.type.startsWith('image/')) {
-          toast.error(`File ${file.name} is not an image`);
+        const validation = validateImageFile(file);
+        if (!validation.valid) {
+          toast.error(validation.error ?? `File ${file.name} is not valid`);
           continue;
         }
-        
-        // Validate file size (10MB limit)
-        if (file.size > 10 * 1024 * 1024) {
-          toast.error(`File ${file.name} is too large (max 10MB)`);
-          continue;
-        }
-        
-        const thumbnailId = Object.keys(thumbnailMap)[i];
+
+        const thumbnailId = thumbnailMap[`uploading-${uploadTimestamp}-${i}`] ? `uploading-${uploadTimestamp}-${i}` : undefined;
         
         try {
           // Compress image for better performance

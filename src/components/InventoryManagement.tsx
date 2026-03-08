@@ -510,18 +510,18 @@ const InventoryManagement: React.FC<InventoryManagementProps> = ({ onBack }) => 
     <div className="space-y-6">
       {/* Tabs for Main Inventory, Bundles, and Technician Inventory */}
       <Tabs defaultValue="main" className="w-full">
-        <TabsList className="grid w-full grid-cols-3">
-          <TabsTrigger value="main" className="flex items-center gap-2">
-            <ShoppingCart className="w-4 h-4" />
-            Main Inventory
+        <TabsList className="grid w-full grid-cols-3 h-auto">
+          <TabsTrigger value="main" className="flex items-center gap-1.5 min-w-0 overflow-hidden px-2 sm:px-3">
+            <ShoppingCart className="w-4 h-4 shrink-0" />
+            <span className="min-w-0 truncate">Main Inventory</span>
           </TabsTrigger>
-          <TabsTrigger value="bundles" className="flex items-center gap-2" onClick={() => !bundlesLoaded && loadBundles()}>
-            <Package className="w-4 h-4" />
-            Bundles
+          <TabsTrigger value="bundles" className="flex items-center gap-1.5 min-w-0 overflow-hidden px-2 sm:px-3" onClick={() => !bundlesLoaded && loadBundles()}>
+            <Package className="w-4 h-4 shrink-0" />
+            <span className="min-w-0 truncate">Bundles</span>
           </TabsTrigger>
-          <TabsTrigger value="technician" className="flex items-center gap-2">
-            <User className="w-4 h-4" />
-            Technician Inventory
+          <TabsTrigger value="technician" className="flex items-center gap-1.5 min-w-0 overflow-hidden px-2 sm:px-3">
+            <User className="w-4 h-4 shrink-0" />
+            <span className="min-w-0 truncate">Technician Inventory</span>
           </TabsTrigger>
         </TabsList>
 

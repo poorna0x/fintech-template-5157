@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -8,7 +8,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { Upload } from 'lucide-react';
 import { Customer } from '@/types';
 import { toast } from 'sonner';
-import { cloudinaryService, compressImage } from '@/lib/cloudinary';
+import { cloudinaryService, compressImage, validateImageFile } from '@/lib/cloudinary';
 import { generateJobNumber } from '@/lib/adminUtils';
 import { db } from '@/lib/supabase';
 import { createJobAssignedNotification, sendNotification } from '@/lib/notifications';
@@ -56,6 +56,8 @@ const NewJobDialog: React.FC<NewJobDialogProps> = ({
 }) => {
   const [isDragOverNewJob, setIsDragOverNewJob] = useState(false);
   const [isCreatingJob, setIsCreatingJob] = useState(false);
+  const [isUploadingPhotos, setIsUploadingPhotos] = useState(false);
+  const pendingPhotoBatchesRef = useRef<{ startIndex: number; promise: Promise<string[]> }[]>([]);
   // Get default lead cost based on lead source
   const getDefaultLeadCost = (leadSource: string): string => {
     switch (leadSource) {
@@ -151,80 +153,79 @@ const NewJobDialog: React.FC<NewJobDialogProps> = ({
     }));
   };
 
-  const handlePhotoUpload = async (files: File[]) => {
+  const handlePhotoUpload = (files: File[]) => {
     if (!files || files.length === 0) return;
-    
-    try {
-      const validFiles: File[] = [];
-      for (const file of files) {
-        if (!file.type.startsWith('image/')) {
-          toast.error(`${file.name} is not an image file`);
-          continue;
-        }
-        if (file.size > 10 * 1024 * 1024) {
-          toast.error(`${file.name} is too large (max 10MB)`);
-          continue;
-        }
-        validFiles.push(file);
+
+    const validFiles: File[] = [];
+    for (const file of files) {
+      const validation = validateImageFile(file);
+      if (!validation.valid) {
+        toast.error(validation.error ?? `${file.name} is not valid`);
+        continue;
       }
-      
-      if (validFiles.length === 0) {
-        toast.error('No valid image files to upload');
-        return;
-      }
-      
-      const thumbnailPromises = validFiles.map(file => {
-        return new Promise<string>((resolve) => {
-          const reader = new FileReader();
-          reader.onload = (e) => {
-            resolve(e.target?.result as string);
-          };
-          reader.onerror = () => {
-            resolve('');
-          };
-          reader.readAsDataURL(file);
-        });
-      });
-      
-      const thumbnails = await Promise.all(thumbnailPromises);
-      const validThumbnails = thumbnails.filter(t => t !== '');
-      
-      setNewJobFormData(prev => ({
-        ...prev,
-        photos: [...prev.photos, ...validThumbnails]
-      }));
-      
-      const uploadPromises = validFiles.map(async (file, index) => {
-        try {
-          const compressedFile = await compressImage(file, 800, 0.4);
-          const uploadResult = await cloudinaryService.uploadImage(compressedFile, 'ro-service', false);
-          
-          if (!uploadResult || !uploadResult.secure_url) {
-            throw new Error('Upload failed - no URL returned');
-          }
-          
-          setNewJobFormData(prev => ({
-            ...prev,
-            photos: prev.photos.map((photo, i) => {
-              const thumbnailIndex = prev.photos.length - validThumbnails.length + index;
-              return i === thumbnailIndex ? uploadResult.secure_url : photo;
-            })
-          }));
-          
-          return uploadResult.secure_url;
-        } catch (error) {
-          console.error(`❌ Failed to upload ${file.name}:`, error);
-          toast.error(`Failed to upload ${file.name}: ${error instanceof Error ? error.message : 'Unknown error'}`);
-          return validThumbnails[index] || '';
-        }
-      });
-      
-      await Promise.all(uploadPromises);
-      toast.success(`${validFiles.length} photo(s) uploaded successfully!`);
-    } catch (error) {
-      console.error('Error processing photos:', error);
-      toast.error(`Failed to process photos: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      validFiles.push(file);
     }
+
+    if (validFiles.length === 0) {
+      toast.error('No valid image files to upload');
+      return;
+    }
+
+    let startIndex: number;
+    setNewJobFormData(prev => {
+      startIndex = prev.photos.length;
+      return { ...prev, photos: [...prev.photos, ...Array(validFiles.length).fill('')] };
+    });
+
+    const thumbnailPromises = validFiles.map(file =>
+      new Promise<string>((resolve) => {
+        const reader = new FileReader();
+        reader.onload = (e) => resolve((e.target?.result as string) || '');
+        reader.onerror = () => resolve('');
+        reader.readAsDataURL(file);
+      })
+    );
+
+    Promise.all(thumbnailPromises).then(thumbnails => {
+      setNewJobFormData(prev => {
+        const next = [...prev.photos];
+        thumbnails.forEach((t, i) => { if (t) next[startIndex + i] = t; });
+        return { ...prev, photos: next };
+      });
+    });
+
+    const uploadPromises = validFiles.map(async (file, index) => {
+      try {
+        const compressedFile = await compressImage(file, 800, 0.4);
+        const uploadResult = await cloudinaryService.uploadImage(compressedFile, 'ro-service', false);
+        if (!uploadResult?.secure_url) throw new Error('Upload failed - no URL returned');
+        setNewJobFormData(prev => {
+          const replaceIndex = startIndex + index;
+          return {
+            ...prev,
+            photos: prev.photos.map((photo, i) => (i === replaceIndex ? uploadResult.secure_url : photo))
+          };
+        });
+        return uploadResult.secure_url;
+      } catch (error) {
+        console.error(`❌ Failed to upload ${file.name}:`, error);
+        toast.error(`Failed to upload ${file.name}: ${error instanceof Error ? error.message : 'Unknown error'}`);
+        return '';
+      }
+    });
+
+    const batchPromise = Promise.all(uploadPromises).then(urls => urls.filter(Boolean));
+    const batch = { startIndex, promise: batchPromise };
+    pendingPhotoBatchesRef.current = [...pendingPhotoBatchesRef.current, batch];
+    setIsUploadingPhotos(true);
+
+    batchPromise.finally(() => {
+      pendingPhotoBatchesRef.current = pendingPhotoBatchesRef.current.filter(b => b !== batch);
+      setIsUploadingPhotos(pendingPhotoBatchesRef.current.length > 0);
+    });
+    batchPromise.then(() => {
+      if (validFiles.length > 0) toast.success(`${validFiles.length} photo(s) uploaded successfully!`);
+    }).catch(() => {});
   };
 
   const handleRemovePhoto = (index: number) => {
@@ -312,6 +313,21 @@ const NewJobDialog: React.FC<NewJobDialogProps> = ({
         });
       }
 
+      // Wait for any in-flight photo uploads so we include all photos in the job
+      let photosToUse = newJobFormData.photos.filter(photo => photo && photo.trim() !== '' && photo.startsWith('http'));
+      const pendingBatches = pendingPhotoBatchesRef.current;
+      if (pendingBatches.length > 0) {
+        pendingPhotoBatchesRef.current = [];
+        const results = await Promise.all(pendingBatches.map(async (b) => ({ startIndex: b.startIndex, urls: await b.promise })));
+        const merged = [...newJobFormData.photos];
+        for (const { startIndex, urls } of results) {
+          for (let i = 0; i < urls.length; i++) {
+            if (urls[i] && startIndex + i < merged.length) merged[startIndex + i] = urls[i];
+          }
+        }
+        photosToUse = merged.filter(photo => photo && photo.trim() !== '' && photo.startsWith('http'));
+      }
+
       const jobData = {
         job_number: jobNumber,
         customer_id: customer.id,
@@ -332,7 +348,7 @@ const NewJobDialog: React.FC<NewJobDialogProps> = ({
         payment_status: 'PENDING',
         assigned_technician_id: newJobFormData.assigned_technician_id || null,
         assigned_date: newJobFormData.assigned_technician_id ? new Date().toISOString() : null,
-        before_photos: newJobFormData.photos.filter(photo => photo && photo.trim() !== '' && photo.startsWith('http'))
+        before_photos: photosToUse
       };
 
       const { data: newJob, error } = await db.jobs.create(jobData);
@@ -542,11 +558,11 @@ const NewJobDialog: React.FC<NewJobDialogProps> = ({
                     e.preventDefault();
                     e.stopPropagation();
                     setIsDragOverNewJob(false);
-                    const files = Array.from(e.dataTransfer.files).filter(file => file.type.startsWith('image/'));
+                    const files = Array.from(e.dataTransfer.files).filter(file => validateImageFile(file).valid);
                     if (files.length > 0) {
                       handlePhotoUpload(files);
                     } else {
-                      toast.error('Please drop image files only');
+                      toast.error('Please drop image files only (JPEG, PNG, WebP, HEIC)');
                     }
                   }}
                   onClick={() => document.getElementById('photo-upload')?.click()}
@@ -615,16 +631,25 @@ const NewJobDialog: React.FC<NewJobDialogProps> = ({
                   className="hidden"
                 />
                 
+                {isUploadingPhotos && (
+                  <p className="text-sm text-muted-foreground">Photos still uploading — you can click Create Job and they will be included when ready.</p>
+                )}
                 {newJobFormData.photos.length > 0 && (
                   <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4">
                     {newJobFormData.photos.map((photo, index) => (
                       <div key={index} className="relative group">
-                        <img
-                          src={photo}
-                          alt={`Upload ${index + 1}`}
-                          className="w-full h-24 object-cover rounded-lg border"
-                        />
-                        {photo.startsWith('data:') && (
+                        {photo ? (
+                          <img
+                            src={photo}
+                            alt={`Upload ${index + 1}`}
+                            className="w-full h-24 object-cover rounded-lg border"
+                          />
+                        ) : (
+                          <div className="w-full h-24 rounded-lg border border-dashed bg-muted flex items-center justify-center">
+                            <div className="w-6 h-6 border-2 border-muted-foreground border-t-transparent rounded-full animate-spin" />
+                          </div>
+                        )}
+                        {(photo && (photo.startsWith('data:') || !photo.startsWith('http'))) && (
                           <div className="absolute inset-0 bg-black bg-opacity-50 rounded-lg flex items-center justify-center">
                             <div className="w-6 h-6 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
                           </div>
