@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { CheckCircle, Edit, Package, Bell } from 'lucide-react';
+import { CheckCircle, Edit, ShoppingCart, Bell } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
   AlertDialog,
@@ -349,7 +349,7 @@ export const CompletedJobSection: React.FC<CompletedJobSectionProps> = ({
             </div>
           )}
         </div>
-        <div className="flex flex-row sm:flex-col gap-2 mt-2 sm:mt-0 w-full sm:w-auto">
+        <div className="flex flex-nowrap items-center gap-1.5 sm:gap-2 mt-2 sm:mt-0 min-w-0 w-full">
           <Button
             size="sm"
             variant="outline"
@@ -394,31 +394,29 @@ export const CompletedJobSection: React.FC<CompletedJobSectionProps> = ({
               setCompletedJobEditData(editData);
               setEditCompletedJobDialogOpen(true);
             }}
-            className="text-xs flex-1 sm:flex-none"
+            title="Edit"
+            className="text-xs flex-1 min-w-0 justify-center py-2 px-2"
           >
-            <Edit className="w-3 h-3 mr-1" />
-            Edit
+            <Edit className="w-4 h-4 shrink-0" />
           </Button>
           <Button
             size="sm"
             variant="outline"
             onClick={() => setSendMessageConfirmOpen(true)}
-            className="text-xs flex-1 sm:flex-none"
+            title={messageSent ? 'Send Again' : 'Send Message'}
+            className="text-xs flex-1 min-w-0 justify-center py-2 px-2"
           >
-            <WhatsAppIcon className="w-3 h-3 mr-1" />
-            {messageSent ? 'Send Again' : 'Send Message'}
+            <WhatsAppIcon className="w-4 h-4 shrink-0" />
           </Button>
           {assignedTechnician && (
             <Button
               size="sm"
               variant="outline"
-              onClick={() => {
-                setPartsUsedDialogOpen(true);
-              }}
-              className="text-xs flex-1 sm:flex-none"
+              onClick={() => setPartsUsedDialogOpen(true)}
+              title="Add Parts"
+              className="text-xs flex-1 min-w-0 justify-center py-2 px-2"
             >
-              <Package className="w-3 h-3 mr-1" />
-              Add Parts
+              <ShoppingCart className="w-4 h-4 shrink-0" />
             </Button>
           )}
           {onAddReminder && (
@@ -426,10 +424,10 @@ export const CompletedJobSection: React.FC<CompletedJobSectionProps> = ({
               size="sm"
               variant="outline"
               onClick={() => onAddReminder(job)}
-              className="text-xs flex-1 sm:flex-none"
+              title="Add Reminder"
+              className="text-xs flex-1 min-w-0 justify-center py-2 px-2"
             >
-              <Bell className="w-3 h-3 mr-1" />
-              Add Reminder
+              <Bell className="w-4 h-4 shrink-0" />
             </Button>
           )}
         </div>
