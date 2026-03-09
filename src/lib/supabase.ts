@@ -711,17 +711,18 @@ export const db = {
       };
     },
 
-    /** Minimal fetch for follow-up glow: only jobs with follow_up_date today or tomorrow. Returns id, status, follow_up_date only. */
+    /** Minimal fetch for follow-up glow: only jobs with follow_up_date today or tomorrow (local date). Returns id, status, follow_up_date only. */
     async getFollowUpForGlow() {
       const now = new Date();
-      const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0, 0);
-      const dayAfterTomorrow = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 2, 0, 0, 0, 0);
+      const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+      const tomorrow = new Date(now);
+      tomorrow.setDate(tomorrow.getDate() + 1);
+      const tomorrowStr = `${tomorrow.getFullYear()}-${String(tomorrow.getMonth() + 1).padStart(2, '0')}-${String(tomorrow.getDate()).padStart(2, '0')}`;
       const { data, error } = await supabase
         .from('jobs')
         .select('id, status, follow_up_date')
         .in('status', ['FOLLOW_UP', 'RESCHEDULED'])
-        .gte('follow_up_date', todayStart.toISOString())
-        .lt('follow_up_date', dayAfterTomorrow.toISOString())
+        .in('follow_up_date', [todayStr, tomorrowStr])
         .limit(200);
       return { data: data || [], error };
     },

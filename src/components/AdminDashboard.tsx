@@ -1143,13 +1143,11 @@ const AdminDashboard = () => {
     }
   }, [pageSize, deniedDateFilter, completedDateFilter]);
 
-  // Reload follow-up jobs for glow when status filter changes to RESCHEDULED (minimal: today/tomorrow only)
+  // Reload follow-up jobs for glow whenever filter changes (so Followup card border glow is correct for today/tomorrow)
   useEffect(() => {
-    if (statusFilter === 'RESCHEDULED') {
-      db.jobs.getFollowUpForGlow().then(({ data }) => {
-        if (data) setAllFollowUpJobs(data as Job[]);
-      }).catch(() => {});
-    }
+    db.jobs.getFollowUpForGlow().then(({ data }) => {
+      if (data) setAllFollowUpJobs(data as Job[]);
+    }).catch(() => {});
   }, [statusFilter]);
 
   // Fetch all jobs for customer when report dialog opens
