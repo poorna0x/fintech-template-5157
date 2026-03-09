@@ -117,29 +117,31 @@ export const CompletedJobSection: React.FC<CompletedJobSectionProps> = ({
   const otpEntered = otpRequirement?.otp_entered || otpRequirement?.otp_code;
 
   return (
-    <div className="mt-4 mb-2">
-      <div className="flex flex-col sm:flex-row items-start gap-3 rounded-md border border-green-200 bg-green-50 px-3 py-2">
+    <div className="mt-4 mb-2 w-full min-w-0">
+      <div className="flex flex-col sm:flex-row items-start gap-3 rounded-md border border-green-200 bg-green-50 px-3 py-2 w-full min-w-0 overflow-hidden">
         <CheckCircle className="w-4 h-4 text-green-600 mt-0.5 flex-shrink-0" />
-        <div className="space-y-2 text-sm text-gray-900 flex-1 min-w-0">
+        <div className="space-y-2 text-sm text-gray-900 flex-1 min-w-0 w-full overflow-hidden">
           <div className="font-semibold text-green-900">
             Job Completed
           </div>
           
           {/* Bill Amount */}
           {(actualCost || paymentAmount) && (
-            <div className="text-gray-700 break-words">
-              <span className="text-gray-500 font-medium">Amount:</span> ₹{actualCost || paymentAmount}
+            <div className="text-gray-700 break-words flex flex-wrap items-baseline gap-x-1">
+              <span className="text-gray-500 font-medium whitespace-nowrap">Amount:</span>
+              <span className="whitespace-nowrap">₹{actualCost || paymentAmount}</span>
             </div>
           )}
           
           {/* Payment Mode */}
           {paymentMethod && (
-            <div className="text-gray-700 break-words">
-              <span className="text-gray-500 font-medium">Payment Mode:</span> {
+            <div className="text-gray-700 break-words flex flex-wrap items-baseline gap-x-1">
+              <span className="text-gray-500 font-medium whitespace-nowrap">Payment Mode:</span>
+              <span className="whitespace-nowrap">{
                 paymentMethod === 'CASH' ? 'Cash' : 
                 paymentMethod === 'ONLINE' || paymentMethod === 'UPI' || paymentMethod === 'CARD' || paymentMethod === 'BANK_TRANSFER' ? 'Online' : 
                 paymentMethod
-              }
+              }</span>
             </div>
           )}
           {/* Partial payment breakdown: show how much cash and how much online */}
@@ -349,7 +351,7 @@ export const CompletedJobSection: React.FC<CompletedJobSectionProps> = ({
             </div>
           )}
         </div>
-        <div className="flex flex-nowrap items-center gap-1.5 sm:gap-2 mt-2 sm:mt-0 min-w-0 w-full">
+        <div className="flex flex-shrink-0 flex-nowrap items-center gap-1.5 sm:gap-2 mt-2 sm:mt-0 min-w-0 w-full sm:w-auto">
           <Button
             size="sm"
             variant="outline"
@@ -402,7 +404,14 @@ export const CompletedJobSection: React.FC<CompletedJobSectionProps> = ({
           <Button
             size="sm"
             variant="outline"
-            onClick={() => setSendMessageConfirmOpen(true)}
+            onClick={() => {
+              if (dontSendMessage) {
+                setSendMessageConfirmOpen(true);
+              } else {
+                setSelectedJobForMessage(job);
+                setSendMessageDialogOpen(true);
+              }
+            }}
             title={messageSent ? 'Send Again' : 'Send Message'}
             className="text-xs flex-1 min-w-0 justify-center py-2 px-2"
           >
@@ -438,9 +447,7 @@ export const CompletedJobSection: React.FC<CompletedJobSectionProps> = ({
           <AlertDialogHeader>
             <AlertDialogTitle>Send WhatsApp message?</AlertDialogTitle>
             <AlertDialogDescription>
-              {dontSendMessage
-                ? `Technician requested not to send message to ${customerName}. Send anyway?`
-                : `Send completion message to ${customerName} via WhatsApp?`}
+              Technician requested not to send message to {customerName}. Send anyway?
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
