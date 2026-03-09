@@ -706,6 +706,11 @@ const AdminDashboard = () => {
     const day = String(today.getDate()).padStart(2, '0');
     return `${year}-${month}-${day}`;
   };
+  const getTomorrowLocalDate = () => {
+    const tomorrow = new Date();
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    return `${tomorrow.getFullYear()}-${String(tomorrow.getMonth() + 1).padStart(2, '0')}-${String(tomorrow.getDate()).padStart(2, '0')}`;
+  };
 
   // Date filter for denied jobs (default to today)
   const [deniedDateFilter, setDeniedDateFilter] = useState<string>(() => {
@@ -7121,8 +7126,17 @@ const AdminDashboard = () => {
     return filteredCustomers;
   };
 
-  // Get today's date string for filtering followups
+  // Get today's and tomorrow's date strings for filtering followups (local YYYY-MM-DD)
   const todayDateStr = getTodayLocalDate();
+  const tomorrowDateStr = getTomorrowLocalDate();
+  const followUpDateToStr = (followUpDate: string | null | undefined): string | null => {
+    if (!followUpDate) return null;
+    if (followUpDate.includes('T')) {
+      const d = new Date(followUpDate);
+      return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+    }
+    return followUpDate.split('T')[0].trim();
+  };
 
   const displayedCustomers = !searchTerm.trim()
     ? (() => {
@@ -7167,37 +7181,33 @@ const AdminDashboard = () => {
             return bMostRecent - aMostRecent;
           });
         }
-        // For RESCHEDULED filter, sort by closest follow-up date first
+        // For RESCHEDULED filter, sort by follow-up date: today first, tomorrow next, then later by date
         if (statusFilter === 'RESCHEDULED') {
           return filtered.sort((a, b) => {
-            // Get closest follow-up date for each customer
-            const getClosestFollowUpDate = (customer: typeof filtered[0]): number | null => {
-              const followUpJobs = customer.allJobs.filter(job => 
+            const getClosestFollowUpRankAndTime = (customer: typeof filtered[0]): { rank: number; time: number } | null => {
+              const followUpJobs = customer.allJobs.filter(job =>
                 ['FOLLOW_UP', 'RESCHEDULED'].includes(job.status)
               );
               if (followUpJobs.length === 0) return null;
-              
-              const dates = followUpJobs
+              const withRank = followUpJobs
                 .map(job => {
-                  const followUpDate = job.followUpDate || (job as any).follow_up_date;
-                  return followUpDate ? new Date(followUpDate).getTime() : null;
+                  const fd = job.followUpDate || (job as any).follow_up_date;
+                  const dateStr = fd ? followUpDateToStr(fd) : null;
+                  if (!dateStr) return null;
+                  const rank = dateStr === todayDateStr ? 0 : dateStr === tomorrowDateStr ? 1 : 2;
+                  const time = new Date(fd).getTime();
+                  return { rank, time };
                 })
-                .filter((d): d is number => d !== null)
-                .sort((x, y) => x - y); // Sort ascending (closest first)
-              
-              return dates.length > 0 ? dates[0] : null;
+                .filter((d): d is { rank: number; time: number } => d !== null)
+                .sort((x, y) => x.rank !== y.rank ? x.rank - y.rank : x.time - y.time);
+              return withRank.length > 0 ? withRank[0] : null;
             };
-            
-            const aClosestDate = getClosestFollowUpDate(a);
-            const bClosestDate = getClosestFollowUpDate(b);
-            
-            // Customers with follow-ups come before those without
-            if (aClosestDate === null && bClosestDate === null) return 0;
-            if (aClosestDate === null) return 1;
-            if (bClosestDate === null) return -1;
-            
-            // Sort by closest follow-up date (ascending - closest first)
-            return aClosestDate - bClosestDate;
+            const aVal = getClosestFollowUpRankAndTime(a);
+            const bVal = getClosestFollowUpRankAndTime(b);
+            if (aVal === null && bVal === null) return 0;
+            if (aVal === null) return 1;
+            if (bVal === null) return -1;
+            return aVal.rank !== bVal.rank ? aVal.rank - bVal.rank : aVal.time - bVal.time;
           });
         }
         // For other filters, sort by customer creation date
@@ -7846,12 +7856,16 @@ const AdminDashboard = () => {
           {/* Customer Cards with Jobs */}
           <div className="space-y-6">
             {displayedCustomers.map(({ customer, allJobs, upcomingJobs, completedJobs, cancelledJobs }) => {
-              // Check if this customer has followup jobs scheduled for today
+              // Check if this customer has followup jobs scheduled for today or tomorrow (for card border)
               const hasTodayFollowup = statusFilter === 'RESCHEDULED' && allJobs.some(job => {
                 if (!['FOLLOW_UP', 'RESCHEDULED'].includes(job.status)) return false;
-                const followUpDate = job.followUpDate || (job as any).follow_up_date;
-                if (!followUpDate) return false;
-                return followUpDate.startsWith(todayDateStr);
+                const dateStr = followUpDateToStr(job.followUpDate || (job as any).follow_up_date);
+                return dateStr === todayDateStr;
+              });
+              const hasTomorrowFollowup = statusFilter === 'RESCHEDULED' && !hasTodayFollowup && allJobs.some(job => {
+                if (!['FOLLOW_UP', 'RESCHEDULED'].includes(job.status)) return false;
+                const dateStr = followUpDateToStr(job.followUpDate || (job as any).follow_up_date);
+                return dateStr === tomorrowDateStr;
               });
               // Check if this customer has any job with lead source Website
               const hasWebsiteLead = allJobs.some(job => {
@@ -7859,7 +7873,7 @@ const AdminDashboard = () => {
                 const arr = Array.isArray(reqs) ? reqs : reqs && typeof reqs === 'object' ? [reqs] : [];
                 return findLeadSource(arr) === 'Website';
               });
-              const borderClass = hasTodayFollowup ? 'border-orange-400 border-2' : hasWebsiteLead ? 'border-red-400 border-2' : 'border-gray-300';
+              const borderClass = hasTodayFollowup ? 'border-red-400 border-2' : hasTomorrowFollowup ? 'border-yellow-400 border-2' : hasWebsiteLead ? 'border-red-400 border-2' : 'border-gray-300';
               const hoverBorderClass = hasWebsiteLead ? 'hover:border-green-400' : 'hover:border-gray-400';
 
               return (
@@ -7937,16 +7951,19 @@ const AdminDashboard = () => {
                             return bCreated - aCreated; // Newest first
                           });
                         } else if (statusFilter === 'RESCHEDULED') {
-                          // Show follow-up jobs (FOLLOW_UP status)
-                          jobsToShow = allJobs.filter(job => job.status === 'FOLLOW_UP');
-                          // Sort by closest follow-up date first (ascending)
+                          // Show follow-up jobs (FOLLOW_UP and RESCHEDULED)
+                          jobsToShow = allJobs.filter(job => ['FOLLOW_UP', 'RESCHEDULED'].includes(job.status));
+                          // Sort by follow-up date: today first, tomorrow next, then by date ascending
                           jobsToShow.sort((a, b) => {
-                            const aFollowUpDate = (a as any).follow_up_date || a.followUpDate;
-                            const bFollowUpDate = (b as any).follow_up_date || b.followUpDate;
-                            if (!aFollowUpDate && !bFollowUpDate) return 0;
-                            if (!aFollowUpDate) return 1; // No date goes to end
-                            if (!bFollowUpDate) return -1; // No date goes to end
-                            return new Date(aFollowUpDate).getTime() - new Date(bFollowUpDate).getTime();
+                            const aStr = followUpDateToStr((a as any).follow_up_date || a.followUpDate);
+                            const bStr = followUpDateToStr((b as any).follow_up_date || b.followUpDate);
+                            if (!aStr && !bStr) return 0;
+                            if (!aStr) return 1;
+                            if (!bStr) return -1;
+                            const aRank = aStr === todayDateStr ? 0 : aStr === tomorrowDateStr ? 1 : 2;
+                            const bRank = bStr === todayDateStr ? 0 : bStr === tomorrowDateStr ? 1 : 2;
+                            if (aRank !== bRank) return aRank - bRank;
+                            return new Date((a as any).follow_up_date || a.followUpDate).getTime() - new Date((b as any).follow_up_date || b.followUpDate).getTime();
                           });
                         } else if (statusFilter === 'CANCELLED') {
                           // Show denied jobs (DENIED status)
@@ -8250,7 +8267,13 @@ const AdminDashboard = () => {
                               formattedFollowUpScheduledAt={formattedFollowUpScheduledAt}
                               followUpScheduledByName={followUpScheduledByName}
                             />
-                            <div className={`bg-white rounded-lg border ${job.status === 'PENDING' && !(job.assigned_technician_id || job.assignedTechnicianId) ? 'border-blue-500 border-2' : 'border-gray-300'} hover:border-gray-400 hover:shadow-sm transition-all duration-200 overflow-hidden group`}>
+                            {(() => {
+                              const jobFollowUpDateStr = followUpDateToStr(followUpDate);
+                              const isFollowUpToday = statusFilter === 'RESCHEDULED' && ['FOLLOW_UP', 'RESCHEDULED'].includes(job.status) && jobFollowUpDateStr === todayDateStr;
+                              const isFollowUpTomorrow = statusFilter === 'RESCHEDULED' && ['FOLLOW_UP', 'RESCHEDULED'].includes(job.status) && jobFollowUpDateStr === tomorrowDateStr;
+                              const jobBorderClass = isFollowUpToday ? 'border-red-400 border-2' : isFollowUpTomorrow ? 'border-yellow-400 border-2' : job.status === 'PENDING' && !(job.assigned_technician_id || job.assignedTechnicianId) ? 'border-blue-500 border-2' : 'border-gray-300';
+                              return (
+                            <div className={`bg-white rounded-lg border ${jobBorderClass} hover:border-gray-400 hover:shadow-sm transition-all duration-200 overflow-hidden group`}>
                             <div className="p-3 sm:p-4">
                               <div className="flex items-start justify-between mb-4">
                                 <div className="flex-1 min-w-0">
@@ -8793,6 +8816,7 @@ const AdminDashboard = () => {
                               </div>
                             </div>
                           </div>
+                        ); })()}
                           </div>
                         );
                         });
