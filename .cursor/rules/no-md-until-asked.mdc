@@ -1,0 +1,10 @@
+---
+description: Do not create markdown (.md) files unless the user explicitly asks for them
+alwaysApply: true
+---
+
+# No Markdown Files Unless Asked
+
+- Do **not** create any `.md` or markdown documentation files (e.g. README, docs, guides) unless the user explicitly requests one.
+- Updating existing `.md` files when relevant to the task is fine.
+- If documentation would be helpful and the user did not ask for it, suggest it in chat instead of creating a file.

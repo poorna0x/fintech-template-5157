@@ -2,7 +2,7 @@
 -- PostgreSQL database dump
 --
 
-\restrict k5puEkcb4aCceJUSLrimnK7wvhhJIowJsWrUfLfOrEwsQWgiIkRvl1OOcZBZXk5
+\restrict D7NUovo1xMTzc7nLETKxTMBxkPnV3bofSBtek1ytHJk2QZhXRFtTaesj118JM1t
 
 -- Dumped from database version 17.6
 -- Dumped by pg_dump version 17.6
@@ -47,7 +47,7 @@ DECLARE
     skipped_count INTEGER := 0;
     error_count INTEGER := 0;
 BEGIN
-    -- Loop through all completed jobs that have assigned technicians (allows zero amounts)
+    -- Loop through all completed jobs that have assigned technicians (removed > 0 check)
     FOR job_record IN 
         SELECT 
             j.id as job_id,
@@ -65,7 +65,7 @@ BEGIN
                 SELECT 1 FROM technician_payments 
                 WHERE job_id = job_record.job_id
             ) THEN
-                -- Create payment record
+                -- Create payment record (even if amount is 0)
                 INSERT INTO technician_payments (
                     technician_id,
                     job_id,
@@ -142,7 +142,7 @@ CREATE FUNCTION public.create_technician_payment_on_job_completion() RETURNS tri
     AS $$
 BEGIN
     -- Only create payment if job status changed to COMPLETED
-    -- and has assigned technician (allows zero amounts)
+    -- and has assigned technician (removed the > 0 check to allow zero amounts)
     IF NEW.status = 'COMPLETED' 
        AND OLD.status != 'COMPLETED'
        AND NEW.assigned_technician_id IS NOT NULL THEN
@@ -478,6 +478,34 @@ $$;
 
 
 --
+-- Name: update_inventory_bundles_updated_at(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.update_inventory_bundles_updated_at() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+    NEW.updated_at = NOW();
+    RETURN NEW;
+END;
+$$;
+
+
+--
+-- Name: update_inventory_updated_at(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.update_inventory_updated_at() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+    NEW.updated_at = NOW();
+    RETURN NEW;
+END;
+$$;
+
+
+--
 -- Name: update_job_assignment_requests_updated_at(); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -521,6 +549,20 @@ $$;
 
 
 --
+-- Name: update_technician_inventory_updated_at(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.update_technician_inventory_updated_at() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+    NEW.updated_at = NOW();
+    RETURN NEW;
+END;
+$$;
+
+
+--
 -- Name: update_updated_at_column(); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -551,6 +593,17 @@ $$;
 SET default_tablespace = '';
 
 SET default_table_access_method = heap;
+
+--
+-- Name: admin_todos; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.admin_todos (
+    id uuid DEFAULT extensions.uuid_generate_v4() NOT NULL,
+    text text NOT NULL,
+    created_at timestamp with time zone DEFAULT now()
+);
+
 
 --
 -- Name: admin_users; Type: TABLE; Schema: public; Owner: -
@@ -587,7 +640,33 @@ CREATE TABLE public.amc_contracts (
     renewed_from_amc_id uuid,
     created_at timestamp with time zone DEFAULT now(),
     updated_at timestamp with time zone DEFAULT now(),
+    service_period_months integer,
     CONSTRAINT amc_contracts_status_check CHECK (((status)::text = ANY ((ARRAY['ACTIVE'::character varying, 'EXPIRED'::character varying, 'CANCELLED'::character varying, 'RENEWED'::character varying])::text[])))
+);
+
+
+--
+-- Name: COLUMN amc_contracts.service_period_months; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.amc_contracts.service_period_months IS 'Months between auto-created AMC service jobs. NULL = use app default, 0 = no auto, 4/6/custom = months.';
+
+
+--
+-- Name: business_expenses; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.business_expenses (
+    id uuid DEFAULT extensions.uuid_generate_v4() NOT NULL,
+    amount numeric(10,2) NOT NULL,
+    description text NOT NULL,
+    expense_date date DEFAULT CURRENT_DATE NOT NULL,
+    category character varying(50),
+    receipt_url text,
+    notes text,
+    added_by uuid,
+    created_at timestamp with time zone DEFAULT now(),
+    updated_at timestamp with time zone DEFAULT now()
 );
 
 
@@ -654,9 +733,11 @@ CREATE TABLE public.customers (
     visible_address character varying(100),
     custom_time character varying(10),
     has_prefilter boolean,
+    raw_water_tds integer,
+    photos jsonb DEFAULT '[]'::jsonb,
     CONSTRAINT customers_preferred_language_check CHECK (((preferred_language)::text = ANY ((ARRAY['ENGLISH'::character varying, 'HINDI'::character varying, 'KANNADA'::character varying, 'TAMIL'::character varying, 'TELUGU'::character varying])::text[]))),
     CONSTRAINT customers_preferred_time_slot_check CHECK (((preferred_time_slot)::text = ANY ((ARRAY['MORNING'::character varying, 'AFTERNOON'::character varying, 'EVENING'::character varying, 'CUSTOM'::character varying])::text[]))),
-    CONSTRAINT customers_service_type_check CHECK (((service_type)::text = ANY ((ARRAY['RO'::character varying, 'SOFTENER'::character varying, 'AC'::character varying, 'APPLIANCE'::character varying, 'MULTIPLE'::character varying, 'RO_SOFTENER'::character varying, 'RO_AC'::character varying, 'SOFTENER_AC'::character varying, 'ALL_SERVICES'::character varying])::text[]))),
+    CONSTRAINT customers_service_type_check CHECK (((service_type)::text = ANY (ARRAY['RO'::text, 'SOFTENER'::text, 'RO_SOFTENER'::text]))),
     CONSTRAINT customers_status_check CHECK (((status)::text = ANY ((ARRAY['ACTIVE'::character varying, 'INACTIVE'::character varying, 'BLOCKED'::character varying])::text[])))
 );
 
@@ -680,6 +761,20 @@ COMMENT ON COLUMN public.customers.custom_time IS 'Exact time in HH:MM format wh
 --
 
 COMMENT ON COLUMN public.customers.has_prefilter IS 'Indicates whether the customer has a prefilter installed. NULL means not set/unknown, true means yes, false means no.';
+
+
+--
+-- Name: COLUMN customers.raw_water_tds; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.customers.raw_water_tds IS 'Raw water TDS in ppm (before RO purification). Captured at job completion for RO customers (prefilter step). Default 0 for existing records.';
+
+
+--
+-- Name: COLUMN customers.photos; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.customers.photos IS 'Array of photo URLs attached to the customer (e.g. profile/reference photos), not tied to any job.';
 
 
 --
@@ -732,6 +827,49 @@ COMMENT ON COLUMN public.follow_ups.completed IS 'Whether this follow-up was com
 
 
 --
+-- Name: inventory; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.inventory (
+    id uuid DEFAULT extensions.uuid_generate_v4() NOT NULL,
+    product_name character varying(255) NOT NULL,
+    code character varying(100),
+    price numeric(10,2) DEFAULT 0 NOT NULL,
+    quantity integer DEFAULT 0 NOT NULL,
+    created_at timestamp with time zone DEFAULT now(),
+    updated_at timestamp with time zone DEFAULT now(),
+    CONSTRAINT inventory_quantity_check CHECK ((quantity >= 0))
+);
+
+
+--
+-- Name: inventory_bundle_items; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.inventory_bundle_items (
+    id uuid DEFAULT extensions.uuid_generate_v4() NOT NULL,
+    bundle_id uuid NOT NULL,
+    inventory_id uuid NOT NULL,
+    quantity integer DEFAULT 1 NOT NULL,
+    created_at timestamp with time zone DEFAULT now(),
+    CONSTRAINT inventory_bundle_items_quantity_check CHECK ((quantity > 0))
+);
+
+
+--
+-- Name: inventory_bundles; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.inventory_bundles (
+    id uuid DEFAULT extensions.uuid_generate_v4() NOT NULL,
+    name character varying(255) NOT NULL,
+    description text,
+    created_at timestamp with time zone DEFAULT now(),
+    updated_at timestamp with time zone DEFAULT now()
+);
+
+
+--
 -- Name: job_assignment_requests; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -748,6 +886,30 @@ CREATE TABLE public.job_assignment_requests (
     updated_at timestamp with time zone DEFAULT now(),
     CONSTRAINT job_assignment_requests_status_check CHECK (((status)::text = ANY ((ARRAY['PENDING'::character varying, 'ACCEPTED'::character varying, 'REJECTED'::character varying, 'CANCELLED'::character varying])::text[])))
 );
+
+
+--
+-- Name: job_parts_used; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.job_parts_used (
+    id uuid DEFAULT extensions.uuid_generate_v4() NOT NULL,
+    job_id uuid NOT NULL,
+    technician_id uuid NOT NULL,
+    inventory_id uuid NOT NULL,
+    quantity_used integer DEFAULT 1 NOT NULL,
+    created_at timestamp with time zone DEFAULT now(),
+    created_by uuid,
+    price_at_time_of_use numeric(10,2),
+    CONSTRAINT job_parts_used_quantity_used_check CHECK ((quantity_used > 0))
+);
+
+
+--
+-- Name: COLUMN job_parts_used.price_at_time_of_use; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.job_parts_used.price_at_time_of_use IS 'Price of the inventory item at the time it was used (for historical accuracy in analytics). Stored when part is added to job.';
 
 
 --
@@ -801,7 +963,10 @@ CREATE TABLE public.jobs (
     completion_notes text,
     completed_by uuid,
     denied_by character varying(255),
-    CONSTRAINT jobs_payment_method_check CHECK (((payment_method)::text = ANY ((ARRAY['CASH'::character varying, 'CARD'::character varying, 'UPI'::character varying, 'BANK_TRANSFER'::character varying])::text[]))),
+    team_members jsonb DEFAULT '[]'::jsonb,
+    lead_cost numeric(10,2) DEFAULT 0,
+    parts_cost_total numeric(12,2) DEFAULT 0 NOT NULL,
+    CONSTRAINT jobs_payment_method_check CHECK (((payment_method IS NULL) OR ((payment_method)::text = ANY (ARRAY['CASH'::text, 'CARD'::text, 'UPI'::text, 'BANK_TRANSFER'::text, 'PARTIAL'::text])))),
     CONSTRAINT jobs_payment_status_check CHECK (((payment_status)::text = ANY ((ARRAY['PENDING'::character varying, 'PAID'::character varying, 'PARTIAL'::character varying, 'REFUNDED'::character varying])::text[]))),
     CONSTRAINT jobs_priority_check CHECK (((priority)::text = ANY ((ARRAY['LOW'::character varying, 'MEDIUM'::character varying, 'HIGH'::character varying, 'URGENT'::character varying])::text[]))),
     CONSTRAINT jobs_scheduled_time_slot_check CHECK (((scheduled_time_slot)::text = ANY ((ARRAY['MORNING'::character varying, 'AFTERNOON'::character varying, 'EVENING'::character varying, 'FIRST_HALF'::character varying, 'SECOND_HALF'::character varying])::text[]))),
@@ -815,6 +980,13 @@ CREATE TABLE public.jobs (
 --
 
 COMMENT ON COLUMN public.jobs.status IS 'Job status: PENDING, ASSIGNED, EN_ROUTE (technician going to location), IN_PROGRESS (at location working), COMPLETED, CANCELLED, RESCHEDULED, FOLLOW_UP, DENIED';
+
+
+--
+-- Name: COLUMN jobs.payment_method; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.jobs.payment_method IS 'CASH, ONLINE (UPI/CARD/BANK_TRANSFER), or PARTIAL (split cash+online; see requirements.partial_cash_amount, partial_online_amount)';
 
 
 --
@@ -895,6 +1067,20 @@ COMMENT ON COLUMN public.jobs.completed_by IS 'User ID who marked job as complet
 
 
 --
+-- Name: COLUMN jobs.team_members; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.jobs.team_members IS 'Array of technician IDs who are teammates for this job. Primary assigned technician is in assigned_technician_id.';
+
+
+--
+-- Name: COLUMN jobs.parts_cost_total; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.jobs.parts_cost_total IS 'Total cost of parts used on this job (denormalized from job_parts_used for fast analytics).';
+
+
+--
 -- Name: notifications; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -909,6 +1095,24 @@ CREATE TABLE public.notifications (
     data jsonb,
     created_at timestamp with time zone DEFAULT now(),
     CONSTRAINT notifications_user_type_check CHECK (((user_type)::text = ANY ((ARRAY['CUSTOMER'::character varying, 'TECHNICIAN'::character varying, 'ADMIN'::character varying])::text[])))
+);
+
+
+--
+-- Name: other_expenses; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.other_expenses (
+    id uuid DEFAULT extensions.uuid_generate_v4() NOT NULL,
+    amount numeric(10,2) NOT NULL,
+    description text NOT NULL,
+    expense_date date DEFAULT CURRENT_DATE NOT NULL,
+    category character varying(50),
+    receipt_url text,
+    notes text,
+    added_by uuid,
+    created_at timestamp with time zone DEFAULT now(),
+    updated_at timestamp with time zone DEFAULT now()
 );
 
 
@@ -950,6 +1154,76 @@ CREATE TABLE public.product_qr_codes (
     product_image_url text,
     product_mrp character varying(50)
 );
+
+
+--
+-- Name: reminders; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.reminders (
+    id uuid DEFAULT extensions.uuid_generate_v4() NOT NULL,
+    entity_type character varying(20) DEFAULT 'general'::character varying NOT NULL,
+    entity_id uuid,
+    title text NOT NULL,
+    notes text,
+    reminder_at date NOT NULL,
+    created_by uuid,
+    created_at timestamp with time zone DEFAULT now(),
+    completed_at timestamp with time zone,
+    interval_type character varying(10),
+    interval_value integer,
+    CONSTRAINT reminders_entity_type_check CHECK (((entity_type)::text = ANY ((ARRAY['customer'::character varying, 'job'::character varying, 'general'::character varying])::text[]))),
+    CONSTRAINT reminders_interval_type_check CHECK (((interval_type IS NULL) OR ((interval_type)::text = ANY ((ARRAY['days'::character varying, 'months'::character varying])::text[]))))
+);
+
+
+--
+-- Name: TABLE reminders; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON TABLE public.reminders IS 'Reminders for today/tomorrow; app loads with single query. No cron.';
+
+
+--
+-- Name: COLUMN reminders.entity_type; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.reminders.entity_type IS 'customer | job | general';
+
+
+--
+-- Name: COLUMN reminders.entity_id; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.reminders.entity_id IS 'customer_id or job_id when entity_type is customer or job';
+
+
+--
+-- Name: COLUMN reminders.reminder_at; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.reminders.reminder_at IS 'Date to show reminder (app shows today + tomorrow)';
+
+
+--
+-- Name: COLUMN reminders.completed_at; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.reminders.completed_at IS 'When user marked done; null = still active';
+
+
+--
+-- Name: COLUMN reminders.interval_type; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.reminders.interval_type IS 'null = one-time, ''days'' or ''months'' = repeat';
+
+
+--
+-- Name: COLUMN reminders.interval_value; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.reminders.interval_value IS 'Repeat every N days or N months (used when interval_type is set)';
 
 
 --
@@ -1035,6 +1309,19 @@ CREATE TABLE public.technician_advances (
 
 
 --
+-- Name: technician_common_qr; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.technician_common_qr (
+    id uuid DEFAULT extensions.uuid_generate_v4() NOT NULL,
+    name character varying(255) NOT NULL,
+    qr_code_url text NOT NULL,
+    created_at timestamp with time zone DEFAULT now(),
+    updated_at timestamp with time zone DEFAULT now()
+);
+
+
+--
 -- Name: technician_expenses; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -1091,6 +1378,22 @@ CREATE TABLE public.technician_holidays (
 
 
 --
+-- Name: technician_inventory; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.technician_inventory (
+    id uuid DEFAULT extensions.uuid_generate_v4() NOT NULL,
+    technician_id uuid NOT NULL,
+    inventory_id uuid NOT NULL,
+    quantity integer DEFAULT 0 NOT NULL,
+    notes text,
+    created_at timestamp with time zone DEFAULT now(),
+    updated_at timestamp with time zone DEFAULT now(),
+    CONSTRAINT technician_inventory_quantity_check CHECK ((quantity >= 0))
+);
+
+
+--
 -- Name: technician_payments; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -1140,6 +1443,7 @@ CREATE TABLE public.technicians (
     qr_code text,
     photo text,
     visible_qr_codes jsonb DEFAULT '[]'::jsonb,
+    common_qr_code_ids jsonb DEFAULT '[]'::jsonb,
     CONSTRAINT check_account_status CHECK (((account_status)::text = ANY ((ARRAY['ACTIVE'::character varying, 'INACTIVE'::character varying, 'SUSPENDED'::character varying])::text[]))),
     CONSTRAINT technicians_account_status_check CHECK (((account_status)::text = ANY ((ARRAY['ACTIVE'::character varying, 'INACTIVE'::character varying, 'SUSPENDED'::character varying])::text[]))),
     CONSTRAINT technicians_status_check CHECK (((status)::text = ANY ((ARRAY['AVAILABLE'::character varying, 'BUSY'::character varying, 'OFFLINE'::character varying, 'ON_BREAK'::character varying])::text[])))
@@ -1158,6 +1462,21 @@ COMMENT ON COLUMN public.technicians.push_subscription IS 'Web Push subscription
 --
 
 COMMENT ON COLUMN public.technicians.visible_qr_codes IS 'Array of QR code IDs visible to this technician. Empty array = none, ["all"] = all, or specific IDs like ["common_123", "technician_456"]';
+
+
+--
+-- Name: COLUMN technicians.common_qr_code_ids; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.technicians.common_qr_code_ids IS 'Array of Common QR ids (technician_common_qr) shown to this technician below payment QR';
+
+
+--
+-- Name: admin_todos admin_todos_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.admin_todos
+    ADD CONSTRAINT admin_todos_pkey PRIMARY KEY (id);
 
 
 --
@@ -1182,6 +1501,14 @@ ALTER TABLE ONLY public.admin_users
 
 ALTER TABLE ONLY public.amc_contracts
     ADD CONSTRAINT amc_contracts_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: business_expenses business_expenses_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.business_expenses
+    ADD CONSTRAINT business_expenses_pkey PRIMARY KEY (id);
 
 
 --
@@ -1233,6 +1560,46 @@ ALTER TABLE ONLY public.follow_ups
 
 
 --
+-- Name: inventory_bundle_items inventory_bundle_items_bundle_id_inventory_id_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.inventory_bundle_items
+    ADD CONSTRAINT inventory_bundle_items_bundle_id_inventory_id_key UNIQUE (bundle_id, inventory_id);
+
+
+--
+-- Name: inventory_bundle_items inventory_bundle_items_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.inventory_bundle_items
+    ADD CONSTRAINT inventory_bundle_items_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: inventory_bundles inventory_bundles_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.inventory_bundles
+    ADD CONSTRAINT inventory_bundles_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: inventory inventory_code_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.inventory
+    ADD CONSTRAINT inventory_code_key UNIQUE (code);
+
+
+--
+-- Name: inventory inventory_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.inventory
+    ADD CONSTRAINT inventory_pkey PRIMARY KEY (id);
+
+
+--
 -- Name: job_assignment_requests job_assignment_requests_job_id_technician_id_key; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -1246,6 +1613,22 @@ ALTER TABLE ONLY public.job_assignment_requests
 
 ALTER TABLE ONLY public.job_assignment_requests
     ADD CONSTRAINT job_assignment_requests_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: job_parts_used job_parts_used_job_id_inventory_id_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.job_parts_used
+    ADD CONSTRAINT job_parts_used_job_id_inventory_id_key UNIQUE (job_id, inventory_id);
+
+
+--
+-- Name: job_parts_used job_parts_used_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.job_parts_used
+    ADD CONSTRAINT job_parts_used_pkey PRIMARY KEY (id);
 
 
 --
@@ -1273,6 +1656,14 @@ ALTER TABLE ONLY public.notifications
 
 
 --
+-- Name: other_expenses other_expenses_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.other_expenses
+    ADD CONSTRAINT other_expenses_pkey PRIMARY KEY (id);
+
+
+--
 -- Name: parts_inventory parts_inventory_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -1294,6 +1685,14 @@ ALTER TABLE ONLY public.parts_inventory
 
 ALTER TABLE ONLY public.product_qr_codes
     ADD CONSTRAINT product_qr_codes_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: reminders reminders_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.reminders
+    ADD CONSTRAINT reminders_pkey PRIMARY KEY (id);
 
 
 --
@@ -1337,6 +1736,14 @@ ALTER TABLE ONLY public.technician_advances
 
 
 --
+-- Name: technician_common_qr technician_common_qr_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.technician_common_qr
+    ADD CONSTRAINT technician_common_qr_pkey PRIMARY KEY (id);
+
+
+--
 -- Name: technician_expenses technician_expenses_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -1366,6 +1773,22 @@ ALTER TABLE ONLY public.technician_holidays
 
 ALTER TABLE ONLY public.technician_holidays
     ADD CONSTRAINT technician_holidays_technician_id_holiday_date_key UNIQUE (technician_id, holiday_date);
+
+
+--
+-- Name: technician_inventory technician_inventory_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.technician_inventory
+    ADD CONSTRAINT technician_inventory_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: technician_inventory technician_inventory_technician_id_inventory_id_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.technician_inventory
+    ADD CONSTRAINT technician_inventory_technician_id_inventory_id_key UNIQUE (technician_id, inventory_id);
 
 
 --
@@ -1401,6 +1824,13 @@ ALTER TABLE ONLY public.technicians
 
 
 --
+-- Name: idx_admin_todos_created_at; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_admin_todos_created_at ON public.admin_todos USING btree (created_at DESC);
+
+
+--
 -- Name: idx_amc_contracts_customer_id; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -1433,6 +1863,20 @@ CREATE INDEX idx_amc_contracts_start_date ON public.amc_contracts USING btree (s
 --
 
 CREATE INDEX idx_amc_contracts_status ON public.amc_contracts USING btree (status);
+
+
+--
+-- Name: idx_business_expenses_category; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_business_expenses_category ON public.business_expenses USING btree (category);
+
+
+--
+-- Name: idx_business_expenses_date; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_business_expenses_date ON public.business_expenses USING btree (expense_date);
 
 
 --
@@ -1520,13 +1964,6 @@ CREATE INDEX idx_follow_ups_date ON public.follow_ups USING btree (follow_up_dat
 
 
 --
--- Name: idx_follow_ups_follow_up_date; Type: INDEX; Schema: public; Owner: -
---
-
-CREATE INDEX idx_follow_ups_follow_up_date ON public.follow_ups USING btree (follow_up_date);
-
-
---
 -- Name: idx_follow_ups_job_id; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -1538,6 +1975,41 @@ CREATE INDEX idx_follow_ups_job_id ON public.follow_ups USING btree (job_id);
 --
 
 CREATE INDEX idx_follow_ups_parent_id ON public.follow_ups USING btree (parent_follow_up_id);
+
+
+--
+-- Name: idx_inventory_bundle_items_bundle_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_inventory_bundle_items_bundle_id ON public.inventory_bundle_items USING btree (bundle_id);
+
+
+--
+-- Name: idx_inventory_bundle_items_inventory_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_inventory_bundle_items_inventory_id ON public.inventory_bundle_items USING btree (inventory_id);
+
+
+--
+-- Name: idx_inventory_bundles_name; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_inventory_bundles_name ON public.inventory_bundles USING btree (name);
+
+
+--
+-- Name: idx_inventory_code; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_inventory_code ON public.inventory USING btree (code);
+
+
+--
+-- Name: idx_inventory_product_name; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_inventory_product_name ON public.inventory USING btree (product_name);
 
 
 --
@@ -1559,6 +2031,55 @@ CREATE INDEX idx_job_assignment_requests_status ON public.job_assignment_request
 --
 
 CREATE INDEX idx_job_assignment_requests_technician_id ON public.job_assignment_requests USING btree (technician_id);
+
+
+--
+-- Name: idx_job_parts_used_created_at; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_job_parts_used_created_at ON public.job_parts_used USING btree (created_at DESC);
+
+
+--
+-- Name: idx_job_parts_used_inventory_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_job_parts_used_inventory_id ON public.job_parts_used USING btree (inventory_id);
+
+
+--
+-- Name: idx_job_parts_used_job_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_job_parts_used_job_id ON public.job_parts_used USING btree (job_id);
+
+
+--
+-- Name: idx_job_parts_used_technician_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_job_parts_used_technician_id ON public.job_parts_used USING btree (technician_id);
+
+
+--
+-- Name: idx_jobs_completed_at; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_jobs_completed_at ON public.jobs USING btree (completed_at) WHERE ((status)::text = 'COMPLETED'::text);
+
+
+--
+-- Name: idx_jobs_completed_end_time; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_jobs_completed_end_time ON public.jobs USING btree (end_time) WHERE ((status)::text = 'COMPLETED'::text);
+
+
+--
+-- Name: idx_jobs_created_at; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_jobs_created_at ON public.jobs USING btree (created_at);
 
 
 --
@@ -1590,6 +2111,13 @@ CREATE INDEX idx_jobs_job_number ON public.jobs USING btree (job_number);
 
 
 --
+-- Name: idx_jobs_lead_cost; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_jobs_lead_cost ON public.jobs USING btree (lead_cost);
+
+
+--
 -- Name: idx_jobs_scheduled_date; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -1615,6 +2143,13 @@ CREATE INDEX idx_jobs_status_denied ON public.jobs USING btree (status) WHERE ((
 --
 
 CREATE INDEX idx_jobs_status_follow_up ON public.jobs USING btree (status) WHERE ((status)::text = 'FOLLOW_UP'::text);
+
+
+--
+-- Name: idx_jobs_team_members; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_jobs_team_members ON public.jobs USING gin (team_members);
 
 
 --
@@ -1646,10 +2181,45 @@ CREATE INDEX idx_notifications_user_type ON public.notifications USING btree (us
 
 
 --
+-- Name: idx_other_expenses_category; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_other_expenses_category ON public.other_expenses USING btree (category);
+
+
+--
+-- Name: idx_other_expenses_date; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_other_expenses_date ON public.other_expenses USING btree (expense_date);
+
+
+--
 -- Name: idx_product_qr_codes_created_at; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX idx_product_qr_codes_created_at ON public.product_qr_codes USING btree (created_at);
+
+
+--
+-- Name: idx_reminders_completed; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_reminders_completed ON public.reminders USING btree (completed_at) WHERE (completed_at IS NULL);
+
+
+--
+-- Name: idx_reminders_entity; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_reminders_entity ON public.reminders USING btree (entity_type, entity_id);
+
+
+--
+-- Name: idx_reminders_reminder_at; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_reminders_reminder_at ON public.reminders USING btree (reminder_at);
 
 
 --
@@ -1755,6 +2325,27 @@ CREATE INDEX idx_technician_holidays_technician_date ON public.technician_holida
 --
 
 CREATE INDEX idx_technician_holidays_technician_id ON public.technician_holidays USING btree (technician_id);
+
+
+--
+-- Name: idx_technician_inventory_created_at; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_technician_inventory_created_at ON public.technician_inventory USING btree (created_at DESC);
+
+
+--
+-- Name: idx_technician_inventory_inventory_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_technician_inventory_inventory_id ON public.technician_inventory USING btree (inventory_id);
+
+
+--
+-- Name: idx_technician_inventory_technician_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_technician_inventory_technician_id ON public.technician_inventory USING btree (technician_id);
 
 
 --
@@ -1898,6 +2489,13 @@ CREATE TRIGGER update_amc_contracts_updated_at BEFORE UPDATE ON public.amc_contr
 
 
 --
+-- Name: business_expenses update_business_expenses_updated_at; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER update_business_expenses_updated_at BEFORE UPDATE ON public.business_expenses FOR EACH ROW EXECUTE FUNCTION public.update_updated_at_column();
+
+
+--
 -- Name: call_history update_call_history_updated_at; Type: TRIGGER; Schema: public; Owner: -
 --
 
@@ -1912,10 +2510,31 @@ CREATE TRIGGER update_customers_updated_at BEFORE UPDATE ON public.customers FOR
 
 
 --
+-- Name: inventory_bundles update_inventory_bundles_updated_at_trigger; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER update_inventory_bundles_updated_at_trigger BEFORE UPDATE ON public.inventory_bundles FOR EACH ROW EXECUTE FUNCTION public.update_inventory_bundles_updated_at();
+
+
+--
+-- Name: inventory update_inventory_updated_at_trigger; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER update_inventory_updated_at_trigger BEFORE UPDATE ON public.inventory FOR EACH ROW EXECUTE FUNCTION public.update_inventory_updated_at();
+
+
+--
 -- Name: jobs update_jobs_updated_at; Type: TRIGGER; Schema: public; Owner: -
 --
 
 CREATE TRIGGER update_jobs_updated_at BEFORE UPDATE ON public.jobs FOR EACH ROW EXECUTE FUNCTION public.update_updated_at_column();
+
+
+--
+-- Name: other_expenses update_other_expenses_updated_at; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER update_other_expenses_updated_at BEFORE UPDATE ON public.other_expenses FOR EACH ROW EXECUTE FUNCTION public.update_updated_at_column();
 
 
 --
@@ -1951,6 +2570,13 @@ CREATE TRIGGER update_technician_extra_commissions_updated_at BEFORE UPDATE ON p
 --
 
 CREATE TRIGGER update_technician_holidays_updated_at BEFORE UPDATE ON public.technician_holidays FOR EACH ROW EXECUTE FUNCTION public.update_updated_at_column();
+
+
+--
+-- Name: technician_inventory update_technician_inventory_updated_at_trigger; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER update_technician_inventory_updated_at_trigger BEFORE UPDATE ON public.technician_inventory FOR EACH ROW EXECUTE FUNCTION public.update_technician_inventory_updated_at();
 
 
 --
@@ -2016,6 +2642,22 @@ ALTER TABLE ONLY public.follow_ups
 
 
 --
+-- Name: inventory_bundle_items inventory_bundle_items_bundle_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.inventory_bundle_items
+    ADD CONSTRAINT inventory_bundle_items_bundle_id_fkey FOREIGN KEY (bundle_id) REFERENCES public.inventory_bundles(id) ON DELETE CASCADE;
+
+
+--
+-- Name: inventory_bundle_items inventory_bundle_items_inventory_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.inventory_bundle_items
+    ADD CONSTRAINT inventory_bundle_items_inventory_id_fkey FOREIGN KEY (inventory_id) REFERENCES public.inventory(id) ON DELETE CASCADE;
+
+
+--
 -- Name: job_assignment_requests job_assignment_requests_job_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -2029,6 +2671,30 @@ ALTER TABLE ONLY public.job_assignment_requests
 
 ALTER TABLE ONLY public.job_assignment_requests
     ADD CONSTRAINT job_assignment_requests_technician_id_fkey FOREIGN KEY (technician_id) REFERENCES public.technicians(id) ON DELETE CASCADE;
+
+
+--
+-- Name: job_parts_used job_parts_used_inventory_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.job_parts_used
+    ADD CONSTRAINT job_parts_used_inventory_id_fkey FOREIGN KEY (inventory_id) REFERENCES public.inventory(id) ON DELETE CASCADE;
+
+
+--
+-- Name: job_parts_used job_parts_used_job_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.job_parts_used
+    ADD CONSTRAINT job_parts_used_job_id_fkey FOREIGN KEY (job_id) REFERENCES public.jobs(id) ON DELETE CASCADE;
+
+
+--
+-- Name: job_parts_used job_parts_used_technician_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.job_parts_used
+    ADD CONSTRAINT job_parts_used_technician_id_fkey FOREIGN KEY (technician_id) REFERENCES public.technicians(id) ON DELETE CASCADE;
 
 
 --
@@ -2096,6 +2762,22 @@ ALTER TABLE ONLY public.technician_holidays
 
 
 --
+-- Name: technician_inventory technician_inventory_inventory_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.technician_inventory
+    ADD CONSTRAINT technician_inventory_inventory_id_fkey FOREIGN KEY (inventory_id) REFERENCES public.inventory(id) ON DELETE CASCADE;
+
+
+--
+-- Name: technician_inventory technician_inventory_technician_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.technician_inventory
+    ADD CONSTRAINT technician_inventory_technician_id_fkey FOREIGN KEY (technician_id) REFERENCES public.technicians(id) ON DELETE CASCADE;
+
+
+--
 -- Name: technician_payments technician_payments_job_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -2133,6 +2815,34 @@ CREATE POLICY "Allow all users to delete common_qr_codes" ON public.common_qr_co
 
 
 --
+-- Name: inventory Allow all users to delete inventory; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY "Allow all users to delete inventory" ON public.inventory FOR DELETE USING (true);
+
+
+--
+-- Name: inventory_bundle_items Allow all users to delete inventory_bundle_items; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY "Allow all users to delete inventory_bundle_items" ON public.inventory_bundle_items FOR DELETE USING (true);
+
+
+--
+-- Name: inventory_bundles Allow all users to delete inventory_bundles; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY "Allow all users to delete inventory_bundles" ON public.inventory_bundles FOR DELETE USING (true);
+
+
+--
+-- Name: job_parts_used Allow all users to delete job_parts_used; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY "Allow all users to delete job_parts_used" ON public.job_parts_used FOR DELETE USING (true);
+
+
+--
 -- Name: product_qr_codes Allow all users to delete product_qr_codes; Type: POLICY; Schema: public; Owner: -
 --
 
@@ -2140,10 +2850,52 @@ CREATE POLICY "Allow all users to delete product_qr_codes" ON public.product_qr_
 
 
 --
+-- Name: technician_common_qr Allow all users to delete technician_common_qr; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY "Allow all users to delete technician_common_qr" ON public.technician_common_qr FOR DELETE USING (true);
+
+
+--
+-- Name: technician_inventory Allow all users to delete technician_inventory; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY "Allow all users to delete technician_inventory" ON public.technician_inventory FOR DELETE USING (true);
+
+
+--
 -- Name: common_qr_codes Allow all users to insert common_qr_codes; Type: POLICY; Schema: public; Owner: -
 --
 
 CREATE POLICY "Allow all users to insert common_qr_codes" ON public.common_qr_codes FOR INSERT WITH CHECK (true);
+
+
+--
+-- Name: inventory Allow all users to insert inventory; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY "Allow all users to insert inventory" ON public.inventory FOR INSERT WITH CHECK (true);
+
+
+--
+-- Name: inventory_bundle_items Allow all users to insert inventory_bundle_items; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY "Allow all users to insert inventory_bundle_items" ON public.inventory_bundle_items FOR INSERT WITH CHECK (true);
+
+
+--
+-- Name: inventory_bundles Allow all users to insert inventory_bundles; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY "Allow all users to insert inventory_bundles" ON public.inventory_bundles FOR INSERT WITH CHECK (true);
+
+
+--
+-- Name: job_parts_used Allow all users to insert job_parts_used; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY "Allow all users to insert job_parts_used" ON public.job_parts_used FOR INSERT WITH CHECK (true);
 
 
 --
@@ -2161,10 +2913,59 @@ CREATE POLICY "Allow all users to insert tax invoices" ON public.tax_invoices FO
 
 
 --
+-- Name: technician_common_qr Allow all users to insert technician_common_qr; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY "Allow all users to insert technician_common_qr" ON public.technician_common_qr FOR INSERT WITH CHECK (true);
+
+
+--
+-- Name: technician_inventory Allow all users to insert technician_inventory; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY "Allow all users to insert technician_inventory" ON public.technician_inventory FOR INSERT WITH CHECK (true);
+
+
+--
+-- Name: amc_contracts Allow all users to read amc_contracts; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY "Allow all users to read amc_contracts" ON public.amc_contracts FOR SELECT USING (true);
+
+
+--
 -- Name: common_qr_codes Allow all users to read common_qr_codes; Type: POLICY; Schema: public; Owner: -
 --
 
 CREATE POLICY "Allow all users to read common_qr_codes" ON public.common_qr_codes FOR SELECT USING (true);
+
+
+--
+-- Name: inventory Allow all users to read inventory; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY "Allow all users to read inventory" ON public.inventory FOR SELECT USING (true);
+
+
+--
+-- Name: inventory_bundle_items Allow all users to read inventory_bundle_items; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY "Allow all users to read inventory_bundle_items" ON public.inventory_bundle_items FOR SELECT USING (true);
+
+
+--
+-- Name: inventory_bundles Allow all users to read inventory_bundles; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY "Allow all users to read inventory_bundles" ON public.inventory_bundles FOR SELECT USING (true);
+
+
+--
+-- Name: job_parts_used Allow all users to read job_parts_used; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY "Allow all users to read job_parts_used" ON public.job_parts_used FOR SELECT USING (true);
 
 
 --
@@ -2182,10 +2983,59 @@ CREATE POLICY "Allow all users to read tax invoices" ON public.tax_invoices FOR 
 
 
 --
+-- Name: technician_common_qr Allow all users to read technician_common_qr; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY "Allow all users to read technician_common_qr" ON public.technician_common_qr FOR SELECT USING (true);
+
+
+--
+-- Name: technician_inventory Allow all users to read technician_inventory; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY "Allow all users to read technician_inventory" ON public.technician_inventory FOR SELECT USING (true);
+
+
+--
+-- Name: amc_contracts Allow all users to update amc_contracts; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY "Allow all users to update amc_contracts" ON public.amc_contracts FOR UPDATE USING (true) WITH CHECK (true);
+
+
+--
 -- Name: common_qr_codes Allow all users to update common_qr_codes; Type: POLICY; Schema: public; Owner: -
 --
 
 CREATE POLICY "Allow all users to update common_qr_codes" ON public.common_qr_codes FOR UPDATE USING (true) WITH CHECK (true);
+
+
+--
+-- Name: inventory Allow all users to update inventory; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY "Allow all users to update inventory" ON public.inventory FOR UPDATE USING (true) WITH CHECK (true);
+
+
+--
+-- Name: inventory_bundle_items Allow all users to update inventory_bundle_items; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY "Allow all users to update inventory_bundle_items" ON public.inventory_bundle_items FOR UPDATE USING (true) WITH CHECK (true);
+
+
+--
+-- Name: inventory_bundles Allow all users to update inventory_bundles; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY "Allow all users to update inventory_bundles" ON public.inventory_bundles FOR UPDATE USING (true) WITH CHECK (true);
+
+
+--
+-- Name: job_parts_used Allow all users to update job_parts_used; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY "Allow all users to update job_parts_used" ON public.job_parts_used FOR UPDATE USING (true) WITH CHECK (true);
 
 
 --
@@ -2203,17 +3053,45 @@ CREATE POLICY "Allow all users to update tax invoices" ON public.tax_invoices FO
 
 
 --
--- Name: jobs Allow anon to read jobs for Realtime; Type: POLICY; Schema: public; Owner: -
+-- Name: technician_common_qr Allow all users to update technician_common_qr; Type: POLICY; Schema: public; Owner: -
 --
 
-CREATE POLICY "Allow anon to read jobs for Realtime" ON public.jobs FOR SELECT TO anon USING (true);
+CREATE POLICY "Allow all users to update technician_common_qr" ON public.technician_common_qr FOR UPDATE USING (true) WITH CHECK (true);
 
 
 --
--- Name: jobs Allow anon to read jobs for realtime; Type: POLICY; Schema: public; Owner: -
+-- Name: technician_inventory Allow all users to update technician_inventory; Type: POLICY; Schema: public; Owner: -
 --
 
-CREATE POLICY "Allow anon to read jobs for realtime" ON public.jobs FOR SELECT TO anon USING (true);
+CREATE POLICY "Allow all users to update technician_inventory" ON public.technician_inventory FOR UPDATE USING (true) WITH CHECK (true);
+
+
+--
+-- Name: reminders Allow anon delete reminders; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY "Allow anon delete reminders" ON public.reminders FOR DELETE TO anon USING (true);
+
+
+--
+-- Name: reminders Allow anon insert reminders; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY "Allow anon insert reminders" ON public.reminders FOR INSERT TO anon WITH CHECK (true);
+
+
+--
+-- Name: reminders Allow anon read reminders; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY "Allow anon read reminders" ON public.reminders FOR SELECT TO anon USING (true);
+
+
+--
+-- Name: reminders Allow anon update reminders; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY "Allow anon update reminders" ON public.reminders FOR UPDATE TO anon USING (true) WITH CHECK (true);
 
 
 --
@@ -2224,45 +3102,38 @@ CREATE POLICY "Allow anonymous to insert customers" ON public.customers FOR INSE
 
 
 --
--- Name: customers Allow anonymous to read customers; Type: POLICY; Schema: public; Owner: -
+-- Name: reminders Allow authenticated delete reminders; Type: POLICY; Schema: public; Owner: -
 --
 
-CREATE POLICY "Allow anonymous to read customers" ON public.customers FOR SELECT TO authenticated, anon USING (true);
-
-
---
--- Name: jobs Allow anonymous to read jobs; Type: POLICY; Schema: public; Owner: -
---
-
-CREATE POLICY "Allow anonymous to read jobs" ON public.jobs FOR SELECT TO authenticated, anon USING (true);
+CREATE POLICY "Allow authenticated delete reminders" ON public.reminders FOR DELETE TO authenticated USING (true);
 
 
 --
--- Name: customers Allow anonymous to update customers; Type: POLICY; Schema: public; Owner: -
+-- Name: reminders Allow authenticated insert reminders; Type: POLICY; Schema: public; Owner: -
 --
 
-CREATE POLICY "Allow anonymous to update customers" ON public.customers FOR UPDATE TO authenticated, anon USING (true) WITH CHECK (true);
-
-
---
--- Name: jobs Allow anonymous to update jobs; Type: POLICY; Schema: public; Owner: -
---
-
-CREATE POLICY "Allow anonymous to update jobs" ON public.jobs FOR UPDATE TO authenticated, anon USING (true) WITH CHECK (true);
+CREATE POLICY "Allow authenticated insert reminders" ON public.reminders FOR INSERT TO authenticated WITH CHECK (true);
 
 
 --
--- Name: follow_ups Allow authenticated users to create follow-ups; Type: POLICY; Schema: public; Owner: -
+-- Name: reminders Allow authenticated read reminders; Type: POLICY; Schema: public; Owner: -
 --
 
-CREATE POLICY "Allow authenticated users to create follow-ups" ON public.follow_ups FOR INSERT TO authenticated WITH CHECK (true);
+CREATE POLICY "Allow authenticated read reminders" ON public.reminders FOR SELECT TO authenticated USING (true);
+
+
+--
+-- Name: reminders Allow authenticated update reminders; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY "Allow authenticated update reminders" ON public.reminders FOR UPDATE TO authenticated USING (true) WITH CHECK (true);
 
 
 --
 -- Name: amc_contracts Allow authenticated users to delete amc_contracts; Type: POLICY; Schema: public; Owner: -
 --
 
-CREATE POLICY "Allow authenticated users to delete amc_contracts" ON public.amc_contracts FOR DELETE USING (true);
+CREATE POLICY "Allow authenticated users to delete amc_contracts" ON public.amc_contracts FOR DELETE USING ((( SELECT auth.role() AS role) = 'authenticated'::text));
 
 
 --
@@ -2273,38 +3144,10 @@ CREATE POLICY "Allow authenticated users to delete customers" ON public.customer
 
 
 --
--- Name: follow_ups Allow authenticated users to delete follow_ups; Type: POLICY; Schema: public; Owner: -
---
-
-CREATE POLICY "Allow authenticated users to delete follow_ups" ON public.follow_ups FOR DELETE USING (((auth.role() = 'authenticated'::text) OR (auth.role() = 'anon'::text) OR (auth.uid() IS NOT NULL)));
-
-
---
--- Name: jobs Allow authenticated users to delete jobs; Type: POLICY; Schema: public; Owner: -
---
-
-CREATE POLICY "Allow authenticated users to delete jobs" ON public.jobs FOR DELETE USING ((auth.role() = 'authenticated'::text));
-
-
---
 -- Name: tax_invoices Allow authenticated users to delete tax invoices; Type: POLICY; Schema: public; Owner: -
 --
 
 CREATE POLICY "Allow authenticated users to delete tax invoices" ON public.tax_invoices FOR DELETE TO authenticated USING (true);
-
-
---
--- Name: technician_advances Allow authenticated users to delete technician_advances; Type: POLICY; Schema: public; Owner: -
---
-
-CREATE POLICY "Allow authenticated users to delete technician_advances" ON public.technician_advances FOR DELETE USING (true);
-
-
---
--- Name: technician_expenses Allow authenticated users to delete technician_expenses; Type: POLICY; Schema: public; Owner: -
---
-
-CREATE POLICY "Allow authenticated users to delete technician_expenses" ON public.technician_expenses FOR DELETE USING (true);
 
 
 --
@@ -2322,45 +3165,17 @@ CREATE POLICY "Allow authenticated users to delete technician_holidays" ON publi
 
 
 --
--- Name: technicians Allow authenticated users to delete technicians; Type: POLICY; Schema: public; Owner: -
---
-
-CREATE POLICY "Allow authenticated users to delete technicians" ON public.technicians FOR DELETE USING ((auth.role() = 'authenticated'::text));
-
-
---
 -- Name: amc_contracts Allow authenticated users to insert amc_contracts; Type: POLICY; Schema: public; Owner: -
 --
 
-CREATE POLICY "Allow authenticated users to insert amc_contracts" ON public.amc_contracts FOR INSERT WITH CHECK (true);
+CREATE POLICY "Allow authenticated users to insert amc_contracts" ON public.amc_contracts FOR INSERT WITH CHECK ((( SELECT auth.role() AS role) = 'authenticated'::text));
 
 
 --
 -- Name: call_history Allow authenticated users to insert call history; Type: POLICY; Schema: public; Owner: -
 --
 
-CREATE POLICY "Allow authenticated users to insert call history" ON public.call_history FOR INSERT WITH CHECK ((auth.role() = 'authenticated'::text));
-
-
---
--- Name: follow_ups Allow authenticated users to insert follow_ups; Type: POLICY; Schema: public; Owner: -
---
-
-CREATE POLICY "Allow authenticated users to insert follow_ups" ON public.follow_ups FOR INSERT WITH CHECK (((auth.role() = 'authenticated'::text) OR (auth.role() = 'anon'::text) OR (auth.uid() IS NOT NULL)));
-
-
---
--- Name: technician_advances Allow authenticated users to insert technician_advances; Type: POLICY; Schema: public; Owner: -
---
-
-CREATE POLICY "Allow authenticated users to insert technician_advances" ON public.technician_advances FOR INSERT WITH CHECK (true);
-
-
---
--- Name: technician_expenses Allow authenticated users to insert technician_expenses; Type: POLICY; Schema: public; Owner: -
---
-
-CREATE POLICY "Allow authenticated users to insert technician_expenses" ON public.technician_expenses FOR INSERT WITH CHECK (true);
+CREATE POLICY "Allow authenticated users to insert call history" ON public.call_history FOR INSERT WITH CHECK ((( SELECT auth.role() AS role) = 'authenticated'::text));
 
 
 --
@@ -2378,73 +3193,24 @@ CREATE POLICY "Allow authenticated users to insert technician_holidays" ON publi
 
 
 --
--- Name: amc_contracts Allow authenticated users to read amc_contracts; Type: POLICY; Schema: public; Owner: -
---
-
-CREATE POLICY "Allow authenticated users to read amc_contracts" ON public.amc_contracts FOR SELECT USING (true);
-
-
---
 -- Name: call_history Allow authenticated users to read call history; Type: POLICY; Schema: public; Owner: -
 --
 
-CREATE POLICY "Allow authenticated users to read call history" ON public.call_history FOR SELECT USING ((auth.role() = 'authenticated'::text));
-
-
---
--- Name: customers Allow authenticated users to read customers; Type: POLICY; Schema: public; Owner: -
---
-
-CREATE POLICY "Allow authenticated users to read customers" ON public.customers FOR SELECT USING ((auth.role() = 'authenticated'::text));
-
-
---
--- Name: follow_ups Allow authenticated users to read follow-ups; Type: POLICY; Schema: public; Owner: -
---
-
-CREATE POLICY "Allow authenticated users to read follow-ups" ON public.follow_ups FOR SELECT TO authenticated USING (true);
-
-
---
--- Name: follow_ups Allow authenticated users to read follow_ups; Type: POLICY; Schema: public; Owner: -
---
-
-CREATE POLICY "Allow authenticated users to read follow_ups" ON public.follow_ups FOR SELECT USING (((auth.role() = 'authenticated'::text) OR (auth.role() = 'anon'::text) OR (auth.uid() IS NOT NULL)));
-
-
---
--- Name: jobs Allow authenticated users to read jobs; Type: POLICY; Schema: public; Owner: -
---
-
-CREATE POLICY "Allow authenticated users to read jobs" ON public.jobs FOR SELECT USING ((auth.role() = 'authenticated'::text));
+CREATE POLICY "Allow authenticated users to read call history" ON public.call_history FOR SELECT USING ((( SELECT auth.role() AS role) = 'authenticated'::text));
 
 
 --
 -- Name: parts_inventory Allow authenticated users to read parts inventory; Type: POLICY; Schema: public; Owner: -
 --
 
-CREATE POLICY "Allow authenticated users to read parts inventory" ON public.parts_inventory FOR SELECT USING ((auth.role() = 'authenticated'::text));
+CREATE POLICY "Allow authenticated users to read parts inventory" ON public.parts_inventory FOR SELECT USING ((( SELECT auth.role() AS role) = 'authenticated'::text));
 
 
 --
 -- Name: service_areas Allow authenticated users to read service areas; Type: POLICY; Schema: public; Owner: -
 --
 
-CREATE POLICY "Allow authenticated users to read service areas" ON public.service_areas FOR SELECT USING ((auth.role() = 'authenticated'::text));
-
-
---
--- Name: technician_advances Allow authenticated users to read technician_advances; Type: POLICY; Schema: public; Owner: -
---
-
-CREATE POLICY "Allow authenticated users to read technician_advances" ON public.technician_advances FOR SELECT USING (true);
-
-
---
--- Name: technician_expenses Allow authenticated users to read technician_expenses; Type: POLICY; Schema: public; Owner: -
---
-
-CREATE POLICY "Allow authenticated users to read technician_expenses" ON public.technician_expenses FOR SELECT USING (true);
+CREATE POLICY "Allow authenticated users to read service areas" ON public.service_areas FOR SELECT USING ((( SELECT auth.role() AS role) = 'authenticated'::text));
 
 
 --
@@ -2462,66 +3228,17 @@ CREATE POLICY "Allow authenticated users to read technician_holidays" ON public.
 
 
 --
--- Name: technicians Allow authenticated users to read technicians; Type: POLICY; Schema: public; Owner: -
---
-
-CREATE POLICY "Allow authenticated users to read technicians" ON public.technicians FOR SELECT USING ((auth.role() = 'authenticated'::text));
-
-
---
--- Name: amc_contracts Allow authenticated users to update amc_contracts; Type: POLICY; Schema: public; Owner: -
---
-
-CREATE POLICY "Allow authenticated users to update amc_contracts" ON public.amc_contracts FOR UPDATE USING (true) WITH CHECK (true);
-
-
---
 -- Name: call_history Allow authenticated users to update call history; Type: POLICY; Schema: public; Owner: -
 --
 
-CREATE POLICY "Allow authenticated users to update call history" ON public.call_history FOR UPDATE USING ((auth.role() = 'authenticated'::text));
-
-
---
--- Name: customers Allow authenticated users to update customers; Type: POLICY; Schema: public; Owner: -
---
-
-CREATE POLICY "Allow authenticated users to update customers" ON public.customers FOR UPDATE USING ((auth.role() = 'authenticated'::text));
-
-
---
--- Name: follow_ups Allow authenticated users to update follow_ups; Type: POLICY; Schema: public; Owner: -
---
-
-CREATE POLICY "Allow authenticated users to update follow_ups" ON public.follow_ups FOR UPDATE USING (((auth.role() = 'authenticated'::text) OR (auth.role() = 'anon'::text) OR (auth.uid() IS NOT NULL)));
-
-
---
--- Name: jobs Allow authenticated users to update jobs; Type: POLICY; Schema: public; Owner: -
---
-
-CREATE POLICY "Allow authenticated users to update jobs" ON public.jobs FOR UPDATE USING ((auth.role() = 'authenticated'::text));
+CREATE POLICY "Allow authenticated users to update call history" ON public.call_history FOR UPDATE USING ((( SELECT auth.role() AS role) = 'authenticated'::text));
 
 
 --
 -- Name: parts_inventory Allow authenticated users to update parts inventory; Type: POLICY; Schema: public; Owner: -
 --
 
-CREATE POLICY "Allow authenticated users to update parts inventory" ON public.parts_inventory FOR UPDATE USING ((auth.role() = 'authenticated'::text));
-
-
---
--- Name: technician_advances Allow authenticated users to update technician_advances; Type: POLICY; Schema: public; Owner: -
---
-
-CREATE POLICY "Allow authenticated users to update technician_advances" ON public.technician_advances FOR UPDATE USING (true);
-
-
---
--- Name: technician_expenses Allow authenticated users to update technician_expenses; Type: POLICY; Schema: public; Owner: -
---
-
-CREATE POLICY "Allow authenticated users to update technician_expenses" ON public.technician_expenses FOR UPDATE USING (true);
+CREATE POLICY "Allow authenticated users to update parts inventory" ON public.parts_inventory FOR UPDATE USING ((( SELECT auth.role() AS role) = 'authenticated'::text));
 
 
 --
@@ -2539,64 +3256,94 @@ CREATE POLICY "Allow authenticated users to update technician_holidays" ON publi
 
 
 --
--- Name: technicians Allow authenticated users to update technicians; Type: POLICY; Schema: public; Owner: -
+-- Name: business_expenses Allow public delete access; Type: POLICY; Schema: public; Owner: -
 --
 
-CREATE POLICY "Allow authenticated users to update technicians" ON public.technicians FOR UPDATE USING ((auth.role() = 'authenticated'::text));
-
-
---
--- Name: technicians Allow public to read technician ID card data; Type: POLICY; Schema: public; Owner: -
---
-
-CREATE POLICY "Allow public to read technician ID card data" ON public.technicians FOR SELECT TO authenticated, anon USING (true);
+CREATE POLICY "Allow public delete access" ON public.business_expenses FOR DELETE USING (true);
 
 
 --
--- Name: follow_ups Allow users to delete their own follow-ups; Type: POLICY; Schema: public; Owner: -
+-- Name: other_expenses Allow public delete access; Type: POLICY; Schema: public; Owner: -
 --
 
-CREATE POLICY "Allow users to delete their own follow-ups" ON public.follow_ups FOR DELETE TO authenticated USING (((scheduled_by = auth.uid()) OR (EXISTS ( SELECT 1
-   FROM public.jobs
-  WHERE ((jobs.id = follow_ups.job_id) AND ((jobs.assigned_technician_id = auth.uid()) OR (jobs.assigned_by = auth.uid())))))));
+CREATE POLICY "Allow public delete access" ON public.other_expenses FOR DELETE USING (true);
 
 
 --
--- Name: follow_ups Allow users to update their own follow-ups; Type: POLICY; Schema: public; Owner: -
+-- Name: business_expenses Allow public insert access; Type: POLICY; Schema: public; Owner: -
 --
 
-CREATE POLICY "Allow users to update their own follow-ups" ON public.follow_ups FOR UPDATE TO authenticated USING (((scheduled_by = auth.uid()) OR (EXISTS ( SELECT 1
-   FROM public.jobs
-  WHERE ((jobs.id = follow_ups.job_id) AND ((jobs.assigned_technician_id = auth.uid()) OR (jobs.assigned_by = auth.uid())))))));
+CREATE POLICY "Allow public insert access" ON public.business_expenses FOR INSERT WITH CHECK (true);
+
+
+--
+-- Name: other_expenses Allow public insert access; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY "Allow public insert access" ON public.other_expenses FOR INSERT WITH CHECK (true);
+
+
+--
+-- Name: business_expenses Allow public read access; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY "Allow public read access" ON public.business_expenses FOR SELECT USING (true);
+
+
+--
+-- Name: other_expenses Allow public read access; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY "Allow public read access" ON public.other_expenses FOR SELECT USING (true);
+
+
+--
+-- Name: business_expenses Allow public update access; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY "Allow public update access" ON public.business_expenses FOR UPDATE USING (true);
+
+
+--
+-- Name: other_expenses Allow public update access; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY "Allow public update access" ON public.other_expenses FOR UPDATE USING (true) WITH CHECK (true);
 
 
 --
 -- Name: job_assignment_requests Authenticated users can create job assignment requests; Type: POLICY; Schema: public; Owner: -
 --
 
-CREATE POLICY "Authenticated users can create job assignment requests" ON public.job_assignment_requests FOR INSERT WITH CHECK ((auth.role() = 'authenticated'::text));
+CREATE POLICY "Authenticated users can create job assignment requests" ON public.job_assignment_requests FOR INSERT WITH CHECK ((( SELECT auth.role() AS role) = 'authenticated'::text));
 
 
 --
 -- Name: job_assignment_requests Authenticated users can delete job assignment requests; Type: POLICY; Schema: public; Owner: -
 --
 
-CREATE POLICY "Authenticated users can delete job assignment requests" ON public.job_assignment_requests FOR DELETE USING ((auth.role() = 'authenticated'::text));
+CREATE POLICY "Authenticated users can delete job assignment requests" ON public.job_assignment_requests FOR DELETE USING ((( SELECT auth.role() AS role) = 'authenticated'::text));
 
 
 --
 -- Name: job_assignment_requests Authenticated users can update job assignment requests; Type: POLICY; Schema: public; Owner: -
 --
 
-CREATE POLICY "Authenticated users can update job assignment requests" ON public.job_assignment_requests FOR UPDATE USING ((auth.role() = 'authenticated'::text));
+CREATE POLICY "Authenticated users can update job assignment requests" ON public.job_assignment_requests FOR UPDATE USING ((( SELECT auth.role() AS role) = 'authenticated'::text));
 
 
 --
 -- Name: job_assignment_requests Authenticated users can view job assignment requests; Type: POLICY; Schema: public; Owner: -
 --
 
-CREATE POLICY "Authenticated users can view job assignment requests" ON public.job_assignment_requests FOR SELECT USING ((auth.role() = 'authenticated'::text));
+CREATE POLICY "Authenticated users can view job assignment requests" ON public.job_assignment_requests FOR SELECT USING ((( SELECT auth.role() AS role) = 'authenticated'::text));
 
+
+--
+-- Name: admin_todos; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.admin_todos ENABLE ROW LEVEL SECURITY;
 
 --
 -- Name: admin_users; Type: ROW SECURITY; Schema: public; Owner: -
@@ -2625,6 +3372,12 @@ CREATE POLICY allow_all_technicians ON public.technicians USING (true) WITH CHEC
 ALTER TABLE public.amc_contracts ENABLE ROW LEVEL SECURITY;
 
 --
+-- Name: business_expenses; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.business_expenses ENABLE ROW LEVEL SECURITY;
+
+--
 -- Name: call_history; Type: ROW SECURITY; Schema: public; Owner: -
 --
 
@@ -2643,10 +3396,74 @@ ALTER TABLE public.common_qr_codes ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.customers ENABLE ROW LEVEL SECURITY;
 
 --
+-- Name: customers customers_select; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY customers_select ON public.customers FOR SELECT USING (true);
+
+
+--
+-- Name: customers customers_update; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY customers_update ON public.customers FOR UPDATE USING (true) WITH CHECK (true);
+
+
+--
 -- Name: follow_ups; Type: ROW SECURITY; Schema: public; Owner: -
 --
 
 ALTER TABLE public.follow_ups ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: follow_ups follow_ups_delete; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY follow_ups_delete ON public.follow_ups FOR DELETE USING (((( SELECT auth.role() AS role) = 'authenticated'::text) OR (( SELECT auth.role() AS role) = 'anon'::text) OR (( SELECT auth.uid() AS uid) IS NOT NULL) OR (scheduled_by = ( SELECT auth.uid() AS uid)) OR (EXISTS ( SELECT 1
+   FROM public.jobs
+  WHERE ((jobs.id = follow_ups.job_id) AND ((jobs.assigned_technician_id = ( SELECT auth.uid() AS uid)) OR (jobs.assigned_by = ( SELECT auth.uid() AS uid))))))));
+
+
+--
+-- Name: follow_ups follow_ups_insert; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY follow_ups_insert ON public.follow_ups FOR INSERT WITH CHECK (((( SELECT auth.role() AS role) = 'authenticated'::text) OR (( SELECT auth.role() AS role) = 'anon'::text) OR (( SELECT auth.uid() AS uid) IS NOT NULL)));
+
+
+--
+-- Name: follow_ups follow_ups_select; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY follow_ups_select ON public.follow_ups FOR SELECT USING (((( SELECT auth.role() AS role) = 'authenticated'::text) OR (( SELECT auth.role() AS role) = 'anon'::text) OR (( SELECT auth.uid() AS uid) IS NOT NULL)));
+
+
+--
+-- Name: follow_ups follow_ups_update; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY follow_ups_update ON public.follow_ups FOR UPDATE USING (((( SELECT auth.role() AS role) = 'authenticated'::text) OR (( SELECT auth.role() AS role) = 'anon'::text) OR (( SELECT auth.uid() AS uid) IS NOT NULL) OR (scheduled_by = ( SELECT auth.uid() AS uid)) OR (EXISTS ( SELECT 1
+   FROM public.jobs
+  WHERE ((jobs.id = follow_ups.job_id) AND ((jobs.assigned_technician_id = ( SELECT auth.uid() AS uid)) OR (jobs.assigned_by = ( SELECT auth.uid() AS uid))))))));
+
+
+--
+-- Name: inventory; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.inventory ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: inventory_bundle_items; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.inventory_bundle_items ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: inventory_bundles; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.inventory_bundles ENABLE ROW LEVEL SECURITY;
 
 --
 -- Name: job_assignment_requests; Type: ROW SECURITY; Schema: public; Owner: -
@@ -2655,30 +3472,28 @@ ALTER TABLE public.follow_ups ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.job_assignment_requests ENABLE ROW LEVEL SECURITY;
 
 --
+-- Name: job_parts_used; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.job_parts_used ENABLE ROW LEVEL SECURITY;
+
+--
 -- Name: jobs; Type: ROW SECURITY; Schema: public; Owner: -
 --
 
 ALTER TABLE public.jobs ENABLE ROW LEVEL SECURITY;
 
 --
--- Name: jobs jobs_anonymous_insert_policy; Type: POLICY; Schema: public; Owner: -
---
-
-CREATE POLICY jobs_anonymous_insert_policy ON public.jobs FOR INSERT TO anon WITH CHECK (true);
-
-
---
--- Name: jobs jobs_insert_policy; Type: POLICY; Schema: public; Owner: -
---
-
-CREATE POLICY jobs_insert_policy ON public.jobs FOR INSERT TO authenticated WITH CHECK (true);
-
-
---
 -- Name: notifications; Type: ROW SECURITY; Schema: public; Owner: -
 --
 
 ALTER TABLE public.notifications ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: other_expenses; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.other_expenses ENABLE ROW LEVEL SECURITY;
 
 --
 -- Name: parts_inventory; Type: ROW SECURITY; Schema: public; Owner: -
@@ -2691,6 +3506,12 @@ ALTER TABLE public.parts_inventory ENABLE ROW LEVEL SECURITY;
 --
 
 ALTER TABLE public.product_qr_codes ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: reminders; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.reminders ENABLE ROW LEVEL SECURITY;
 
 --
 -- Name: service_areas; Type: ROW SECURITY; Schema: public; Owner: -
@@ -2711,6 +3532,12 @@ ALTER TABLE public.tax_invoices ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.technician_advances ENABLE ROW LEVEL SECURITY;
 
 --
+-- Name: technician_common_qr; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.technician_common_qr ENABLE ROW LEVEL SECURITY;
+
+--
 -- Name: technician_expenses; Type: ROW SECURITY; Schema: public; Owner: -
 --
 
@@ -2727,6 +3554,12 @@ ALTER TABLE public.technician_extra_commissions ENABLE ROW LEVEL SECURITY;
 --
 
 ALTER TABLE public.technician_holidays ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: technician_inventory; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.technician_inventory ENABLE ROW LEVEL SECURITY;
 
 --
 -- Name: technician_payments; Type: ROW SECURITY; Schema: public; Owner: -
@@ -2769,15 +3602,29 @@ CREATE POLICY technician_payments_update_policy ON public.technician_payments FO
 ALTER TABLE public.technicians ENABLE ROW LEVEL SECURITY;
 
 --
--- Name: technicians technicians_insert_policy; Type: POLICY; Schema: public; Owner: -
+-- Name: admin_todos todos_delete_anon; Type: POLICY; Schema: public; Owner: -
 --
 
-CREATE POLICY technicians_insert_policy ON public.technicians FOR INSERT TO authenticated WITH CHECK (true);
+CREATE POLICY todos_delete_anon ON public.admin_todos FOR DELETE TO authenticated, anon USING (true);
+
+
+--
+-- Name: admin_todos todos_insert_anon; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY todos_insert_anon ON public.admin_todos FOR INSERT TO authenticated, anon WITH CHECK (true);
+
+
+--
+-- Name: admin_todos todos_select_anon; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY todos_select_anon ON public.admin_todos FOR SELECT TO authenticated, anon USING (true);
 
 
 --
 -- PostgreSQL database dump complete
 --
 
-\unrestrict k5puEkcb4aCceJUSLrimnK7wvhhJIowJsWrUfLfOrEwsQWgiIkRvl1OOcZBZXk5
+\unrestrict D7NUovo1xMTzc7nLETKxTMBxkPnV3bofSBtek1ytHJk2QZhXRFtTaesj118JM1t
 
