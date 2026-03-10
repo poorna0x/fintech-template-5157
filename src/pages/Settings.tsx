@@ -1162,6 +1162,27 @@ const Settings = () => {
         tables.push({ name: 'technician_common_qr', data: technicianCommonQr });
       }
 
+      const { data: inventoryBundles, error: inventoryBundlesError } = await fetchAllFromTable('inventory_bundles', 'updated_at');
+      if (inventoryBundlesError) {
+        toast.error(`Failed to fetch inventory bundles: ${inventoryBundlesError.message}`);
+      } else {
+        tables.push({ name: 'inventory_bundles', data: inventoryBundles });
+      }
+
+      const { data: inventoryBundleItems, error: inventoryBundleItemsError } = await fetchAllFromTable('inventory_bundle_items', 'id');
+      if (inventoryBundleItemsError) {
+        toast.error(`Failed to fetch inventory bundle items: ${inventoryBundleItemsError.message}`);
+      } else {
+        tables.push({ name: 'inventory_bundle_items', data: inventoryBundleItems });
+      }
+
+      const { data: otherExpenses, error: otherExpensesError } = await fetchAllFromTable('other_expenses', 'expense_date');
+      if (otherExpensesError) {
+        toast.error(`Failed to fetch other expenses: ${otherExpensesError.message}`);
+      } else {
+        tables.push({ name: 'other_expenses', data: otherExpenses });
+      }
+
       // Create ZIP file with all CSV files
       const zip = new JSZip();
       
@@ -1980,7 +2001,7 @@ const Settings = () => {
                 <p className="text-sm text-blue-900 dark:text-blue-200 mb-2">
                   <strong>What will be downloaded:</strong>
                 </p>
-                <ul className="text-sm text-blue-800 dark:text-blue-300 space-y-1 list-disc list-inside">
+                  <ul className="text-sm text-blue-800 dark:text-blue-300 space-y-1 list-disc list-inside">
                   <li>Admin Todos</li>
                   <li>Admin Users</li>
                   <li>AMC Contracts</li>
@@ -1990,10 +2011,13 @@ const Settings = () => {
                   <li>Customers</li>
                   <li>Follow-ups</li>
                   <li>Inventory</li>
+                  <li>Inventory Bundle Items</li>
+                  <li>Inventory Bundles</li>
                   <li>Job Assignment Requests</li>
                   <li>Job Parts Used</li>
                   <li>Jobs</li>
                   <li>Notifications</li>
+                  <li>Other Expenses</li>
                   <li>Parts Inventory</li>
                   <li>Product QR Codes</li>
                   <li>Reminders</li>
