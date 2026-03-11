@@ -1116,7 +1116,7 @@ const Booking: React.FC = () => {
         return `https://www.google.com/maps/embed?pb=!1m18!1m12!1m3!1d3888.123456789!2d77.6325!3d12.8934!2m3!1f0!2f0!3f0!3m2!1i1024!2i768!4f13.1!3m3!1m2!1s0x0%3A0x0!2zMTLCsDUzJzM2LjIiTiA3N8KwMzcnNTcuMCJF!5e0!3m2!1sen!2sin!4v1234567890123!5m2!1sen!2sin`;
       } else if (url.includes('google.com/maps/place/')) {
         // Extract coordinates from place URL
-        const match = url.match(/\/place\/([^\/]+)/);
+        const match = url.match(/\/place\/([^/]+)/);
         if (match) {
           const coords = match[1].split(',');
           if (coords.length >= 2) {
@@ -2599,9 +2599,10 @@ const Booking: React.FC = () => {
                validatePhoneNumber(formData.phone) &&
                validateEmail(formData.email) &&
                (formData.alternatePhone === '' || validatePhoneNumber(formData.alternatePhone));
-      case 2:
+      case 2: {
         const serviceValid = formData.service && (formData.service !== 'Other' || formData.customService);
         return serviceValid; // Brand name and model name are now optional
+      }
       case 3:
         return formData.address;
       case 4:

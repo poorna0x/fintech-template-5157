@@ -12,7 +12,7 @@ export function cn(...inputs: ClassValue[]) {
  */
 export function formatPhoneForWhatsApp(phone: string): string {
   // Remove all non-digit characters
-  let cleaned = phone.replace(/\D/g, '');
+  const cleaned = phone.replace(/\D/g, '');
   
   // Handle different phone number formats
   if (cleaned.length === 12 && cleaned.startsWith('91')) {

@@ -320,8 +320,8 @@ const EditJobDialog: React.FC<EditJobDialogProps> = ({
         : editJobFormData.lead_source;
       
       // Find existing non-OTP requirement object or create new one
-      let leadReqIndex = requirementsArr.findIndex((r: any) => r && typeof r === 'object' && !r.require_otp);
-      let reqObj = leadReqIndex >= 0 ? { ...requirementsArr[leadReqIndex] } : {};
+      const leadReqIndex = requirementsArr.findIndex((r: any) => r && typeof r === 'object' && !r.require_otp);
+      const reqObj = leadReqIndex >= 0 ? { ...requirementsArr[leadReqIndex] } : {};
       reqObj.lead_source = leadSourceValue;
       if (editJobFormData.lead_source === 'Other' && editJobFormData.lead_source_custom) {
         reqObj.lead_source_custom = editJobFormData.lead_source_custom;

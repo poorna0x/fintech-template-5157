@@ -233,7 +233,7 @@ export default function TaxInvoiceGenerator({ customer, onPrint, onTaxInvoiceSav
       setShowComputerGeneratedText(false);
       setShowDigitallySignedText(true);
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+     
   }, [useDSC]);
   
   const [poNumber, setPONumber] = useState('');

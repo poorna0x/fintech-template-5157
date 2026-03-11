@@ -3215,9 +3215,10 @@ export const db = {
       if (fetchError) return { error: fetchError };
       const total = (rows || []).reduce((sum: number, row: any) => {
         const qty = Number(row.quantity_used) || 0;
+        const invPrice = (row as any).inventory?.price;
         const price = row.price_at_time_of_use !== null && row.price_at_time_of_use !== undefined
           ? Number(row.price_at_time_of_use)
-          : (Number((row as any).inventory?.price) ?? 0);
+          : (invPrice != null ? Number(invPrice) : 0);
         return sum + qty * price;
       }, 0);
       const { error: updateError } = await supabase

@@ -60,18 +60,20 @@ const MathCaptcha: React.FC<MathCaptchaProps> = ({ onVerify, onAutoSubmit, class
         answer = num1 + num2;
         question = `${num1} + ${num2} = ?`;
         break;
-      case '-':
+      case '-': {
         const larger = Math.max(num1, num2);
         const smaller = Math.min(num1, num2);
         answer = larger - smaller;
         question = `${larger} - ${smaller} = ?`;
         break;
-      case '×':
+      }
+      case '×': {
         const factor1 = Math.floor(Math.random() * 6) + 1;
         const factor2 = Math.floor(Math.random() * 6) + 1;
         answer = factor1 * factor2;
         question = `${factor1} × ${factor2} = ?`;
         break;
+      }
       default:
         answer = num1 + num2;
         question = `${num1} + ${num2} = ?`;

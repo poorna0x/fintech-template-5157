@@ -3247,7 +3247,7 @@ const TechnicianDashboard = () => {
     }
     
     // Remove all non-digit characters
-    let cleaned = phone.replace(/\D/g, '');
+    const cleaned = phone.replace(/\D/g, '');
     
     // Validate phone number length
     if (cleaned.length < 10) {
@@ -7677,7 +7677,7 @@ const TechnicianDashboard = () => {
                         console.log('📸 All photos from after_photos:', extractedAfterPhotos);
                         
                         // Get bill photos from requirements.bill_photos (fallback)
-                        let billPhotosFromReq = requirements.find((r: any) => r?.bill_photos)?.bill_photos || [];
+                        const billPhotosFromReq = requirements.find((r: any) => r?.bill_photos)?.bill_photos || [];
                         const extractedBillPhotosFromReq = extractPhotoUrls(billPhotosFromReq);
                         
                         // Determine bill photos: use after_photos (which includes payment screenshot) but exclude payment screenshot if we found it

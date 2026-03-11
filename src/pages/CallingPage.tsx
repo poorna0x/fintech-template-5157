@@ -484,7 +484,7 @@ const CallingPage = ({ hideHeader = false, onBack }: CallingPageProps = {}) => {
     const daysSinceService = customer.daysSinceService;
     
     switch (template) {
-      case 'service_due':
+      case 'service_due': {
         let message = `Hi ${customer.fullName},\n\n`;
         if (daysSinceService != null && daysSinceService > 0) {
           message += `We noticed it's been ${formatDaysAgo(daysSinceService)} since your last RO service.\n\n`;
@@ -493,6 +493,7 @@ const CallingPage = ({ hideHeader = false, onBack }: CallingPageProps = {}) => {
         message += `Would you like to schedule a service? Please reply to this message or call us at 8884944288.\n\n`;
         message += `Thank you!\nHydrogen RO Team`;
         return message;
+      }
 
       case 'contact':
         return `Hi ${customer.fullName},\n\nThis is Hydrogen RO. We wanted to reach out and check if you need any assistance with your RO water purifier.\n\nIf you have any questions or need service, please reply to this message or call us at:\n📞 8884944288\n📞 9886944288\n\nWe're here to help!\nHydrogen RO Team`;

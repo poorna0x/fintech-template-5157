@@ -1089,10 +1089,12 @@ const AdminDashboard = () => {
     try {
       const { data, error } = await db.jobs.getCounts();
       if (error) {
+        // ignore
       } else if (data) {
         setJobCounts(data);
       }
-    } catch (error) {
+    } catch {
+      // ignore
     }
   }, []);
 
@@ -1502,7 +1504,9 @@ const AdminDashboard = () => {
         if (ctx.state === 'suspended') {
           await ctx.resume();
         }
-      } catch (_) {}
+      } catch {
+        // ignore
+      }
       document.removeEventListener('click', handleUserInteraction);
       document.removeEventListener('keydown', handleUserInteraction);
     };
@@ -6145,7 +6149,7 @@ const AdminDashboard = () => {
 
       // Add or update message_sent flag
       // Check if message_sent already exists in any requirement object
-      let messageIndex = requirements.findIndex((r: any) => r?.message_sent !== undefined);
+      const messageIndex = requirements.findIndex((r: any) => r?.message_sent !== undefined);
       if (messageIndex >= 0) {
         // Update existing message_sent entry
         requirements[messageIndex].message_sent = true;
@@ -6431,7 +6435,7 @@ const AdminDashboard = () => {
       // If it's a Cloudinary URL, try to get the raw version
       if (photoUrl.includes('cloudinary.com')) {
         // Remove any transformations and get the raw image
-        downloadUrl = photoUrl.replace(/\/upload\/[^\/]*\//, '/upload/');
+        downloadUrl = photoUrl.replace(/\/upload\/[^/]*\//, '/upload/');
       }
       
       // Method 1: Try direct download
@@ -6489,8 +6493,8 @@ const AdminDashboard = () => {
       const afterPhotos = Array.isArray(job.after_photos || job.afterPhotos) ? (job.after_photos || job.afterPhotos) : [];
       
       // Determine which array contains the photo to delete
-      let updatedBeforePhotos = [...beforePhotos];
-      let updatedAfterPhotos = [...afterPhotos];
+      const updatedBeforePhotos = [...beforePhotos];
+      const updatedAfterPhotos = [...afterPhotos];
       let isBeforePhoto = false;
       
       // Check if photo exists in before_photos
@@ -8095,8 +8099,9 @@ const AdminDashboard = () => {
                           }
                         }
                         
-                        // Debug logging
+                        // Debug logging (optional)
                         if (import.meta.env.DEV) {
+                          // dev-only logging can go here
                         }
                         
                                                 return jobsToShow.length === 0 ? (
@@ -10008,7 +10013,7 @@ const AdminDashboard = () => {
                   }
 
                   // Update or add AMC info
-                  let amcIndex = requirements.findIndex((r: any) => r?.amc_info);
+                  const amcIndex = requirements.findIndex((r: any) => r?.amc_info);
                   if (completedJobEditData.amcInfo) {
                     if (amcIndex >= 0) {
                       requirements[amcIndex].amc_info = completedJobEditData.amcInfo;
@@ -10032,7 +10037,7 @@ const AdminDashboard = () => {
                   if (completedJobEditData.paymentMethod === 'PARTIAL') {
                     const cash = parseFloat(completedJobEditData.partialCashAmount) || 0;
                     const online = parseFloat(completedJobEditData.partialOnlineAmount) || 0;
-                    let partialIndex = requirements.findIndex((r: any) => r?.partial_cash_amount != null || r?.partial_online_amount != null);
+                    const partialIndex = requirements.findIndex((r: any) => r?.partial_cash_amount != null || r?.partial_online_amount != null);
                     if (partialIndex >= 0) {
                       requirements[partialIndex].partial_cash_amount = cash;
                       requirements[partialIndex].partial_online_amount = online;
@@ -10043,7 +10048,7 @@ const AdminDashboard = () => {
 
                   // Update QR photos if QR code name changed (only for non-CASH / online / partial payments)
                   if (completedJobEditData.paymentMethod !== 'CASH' && completedJobEditData.qrCodeName) {
-                    let qrIndex = requirements.findIndex((r: any) => r?.qr_photos);
+                    const qrIndex = requirements.findIndex((r: any) => r?.qr_photos);
                     if (qrIndex >= 0) {
                       requirements[qrIndex].qr_photos = {
                         ...requirements[qrIndex].qr_photos,
@@ -10058,7 +10063,7 @@ const AdminDashboard = () => {
 
                   // Update or add lead source
                   if (completedJobEditData.leadSource) {
-                    let leadSourceIndex = requirements.findIndex((r: any) => r?.lead_source);
+                    const leadSourceIndex = requirements.findIndex((r: any) => r?.lead_source);
                     const leadSourceValue = completedJobEditData.leadSource === 'Other' 
                       ? (completedJobEditData.leadSourceCustom || 'Other')
                       : completedJobEditData.leadSource;

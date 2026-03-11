@@ -348,7 +348,7 @@ class CloudinaryService {
   extractPublicId(url: string): { publicId: string; useSecondary: boolean } | null {
     if (!url || typeof url !== 'string') return null;
     
-    const match = url.match(/res\.cloudinary\.com\/([^\/]+)\/image\/upload\/(.+)/);
+    const match = url.match(/res\.cloudinary\.com\/([^/]+)\/image\/upload\/(.+)/);
     if (match) {
       const cloudName = match[1];
       const pathAfterUpload = match[2].split('?')[0]; // Remove query params
@@ -363,7 +363,7 @@ class CloudinaryService {
       if (pathParts.length === 0) return null;
       
       // public_id = folder/file (no version), strip extension
-      let publicId = pathParts.join('/').replace(/\.[^.]+$/, '');
+      const publicId = pathParts.join('/').replace(/\.[^.]+$/, '');
       
       return { publicId, useSecondary: useSecondary || false };
     }

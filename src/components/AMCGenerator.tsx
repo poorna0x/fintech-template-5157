@@ -128,7 +128,7 @@ ${notCoveredWithPreFilter}`;
   // Update terms when pre-sediment filtration checkbox changes
   React.useEffect(() => {
     setTerms(generateTerms(includesPreSedimentFiltration));
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+     
   }, [includesPreSedimentFiltration]);
 
   // Auto-populate RO model from customer data

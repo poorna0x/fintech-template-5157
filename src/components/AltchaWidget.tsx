@@ -1,7 +1,8 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { useSecurity } from '@/contexts/SecurityContext';
 
-// Extend HTML elements to include altcha-widget
+// Extend HTML elements to include altcha-widget (namespace required for JSX intrinsic elements)
+/* eslint-disable @typescript-eslint/no-namespace */
 declare global {
   namespace JSX {
     interface IntrinsicElements {
@@ -23,6 +24,7 @@ declare global {
     }
   }
 }
+/* eslint-enable @typescript-eslint/no-namespace */
 
 interface AltchaWidgetProps {
   onVerify: (isValid: boolean, payload?: string) => void;

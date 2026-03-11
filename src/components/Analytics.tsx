@@ -184,20 +184,22 @@ const Analytics = () => {
         startDate.setDate(startDate.getDate() - 30);
         endDate.setHours(23, 59, 59, 999); // End of today
         break;
-      case 'thisWeek':
+      case 'thisWeek': {
         // Start of this week (Monday)
         const dayOfWeek = startDate.getDay();
         const diff = startDate.getDate() - dayOfWeek + (dayOfWeek === 0 ? -6 : 1); // Adjust when day is Sunday
         startDate.setDate(diff);
         endDate.setHours(23, 59, 59, 999); // End of today
         break;
-      case 'thisMonth':
+      }
+      case 'thisMonth': {
         // Start of current month (1st)
         startDate.setDate(1);
         // End of current month (last day)
         endDate = new Date(startDate.getFullYear(), startDate.getMonth() + 1, 0);
         endDate.setHours(23, 59, 59, 999);
         break;
+      }
       case 'previousMonth':
         // First day of previous month to last day of previous month
         startDate.setMonth(startDate.getMonth() - 1);
@@ -416,8 +418,8 @@ const Analytics = () => {
         }
 
         const allInRange = Array.isArray(jobsInRangeResult.data) ? jobsInRangeResult.data : [];
-        var jobs = allInRange;
-        var completedJobs = allInRange.filter((j: any) => j && j.status === 'COMPLETED');
+        const jobs = allInRange;
+        const completedJobs = allInRange.filter((j: any) => j && j.status === 'COMPLETED');
       } else {
         const [analyticsRes, jobsRes] = await Promise.all([
           db.stats.getAnalytics(),
@@ -435,8 +437,8 @@ const Analytics = () => {
           return;
         }
         const allJobsList = Array.isArray(jobsRes.data) ? jobsRes.data : [];
-        var jobs = allJobsList;
-        var completedJobs = allJobsList.filter((j: any) => j && j.status === 'COMPLETED');
+        const jobs = allJobsList;
+        const completedJobs = allJobsList.filter((j: any) => j && j.status === 'COMPLETED');
       }
 
       // Spare parts cost: sum denormalized parts_cost_total from completed jobs in period
@@ -732,15 +734,15 @@ const Analytics = () => {
       console.log('🔵 [Analytics] Total softener jobs found:', softenerJobs.length, 'out of', jobs.length, 'total jobs');
       
       const softenerCompletedJobs = softenerJobs.filter((j: any) => j && j.status === 'COMPLETED');
+      let softenerCompletedForBilling: typeof softenerCompletedJobs;
       if (startDate && endDate) {
         const filteredSoftenerCompleted = softenerCompletedJobs.filter((j: any) => {
           const completedDate = j.completed_at || j.end_time || j.completedAt;
           return isDateInRange(completedDate, startDate, endDate);
         });
-        // Use filtered for billing calculations
-        var softenerCompletedForBilling = filteredSoftenerCompleted;
+        softenerCompletedForBilling = filteredSoftenerCompleted;
       } else {
-        var softenerCompletedForBilling = softenerCompletedJobs;
+        softenerCompletedForBilling = softenerCompletedJobs;
       }
       
       // Softener Service Type Breakdown

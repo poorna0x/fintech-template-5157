@@ -642,7 +642,7 @@ function generateSalarySlipHTML(data: SalarySlipPDFData, includeDayWiseBreakdown
           ${(() => {
             // Add Advances section at the end
             if (data.advances && data.advances.length > 0) {
-              let advancesHtml = `
+              const advancesHtml = `
                 <div style="margin-top: 30px; margin-bottom: 20px;">
                   <div style="font-weight: 600; font-size: 16px; color: #374151; margin-bottom: 12px; padding: 8px; background: #fef3c7; border-left: 4px solid #f59e0b;">
                     Advances
@@ -692,7 +692,7 @@ function generateSalarySlipHTML(data: SalarySlipPDFData, includeDayWiseBreakdown
           ${(() => {
             // Add Extra Commissions section at the end
             if (data.extraCommissions && data.extraCommissions.length > 0) {
-              let extraCommissionsHtml = `
+              const extraCommissionsHtml = `
                 <div style="margin-top: 30px; margin-bottom: 20px;">
                   <div style="font-weight: 600; font-size: 16px; color: #374151; margin-bottom: 12px; padding: 8px; background: #f3e8ff; border-left: 4px solid #9333ea;">
                     Extra Commissions

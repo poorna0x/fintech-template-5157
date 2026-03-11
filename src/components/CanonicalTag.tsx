@@ -13,7 +13,7 @@ const CanonicalTag = () => {
     const baseUrl = 'https://hydrogenro.com';
     
     // Build the canonical URL - remove trailing slash except for homepage
-    let pathname = location.pathname === '/' ? '' : location.pathname;
+    const pathname = location.pathname === '/' ? '' : location.pathname;
     // Remove trailing slash from pathname if it exists (except for root)
     const cleanPathname = pathname === '/' ? '' : pathname.replace(/\/$/, '');
     
@@ -35,7 +35,7 @@ const CanonicalTag = () => {
     }
     
     // Also update og:url meta tag (always update this, but use clean URL without query params)
-    let ogUrl = document.querySelector('meta[property="og:url"]');
+    const ogUrl = document.querySelector('meta[property="og:url"]');
     if (ogUrl) {
       ogUrl.setAttribute('content', canonicalUrl);
     } else {
@@ -46,7 +46,7 @@ const CanonicalTag = () => {
     }
     
     // Also update twitter:url if it exists
-    let twitterUrl = document.querySelector('meta[name="twitter:url"]');
+    const twitterUrl = document.querySelector('meta[name="twitter:url"]');
     if (twitterUrl) {
       twitterUrl.setAttribute('content', canonicalUrl);
     }
