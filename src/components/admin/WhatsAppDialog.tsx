@@ -23,8 +23,8 @@ const WhatsAppDialog: React.FC<WhatsAppDialogProps> = ({
   customerName,
   location
 }) => {
-  const locationWord = location?.trim() ? location.trim().split(/\s+/)[0] : '';
-  const message = `New ${serviceSubType.toLowerCase()} assigned - ${customerName}${locationWord ? ` - ${locationWord}` : ''}`;
+  const locationText = location?.trim() ?? '';
+  const message = `New ${serviceSubType.toLowerCase()} assigned - ${customerName}${locationText ? ` - ${locationText}` : ''}`;
   
   // Format phone number for WhatsApp (remove any non-digit characters except +)
   const formatPhoneForWhatsApp = (phone: string): string => {

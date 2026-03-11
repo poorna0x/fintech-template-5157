@@ -4810,14 +4810,14 @@ const AdminDashboard = () => {
         const customerName = (jobToAssign.customer as any)?.full_name || (jobToAssign.customer as any)?.fullName || 'Customer';
         const addr = (jobToAssign as any).service_address || (jobToAssign.customer as any)?.address;
         const vis = (jobToAssign.customer as any)?.visible_address;
-        const locationWord = (vis && String(vis).trim()) ? String(vis).trim().split(/\s+/)[0] : (addr?.area || addr?.city || '');
+        const locationText = (vis && String(vis).trim()) ? String(vis).trim() : (addr?.area || addr?.city || '');
         setWhatsappTechnician({
           name: assignedTechnician.fullName,
           phone: assignedTechnician.phone
         });
         setWhatsappServiceSubType(serviceSubType);
         setWhatsappCustomerName(customerName);
-        setWhatsappLocation(locationWord || '');
+        setWhatsappLocation(locationText || '');
         setWhatsappDialogOpen(true);
       }
       
@@ -5021,14 +5021,14 @@ const AdminDashboard = () => {
         const customerName = (jobToReassign.customer as any)?.full_name || (jobToReassign.customer as any)?.fullName || 'Customer';
         const addr = (jobToReassign as any).service_address || (jobToReassign.customer as any)?.address;
         const vis = (jobToReassign.customer as any)?.visible_address;
-        const locationWord = (vis && String(vis).trim()) ? String(vis).trim().split(/\s+/)[0] : (addr?.area || addr?.city || '');
+        const locationText = (vis && String(vis).trim()) ? String(vis).trim() : (addr?.area || addr?.city || '');
         setWhatsappTechnician({
           name: reassignedTechnician.fullName,
           phone: reassignedTechnician.phone
         });
         setWhatsappServiceSubType(serviceSubType);
         setWhatsappCustomerName(customerName);
-        setWhatsappLocation(locationWord || '');
+        setWhatsappLocation(locationText || '');
         setWhatsappDialogOpen(true);
       }
       
