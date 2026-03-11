@@ -262,6 +262,16 @@ export const CompletedJobSection: React.FC<CompletedJobSectionProps> = ({
                     <span className="text-gray-500">Includes Prefilter:</span> {amcInfo.includes_prefilter ? 'Yes' : 'No'}
                   </div>
                 )}
+                <div>
+                  <span className="text-gray-500">AMC service period (auto job creation):</span>{' '}
+                  {amcInfo.service_period_months !== undefined && amcInfo.service_period_months !== null
+                    ? amcInfo.service_period_months === 0
+                      ? 'No auto'
+                      : amcInfo.service_period_months === 1
+                        ? '1 month'
+                        : `${amcInfo.service_period_months} months`
+                    : '—'}
+                </div>
                 {(() => {
                   // Parse additional_info to extract description
                   let description = '';

@@ -354,9 +354,11 @@ const TechnicianDashboard = () => {
   const [amcDateGiven, setAmcDateGiven] = useState<string>('');
   const [amcEndDate, setAmcEndDate] = useState<string>('');
   const [amcYears, setAmcYears] = useState<number>(0);
-  const [amcIncludesPrefilter, setAmcIncludesPrefilter] = useState<boolean>(false);
+  const [amcIncludesPrefilter, setAmcIncludesPrefilter] = useState<boolean | null>(null);
   const [amcAdditionalInfo, setAmcAdditionalInfo] = useState<string>('');
   const [amcAmount, setAmcAmount] = useState<string>('');
+  const [amcServicePeriodKind, setAmcServicePeriodKind] = useState<'4' | '6' | 'custom' | 'no_auto'>('4');
+  const [amcServicePeriodCustomMonths, setAmcServicePeriodCustomMonths] = useState<number>(4);
   const [hasAMC, setHasAMC] = useState<boolean | null>(null);
   const [paymentMode, setPaymentMode] = useState<'CASH' | 'ONLINE' | 'PARTIAL' | ''>('');
   const [billAmountConfirmOpen, setBillAmountConfirmOpen] = useState(false);
@@ -1947,10 +1949,12 @@ const TechnicianDashboard = () => {
       setAmcDateGiven(today);
     setAmcYears(0);
     setAmcEndDate('');
-      setAmcIncludesPrefilter(false);
+      setAmcIncludesPrefilter(null);
     setHasAMC(null);
         setAmcAdditionalInfo('');
     setAmcAmount('');
+    setAmcServicePeriodKind('4');
+    setAmcServicePeriodCustomMonths(4);
         setPaymentScreenshot('');
         setPaymentMode('');
       setCustomerHasPrefilter(null);
@@ -2468,6 +2472,22 @@ const TechnicianDashboard = () => {
       
       // If years is 0, treat it as no AMC
       const effectiveHasAMC = hasAMC === true && amcYears > 0;
+
+      // When AMC is selected, Includes Prefilter and AMC service period are required
+      if (effectiveHasAMC) {
+        if (amcIncludesPrefilter === null) {
+          toast.error('Please select whether AMC includes prefilter (Yes or No)');
+          return;
+        }
+        if (!amcServicePeriodKind) {
+          toast.error('Please select AMC service period (auto job creation)');
+          return;
+        }
+        if (amcServicePeriodKind === 'custom' && (amcServicePeriodCustomMonths < 1 || amcServicePeriodCustomMonths > 24)) {
+          toast.error('Please enter a valid custom period (1–24 months)');
+          return;
+        }
+      }
       
       // Check if bill amount is zero - if so, skip payment steps (4 and 5)
       const billIsZeroStep3Continue = isBillAmountZero();
@@ -2496,7 +2516,7 @@ const TechnicianDashboard = () => {
         amcDateGiven: effectiveHasAMC ? amcDateGiven : '',
         amcEndDate: effectiveHasAMC ? amcEndDate : '',
         amcYears: effectiveHasAMC ? amcYears : 0,
-        amcIncludesPrefilter: effectiveHasAMC ? amcIncludesPrefilter : false,
+        amcIncludesPrefilter: effectiveHasAMC ? (amcIncludesPrefilter ?? false) : false,
         amcAdditionalInfo: effectiveHasAMC ? amcAdditionalInfo : '',
         currentStep: nextStep,
       });
@@ -3038,14 +3058,20 @@ const TechnicianDashboard = () => {
         // Only add if years > 0 (0 years means no AMC)
         const effectiveHasAMC = hasAMC === true && amcYears > 0;
         if (effectiveHasAMC) {
+          const servicePeriodMonths =
+            amcServicePeriodKind === 'no_auto' ? 0
+              : amcServicePeriodKind === '4' ? 4
+              : amcServicePeriodKind === '6' ? 6
+              : Math.max(1, amcServicePeriodCustomMonths);
           const amcInfo = {
             date_given: amcDateGiven || null,
             end_date: amcEndDate || null,
             years: amcYears,
             amount: amcAmount ? parseFloat(amcAmount) : null,
-            includes_prefilter: amcIncludesPrefilter || false,
+            includes_prefilter: amcIncludesPrefilter ?? false,
             additional_info: amcAdditionalInfo || null,
             notes: amcAdditionalInfo || null,
+            service_period_months: servicePeriodMonths,
             technician_reference: true // Mark as technician reference, not official AMC
           };
           requirements.push({ amc_info: amcInfo });
@@ -3201,7 +3227,9 @@ const TechnicianDashboard = () => {
         setAmcDateGiven(new Date().toISOString().split('T')[0]);
         setAmcEndDate('');
         setAmcYears(0);
-        setAmcIncludesPrefilter(false);
+        setAmcIncludesPrefilter(null);
+        setAmcServicePeriodKind('4');
+        setAmcServicePeriodCustomMonths(4);
         setHasAMC(null);
         setPaymentMode('');
         setPartialCashAmount('');
@@ -5871,7 +5899,9 @@ const TechnicianDashboard = () => {
             setAmcDateGiven(today);
             setAmcEndDate('');
             setAmcYears(0);
-            setAmcIncludesPrefilter(false);
+            setAmcIncludesPrefilter(null);
+            setAmcServicePeriodKind('4');
+            setAmcServicePeriodCustomMonths(4);
             setHasAMC(null);
             setPaymentMode('');
             setCustomerHasPrefilter(null);
@@ -6304,22 +6334,61 @@ const TechnicianDashboard = () => {
                   </div>
 
                   <div>
-                      <Label htmlFor="amc-includes-prefilter" className="text-sm font-medium mb-2 block">Includes Prefilter</Label>
-                      <div className="flex items-center space-x-2">
-                        <input
-                          type="checkbox"
-                          id="amc-includes-prefilter"
-                          checked={amcIncludesPrefilter}
-                          onChange={(e) => {
-                            const checked = e.target.checked;
-                            setAmcIncludesPrefilter(checked);
-                          }}
-                          className="w-4 h-4"
-                        />
-                        <Label htmlFor="amc-includes-prefilter" className="text-sm cursor-pointer">
-                          Customer's AMC includes prefilter maintenance
-                        </Label>
+                      <Label className="text-sm font-medium mb-2 block">Includes Prefilter <span className="text-red-600">*</span></Label>
+                      <p className="text-xs text-gray-500 mb-2">Customer&apos;s AMC includes prefilter maintenance</p>
+                      <div className="grid grid-cols-2 gap-4">
+                        <button
+                          type="button"
+                          onClick={() => setAmcIncludesPrefilter(true)}
+                          className={`p-4 rounded-lg border-2 transition-all duration-200 ${
+                            amcIncludesPrefilter === true
+                              ? 'border-black bg-black text-white shadow-md'
+                              : 'border-gray-300 bg-white text-gray-700 hover:border-gray-400 hover:bg-gray-50'
+                          }`}
+                        >
+                          <span className="font-medium text-sm">Yes</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setAmcIncludesPrefilter(false)}
+                          className={`p-4 rounded-lg border-2 transition-all duration-200 ${
+                            amcIncludesPrefilter === false
+                              ? 'border-black bg-black text-white shadow-md'
+                              : 'border-gray-300 bg-white text-gray-700 hover:border-gray-400 hover:bg-gray-50'
+                          }`}
+                        >
+                          <span className="font-medium text-sm">No</span>
+                        </button>
                       </div>
+                    </div>
+
+                    <div>
+                      <Label className="text-sm font-medium">AMC service period (auto job creation) <span className="text-red-600">*</span></Label>
+                      <Select
+                        value={amcServicePeriodKind}
+                        onValueChange={(v: '4' | '6' | 'custom' | 'no_auto') => setAmcServicePeriodKind(v)}
+                      >
+                        <SelectTrigger className="mt-1">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="4">Every 4 months</SelectItem>
+                          <SelectItem value="6">Every 6 months</SelectItem>
+                          <SelectItem value="custom">Custom (months)</SelectItem>
+                          <SelectItem value="no_auto">No auto</SelectItem>
+                        </SelectContent>
+                      </Select>
+                      {amcServicePeriodKind === 'custom' && (
+                        <Input
+                          type="number"
+                          min={1}
+                          max={24}
+                          value={amcServicePeriodCustomMonths}
+                          onChange={(e) => setAmcServicePeriodCustomMonths(Math.max(1, parseInt(e.target.value, 10) || 1))}
+                          className="mt-1"
+                          placeholder="Months"
+                        />
+                      )}
                     </div>
 
                     <div>
@@ -6854,7 +6923,9 @@ const TechnicianDashboard = () => {
                     setAmcDateGiven(today);
                     setAmcEndDate('');
                     setAmcYears(0);
-                    setAmcIncludesPrefilter(false);
+                    setAmcIncludesPrefilter(null);
+                    setAmcServicePeriodKind('4');
+                    setAmcServicePeriodCustomMonths(4);
                     setHasAMC(null);
                     setPaymentMode('');
                     setCustomerHasPrefilter(null);
