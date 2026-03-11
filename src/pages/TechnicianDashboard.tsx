@@ -6664,6 +6664,13 @@ const TechnicianDashboard = () => {
               )}
 
               {/* Step 6: Prefilter Question (RO) or final step (softener) */}
+              {completeJobStep === 6 && (
+                <div className="rounded-xl border border-blue-200 bg-blue-50/80 dark:bg-blue-950/30 dark:border-blue-800 p-3 sm:p-4 mb-4">
+                  <p className="text-sm text-blue-900 dark:text-blue-100">
+                    <span className="font-medium">Reminder:</span> Please affix the sticker on the machine and capture any photos if needed before completing.
+                  </p>
+                </div>
+              )}
               {completeJobStep === 6 && isSoftenerService() && (
                 <div className="space-y-4">
                   <div className="text-center py-4">
