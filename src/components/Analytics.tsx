@@ -283,6 +283,9 @@ const Analytics = () => {
       const startStr = startDate?.toISOString().split('T')[0];
       const endStr = endDate?.toISOString().split('T')[0];
 
+      let jobs: any[] = [];
+      let completedJobs: any[] = [];
+
       if (startDate && endDate) {
         // Parallel fetch: only in-range data (no getAnalytics = no full-table scans). Technicians + payments in range + jobs in range + expenses in range.
         const startISO = startDate.toISOString();
@@ -418,8 +421,8 @@ const Analytics = () => {
         }
 
         const allInRange = Array.isArray(jobsInRangeResult.data) ? jobsInRangeResult.data : [];
-        const jobs = allInRange;
-        const completedJobs = allInRange.filter((j: any) => j && j.status === 'COMPLETED');
+        jobs = allInRange;
+        completedJobs = allInRange.filter((j: any) => j && j.status === 'COMPLETED');
       } else {
         const [analyticsRes, jobsRes] = await Promise.all([
           db.stats.getAnalytics(),
@@ -437,8 +440,8 @@ const Analytics = () => {
           return;
         }
         const allJobsList = Array.isArray(jobsRes.data) ? jobsRes.data : [];
-        const jobs = allJobsList;
-        const completedJobs = allJobsList.filter((j: any) => j && j.status === 'COMPLETED');
+        jobs = allJobsList;
+        completedJobs = allJobsList.filter((j: any) => j && j.status === 'COMPLETED');
       }
 
       // Spare parts cost: sum denormalized parts_cost_total from completed jobs in period
