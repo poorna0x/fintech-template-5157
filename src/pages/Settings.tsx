@@ -1257,15 +1257,14 @@ const Settings = () => {
 
   return (
     <div className="min-h-screen bg-gray-50">
-      {/* Header */}
-      <div className="bg-white border-b border-gray-200">
+      {/* Header - sticky so Back stays visible when scrolling */}
+      <div className="sticky top-0 z-10 bg-white border-b border-gray-200">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 py-4 sm:py-0 sm:h-16">
             <div className="flex items-center">
               <SettingsIcon className="w-6 h-6 sm:w-8 sm:h-8 text-blue-600 mr-2 sm:mr-3 shrink-0" />
               <div>
                 <h1 className="text-lg sm:text-xl font-bold text-gray-900">Settings</h1>
-                <p className="text-xs sm:text-sm text-gray-600">Manage technician accounts</p>
               </div>
             </div>
             
