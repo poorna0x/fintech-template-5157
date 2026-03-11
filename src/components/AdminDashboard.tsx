@@ -7822,21 +7822,21 @@ const AdminDashboard = () => {
 
         {/* Date Filter for Completed Jobs */}
         {statusFilter === 'COMPLETED' && (
-          <div className="mb-4">
-            <div className="inline-flex flex-nowrap items-center gap-1.5 rounded-lg border border-border bg-muted/30 px-2 py-1.5 overflow-x-auto min-w-0 max-w-full">
-              <Label className="text-sm font-medium text-muted-foreground shrink-0 whitespace-nowrap">
+          <div className="mb-4 w-full min-w-0">
+            <div className="flex flex-nowrap items-center gap-2 rounded-lg border border-border bg-muted/30 p-2 w-full min-w-0">
+              <Label className="text-sm font-medium text-muted-foreground min-w-0 shrink truncate">
                 Show completed jobs for
               </Label>
               <DatePicker
                 value={completedDateFilter}
                 onChange={(v) => setCompletedDateFilter(v ?? getTodayLocalDate())}
                 placeholder="Pick date"
-                className="shrink-0"
+                className="shrink-0 h-10 px-3 py-2 border border-input rounded-md min-w-[7rem]"
               />
               <Button
                 variant="outline"
-                size="sm"
-                className="shrink-0 whitespace-nowrap"
+                type="button"
+                className="shrink-0 whitespace-nowrap h-10 px-3 py-2 border border-input rounded-md text-sm font-normal"
                 onClick={() => setCompletedDateFilter(getTodayLocalDate())}
               >
                 Today
