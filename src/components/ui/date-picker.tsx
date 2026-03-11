@@ -49,7 +49,7 @@ export function DatePicker({
           variant="outline"
           size="sm"
           disabled={disabled}
-          className={cn("min-w-[120px] justify-start font-normal", !value && "text-muted-foreground", className)}
+          className={cn("min-w-[120px] justify-start font-normal h-10 px-3 py-2 border border-input rounded-md", !value && "text-muted-foreground", className)}
           aria-label={placeholder}
         >
           {displayText}

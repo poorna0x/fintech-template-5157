@@ -357,7 +357,7 @@ const TechnicianDashboard = () => {
   const [amcIncludesPrefilter, setAmcIncludesPrefilter] = useState<boolean | null>(null);
   const [amcAdditionalInfo, setAmcAdditionalInfo] = useState<string>('');
   const [amcAmount, setAmcAmount] = useState<string>('');
-  const [amcServicePeriodKind, setAmcServicePeriodKind] = useState<'4' | '6' | 'custom' | 'no_auto'>('4');
+  const [amcServicePeriodKind, setAmcServicePeriodKind] = useState<'' | '4' | '6' | 'custom' | 'no_auto'>('');
   const [amcServicePeriodCustomMonths, setAmcServicePeriodCustomMonths] = useState<number>(4);
   const [hasAMC, setHasAMC] = useState<boolean | null>(null);
   const [paymentMode, setPaymentMode] = useState<'CASH' | 'ONLINE' | 'PARTIAL' | ''>('');
@@ -1944,7 +1944,6 @@ const TechnicianDashboard = () => {
       setBillPhotos([]);
       setPaymentPhotos([]);
       setOptionalCompletionPhotos([]);
-      // Set default AMC date to today
       const today = new Date().toISOString().split('T')[0];
       setAmcDateGiven(today);
     setAmcYears(0);
@@ -1953,7 +1952,7 @@ const TechnicianDashboard = () => {
     setHasAMC(null);
         setAmcAdditionalInfo('');
     setAmcAmount('');
-    setAmcServicePeriodKind('4');
+    setAmcServicePeriodKind('');
     setAmcServicePeriodCustomMonths(4);
         setPaymentScreenshot('');
         setPaymentMode('');
@@ -2473,8 +2472,26 @@ const TechnicianDashboard = () => {
       // If years is 0, treat it as no AMC
       const effectiveHasAMC = hasAMC === true && amcYears > 0;
 
-      // When AMC is selected, Includes Prefilter and AMC service period are required
+      // When AMC is selected, all AMC fields are required
       if (effectiveHasAMC) {
+        if (!amcDateGiven || !amcDateGiven.trim()) {
+          toast.error('Please select AMC start date');
+          return;
+        }
+        if (amcYears < 1) {
+          toast.error('Please select number of years (1, 2, or 3)');
+          return;
+        }
+        const amountTrimmed = amcAmount?.trim() ?? '';
+        if (!amountTrimmed) {
+          toast.error('Please enter AMC amount');
+          return;
+        }
+        const amountNum = parseFloat(amountTrimmed);
+        if (isNaN(amountNum) || amountNum < 0) {
+          toast.error('Please enter a valid AMC amount');
+          return;
+        }
         if (amcIncludesPrefilter === null) {
           toast.error('Please select whether AMC includes prefilter (Yes or No)');
           return;
@@ -3057,7 +3074,7 @@ const TechnicianDashboard = () => {
         // Add AMC info for reference (technician provides this, admin will create official AMC)
         // Only add if years > 0 (0 years means no AMC)
         const effectiveHasAMC = hasAMC === true && amcYears > 0;
-        if (effectiveHasAMC) {
+        if (effectiveHasAMC && amcServicePeriodKind) {
           const servicePeriodMonths =
             amcServicePeriodKind === 'no_auto' ? 0
               : amcServicePeriodKind === '4' ? 4
@@ -5900,7 +5917,7 @@ const TechnicianDashboard = () => {
             setAmcEndDate('');
             setAmcYears(0);
             setAmcIncludesPrefilter(null);
-            setAmcServicePeriodKind('4');
+            setAmcServicePeriodKind('');
             setAmcServicePeriodCustomMonths(4);
             setHasAMC(null);
             setPaymentMode('');
@@ -6260,7 +6277,7 @@ const TechnicianDashboard = () => {
                       <div className="space-y-4">
                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
-                            <Label htmlFor="amc-start-date" className="text-sm font-medium">AMC Start Date</Label>
+                            <Label htmlFor="amc-start-date" className="text-sm font-medium">AMC Start Date <span className="text-red-600">*</span></Label>
                             <DatePicker
                               value={amcDateGiven || undefined}
                               onChange={(date) => {
@@ -6277,17 +6294,16 @@ const TechnicianDashboard = () => {
                                 }
                               }}
                               placeholder="Pick date"
-                              className="mt-1"
+                              className="mt-1 h-10 w-full min-w-0 rounded-md border border-input bg-background px-3 py-2 text-sm font-normal"
                             />
                       </div>
                       <div>
-                        <Label htmlFor="amc-years" className="text-sm font-medium">Number of Years</Label>
+                        <Label htmlFor="amc-years" className="text-sm font-medium">Number of Years <span className="text-red-600">*</span></Label>
                         <Select
                           value={amcYears > 0 ? amcYears.toString() : ''}
                           onValueChange={(value) => {
                             const years = value ? parseInt(value) : 0;
                             setAmcYears(years);
-                            // If years is 0 or not selected, treat as no AMC
                             if (years === 0) {
                               setHasAMC(false);
                               setAmcEndDate('');
@@ -6302,8 +6318,8 @@ const TechnicianDashboard = () => {
                             }
                           }}
                         >
-                          <SelectTrigger id="amc-years" className="mt-1">
-                            <SelectValue placeholder="Select years (optional)" />
+                          <SelectTrigger id="amc-years" className="mt-1 h-10 w-full rounded-md border border-input">
+                            <SelectValue placeholder="Select years" />
                           </SelectTrigger>
                           <SelectContent>
                             <SelectItem value="1">1 Year</SelectItem>
@@ -6311,23 +6327,20 @@ const TechnicianDashboard = () => {
                             <SelectItem value="3">3 Years</SelectItem>
                           </SelectContent>
                         </Select>
-                        {amcYears === 0 && (
-                          <p className="text-xs text-gray-500 mt-1">If not selected, it means no AMC</p>
-                        )}
                       </div>
                     </div>
 
                     <div>
-                      <Label htmlFor="amc-amount" className="text-sm font-medium">AMC Amount (Reference Only)</Label>
+                      <Label htmlFor="amc-amount" className="text-sm font-medium">AMC Amount <span className="text-red-600">*</span></Label>
                       <Input
                         id="amc-amount"
                         type="number"
-                        placeholder="Enter AMC amount (optional)"
+                        placeholder="Enter AMC amount"
                         value={amcAmount}
                         onChange={(e) => {
                           setAmcAmount(e.target.value);
                       }}
-                      className="mt-1"
+                      className="mt-1 h-10 w-full rounded-md border border-input"
                       min="0"
                       step="0.01"
                     />
@@ -6365,11 +6378,11 @@ const TechnicianDashboard = () => {
                     <div>
                       <Label className="text-sm font-medium">AMC service period (auto job creation) <span className="text-red-600">*</span></Label>
                       <Select
-                        value={amcServicePeriodKind}
-                        onValueChange={(v: '4' | '6' | 'custom' | 'no_auto') => setAmcServicePeriodKind(v)}
+                        value={amcServicePeriodKind || undefined}
+                        onValueChange={(v: string) => setAmcServicePeriodKind(v === '' ? '' : (v as '4' | '6' | 'custom' | 'no_auto'))}
                       >
-                        <SelectTrigger className="mt-1">
-                          <SelectValue />
+                        <SelectTrigger className="mt-1 h-10 w-full rounded-md border border-input">
+                          <SelectValue placeholder="Select period" />
                         </SelectTrigger>
                         <SelectContent>
                           <SelectItem value="4">Every 4 months</SelectItem>
@@ -6385,7 +6398,7 @@ const TechnicianDashboard = () => {
                           max={24}
                           value={amcServicePeriodCustomMonths}
                           onChange={(e) => setAmcServicePeriodCustomMonths(Math.max(1, parseInt(e.target.value, 10) || 1))}
-                          className="mt-1"
+                          className="mt-1 h-10 w-full rounded-md border border-input"
                           placeholder="Months"
                         />
                       )}
@@ -6401,7 +6414,7 @@ const TechnicianDashboard = () => {
                         }}
                         placeholder="Enter any additional AMC information for admin reference (optional)..."
                         rows={4}
-                      className="mt-1"
+                      className="mt-1 w-full rounded-md border border-input min-h-[80px]"
                 />
                       <p className="text-xs text-gray-500 mt-1">
                         This information is for admin reference only. The admin will create the official AMC contract.
@@ -6924,7 +6937,7 @@ const TechnicianDashboard = () => {
                     setAmcEndDate('');
                     setAmcYears(0);
                     setAmcIncludesPrefilter(null);
-                    setAmcServicePeriodKind('4');
+                    setAmcServicePeriodKind('');
                     setAmcServicePeriodCustomMonths(4);
                     setHasAMC(null);
                     setPaymentMode('');
