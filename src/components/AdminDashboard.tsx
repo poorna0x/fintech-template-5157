@@ -101,6 +101,7 @@ import EditCustomerDialog from './admin/EditCustomerDialog';
 import AddCustomerDialog from './admin/AddCustomerDialog';
 import CustomerReportDialog from './admin/CustomerReportDialog';
 import SendMessageDialog from './admin/SendMessageDialog';
+import ShareTechnicianInfoToCustomerDialog from './admin/ShareTechnicianInfoToCustomerDialog';
 import RecentAccountsDialog from './admin/RecentAccountsDialog';
 import ServiceHistoryDialog from './admin/ServiceHistoryDialog';
 import PhotoGalleryDialog from './admin/PhotoGalleryDialog';
@@ -685,6 +686,8 @@ const AdminDashboard = () => {
   const [completedJobEditData, setCompletedJobEditData] = useState<any>({});
   const [sendMessageDialogOpen, setSendMessageDialogOpen] = useState(false);
   const [selectedJobForMessage, setSelectedJobForMessage] = useState<any | null>(null);
+  const [shareTechnicianInfoDialogOpen, setShareTechnicianInfoDialogOpen] = useState(false);
+  const [selectedJobForShareInfo, setSelectedJobForShareInfo] = useState<Job | null>(null);
   const [addReminderDialogOpen, setAddReminderDialogOpen] = useState(false);
   const [reminderEntity, setReminderEntity] = useState<{ type: 'customer' | 'job' | 'general'; id: string | null }>({ type: 'general', id: null });
   const [reminderContextLabel, setReminderContextLabel] = useState<string>('');
@@ -5508,6 +5511,79 @@ const AdminDashboard = () => {
     }
   };
 
+  // Get ETA for share-technician-info dialog (reuses same job coords and distance logic)
+  const getEtaForShareDialog = useCallback(async (job: Job): Promise<{ durationText?: string; estimatedArrival?: string } | null> => {
+    const customer = (job as any).customer || job.customer;
+    const customerLocation = customer?.location || {};
+    const jobLocation = job.serviceLocation || (job as any).service_location;
+    let jobCoords: { lat: number; lng: number } | null = null;
+    if (customerLocation?.latitude != null && customerLocation?.longitude != null && customerLocation.latitude !== 0 && customerLocation.longitude !== 0) {
+      jobCoords = { lat: customerLocation.latitude, lng: customerLocation.longitude };
+    } else if (customerLocation?.googleLocation || customerLocation?.google_location) {
+      const gl = customerLocation.googleLocation || customerLocation.google_location;
+      if (gl && typeof gl === 'string' && gl.trim() !== '') {
+        const ex = extractCoordinatesFromGoogleMapsLink(gl);
+        if (ex) jobCoords = { lat: ex.latitude, lng: ex.longitude };
+      }
+    } else if (jobLocation?.latitude != null && jobLocation?.longitude != null && jobLocation.latitude !== 0 && jobLocation.longitude !== 0) {
+      jobCoords = { lat: jobLocation.latitude, lng: jobLocation.longitude };
+    } else if (jobLocation?.googleLocation || jobLocation?.google_location) {
+      const gl = jobLocation.googleLocation || jobLocation.google_location;
+      if (gl && typeof gl === 'string' && gl.trim() !== '') {
+        const ex = extractCoordinatesFromGoogleMapsLink(gl);
+        if (ex) jobCoords = { lat: ex.latitude, lng: ex.longitude };
+      }
+    }
+    if (!jobCoords) return null;
+    const assignedTechnicianId = (job as any).assigned_technician_id || (job as any).assignedTechnicianId;
+    if (!assignedTechnicianId) return null;
+    const assignedTechnician = technicians.find(t => t.id === assignedTechnicianId);
+    const techLocation = assignedTechnician?.currentLocation || (assignedTechnician as any)?.current_location;
+    if (!techLocation?.latitude || !techLocation?.longitude) return null;
+    try {
+      await ensureGoogleMapsLoaded();
+      const distanceMatrix = new (window as any).google.maps.DistanceMatrixService();
+      const origin = { lat: Number(techLocation.latitude), lng: Number(techLocation.longitude) };
+      const destination = { lat: jobCoords.lat, lng: jobCoords.lng };
+      return new Promise((resolve) => {
+        distanceMatrix.getDistanceMatrix(
+          {
+            origins: [origin],
+            destinations: [destination],
+            travelMode: (window as any).google.maps.TravelMode.DRIVING,
+            unitSystem: (window as any).google.maps.UnitSystem.METRIC,
+          },
+          (response: any, status: any) => {
+            if (status !== (window as any).google.maps.DistanceMatrixStatus.OK || !response) {
+              resolve(null);
+              return;
+            }
+            const result = response.rows?.[0]?.elements?.[0];
+            if (!result || result.status !== (window as any).google.maps.DistanceMatrixElementStatus.OK) {
+              resolve(null);
+              return;
+            }
+            const durationText = result.duration?.text || '';
+            const durationValue = result.duration?.value ?? 0;
+            let estimatedArrival: string | undefined;
+            if (techLocation?.lastUpdated && durationValue > 0) {
+              try {
+                const lastUpdatedDate = new Date((techLocation as any).lastUpdated);
+                const arrivalDate = new Date(lastUpdatedDate.getTime() + durationValue * 1000);
+                estimatedArrival = formatTime12Hour(arrivalDate);
+              } catch {
+                estimatedArrival = undefined;
+              }
+            }
+            resolve({ durationText, estimatedArrival: estimatedArrival || undefined });
+          }
+        );
+      });
+    } catch {
+      return null;
+    }
+  }, [technicians, ensureGoogleMapsLoaded, formatTime12Hour]);
+
   const handleJobStatusUpdate = async (jobId: string, newStatus: string) => {
     try {
       const { error } = await db.jobs.update(jobId, { status: newStatus as 'PENDING' | 'ASSIGNED' | 'EN_ROUTE' | 'IN_PROGRESS' | 'COMPLETED' | 'CANCELLED' | 'RESCHEDULED' });
@@ -8800,6 +8876,18 @@ const AdminDashboard = () => {
                                           </DropdownMenuItem>
                                         ) : null;
                                       })()}
+                                      {(() => {
+                                        const assignedTechnicianId = (job as any).assigned_technician_id || (job as any).assignedTechnicianId;
+                                        return assignedTechnicianId ? (
+                                          <DropdownMenuItem onClick={() => {
+                                            setSelectedJobForShareInfo(job);
+                                            setShareTechnicianInfoDialogOpen(true);
+                                          }}>
+                                            <Send className="mr-2 h-4 w-4" />
+                                            Share info to customer
+                                          </DropdownMenuItem>
+                                        ) : null;
+                                      })()}
                                       <DropdownMenuItem 
                                         onClick={() => {
                                           setJobToDelete(job);
@@ -10190,6 +10278,18 @@ const AdminDashboard = () => {
         onOpenChange={setSendMessageDialogOpen}
         job={selectedJobForMessage}
         onMessageSent={handleMessageSent}
+      />
+
+      <ShareTechnicianInfoToCustomerDialog
+        open={shareTechnicianInfoDialogOpen}
+        onOpenChange={(open) => {
+          setShareTechnicianInfoDialogOpen(open);
+          if (!open) setSelectedJobForShareInfo(null);
+        }}
+        job={selectedJobForShareInfo}
+        customer={selectedJobForShareInfo ? ((selectedJobForShareInfo as any).customer || selectedJobForShareInfo.customer) : null}
+        technicians={technicians}
+        getEta={getEtaForShareDialog}
       />
 
       <AddReminderDialog
