@@ -62,9 +62,16 @@ export default defineConfig(({ mode }) => ({
     rollupOptions: {
       output: {
         manualChunks: {
-          // Vendor chunks
+          // Vendor chunks (split so unused code loads only when route needs it)
           'react-vendor': ['react', 'react-dom'],
           'router-vendor': ['react-router-dom'],
+          'mui-vendor': [
+            '@mui/material',
+            '@mui/x-date-pickers',
+            '@emotion/react',
+            '@emotion/styled',
+            'dayjs',
+          ],
           'ui-vendor': [
             '@radix-ui/react-dialog',
             '@radix-ui/react-select',
@@ -105,6 +112,7 @@ export default defineConfig(({ mode }) => ({
             '@supabase/auth-helpers-react',
             '@supabase/ssr',
           ],
+          'charts-vendor': ['recharts'],
           'utils-vendor': [
             'clsx',
             'tailwind-merge',
@@ -116,7 +124,6 @@ export default defineConfig(({ mode }) => ({
             'vaul',
             'embla-carousel-react',
             'react-resizable-panels',
-            'recharts',
             'next-themes',
             'i18next',
             'i18next-browser-languagedetector',

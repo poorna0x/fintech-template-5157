@@ -16,25 +16,38 @@ const GA_MEASUREMENT_ID = import.meta.env.VITE_GA_MEASUREMENT_ID || 'G-XXXXXXXXX
 const GoogleAnalytics = () => {
   const location = useLocation();
 
-  // Initialize Google Analytics
+  // Initialize Google Analytics after page is interactive (defer to improve LCP / reduce unused JS)
   useEffect(() => {
-    // Only initialize if we have a valid measurement ID
-    if (GA_MEASUREMENT_ID && GA_MEASUREMENT_ID !== 'G-XXXXXXXXXX') {
-      // Load Google Analytics script
+    if (!GA_MEASUREMENT_ID || GA_MEASUREMENT_ID === 'G-XXXXXXXXXX') return;
+
+    const initGtag = () => {
       const script1 = document.createElement('script');
       script1.async = true;
       script1.src = `https://www.googletagmanager.com/gtag/js?id=${GA_MEASUREMENT_ID}`;
       document.head.appendChild(script1);
 
-      // Initialize dataLayer and gtag
       window.dataLayer = window.dataLayer || [];
-      window.gtag = function(...args: unknown[]) {
+      window.gtag = function (...args: unknown[]) {
         window.dataLayer.push(args);
       };
       window.gtag('js', new Date());
       window.gtag('config', GA_MEASUREMENT_ID, {
-        send_page_view: false, // We'll send page views manually for SPA
+        send_page_view: false,
       });
+    };
+
+    const runWhenIdle = () => {
+      if ('requestIdleCallback' in window) {
+        (window as unknown as { requestIdleCallback: (cb: () => void, opts?: { timeout: number }) => void }).requestIdleCallback(initGtag, { timeout: 3500 });
+      } else {
+        setTimeout(initGtag, 1500);
+      }
+    };
+
+    if (document.readyState === 'complete') {
+      runWhenIdle();
+    } else {
+      window.addEventListener('load', runWhenIdle, { once: true });
     }
   }, []);
 
