@@ -525,7 +525,8 @@ const TechnicianInventoryManagement: React.FC<TechnicianInventoryManagementProps
         toast.success('Inventory item assigned to technician successfully');
       }
 
-      // Clear cache and reload data
+      // Clear cache and reload data (preserve scroll so user stays in place)
+      const scrollY = window.scrollY ?? document.documentElement.scrollTop;
       if (formData.technician_id === ASSIGN_ALL_TECHNICIANS) {
         technicians.forEach(t => inventoryCache.clear(`tech_inventory_${t.id}`));
         inventoryCache.clear('all_tech_inventory');
@@ -543,6 +544,7 @@ const TechnicianInventoryManagement: React.FC<TechnicianInventoryManagementProps
       } else {
         await loadTechnicianInventory(undefined, true);
       }
+      requestAnimationFrame(() => { window.scrollTo(0, scrollY); });
 
       setAddDialogOpen(false);
       setEditDialogOpen(false);
@@ -582,7 +584,8 @@ const TechnicianInventoryManagement: React.FC<TechnicianInventoryManagementProps
       if (error) throw error;
       toast.success('Inventory item removed from technician and returned to main inventory');
 
-      // Clear cache and reload data
+      // Clear cache and reload data (preserve scroll so user stays in place)
+      const scrollY = window.scrollY ?? document.documentElement.scrollTop;
       inventoryCache.clear('main_inventory');
       await loadInventoryItems(true);
       const cacheKey = selectedTechnicianId ? `tech_inventory_${selectedTechnicianId}` : 'all_tech_inventory';
@@ -593,6 +596,7 @@ const TechnicianInventoryManagement: React.FC<TechnicianInventoryManagementProps
       } else {
         await loadTechnicianInventory(undefined, true);
       }
+      requestAnimationFrame(() => { window.scrollTo(0, scrollY); });
 
       setDeleteDialogOpen(false);
       setSelectedItem(null);
@@ -901,16 +905,22 @@ const TechnicianInventoryManagement: React.FC<TechnicianInventoryManagementProps
             inventory_id: '',
             quantity: ''
           });
-          // Refresh data when closing assign dialog so main page table and main inventory are in sync
+          // Refresh data when closing assign dialog (preserve scroll)
+          const scrollY = window.scrollY ?? document.documentElement.scrollTop;
           inventoryCache.clear('inventory_items');
           loadInventoryItems(true);
           if (selectedTechnicianId) {
             inventoryCache.clear(`tech_inventory_${selectedTechnicianId}`);
-            loadTechnicianInventory(selectedTechnicianId, true).then(() => setLoadedForTechnicianId(selectedTechnicianId));
+            loadTechnicianInventory(selectedTechnicianId, true).then(() => {
+              setLoadedForTechnicianId(selectedTechnicianId);
+              requestAnimationFrame(() => { window.scrollTo(0, scrollY); });
+            });
           } else {
             technicians.forEach(t => inventoryCache.clear(`tech_inventory_${t.id}`));
             inventoryCache.clear('all_tech_inventory');
-            loadTechnicianInventory(undefined, true);
+            loadTechnicianInventory(undefined, true).then(() => {
+              requestAnimationFrame(() => { window.scrollTo(0, scrollY); });
+            });
           }
         }
       }}>

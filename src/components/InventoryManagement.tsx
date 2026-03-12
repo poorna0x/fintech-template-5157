@@ -339,8 +339,10 @@ const InventoryManagement: React.FC<InventoryManagementProps> = ({ onBack }) => 
           inventoryCache.clear(cacheKey);
         }
       });
-      
+
+      const scrollY = window.scrollY ?? document.documentElement.scrollTop;
       await loadInventory(true); // Force reload after save
+      requestAnimationFrame(() => { window.scrollTo(0, scrollY); });
       setInventoryLoaded(true);
     } catch (error: any) {
       console.error('Error saving inventory:', error);
@@ -501,8 +503,8 @@ const InventoryManagement: React.FC<InventoryManagementProps> = ({ onBack }) => 
     } catch (error: any) {
       console.error('Error deleting inventory:', error);
       toast.error(error?.message || 'Failed to delete inventory item');
-      // Reload on error to sync with server
-      loadInventory(true);
+      const scrollY = window.scrollY ?? document.documentElement.scrollTop;
+      loadInventory(true).then(() => requestAnimationFrame(() => { window.scrollTo(0, scrollY); }));
     }
   };
 
@@ -553,7 +555,10 @@ const InventoryManagement: React.FC<InventoryManagementProps> = ({ onBack }) => 
               {inventoryLoaded && (
                 <Button
                   variant="outline"
-                  onClick={() => loadInventory(true)}
+                  onClick={() => {
+                    const scrollY = window.scrollY ?? document.documentElement.scrollTop;
+                    loadInventory(true).then(() => requestAnimationFrame(() => { window.scrollTo(0, scrollY); }));
+                  }}
                   className="w-full sm:w-auto"
                   title="Refresh inventory"
                 >
