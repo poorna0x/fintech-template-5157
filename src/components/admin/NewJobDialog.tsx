@@ -82,7 +82,7 @@ const NewJobDialog: React.FC<NewJobDialogProps> = ({
 
   const [newJobFormData, setNewJobFormData] = useState<NewJobFormData>({
     service_type: 'RO',
-    service_sub_type: 'Installation',
+    service_sub_type: 'Service',
     service_sub_type_custom: '',
     brand: '',
     model: '',
@@ -126,7 +126,7 @@ const NewJobDialog: React.FC<NewJobDialogProps> = ({
   const handleClose = () => {
     setNewJobFormData({
       service_type: 'RO',
-      service_sub_type: 'Installation',
+      service_sub_type: 'Service',
       service_sub_type_custom: '',
       brand: '',
       model: '',
@@ -465,20 +465,21 @@ const NewJobDialog: React.FC<NewJobDialogProps> = ({
                   <Label htmlFor="job_service_sub_type">Service Sub Type</Label>
                   <select
                     id="job_service_sub_type"
-                    value={newJobFormData.service_sub_type || 'Installation'}
+                    value={newJobFormData.service_sub_type || 'Service'}
                     onChange={(e) => handleFormChange('service_sub_type', e.target.value)}
                     className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 appearance-none bg-white"
                   >
+                    <option value="Service">Service</option>
                     <option value="Installation">Installation</option>
                     <option value="Reinstallation">Reinstallation</option>
+                    <option value="Return Complaint">Return Complaint</option>
+                    <option value="AMC Service">AMC Service</option>
+                    <option value="New Purifier Installation">New Purifier Installation</option>
                     <option value="Un-Installation">Un-Installation</option>
-                    <option value="Service">Service</option>
                     <option value="Repair">Repair</option>
                     <option value="Maintenance">Maintenance</option>
                     <option value="Replacement">Replacement</option>
                     <option value="Inspection">Inspection</option>
-                    <option value="Return Complaint">Return Complaint</option>
-                    <option value="AMC Service">AMC Service</option>
                     <option value="Other">Other</option>
                   </select>
                   {newJobFormData.service_sub_type === 'Other' && (

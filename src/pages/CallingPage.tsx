@@ -855,15 +855,17 @@ const CallingPage = ({ hideHeader = false, onBack }: CallingPageProps = {}) => {
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="all">All Types</SelectItem>
+                    <SelectItem value="Service">Service</SelectItem>
                     <SelectItem value="Installation">Installation</SelectItem>
                     <SelectItem value="Reinstallation">Reinstallation</SelectItem>
+                    <SelectItem value="Return Complaint">Return Complaint</SelectItem>
+                    <SelectItem value="AMC Service">AMC Service</SelectItem>
+                    <SelectItem value="New Purifier Installation">New Purifier Installation</SelectItem>
                     <SelectItem value="Un-Installation">Un-Installation</SelectItem>
-                    <SelectItem value="Service">Service</SelectItem>
                     <SelectItem value="Repair">Repair</SelectItem>
                     <SelectItem value="Maintenance">Maintenance</SelectItem>
-                    <SelectItem value="AMC Service">AMC Service</SelectItem>
+                    <SelectItem value="Replacement">Replacement</SelectItem>
                     <SelectItem value="Inspection">Inspection</SelectItem>
-                    <SelectItem value="Return Complaint">Return Complaint</SelectItem>
                     <SelectItem value="Other">Other</SelectItem>
                   </SelectContent>
                 </Select>

@@ -286,7 +286,7 @@ export interface BookingFormData {
   
   // Service Details
   serviceType: 'RO' | 'SOFTENER';
-  serviceSubType: 'Installation' | 'Un-Installation' | 'Repair' | 'Maintenance' | 'Inspection' | 'AMC';
+  serviceSubType: 'Service' | 'Installation' | 'Reinstallation' | 'Return Complaint' | 'AMC Service' | 'New Purifier Installation' | 'Un-Installation' | 'Repair' | 'Maintenance' | 'Inspection';
   brand: string;
   model: string;
   

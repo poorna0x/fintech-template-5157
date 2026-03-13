@@ -66,7 +66,7 @@ const EditJobDialog: React.FC<EditJobDialogProps> = ({
 
   const [editJobFormData, setEditJobFormData] = useState<EditJobFormData>({
     serviceType: 'RO',
-    serviceSubType: 'Installation',
+    serviceSubType: 'Service',
     serviceSubTypeCustom: '',
     description: '',
     require_otp: false,
@@ -82,8 +82,8 @@ const EditJobDialog: React.FC<EditJobDialogProps> = ({
   useEffect(() => {
     if (job && open) {
       // Determine if service sub type is custom
-      const serviceSubType = job.service_sub_type || job.serviceSubType || 'Installation';
-      const isCustomSubType = !['Installation', 'Reinstallation', 'Un-Installation', 'Service', 'Repair', 'Maintenance', 'Replacement', 'Inspection', 'Return Complaint', 'AMC Service', 'Other'].includes(serviceSubType);
+      const serviceSubType = job.service_sub_type || job.serviceSubType || 'Service';
+      const isCustomSubType = !['Service', 'Installation', 'Reinstallation', 'Return Complaint', 'AMC Service', 'New Purifier Installation', 'Un-Installation', 'Repair', 'Maintenance', 'Replacement', 'Inspection', 'Other'].includes(serviceSubType);
       
       // Determine if time slot is custom
       const timeSlot = job.scheduled_time_slot || job.scheduledTimeSlot || 'MORNING';
@@ -522,16 +522,17 @@ const EditJobDialog: React.FC<EditJobDialogProps> = ({
                   <SelectValue placeholder="Select service sub type" />
                 </SelectTrigger>
                 <SelectContent>
+                  <SelectItem value="Service">Service</SelectItem>
                   <SelectItem value="Installation">Installation</SelectItem>
                   <SelectItem value="Reinstallation">Reinstallation</SelectItem>
+                  <SelectItem value="Return Complaint">Return Complaint</SelectItem>
+                  <SelectItem value="AMC Service">AMC Service</SelectItem>
+                  <SelectItem value="New Purifier Installation">New Purifier Installation</SelectItem>
                   <SelectItem value="Un-Installation">Un-Installation</SelectItem>
-                  <SelectItem value="Service">Service</SelectItem>
                   <SelectItem value="Repair">Repair</SelectItem>
                   <SelectItem value="Maintenance">Maintenance</SelectItem>
                   <SelectItem value="Replacement">Replacement</SelectItem>
                   <SelectItem value="Inspection">Inspection</SelectItem>
-                  <SelectItem value="Return Complaint">Return Complaint</SelectItem>
-                  <SelectItem value="AMC Service">AMC Service</SelectItem>
                   <SelectItem value="Other">Other</SelectItem>
                   <SelectItem value="Custom">Custom</SelectItem>
                 </SelectContent>

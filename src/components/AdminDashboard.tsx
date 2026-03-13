@@ -248,7 +248,7 @@ const AdminDashboard = () => {
   const [isDragOverNewJob, setIsDragOverNewJob] = useState(false);
   const [newJobFormData, setNewJobFormData] = useState({
     service_type: 'RO' as 'RO' | 'SOFTENER',
-    service_sub_type: 'Installation',
+    service_sub_type: 'Service',
     service_sub_type_custom: '',
     brand: '',
     model: '',
@@ -613,7 +613,7 @@ const AdminDashboard = () => {
   const [loadingRecentAccounts, setLoadingRecentAccounts] = useState(false);
   const [step5JobData, setStep5JobData] = useState({
     service_type: 'RO' as 'RO' | 'SOFTENER',
-    service_sub_type: 'Installation',
+    service_sub_type: 'Service',
     service_sub_type_custom: '',
     scheduled_date: '',
     scheduled_time_slot: 'MORNING' as 'MORNING' | 'AFTERNOON' | 'EVENING' | 'CUSTOM',
@@ -3174,7 +3174,7 @@ const AdminDashboard = () => {
       setShouldCreateJob(false);
       setStep5JobData({
         service_type: 'RO' as 'RO' | 'SOFTENER',
-        service_sub_type: 'Installation',
+        service_sub_type: 'Service',
         service_sub_type_custom: '',
         scheduled_date: '',
         scheduled_time_slot: 'MORNING' as 'MORNING' | 'AFTERNOON' | 'EVENING' | 'CUSTOM',
@@ -3238,7 +3238,7 @@ const AdminDashboard = () => {
     const svcType = (customer as any).service_type || customer.serviceType;
     const initialFormData = {
       service_type: (svcType === 'SOFTENER' ? 'SOFTENER' : 'RO') as 'RO' | 'SOFTENER',
-      service_sub_type: 'Installation',
+      service_sub_type: 'Service',
       service_sub_type_custom: '',
       brand: customerBrand || 'Not specified',
       model: customerModel || 'Not specified',

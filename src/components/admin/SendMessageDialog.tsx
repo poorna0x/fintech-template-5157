@@ -34,7 +34,9 @@ const SendMessageDialog: React.FC<SendMessageDialogProps> = ({
   const serviceType = ((job as any).service_type || job.serviceType || '').toUpperCase();
   const serviceSubType = (job as any).service_sub_type || job.serviceSubType || '';
   const capitalize = (s: string) => s ? s.charAt(0).toUpperCase() + s.slice(1).toLowerCase() : '';
-  const subtypeText = serviceSubType ? capitalize(serviceSubType) : '';
+  const rawSubtypeText = serviceSubType ? capitalize(serviceSubType) : '';
+  // For completion message, "New Purifier Installation" should display as "installation"
+  const subtypeText = (serviceSubType || '').trim() === 'New Purifier Installation' ? 'installation' : rawSubtypeText;
 
   let completionLine: string;
   if (serviceType && serviceType.includes('RO') && subtypeText) {

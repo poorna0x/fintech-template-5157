@@ -412,8 +412,12 @@ const Booking: React.FC = () => {
   // Service options based on service type
   const serviceOptions = {
     'RO': [
+      'Service',
       'Installation',
       'Reinstallation',
+      'Return Complaint',
+      'AMC Service',
+      'New Purifier Installation',
       'Un-Installation',
       'Repair',
       'General Maintenance',

@@ -46,7 +46,7 @@ const bookingSchema = z.object({
   
   // Service Details
   serviceType: z.enum(['RO', 'SOFTENER']),
-  serviceSubType: z.enum(['Installation', 'Un-Installation', 'Repair', 'Maintenance', 'Inspection', 'AMC']),
+  serviceSubType: z.enum(['Service', 'Installation', 'Reinstallation', 'Return Complaint', 'AMC Service', 'New Purifier Installation', 'Un-Installation', 'Repair', 'Maintenance', 'Inspection']),
   brand: z.string().min(1, 'Please enter brand name'),
   model: z.string().min(1, 'Please enter model name'),
   
@@ -83,7 +83,7 @@ const EnhancedBookingForm = () => {
     resolver: zodResolver(bookingSchema),
     defaultValues: {
       serviceType: 'RO',
-      serviceSubType: 'Repair',
+      serviceSubType: 'Service',
       urgency: 'MEDIUM',
       preferredLanguage: 'ENGLISH',
       preferredTimeSlot: 'MORNING',
@@ -630,12 +630,16 @@ const EnhancedBookingForm = () => {
                       <SelectValue placeholder="Select service" />
                     </SelectTrigger>
                     <SelectContent>
+                      <SelectItem value="Service">Service</SelectItem>
                       <SelectItem value="Installation">Installation</SelectItem>
+                      <SelectItem value="Reinstallation">Reinstallation</SelectItem>
+                      <SelectItem value="Return Complaint">Return Complaint</SelectItem>
+                      <SelectItem value="AMC Service">AMC Service</SelectItem>
+                      <SelectItem value="New Purifier Installation">New Purifier Installation</SelectItem>
                       <SelectItem value="Un-Installation">Un-Installation</SelectItem>
                       <SelectItem value="Repair">Repair</SelectItem>
                       <SelectItem value="Maintenance">Maintenance</SelectItem>
                       <SelectItem value="Inspection">Inspection</SelectItem>
-                      <SelectItem value="AMC">Annual Maintenance Contract</SelectItem>
                     </SelectContent>
                   </Select>
                   {errors.serviceSubType && (
