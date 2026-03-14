@@ -403,6 +403,8 @@ export const CompletedJobSection: React.FC<CompletedJobSectionProps> = ({
                 completedAt: completedAt || null,
                 completedDate: completedDate,
                 completedTime: completedTime,
+                billPhotos: Array.isArray(billPhotos) ? [...billPhotos] : [],
+                paymentScreenshot: paymentScreenshot || null,
               };
               setCompletedJobEditData(editData);
               setEditCompletedJobDialogOpen(true);

@@ -3926,7 +3926,7 @@ const AdminDashboard = () => {
           }
 
           if (customerJobs && customerJobs.length > 0) {
-            // Update the latest job with new photos
+            // Update the latest job with new photos (gallery only - use Edit Completed Job to add completion/bill photos)
             const latestJob = customerJobs[0]; // Jobs are ordered by created_at desc
             const currentPhotos = Array.isArray(latestJob.before_photos || latestJob.beforePhotos) ? (latestJob.before_photos || latestJob.beforePhotos) : [];
             const updatedPhotos = [...currentPhotos, ...uploadedPhotos];
@@ -10086,6 +10086,43 @@ const AdminDashboard = () => {
                     }
                   }
 
+                  // Update bill/completion photos (so they show in completed section and reports)
+                  if (completedJobEditData.billPhotos && Array.isArray(completedJobEditData.billPhotos)) {
+                    const otherReqs = requirements.filter((r: any) => !r?.bill_photos);
+                    requirements.length = 0;
+                    requirements.push(...otherReqs);
+                    if (completedJobEditData.billPhotos.length > 0) {
+                      requirements.push({ bill_photos: completedJobEditData.billPhotos });
+                    }
+                  }
+
+                  // Update payment screenshot in requirements (qr_photos for online, payment_photos for CASH)
+                  const paymentScreenshot = completedJobEditData.paymentScreenshot && typeof completedJobEditData.paymentScreenshot === 'string'
+                    ? completedJobEditData.paymentScreenshot.trim()
+                    : null;
+                  if (completedJobEditData.paymentMethod !== 'CASH') {
+                    const qrIndex = requirements.findIndex((r: any) => r?.qr_photos);
+                    if (qrIndex >= 0) {
+                      requirements[qrIndex].qr_photos = {
+                        ...requirements[qrIndex].qr_photos,
+                        payment_screenshot: paymentScreenshot || undefined
+                      };
+                    } else if (paymentScreenshot) {
+                      requirements.push({ qr_photos: { payment_screenshot: paymentScreenshot } });
+                    }
+                  } else {
+                    const payIdx = requirements.findIndex((r: any) => r?.payment_photos);
+                    if (paymentScreenshot) {
+                      if (payIdx >= 0) {
+                        requirements[payIdx] = { payment_photos: [paymentScreenshot] };
+                      } else {
+                        requirements.push({ payment_photos: [paymentScreenshot] });
+                      }
+                    } else if (payIdx >= 0) {
+                      requirements.splice(payIdx, 1);
+                    }
+                  }
+
                   // Prepare update data
                   let amount = parseFloat(completedJobEditData.amount) || 0;
                   if (completedJobEditData.paymentMethod === 'PARTIAL') {
@@ -10124,6 +10161,13 @@ const AdminDashboard = () => {
                     lead_cost: leadCost,
                     requirements: JSON.stringify(requirements)
                   };
+                  const paymentScreenshotUrl = completedJobEditData.paymentScreenshot && typeof completedJobEditData.paymentScreenshot === 'string'
+                    ? completedJobEditData.paymentScreenshot.trim()
+                    : null;
+                  const billPhotosList = Array.isArray(completedJobEditData.billPhotos) ? completedJobEditData.billPhotos : [];
+                  if (paymentScreenshotUrl || billPhotosList.length > 0) {
+                    updateData.after_photos = [paymentScreenshotUrl, ...billPhotosList].filter(Boolean);
+                  }
                   
                   // If completed_by is a technician ID (not 'admin'), update assigned_technician_id
                   // This ensures salary, payment, and attendance records are linked to the correct technician
