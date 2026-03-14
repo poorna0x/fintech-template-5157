@@ -180,9 +180,43 @@ const CustomerReportDialog: React.FC<CustomerReportDialogProps> = ({
                   
                   const amcInfo = requirements.find((r: any) => r?.amc_info)?.amc_info || null;
                   const qrPhotos = requirements.find((r: any) => r?.qr_photos)?.qr_photos || null;
-                  const billPhotos = requirements.find((r: any) => r?.bill_photos)?.bill_photos || [];
-                  const paymentScreenshot = qrPhotos?.payment_screenshot || null;
-                  
+                  const billPhotosReq = requirements.find((r: any) => r?.bill_photos)?.bill_photos;
+                  const billPhotos = Array.isArray(billPhotosReq) ? billPhotosReq : [];
+
+                  const toUrl = (v: any): string | null => {
+                    if (!v) return null;
+                    if (typeof v === 'string') {
+                      const s = v.trim();
+                      return s.startsWith('http') ? s : null;
+                    }
+                    if (typeof v === 'object' && v.secure_url && typeof v.secure_url === 'string') {
+                      const s = v.secure_url.trim();
+                      return s.startsWith('http') ? s : null;
+                    }
+                    return null;
+                  };
+
+                  // All payment screenshots: from qr_photos.payment_screenshot (online) and payment_photos (CASH or all)
+                  const paymentScreenshots: string[] = [];
+                  const qrPayment = toUrl(qrPhotos?.payment_screenshot);
+                  if (qrPayment) paymentScreenshots.push(qrPayment);
+                  const paymentPhotosReq = requirements.find((r: any) => r?.payment_photos);
+                  const paymentPhotos = paymentPhotosReq?.payment_photos;
+                  if (Array.isArray(paymentPhotos)) {
+                    paymentPhotos.forEach((p: any) => {
+                      const u = toUrl(p);
+                      if (u && !paymentScreenshots.some(ex => ex.split('?')[0].toLowerCase() === u.split('?')[0].toLowerCase())) {
+                        paymentScreenshots.push(u);
+                      }
+                    });
+                  }
+                  // Exclude all payment URLs from bill photos so they only show under Payment (no limit)
+                  const paymentNormSet = new Set(paymentScreenshots.map(u => u.split('?')[0].toLowerCase()));
+                  const billPhotosOnly = billPhotos.filter((url: string) => {
+                    const norm = typeof url === 'string' ? url.split('?')[0].toLowerCase() : '';
+                    return norm && !paymentNormSet.has(norm);
+                  });
+
                   return (
                     <div key={job.id} className="border border-gray-200 rounded-lg p-4 bg-white">
                       <div className="flex items-start justify-between mb-3">
@@ -269,26 +303,27 @@ const CustomerReportDialog: React.FC<CustomerReportDialogProps> = ({
                           </div>
                         )}
                         
-                        {paymentScreenshot || (billPhotos && Array.isArray(billPhotos) && billPhotos.length > 0) ? (
+                        {paymentScreenshots.length > 0 || (billPhotosOnly && billPhotosOnly.length > 0) ? (
                           <div className="mt-3 pt-3 border-t border-gray-200">
                             <div className="font-medium text-gray-900 mb-3">Payment & Bill Documents</div>
                             <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-                              {paymentScreenshot && (
+                              {paymentScreenshots.map((paymentUrl, idx) => (
                                 <div 
+                                  key={`payment-${idx}`}
                                   className="relative group cursor-pointer rounded-lg overflow-hidden border-2 border-blue-300 hover:border-blue-500 transition-all"
                                   onClick={() => {
                                     if (onPhotoClick) {
-                                      onPhotoClick(paymentScreenshot, 0, 1);
+                                      onPhotoClick(paymentUrl, idx, paymentScreenshots.length);
                                     }
                                   }}
                                 >
                                   <img 
-                                    src={paymentScreenshot} 
-                                    alt="Payment Screenshot" 
+                                    src={paymentUrl} 
+                                    alt={`Payment ${idx + 1}`} 
                                     className="w-full h-40 sm:h-48 object-cover transition-transform group-hover:scale-105" 
                                   />
                                   <div className="absolute top-2 left-2 bg-blue-600 text-white text-xs font-semibold px-2 py-1 rounded">
-                                    Payment
+                                    Payment {paymentScreenshots.length > 1 ? idx + 1 : ''}
                                   </div>
                                   <div className="absolute inset-0 bg-black bg-opacity-0 group-hover:bg-opacity-10 transition-opacity flex items-center justify-center">
                                     <div className="opacity-0 group-hover:opacity-100 transition-opacity text-white text-sm font-medium bg-black bg-opacity-50 px-3 py-1 rounded">
@@ -296,17 +331,17 @@ const CustomerReportDialog: React.FC<CustomerReportDialogProps> = ({
                                     </div>
                                   </div>
                                 </div>
-                              )}
+                              ))}
                               
-                              {billPhotos && Array.isArray(billPhotos) && billPhotos.length > 0 && billPhotos.map((photo, idx) => (
+                              {billPhotosOnly && billPhotosOnly.length > 0 && billPhotosOnly.map((photo: string, idx: number) => (
                                 <div 
                                   key={idx} 
                                   className="relative group cursor-pointer rounded-lg overflow-hidden border-2 border-green-300 hover:border-green-500 transition-all"
                                   onClick={() => {
                                     if (onBillPhotosClick) {
-                                      onBillPhotosClick(billPhotos, idx);
+                                      onBillPhotosClick(billPhotosOnly, idx);
                                     } else if (onPhotoClick) {
-                                      onPhotoClick(photo, idx, billPhotos.length);
+                                      onPhotoClick(photo, idx, billPhotosOnly.length);
                                     }
                                   }}
                                 >

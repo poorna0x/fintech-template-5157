@@ -10096,31 +10096,32 @@ const AdminDashboard = () => {
                     }
                   }
 
-                  // Update payment screenshot in requirements (qr_photos for online, payment_photos for CASH)
-                  const paymentScreenshot = completedJobEditData.paymentScreenshot && typeof completedJobEditData.paymentScreenshot === 'string'
-                    ? completedJobEditData.paymentScreenshot.trim()
-                    : null;
+                  // Update payment screenshot(s) in requirements - store all so report shows all (no 1-photo limit)
+                  const paymentScreenshotsList = Array.isArray(completedJobEditData.paymentScreenshots)
+                    ? completedJobEditData.paymentScreenshots.filter((u: any) => typeof u === 'string' && (u as string).trim()).map((u: any) => (u as string).trim())
+                    : [];
+                  const firstPaymentScreenshot = paymentScreenshotsList.length > 0 ? paymentScreenshotsList[0] : null;
                   if (completedJobEditData.paymentMethod !== 'CASH') {
                     const qrIndex = requirements.findIndex((r: any) => r?.qr_photos);
                     if (qrIndex >= 0) {
                       requirements[qrIndex].qr_photos = {
                         ...requirements[qrIndex].qr_photos,
-                        payment_screenshot: paymentScreenshot || undefined
+                        payment_screenshot: firstPaymentScreenshot || undefined
                       };
-                    } else if (paymentScreenshot) {
-                      requirements.push({ qr_photos: { payment_screenshot: paymentScreenshot } });
+                    } else if (firstPaymentScreenshot) {
+                      requirements.push({ qr_photos: { payment_screenshot: firstPaymentScreenshot } });
                     }
-                  } else {
-                    const payIdx = requirements.findIndex((r: any) => r?.payment_photos);
-                    if (paymentScreenshot) {
-                      if (payIdx >= 0) {
-                        requirements[payIdx] = { payment_photos: [paymentScreenshot] };
-                      } else {
-                        requirements.push({ payment_photos: [paymentScreenshot] });
-                      }
-                    } else if (payIdx >= 0) {
-                      requirements.splice(payIdx, 1);
+                  }
+                  // Always set payment_photos to full list (for CASH and for report to show multiple payment screenshots)
+                  const payIdx = requirements.findIndex((r: any) => r?.payment_photos);
+                  if (paymentScreenshotsList.length > 0) {
+                    if (payIdx >= 0) {
+                      requirements[payIdx] = { payment_photos: paymentScreenshotsList };
+                    } else {
+                      requirements.push({ payment_photos: paymentScreenshotsList });
                     }
+                  } else if (payIdx >= 0) {
+                    requirements.splice(payIdx, 1);
                   }
 
                   // Prepare update data
@@ -10161,12 +10162,12 @@ const AdminDashboard = () => {
                     lead_cost: leadCost,
                     requirements: JSON.stringify(requirements)
                   };
-                  const paymentScreenshotUrl = completedJobEditData.paymentScreenshot && typeof completedJobEditData.paymentScreenshot === 'string'
-                    ? completedJobEditData.paymentScreenshot.trim()
-                    : null;
+                  const paymentScreenshotsUrls = Array.isArray(completedJobEditData.paymentScreenshots)
+                    ? completedJobEditData.paymentScreenshots.filter((u: any) => typeof u === 'string' && u.trim())
+                    : [];
                   const billPhotosList = Array.isArray(completedJobEditData.billPhotos) ? completedJobEditData.billPhotos : [];
-                  if (paymentScreenshotUrl || billPhotosList.length > 0) {
-                    updateData.after_photos = [paymentScreenshotUrl, ...billPhotosList].filter(Boolean);
+                  if (paymentScreenshotsUrls.length > 0 || billPhotosList.length > 0) {
+                    updateData.after_photos = [...paymentScreenshotsUrls, ...billPhotosList].filter(Boolean);
                   }
                   
                   // If completed_by is a technician ID (not 'admin'), update assigned_technician_id

@@ -60,11 +60,12 @@ const EditCompletedJobDialog: React.FC<EditCompletedJobDialogProps> = ({
   const handlePaymentFiles = useCallback(async (files: FileList | null) => {
     if (!files?.length) return;
     setUploadingPaymentPhoto(true);
+    const baseList = editData.paymentScreenshots || [];
     try {
       const urls = await uploadFiles(Array.from(files), true);
       if (urls.length > 0) {
-        onEditDataChange({ ...editData, paymentScreenshot: urls[0] });
-        toast.success('Payment screenshot added');
+        onEditDataChange({ ...editData, paymentScreenshots: [...baseList, ...urls] });
+        toast.success(`${urls.length} payment screenshot(s) added`);
       }
     } catch (err: any) {
       toast.error(err?.message || 'Upload failed');
@@ -364,63 +365,69 @@ const EditCompletedJobDialog: React.FC<EditCompletedJobDialogProps> = ({
             />
           </div>
 
-          {/* Payment screenshot - single, drag and drop + select */}
+          {/* Payment screenshots - multiple, always show add/drop zone */}
           <div className="border-t pt-4">
-            <Label className="text-base font-semibold">Payment screenshot</Label>
-            <p className="text-xs text-gray-500 mt-1 mb-2">One image. Drag and drop or click to select.</p>
+            <Label className="text-base font-semibold">Payment screenshots</Label>
+            <p className="text-xs text-gray-500 mt-1 mb-2">Drag and drop or click to add. You can add more even if you already have some.</p>
+            <div className="flex flex-wrap gap-2 mb-2">
+              {(editData.paymentScreenshots || []).map((url: string, idx: number) => (
+                <div key={idx} className="relative group">
+                  <img
+                    src={url}
+                    alt={`Payment ${idx + 1}`}
+                    className="w-20 h-20 object-cover rounded-lg border-2 border-blue-200"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const list = [...(editData.paymentScreenshots || [])];
+                      list.splice(idx, 1);
+                      onEditDataChange({ ...editData, paymentScreenshots: list });
+                    }}
+                    className="absolute -top-1 -right-1 w-5 h-5 rounded-full bg-red-500 text-white flex items-center justify-center opacity-90 hover:opacity-100"
+                    aria-label="Remove payment screenshot"
+                  >
+                    <X className="w-3 h-3" />
+                  </button>
+                </div>
+              ))}
+            </div>
             <input
               ref={paymentInputRef}
               type="file"
               accept="image/*"
+              multiple
               className="hidden"
               onChange={(e) => {
                 handlePaymentFiles(e.target.files);
                 e.target.value = '';
               }}
             />
-            {editData.paymentScreenshot ? (
-              <div className="relative group inline-block">
-                <img
-                  src={editData.paymentScreenshot}
-                  alt="Payment"
-                  className="w-32 h-32 object-cover rounded-lg border-2 border-blue-200"
-                />
-                <button
-                  type="button"
-                  onClick={() => onEditDataChange({ ...editData, paymentScreenshot: null })}
-                  className="absolute -top-1 -right-1 w-6 h-6 rounded-full bg-red-500 text-white flex items-center justify-center opacity-90 hover:opacity-100"
-                  aria-label="Remove payment screenshot"
-                >
-                  <X className="w-4 h-4" />
-                </button>
-              </div>
-            ) : (
-              <div
-                onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); setDragOverPayment(true); }}
-                onDragLeave={(e) => { e.preventDefault(); setDragOverPayment(false); }}
-                onDrop={(e) => {
-                  e.preventDefault();
-                  setDragOverPayment(false);
-                  const files = e.dataTransfer.files;
-                  if (files?.length) handlePaymentFiles(files);
-                }}
-                onClick={() => paymentInputRef.current?.click()}
-                className={`border-2 border-dashed rounded-lg p-6 text-center cursor-pointer transition-colors ${
-                  dragOverPayment ? 'border-blue-500 bg-blue-50' : 'border-gray-300 hover:border-blue-400 hover:bg-gray-50'
-                } ${uploadingPaymentPhoto ? 'opacity-60 pointer-events-none' : ''}`}
-              >
-                <ImagePlus className="w-10 h-10 mx-auto text-gray-400 mb-2" />
-                <p className="text-sm text-gray-600">
-                  {uploadingPaymentPhoto ? 'Uploading...' : 'Drag & drop or click to add payment screenshot'}
-                </p>
-              </div>
-            )}
+            <div
+              onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); setDragOverPayment(true); }}
+              onDragLeave={(e) => { e.preventDefault(); setDragOverPayment(false); }}
+              onDrop={(e) => {
+                e.preventDefault();
+                setDragOverPayment(false);
+                const files = e.dataTransfer.files;
+                if (files?.length) handlePaymentFiles(files);
+              }}
+              onClick={() => paymentInputRef.current?.click()}
+              className={`border-2 border-dashed rounded-lg p-4 text-center cursor-pointer transition-colors ${
+                dragOverPayment ? 'border-blue-500 bg-blue-50' : 'border-gray-300 hover:border-blue-400 hover:bg-gray-50'
+              } ${uploadingPaymentPhoto ? 'opacity-60 pointer-events-none' : ''}`}
+            >
+              <ImagePlus className="w-8 h-8 mx-auto text-gray-400 mb-1" />
+              <p className="text-sm text-gray-600">
+                {uploadingPaymentPhoto ? 'Uploading...' : 'Drag & drop or click to add payment screenshot(s)'}
+              </p>
+            </div>
           </div>
 
-          {/* Bill photos - multiple, drag and drop + select */}
+          {/* Bill photos - multiple, always show add/drop zone */}
           <div>
             <Label className="text-base font-semibold">Bill photos</Label>
-            <p className="text-xs text-gray-500 mt-1 mb-2">Multiple images. Drag and drop or click to select.</p>
+            <p className="text-xs text-gray-500 mt-1 mb-2">Drag and drop or click to add. You can add more even if you already have some.</p>
             <div className="flex flex-wrap gap-2 mb-2">
               {(editData.billPhotos || []).map((url: string, idx: number) => (
                 <div key={idx} className="relative group">
