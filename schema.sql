@@ -3130,10 +3130,10 @@ CREATE POLICY "Allow authenticated update reminders" ON public.reminders FOR UPD
 
 
 --
--- Name: amc_contracts Allow authenticated users to delete amc_contracts; Type: POLICY; Schema: public; Owner: -
+-- Name: amc_contracts Allow all to delete amc_contracts; Type: POLICY; Schema: public; Owner: -
 --
 
-CREATE POLICY "Allow authenticated users to delete amc_contracts" ON public.amc_contracts FOR DELETE USING ((( SELECT auth.role() AS role) = 'authenticated'::text));
+CREATE POLICY "Allow all to delete amc_contracts" ON public.amc_contracts FOR DELETE USING (true);
 
 
 --
@@ -3165,10 +3165,10 @@ CREATE POLICY "Allow authenticated users to delete technician_holidays" ON publi
 
 
 --
--- Name: amc_contracts Allow authenticated users to insert amc_contracts; Type: POLICY; Schema: public; Owner: -
+-- Name: amc_contracts Allow all to insert amc_contracts; Type: POLICY; Schema: public; Owner: -
 --
 
-CREATE POLICY "Allow authenticated users to insert amc_contracts" ON public.amc_contracts FOR INSERT WITH CHECK ((( SELECT auth.role() AS role) = 'authenticated'::text));
+CREATE POLICY "Allow all to insert amc_contracts" ON public.amc_contracts FOR INSERT WITH CHECK (true);
 
 
 --

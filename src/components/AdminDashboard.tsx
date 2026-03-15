@@ -4757,6 +4757,7 @@ const AdminDashboard = () => {
 
   const handleHideAMCView = () => {
     setShowAMCViewPage(false);
+    reloadAMCStatus(); // Refresh green dots when returning to dashboard
   };
 
 
@@ -7468,7 +7469,7 @@ const AdminDashboard = () => {
 
   // Show AMC View page if requested
   if (showAMCViewPage) {
-    return <AMCViewPage onBack={handleHideAMCView} />;
+    return <AMCViewPage onBack={handleHideAMCView} onAMCDeleted={reloadAMCStatus} />;
   }
 
   // Show different views based on currentView state

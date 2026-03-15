@@ -27,7 +27,7 @@ import {
 } from 'lucide-react';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { db, supabase } from '@/lib/supabase';
+import { db } from '@/lib/supabase';
 import { toast } from 'sonner';
 import AdminHeader from './AdminHeader';
 import { useAuth } from '@/contexts/AuthContext';
@@ -58,9 +58,10 @@ interface AMCRecord {
 
 interface AMCViewPageProps {
   onBack: () => void;
+  onAMCDeleted?: () => void;
 }
 
-const AMCViewPage: React.FC<AMCViewPageProps> = ({ onBack }) => {
+const AMCViewPage: React.FC<AMCViewPageProps> = ({ onBack, onAMCDeleted }) => {
   const { user } = useAuth();
   const [amcRecords, setAmcRecords] = useState<AMCRecord[]>([]);
   const [loading, setLoading] = useState(true);
@@ -88,8 +89,6 @@ const AMCViewPage: React.FC<AMCViewPageProps> = ({ onBack }) => {
   const loadAMCRecords = async () => {
     try {
       setLoading(true);
-      // Ensure Supabase client has session from storage before first request (avoids 0 rows when session wasn't attached yet)
-      await supabase.auth.getSession();
       const { data: amcContracts, error } = await db.amcContracts.getAll(1000, 0);
 
       if (error) {
@@ -341,9 +340,10 @@ const AMCViewPage: React.FC<AMCViewPageProps> = ({ onBack }) => {
       setDeleteDialogOpen(false);
       setAmcToDelete(null);
       loadAMCRecords(); // Reload records
+      onAMCDeleted?.(); // Refresh parent (e.g. dashboard green dot)
     } catch (error: any) {
       console.error('Error deleting AMC:', error);
-      toast.error('Failed to delete AMC: ' + (error.message || 'Unknown error'));
+      toast.error('Failed to delete AMC: ' + (error?.message || 'Unknown error'));
     }
   };
 

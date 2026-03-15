@@ -319,7 +319,7 @@ ${notCoveredWithPreFilter}`;
       if (amcError) {
         console.error('Failed to save AMC contract to database:', amcError);
         toast.error('Failed to save AMC contract to database', {
-          description: amcError.message || 'Please try again or contact support.'
+          description: amcError.message || 'Please try again.'
         });
       } else {
         toast.success('AMC contract saved to database successfully', {
@@ -333,7 +333,7 @@ ${notCoveredWithPreFilter}`;
     } catch (error: any) {
       console.error('Error saving AMC contract:', error);
       toast.error('Failed to save AMC contract', {
-        description: error.message || 'An unexpected error occurred. Please try again.'
+        description: error?.message || 'An unexpected error occurred. Please try again.'
       });
     } finally {
       setIsSaving(false);
