@@ -1929,6 +1929,13 @@ export const db = {
         return d.toISOString().split('T')[0];
       };
 
+      // Helper: subtract days from YYYY-MM-DD, return YYYY-MM-DD
+      const subtractDaysFromDate = (dateStr: string, days: number): string => {
+        const d = new Date(dateStr + 'T12:00:00');
+        d.setDate(d.getDate() - days);
+        return d.toISOString().split('T')[0];
+      };
+
       // Get last completed job per customer (batched for scale)
       const customerIds = [...new Set(activeAMCs.map(amc => amc.customer_id).filter(Boolean))] as string[];
       const lastServiceMap = new Map<string, string>();
@@ -2051,11 +2058,12 @@ export const db = {
         }
 
         const nextDueStr = addMonthsToDate(referenceDateStr, periodMonths);
-        const due = todayStr >= nextDueStr;
-        if (isDev) console.log(`  📅 Reference: ${referenceDateStr}, period: ${periodMonths} months, next due: ${nextDueStr}, due: ${due}`);
+        const reminderStartStr = subtractDaysFromDate(nextDueStr, 10);
+        const due = todayStr >= reminderStartStr;
+        if (isDev) console.log(`  📅 Reference: ${referenceDateStr}, period: ${periodMonths} months, next due: ${nextDueStr}, reminder starts: ${reminderStartStr}, within window: ${due}`);
 
         if (!due) {
-          if (isDev) console.log(`  ❌ Skipping - not yet due`);
+          if (isDev) console.log(`  ❌ Skipping - not yet within 10-day window`);
           preview.push({
             customer_id: customer.customer_id || customer.id,
             customer_name: customer.full_name || 'Unknown',
@@ -2063,7 +2071,7 @@ export const db = {
             period_months: periodMonths,
             next_due: nextDueStr,
             would_create: false,
-            skip_reason: `Not yet due (next due ${nextDueStr})`
+            skip_reason: `Not yet within 10-day window (next due ${nextDueStr}, window starts ${reminderStartStr})`
           });
           continue;
         }
