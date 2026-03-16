@@ -131,15 +131,14 @@ ${notCoveredWithPreFilter}`;
      
   }, [includesPreSedimentFiltration]);
 
-  // Auto-populate RO model from customer data
+  // Auto-populate RO model from customer data (brand and/or model)
   React.useEffect(() => {
-    if (customer && customer.model && !roModel) {
-      // Format: Brand + Model (e.g., "Kent Grand Plus")
-      const modelValue = customer.brand && customer.model 
-        ? `${customer.brand} ${customer.model}`.trim()
-        : customer.model;
-      setRoModel(modelValue);
-    }
+    if (!customer || roModel) return;
+    const brand = (customer.brand || '').trim();
+    const model = (customer.model || '').trim();
+    if (!brand && !model) return;
+    const modelValue = [brand, model].filter(Boolean).join(' ').trim();
+    setRoModel(modelValue);
   }, [customer, roModel]);
 
   // Editable customer information state
