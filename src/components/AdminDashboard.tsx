@@ -73,6 +73,7 @@ import { toast } from 'sonner';
 import { isIOS, isPWA, shouldUseFileInputFallback, requestCameraAccess, createVideoElement, checkCameraPermission } from '@/lib/cameraUtils';
 import { getCachedQrCodes, cacheQrCodes, shouldUseCache, CommonQrCode } from '@/lib/qrCodeManager';
 import { openInGoogleMaps, extractCoordinates, formatAddressForDisplay } from '@/lib/maps';
+import { normalizePhoneForSearch } from '@/lib/utils';
 import FollowUpModal from '@/components/FollowUpModal';
 import { sendNotification, createJobAssignedNotification, createJobCompletedNotification, createJobCancelledNotification, createJobAssignmentRequestNotification } from '@/lib/notifications';
 import BillModal from './BillModal';
@@ -4588,22 +4589,6 @@ const AdminDashboard = () => {
     }
   };
 
-  // Helper: normalize phone for search (handles pasted formats: 063616 1253, +91 636161253, etc.)
-  const normalizePhoneNumber = (phone: string | undefined | null): string => {
-    if (!phone) return '';
-    // Digits only (strip spaces, +, -, parentheses, etc.)
-    let normalized = phone.replace(/\D/g, '');
-    // Indian: strip country code 91 (e.g. 91636161253 or +91 636161253 → 636161253)
-    if (normalized.length >= 12 && normalized.startsWith('91')) {
-      normalized = normalized.substring(2);
-    }
-    // Strip leading 0 so 0636161253 and 636161253 match (11 digits: 0+10, or 10 digits with leading 0)
-    if (normalized.length >= 10 && normalized.startsWith('0')) {
-      normalized = normalized.replace(/^0+/, '');
-    }
-    return normalized;
-  };
-
   const handleSearch = async () => {
     const trimmedQuery = searchQuery.trim();
     setIsSearching(true);
@@ -4638,7 +4623,7 @@ const AdminDashboard = () => {
   // When user pastes a phone from contacts (e.g. 063616 1253, +91 636161253), normalize and format
   const handleSearchPaste = (e: React.ClipboardEvent<HTMLInputElement>) => {
     const pasted = e.clipboardData.getData('text');
-    const normalized = normalizePhoneNumber(pasted);
+    const normalized = normalizePhoneForSearch(pasted);
     if (normalized.length >= 10) {
       e.preventDefault();
       setSearchQuery(normalized);
@@ -7332,11 +7317,17 @@ const AdminDashboard = () => {
     
     const searchLower = searchTerm.toLowerCase();
     const altPhone = job.customer?.alternate_phone || (job.customer as any)?.alternatePhone;
+    const normSearch = normalizePhoneForSearch(searchTerm);
+    const phoneMatch = normSearch.length >= 10 && (
+      normalizePhoneForSearch(job.customer?.phone) === normSearch ||
+      normalizePhoneForSearch(altPhone) === normSearch
+    );
     return (
       (job.job_number || job.jobNumber)?.toLowerCase().includes(searchLower) ||
       (job.customer?.full_name || job.customer?.fullName)?.toLowerCase().includes(searchLower) ||
       job.customer?.phone?.includes(searchTerm) ||
-      (altPhone != null && String(altPhone).includes(searchTerm))
+      (altPhone != null && String(altPhone).includes(searchTerm)) ||
+      phoneMatch
     );
   });
 

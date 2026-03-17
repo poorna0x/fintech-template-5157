@@ -45,7 +45,7 @@ const WhatsAppIcon = ({ className }: { className?: string }) => (
 import { toast } from 'sonner';
 import { db, supabase } from '@/lib/supabase';
 import { Customer } from '@/types';
-import { formatPhoneForWhatsApp } from '@/lib/utils';
+import { formatPhoneForWhatsApp, normalizePhoneForSearch } from '@/lib/utils';
 import CustomerPhotoGalleryDialog from '@/components/admin/CustomerPhotoGalleryDialog';
 import CustomerReportDialog from '@/components/admin/CustomerReportDialog';
 import PhotoViewerDialog from '@/components/admin/PhotoViewerDialog';
@@ -310,14 +310,23 @@ const CallingPage = ({ hideHeader = false, onBack }: CallingPageProps = {}) => {
     // Filter by search term
     if (searchTerm) {
       const term = searchTerm.toLowerCase();
-      filtered = filtered.filter(customer =>
-        customer.fullName?.toLowerCase().includes(term) ||
-        customer.phone?.includes(term) ||
-        (customer as any).alternatePhone?.includes(searchTerm) ||
-        (customer as any).alternate_phone?.includes(searchTerm) ||
-        customer.customerId?.toLowerCase().includes(term) ||
-        customer.email?.toLowerCase().includes(term)
-      );
+      const normSearch = normalizePhoneForSearch(searchTerm);
+      const isPhoneSearch = normSearch.length >= 10;
+      filtered = filtered.filter(customer => {
+        const phoneMatch = isPhoneSearch && (
+          normalizePhoneForSearch(customer.phone) === normSearch ||
+          normalizePhoneForSearch((customer as any).alternatePhone ?? (customer as any).alternate_phone) === normSearch
+        );
+        return (
+          customer.fullName?.toLowerCase().includes(term) ||
+          customer.phone?.includes(searchTerm) ||
+          (customer as any).alternatePhone?.includes(searchTerm) ||
+          (customer as any).alternate_phone?.includes(searchTerm) ||
+          customer.customerId?.toLowerCase().includes(term) ||
+          customer.email?.toLowerCase().includes(term) ||
+          phoneMatch
+        );
+      });
     }
 
     // Filter by service date window (how long since last service)

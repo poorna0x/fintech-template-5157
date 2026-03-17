@@ -36,3 +36,25 @@ export function formatPhoneForWhatsApp(phone: string): string {
   // Fallback: return cleaned as-is (might fail but better than nothing)
   return cleaned;
 }
+
+/**
+ * Normalize a string for phone-number search (any format → digits only).
+ * Handles +91, spaces, leading 0, etc. so "6362 27733", "+91 6362 27733", "0636227733" all become "636227733".
+ */
+export function normalizePhoneForSearch(input: string | undefined | null): string {
+  if (input == null || typeof input !== 'string') return '';
+  let digits = input.replace(/\D/g, '');
+  if (digits.length >= 12 && digits.startsWith('91')) digits = digits.slice(2);
+  if (digits.length >= 10 && digits.startsWith('0')) digits = digits.replace(/^0+/, '');
+  return digits;
+}
+
+/**
+ * Escape a string for safe use inside PostgreSQL LIKE patterns (% and _ are wildcards, \ is escape).
+ */
+export function escapeForLike(value: string): string {
+  return value
+    .replace(/\\/g, '\\\\')
+    .replace(/%/g, '\\%')
+    .replace(/_/g, '\\_');
+}

@@ -11,6 +11,7 @@ import { toast } from 'sonner';
 import BillGenerator from '@/components/BillGenerator';
 import { Customer, Bill } from '@/types';
 import { generateBillPDF } from '@/lib/pdf-generator';
+import { normalizePhoneForSearch } from '@/lib/utils';
 
 export default function BillPage() {
   const navigate = useNavigate();
@@ -85,12 +86,18 @@ export default function BillPage() {
 
   const filteredCustomers = customers.filter(customer => {
     const altPhone = (customer as any).alternatePhone ?? (customer as any).alternate_phone ?? '';
+    const normSearch = normalizePhoneForSearch(searchTerm);
+    const phoneMatch = normSearch.length >= 10 && (
+      normalizePhoneForSearch(customer.phone) === normSearch ||
+      normalizePhoneForSearch(altPhone) === normSearch
+    );
     return (
       customer.fullName.toLowerCase().includes(searchTerm.toLowerCase()) ||
       customer.phone.includes(searchTerm) ||
       String(altPhone).includes(searchTerm) ||
       customer.email.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      customer.customerId.toLowerCase().includes(searchTerm.toLowerCase())
+      customer.customerId.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      phoneMatch
     );
   });
 

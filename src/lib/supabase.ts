@@ -1,6 +1,7 @@
 import { createClient } from '@supabase/supabase-js';
 import { Database } from '@/types';
 import { chromeStorage } from './storage';
+import { escapeForLike, normalizePhoneForSearch } from './utils';
 
 // Supabase configuration
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
@@ -192,11 +193,32 @@ export const db = {
       return { data, error };
     },
 
-    async search(query: string, limit: number = 100) {
+    async search(query: string, limit: number = 50) {
+      const trimmed = (query ?? '').trim();
+      if (!trimmed) {
+        return { data: [], error: null };
+      }
+      const escaped = escapeForLike(trimmed);
+      const orParts: string[] = [
+        `customer_id.ilike.%${escaped}%`,
+        `full_name.ilike.%${escaped}%`,
+        `phone.ilike.%${escaped}%`,
+        `alternate_phone.ilike.%${escaped}%`,
+        `email.ilike.%${escaped}%`,
+      ];
+      const normalizedPhone = normalizePhoneForSearch(trimmed);
+      if (normalizedPhone.length >= 10) {
+        orParts.push(`phone.ilike.%${normalizedPhone}%`, `alternate_phone.ilike.%${normalizedPhone}%`);
+        if (normalizedPhone.length === 10) {
+          const first4 = normalizedPhone.slice(0, 4);
+          const last6 = normalizedPhone.slice(4);
+          orParts.push(`phone.ilike.%${first4}%${last6}%`, `alternate_phone.ilike.%${first4}%${last6}%`);
+        }
+      }
       let q = supabase
         .from('customers')
         .select('*')
-        .or(`customer_id.ilike.%${query}%,full_name.ilike.%${query}%,phone.ilike.%${query}%,alternate_phone.ilike.%${query}%,email.ilike.%${query}%`)
+        .or(orParts.join(','))
         .order('created_at', { ascending: false });
       if (limit > 0) q = q.limit(limit);
       const { data, error } = await q;
