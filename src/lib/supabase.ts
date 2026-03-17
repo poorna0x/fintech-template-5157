@@ -196,7 +196,7 @@ export const db = {
       let q = supabase
         .from('customers')
         .select('*')
-        .or(`customer_id.ilike.%${query}%,full_name.ilike.%${query}%,phone.ilike.%${query}%,email.ilike.%${query}%`)
+        .or(`customer_id.ilike.%${query}%,full_name.ilike.%${query}%,phone.ilike.%${query}%,alternate_phone.ilike.%${query}%,email.ilike.%${query}%`)
         .order('created_at', { ascending: false });
       if (limit > 0) q = q.limit(limit);
       const { data, error } = await q;

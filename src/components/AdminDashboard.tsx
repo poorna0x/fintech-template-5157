@@ -7331,10 +7331,12 @@ const AdminDashboard = () => {
     if (!searchTerm.trim()) return true; // Show all jobs if search is empty
     
     const searchLower = searchTerm.toLowerCase();
+    const altPhone = job.customer?.alternate_phone || (job.customer as any)?.alternatePhone;
     return (
       (job.job_number || job.jobNumber)?.toLowerCase().includes(searchLower) ||
       (job.customer?.full_name || job.customer?.fullName)?.toLowerCase().includes(searchLower) ||
-      job.customer?.phone?.includes(searchTerm)
+      job.customer?.phone?.includes(searchTerm) ||
+      (altPhone != null && String(altPhone).includes(searchTerm))
     );
   });
 
@@ -7576,7 +7578,7 @@ const AdminDashboard = () => {
               <div className="relative flex-1">
                 <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
                 <Input
-                  placeholder="Search by customer ID, name, phone, or email..."
+                  placeholder="Search by customer ID, name, phone, alternate number, or email..."
                   value={searchQuery}
                   onChange={(e) => {
                     const value = e.target.value;
@@ -7716,7 +7718,7 @@ const AdminDashboard = () => {
             <div className="relative flex-1">
             <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
               <Input
-                placeholder="Search by customer ID, name, phone, or email..."
+                placeholder="Search by customer ID, name, phone, alternate number, or email..."
                 value={searchQuery}
                 onChange={(e) => {
                   const value = e.target.value;

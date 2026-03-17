@@ -313,6 +313,8 @@ const CallingPage = ({ hideHeader = false, onBack }: CallingPageProps = {}) => {
       filtered = filtered.filter(customer =>
         customer.fullName?.toLowerCase().includes(term) ||
         customer.phone?.includes(term) ||
+        (customer as any).alternatePhone?.includes(searchTerm) ||
+        (customer as any).alternate_phone?.includes(searchTerm) ||
         customer.customerId?.toLowerCase().includes(term) ||
         customer.email?.toLowerCase().includes(term)
       );

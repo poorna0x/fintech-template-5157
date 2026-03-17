@@ -83,12 +83,16 @@ export default function BillPage() {
     }, 1000);
   }, []);
 
-  const filteredCustomers = customers.filter(customer =>
-    customer.fullName.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    customer.phone.includes(searchTerm) ||
-    customer.email.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    customer.customerId.toLowerCase().includes(searchTerm.toLowerCase())
-  );
+  const filteredCustomers = customers.filter(customer => {
+    const altPhone = (customer as any).alternatePhone ?? (customer as any).alternate_phone ?? '';
+    return (
+      customer.fullName.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      customer.phone.includes(searchTerm) ||
+      String(altPhone).includes(searchTerm) ||
+      customer.email.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      customer.customerId.toLowerCase().includes(searchTerm.toLowerCase())
+    );
+  });
 
   const handleCustomerSelect = (customer: Customer) => {
     setSelectedCustomer(customer);
