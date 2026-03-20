@@ -363,7 +363,6 @@ const TechnicianDashboard = () => {
   const [paymentMode, setPaymentMode] = useState<'CASH' | 'ONLINE' | 'PARTIAL' | ''>('');
   const [billAmountConfirmOpen, setBillAmountConfirmOpen] = useState(false);
   const [customerHasPrefilter, setCustomerHasPrefilter] = useState<boolean | null>(null);
-  const [customerHasGoogleReview, setCustomerHasGoogleReview] = useState<boolean | null>(null);
   const [rawWaterTds, setRawWaterTds] = useState<string>('');
   const [qrCodeType, setQrCodeType] = useState<string>('');
   const [selectedQrCodeId, setSelectedQrCodeId] = useState<string>('');
@@ -1958,7 +1957,6 @@ const TechnicianDashboard = () => {
         setPaymentScreenshot('');
         setPaymentMode('');
       setCustomerHasPrefilter(null);
-      setCustomerHasGoogleReview(null);
       setRawWaterTds('');
       setQrCodeType('');
       setSelectedQrCodeId('');
@@ -1972,11 +1970,6 @@ const TechnicianDashboard = () => {
       : null;
     setCustomerHasPrefilter(customerPrefilter);
 
-    // Initialize google review flag from customer's existing value if available
-    const customerGoogleReview = jobWithCustomer.customer
-      ? ((jobWithCustomer.customer as any).has_google_review ?? (jobWithCustomer.customer as any).hasGoogleReview ?? null)
-      : null;
-    setCustomerHasGoogleReview(customerGoogleReview);
     // Only prefill if value > 0; empty by default so mobile users can easily type (0 is hard to clear)
     const existingTds = (jobWithCustomer.customer as any)?.raw_water_tds;
     setRawWaterTds(existingTds != null && Number(existingTds) > 0 ? String(existingTds) : '');
@@ -3162,8 +3155,6 @@ const TechnicianDashboard = () => {
             try {
               const updatePayload: Record<string, any> = {};
               if (customerHasPrefilter !== null) updatePayload.has_prefilter = customerHasPrefilter;
-              // Always persist the user's tri-state choice (true/false/null) to the DB
-              updatePayload.has_google_review = customerHasGoogleReview;
               const tdsVal = parseInt(rawWaterTds, 10);
               if (!isSoftenerService() && !isNaN(tdsVal) && tdsVal >= 0) {
                 updatePayload.raw_water_tds = tdsVal;
@@ -3236,7 +3227,7 @@ const TechnicianDashboard = () => {
             actual_cost: parseFloat(billAmount) || 0,
             payment_amount: parseFloat(billAmount) || 0,
                 customer: (job as any).customer
-                  ? { ...(job as any).customer, has_google_review: customerHasGoogleReview }
+                  ? { ...(job as any).customer }
                   : job.customer
           } : job
         ));
@@ -3265,7 +3256,6 @@ const TechnicianDashboard = () => {
         setPartialCashAmount('');
         setPartialOnlineAmount('');
         setCustomerHasPrefilter(null);
-        setCustomerHasGoogleReview(null);
         setRawWaterTds('');
         setQrCodeType('');
         setSelectedQrCodeId('');
@@ -5972,8 +5962,7 @@ const TechnicianDashboard = () => {
             setHasAMC(null);
             setPaymentMode('');
             setCustomerHasPrefilter(null);
-            setCustomerHasGoogleReview(null);
-        setRawWaterTds('');
+            setRawWaterTds('');
             setQrCodeType('');
             setSelectedQrCodeId('');
             setPaymentScreenshot('');
@@ -6809,59 +6798,6 @@ const TechnicianDashboard = () => {
                   <div className="text-center py-4">
                     <p className="text-gray-600">Review and complete below.</p>
                   </div>
-                  <div className="space-y-3">
-                    <Label className="text-base font-semibold">Has the customer left a Google review?</Label>
-                    <div className="grid grid-cols-2 gap-4">
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setCustomerHasGoogleReview(true);
-                        }}
-                        className={`p-4 rounded-lg border-2 transition-all duration-200 ${
-                          customerHasGoogleReview === true
-                            ? 'border-black bg-black text-white shadow-md'
-                            : 'border-gray-300 bg-white text-gray-700 hover:border-gray-400 hover:bg-gray-50'
-                        }`}
-                      >
-                        <div className="flex flex-col items-center gap-2">
-                          <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center ${
-                            customerHasGoogleReview === true
-                              ? 'border-white bg-white'
-                              : 'border-gray-400'
-                          }`}>
-                            {customerHasGoogleReview === true && (
-                              <div className="w-2.5 h-2.5 rounded-full bg-black"></div>
-                            )}
-                          </div>
-                          <span className="font-medium text-sm">Yes</span>
-                        </div>
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setCustomerHasGoogleReview(false);
-                        }}
-                        className={`p-4 rounded-lg border-2 transition-all duration-200 ${
-                          customerHasGoogleReview === false
-                            ? 'border-black bg-black text-white shadow-md'
-                            : 'border-gray-300 bg-white text-gray-700 hover:border-gray-400 hover:bg-gray-50'
-                        }`}
-                      >
-                        <div className="flex flex-col items-center gap-2">
-                          <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center ${
-                            customerHasGoogleReview === false
-                              ? 'border-white bg-white'
-                              : 'border-gray-400'
-                          }`}>
-                            {customerHasGoogleReview === false && (
-                              <div className="w-2.5 h-2.5 rounded-full bg-black"></div>
-                            )}
-                          </div>
-                          <span className="font-medium text-sm">No</span>
-                        </div>
-                      </button>
-                    </div>
-                  </div>
                   <div className="rounded-xl border border-gray-200 bg-gray-50/80 dark:bg-gray-800/50 p-3 sm:p-4">
                     <div className="flex items-center gap-2 mb-2">
                       <Camera className="w-4 h-4 text-gray-600" />
@@ -6934,83 +6870,6 @@ const TechnicianDashboard = () => {
                             )}
                           </div>
                           <span className="font-medium text-sm">No</span>
-                        </div>
-                      </button>
-                    </div>
-                  </div>
-                  <div className="space-y-3 pt-2">
-                    <Label className="text-base font-semibold">Has the customer left a Google review?</Label>
-                    <div className="grid grid-cols-2 gap-4">
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setCustomerHasGoogleReview(true);
-                        }}
-                        className={`p-4 rounded-lg border-2 transition-all duration-200 ${
-                          customerHasGoogleReview === true
-                            ? 'border-black bg-black text-white shadow-md'
-                            : 'border-gray-300 bg-white text-gray-700 hover:border-gray-400 hover:bg-gray-50'
-                        }`}
-                      >
-                        <div className="flex flex-col items-center gap-2">
-                          <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center ${
-                            customerHasGoogleReview === true
-                              ? 'border-white bg-white'
-                              : 'border-gray-400'
-                          }`}>
-                            {customerHasGoogleReview === true && (
-                              <div className="w-2.5 h-2.5 rounded-full bg-black"></div>
-                            )}
-                          </div>
-                          <span className="font-medium text-sm">Yes</span>
-                        </div>
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setCustomerHasGoogleReview(false);
-                        }}
-                        className={`p-4 rounded-lg border-2 transition-all duration-200 ${
-                          customerHasGoogleReview === false
-                            ? 'border-black bg-black text-white shadow-md'
-                            : 'border-gray-300 bg-white text-gray-700 hover:border-gray-400 hover:bg-gray-50'
-                        }`}
-                      >
-                        <div className="flex flex-col items-center gap-2">
-                          <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center ${
-                            customerHasGoogleReview === false
-                              ? 'border-white bg-white'
-                              : 'border-gray-400'
-                          }`}>
-                            {customerHasGoogleReview === false && (
-                              <div className="w-2.5 h-2.5 rounded-full bg-black"></div>
-                            )}
-                          </div>
-                          <span className="font-medium text-sm">No</span>
-                        </div>
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setCustomerHasGoogleReview(null);
-                        }}
-                        className={`p-4 rounded-lg border-2 transition-all duration-200 ${
-                          customerHasGoogleReview === null
-                            ? 'border-orange-300 bg-orange-50 text-orange-900 shadow-md'
-                            : 'border-gray-300 bg-white text-gray-700 hover:border-gray-400 hover:bg-gray-50'
-                        }`}
-                      >
-                        <div className="flex flex-col items-center gap-2">
-                          <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center ${
-                            customerHasGoogleReview === null
-                              ? 'border-orange-300 bg-orange-100'
-                              : 'border-gray-400'
-                          }`}>
-                            {customerHasGoogleReview === null && (
-                              <div className="w-2.5 h-2.5 rounded-full bg-orange-500"></div>
-                            )}
-                          </div>
-                          <span className="font-medium text-sm">Not Set</span>
                         </div>
                       </button>
                     </div>
