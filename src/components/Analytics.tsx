@@ -381,10 +381,10 @@ const Analytics = () => {
               const [paymentsRes, extraCommissionsRes] = await Promise.all([
                 supabase
                   .from('technician_payments')
-                  .select('*')
+                  .select('technician_id, commission_amount')
                   .gte('created_at', startDate.toISOString())
                   .lte('created_at', endDate.toISOString()),
-                db.technicianExtraCommissions.getAll()
+                db.technicianExtraCommissions.getAll(undefined, startStr, endStr)
               ]);
               const paymentsData = paymentsRes.data || [];
               const extraCommissionsData = extraCommissionsRes.data || [];

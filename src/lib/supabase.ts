@@ -2301,7 +2301,8 @@ export const db = {
     async getAll(technicianId?: string, startDate?: string, endDate?: string) {
       let query = supabase
         .from('technician_extra_commissions')
-        .select('*')
+        // Fetch only fields used by UI (reduce Supabase egress).
+        .select('id, technician_id, commission_date, amount, description, payment_method, payment_reference, notes, created_at')
         .order('commission_date', { ascending: false });
       
       if (technicianId) {
