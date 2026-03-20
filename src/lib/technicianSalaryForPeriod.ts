@@ -46,7 +46,7 @@ export async function getTotalSalaryForCalendarMonth(
     db.technicians.getAll(100),
     supabase
       .from('technician_payments')
-      .select('*')
+      .select('technician_id, job_id, commission_amount')
       .gte('created_at', startDate.toISOString())
       .lte('created_at', endDate.toISOString()),
     db.technicianAdvances.getAll(undefined, periodStartStr, periodEndStr),
