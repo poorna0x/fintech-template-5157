@@ -579,6 +579,7 @@ export const db = {
             preferred_time_slot,
             preferred_language,
             has_prefilter,
+            has_google_review,
             raw_water_tds,
             created_at,
             updated_at
@@ -870,6 +871,7 @@ export const db = {
             preferred_time_slot,
             preferred_language,
             has_prefilter,
+            has_google_review,
             raw_water_tds,
             created_at,
             updated_at
