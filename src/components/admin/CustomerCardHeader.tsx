@@ -47,15 +47,26 @@ export const CustomerCardHeader: React.FC<CustomerCardHeaderProps> = ({
   onAddReminder,
   onViewReminders,
 }) => {
+  const hasGoogleReview = customer.has_google_review === true || (customer as any).has_google_review === 'true';
+
   return (
     <div className="bg-gray-50 p-4 border-b border-gray-200">
       {/* Mobile Customer Info */}
       <div className="mb-4 sm:hidden">
         <div className="flex items-center gap-3 mb-2">
-          <div className={`w-6 h-6 ${customerAMCStatus[customer.id] ? 'bg-green-500' : 'bg-gray-600'} rounded-sm flex items-center justify-center relative`}>
+          <div className={`w-6 h-6 ${
+            customerAMCStatus[customer.id] && hasGoogleReview
+              ? 'bg-fuchsia-500 ring-2 ring-fuchsia-300 shadow-[0_0_12px_rgba(217,70,239,0.9)]'
+              : customerAMCStatus[customer.id]
+                ? 'bg-green-500'
+                : (hasGoogleReview ? 'bg-red-500' : 'bg-gray-600')
+          } rounded-sm flex items-center justify-center relative`}>
             <div className="w-3 h-3 bg-white rounded-sm"></div>
             {customerAMCStatus[customer.id] && (
               <div className="absolute -top-0.5 -right-0.5 w-2 h-2 bg-green-600 rounded-full border border-white" title="Active AMC"></div>
+            )}
+            {hasGoogleReview && (
+              <div className="absolute -bottom-0.5 -left-0.5 w-2 h-2 bg-red-600 rounded-full border border-white" title="Google reviewed"></div>
             )}
           </div>
           <h3 className="text-lg font-semibold text-gray-900 truncate flex-1">
@@ -265,10 +276,19 @@ export const CustomerCardHeader: React.FC<CustomerCardHeaderProps> = ({
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-3 flex-wrap">
             <div className="flex items-center gap-2">
-              <div className={`w-5 h-5 ${customerAMCStatus[customer.id] ? 'bg-green-500' : 'bg-gray-600'} rounded-sm flex items-center justify-center relative`}>
+              <div className={`w-5 h-5 ${
+                customerAMCStatus[customer.id] && hasGoogleReview
+                  ? 'bg-fuchsia-500 ring-2 ring-fuchsia-300 shadow-[0_0_10px_rgba(217,70,239,0.9)]'
+                  : customerAMCStatus[customer.id]
+                    ? 'bg-green-500'
+                    : (hasGoogleReview ? 'bg-red-500' : 'bg-gray-600')
+              } rounded-sm flex items-center justify-center relative`}>
                 <div className="w-2 h-2 bg-white rounded-sm"></div>
                 {customerAMCStatus[customer.id] && (
                   <div className="absolute -top-0.5 -right-0.5 w-2 h-2 bg-green-600 rounded-full border border-white" title="Active AMC"></div>
+                )}
+                {hasGoogleReview && (
+                  <div className="absolute -bottom-0.5 -left-0.5 w-2 h-2 bg-red-600 rounded-full border border-white" title="Google reviewed"></div>
                 )}
               </div>
               <h3 className="text-xl font-semibold text-gray-900 truncate">

@@ -291,31 +291,7 @@ export const db = {
         .from('jobs')
         .select(`
           *,
-          customer:customers(
-            id,
-            customer_id,
-            full_name,
-            phone,
-            email,
-            alternate_phone,
-            address,
-            location,
-            service_type,
-            brand,
-            model,
-            installation_date,
-            warranty_expiry,
-            status,
-            customer_since,
-            last_service_date,
-            notes,
-            preferred_time_slot,
-            preferred_language,
-            has_prefilter,
-            raw_water_tds,
-            created_at,
-            updated_at
-          )
+          customer:customers(*)
         `)
         .eq('id', id)
         .single();
@@ -342,31 +318,7 @@ export const db = {
           .from('jobs')
           .select(`
             *,
-            customer:customers(
-              id,
-              customer_id,
-              full_name,
-              phone,
-              email,
-              alternate_phone,
-              address,
-              location,
-              service_type,
-              brand,
-              model,
-              installation_date,
-              warranty_expiry,
-              status,
-              customer_since,
-              last_service_date,
-              notes,
-              preferred_time_slot,
-              preferred_language,
-              has_prefilter,
-              raw_water_tds,
-              created_at,
-              updated_at
-            )
+            customer:customers(*)
           `);
       } else {
         // Fetch only job data without nested customer (much smaller payload)
@@ -477,24 +429,7 @@ export const db = {
         .from('jobs')
         .select(`
           *,
-          customer:customers(
-            id,
-            customer_id,
-            full_name,
-            phone,
-            email,
-            alternate_phone,
-            visible_address,
-            address,
-            location,
-            service_type,
-            brand,
-            model,
-            preferred_time_slot,
-            preferred_language,
-            has_prefilter,
-            raw_water_tds
-          ),
+          customer:customers(*),
           assigned_technician:technicians!assigned_technician_id(
             id,
             full_name,
