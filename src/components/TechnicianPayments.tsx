@@ -132,6 +132,12 @@ const TechnicianPayments = () => {
     const prevMonth = new Date(now.getFullYear(), now.getMonth() - 1, 1);
     return `${prevMonth.getFullYear()}-${String(prevMonth.getMonth() + 1).padStart(2, '0')}`;
   });
+
+  const [selectedRangeEndMonth, setSelectedRangeEndMonth] = useState<string>(() => {
+    // Default end month = current month (so range "feels" like up-to-this-month initially)
+    const now = new Date();
+    return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+  });
   const [showDailyDetails, setShowDailyDetails] = useState<Record<string, boolean>>({});
   const [dailyBreakdownPage, setDailyBreakdownPage] = useState<Record<string, number>>({}); // technicianId -> page number
   const itemsPerPage = 10; // Show 10 days per page
@@ -245,13 +251,23 @@ const TechnicianPayments = () => {
       startDate = new Date(year, selectedMonthIndex, 1, 0, 0, 0, 0);
       endDate = new Date(year, selectedMonthIndex + 1, 0, 23, 59, 59, 999);
     } else if (selectedPeriod === 'rangeToCurrent') {
-      const [year, month] = selectedPastMonth.split('-').map(Number);
-      const selectedMonthIndex = month - 1;
-      startDate = new Date(year, selectedMonthIndex, 1, 0, 0, 0, 0);
+      const [fromYear, fromMonth] = selectedPastMonth.split('-').map(Number);
+      const [toYear, toMonth] = selectedRangeEndMonth.split('-').map(Number);
 
-      const currentMonth = today.getMonth();
-      const currentYear = today.getFullYear();
-      endDate = new Date(currentYear, currentMonth + 1, 0, 23, 59, 59, 999);
+      const fromMonthIndex = fromYear * 12 + (fromMonth - 1);
+      const toMonthIndex = toYear * 12 + (toMonth - 1);
+
+      // Ensure start <= end even if user picks reversed months.
+      const startMonthIndex = Math.min(fromMonthIndex, toMonthIndex);
+      const endMonthIndex = Math.max(fromMonthIndex, toMonthIndex);
+
+      const startYear = Math.floor(startMonthIndex / 12);
+      const startMonth = (startMonthIndex % 12) + 1;
+      const endYear = Math.floor(endMonthIndex / 12);
+      const endMonth = (endMonthIndex % 12) + 1;
+
+      startDate = new Date(startYear, startMonth - 1, 1, 0, 0, 0, 0);
+      endDate = new Date(endYear, endMonth, 0, 23, 59, 59, 999);
     } else {
       const currentMonth = today.getMonth();
       const currentYear = today.getFullYear();
@@ -260,7 +276,7 @@ const TechnicianPayments = () => {
     }
     
     return { startDate, endDate };
-  }, [selectedPeriod, selectedPastMonth]);
+  }, [selectedPeriod, selectedPastMonth, selectedRangeEndMonth]);
 
   const formatDateString = (date: Date): string => {
     const year = date.getFullYear();
@@ -576,36 +592,45 @@ const TechnicianPayments = () => {
 
   useEffect(() => {
     loadTechniciansOnly();
-  }, [selectedPeriod, selectedPastMonth, loadTechniciansOnly]);
+  }, [selectedPeriod, selectedPastMonth, selectedRangeEndMonth, loadTechniciansOnly]);
 
-  const prevBusinessPeriodRef = useRef({ selectedPeriod, selectedPastMonth });
+  const prevBusinessPeriodRef = useRef({ selectedPeriod, selectedPastMonth, selectedRangeEndMonth });
   useEffect(() => {
     if (!businessExpensesViewed) return;
-    const same = prevBusinessPeriodRef.current.selectedPeriod === selectedPeriod && prevBusinessPeriodRef.current.selectedPastMonth === selectedPastMonth;
-    prevBusinessPeriodRef.current = { selectedPeriod, selectedPastMonth };
+    const same =
+      prevBusinessPeriodRef.current.selectedPeriod === selectedPeriod &&
+      prevBusinessPeriodRef.current.selectedPastMonth === selectedPastMonth &&
+      prevBusinessPeriodRef.current.selectedRangeEndMonth === selectedRangeEndMonth;
+    prevBusinessPeriodRef.current = { selectedPeriod, selectedPastMonth, selectedRangeEndMonth };
     if (same) return;
     setLoadingBusinessExpenses(true);
     loadBusinessExpensesOnly().then(() => setLoadingBusinessExpenses(false));
-  }, [selectedPeriod, selectedPastMonth, businessExpensesViewed, loadBusinessExpensesOnly]);
+  }, [selectedPeriod, selectedPastMonth, selectedRangeEndMonth, businessExpensesViewed, loadBusinessExpensesOnly]);
 
-  const prevOtherPeriodRef = useRef({ selectedPeriod, selectedPastMonth });
+  const prevOtherPeriodRef = useRef({ selectedPeriod, selectedPastMonth, selectedRangeEndMonth });
   useEffect(() => {
     if (!otherExpensesViewed) return;
-    const same = prevOtherPeriodRef.current.selectedPeriod === selectedPeriod && prevOtherPeriodRef.current.selectedPastMonth === selectedPastMonth;
-    prevOtherPeriodRef.current = { selectedPeriod, selectedPastMonth };
+    const same =
+      prevOtherPeriodRef.current.selectedPeriod === selectedPeriod &&
+      prevOtherPeriodRef.current.selectedPastMonth === selectedPastMonth &&
+      prevOtherPeriodRef.current.selectedRangeEndMonth === selectedRangeEndMonth;
+    prevOtherPeriodRef.current = { selectedPeriod, selectedPastMonth, selectedRangeEndMonth };
     if (same) return;
     setLoadingOtherExpenses(true);
     loadOtherExpensesOnly().then(() => setLoadingOtherExpenses(false));
-  }, [selectedPeriod, selectedPastMonth, otherExpensesViewed, loadOtherExpensesOnly]);
+  }, [selectedPeriod, selectedPastMonth, selectedRangeEndMonth, otherExpensesViewed, loadOtherExpensesOnly]);
 
-  const prevPeriodRef = useRef({ selectedPeriod, selectedPastMonth });
+  const prevPeriodRef = useRef({ selectedPeriod, selectedPastMonth, selectedRangeEndMonth });
   useEffect(() => {
     if (!salaryDataLoaded) return;
-    const same = prevPeriodRef.current.selectedPeriod === selectedPeriod && prevPeriodRef.current.selectedPastMonth === selectedPastMonth;
-    prevPeriodRef.current = { selectedPeriod, selectedPastMonth };
+    const same =
+      prevPeriodRef.current.selectedPeriod === selectedPeriod &&
+      prevPeriodRef.current.selectedPastMonth === selectedPastMonth &&
+      prevPeriodRef.current.selectedRangeEndMonth === selectedRangeEndMonth;
+    prevPeriodRef.current = { selectedPeriod, selectedPastMonth, selectedRangeEndMonth };
     if (same) return;
     loadSalaryBreakdownData(false);
-  }, [selectedPeriod, selectedPastMonth, salaryDataLoaded, loadSalaryBreakdownData]);
+  }, [selectedPeriod, selectedPastMonth, selectedRangeEndMonth, salaryDataLoaded, loadSalaryBreakdownData]);
 
 
   /** Full refresh: technicians + period; salary/business only if user had viewed them. */
@@ -1556,16 +1581,14 @@ const TechnicianPayments = () => {
               <SelectContent>
                 <SelectItem value="current">Current Cycle</SelectItem>
                 <SelectItem value="pastMonth">Past Month</SelectItem>
-                <SelectItem value="rangeToCurrent">From Selected Month to This Month</SelectItem>
+                <SelectItem value="rangeToCurrent">Range (From -> To)</SelectItem>
               </SelectContent>
             </Select>
           </div>
           
-          {(selectedPeriod === 'pastMonth' || selectedPeriod === 'rangeToCurrent') && (
+          {selectedPeriod === 'pastMonth' && (
             <div className="flex-1 min-w-0 sm:min-w-[200px]">
-              <Label htmlFor="month-select">
-                {selectedPeriod === 'rangeToCurrent' ? 'From Month' : 'Select Month'}
-              </Label>
+              <Label htmlFor="month-select">Select Month</Label>
               <Input
                 id="month-select"
                 type="month"
@@ -1573,6 +1596,31 @@ const TechnicianPayments = () => {
                 onChange={(e) => setSelectedPastMonth(e.target.value)}
                 className="w-full"
               />
+            </div>
+          )}
+
+          {selectedPeriod === 'rangeToCurrent' && (
+            <div className="flex-1 min-w-0 sm:min-w-[400px] grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div className="min-w-0">
+                <Label htmlFor="from-month-select">From Month</Label>
+                <Input
+                  id="from-month-select"
+                  type="month"
+                  value={selectedPastMonth}
+                  onChange={(e) => setSelectedPastMonth(e.target.value)}
+                  className="w-full"
+                />
+              </div>
+              <div className="min-w-0">
+                <Label htmlFor="to-month-select">To Month</Label>
+                <Input
+                  id="to-month-select"
+                  type="month"
+                  value={selectedRangeEndMonth}
+                  onChange={(e) => setSelectedRangeEndMonth(e.target.value)}
+                  className="w-full"
+                />
+              </div>
             </div>
           )}
           
