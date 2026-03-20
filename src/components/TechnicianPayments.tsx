@@ -125,7 +125,7 @@ const TechnicianPayments = () => {
   const [selectedTechnician, setSelectedTechnician] = useState<string | null>(null);
   const [commissionPeriod, setCommissionPeriod] = useState<{ start: Date; end: Date } | null>(null);
   const [completedJobs, setCompletedJobs] = useState<any[]>([]);
-  const [selectedPeriod, setSelectedPeriod] = useState<'current' | 'pastMonth'>('current');
+  const [selectedPeriod, setSelectedPeriod] = useState<'current' | 'pastMonth' | 'rangeToCurrent'>('current');
   const [selectedPastMonth, setSelectedPastMonth] = useState<string>(() => {
     // Default to previous month
     const now = new Date();
@@ -244,6 +244,14 @@ const TechnicianPayments = () => {
       const selectedMonthIndex = month - 1;
       startDate = new Date(year, selectedMonthIndex, 1, 0, 0, 0, 0);
       endDate = new Date(year, selectedMonthIndex + 1, 0, 23, 59, 59, 999);
+    } else if (selectedPeriod === 'rangeToCurrent') {
+      const [year, month] = selectedPastMonth.split('-').map(Number);
+      const selectedMonthIndex = month - 1;
+      startDate = new Date(year, selectedMonthIndex, 1, 0, 0, 0, 0);
+
+      const currentMonth = today.getMonth();
+      const currentYear = today.getFullYear();
+      endDate = new Date(currentYear, currentMonth + 1, 0, 23, 59, 59, 999);
     } else {
       const currentMonth = today.getMonth();
       const currentYear = today.getFullYear();
@@ -385,12 +393,19 @@ const TechnicianPayments = () => {
       todayForHolidays.setHours(0, 0, 0, 0);
       const todayStrForHolidays = formatDateString(todayForHolidays);
 
+      // How many full calendar months are included (inclusive).
+      // Example: Feb -> Mar => 2 months.
+      const inclusiveMonthCount =
+        (endDate.getFullYear() - startDate.getFullYear()) * 12 +
+        (endDate.getMonth() - startDate.getMonth()) +
+        1;
+
       const breakdowns: TechnicianSalaryBreakdown[] = techs.map((tech: any) => {
         const techId = tech.id;
         const monthlyBaseSalary = (tech.salary && typeof tech.salary === 'object' && (tech.salary as any).baseSalary) ? (tech.salary as any).baseSalary : 8000;
-        const periodBaseSalary = monthlyBaseSalary;
+        const periodBaseSalary = monthlyBaseSalary * inclusiveMonthCount;
         const dailyBaseSalary = monthlyBaseSalary / 30;
-        const allowedHolidays = 4;
+        const allowedHolidays = 4 * inclusiveMonthCount;
 
         const techPayments = paymentsData.filter((p: TechnicianPayment) => p.technician_id === techId);
         const techPaymentsForCommission = paymentsData.filter((p: TechnicianPayment) => p.technician_id === techId);
@@ -1541,13 +1556,16 @@ const TechnicianPayments = () => {
               <SelectContent>
                 <SelectItem value="current">Current Cycle</SelectItem>
                 <SelectItem value="pastMonth">Past Month</SelectItem>
+                <SelectItem value="rangeToCurrent">From Selected Month to This Month</SelectItem>
               </SelectContent>
             </Select>
           </div>
           
-          {selectedPeriod === 'pastMonth' && (
+          {(selectedPeriod === 'pastMonth' || selectedPeriod === 'rangeToCurrent') && (
             <div className="flex-1 min-w-0 sm:min-w-[200px]">
-              <Label htmlFor="month-select">Select Month</Label>
+              <Label htmlFor="month-select">
+                {selectedPeriod === 'rangeToCurrent' ? 'From Month' : 'Select Month'}
+              </Label>
               <Input
                 id="month-select"
                 type="month"
@@ -1561,16 +1579,21 @@ const TechnicianPayments = () => {
           {commissionPeriod && (
             <div className="text-xs sm:text-sm text-gray-500 flex items-center px-2 py-1 sm:px-0 sm:py-0">
               Period: {(() => {
+                // Calculate payment date: 10th of next month after the selected period end
+                const nextMonth = new Date(commissionPeriod.end);
+                nextMonth.setMonth(nextMonth.getMonth() + 1);
+                nextMonth.setDate(10);
+                const paymentDate = nextMonth.toLocaleDateString('en-IN', { day: 'numeric', month: 'long', year: 'numeric' });
+
+                if (selectedPeriod === 'rangeToCurrent') {
+                  const fromMonth = commissionPeriod.start.toLocaleDateString('en-IN', { month: 'long', year: 'numeric' });
+                  const toMonth = commissionPeriod.end.toLocaleDateString('en-IN', { month: 'long', year: 'numeric' });
+                  return `From ${fromMonth} to ${toMonth} (Paid on ${paymentDate})`;
+                }
+
                 const startDay = commissionPeriod.start.getDate();
                 const endDay = commissionPeriod.end.getDate();
                 const month = commissionPeriod.start.toLocaleDateString('en-IN', { month: 'long', year: 'numeric' });
-                
-                // Calculate payment date: 10th of next month
-                // Use start date (1st of month) to avoid date rollover issues when adding months
-                const nextMonth = new Date(commissionPeriod.start);
-                nextMonth.setMonth(nextMonth.getMonth() + 1);
-                nextMonth.setDate(10); // Set to 10th of next month
-                const paymentDate = nextMonth.toLocaleDateString('en-IN', { day: 'numeric', month: 'long', year: 'numeric' });
                 
                 const getDaySuffix = (day: number) => {
                   if (day === 1 || day === 21 || day === 31) return 'st';
@@ -2183,8 +2206,8 @@ const TechnicianPayments = () => {
                 </div>
               )}
 
-              {/* Past Month Summary - Show final salary paid on 10th */}
-              {selectedPeriod === 'pastMonth' && (
+              {/* Summary - Show final salary paid on 10th */}
+              {(selectedPeriod === 'pastMonth' || selectedPeriod === 'rangeToCurrent') && (
                 <div className="mb-6 p-4 bg-green-50 rounded-lg border-2 border-green-200">
                   <div className="flex items-center justify-between">
                     <div>
@@ -2199,9 +2222,8 @@ const TechnicianPayments = () => {
                       </p>
                       <p className="text-xs text-gray-500 mt-1">
                         Paid on {(() => {
-                          // Use start date (1st of month) to avoid date rollover issues when adding months
-                          const startDate = commissionPeriod?.start || new Date();
-                          const paymentDate = new Date(startDate);
+                          const endDate = commissionPeriod?.end || new Date();
+                          const paymentDate = new Date(endDate);
                           paymentDate.setMonth(paymentDate.getMonth() + 1);
                           paymentDate.setDate(10);
                           return paymentDate.toLocaleDateString('en-IN', {
