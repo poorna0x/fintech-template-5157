@@ -3147,12 +3147,8 @@ const TechnicianDashboard = () => {
           });
         }
 
-        // Update customer prefilter status / raw_water_tds (RO jobs only) and Google review flag
-        if (
-          customerHasPrefilter !== null ||
-          (rawWaterTds !== '' && !isSoftenerService()) ||
-          customerHasGoogleReview !== null
-        ) {
+        // Update customer Google review flag (RO jobs only)
+        if (!isSoftenerService()) {
           // Get customer UUID from job - prioritize customer.id (UUID) over customer_id
           // customer.id is the UUID primary key, customer_id in job is also UUID foreign key
           const customerId = 
@@ -3166,7 +3162,8 @@ const TechnicianDashboard = () => {
             try {
               const updatePayload: Record<string, any> = {};
               if (customerHasPrefilter !== null) updatePayload.has_prefilter = customerHasPrefilter;
-              if (customerHasGoogleReview !== null) updatePayload.has_google_review = customerHasGoogleReview;
+              // Always persist the user's tri-state choice (true/false/null) to the DB
+              updatePayload.has_google_review = customerHasGoogleReview;
               const tdsVal = parseInt(rawWaterTds, 10);
               if (!isSoftenerService() && !isNaN(tdsVal) && tdsVal >= 0) {
                 updatePayload.raw_water_tds = tdsVal;
@@ -6990,6 +6987,30 @@ const TechnicianDashboard = () => {
                             )}
                           </div>
                           <span className="font-medium text-sm">No</span>
+                        </div>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setCustomerHasGoogleReview(null);
+                        }}
+                        className={`p-4 rounded-lg border-2 transition-all duration-200 ${
+                          customerHasGoogleReview === null
+                            ? 'border-orange-300 bg-orange-50 text-orange-900 shadow-md'
+                            : 'border-gray-300 bg-white text-gray-700 hover:border-gray-400 hover:bg-gray-50'
+                        }`}
+                      >
+                        <div className="flex flex-col items-center gap-2">
+                          <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center ${
+                            customerHasGoogleReview === null
+                              ? 'border-orange-300 bg-orange-100'
+                              : 'border-gray-400'
+                          }`}>
+                            {customerHasGoogleReview === null && (
+                              <div className="w-2.5 h-2.5 rounded-full bg-orange-500"></div>
+                            )}
+                          </div>
+                          <span className="font-medium text-sm">Not Set</span>
                         </div>
                       </button>
                     </div>
