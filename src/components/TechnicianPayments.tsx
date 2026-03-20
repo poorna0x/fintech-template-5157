@@ -1581,7 +1581,7 @@ const TechnicianPayments = () => {
               <SelectContent>
                 <SelectItem value="current">Current Cycle</SelectItem>
                 <SelectItem value="pastMonth">Past Month</SelectItem>
-                <SelectItem value="rangeToCurrent">Range (From -> To)</SelectItem>
+                <SelectItem value="rangeToCurrent">Range (From -&gt; To)</SelectItem>
               </SelectContent>
             </Select>
           </div>
