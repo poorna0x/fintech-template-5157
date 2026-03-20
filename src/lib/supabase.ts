@@ -1296,8 +1296,9 @@ export const db = {
     async getAll() {
       const { data, error } = await supabase
         .from('common_qr_codes')
-        .select('*')
-        .order('created_at', { ascending: false });
+        .select('id, name, qr_code_url, created_at, updated_at')
+        .order('created_at', { ascending: false })
+        .limit(50);
       
       return { data, error };
     },
@@ -1353,8 +1354,9 @@ export const db = {
     async getAll() {
       const { data, error } = await supabase
         .from('technician_common_qr')
-        .select('*')
-        .order('created_at', { ascending: false });
+        .select('id, name, qr_code_url, created_at, updated_at')
+        .order('created_at', { ascending: false })
+        .limit(50);
       return { data, error };
     },
     async update(id: string, updates: { name?: string; qr_code_url?: string }) {
@@ -1402,8 +1404,9 @@ export const db = {
     async getAll() {
       const { data, error } = await supabase
         .from('product_qr_codes')
-        .select('*')
-        .order('created_at', { ascending: false });
+        .select('id, name, qr_code_url, product_image_url, product_name, product_description, product_mrp, created_at, updated_at')
+        .order('created_at', { ascending: false })
+        .limit(50);
       
       return { data, error };
     },
