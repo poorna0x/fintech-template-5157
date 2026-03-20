@@ -379,7 +379,20 @@ const TechnicianPayments = () => {
         holidaysRes,
         completedJobsRes
       ] = await Promise.all([
-        supabase.from('technician_payments').select(`*, technician:technicians(id, full_name, employee_id), job:jobs(id, job_number)`)
+        supabase
+          .from('technician_payments')
+          .select(`
+            id,
+            technician_id,
+            job_id,
+            bill_amount,
+            commission_percentage,
+            commission_amount,
+            payment_status,
+            payment_date,
+            created_at,
+            job:jobs(id, job_number)
+          `)
           .gte('created_at', startDate.toISOString()).lte('created_at', endDate.toISOString()),
         db.technicianExpenses.getAll(undefined, periodStartStr, periodEndStr),
         db.technicianAdvances.getAll(undefined, periodStartStr, periodEndStr),
