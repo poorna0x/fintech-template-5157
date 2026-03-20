@@ -911,6 +911,7 @@ const AdminDashboard = () => {
     serviceCost: customer.service_cost,
     costAgreed: customer.cost_agreed,
     has_prefilter: customer.has_prefilter ?? null,
+    has_google_review: customer.has_google_review ?? null,
     raw_water_tds: (customer as any).raw_water_tds ?? 0,
     createdAt: customer.created_at,
     updatedAt: customer.updated_at

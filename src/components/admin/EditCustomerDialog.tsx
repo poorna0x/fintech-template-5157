@@ -125,6 +125,7 @@ const transformCustomerData = (customer: any): Customer => ({
   serviceCost: customer.service_cost,
   costAgreed: customer.cost_agreed,
   has_prefilter: customer.has_prefilter ?? null,
+  has_google_review: (customer as any).has_google_review ?? null,
   raw_water_tds: (customer as any).raw_water_tds ?? 0,
   createdAt: customer.created_at,
   updatedAt: customer.updated_at
@@ -168,6 +169,7 @@ const EditCustomerDialog: React.FC<EditCustomerDialogProps> = ({
     visible_address: '',
     custom_time: '',
     has_prefilter: null as boolean | null,
+    has_google_review: null as boolean | null,
     raw_water_tds: 0 as number,
     address: {
       street: '',
@@ -248,6 +250,7 @@ const EditCustomerDialog: React.FC<EditCustomerDialogProps> = ({
             status: customerToUse.status || '',
             notes: customerToUse.notes || '',
             has_prefilter: (customerToUse as any).has_prefilter ?? null,
+            has_google_review: (customerToUse as any).has_google_review ?? null,
             raw_water_tds: ((customerToUse as any).raw_water_tds != null && Number((customerToUse as any).raw_water_tds) > 0) ? (customerToUse as any).raw_water_tds : 0,
         google_location: (() => {
           if ((customerToUse.location as any)?.googleLocation) {
@@ -871,6 +874,7 @@ const EditCustomerDialog: React.FC<EditCustomerDialogProps> = ({
         visible_address: editFormData.visible_address ? editFormData.visible_address.trim() : '',
         custom_time: editFormData.custom_time || null,
         has_prefilter: editFormData.has_prefilter,
+        has_google_review: editFormData.has_google_review,
         raw_water_tds: Math.max(0, parseInt(String(editFormData.raw_water_tds), 10) || 0),
         address: updatedAddress,
         location: updatedLocation
@@ -1035,6 +1039,7 @@ const EditCustomerDialog: React.FC<EditCustomerDialogProps> = ({
         visible_address: editFormData.visible_address ? editFormData.visible_address.trim() : '',
         custom_time: editFormData.custom_time || null,
         has_prefilter: editFormData.has_prefilter,
+        has_google_review: editFormData.has_google_review,
         raw_water_tds: Math.max(0, parseInt(String(editFormData.raw_water_tds), 10) || 0),
         address: updatedAddress,
         location: updatedLocation
@@ -1397,6 +1402,44 @@ const EditCustomerDialog: React.FC<EditCustomerDialogProps> = ({
                   </div>
                 </div>
               </div>
+                <div className="space-y-2">
+                  <Label>Has the customer left a Google review?</Label>
+                  <div className="flex gap-4">
+                    <div className="flex items-center space-x-2">
+                      <input
+                        type="radio"
+                        id="edit-google-review-yes"
+                        name="edit-google-review"
+                        checked={editFormData.has_google_review === true}
+                        onChange={() => handleEditFormChange('has_google_review', true)}
+                        className="w-4 h-4"
+                      />
+                      <Label htmlFor="edit-google-review-yes" className="cursor-pointer">Yes</Label>
+                    </div>
+                    <div className="flex items-center space-x-2">
+                      <input
+                        type="radio"
+                        id="edit-google-review-no"
+                        name="edit-google-review"
+                        checked={editFormData.has_google_review === false}
+                        onChange={() => handleEditFormChange('has_google_review', false)}
+                        className="w-4 h-4"
+                      />
+                      <Label htmlFor="edit-google-review-no" className="cursor-pointer">No</Label>
+                    </div>
+                    <div className="flex items-center space-x-2">
+                      <input
+                        type="radio"
+                        id="edit-google-review-unknown"
+                        name="edit-google-review"
+                        checked={editFormData.has_google_review === null}
+                        onChange={() => handleEditFormChange('has_google_review', null)}
+                        className="w-4 h-4"
+                      />
+                      <Label htmlFor="edit-google-review-unknown" className="cursor-pointer">Not Set</Label>
+                    </div>
+                  </div>
+                </div>
               <div className="space-y-2">
                 <Label htmlFor="edit-raw-water-tds">Raw water TDS (ppm)</Label>
                 <Input

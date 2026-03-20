@@ -60,6 +60,9 @@ export interface Customer {
   // Raw water TDS (ppm) - before RO purification
   rawWaterTds?: number;
   raw_water_tds?: number;
+
+  // Google review status (whether the customer left a Google review)
+  has_google_review?: boolean | null;
   
   // Timestamps
   createdAt: string;
