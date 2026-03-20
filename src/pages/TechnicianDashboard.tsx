@@ -4136,7 +4136,7 @@ const TechnicianDashboard = () => {
                             <div className="flex items-center gap-2 mb-2">
                               <div className={`w-4 h-4 ${
                                 customerAMCStatus[customer?.id] && Boolean(customer?.has_google_review)
-                                  ? 'bg-fuchsia-500 ring-2 ring-fuchsia-300 shadow-[0_0_12px_rgba(217,70,239,0.9)]'
+                                  ? 'bg-orange-500 ring-2 ring-orange-300 shadow-[0_0_12px_rgba(249,115,22,0.9)]'
                                   : customerAMCStatus[customer?.id]
                                     ? 'bg-green-500'
                                     : (customer?.has_google_review ? 'bg-red-500' : 'bg-gray-400')
@@ -4146,7 +4146,7 @@ const TechnicianDashboard = () => {
                                   <div className="absolute -top-0.5 -right-0.5 w-1.5 h-1.5 bg-green-600 rounded-full border border-white" title="Active AMC"></div>
                                 )}
                                 {Boolean(customer?.has_google_review) && customerAMCStatus[customer?.id] && (
-                                  <div className="absolute -bottom-0.5 -left-0.5 w-1.5 h-1.5 bg-red-600 rounded-full border border-white" title="Google reviewed"></div>
+                                  <div className="absolute -bottom-0.5 -left-0.5 w-1.5 h-1.5 bg-orange-600 rounded-full border border-white" title="Google reviewed"></div>
                                 )}
                                 {Boolean(customer?.has_google_review) && !customerAMCStatus[customer?.id] && (
                                   <div className="absolute -bottom-0.5 -left-0.5 w-1.5 h-1.5 bg-white rounded-full border border-red-200" title="Google reviewed"></div>
@@ -4639,7 +4639,7 @@ const TechnicianDashboard = () => {
                       <div className="flex items-center gap-2 mb-3 flex-wrap">
                           <div className={`w-4 h-4 ${
                             customerAMCStatus[(job.customer as any)?.id] && Boolean((job.customer as any)?.has_google_review)
-                              ? 'bg-fuchsia-500 ring-2 ring-fuchsia-300 shadow-[0_0_12px_rgba(217,70,239,0.9)]'
+                              ? 'bg-orange-500 ring-2 ring-orange-300 shadow-[0_0_12px_rgba(249,115,22,0.9)]'
                               : customerAMCStatus[(job.customer as any)?.id]
                                 ? 'bg-green-500'
                                 : ((job.customer as any)?.has_google_review ? 'bg-red-500' : 'bg-gray-400')
@@ -4649,7 +4649,7 @@ const TechnicianDashboard = () => {
                               <div className="absolute -top-0.5 -right-0.5 w-1.5 h-1.5 bg-green-600 rounded-full border border-white" title="Active AMC"></div>
                             )}
                             {Boolean((job.customer as any)?.has_google_review) && customerAMCStatus[(job.customer as any)?.id] && (
-                              <div className="absolute -bottom-0.5 -left-0.5 w-1.5 h-1.5 bg-red-600 rounded-full border border-white" title="Google reviewed"></div>
+                              <div className="absolute -bottom-0.5 -left-0.5 w-1.5 h-1.5 bg-orange-600 rounded-full border border-white" title="Google reviewed"></div>
                             )}
                             {Boolean((job.customer as any)?.has_google_review) && !customerAMCStatus[(job.customer as any)?.id] && (
                               <div className="absolute -bottom-0.5 -left-0.5 w-1.5 h-1.5 bg-white rounded-full border border-red-200" title="Google reviewed"></div>
@@ -5376,7 +5376,7 @@ const TechnicianDashboard = () => {
                         <div className="flex items-center gap-2 mb-3">
                           <div className={`w-5 h-5 ${
                             customerAMCStatus[customer?.id] && Boolean(customer?.has_google_review)
-                              ? 'bg-fuchsia-500 ring-2 ring-fuchsia-300 shadow-[0_0_12px_rgba(217,70,239,0.9)]'
+                              ? 'bg-orange-500 ring-2 ring-orange-300 shadow-[0_0_12px_rgba(249,115,22,0.9)]'
                               : customerAMCStatus[customer?.id]
                                 ? 'bg-green-500'
                                 : (customer?.has_google_review ? 'bg-red-500' : 'bg-gray-400')
@@ -5386,7 +5386,7 @@ const TechnicianDashboard = () => {
                               <div className="absolute -top-0.5 -right-0.5 w-2 h-2 bg-green-600 rounded-full border border-white" title="Active AMC"></div>
                             )}
                             {Boolean(customer?.has_google_review) && customerAMCStatus[customer?.id] && (
-                              <div className="absolute -bottom-0.5 -left-0.5 w-2 h-2 bg-red-600 rounded-full border border-white" title="Google reviewed"></div>
+                              <div className="absolute -bottom-0.5 -left-0.5 w-2 h-2 bg-orange-600 rounded-full border border-white" title="Google reviewed"></div>
                             )}
                             {Boolean(customer?.has_google_review) && !customerAMCStatus[customer?.id] && (
                               <div className="absolute -bottom-0.5 -left-0.5 w-2 h-2 bg-white rounded-full border border-red-200" title="Google reviewed"></div>
