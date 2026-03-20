@@ -2809,8 +2809,9 @@ export const db = {
     async getAll() {
       const { data, error } = await supabase
         .from('admin_todos')
-        .select('*')
-        .order('created_at', { ascending: false });
+        .select('id, text, created_at')
+        .order('created_at', { ascending: false })
+        .limit(200);
       
       return { data, error };
     },
