@@ -196,7 +196,11 @@ const CallingPage = ({ hideHeader = false, onBack }: CallingPageProps = {}) => {
           status,
           has_prefilter,
           last_service_date
-        `);
+        `)
+        // Cap customers pulled from DB to avoid full-table egress.
+        // Client still paginates using `currentPage/itemsPerPage`.
+        .order('created_at', { ascending: false })
+        .limit(1000);
 
       if (customersError) throw customersError;
 
@@ -217,7 +221,8 @@ const CallingPage = ({ hideHeader = false, onBack }: CallingPageProps = {}) => {
           .select('customer_id, completed_at, service_type, service_sub_type')
           .eq('status', 'COMPLETED')
           .not('completed_at', 'is', null)
-          .order('completed_at', { ascending: false });
+          .order('completed_at', { ascending: false })
+          .limit(2000);
         lastJobsData = fallback.data;
       } else {
         lastJobsData = jobsRes.data;
@@ -226,7 +231,8 @@ const CallingPage = ({ hideHeader = false, onBack }: CallingPageProps = {}) => {
         const fallback = await supabase
           .from('call_history')
           .select('customer_id, contacted_at, status')
-          .order('contacted_at', { ascending: false });
+          .order('contacted_at', { ascending: false })
+          .limit(2000);
         lastContactsData = fallback.data;
       } else {
         lastContactsData = contactsRes.data;
