@@ -3623,6 +3623,12 @@ CREATE POLICY todos_select_anon ON public.admin_todos FOR SELECT TO authenticate
 
 
 --
+-- Optional migration: customer tier (premium / worst) — run in Supabase SQL if column missing
+--
+ALTER TABLE public.customers ADD COLUMN IF NOT EXISTS customer_tier character varying(20);
+COMMENT ON COLUMN public.customers.customer_tier IS 'PREMIUM = gold name highlight; WORST = red name (bad/problem customer). NULL = normal.';
+
+--
 -- PostgreSQL database dump complete
 --
 

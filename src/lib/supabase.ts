@@ -580,6 +580,7 @@ export const db = {
             preferred_language,
             has_prefilter,
             has_google_review,
+            customer_tier,
             raw_water_tds,
             created_at,
             updated_at
@@ -872,6 +873,7 @@ export const db = {
             preferred_language,
             has_prefilter,
             has_google_review,
+            customer_tier,
             raw_water_tds,
             created_at,
             updated_at

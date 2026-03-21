@@ -16,6 +16,7 @@ import { WhatsAppIcon } from '../WhatsAppIcon';
 import { findLeadSource } from '@/lib/adminUtils';
 import JobPartsUsedDialog from './JobPartsUsedDialog';
 import { db } from '@/lib/supabase';
+import { customerNameClassName } from '@/lib/customerDisplay';
 
 interface CompletedJobSectionProps {
   job: Job;
@@ -460,7 +461,8 @@ export const CompletedJobSection: React.FC<CompletedJobSectionProps> = ({
           <AlertDialogHeader>
             <AlertDialogTitle>Send WhatsApp message?</AlertDialogTitle>
             <AlertDialogDescription>
-              Technician requested not to send message to {customerName}. Send anyway?
+              Technician requested not to send message to{' '}
+              <span className={customerNameClassName((job as any).customer)}>{customerName}</span>. Send anyway?
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>

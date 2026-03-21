@@ -63,6 +63,7 @@ const transformCustomerData = (customer: any): Customer => ({
   costAgreed: customer.cost_agreed,
   has_prefilter: customer.has_prefilter ?? null,
   has_google_review: (customer as any).has_google_review ?? null,
+  customer_tier: (customer as any).customer_tier ?? null,
   createdAt: customer.created_at,
   updatedAt: customer.updated_at
 });

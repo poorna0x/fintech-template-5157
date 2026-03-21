@@ -5,6 +5,7 @@ import { Badge } from '@/components/ui/badge';
 import { Customer, Job, Technician } from '@/types';
 import { db } from '@/lib/supabase';
 import { CheckCircle } from 'lucide-react';
+import { customerNameClassName } from '@/lib/customerDisplay';
 
 interface CustomerReportDialogProps {
   open: boolean;
@@ -77,7 +78,10 @@ const CustomerReportDialog: React.FC<CustomerReportDialogProps> = ({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-4xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
-          <DialogTitle>Customer Report - {customer.fullName || 'Unknown'}</DialogTitle>
+          <DialogTitle>
+            Customer Report -{' '}
+            <span className={customerNameClassName(customer)}>{customer.fullName || 'Unknown'}</span>
+          </DialogTitle>
           <DialogDescription>
             Complete service history and job details
           </DialogDescription>
@@ -89,7 +93,8 @@ const CustomerReportDialog: React.FC<CustomerReportDialogProps> = ({
             <h3 className="font-semibold text-lg mb-3">Customer Information</h3>
             <div className="grid grid-cols-2 gap-3 text-sm">
               <div>
-                <span className="text-gray-500">Name:</span> {customer.fullName}
+                <span className="text-gray-500">Name:</span>{' '}
+                <span className={customerNameClassName(customer)}>{customer.fullName}</span>
               </div>
               <div>
                 <span className="text-gray-500">Customer ID:</span> {customer.customerId}

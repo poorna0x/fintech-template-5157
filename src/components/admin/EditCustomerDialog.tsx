@@ -126,6 +126,7 @@ const transformCustomerData = (customer: any): Customer => ({
   costAgreed: customer.cost_agreed,
   has_prefilter: customer.has_prefilter ?? null,
   has_google_review: (customer as any).has_google_review ?? null,
+  customer_tier: (customer as any).customer_tier ?? null,
   raw_water_tds: (customer as any).raw_water_tds ?? 0,
   createdAt: customer.created_at,
   updatedAt: customer.updated_at
@@ -170,6 +171,7 @@ const EditCustomerDialog: React.FC<EditCustomerDialogProps> = ({
     custom_time: '',
     has_prefilter: null as boolean | null,
     has_google_review: null as boolean | null,
+    customer_tier: null as 'PREMIUM' | 'WORST' | null,
     raw_water_tds: 0 as number,
     address: {
       street: '',
@@ -251,6 +253,10 @@ const EditCustomerDialog: React.FC<EditCustomerDialogProps> = ({
             notes: customerToUse.notes || '',
             has_prefilter: (customerToUse as any).has_prefilter ?? null,
             has_google_review: (customerToUse as any).has_google_review ?? null,
+            customer_tier: ((t: unknown) => {
+              if (t === 'PREMIUM' || t === 'WORST') return t;
+              return null;
+            })((customerToUse as any).customer_tier),
             raw_water_tds: ((customerToUse as any).raw_water_tds != null && Number((customerToUse as any).raw_water_tds) > 0) ? (customerToUse as any).raw_water_tds : 0,
         google_location: (() => {
           if ((customerToUse.location as any)?.googleLocation) {
@@ -344,7 +350,10 @@ const EditCustomerDialog: React.FC<EditCustomerDialogProps> = ({
   }, [customer, open]);
 
 
-  const handleEditFormChange = (field: string, value: string | string[] | boolean | number | null) => {
+  const handleEditFormChange = (
+    field: string,
+    value: string | string[] | boolean | number | null | 'PREMIUM' | 'WORST'
+  ) => {
     setEditFormData(prev => ({
       ...prev,
       [field]: value
@@ -875,6 +884,7 @@ const EditCustomerDialog: React.FC<EditCustomerDialogProps> = ({
         custom_time: editFormData.custom_time || null,
         has_prefilter: editFormData.has_prefilter,
         has_google_review: editFormData.has_google_review,
+        customer_tier: editFormData.customer_tier,
         raw_water_tds: Math.max(0, parseInt(String(editFormData.raw_water_tds), 10) || 0),
         address: updatedAddress,
         location: updatedLocation
@@ -1040,6 +1050,7 @@ const EditCustomerDialog: React.FC<EditCustomerDialogProps> = ({
         custom_time: editFormData.custom_time || null,
         has_prefilter: editFormData.has_prefilter,
         has_google_review: editFormData.has_google_review,
+        customer_tier: editFormData.customer_tier,
         raw_water_tds: Math.max(0, parseInt(String(editFormData.raw_water_tds), 10) || 0),
         address: updatedAddress,
         location: updatedLocation
@@ -1437,6 +1448,45 @@ const EditCustomerDialog: React.FC<EditCustomerDialogProps> = ({
                         className="w-4 h-4"
                       />
                       <Label htmlFor="edit-google-review-unknown" className="cursor-pointer">Not Set</Label>
+                    </div>
+                  </div>
+                </div>
+                <div className="space-y-2">
+                  <Label>Customer highlight (name color in lists)</Label>
+                  <p className="text-xs text-muted-foreground">Premium = gold name. Worst = red name for difficult/problem customers.</p>
+                  <div className="flex flex-wrap gap-4">
+                    <div className="flex items-center space-x-2">
+                      <input
+                        type="radio"
+                        id="edit-customer-tier-none"
+                        name="edit-customer-tier"
+                        checked={editFormData.customer_tier === null}
+                        onChange={() => handleEditFormChange('customer_tier', null)}
+                        className="w-4 h-4"
+                      />
+                      <Label htmlFor="edit-customer-tier-none" className="cursor-pointer">Normal</Label>
+                    </div>
+                    <div className="flex items-center space-x-2">
+                      <input
+                        type="radio"
+                        id="edit-customer-tier-premium"
+                        name="edit-customer-tier"
+                        checked={editFormData.customer_tier === 'PREMIUM'}
+                        onChange={() => handleEditFormChange('customer_tier', 'PREMIUM')}
+                        className="w-4 h-4"
+                      />
+                      <Label htmlFor="edit-customer-tier-premium" className="cursor-pointer text-amber-600 font-medium">Premium (gold)</Label>
+                    </div>
+                    <div className="flex items-center space-x-2">
+                      <input
+                        type="radio"
+                        id="edit-customer-tier-worst"
+                        name="edit-customer-tier"
+                        checked={editFormData.customer_tier === 'WORST'}
+                        onChange={() => handleEditFormChange('customer_tier', 'WORST')}
+                        className="w-4 h-4"
+                      />
+                      <Label htmlFor="edit-customer-tier-worst" className="cursor-pointer text-red-600 font-medium">Worst (red)</Label>
                     </div>
                   </div>
                 </div>

@@ -66,6 +66,7 @@ import TechnicianInventoryView from '@/components/TechnicianInventoryView';
 import JobPartsUsedDialog from '@/components/admin/JobPartsUsedDialog';
 import { AddReminderDialog } from '@/components/reminders/AddReminderDialog';
 import { bangaloreAreas } from '@/lib/adminUtils';
+import { customerNameClassName } from '@/lib/customerDisplay';
 
 // Calculate Levenshtein distance for fuzzy matching
 const levenshteinDistance = (str1: string, str2: string): number => {
@@ -3187,77 +3188,53 @@ const TechnicianDashboard = () => {
           });
         }
 
-        // Update customer Google review flag (RO jobs only)
-        if (!isSoftenerService()) {
-          // Get customer UUID from job - prioritize customer.id (UUID) over customer_id
-          // customer.id is the UUID primary key, customer_id in job is also UUID foreign key
-          const customerId = 
-            (selectedJobForComplete.customer as any)?.id ||  // UUID from joined customer object (most reliable)
-            selectedJobForComplete.customer?.id ||           // UUID from customer object
-            selectedJobForComplete.customer_id ||            // UUID foreign key in job table
-            (selectedJobForComplete as any).customer_id ||   // Alternative field name
-            selectedJobForComplete.customerId;              // Fallback
-          
-          if (customerId) {
-            try {
-              const updatePayload: Record<string, any> = {};
+        // Update customer (prefilter/TDS for RO)
+        const customerId =
+          (selectedJobForComplete.customer as any)?.id ||
+          selectedJobForComplete.customer?.id ||
+          selectedJobForComplete.customer_id ||
+          (selectedJobForComplete as any).customer_id ||
+          selectedJobForComplete.customerId;
+
+        if (customerId) {
+          try {
+            const updatePayload: Record<string, any> = {};
+            if (!isSoftenerService()) {
               if (customerHasPrefilter !== null) updatePayload.has_prefilter = customerHasPrefilter;
               const tdsVal = parseInt(rawWaterTds, 10);
-              if (!isSoftenerService() && !isNaN(tdsVal) && tdsVal >= 0) {
+              if (!isNaN(tdsVal) && tdsVal >= 0) {
                 updatePayload.raw_water_tds = tdsVal;
-              } else if (!isSoftenerService() && rawWaterTds === '') {
+              } else if (rawWaterTds === '') {
                 updatePayload.raw_water_tds = 0;
               }
-              if (Object.keys(updatePayload).length > 0) {
-                console.log('🔄 Updating customer prefilter/raw_water_tds:', {
-                  customerId,
-                  hasPrefilter: customerHasPrefilter,
-                  raw_water_tds: updatePayload.raw_water_tds,
-                  jobId: selectedJobForComplete.id,
-                });
-                
-                const { data, error } = await db.customers.update(customerId, updatePayload);
-                
-                if (error) {
-                  console.error('❌ Failed to update customer prefilter status:', {
-                    error,
-                    customerId,
-                    hasPrefilter: customerHasPrefilter,
-                    errorMessage: error.message,
-                    errorCode: error.code
-                  });
-                  toast.error(`Failed to update customer prefilter status: ${error.message || 'Unknown error'}`);
-                } else {
-                  console.log('✅ Customer prefilter status updated successfully:', {
-                    customerId,
-                    hasPrefilter: customerHasPrefilter,
-                    updatedData: data
-                  });
-                }
-              }
-            } catch (error: any) {
-              console.error('❌ Error updating customer prefilter status:', {
-                error,
-                customerId,
-                hasPrefilter: customerHasPrefilter,
-                errorMessage: error?.message,
-                errorStack: error?.stack
-              });
-              toast.error(`Failed to update customer prefilter status: ${error?.message || 'Unknown error'}`);
             }
-          } else {
-            console.warn('⚠️ Cannot update customer prefilter: customer UUID not found in job', {
-              jobId: selectedJobForComplete.id,
-              jobNumber: (selectedJobForComplete as any).job_number || selectedJobForComplete.jobNumber,
-              customer: selectedJobForComplete.customer ? {
-                id: (selectedJobForComplete.customer as any)?.id,
-                customer_id: (selectedJobForComplete.customer as any)?.customer_id,
-                fullName: selectedJobForComplete.customer.fullName || (selectedJobForComplete.customer as any)?.full_name
-              } : 'missing',
-              customer_id: selectedJobForComplete.customer_id,
-              customerId: selectedJobForComplete.customerId
-            });
-            toast.warning('Could not update customer prefilter: customer ID not found');
+
+            if (Object.keys(updatePayload).length > 0) {
+              const { data, error } = await db.customers.update(customerId, updatePayload);
+
+              if (error) {
+                console.error('❌ Failed to update customer on job completion:', {
+                  error,
+                  customerId,
+                  updatePayload,
+                  errorMessage: error.message,
+                });
+                toast.error(`Failed to update customer: ${error.message || 'Unknown error'}`);
+              } else {
+                console.log('✅ Customer updated on job completion:', { customerId, updatePayload, data });
+              }
+            }
+          } catch (error: any) {
+            console.error('❌ Error updating customer on job completion:', error);
+            toast.error(`Failed to update customer: ${error?.message || 'Unknown error'}`);
+          }
+        } else {
+          console.warn('⚠️ Cannot update customer: customer UUID not found in job', {
+            jobId: selectedJobForComplete.id,
+            jobNumber: (selectedJobForComplete as any).job_number || selectedJobForComplete.jobNumber,
+          });
+          if (!isSoftenerService()) {
+            toast.warning('Could not update customer: customer ID not found');
           }
         }
 
@@ -3273,9 +3250,7 @@ const TechnicianDashboard = () => {
             completedAt: new Date().toISOString(),
             actual_cost: parseFloat(billAmount) || 0,
             payment_amount: parseFloat(billAmount) || 0,
-                customer: (job as any).customer
-                  ? { ...(job as any).customer }
-                  : job.customer
+                customer: job.customer
           } : job
         ));
 
@@ -4195,7 +4170,7 @@ const TechnicianDashboard = () => {
                                   <div className="absolute -bottom-0.5 -left-0.5 w-1.5 h-1.5 bg-white rounded-full border border-red-200" title="Google reviewed"></div>
                                 )}
                               </div>
-                              <span className="font-bold text-lg text-gray-900">
+                              <span className={`font-bold text-lg text-gray-900 ${customerNameClassName(customer)}`}>
                                 {customer?.full_name || 'N/A'}
                               </span>
                               <Badge className="bg-orange-100 text-orange-800 border-0">
@@ -4704,7 +4679,7 @@ const TechnicianDashboard = () => {
                           </div>
                             );
                           })()}
-                          <span className="font-bold text-lg text-gray-900">
+                          <span className={`font-bold text-lg text-gray-900 ${customerNameClassName(job.customer as any)}`}>
                             {(job.customer as any)?.full_name || 'N/A'}
                           </span>
                         {getStatusBadge((job as any).status || job.status)}
@@ -5442,7 +5417,7 @@ const TechnicianDashboard = () => {
                               <div className="absolute -bottom-0.5 -left-0.5 w-2 h-2 bg-white rounded-full border border-red-200" title="Google reviewed"></div>
                             )}
                           </div>
-                          <span className="font-bold text-xl text-gray-900">
+                          <span className={`font-bold text-xl text-gray-900 ${customerNameClassName(customer)}`}>
                             {customer?.full_name || 'N/A'}
                           </span>
                           <Badge className="bg-orange-100 text-orange-800 border-0">
@@ -5557,7 +5532,9 @@ const TechnicianDashboard = () => {
                         <h4 className="font-semibold text-blue-900 mb-3">Customer Information</h4>
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
                           <div>
-                            <p><strong>Name:</strong> {customer?.full_name || 'N/A'}</p>
+                            <p><strong>Name:</strong>{' '}
+                              <span className={customerNameClassName(customer)}>{customer?.full_name || 'N/A'}</span>
+                            </p>
                             {customer?.phone && <p><strong>Phone:</strong> {customer.phone}</p>}
                             {customer?.email && <p><strong>Email:</strong> {customer.email}</p>}
                           </div>
@@ -6107,12 +6084,13 @@ const TechnicianDashboard = () => {
                     {(selectedJobForComplete.serviceType || (selectedJobForComplete as any).service_type || 'N/A')} - {(selectedJobForComplete.serviceSubType || (selectedJobForComplete as any).service_sub_type || 'N/A')}
                   </div>
                   <div className="text-sm text-gray-600">
-                    Customer: {
-                      selectedJobForComplete.customer?.fullName || 
-                      (selectedJobForComplete.customer as any)?.full_name ||
-                      (selectedJobForComplete.customer as any)?.name ||
-                      'Unknown'
-                    }
+                    Customer:{' '}
+                    <span className={customerNameClassName(selectedJobForComplete.customer as any)}>
+                      {selectedJobForComplete.customer?.fullName ||
+                        (selectedJobForComplete.customer as any)?.full_name ||
+                        (selectedJobForComplete.customer as any)?.name ||
+                        'Unknown'}
+                    </span>
                   </div>
                 </div>
                 </>
@@ -7723,7 +7701,12 @@ const TechnicianDashboard = () => {
       <Dialog open={customerReportDialogOpen} onOpenChange={setCustomerReportDialogOpen}>
         <DialogContent className="sm:max-w-4xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>Customer Report - {selectedCustomerForReport?.full_name || selectedCustomerForReport?.fullName || 'Unknown'}</DialogTitle>
+            <DialogTitle>
+              Customer Report -{' '}
+              <span className={customerNameClassName(selectedCustomerForReport as any)}>
+                {selectedCustomerForReport?.full_name || selectedCustomerForReport?.fullName || 'Unknown'}
+              </span>
+            </DialogTitle>
             <DialogDescription>
               Complete service history and job details
             </DialogDescription>
@@ -7753,7 +7736,10 @@ const TechnicianDashboard = () => {
                   <h3 className="font-semibold text-lg mb-3">Customer Information</h3>
                   <div className="grid grid-cols-2 gap-3 text-sm">
                     <div>
-                      <span className="text-gray-500">Name:</span> {selectedCustomerForReport.full_name || selectedCustomerForReport.fullName}
+                      <span className="text-gray-500">Name:</span>{' '}
+                      <span className={customerNameClassName(selectedCustomerForReport as any)}>
+                        {selectedCustomerForReport.full_name || selectedCustomerForReport.fullName}
+                      </span>
                     </div>
                     <div>
                       <span className="text-gray-500">Customer ID:</span> {selectedCustomerForReport.customer_id || selectedCustomerForReport.customerId}

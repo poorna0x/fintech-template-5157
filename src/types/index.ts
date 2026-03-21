@@ -63,6 +63,9 @@ export interface Customer {
 
   // Google review status (whether the customer left a Google review)
   has_google_review?: boolean | null;
+
+  /** PREMIUM = highlight name gold; WORST = highlight name red (problem customer). */
+  customer_tier?: 'PREMIUM' | 'WORST' | null;
   
   // Timestamps
   createdAt: string;
@@ -425,6 +428,7 @@ export interface Database {
           service_cost?: number;
           cost_agreed?: boolean;
           has_prefilter?: boolean | null;
+          customer_tier?: string | null;
           created_at: string;
           updated_at: string;
         };

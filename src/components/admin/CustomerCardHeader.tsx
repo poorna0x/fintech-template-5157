@@ -5,6 +5,7 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigge
 import { Edit, Plus, Camera, FileText, MoreVertical, Receipt, Star, Bell } from 'lucide-react';
 import { Customer } from '@/types';
 import { WhatsAppIcon } from '@/components/WhatsAppIcon';
+import { customerNameClassName } from '@/lib/customerDisplay';
 
 interface CustomerCardHeaderProps {
   customer: Customer;
@@ -112,7 +113,7 @@ export const CustomerCardHeader: React.FC<CustomerCardHeaderProps> = ({
               <div className="absolute -bottom-0.5 -left-0.5 z-10 w-2 h-2 bg-red-600 rounded-full border border-white" title="Google reviewed"></div>
             ) : null}
           </div>
-          <h3 className="text-lg font-semibold text-gray-900 truncate flex-1">
+          <h3 className={`text-lg font-semibold text-gray-900 truncate flex-1 ${customerNameClassName(customer)}`}>
             {customer.fullName || 'Unknown Customer'}
           </h3>
           <div className="bg-gray-800 text-white px-2 py-1 rounded-md font-mono text-xs font-medium">
@@ -333,7 +334,7 @@ export const CustomerCardHeader: React.FC<CustomerCardHeaderProps> = ({
                   <div className="absolute -bottom-0.5 -left-0.5 z-10 w-2 h-2 bg-red-600 rounded-full border border-white" title="Google reviewed"></div>
                 ) : null}
               </div>
-              <h3 className="text-xl font-semibold text-gray-900 truncate">
+              <h3 className={`text-xl font-semibold text-gray-900 truncate ${customerNameClassName(customer)}`}>
                 {customer.fullName || 'Unknown Customer'}
               </h3>
               <div className="bg-gray-800 text-white px-2 py-1 rounded-md font-mono text-sm font-medium">
