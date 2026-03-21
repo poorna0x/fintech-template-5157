@@ -49,7 +49,7 @@ import {
   Package
 } from 'lucide-react';
 import { toast } from 'sonner';
-import { db, supabase } from '@/lib/supabase';
+import { db, supabase, fetchCustomerIdsWithCompletedJobsMap } from '@/lib/supabase';
 import { Job, JobAssignmentRequest } from '@/types';
 import { sendNotification, createJobCompletedNotification, createJobAssignmentRequestNotification, createJobAssignmentAcceptedNotification, createJobAssignmentRejectedNotification, requestNotificationPermission } from '@/lib/notifications';
 import FollowUpModal from '@/components/FollowUpModal';
@@ -183,6 +183,15 @@ const extractLocationFromAddressString = (completeAddress: string): string | nul
   return bestMatch;
 };
 
+/** Main square color for AMC / Google review / prior (returning) customer — Technician lists. Blue only when no AMC and no Google review (green/red/orange unchanged). */
+function technicianCustomerIndicatorMainClass(hasAmc: boolean, hasG: boolean, hasPrior: boolean): string {
+  if (hasAmc && hasG) return 'bg-orange-500 ring-2 ring-orange-300 shadow-[0_0_12px_rgba(249,115,22,0.9)]';
+  if (hasAmc) return 'bg-green-500';
+  if (hasG) return 'bg-red-500';
+  if (hasPrior && !hasAmc && !hasG) return 'bg-blue-500';
+  return 'bg-gray-400';
+}
+
 const TechnicianDashboard = () => {
   const { user, logout, isTechnician, loading } = useAuth();
   const navigate = useNavigate();
@@ -191,6 +200,13 @@ const TechnicianDashboard = () => {
   const [filteredJobs, setFilteredJobs] = useState<Job[]>([]);
   const [jobsLoading, setJobsLoading] = useState(false); // Start as false to prevent flash
   const [customerAMCStatus, setCustomerAMCStatus] = useState<Record<string, boolean>>({}); // Map customer ID to hasActiveAMC
+  const [customerPriorServiceStatus, setCustomerPriorServiceStatus] = useState<Record<string, boolean>>({}); // ≥1 completed job (returning)
+  const techCustomerHasPriorService = useCallback((customer: any) => {
+    const cid = customer?.id;
+    if (!cid) return false;
+    if (customerPriorServiceStatus[cid]) return true;
+    return Boolean(customer?.last_service_date ?? customer?.lastServiceDate);
+  }, [customerPriorServiceStatus]);
   const [amcInfoDialogOpen, setAmcInfoDialogOpen] = useState(false);
   const [selectedCustomerForAMC, setSelectedCustomerForAMC] = useState<{id: string, name: string} | null>(null);
   const [amcInfo, setAmcInfo] = useState<any>(null);
@@ -474,6 +490,19 @@ const TechnicianDashboard = () => {
       jobsRef.current = allJobs; // Update ref for synchronous access
       hasJobsRef.current = true; // Mark that we've loaded jobs at least once
       setJobsLoading(false); // Show jobs immediately, don't wait for AMC
+
+      setCustomerPriorServiceStatus((prev) => {
+        const next = { ...prev };
+        for (const j of allJobs) {
+          const cid = (j as any).customer_id || (j.customer as any)?.id;
+          if (!cid) continue;
+          const st = (j as any).status || j.status;
+          if (st === 'COMPLETED') next[cid] = true;
+          const c = j.customer as any;
+          if (c?.last_service_date || c?.lastServiceDate) next[cid] = true;
+        }
+        return next;
+      });
       
       // Load AMC status in background (non-blocking) - defer for mobile performance
       if (data && data.length > 0) {
@@ -551,6 +580,24 @@ const TechnicianDashboard = () => {
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user?.technicianId, loadAssignedJobs]);
+
+  // Returning customers (≥1 completed job) — same logic as admin blue indicator
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const map = await fetchCustomerIdsWithCompletedJobsMap();
+        if (!cancelled) {
+          setCustomerPriorServiceStatus((prev) => ({ ...map, ...prev }));
+        }
+      } catch (e) {
+        console.warn('TechnicianDashboard: prior-service map failed', e);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   // Always show AMC question first when entering step 3
   useEffect(() => {
@@ -3231,6 +3278,14 @@ const TechnicianDashboard = () => {
                   : job.customer
           } : job
         ));
+
+        const completedCustId =
+          (selectedJobForComplete.customer as any)?.id ||
+          selectedJobForComplete.customer_id ||
+          (selectedJobForComplete as any).customer_id;
+        if (completedCustId) {
+          setCustomerPriorServiceStatus((prev) => ({ ...prev, [completedCustId]: true }));
+        }
         
         setIsSubmittingJobCompletion(false);
         // Job completed - dialog will close automatically
@@ -4114,6 +4169,10 @@ const TechnicianDashboard = () => {
                   .map((request) => {
                   const job = request.job as any;
                   const customer = job?.customer as any;
+                  const hasAmcR = Boolean(customerAMCStatus[customer?.id]);
+                  const hasGR = Boolean(customer?.has_google_review);
+                  const hasPriorR = techCustomerHasPriorService(customer);
+                  const showPriorCornerR = hasPriorR && (hasAmcR || hasGR);
                   
                   return (
                     <Card key={request.id} className="border-orange-200">
@@ -4121,14 +4180,11 @@ const TechnicianDashboard = () => {
                         <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4">
                           <div className="flex-1 min-w-0">
                             <div className="flex items-center gap-2 mb-2">
-                              <div className={`w-4 h-4 ${
-                                customerAMCStatus[customer?.id] && Boolean(customer?.has_google_review)
-                                  ? 'bg-orange-500 ring-2 ring-orange-300 shadow-[0_0_12px_rgba(249,115,22,0.9)]'
-                                  : customerAMCStatus[customer?.id]
-                                    ? 'bg-green-500'
-                                    : (customer?.has_google_review ? 'bg-red-500' : 'bg-gray-400')
-                              } rounded-sm flex items-center justify-center relative`}>
+                              <div className={`w-4 h-4 ${technicianCustomerIndicatorMainClass(hasAmcR, hasGR, hasPriorR)} rounded-sm flex items-center justify-center relative`}>
                                 <div className="w-2 h-2 bg-white rounded-sm"></div>
+                                {showPriorCornerR && (
+                                  <div className="absolute -top-0.5 -left-0.5 w-1.5 h-1.5 bg-blue-600 rounded-full border border-white" title="Prior service (returning customer)"></div>
+                                )}
                                 {customerAMCStatus[customer?.id] && (
                                   <div className="absolute -top-0.5 -right-0.5 w-1.5 h-1.5 bg-green-600 rounded-full border border-white" title="Active AMC"></div>
                                 )}
@@ -4620,28 +4676,34 @@ const TechnicianDashboard = () => {
                       </div>
                     </div>
                   )}
-                  <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4">
+                      <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4">
                     <div className="flex-1 min-w-0">
                       {/* Customer name */}
                       <div className="flex items-center gap-2 mb-3 flex-wrap">
-                          <div className={`w-4 h-4 ${
-                            customerAMCStatus[(job.customer as any)?.id] && Boolean((job.customer as any)?.has_google_review)
-                              ? 'bg-orange-500 ring-2 ring-orange-300 shadow-[0_0_12px_rgba(249,115,22,0.9)]'
-                              : customerAMCStatus[(job.customer as any)?.id]
-                                ? 'bg-green-500'
-                                : ((job.customer as any)?.has_google_review ? 'bg-red-500' : 'bg-gray-400')
-                          } rounded-sm flex items-center justify-center relative`}>
+                          {(() => {
+                            const jc = job.customer as any;
+                            const hasAmcJ = Boolean(customerAMCStatus[jc?.id]);
+                            const hasGJ = Boolean(jc?.has_google_review);
+                            const hasPriorJ = techCustomerHasPriorService(jc);
+                            const showPriorCornerJ = hasPriorJ && (hasAmcJ || hasGJ);
+                            return (
+                          <div className={`w-4 h-4 ${technicianCustomerIndicatorMainClass(hasAmcJ, hasGJ, hasPriorJ)} rounded-sm flex items-center justify-center relative`}>
                             <div className="w-2 h-2 bg-white rounded-sm"></div>
-                            {customerAMCStatus[(job.customer as any)?.id] && (
+                            {showPriorCornerJ && (
+                              <div className="absolute -top-0.5 -left-0.5 w-1.5 h-1.5 bg-blue-600 rounded-full border border-white" title="Prior service (returning customer)"></div>
+                            )}
+                            {customerAMCStatus[jc?.id] && (
                               <div className="absolute -top-0.5 -right-0.5 w-1.5 h-1.5 bg-green-600 rounded-full border border-white" title="Active AMC"></div>
                             )}
-                            {Boolean((job.customer as any)?.has_google_review) && customerAMCStatus[(job.customer as any)?.id] && (
+                            {Boolean(jc?.has_google_review) && customerAMCStatus[jc?.id] && (
                               <div className="absolute -bottom-0.5 -left-0.5 w-1.5 h-1.5 bg-orange-600 rounded-full border border-white" title="Google reviewed"></div>
                             )}
-                            {Boolean((job.customer as any)?.has_google_review) && !customerAMCStatus[(job.customer as any)?.id] && (
+                            {Boolean(jc?.has_google_review) && !customerAMCStatus[jc?.id] && (
                               <div className="absolute -bottom-0.5 -left-0.5 w-1.5 h-1.5 bg-white rounded-full border border-red-200" title="Google reviewed"></div>
                             )}
                           </div>
+                            );
+                          })()}
                           <span className="font-bold text-lg text-gray-900">
                             {(job.customer as any)?.full_name || 'N/A'}
                           </span>
@@ -5355,20 +5417,21 @@ const TechnicianDashboard = () => {
                 {(() => {
                   const job = selectedRequest.job as any;
                   const customer = job?.customer as any;
+                  const hasAmcD = Boolean(customerAMCStatus[customer?.id]);
+                  const hasGD = Boolean(customer?.has_google_review);
+                  const hasPriorD = techCustomerHasPriorService(customer);
+                  const showPriorCornerD = hasPriorD && (hasAmcD || hasGD);
                   
                   return (
                     <>
                       {/* Job Info */}
                       <div className="bg-gray-50 p-4 rounded-lg">
                         <div className="flex items-center gap-2 mb-3">
-                          <div className={`w-5 h-5 ${
-                            customerAMCStatus[customer?.id] && Boolean(customer?.has_google_review)
-                              ? 'bg-orange-500 ring-2 ring-orange-300 shadow-[0_0_12px_rgba(249,115,22,0.9)]'
-                              : customerAMCStatus[customer?.id]
-                                ? 'bg-green-500'
-                                : (customer?.has_google_review ? 'bg-red-500' : 'bg-gray-400')
-                          } rounded-sm flex items-center justify-center relative`}>
+                          <div className={`w-5 h-5 ${technicianCustomerIndicatorMainClass(hasAmcD, hasGD, hasPriorD)} rounded-sm flex items-center justify-center relative`}>
                             <div className="w-2.5 h-2.5 bg-white rounded-sm"></div>
+                            {showPriorCornerD && (
+                              <div className="absolute -top-0.5 -left-0.5 w-2 h-2 bg-blue-600 rounded-full border border-white" title="Prior service (returning customer)"></div>
+                            )}
                             {customerAMCStatus[customer?.id] && (
                               <div className="absolute -top-0.5 -right-0.5 w-2 h-2 bg-green-600 rounded-full border border-white" title="Active AMC"></div>
                             )}

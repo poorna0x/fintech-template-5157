@@ -65,7 +65,7 @@ import {
   ChevronDown,
   ChevronUp
 } from 'lucide-react';
-import { db, supabase } from '@/lib/supabase';
+import { db, supabase, fetchCustomerIdsWithCompletedJobsMap } from '@/lib/supabase';
 import { registerAdminPWA, disablePWA } from '@/lib/pwa';
 import { Customer, Job, Technician } from '@/types';
 import { cloudinaryService, compressImage, validateImageFile } from '@/lib/cloudinary';
@@ -143,6 +143,7 @@ const AdminDashboard = () => {
   const [technicians, setTechnicians] = useState<Technician[]>([]);
   const [loading, setLoading] = useState(true);
   const [customerAMCStatus, setCustomerAMCStatus] = useState<Record<string, boolean>>({}); // Map customer ID to hasActiveAMC
+  const [customerPriorServiceStatus, setCustomerPriorServiceStatus] = useState<Record<string, boolean>>({}); // ≥1 completed job
   const [searchTerm, setSearchTerm] = useState('');
   const [searchQuery, setSearchQuery] = useState(''); // For the input field
   const [isSearching, setIsSearching] = useState(false);
@@ -1217,13 +1218,14 @@ const AdminDashboard = () => {
       });
       
       // Don't load all customers – list comes from jobs (useEffect below). Duplicate check uses a single query when user adds customer.
-      const [techniciansResult, amcContractsResult, jobCountsResult] = await Promise.all([
+      const [techniciansResult, amcContractsResult, jobCountsResult, priorCompletedMap] = await Promise.all([
         db.technicians.getAll(100),
         supabase
           .from('amc_contracts')
           .select('customer_id, status')
           .eq('status', 'ACTIVE'),
-        db.jobs.getCounts()
+        db.jobs.getCounts(),
+        fetchCustomerIdsWithCompletedJobsMap(),
       ]);
 
       const amcStatusMap: Record<string, boolean> = {};
@@ -1233,6 +1235,7 @@ const AdminDashboard = () => {
         });
       }
       setCustomerAMCStatus(amcStatusMap);
+      setCustomerPriorServiceStatus(priorCompletedMap);
 
       if (jobCountsResult.data) {
         setJobCounts(jobCountsResult.data);
@@ -4719,6 +4722,15 @@ const AdminDashboard = () => {
     }
   };
 
+  const reloadCustomerPriorServiceStatus = async () => {
+    try {
+      const map = await fetchCustomerIdsWithCompletedJobsMap();
+      setCustomerPriorServiceStatus(map);
+    } catch (error) {
+      console.error('Error reloading prior-service status:', error);
+    }
+  };
+
   const handleGenerateTaxInvoice = (customer: Customer) => {
     setSelectedCustomerForTaxInvoice(customer);
     setTaxInvoiceModalOpen(true);
@@ -4744,6 +4756,7 @@ const AdminDashboard = () => {
   const handleHideAMCView = () => {
     setShowAMCViewPage(false);
     reloadAMCStatus(); // Refresh green dots when returning to dashboard
+    reloadCustomerPriorServiceStatus();
   };
 
 
@@ -7956,6 +7969,7 @@ const AdminDashboard = () => {
                 <CustomerCardHeader
                   customer={customer}
                   customerAMCStatus={customerAMCStatus}
+                  customerPriorServiceStatus={customerPriorServiceStatus}
                   isLoadingPhotos={isLoadingPhotos}
                   selectedCustomerForPhotos={selectedCustomerForPhotos}
                   moreOptionsDialogOpen={moreOptionsDialogOpen}

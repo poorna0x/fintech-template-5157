@@ -9,6 +9,8 @@ import { WhatsAppIcon } from '@/components/WhatsAppIcon';
 interface CustomerCardHeaderProps {
   customer: Customer;
   customerAMCStatus: Record<string, boolean>;
+  /** True if customer has had at least one completed service (returning customer). */
+  customerPriorServiceStatus: Record<string, boolean>;
   isLoadingPhotos: boolean;
   selectedCustomerForPhotos: Customer | null;
   moreOptionsDialogOpen: Record<string, boolean>;
@@ -30,6 +32,7 @@ interface CustomerCardHeaderProps {
 export const CustomerCardHeader: React.FC<CustomerCardHeaderProps> = ({
   customer,
   customerAMCStatus,
+  customerPriorServiceStatus,
   isLoadingPhotos,
   selectedCustomerForPhotos,
   moreOptionsDialogOpen,
@@ -48,20 +51,48 @@ export const CustomerCardHeader: React.FC<CustomerCardHeaderProps> = ({
   onViewReminders,
 }) => {
   const hasGoogleReview = customer.has_google_review === true || (customer as any).has_google_review === 'true';
+  const hasPriorService = Boolean(
+    customerPriorServiceStatus[customer.id] ||
+      customer.lastServiceDate ||
+      (customer as any).last_service_date
+  );
+  const hasAmc = Boolean(customerAMCStatus[customer.id]);
+  /** Blue side dot when returning customer also has AMC or Google review (main square stays green/red/orange). */
+  const showPriorCornerDot = hasPriorService && (hasAmc || hasGoogleReview);
+
+  // Blue (returning customer) only when no active AMC and no Google review — green/red/orange behave as before.
+  const mainIndicatorClass =
+    hasAmc && hasGoogleReview
+      ? 'bg-orange-500 ring-2 ring-orange-300 shadow-[0_0_12px_rgba(249,115,22,0.9)]'
+      : hasAmc
+        ? 'bg-green-500'
+        : hasGoogleReview
+          ? 'bg-red-500'
+          : hasPriorService && !hasAmc && !hasGoogleReview
+            ? 'bg-blue-500'
+            : 'bg-gray-600';
+
+  const mainIndicatorClassDesktop =
+    hasAmc && hasGoogleReview
+      ? 'bg-orange-500 ring-2 ring-orange-300 shadow-[0_0_10px_rgba(249,115,22,0.9)]'
+      : hasAmc
+        ? 'bg-green-500'
+        : hasGoogleReview
+          ? 'bg-red-500'
+          : hasPriorService && !hasAmc && !hasGoogleReview
+            ? 'bg-blue-500'
+            : 'bg-gray-600';
 
   return (
     <div className="bg-gray-50 p-4 border-b border-gray-200">
       {/* Mobile Customer Info */}
       <div className="mb-4 sm:hidden">
         <div className="flex items-center gap-3 mb-2">
-          <div className={`w-6 h-6 ${
-            customerAMCStatus[customer.id] && hasGoogleReview
-              ? 'bg-orange-500 ring-2 ring-orange-300 shadow-[0_0_12px_rgba(249,115,22,0.9)]'
-              : customerAMCStatus[customer.id]
-                ? 'bg-green-500'
-                : (hasGoogleReview ? 'bg-red-500' : 'bg-gray-600')
-          } rounded-sm flex items-center justify-center relative`}>
+          <div className={`w-6 h-6 ${mainIndicatorClass} rounded-sm flex items-center justify-center relative`}>
             <div className="w-3 h-3 bg-white rounded-sm"></div>
+            {showPriorCornerDot && (
+              <div className="absolute -top-0.5 -left-0.5 w-2 h-2 bg-blue-600 rounded-full border border-white" title="Prior service (returning customer)"></div>
+            )}
             {customerAMCStatus[customer.id] && (
               <div className="absolute -top-0.5 -right-0.5 w-2 h-2 bg-green-600 rounded-full border border-white" title="Active AMC"></div>
             )}
@@ -278,14 +309,11 @@ export const CustomerCardHeader: React.FC<CustomerCardHeaderProps> = ({
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-3 flex-wrap">
             <div className="flex items-center gap-2">
-              <div className={`w-5 h-5 ${
-                customerAMCStatus[customer.id] && hasGoogleReview
-                  ? 'bg-orange-500 ring-2 ring-orange-300 shadow-[0_0_10px_rgba(249,115,22,0.9)]'
-                  : customerAMCStatus[customer.id]
-                    ? 'bg-green-500'
-                    : (hasGoogleReview ? 'bg-red-500' : 'bg-gray-600')
-              } rounded-sm flex items-center justify-center relative`}>
+              <div className={`w-5 h-5 ${mainIndicatorClassDesktop} rounded-sm flex items-center justify-center relative`}>
                 <div className="w-2 h-2 bg-white rounded-sm"></div>
+                {showPriorCornerDot && (
+                  <div className="absolute -top-0.5 -left-0.5 w-2 h-2 bg-blue-600 rounded-full border border-white" title="Prior service (returning customer)"></div>
+                )}
                 {customerAMCStatus[customer.id] && (
                   <div className="absolute -top-0.5 -right-0.5 w-2 h-2 bg-green-600 rounded-full border border-white" title="Active AMC"></div>
                 )}

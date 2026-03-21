@@ -3308,3 +3308,31 @@ export const validatePincode = async (pincode: string): Promise<boolean> => {
   // You can implement actual pincode validation here
   return pincode.length === 6 && /^\d+$/.test(pincode);
 };
+
+/** Customer UUID → true if they have at least one COMPLETED job (returning / prior service). Paginates past default row limits. */
+export async function fetchCustomerIdsWithCompletedJobsMap(): Promise<Record<string, boolean>> {
+  const map: Record<string, boolean> = {};
+  const pageSize = 1000;
+  let from = 0;
+  for (;;) {
+    const { data, error } = await supabase
+      .from('jobs')
+      .select('customer_id')
+      .eq('status', 'COMPLETED')
+      .not('customer_id', 'is', null)
+      .range(from, from + pageSize - 1);
+
+    if (error) {
+      console.warn('[fetchCustomerIdsWithCompletedJobsMap]', error);
+      break;
+    }
+    if (!data?.length) break;
+
+    for (const row of data as { customer_id: string | null }[]) {
+      if (row.customer_id) map[row.customer_id] = true;
+    }
+    if (data.length < pageSize) break;
+    from += pageSize;
+  }
+  return map;
+}
