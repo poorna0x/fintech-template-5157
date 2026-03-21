@@ -4,6 +4,7 @@ import { Button } from '@/components/ui/button';
 import { MapPin } from 'lucide-react';
 import { Customer } from '@/types';
 import { formatAddressForDisplay, extractCoordinates } from '@/lib/maps';
+import { customerNameClassName } from '@/lib/customerDisplay';
 import { toast } from 'sonner';
 
 interface AddressDialogProps {
@@ -40,8 +41,11 @@ const AddressDialog: React.FC<AddressDialogProps> = ({
           <DialogContent className="sm:max-w-md">
             <DialogHeader>
               <DialogTitle>Full Address</DialogTitle>
-              <DialogDescription>
-                Complete address for {customer.fullName || 'Customer'}
+              <DialogDescription asChild>
+                <span>
+                  Complete address for{' '}
+                  <span className={customerNameClassName(customer)}>{customer.fullName || 'Customer'}</span>
+                </span>
               </DialogDescription>
             </DialogHeader>
             <div className="py-4 space-y-4">

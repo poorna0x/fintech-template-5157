@@ -8,6 +8,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { Customer } from '@/types';
 import { db } from '@/lib/supabase';
 import { toast } from 'sonner';
+import { customerNameClassName } from '@/lib/customerDisplay';
 import { MapPin, Download, ExternalLink, Trash2 } from 'lucide-react';
 import { mapServiceTypesToDbValue, extractLocationFromAddressString, bangaloreAreas } from '@/lib/adminUtils';
 
@@ -1092,8 +1093,13 @@ const EditCustomerDialog: React.FC<EditCustomerDialogProps> = ({
       <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>Edit Customer</DialogTitle>
-          <DialogDescription>
-            Update customer information for {customer?.customerId || (customer as any)?.customer_id || 'Customer'} - {customer?.fullName || (customer as any)?.full_name || ''}
+          <DialogDescription asChild>
+            <span>
+              Update customer information for {customer?.customerId || (customer as any)?.customer_id || 'Customer'} -{' '}
+              <span className={customerNameClassName(customer as any)}>
+                {customer?.fullName || (customer as any)?.full_name || ''}
+              </span>
+            </span>
           </DialogDescription>
         </DialogHeader>
         

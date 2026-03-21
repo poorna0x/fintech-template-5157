@@ -16,10 +16,11 @@ export function customerNameClassName(customer: Customer | Record<string, unknow
     (customer as Customer).customer_tier ?? (customer as any).customerTier
   );
   if (t === 'PREMIUM') {
-    return 'text-amber-500 dark:text-amber-400 font-semibold drop-shadow-[0_0_1px_rgba(245,158,11,0.75)]';
+    // !text-* wins over parent text-gray-900 on the same element (Tailwind merge order)
+    return 'font-semibold !text-amber-600 dark:!text-amber-300';
   }
   if (t === 'WORST') {
-    return 'text-red-600 dark:text-red-400 font-semibold';
+    return 'font-semibold !text-red-600 dark:!text-red-400';
   }
   return '';
 }

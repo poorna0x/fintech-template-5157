@@ -7,6 +7,7 @@ import { Job, Technician } from '@/types';
 import { MapPin, Loader2, Navigation } from 'lucide-react';
 import { toast } from 'sonner';
 import { calculateHaversineDistance } from '@/lib/distance';
+import { customerNameClassName } from '@/lib/customerDisplay';
 
 interface AssignJobDialogProps {
   open: boolean;
@@ -481,7 +482,7 @@ const AssignJobDialog: React.FC<AssignJobDialogProps> = ({
             <div className="font-semibold text-sm sm:text-base">
               {(job as any).job_number || job.jobNumber}
             </div>
-            <div className="text-xs sm:text-sm text-gray-600">
+            <div className={`text-xs sm:text-sm text-gray-600 ${customerNameClassName(customer as any)}`}>
               {customer?.full_name || customer?.fullName || 'Customer'}
             </div>
             {(() => {

@@ -1,4 +1,5 @@
 import React from 'react';
+import { customerNameClassName } from '@/lib/customerDisplay';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -25,8 +26,13 @@ const ServiceHistoryDialog: React.FC<ServiceHistoryDialogProps> = ({
       <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>Service History</DialogTitle>
-          <DialogDescription>
-            Complete service history for {customer.customer_id || customer.customerId} - {customer.fullName || customer.full_name}
+          <DialogDescription asChild>
+            <span>
+              Complete service history for {customer.customer_id || customer.customerId} -{' '}
+              <span className={customerNameClassName(customer)}>
+                {customer.fullName || customer.full_name}
+              </span>
+            </span>
           </DialogDescription>
         </DialogHeader>
         

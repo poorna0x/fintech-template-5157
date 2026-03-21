@@ -74,6 +74,7 @@ import { isIOS, isPWA, shouldUseFileInputFallback, requestCameraAccess, createVi
 import { getCachedQrCodes, cacheQrCodes, shouldUseCache, CommonQrCode } from '@/lib/qrCodeManager';
 import { openInGoogleMaps, extractCoordinates, formatAddressForDisplay } from '@/lib/maps';
 import { normalizePhoneForSearch } from '@/lib/utils';
+import { customerNameClassName } from '@/lib/customerDisplay';
 import FollowUpModal from '@/components/FollowUpModal';
 import { sendNotification, createJobAssignedNotification, createJobCompletedNotification, createJobCancelledNotification, createJobAssignmentRequestNotification } from '@/lib/notifications';
 import BillModal from './BillModal';
@@ -10408,7 +10409,7 @@ const AdminDashboard = () => {
                             <span className="font-semibold text-gray-900">
                               {customer.customer_id || (customer as any).customerId}
                             </span>
-                            <Badge variant="outline" className="text-xs">
+                            <Badge variant="outline" className={`text-xs ${customerNameClassName(customer)}`}>
                               {customer.fullName || customer.full_name}
                             </Badge>
                           </div>

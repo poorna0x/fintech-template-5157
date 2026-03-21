@@ -46,6 +46,7 @@ import { toast } from 'sonner';
 import { db, supabase } from '@/lib/supabase';
 import { Customer } from '@/types';
 import { formatPhoneForWhatsApp, normalizePhoneForSearch } from '@/lib/utils';
+import { customerNameClassName } from '@/lib/customerDisplay';
 import CustomerPhotoGalleryDialog from '@/components/admin/CustomerPhotoGalleryDialog';
 import CustomerReportDialog from '@/components/admin/CustomerReportDialog';
 import PhotoViewerDialog from '@/components/admin/PhotoViewerDialog';
@@ -187,6 +188,7 @@ const CallingPage = ({ hideHeader = false, onBack }: CallingPageProps = {}) => {
           id,
           customer_id,
           full_name,
+          customer_tier,
           phone,
           alternate_phone,
           email,
@@ -1026,7 +1028,7 @@ const CallingPage = ({ hideHeader = false, onBack }: CallingPageProps = {}) => {
                         </div>
                         <div className="flex-1 min-w-0">
                           <div className="flex items-center gap-2 mb-1">
-                            <h3 className="font-semibold text-gray-900 text-base sm:text-lg">
+                            <h3 className={`font-semibold text-base sm:text-lg ${customerNameClassName(customer) || 'text-gray-900'}`}>
                               {customer.fullName}
                             </h3>
                             <Badge variant="outline">{customer.customerId}</Badge>
@@ -1234,8 +1236,13 @@ const CallingPage = ({ hideHeader = false, onBack }: CallingPageProps = {}) => {
               <WhatsAppIcon className="w-5 h-5 text-green-600" />
               Select WhatsApp Message
             </DialogTitle>
-            <DialogDescription>
-              Choose a message template to send to {selectedCustomerForWhatsApp?.fullName}
+            <DialogDescription asChild>
+              <span>
+                Choose a message template to send to{' '}
+                <span className={customerNameClassName(selectedCustomerForWhatsApp as any)}>
+                  {selectedCustomerForWhatsApp?.fullName}
+                </span>
+              </span>
             </DialogDescription>
           </DialogHeader>
           

@@ -3,6 +3,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Button } from '@/components/ui/button';
 import { Phone } from 'lucide-react';
 import { Customer } from '@/types';
+import { customerNameClassName } from '@/lib/customerDisplay';
 
 interface PhoneNumbersDialogProps {
   open: boolean;
@@ -19,8 +20,13 @@ const PhoneNumbersDialog: React.FC<PhoneNumbersDialogProps> = ({ open, onOpenCha
             <Phone className="w-5 h-5 text-blue-600" />
             Contact Numbers
           </DialogTitle>
-          <DialogDescription>
-            Choose a phone number to call for {(customer as any)?.full_name}
+          <DialogDescription asChild>
+            <span>
+              Choose a phone number to call for{' '}
+              <span className={customerNameClassName(customer)}>
+                {(customer as any)?.full_name || customer?.fullName || 'customer'}
+              </span>
+            </span>
           </DialogDescription>
         </DialogHeader>
         <div className="space-y-4">

@@ -203,8 +203,13 @@ export const CustomerCardHeader: React.FC<CustomerCardHeaderProps> = ({
             <DialogContent className="sm:max-w-md">
               <DialogHeader>
                 <DialogTitle>More Options</DialogTitle>
-                <DialogDescription>
-                  Choose an action for {customer.fullName || 'this customer'}
+                <DialogDescription asChild>
+                  <span>
+                    Choose an action for{' '}
+                    <span className={customerNameClassName(customer)}>
+                      {customer.fullName || 'this customer'}
+                    </span>
+                  </span>
                 </DialogDescription>
               </DialogHeader>
               <div className="grid gap-2 py-4">

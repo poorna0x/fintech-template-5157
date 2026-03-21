@@ -3,6 +3,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Customer } from '@/types';
+import { customerNameClassName } from '@/lib/customerDisplay';
 import { Plus, Edit } from 'lucide-react';
 
 interface RecentAccountsDialogProps {
@@ -62,7 +63,7 @@ const RecentAccountsDialog: React.FC<RecentAccountsDialogProps> = ({
                         <span className="font-semibold text-gray-900">
                           {customer.customer_id || (customer as any).customerId}
                         </span>
-                        <Badge variant="outline" className="text-xs">
+                        <Badge variant="outline" className={`text-xs ${customerNameClassName(customer)}`}>
                           {customer.fullName || customer.full_name}
                         </Badge>
                       </div>

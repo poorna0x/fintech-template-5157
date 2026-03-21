@@ -7,6 +7,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Badge } from '@/components/ui/badge';
 import { MapPin, Loader2, Navigation } from 'lucide-react';
 import { Job, Technician } from '@/types';
+import { customerNameClassName } from '@/lib/customerDisplay';
 
 interface ReassignJobDialogProps {
   open: boolean;
@@ -441,7 +442,12 @@ const ReassignJobDialog: React.FC<ReassignJobDialogProps> = ({
                 </Badge>
               </div>
               <div className="space-y-1 text-xs sm:text-sm text-gray-600">
-                <p><strong>Customer:</strong> {(job as any)?.customer?.full_name || 'N/A'}</p>
+                <p>
+                  <strong>Customer:</strong>{' '}
+                  <span className={customerNameClassName((job as any)?.customer)}>
+                    {(job as any)?.customer?.full_name || (job as any)?.customer?.fullName || 'N/A'}
+                  </span>
+                </p>
                 <p><strong>Scheduled:</strong> {(job as any)?.scheduled_date} - {(job as any)?.scheduled_time_slot}</p>
                 {(() => {
                   const serviceAddress = (job as any)?.service_address || {};

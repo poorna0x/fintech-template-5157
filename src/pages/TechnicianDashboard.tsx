@@ -403,9 +403,19 @@ const TechnicianDashboard = () => {
 
   // Phone popup state
   const [phonePopupOpen, setPhonePopupOpen] = useState(false);
-  const [selectedCustomerPhone, setSelectedCustomerPhone] = useState<{phone: string, alternate_phone?: string, full_name?: string} | null>(null);
+  const [selectedCustomerPhone, setSelectedCustomerPhone] = useState<{
+    phone: string;
+    alternate_phone?: string;
+    full_name?: string;
+    customer_tier?: string | null;
+  } | null>(null);
   const [whatsappNumberDialogOpen, setWhatsappNumberDialogOpen] = useState(false);
-  const [selectedCustomerForWhatsApp, setSelectedCustomerForWhatsApp] = useState<{phone: string, alternate_phone?: string, full_name?: string} | null>(null);
+  const [selectedCustomerForWhatsApp, setSelectedCustomerForWhatsApp] = useState<{
+    phone: string;
+    alternate_phone?: string;
+    full_name?: string;
+    customer_tier?: string | null;
+  } | null>(null);
 
   // Header 3-dot menu → centered options dialog
   const [headerOptionsDialogOpen, setHeaderOptionsDialogOpen] = useState(false);
@@ -3311,7 +3321,12 @@ const TechnicianDashboard = () => {
     const fullName = customer?.full_name || customer?.fullName;
     
     if (alternatePhone) {
-      setSelectedCustomerPhone({ phone, alternate_phone: alternatePhone, full_name: fullName });
+      setSelectedCustomerPhone({
+        phone,
+        alternate_phone: alternatePhone,
+        full_name: fullName,
+        customer_tier: customer?.customer_tier ?? (customer as any)?.customerTier ?? null,
+      });
       setPhonePopupOpen(true);
     } else if (phone) {
       window.location.href = `tel:${phone}`;
@@ -3370,11 +3385,21 @@ const TechnicianDashboard = () => {
   };
 
   // Open WhatsApp: if customer has alternate number, show "which number?" dialog; else open directly
-  const handleSendMessageClick = (phone: string, alternatePhone?: string, fullName?: string) => {
+  const handleSendMessageClick = (
+    phone: string,
+    alternatePhone?: string,
+    fullName?: string,
+    customerTier?: string | null
+  ) => {
     if (!phone?.trim()) return;
     const alt = alternatePhone?.trim();
     if (alt && alt !== phone) {
-      setSelectedCustomerForWhatsApp({ phone, alternate_phone: alt, full_name: fullName });
+      setSelectedCustomerForWhatsApp({
+        phone,
+        alternate_phone: alt,
+        full_name: fullName,
+        customer_tier: customerTier ?? null,
+      });
       setWhatsappNumberDialogOpen(true);
     } else {
       handleWhatsAppClick(phone);
@@ -4344,7 +4369,8 @@ const TechnicianDashboard = () => {
                                             handleSendMessageClick(
                                               customer.phone || '',
                                               (customer as any)?.alternate_phone || (customer as any)?.alternatePhone,
-                                              (customer as any)?.full_name || (customer as any)?.fullName
+                                              (customer as any)?.full_name || (customer as any)?.fullName,
+                                              (customer as any)?.customer_tier ?? null
                                             );
                                           }}
                                           className="cursor-pointer"
@@ -5269,7 +5295,8 @@ const TechnicianDashboard = () => {
                                       handleSendMessageClick(
                                         c?.phone || '',
                                         c?.alternate_phone || c?.alternatePhone,
-                                        c?.full_name || c?.fullName
+                                        c?.full_name || c?.fullName,
+                                        c?.customer_tier ?? null
                                       );
                                     }}
                                     className="cursor-pointer"
@@ -5633,7 +5660,14 @@ const TechnicianDashboard = () => {
             </AlertDialogHeader>
             {confirmStartJobDialog.job && (
               <div className="bg-gray-50 p-3 rounded-lg text-sm">
-                <p><strong>Job:</strong> {(confirmStartJobDialog.job.customer as any)?.full_name || 'Unknown'}</p>
+                <p>
+                  <strong>Customer:</strong>{' '}
+                  <span className={customerNameClassName(confirmStartJobDialog.job.customer as any)}>
+                    {(confirmStartJobDialog.job.customer as any)?.full_name ||
+                      confirmStartJobDialog.job.customer?.fullName ||
+                      'Unknown'}
+                  </span>
+                </p>
                 <p><strong>Service:</strong> {(confirmStartJobDialog.job as any).service_type || confirmStartJobDialog.job.serviceType || 'N/A'}</p>
               </div>
             )}
@@ -5671,7 +5705,14 @@ const TechnicianDashboard = () => {
             </AlertDialogHeader>
             {confirmStartWorkDialog.job && (
               <div className="bg-gray-50 p-3 rounded-lg text-sm">
-                <p><strong>Job:</strong> {(confirmStartWorkDialog.job.customer as any)?.full_name || 'Unknown'}</p>
+                <p>
+                  <strong>Customer:</strong>{' '}
+                  <span className={customerNameClassName(confirmStartWorkDialog.job.customer as any)}>
+                    {(confirmStartWorkDialog.job.customer as any)?.full_name ||
+                      confirmStartWorkDialog.job.customer?.fullName ||
+                      'Unknown'}
+                  </span>
+                </p>
                 <p><strong>Service:</strong> {(confirmStartWorkDialog.job as any).service_type || confirmStartWorkDialog.job.serviceType || 'N/A'}</p>
               </div>
             )}
@@ -5709,7 +5750,14 @@ const TechnicianDashboard = () => {
             </AlertDialogHeader>
             {confirmCompleteJobDialog.job && (
               <div className="bg-gray-50 p-3 rounded-lg text-sm">
-                <p><strong>Job:</strong> {(confirmCompleteJobDialog.job.customer as any)?.full_name || 'Unknown'}</p>
+                <p>
+                  <strong>Customer:</strong>{' '}
+                  <span className={customerNameClassName(confirmCompleteJobDialog.job.customer as any)}>
+                    {(confirmCompleteJobDialog.job.customer as any)?.full_name ||
+                      confirmCompleteJobDialog.job.customer?.fullName ||
+                      'Unknown'}
+                  </span>
+                </p>
                 <p><strong>Service:</strong> {(confirmCompleteJobDialog.job as any).service_type || confirmCompleteJobDialog.job.serviceType || 'N/A'}</p>
               </div>
             )}
@@ -5898,7 +5946,10 @@ const TechnicianDashboard = () => {
                     <strong>Job Number:</strong> {(selectedJobForDeny as any).job_number}
                   </p>
                   <p className="text-sm text-gray-600">
-                    <strong>Customer:</strong> {(selectedJobForDeny.customer as any)?.full_name || 'Unknown'}
+                    <strong>Customer:</strong>{' '}
+                    <span className={customerNameClassName(selectedJobForDeny.customer as any)}>
+                      {(selectedJobForDeny.customer as any)?.full_name || selectedJobForDeny.customer?.fullName || 'Unknown'}
+                    </span>
                   </p>
                   <p className="text-sm text-gray-600">
                     <strong>Service:</strong> {(selectedJobForDeny as any).service_type || selectedJobForDeny.serviceType || 'N/A'} - {(selectedJobForDeny as any).service_sub_type || selectedJobForDeny.serviceSubType || 'N/A'}
@@ -7125,8 +7176,18 @@ const TechnicianDashboard = () => {
                 <Phone className="w-5 h-5 text-blue-600" />
                 Contact Numbers
               </DialogTitle>
-              <DialogDescription>
-                Choose a phone number to call for {selectedCustomerPhone?.full_name || 'customer'}
+              <DialogDescription asChild>
+                <span>
+                  Choose a phone number to call for{' '}
+                  <span
+                    className={customerNameClassName({
+                      full_name: selectedCustomerPhone?.full_name,
+                      customer_tier: selectedCustomerPhone?.customer_tier,
+                    } as any)}
+                  >
+                    {selectedCustomerPhone?.full_name || 'customer'}
+                  </span>
+                </span>
               </DialogDescription>
             </DialogHeader>
             <div className="space-y-4">
@@ -7178,8 +7239,24 @@ const TechnicianDashboard = () => {
           <DialogContent className="sm:max-w-md">
             <DialogHeader>
               <DialogTitle>Send message to which number?</DialogTitle>
-              <DialogDescription>
-                {selectedCustomerForWhatsApp?.full_name ? `Choose number for ${selectedCustomerForWhatsApp.full_name}` : 'Choose which number to open in WhatsApp'}
+              <DialogDescription asChild>
+                <span>
+                  {selectedCustomerForWhatsApp?.full_name ? (
+                    <>
+                      Choose number for{' '}
+                      <span
+                        className={customerNameClassName({
+                          full_name: selectedCustomerForWhatsApp.full_name,
+                          customer_tier: selectedCustomerForWhatsApp.customer_tier,
+                        } as any)}
+                      >
+                        {selectedCustomerForWhatsApp.full_name}
+                      </span>
+                    </>
+                  ) : (
+                    'Choose which number to open in WhatsApp'
+                  )}
+                </span>
               </DialogDescription>
             </DialogHeader>
             <div className="space-y-3 py-2">
@@ -7301,8 +7378,15 @@ const TechnicianDashboard = () => {
             <DialogContent className="sm:max-w-md">
               <DialogHeader>
                 <DialogTitle>Full Address</DialogTitle>
-                <DialogDescription>
-                  Complete address for {(selectedJobForAddress.customer as any)?.full_name || (selectedJobForAddress.customer as any)?.fullName || 'Customer'}
+                <DialogDescription asChild>
+                  <span>
+                    Complete address for{' '}
+                    <span className={customerNameClassName(selectedJobForAddress.customer as any)}>
+                      {(selectedJobForAddress.customer as any)?.full_name ||
+                        (selectedJobForAddress.customer as any)?.fullName ||
+                        'Customer'}
+                    </span>
+                  </span>
                 </DialogDescription>
               </DialogHeader>
               <div className="py-4 space-y-4">

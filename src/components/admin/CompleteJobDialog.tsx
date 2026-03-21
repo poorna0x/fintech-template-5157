@@ -14,6 +14,7 @@ import { toast } from 'sonner';
 import { getCachedQrCodes, CommonQrCode } from '@/lib/qrCodeManager';
 import { useAuth } from '@/contexts/AuthContext';
 import { RefreshCw } from 'lucide-react';
+import { customerNameClassName } from '@/lib/customerDisplay';
 
 interface CompleteJobDialogProps {
   open: boolean;
@@ -799,12 +800,13 @@ export const CompleteJobDialog: React.FC<CompleteJobDialogProps> = ({
                 {(job.serviceType || (job as any).service_type || 'N/A')} - {(job.serviceSubType || (job as any).service_sub_type || 'N/A')}
               </div>
               <div className="text-sm text-gray-600">
-                Customer: {
-                  job.customer?.fullName || 
-                  (job.customer as any)?.full_name ||
-                  (job.customer as any)?.name ||
-                  'Unknown'
-                }
+                Customer:{' '}
+                <span className={customerNameClassName(job.customer as any)}>
+                  {job.customer?.fullName ||
+                    (job.customer as any)?.full_name ||
+                    (job.customer as any)?.name ||
+                    'Unknown'}
+                </span>
               </div>
             </div>
             )}

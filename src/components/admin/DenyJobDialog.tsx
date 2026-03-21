@@ -4,6 +4,7 @@ import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Job } from '@/types';
+import { customerNameClassName } from '@/lib/customerDisplay';
 
 interface DenyJobDialogProps {
   open: boolean;
@@ -71,7 +72,10 @@ const DenyJobDialog: React.FC<DenyJobDialogProps> = ({
               {((job as any).service_type || job.serviceType || 'N/A')} - {((job as any).service_sub_type || job.serviceSubType || 'N/A')}
             </div>
             <div className="text-sm text-gray-600">
-              Customer: {(job.customer as any)?.full_name || job.customer?.fullName || 'Unknown'}
+              Customer:{' '}
+              <span className={customerNameClassName(job.customer as any)}>
+                {(job.customer as any)?.full_name || job.customer?.fullName || 'Unknown'}
+              </span>
             </div>
           </div>
         )}
