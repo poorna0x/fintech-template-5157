@@ -4172,7 +4172,7 @@ const TechnicianDashboard = () => {
                   const hasAmcR = Boolean(customerAMCStatus[customer?.id]);
                   const hasGR = Boolean(customer?.has_google_review);
                   const hasPriorR = techCustomerHasPriorService(customer);
-                  const showPriorCornerR = hasPriorR && (hasAmcR || hasGR);
+                  const showPriorCornerR = hasPriorR && hasAmcR && !hasGR;
                   
                   return (
                     <Card key={request.id} className="border-orange-200">
@@ -4685,7 +4685,7 @@ const TechnicianDashboard = () => {
                             const hasAmcJ = Boolean(customerAMCStatus[jc?.id]);
                             const hasGJ = Boolean(jc?.has_google_review);
                             const hasPriorJ = techCustomerHasPriorService(jc);
-                            const showPriorCornerJ = hasPriorJ && (hasAmcJ || hasGJ);
+                            const showPriorCornerJ = hasPriorJ && hasAmcJ && !hasGJ;
                             return (
                           <div className={`w-4 h-4 ${technicianCustomerIndicatorMainClass(hasAmcJ, hasGJ, hasPriorJ)} rounded-sm flex items-center justify-center relative`}>
                             <div className="w-2 h-2 bg-white rounded-sm"></div>
@@ -5420,7 +5420,7 @@ const TechnicianDashboard = () => {
                   const hasAmcD = Boolean(customerAMCStatus[customer?.id]);
                   const hasGD = Boolean(customer?.has_google_review);
                   const hasPriorD = techCustomerHasPriorService(customer);
-                  const showPriorCornerD = hasPriorD && (hasAmcD || hasGD);
+                  const showPriorCornerD = hasPriorD && hasAmcD && !hasGD;
                   
                   return (
                     <>

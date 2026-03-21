@@ -27,6 +27,8 @@ interface CustomerCardHeaderProps {
   onViewAMCInfo?: (customer: Customer) => void;
   onAddReminder?: (customer: Customer) => void;
   onViewReminders?: (customer: Customer) => void;
+  /** True when this card's job list includes at least one completed job (fixes prior dot if global map missed). */
+  priorServiceFromJobs?: boolean;
 }
 
 export const CustomerCardHeader: React.FC<CustomerCardHeaderProps> = ({
@@ -49,16 +51,24 @@ export const CustomerCardHeader: React.FC<CustomerCardHeaderProps> = ({
   onViewAMCInfo,
   onAddReminder,
   onViewReminders,
+  priorServiceFromJobs = false,
 }) => {
-  const hasGoogleReview = customer.has_google_review === true || (customer as any).has_google_review === 'true';
+  const hasGoogleReview =
+    customer.has_google_review === true ||
+    (customer as any).has_google_review === 'true' ||
+    (customer as any).has_google_review === 1 ||
+    (customer as any).has_google_review === '1';
+  /** DB UUID — maps (AMC / prior) are keyed by this; fall back if `id` alias missing */
+  const customerUuid = (customer.id || (customer as any).customer_id) as string | undefined;
   const hasPriorService = Boolean(
-    customerPriorServiceStatus[customer.id] ||
+    (customerUuid && customerPriorServiceStatus[customerUuid]) ||
+      priorServiceFromJobs ||
       customer.lastServiceDate ||
       (customer as any).last_service_date
   );
-  const hasAmc = Boolean(customerAMCStatus[customer.id]);
-  /** Blue side dot when returning customer also has AMC or Google review (main square stays green/red/orange). */
-  const showPriorCornerDot = hasPriorService && (hasAmc || hasGoogleReview);
+  const hasAmc = Boolean(customerUuid && customerAMCStatus[customerUuid]);
+  /** Blue side dot: returning + AMC only — if they left a Google review, that already means they're a repeat customer. */
+  const showPriorCornerDot = hasPriorService && hasAmc && !hasGoogleReview;
 
   // Blue (returning customer) only when no active AMC and no Google review — green/red/orange behave as before.
   const mainIndicatorClass =
@@ -91,15 +101,15 @@ export const CustomerCardHeader: React.FC<CustomerCardHeaderProps> = ({
           <div className={`w-6 h-6 ${mainIndicatorClass} rounded-sm flex items-center justify-center relative`}>
             <div className="w-3 h-3 bg-white rounded-sm"></div>
             {showPriorCornerDot && (
-              <div className="absolute -top-0.5 -left-0.5 w-2 h-2 bg-blue-600 rounded-full border border-white" title="Prior service (returning customer)"></div>
+              <div className="absolute -top-0.5 -left-0.5 z-20 w-2 h-2 bg-blue-600 rounded-full border border-white shadow-sm" title="Prior service (returning customer)"></div>
             )}
-            {customerAMCStatus[customer.id] && (
-              <div className="absolute -top-0.5 -right-0.5 w-2 h-2 bg-green-600 rounded-full border border-white" title="Active AMC"></div>
+            {hasAmc && (
+              <div className="absolute -top-0.5 -right-0.5 z-10 w-2 h-2 bg-green-600 rounded-full border border-white" title="Active AMC"></div>
             )}
-            {hasGoogleReview && customerAMCStatus[customer.id] ? (
-              <div className="absolute -bottom-0.5 -left-0.5 w-2 h-2 bg-orange-600 rounded-full border border-white" title="Google reviewed"></div>
+            {hasGoogleReview && hasAmc ? (
+              <div className="absolute -bottom-0.5 -left-0.5 z-10 w-2 h-2 bg-orange-600 rounded-full border border-white" title="Google reviewed"></div>
             ) : hasGoogleReview ? (
-              <div className="absolute -bottom-0.5 -left-0.5 w-2 h-2 bg-red-600 rounded-full border border-white" title="Google reviewed"></div>
+              <div className="absolute -bottom-0.5 -left-0.5 z-10 w-2 h-2 bg-red-600 rounded-full border border-white" title="Google reviewed"></div>
             ) : null}
           </div>
           <h3 className="text-lg font-semibold text-gray-900 truncate flex-1">
@@ -281,7 +291,7 @@ export const CustomerCardHeader: React.FC<CustomerCardHeaderProps> = ({
                     <div className="text-xs text-muted-foreground">Create a tax invoice with GST for this customer</div>
                   </div>
                 </Button>
-                {customerAMCStatus[customer.id] && onViewAMCInfo && (
+                {hasAmc && onViewAMCInfo && (
                   <Button 
                     variant="outline"
                     className="w-full justify-start h-auto py-3 px-4 text-green-700 hover:text-green-800 hover:bg-green-50"
@@ -312,15 +322,15 @@ export const CustomerCardHeader: React.FC<CustomerCardHeaderProps> = ({
               <div className={`w-5 h-5 ${mainIndicatorClassDesktop} rounded-sm flex items-center justify-center relative`}>
                 <div className="w-2 h-2 bg-white rounded-sm"></div>
                 {showPriorCornerDot && (
-                  <div className="absolute -top-0.5 -left-0.5 w-2 h-2 bg-blue-600 rounded-full border border-white" title="Prior service (returning customer)"></div>
+                  <div className="absolute -top-0.5 -left-0.5 z-20 w-2 h-2 bg-blue-600 rounded-full border border-white shadow-sm" title="Prior service (returning customer)"></div>
                 )}
-                {customerAMCStatus[customer.id] && (
-                  <div className="absolute -top-0.5 -right-0.5 w-2 h-2 bg-green-600 rounded-full border border-white" title="Active AMC"></div>
+                {hasAmc && (
+                  <div className="absolute -top-0.5 -right-0.5 z-10 w-2 h-2 bg-green-600 rounded-full border border-white" title="Active AMC"></div>
                 )}
-                {hasGoogleReview && customerAMCStatus[customer.id] ? (
-                  <div className="absolute -bottom-0.5 -left-0.5 w-2 h-2 bg-orange-600 rounded-full border border-white" title="Google reviewed"></div>
+                {hasGoogleReview && hasAmc ? (
+                  <div className="absolute -bottom-0.5 -left-0.5 z-10 w-2 h-2 bg-orange-600 rounded-full border border-white" title="Google reviewed"></div>
                 ) : hasGoogleReview ? (
-                  <div className="absolute -bottom-0.5 -left-0.5 w-2 h-2 bg-red-600 rounded-full border border-white" title="Google reviewed"></div>
+                  <div className="absolute -bottom-0.5 -left-0.5 z-10 w-2 h-2 bg-red-600 rounded-full border border-white" title="Google reviewed"></div>
                 ) : null}
               </div>
               <h3 className="text-xl font-semibold text-gray-900 truncate">
@@ -421,7 +431,7 @@ export const CustomerCardHeader: React.FC<CustomerCardHeaderProps> = ({
                 <Receipt className="mr-2 h-4 w-4" />
                 Generate Tax Invoice
               </DropdownMenuItem>
-              {customerAMCStatus[customer.id] && onViewAMCInfo && (
+              {hasAmc && onViewAMCInfo && (
                 <DropdownMenuItem 
                   onClick={() => onViewAMCInfo(customer)}
                   className="text-green-700 focus:text-green-800 focus:bg-green-50"

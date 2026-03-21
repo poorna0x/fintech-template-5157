@@ -7963,6 +7963,12 @@ const AdminDashboard = () => {
               });
               const borderClass = hasTodayFollowup ? 'border-red-400 border-2' : hasTomorrowFollowup ? 'border-yellow-400 border-2' : hasWebsiteLead ? 'border-red-400 border-2' : 'border-gray-300';
               const hoverBorderClass = hasWebsiteLead ? 'hover:border-green-400' : 'hover:border-gray-400';
+              const priorServiceFromJobs =
+                completedJobs.length > 0 ||
+                allJobs.some(
+                  (job) =>
+                    job.status === 'COMPLETED' || (job as any).status === 'COMPLETED'
+                );
 
               return (
                 <Card key={customer.id} className={`bg-white border ${borderClass} ${hoverBorderClass} hover:shadow-md transition-all duration-200 overflow-hidden mb-6 rounded-lg group`}>
@@ -7970,6 +7976,7 @@ const AdminDashboard = () => {
                   customer={customer}
                   customerAMCStatus={customerAMCStatus}
                   customerPriorServiceStatus={customerPriorServiceStatus}
+                  priorServiceFromJobs={priorServiceFromJobs}
                   isLoadingPhotos={isLoadingPhotos}
                   selectedCustomerForPhotos={selectedCustomerForPhotos}
                   moreOptionsDialogOpen={moreOptionsDialogOpen}
