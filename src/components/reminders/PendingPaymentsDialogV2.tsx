@@ -7,6 +7,16 @@ import { Badge } from '@/components/ui/badge';
 import { DatePicker } from '@/components/ui/date-picker';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
+import {
   Command,
   CommandEmpty,
   CommandGroup,
@@ -93,6 +103,17 @@ function PendingPaymentFormDialogV2({
   const [noteStr, setNoteStr] = useState<string>('');
   const [dueDate, setDueDate] = useState<string>(() => format(new Date(Date.now() + 86400000), 'yyyy-MM-dd'));
 
+  const [saveConfirmOpen, setSaveConfirmOpen] = useState(false);
+  const [saveConfirmBusy, setSaveConfirmBusy] = useState(false);
+  const [savePayload, setSavePayload] = useState<{
+    mode: 'create' | 'update';
+    reminderId?: string;
+    customerId?: string;
+    reminderAt: string;
+    parsedAmount: number;
+    note: string | null;
+  } | null>(null);
+
   const [customerSearchOpen, setCustomerSearchOpen] = useState(false);
   const [customerQuery, setCustomerQuery] = useState('');
   const [customerResults, setCustomerResults] = useState<CustomerLabel[]>([]);
@@ -108,6 +129,9 @@ function PendingPaymentFormDialogV2({
     setCustomerResults([]);
     setCustomerLoading(false);
     setHasAttemptedCustomerSearch(false);
+    setSaveConfirmOpen(false);
+    setSaveConfirmBusy(false);
+    setSavePayload(null);
 
     if (isEdit && editReminder) {
       const nextCustomerId = (editReminder.entity_id as string) ?? '';
@@ -171,39 +195,53 @@ function PendingPaymentFormDialogV2({
       return;
     }
 
-    const reminderAt = dueDate;
+    setSavePayload({
+      mode: isEdit && editReminder ? 'update' : 'create',
+      reminderId: isEdit && editReminder ? editReminder.id : undefined,
+      customerId: isEdit && editReminder ? undefined : customerId,
+      reminderAt: dueDate,
+      parsedAmount,
+      note: noteStr.trim() || null,
+    });
+    setSaveConfirmOpen(true);
+  };
 
+  const confirmSave = async () => {
+    if (!savePayload) return;
+    setSaveConfirmBusy(true);
     try {
-      if (isEdit && editReminder) {
-        const { error } = await db.reminders.update(editReminder.id, {
+      if (savePayload.mode === 'update' && savePayload.reminderId) {
+        const { error } = await db.reminders.update(savePayload.reminderId, {
           title: PENDING_PAYMENT_TITLE,
           notes: JSON.stringify({
-            amount_pending: parsedAmount,
-            note: noteStr.trim() || null,
+            amount_pending: savePayload.parsedAmount,
+            note: savePayload.note,
           }),
-          reminder_at: reminderAt,
+          reminder_at: savePayload.reminderAt,
         });
         if (error) throw new Error(error.message);
         toast.success('Pending payment updated');
       } else {
         const { error } = await db.reminders.create({
           entity_type: 'customer',
-          entity_id: customerId,
+          entity_id: savePayload.customerId ?? null,
           title: PENDING_PAYMENT_TITLE,
           notes: JSON.stringify({
-            amount_pending: parsedAmount,
-            note: noteStr.trim() || null,
+            amount_pending: savePayload.parsedAmount,
+            note: savePayload.note,
           }),
-          reminder_at: reminderAt,
+          reminder_at: savePayload.reminderAt,
         });
         if (error) throw new Error(error.message);
         toast.success('Pending payment added');
       }
-
       onSaved();
+      setSaveConfirmOpen(false);
       onOpenChange(false);
     } catch (err: any) {
       toast.error(err?.message || 'Failed to save pending payment');
+    } finally {
+      setSaveConfirmBusy(false);
     }
   };
 
@@ -355,6 +393,33 @@ function PendingPaymentFormDialogV2({
             </Button>
           </div>
         </form>
+
+        <AlertDialog
+          open={saveConfirmOpen}
+          onOpenChange={(o) => {
+            setSaveConfirmOpen(o);
+            if (!o) setSavePayload(null);
+          }}
+        >
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>{isEdit ? 'Save changes?' : 'Add pending payment?'}</AlertDialogTitle>
+              <AlertDialogDescription>
+                This will {isEdit ? 'update' : 'create'} the pending payment entry for the selected customer.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter className="flex-col sm:flex-row gap-2">
+              <AlertDialogCancel>Cancel</AlertDialogCancel>
+              <AlertDialogAction
+                className="bg-blue-600 hover:bg-blue-700 w-full sm:w-auto"
+                onClick={confirmSave}
+                disabled={saveConfirmBusy}
+              >
+                {saveConfirmBusy ? 'Saving...' : 'Confirm'}
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
       </DialogContent>
     </Dialog>
   );
@@ -382,6 +447,10 @@ export function SettingsPendingPaymentsDialogV2({
 
   const [whatsappDialogOpen, setWhatsappDialogOpen] = useState(false);
   const [whatsappTarget, setWhatsappTarget] = useState<PendingPaymentReminder | null>(null);
+
+  const [completeConfirmOpen, setCompleteConfirmOpen] = useState(false);
+  const [completeConfirmBusy, setCompleteConfirmBusy] = useState(false);
+  const [completeTarget, setCompleteTarget] = useState<PendingPaymentReminder | null>(null);
 
   const openWhatsApp = (phone: string, message: string) => {
     if (!phone) return;
@@ -501,14 +570,26 @@ Thanks & regards 🙏`;
     setFormOpen(true);
   };
 
-  const handleMarkCompleted = async (r: Reminder) => {
-    const { error } = await db.reminders.update(r.id, { completed_at: new Date().toISOString() });
-    if (error) {
-      toast.error(error.message);
-      return;
+  const handleMarkCompleted = (r: Reminder) => {
+    setCompleteTarget(r as PendingPaymentReminder);
+    setCompleteConfirmOpen(true);
+  };
+
+  const confirmMarkCompleted = async () => {
+    if (!completeTarget) return;
+    setCompleteConfirmBusy(true);
+    try {
+      const { error } = await db.reminders.update(completeTarget.id, { completed_at: new Date().toISOString() });
+      if (error) throw new Error(error.message);
+      toast.success('Marked pending payment as collected');
+      await load(); // reload current page
+      setCompleteConfirmOpen(false);
+      setCompleteTarget(null);
+    } catch (err: any) {
+      toast.error(err?.message || 'Failed to mark collected');
+    } finally {
+      setCompleteConfirmBusy(false);
     }
-    toast.success('Marked pending payment as completed');
-    await load(); // reload current page
   };
 
   const handleWhatsAppClick = (p: PendingPaymentReminder) => {
@@ -698,6 +779,33 @@ Thanks & regards 🙏`;
           editReminder={editReminder}
           onSaved={() => load()}
         />
+
+        <AlertDialog
+          open={completeConfirmOpen}
+          onOpenChange={(o) => {
+            setCompleteConfirmOpen(o);
+            if (!o) setCompleteTarget(null);
+          }}
+        >
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>Mark as collected?</AlertDialogTitle>
+              <AlertDialogDescription>
+                This will mark this pending payment as completed and remove it from the pending list.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter className="flex-col sm:flex-row gap-2">
+              <AlertDialogCancel>Cancel</AlertDialogCancel>
+              <AlertDialogAction
+                className="bg-green-600 hover:bg-green-700 w-full sm:w-auto"
+                onClick={confirmMarkCompleted}
+                disabled={completeConfirmBusy}
+              >
+                {completeConfirmBusy ? 'Updating...' : 'Mark as collected'}
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
 
         <Dialog
           open={whatsappDialogOpen}
