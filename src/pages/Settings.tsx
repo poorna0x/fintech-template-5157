@@ -32,7 +32,8 @@ import {
   LogOut,
   ListTodo,
   PhoneCall,
-  RefreshCw
+  RefreshCw,
+  DollarSign
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { db, supabase } from '@/lib/supabase';
@@ -42,6 +43,7 @@ import { CommonQrCode, invalidateQrCodesCache } from '@/lib/qrCodeManager';
 import JSZip from 'jszip';
 import CallingPage from '@/pages/CallingPage';
 import { SettingsRemindersDialog } from '@/components/reminders/SettingsRemindersDialog';
+import { SettingsPendingPaymentsDialogV2 } from '@/components/reminders/PendingPaymentsDialogV2';
 
 const Settings = () => {
   const { user, isAdmin, logout } = useAuth();
@@ -118,6 +120,10 @@ const Settings = () => {
 
   // Reminders dialog (view/search, no add)
   const [remindersDialogOpen, setRemindersDialogOpen] = useState(false);
+
+  // Pending payments dialog (lazy load, add/edit/complete)
+  const [pendingPaymentsDialogOpen, setPendingPaymentsDialogOpen] = useState(false);
+  const [pendingPaymentsInitialAction, setPendingPaymentsInitialAction] = useState<'list' | 'add'>('list');
 
   // Load data on component mount
   useEffect(() => {
@@ -1462,6 +1468,50 @@ const Settings = () => {
           <SettingsRemindersDialog
             open={remindersDialogOpen}
             onOpenChange={setRemindersDialogOpen}
+          />
+
+          {/* Pending payments */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2 text-lg sm:text-xl">
+                <DollarSign className="w-5 h-5" />
+                Pending payments
+              </CardTitle>
+              <CardDescription className="text-sm mt-1">
+                Manage customer pending amounts and due dates. Mark as completed after payment.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="p-4 sm:p-6">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <Button
+                  variant="outline"
+                  className="w-full"
+                  onClick={() => {
+                    setPendingPaymentsInitialAction('list');
+                    setPendingPaymentsDialogOpen(true);
+                  }}
+                >
+                  <DollarSign className="w-4 h-4 mr-2" />
+                  Open Pending Payments
+                </Button>
+                <Button
+                  variant="default"
+                  className="bg-blue-600 hover:bg-blue-700 w-full"
+                  onClick={() => {
+                    setPendingPaymentsInitialAction('add');
+                    setPendingPaymentsDialogOpen(true);
+                  }}
+                >
+                  <Plus className="w-4 h-4 mr-2" />
+                  Add Pending Payment
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+          <SettingsPendingPaymentsDialogV2
+            open={pendingPaymentsDialogOpen}
+            onOpenChange={setPendingPaymentsDialogOpen}
+            initialAction={pendingPaymentsInitialAction}
           />
 
           {/* GST Invoices */}
