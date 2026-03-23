@@ -24,7 +24,7 @@ import {
   CommandList,
 } from '@/components/ui/command';
 import { format } from 'date-fns';
-import { Check, ChevronsUpDown, Edit3, Plus, RefreshCw, Search } from 'lucide-react';
+import { Check, ChevronsUpDown, Edit3, PhoneCall, Plus, RefreshCw, Search } from 'lucide-react';
 import { toast } from 'sonner';
 import type { Reminder } from '@/types';
 import { db, supabase } from '@/lib/supabase';
@@ -448,6 +448,9 @@ export function SettingsPendingPaymentsDialogV2({
   const [whatsappDialogOpen, setWhatsappDialogOpen] = useState(false);
   const [whatsappTarget, setWhatsappTarget] = useState<PendingPaymentReminder | null>(null);
 
+  const [callDialogOpen, setCallDialogOpen] = useState(false);
+  const [callTarget, setCallTarget] = useState<PendingPaymentReminder | null>(null);
+
   const [completeConfirmOpen, setCompleteConfirmOpen] = useState(false);
   const [completeConfirmBusy, setCompleteConfirmBusy] = useState(false);
   const [completeTarget, setCompleteTarget] = useState<PendingPaymentReminder | null>(null);
@@ -457,6 +460,18 @@ export function SettingsPendingPaymentsDialogV2({
     const formatted = formatPhoneForWhatsApp(phone);
     const url = `https://wa.me/${formatted}?text=${encodeURIComponent(message)}`;
     window.open(url, '_blank', 'noopener,noreferrer');
+  };
+
+  const openCall = (phone: string) => {
+    if (!phone) return;
+    const formatted = formatPhoneForWhatsApp(phone);
+    const tel =
+      formatted.startsWith('+')
+        ? formatted
+        : formatted.startsWith('91') && formatted.length === 12
+          ? `+${formatted}`
+          : formatted;
+    window.location.href = `tel:${tel}`;
   };
 
   const buildPendingPaymentMessage = (payment: PendingPaymentReminder, customer: CustomerLabel) => {
@@ -490,6 +505,8 @@ Thanks & regards 🙏`;
       setLoading(false);
       setEditReminder(null);
       setFormOpen(true);
+      setCallDialogOpen(false);
+      setCallTarget(null);
     } else {
       setFormOpen(false);
       setEditReminder(null);
@@ -644,6 +661,28 @@ Thanks & regards 🙏`;
     openWhatsApp(primary || alternate || '', message);
   };
 
+  const handleCallClick = (p: PendingPaymentReminder) => {
+    const customer = p.entity_id ? customerLabels[p.entity_id as string] : undefined;
+    if (!customer) {
+      toast.error('Customer info not loaded');
+      return;
+    }
+    const primary = customer.phone;
+    const alternate = customer.alternatePhone;
+    if (!primary && !alternate) {
+      toast.error('Customer phone number is missing');
+      return;
+    }
+
+    if (alternate && alternate.trim() && alternate.trim() !== primary?.trim()) {
+      setCallTarget(p);
+      setCallDialogOpen(true);
+      return;
+    }
+
+    openCall(primary || alternate || '');
+  };
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-2xl max-h-[90vh] flex flex-col p-4 sm:p-6">
@@ -782,6 +821,14 @@ Thanks & regards 🙏`;
                           title="Notify on WhatsApp"
                         >
                           <WhatsAppIcon className="h-4 w-4" />
+                        </Button>
+                        <Button
+                          size="icon"
+                          onClick={() => handleCallClick(p)}
+                          className="h-9 w-9 bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200"
+                          title="Call customer"
+                        >
+                          <PhoneCall className="h-4 w-4" />
                         </Button>
                       </div>
                     </div>
@@ -923,6 +970,105 @@ Thanks & regards 🙏`;
 
                       <DialogFooter>
                         <Button variant="outline" onClick={() => setWhatsappDialogOpen(false)}>
+                          Close
+                        </Button>
+                      </DialogFooter>
+                    </>
+                  );
+                })()}
+              </>
+            )}
+          </DialogContent>
+        </Dialog>
+
+        <Dialog
+          open={callDialogOpen}
+          onOpenChange={(o) => {
+            setCallDialogOpen(o);
+            if (!o) setCallTarget(null);
+          }}
+        >
+          <DialogContent className="sm:max-w-2xl max-h-[90vh] overflow-y-auto p-4 sm:p-6">
+            {callTarget && (
+              <>
+                {(() => {
+                  const customer = callTarget.entity_id ? customerLabels[callTarget.entity_id as string] : undefined;
+                  const primaryPhone = customer?.phone;
+                  const alternatePhone = customer?.alternatePhone;
+                  const hasAlternate = !!alternatePhone && alternatePhone.trim() !== (primaryPhone || '').trim();
+
+                  return (
+                    <>
+                      <DialogHeader>
+                        <DialogTitle className="flex items-center gap-2">
+                          <PhoneCall className="w-5 h-5 text-blue-600" />
+                          Call customer
+                        </DialogTitle>
+                        <DialogDescription>
+                          Choose which number to call (if you have both primary and alternate).
+                        </DialogDescription>
+                      </DialogHeader>
+
+                      <div className="py-4 space-y-3">
+                        <div className="bg-gray-50 rounded-lg p-4 space-y-2">
+                          <div className="text-sm text-gray-700">
+                            <strong>Customer:</strong> {customer?.name ?? 'Customer'}
+                          </div>
+                          <div className="text-sm text-gray-700">
+                            <strong>Primary:</strong> {primaryPhone ?? '—'}
+                          </div>
+                          {hasAlternate && (
+                            <div className="text-sm text-gray-700">
+                              <strong>Alternate:</strong> {alternatePhone}
+                            </div>
+                          )}
+                        </div>
+
+                        {hasAlternate ? (
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                            <Button
+                              variant="default"
+                              className="bg-blue-600 hover:bg-blue-700 text-white"
+                              onClick={() => {
+                                if (!primaryPhone) return;
+                                openCall(primaryPhone);
+                                setCallDialogOpen(false);
+                              }}
+                            >
+                              <PhoneCall className="w-4 h-4 mr-2" />
+                              Primary: {primaryPhone}
+                            </Button>
+                            <Button
+                              variant="default"
+                              className="bg-blue-600 hover:bg-blue-700 text-white"
+                              onClick={() => {
+                                if (!alternatePhone) return;
+                                openCall(alternatePhone);
+                                setCallDialogOpen(false);
+                              }}
+                            >
+                              <PhoneCall className="w-4 h-4 mr-2" />
+                              Alternate: {alternatePhone}
+                            </Button>
+                          </div>
+                        ) : (
+                          <Button
+                            variant="default"
+                            className="w-full bg-blue-600 hover:bg-blue-700 text-white"
+                            onClick={() => {
+                              if (!primaryPhone) return;
+                              openCall(primaryPhone);
+                              setCallDialogOpen(false);
+                            }}
+                          >
+                            <PhoneCall className="w-4 h-4 mr-2" />
+                            Call {primaryPhone}
+                          </Button>
+                        )}
+                      </div>
+
+                      <DialogFooter>
+                        <Button variant="outline" onClick={() => setCallDialogOpen(false)}>
                           Close
                         </Button>
                       </DialogFooter>
