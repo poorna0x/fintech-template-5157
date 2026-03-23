@@ -567,6 +567,27 @@ Thanks & regards 🙏`;
     }
   };
 
+  // When user is adding/editing, render ONLY the add/edit dialog.
+  // This prevents the pending list UI from showing behind the form.
+  if (open && (initialAction === 'add' || formOpen)) {
+    return (
+      <PendingPaymentFormDialogV2
+        open={open}
+        onOpenChange={(o) => {
+          if (!o) onOpenChange(false);
+        }}
+        editReminder={editReminder}
+        onSaved={() => {
+          // Don’t auto-load list after add/edit; user clicks "Load pending payments" when needed.
+          setLoaded(false);
+          setPayments([]);
+          setCustomerLabels({});
+          setSearchQuery('');
+        }}
+      />
+    );
+  }
+
   const handleOpenAdd = () => {
     setEditReminder(null);
     setFormOpen(true);
@@ -776,16 +797,6 @@ Thanks & regards 🙏`;
             </div>
           )}
         </div>
-
-        <PendingPaymentFormDialogV2
-          open={formOpen}
-          onOpenChange={(o) => {
-            setFormOpen(o);
-            if (!o) setEditReminder(null);
-          }}
-          editReminder={editReminder}
-          onSaved={() => load()}
-        />
 
         <AlertDialog
           open={completeConfirmOpen}
