@@ -33,7 +33,27 @@ function parsePendingAmount(notes: string | null | undefined): number {
   return Number.isFinite(n) ? n : 0;
 }
 
-type PendingPaymentReminder = Reminder & { amount_pending: number };
+function parsePendingNotes(notes: string | null | undefined): { amount_pending: number; note?: string } {
+  const raw = (notes ?? '').toString().trim();
+  if (!raw) return { amount_pending: 0 };
+
+  // New format: JSON { amount_pending: number, note?: string|null }
+  if (raw.startsWith('{')) {
+    try {
+      const parsed = JSON.parse(raw) as { amount_pending?: unknown; note?: unknown };
+      const amount_pending = typeof parsed.amount_pending === 'number' ? parsed.amount_pending : parsePendingAmount(raw);
+      const note = typeof parsed.note === 'string' ? parsed.note : undefined;
+      return { amount_pending, note };
+    } catch {
+      // fallthrough to legacy parsing
+    }
+  }
+
+  // Legacy format: notes was just amount string
+  return { amount_pending: parsePendingAmount(raw), note: undefined };
+}
+
+type PendingPaymentReminder = Reminder & { amount_pending: number; note?: string };
 
 type CustomerLabel = {
   id: string;
@@ -70,12 +90,14 @@ function PendingPaymentFormDialogV2({
   const [customerLabel, setCustomerLabel] = useState<CustomerLabel | null>(null);
 
   const [amountStr, setAmountStr] = useState<string>('');
+  const [noteStr, setNoteStr] = useState<string>('');
   const [dueDate, setDueDate] = useState<string>(() => format(new Date(Date.now() + 86400000), 'yyyy-MM-dd'));
 
   const [customerSearchOpen, setCustomerSearchOpen] = useState(false);
   const [customerQuery, setCustomerQuery] = useState('');
   const [customerResults, setCustomerResults] = useState<CustomerLabel[]>([]);
   const [customerLoading, setCustomerLoading] = useState(false);
+  const [hasAttemptedCustomerSearch, setHasAttemptedCustomerSearch] = useState(false);
 
   useEffect(() => {
     if (!open) return;
@@ -85,14 +107,14 @@ function PendingPaymentFormDialogV2({
     setCustomerQuery('');
     setCustomerResults([]);
     setCustomerLoading(false);
+    setHasAttemptedCustomerSearch(false);
 
     if (isEdit && editReminder) {
       const nextCustomerId = (editReminder.entity_id as string) ?? '';
       setCustomerId(nextCustomerId);
-      setAmountStr(() => {
-        const amt = parsePendingAmount(editReminder.notes);
-        return amt ? String(amt) : '';
-      });
+      const parsed = parsePendingNotes(editReminder.notes);
+      setAmountStr(() => (parsed.amount_pending ? String(parsed.amount_pending) : ''));
+      setNoteStr(parsed.note ?? '');
       setDueDate(
         editReminder.reminder_at ? String(editReminder.reminder_at) : format(new Date(Date.now() + 86400000), 'yyyy-MM-dd')
       );
@@ -107,6 +129,7 @@ function PendingPaymentFormDialogV2({
       setCustomerId('');
       setCustomerLabel(null);
       setAmountStr('');
+      setNoteStr('');
       setDueDate(format(new Date(Date.now() + 86400000), 'yyyy-MM-dd'));
     }
   }, [open, isEdit, editReminder]);
@@ -115,8 +138,10 @@ function PendingPaymentFormDialogV2({
     const q = customerQuery.trim();
     if (!q) {
       setCustomerResults([]);
+      setHasAttemptedCustomerSearch(false);
       return;
     }
+    setHasAttemptedCustomerSearch(true);
     setCustomerLoading(true);
     try {
       const { data, error } = await db.customers.search(q, 20);
@@ -152,7 +177,10 @@ function PendingPaymentFormDialogV2({
       if (isEdit && editReminder) {
         const { error } = await db.reminders.update(editReminder.id, {
           title: PENDING_PAYMENT_TITLE,
-          notes: String(parsedAmount),
+          notes: JSON.stringify({
+            amount_pending: parsedAmount,
+            note: noteStr.trim() || null,
+          }),
           reminder_at: reminderAt,
         });
         if (error) throw new Error(error.message);
@@ -162,7 +190,10 @@ function PendingPaymentFormDialogV2({
           entity_type: 'customer',
           entity_id: customerId,
           title: PENDING_PAYMENT_TITLE,
-          notes: String(parsedAmount),
+          notes: JSON.stringify({
+            amount_pending: parsedAmount,
+            note: noteStr.trim() || null,
+          }),
           reminder_at: reminderAt,
         });
         if (error) throw new Error(error.message);
@@ -221,15 +252,11 @@ function PendingPaymentFormDialogV2({
                     <Command shouldFilter={false}>
                       <div className="p-3 pb-2">
                         <div className="flex items-center gap-2">
-                          <Search className="h-4 w-4 text-muted-foreground shrink-0" />
                           <Input
                             placeholder="Search customer by name, ID, or phone..."
                             value={customerQuery}
                             onChange={(e) => setCustomerQuery(e.target.value)}
                             className="h-10"
-                            onKeyDown={(e) => {
-                              if (e.key === 'Enter') handleCustomerSearch();
-                            }}
                           />
                           <Button
                             type="button"
@@ -249,7 +276,7 @@ function PendingPaymentFormDialogV2({
                         <CommandEmpty>
                           {customerLoading
                             ? 'Searching...'
-                            : customerQuery.trim()
+                            : hasAttemptedCustomerSearch
                               ? 'No customers match.'
                               : 'Type and click search.'}
                         </CommandEmpty>
@@ -264,6 +291,7 @@ function PendingPaymentFormDialogV2({
                                 setCustomerSearchOpen(false);
                                 setCustomerQuery('');
                                 setCustomerResults([]);
+                                setHasAttemptedCustomerSearch(false);
                               }}
                               className="flex items-center justify-between gap-3 px-3 py-2.5 cursor-pointer hover:bg-muted"
                             >
@@ -295,6 +323,16 @@ function PendingPaymentFormDialogV2({
               placeholder="e.g. 2500"
               className="min-h-9"
               required
+            />
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="pending-note">Note (optional)</Label>
+            <Input
+              id="pending-note"
+              value={noteStr}
+              onChange={(e) => setNoteStr(e.target.value)}
+              placeholder="e.g. Service payment, AMC pending..."
+              className="min-h-9"
             />
           </div>
 
@@ -421,10 +459,14 @@ Thanks & regards 🙏`;
 
       if (reminderError) throw reminderError;
 
-      const list = ((reminderRows || []) as Reminder[]).map((r) => ({
-        ...r,
-        amount_pending: parsePendingAmount(r.notes),
-      })) as PendingPaymentReminder[];
+      const list = ((reminderRows || []) as Reminder[]).map((r) => {
+        const parsed = parsePendingNotes(r.notes);
+        return {
+          ...r,
+          amount_pending: parsed.amount_pending,
+          note: parsed.note,
+        };
+      }) as PendingPaymentReminder[];
 
       const customerIds = [...new Set(list.filter((r) => !!r.entity_id).map((r) => r.entity_id as string))];
       // Fetch only required customer fields for the loaded page (keeps egress low).
@@ -599,6 +641,11 @@ Thanks & regards 🙏`;
                             ₹{(Number(p.amount_pending) || 0).toLocaleString('en-IN', { maximumFractionDigits: 2 })}
                           </span>
                         </div>
+                        {p.note && (
+                          <div className="mt-1 text-xs text-muted-foreground break-words">
+                            Note: {p.note}
+                          </div>
+                        )}
                       </div>
 
                       <div className="flex items-center gap-2 shrink-0">
