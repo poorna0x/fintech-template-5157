@@ -481,6 +481,13 @@ Thanks & regards 🙏`;
   useEffect(() => {
     if (!open) return;
     if (initialAction === 'add') {
+      // Important: reset list state so we don't show previously loaded payments in the background.
+      // The component stays mounted, so we must clear cached list data explicitly.
+      setLoaded(false);
+      setPayments([]);
+      setCustomerLabels({});
+      setSearchQuery('');
+      setLoading(false);
       setEditReminder(null);
       setFormOpen(true);
     } else {
