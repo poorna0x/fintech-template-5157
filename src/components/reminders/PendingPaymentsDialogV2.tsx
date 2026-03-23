@@ -690,7 +690,7 @@ Thanks & regards 🙏`;
                     placeholder="Search in this page (customer, due date, amount)..."
                     value={searchQuery}
                     onChange={(e) => setSearchQuery(e.target.value)}
-                    className="min-h-9"
+                    className="min-h-9 border border-input focus-visible:ring-0 focus-visible:ring-offset-0 focus-visible:outline-none focus:outline-none"
                   />
                 </div>
                 <div className="flex gap-2">
