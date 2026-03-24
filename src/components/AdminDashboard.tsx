@@ -726,6 +726,14 @@ const AdminDashboard = () => {
   const [completedDateFilter, setCompletedDateFilter] = useState<string>(() => {
     return getTodayLocalDate();
   });
+  const [completedDatePreset, setCompletedDatePreset] = useState<'day' | 'week' | 'month' | 'custom'>('day');
+  const [completedRangeStartDate, setCompletedRangeStartDate] = useState<string>(() => getTodayLocalDate());
+  const [completedRangeEndDate, setCompletedRangeEndDate] = useState<string>(() => getTodayLocalDate());
+  const [completedLeadTypeFilter, setCompletedLeadTypeFilter] = useState<string>('all');
+  const [completedServiceSubTypeFilter, setCompletedServiceSubTypeFilter] = useState<string>('all');
+  const [completedByFilter, setCompletedByFilter] = useState<string>('all');
+  const [completedFilterDialogOpen, setCompletedFilterDialogOpen] = useState(false);
+  const [completedFilterSourceJobs, setCompletedFilterSourceJobs] = useState<any[]>([]);
   // Job counts for stats cards (loaded separately)
   const [jobCounts, setJobCounts] = useState<{ongoing: number; followup: number; denied: number; completed: number}>({
     ongoing: 0,
@@ -1130,8 +1138,22 @@ const AdminDashboard = () => {
       } else if (filter === 'COMPLETED' || filter === 'CANCELLED') {
         // Use pagination for completed and denied jobs
         const statuses = filter === 'COMPLETED' ? ['COMPLETED'] : ['DENIED', 'CANCELLED'];
-        // Pass date filter for completed or denied jobs
-        const dateFilter = filter === 'COMPLETED' ? completedDateFilter : (filter === 'CANCELLED' ? deniedDateFilter : undefined);
+        // Pass date/day-range filter for completed jobs and day filter for denied jobs
+        let dateFilter: string | { startDate: string; endDate: string } | undefined = undefined;
+        if (filter === 'COMPLETED') {
+          if (completedDatePreset === 'day') {
+            dateFilter = completedDateFilter;
+          } else {
+            const start = completedRangeStartDate <= completedRangeEndDate ? completedRangeStartDate : completedRangeEndDate;
+            const end = completedRangeStartDate <= completedRangeEndDate ? completedRangeEndDate : completedRangeStartDate;
+            dateFilter = {
+              startDate: start,
+              endDate: end
+            };
+          }
+        } else if (filter === 'CANCELLED') {
+          dateFilter = deniedDateFilter;
+        }
         const { data, error, count, totalPages: pages } = await db.jobs.getByStatusPaginated(statuses, page, pageSize, dateFilter);
         if (error) {
           setJobs([]);
@@ -1156,7 +1178,7 @@ const AdminDashboard = () => {
     } finally {
       setLoading(false);
     }
-  }, [pageSize, deniedDateFilter, completedDateFilter]);
+  }, [pageSize, deniedDateFilter, completedDateFilter, completedDatePreset, completedRangeStartDate, completedRangeEndDate]);
 
   // Reload follow-up jobs for glow whenever filter changes (so Followup card border glow is correct for today/tomorrow)
   useEffect(() => {
@@ -1381,14 +1403,26 @@ const AdminDashboard = () => {
     }
   }, [deniedDateFilter, statusFilter, loadFilteredJobs, isInitialLoad]);
 
-  // Reload jobs when completed date filter changes
+  // Reload jobs when completed date/range filter changes
   useEffect(() => {
     if (isInitialLoad) return;
     if (statusFilter === 'COMPLETED') {
       setCurrentPage(1); // Reset to first page when date filter changes
       loadFilteredJobs(statusFilter, 1);
     }
-  }, [completedDateFilter, statusFilter, loadFilteredJobs, isInitialLoad]);
+  }, [completedDateFilter, completedDatePreset, completedRangeStartDate, completedRangeEndDate, statusFilter, loadFilteredJobs, isInitialLoad]);
+
+  // Load full option source for completed filters (not limited to current page)
+  useEffect(() => {
+    if (isInitialLoad || statusFilter !== 'COMPLETED' || !completedFilterDialogOpen) return;
+    const loadCompletedFilterSource = async () => {
+      // Fetch all completed options once (lightweight columns), not just current date,
+      // so lead/subtype dropdowns always show the full set of values.
+      const { data } = await db.jobs.getCompletedJobsFilterSource(undefined);
+      setCompletedFilterSourceJobs(data || []);
+    };
+    loadCompletedFilterSource();
+  }, [isInitialLoad, statusFilter, completedFilterDialogOpen]);
 
   // Restore scroll position when WhatsApp dialog opens (after assign/reassign) so page doesn't jump to top
   useEffect(() => {
@@ -6929,6 +6963,31 @@ const AdminDashboard = () => {
     }
     return new Date(job.createdAt).getTime();
   };
+  const getCompletedJobLeadType = (job: any): string => {
+    return (findLeadSource(parseJobRequirements(job?.requirements || [])) || 'Direct call').trim();
+  };
+  const getCompletedJobServiceSubType = (job: any): string => {
+    return ((job?.service_sub_type || job?.serviceSubType || '') as string).trim();
+  };
+  const getCompletedJobTechnicianName = (job: any): string => {
+    const completedByIdOrName = (job?.completed_by || job?.completedBy || '').toString().trim();
+    const completedByName = (job?.completed_by_name || '').toString().trim();
+    if (completedByIdOrName) {
+      const tech = technicians.find((t) => t.id === completedByIdOrName || t.fullName === completedByIdOrName);
+      if (tech?.fullName) return tech.fullName.trim();
+    }
+    if (completedByName) {
+      const tech = technicians.find((t) => t.fullName === completedByName);
+      if (tech?.fullName) return tech.fullName.trim();
+    }
+    return '';
+  };
+  function doesCompletedJobMatchFilters(job: any): boolean {
+    if (completedLeadTypeFilter !== 'all' && getCompletedJobLeadType(job) !== completedLeadTypeFilter) return false;
+    if (completedServiceSubTypeFilter !== 'all' && getCompletedJobServiceSubType(job) !== completedServiceSubTypeFilter) return false;
+    if (completedByFilter !== 'all' && getCompletedJobTechnicianName(job) !== completedByFilter) return false;
+    return true;
+  }
 
   // Group customers with their jobs (uses baseCustomers so search results get their jobs from current view)
   const customersWithJobs = baseCustomers.map(customer => {
@@ -7055,7 +7114,9 @@ const AdminDashboard = () => {
         .map(({ customer, todayJobs }) => {
           // For COMPLETED filter with date selection, use only the paginated jobs for that date
           // This ensures we show only customers who have jobs on the selected date
-          const allJobs = todayJobs;
+          const allJobs = statusFilter === 'COMPLETED'
+            ? todayJobs.filter((job) => job.status === 'COMPLETED' && doesCompletedJobMatchFilters(job))
+            : todayJobs;
           
           // Sort completed jobs by completion date (latest first)
           const completedJobs = allJobs
@@ -7074,6 +7135,7 @@ const AdminDashboard = () => {
             cancelledJobs: allJobs.filter(job => job.status === 'CANCELLED' || job.status === 'DENIED')
           };
         })
+        .filter((entry) => statusFilter !== 'COMPLETED' || entry.completedJobs.length > 0)
         .sort((a, b) => {
           // Sort customers by their most recent completed job date (latest first)
           const aMostRecentCompleted = a.completedJobs.length > 0 
@@ -7218,6 +7280,21 @@ const AdminDashboard = () => {
       return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
     }
     return followUpDate.split('T')[0].trim();
+  };
+  const completedDateToStr = (dateValue: string | null | undefined): string | null => {
+    if (!dateValue) return null;
+    const d = new Date(dateValue);
+    if (Number.isNaN(d.getTime())) return null;
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  };
+  const isDateWithinCompletedRange = (dateStr: string | null): boolean => {
+    if (!dateStr) return false;
+    if (completedDatePreset === 'day') {
+      return dateStr === completedDateFilter;
+    }
+    const start = completedRangeStartDate <= completedRangeEndDate ? completedRangeStartDate : completedRangeEndDate;
+    const end = completedRangeStartDate <= completedRangeEndDate ? completedRangeEndDate : completedRangeStartDate;
+    return dateStr >= start && dateStr <= end;
   };
 
   const displayedCustomers = !searchTerm.trim()
@@ -7374,6 +7451,56 @@ const AdminDashboard = () => {
   });
   
   const completedJobs = jobs.filter(job => job.status === 'COMPLETED');
+  const completedJobsInSelectedWindow = completedFilterSourceJobs.length > 0
+    ? completedFilterSourceJobs
+    : completedJobs.filter((job) => {
+        const completionDate = (job as any).completed_at || job.completedAt || (job as any).end_time || job.endTime;
+        return isDateWithinCompletedRange(completedDateToStr(completionDate));
+      });
+  const MASTER_LEAD_TYPES = [
+    'Website',
+    'Direct call',
+    'Google-Leads',
+    'RO care india',
+    'Home Triangle',
+    'Home Triangle-Srujan',
+    'Local Ramu',
+    'Other'
+  ];
+  const MASTER_SERVICE_SUB_TYPES = [
+    'Service',
+    'Installation',
+    'Reinstallation',
+    'Return Complaint',
+    'AMC Service',
+    'New Purifier Installation',
+    'Un-Installation',
+    'Repair',
+    'Maintenance',
+    'Replacement',
+    'Inspection',
+    'Other'
+  ];
+  const dataLeadTypeOptions = completedJobsInSelectedWindow
+    .map((job) => findLeadSource(parseJobRequirements((job as any).requirements || job.requirements || [])) || 'Direct call')
+    .map((v) => v.trim())
+    .filter(Boolean);
+  const completedLeadTypeOptions = Array.from(new Set([
+    ...MASTER_LEAD_TYPES,
+    ...dataLeadTypeOptions
+  ])).sort((a, b) => a.localeCompare(b));
+  const dataServiceSubTypeOptions = completedJobsInSelectedWindow
+    .map((job) => ((job as any).service_sub_type || job.serviceSubType || '').trim())
+    .filter(Boolean);
+  const completedServiceSubTypeOptions = Array.from(new Set([
+    ...MASTER_SERVICE_SUB_TYPES,
+    ...dataServiceSubTypeOptions
+  ])).sort((a, b) => a.localeCompare(b));
+  const completedByOptions = Array.from(new Set(
+    technicians
+      .map((tech) => (tech.fullName || '').trim())
+      .filter(Boolean)
+  )).sort((a, b) => a.localeCompare(b));
   
   // New stats for the dashboard cards (filtered by today)
   const ongoingJobs = jobs.filter(job => {
@@ -7830,29 +7957,215 @@ const AdminDashboard = () => {
           </div>
         )}
 
-        {/* Date Filter for Completed Jobs */}
+        {/* Completed Jobs quick filter summary + dialog trigger */}
         {statusFilter === 'COMPLETED' && (
-          <div className="mb-4 w-full min-w-0">
-            <div className="flex flex-nowrap items-center gap-3 rounded-lg border border-input bg-muted/30 p-3 w-full min-w-0">
-              <Label className="text-sm font-medium text-muted-foreground min-w-0 shrink truncate">
-                Show completed jobs for
-              </Label>
-              <DatePicker
-                value={completedDateFilter}
-                onChange={(v) => setCompletedDateFilter(v ?? getTodayLocalDate())}
-                placeholder="Pick date"
-                className="shrink-0 grow-0 h-10 min-w-[7rem] max-w-[10rem] px-3 py-2 rounded-md border border-input bg-background text-sm font-normal"
-              />
-              <Button
-                variant="outline"
-                type="button"
-                className="shrink-0 h-10 px-3 py-2 rounded-md border border-input bg-background text-sm font-normal whitespace-nowrap"
-                onClick={() => setCompletedDateFilter(getTodayLocalDate())}
-              >
-                Today
-              </Button>
+          <div className="mb-4 rounded-lg border border-input bg-muted/20 px-3 py-2">
+            <div className="flex flex-col gap-2 min-w-0">
+              <div className="flex flex-wrap items-center gap-2">
+                <DatePicker
+                  value={completedDateFilter}
+                  onChange={(v) => {
+                    const next = v ?? getTodayLocalDate();
+                    setCompletedDatePreset('day');
+                    setCompletedDateFilter(next);
+                    setCompletedRangeStartDate(next);
+                    setCompletedRangeEndDate(next);
+                  }}
+                  placeholder="Pick date"
+                />
+                <Button
+                  variant="outline"
+                  size="sm"
+                  type="button"
+                  onClick={() => {
+                    const today = getTodayLocalDate();
+                    setCompletedDatePreset('day');
+                    setCompletedDateFilter(today);
+                    setCompletedRangeStartDate(today);
+                    setCompletedRangeEndDate(today);
+                  }}
+                >
+                  Today
+                </Button>
+                <Button variant="outline" size="sm" onClick={() => setCompletedFilterDialogOpen(true)} className="shrink-0 ml-auto">
+                  <Filter className="w-4 h-4 mr-1" />
+                  Filters
+                </Button>
+              </div>
             </div>
           </div>
+        )}
+        {statusFilter === 'COMPLETED' && (
+          <Dialog open={completedFilterDialogOpen} onOpenChange={setCompletedFilterDialogOpen}>
+            <DialogContent className="sm:max-w-2xl">
+              <DialogHeader>
+                <DialogTitle>Completed Jobs Filters</DialogTitle>
+                <DialogDescription>Choose filters to narrow completed jobs.</DialogDescription>
+              </DialogHeader>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 py-1">
+                <div className="space-y-1">
+                  <Label className="text-xs text-muted-foreground">Date Filter</Label>
+                  <Select
+                    value={completedDatePreset}
+                    onValueChange={(value: 'day' | 'week' | 'month' | 'custom') => {
+                      const today = new Date();
+                      const todayStr = getTodayLocalDate();
+                      setCompletedDatePreset(value);
+                      if (value === 'day') {
+                        setCompletedDateFilter(todayStr);
+                      } else if (value === 'week') {
+                        const weekStart = new Date(today);
+                        weekStart.setDate(today.getDate() - 6);
+                        const start = `${weekStart.getFullYear()}-${String(weekStart.getMonth() + 1).padStart(2, '0')}-${String(weekStart.getDate()).padStart(2, '0')}`;
+                        setCompletedRangeStartDate(start);
+                        setCompletedRangeEndDate(todayStr);
+                      } else if (value === 'month') {
+                        const monthStart = new Date(today.getFullYear(), today.getMonth(), 1);
+                        const start = `${monthStart.getFullYear()}-${String(monthStart.getMonth() + 1).padStart(2, '0')}-${String(monthStart.getDate()).padStart(2, '0')}`;
+                        setCompletedRangeStartDate(start);
+                        setCompletedRangeEndDate(todayStr);
+                      } else if (value === 'custom') {
+                        if (!completedRangeStartDate) setCompletedRangeStartDate(todayStr);
+                        if (!completedRangeEndDate) setCompletedRangeEndDate(todayStr);
+                      }
+                    }}
+                  >
+                    <SelectTrigger className="h-10">
+                      <SelectValue placeholder="Select period" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="day">Single day</SelectItem>
+                      <SelectItem value="week">Last 7 days</SelectItem>
+                      <SelectItem value="month">This month</SelectItem>
+                      <SelectItem value="custom">Custom range</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                {completedDatePreset === 'day' ? (
+                  <div className="space-y-1">
+                    <Label className="text-xs text-muted-foreground">Completed On</Label>
+                    <div className="inline-flex w-full items-center gap-2">
+                      <DatePicker
+                        value={completedDateFilter}
+                        onChange={(v) => setCompletedDateFilter(v ?? getTodayLocalDate())}
+                        placeholder="Pick date"
+                        className="flex-1 w-full"
+                      />
+                      <Button
+                        variant="outline"
+                        type="button"
+                        size="sm"
+                        onClick={() => setCompletedDateFilter(getTodayLocalDate())}
+                      >
+                        Today
+                      </Button>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="sm:col-span-2 grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div className="space-y-1 min-w-0">
+                      <Label className="text-xs text-muted-foreground">From</Label>
+                      <DatePicker
+                        value={completedRangeStartDate}
+                        onChange={(v) => {
+                          const nextStart = v ?? completedRangeStartDate;
+                          if (!nextStart) return;
+                          setCompletedRangeStartDate(nextStart);
+                          if (completedRangeEndDate && nextStart > completedRangeEndDate) {
+                            setCompletedRangeEndDate(nextStart);
+                          }
+                        }}
+                        placeholder="Start date"
+                        className="w-full"
+                      />
+                    </div>
+                    <div className="space-y-1 min-w-0">
+                      <Label className="text-xs text-muted-foreground">To</Label>
+                      <DatePicker
+                        value={completedRangeEndDate}
+                        onChange={(v) => {
+                          const nextEnd = v ?? completedRangeEndDate;
+                          if (!nextEnd) return;
+                          setCompletedRangeEndDate(nextEnd);
+                          if (completedRangeStartDate && nextEnd < completedRangeStartDate) {
+                            setCompletedRangeStartDate(nextEnd);
+                          }
+                        }}
+                        placeholder="End date"
+                        className="w-full"
+                      />
+                    </div>
+                  </div>
+                )}
+
+                <div className="space-y-1">
+                  <Label className="text-xs text-muted-foreground">Lead Type</Label>
+                  <Select value={completedLeadTypeFilter} onValueChange={setCompletedLeadTypeFilter}>
+                    <SelectTrigger>
+                      <SelectValue placeholder="All lead types" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">All lead types</SelectItem>
+                      {completedLeadTypeOptions.map((leadType) => (
+                        <SelectItem key={leadType} value={leadType}>{leadType}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div className="space-y-1">
+                  <Label className="text-xs text-muted-foreground">Service Sub Type</Label>
+                  <Select value={completedServiceSubTypeFilter} onValueChange={setCompletedServiceSubTypeFilter}>
+                    <SelectTrigger>
+                      <SelectValue placeholder="All service sub types" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">All service sub types</SelectItem>
+                      {completedServiceSubTypeOptions.map((subType) => (
+                        <SelectItem key={subType} value={subType}>{subType}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div className="space-y-1">
+                  <Label className="text-xs text-muted-foreground">Completed By</Label>
+                  <Select value={completedByFilter} onValueChange={setCompletedByFilter}>
+                    <SelectTrigger>
+                      <SelectValue placeholder="All technicians" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">All technicians</SelectItem>
+                      {completedByOptions.map((completedBy) => (
+                        <SelectItem key={completedBy} value={completedBy}>{completedBy}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
+              </div>
+              <DialogFooter>
+                <Button
+                  variant="outline"
+                  type="button"
+                  onClick={() => {
+                    const today = getTodayLocalDate();
+                    setCompletedDatePreset('day');
+                    setCompletedDateFilter(today);
+                    setCompletedRangeStartDate(today);
+                    setCompletedRangeEndDate(today);
+                    setCompletedLeadTypeFilter('all');
+                    setCompletedServiceSubTypeFilter('all');
+                    setCompletedByFilter('all');
+                  }}
+                >
+                  Reset Filters
+                </Button>
+                <Button type="button" onClick={() => setCompletedFilterDialogOpen(false)}>Apply</Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
         )}
 
         {/* Customers with Jobs */}
@@ -7936,7 +8249,10 @@ const AdminDashboard = () => {
                 : statusFilter === 'COMPLETED'
                 ? (() => {
                     const pageInfo = totalPages > 1 ? ` (page ${currentPage}/${totalPages}, ${totalCount} total jobs)` : '';
-                    return `Showing ${displayedCustomers.length} customer${displayedCustomers.length !== 1 ? 's' : ''} with completed jobs for ${new Date(completedDateFilter).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}${pageInfo}`;
+                    if (completedDatePreset === 'day') {
+                      return `Showing ${displayedCustomers.length} customer${displayedCustomers.length !== 1 ? 's' : ''} with completed jobs for ${new Date(completedDateFilter).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}${pageInfo}`;
+                    }
+                    return `Showing ${displayedCustomers.length} customer${displayedCustomers.length !== 1 ? 's' : ''} with completed jobs from ${new Date(completedRangeStartDate).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })} to ${new Date(completedRangeEndDate).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}${pageInfo}`;
                   })()                                                                             
                 : `Showing ${displayedCustomers.length} customers with ${statusFilter.toLowerCase().replace('_', ' ')} jobs`                                    
               }
@@ -8067,40 +8383,12 @@ const AdminDashboard = () => {
                           // Show denied jobs (DENIED status)
                           jobsToShow = allJobs.filter(job => job.status === 'DENIED');
                         } else if (statusFilter === 'COMPLETED') {
-                          // Show only completed jobs that were completed on the selected date
-                          // Filter by completedDateFilter (format: YYYY-MM-DD)
-                          // Database already filtered by date, but we need to filter again for customer history
-                          // Compare in local timezone to match what user sees
-                          const [filterYear, filterMonth, filterDay] = completedDateFilter.split('-').map(Number);
-                          const filterDateLocal = new Date(filterYear, filterMonth - 1, filterDay);
-                          
+                          // Apply completed date/range + lead/service subtype + customer id range filters
                           jobsToShow = completedJobs
-                            .filter(job => {
-                              const completedAt = job.completed_at || job.completedAt;
-                              const endTime = (job as any).end_time || job.endTime;
-                              const completionDate = completedAt || endTime;
-                              
-                              if (!completionDate) return false;
-                              
-                              // Parse the completion date (stored as UTC ISO string in database)
-                              const completionDateObj = new Date(completionDate);
-                              
-                              // Compare dates in local timezone (what user sees)
-                              // Convert UTC timestamp to local date for comparison
-                              const completionYear = completionDateObj.getFullYear();
-                              const completionMonth = completionDateObj.getMonth() + 1;
-                              const completionDay = completionDateObj.getDate();
-                              
-                              // Compare year, month, day in local timezone
-                              return completionYear === filterYear && 
-                                     completionMonth === filterMonth && 
-                                     completionDay === filterDay;
-                            })
+                            .filter((job) => doesCompletedJobMatchFilters(job))
                             .sort((a, b) => {
-                              // Sort by completion date (latest first)
-                              const aCompletionDate = getJobCompletionDate(a);
-                              const bCompletionDate = getJobCompletionDate(b);
-                              return bCompletionDate - aCompletionDate;
+                              // Default: latest completed first
+                              return getJobCompletionDate(b) - getJobCompletionDate(a);
                             });
                         } else {
                           jobsToShow = allJobs.filter(job => job.status === statusFilter);

@@ -549,7 +549,12 @@ export const db = {
     },
 
     // Get jobs by status with pagination
-    async getByStatusPaginated(statuses: string[], page: number = 1, pageSize: number = 20, dateFilter?: string) {
+    async getByStatusPaginated(
+      statuses: string[],
+      page: number = 1,
+      pageSize: number = 20,
+      dateFilter?: string | { startDate: string; endDate: string }
+    ) {
       const from = (page - 1) * pageSize;
       const to = from + pageSize - 1;
       
@@ -587,55 +592,68 @@ export const db = {
           )
         `, { count: 'exact' });
       
+      const toLocalDayBounds = (dateStr: string) => {
+        const [year, month, day] = dateStr.split('-').map(Number);
+        const localStart = new Date(year, month - 1, day, 0, 0, 0, 0);
+        const localNext = new Date(year, month - 1, day + 1, 0, 0, 0, 0);
+        return { startISO: localStart.toISOString(), nextISO: localNext.toISOString() };
+      };
+
       // If date filter is provided, filter by date based on status
       if (dateFilter) {
-        // Parse date filter (format: YYYY-MM-DD) and create date range
-        // Filter by date portion in local timezone (what the user sees)
-        // Since timestamps are stored in UTC, we need to convert local date range to UTC
-        const [year, month, day] = dateFilter.split('-').map(Number);
-        
-        // Create date objects in local timezone (start and end of selected day)
-        // new Date(year, month, day, hour, min, sec) creates a date at that LOCAL time
-        // For IST: Dec 3, 2025 00:00:00 IST = Dec 2, 2025 18:30:00 UTC
-        const localStartOfDay = new Date(year, month - 1, day, 0, 0, 0, 0);
-        const localStartOfNextDay = new Date(year, month - 1, day + 1, 0, 0, 0, 0);
-        
-        // The Date objects already represent the correct moment in time
-        // When converted to ISO string, they will be in UTC
-        // For IST (UTC+5:30): Dec 3, 2025 00:00:00 IST.toISOString() = "2025-12-02T18:30:00.000Z"
-        // So we can use the Date objects directly
-        const startOfDay = localStartOfDay;
-        const startOfNextDay = localStartOfNextDay;
+        const hasRangeObject = typeof dateFilter === 'object' && !!dateFilter.startDate && !!dateFilter.endDate;
+        const singleDate = typeof dateFilter === 'string' ? dateFilter : undefined;
+        const rangeStartDate = hasRangeObject ? dateFilter.startDate : undefined;
+        const rangeEndDate = hasRangeObject ? dateFilter.endDate : undefined;
         
         if (statuses.includes('DENIED')) {
           // Filter DENIED jobs by denied_at date
           // Filter: DENIED jobs with denied_at in date range, OR CANCELLED jobs (show all cancelled regardless of date)
           if (statuses.includes('CANCELLED')) {
-            query = query.or(`and(status.eq.DENIED,denied_at.gte.${startOfDay.toISOString()},denied_at.lt.${startOfNextDay.toISOString()}),status.eq.CANCELLED`);
+            if (singleDate) {
+              const { startISO, nextISO } = toLocalDayBounds(singleDate);
+              query = query.or(`and(status.eq.DENIED,denied_at.gte.${startISO},denied_at.lt.${nextISO}),status.eq.CANCELLED`);
+            } else {
+              query = query.in('status', statuses);
+            }
           } else {
             // Only DENIED jobs, filter by date
             // Use start of next day with lt (less than) for reliability
-            query = query
-              .eq('status', 'DENIED')
-              .gte('denied_at', startOfDay.toISOString())
-              .lt('denied_at', startOfNextDay.toISOString());
+            if (singleDate) {
+              const { startISO, nextISO } = toLocalDayBounds(singleDate);
+              query = query
+                .eq('status', 'DENIED')
+                .gte('denied_at', startISO)
+                .lt('denied_at', nextISO);
+            } else {
+              query = query.eq('status', 'DENIED');
+            }
           }
         } else if (statuses.includes('COMPLETED')) {
           // Filter COMPLETED jobs by completed_at or end_time date
           // Some jobs might have end_time set but not completed_at (or vice versa)
           // Filter by date portion in local timezone (what user sees)
-          const startISO = startOfDay.toISOString();
-          const nextDayISO = startOfNextDay.toISOString(); // Use start of next day with .lt() for reliability
+          let startISO: string | null = null;
+          let nextDayISO: string | null = null;
+
+          if (singleDate) {
+            const bounds = toLocalDayBounds(singleDate);
+            startISO = bounds.startISO;
+            nextDayISO = bounds.nextISO;
+          } else if (rangeStartDate && rangeEndDate) {
+            const startBounds = toLocalDayBounds(rangeStartDate);
+            const endBounds = toLocalDayBounds(rangeEndDate);
+            startISO = startBounds.startISO;
+            nextDayISO = endBounds.nextISO;
+          }
           
           // Debug logging in development
-          if (import.meta.env.DEV && dateFilter) {
+          if (import.meta.env.DEV && dateFilter && startISO && nextDayISO) {
             console.log('Completed jobs date filter:', {
               dateFilter,
               startISO,
               nextDayISO,
-              localStartOfDay: localStartOfDay.toISOString(),
-              localStartOfNextDay: localStartOfNextDay.toISOString(),
-              timezoneOffset: localStartOfDay.getTimezoneOffset()
+              timezoneOffset: new Date().getTimezoneOffset()
             });
           }
           
@@ -644,9 +662,13 @@ export const db = {
           // We want jobs where either completed_at OR end_time is in the date range
           // Use .lt() with start of next day to ensure we capture all jobs within the day
           // Simplified: Just check if either field is in the date range (nulls will be excluded by .gte/.lt)
-          query = query
-            .eq('status', 'COMPLETED')
-            .or(`and(completed_at.gte.${startISO},completed_at.lt.${nextDayISO}),and(end_time.gte.${startISO},end_time.lt.${nextDayISO})`);
+          if (startISO && nextDayISO) {
+            query = query
+              .eq('status', 'COMPLETED')
+              .or(`and(completed_at.gte.${startISO},completed_at.lt.${nextDayISO}),and(end_time.gte.${startISO},end_time.lt.${nextDayISO})`);
+          } else {
+            query = query.eq('status', 'COMPLETED');
+          }
         } else {
           // No date filter for this status, use normal status filter
           query = query.in('status', statuses);
@@ -841,6 +863,47 @@ export const db = {
         .eq('status', 'COMPLETED')
         .order('end_time', { ascending: false })
         .limit(limit);
+      return { data: data || [], error };
+    },
+
+    /** Completed jobs for filter dropdown options (not paginated). */
+    async getCompletedJobsFilterSource(
+      dateFilter?: string | { startDate: string; endDate: string },
+      limit: number = 5000
+    ) {
+      const toLocalDayBounds = (dateStr: string) => {
+        const [year, month, day] = dateStr.split('-').map(Number);
+        const localStart = new Date(year, month - 1, day, 0, 0, 0, 0);
+        const localNext = new Date(year, month - 1, day + 1, 0, 0, 0, 0);
+        return { startISO: localStart.toISOString(), nextISO: localNext.toISOString() };
+      };
+
+      let query = supabase
+        .from('jobs')
+        .select('id,requirements,service_sub_type,completed_by,completed_by_name,completed_at,end_time')
+        .eq('status', 'COMPLETED')
+        .order('created_at', { ascending: false })
+        .limit(limit);
+
+      if (dateFilter) {
+        let startISO: string | null = null;
+        let nextDayISO: string | null = null;
+        if (typeof dateFilter === 'string') {
+          const bounds = toLocalDayBounds(dateFilter);
+          startISO = bounds.startISO;
+          nextDayISO = bounds.nextISO;
+        } else if (dateFilter.startDate && dateFilter.endDate) {
+          const startBounds = toLocalDayBounds(dateFilter.startDate);
+          const endBounds = toLocalDayBounds(dateFilter.endDate);
+          startISO = startBounds.startISO;
+          nextDayISO = endBounds.nextISO;
+        }
+        if (startISO && nextDayISO) {
+          query = query.or(`and(completed_at.gte.${startISO},completed_at.lt.${nextDayISO}),and(end_time.gte.${startISO},end_time.lt.${nextDayISO})`);
+        }
+      }
+
+      const { data, error } = await query;
       return { data: data || [], error };
     },
 
