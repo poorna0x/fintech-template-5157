@@ -1145,6 +1145,11 @@ const AdminDashboard = () => {
       } else if (filter === 'COMPLETED' || filter === 'CANCELLED') {
         // Use pagination for completed and denied jobs
         const statuses = filter === 'COMPLETED' ? ['COMPLETED'] : ['DENIED', 'CANCELLED'];
+        const hasCompletedClientFiltersActive =
+          filter === 'COMPLETED' &&
+          (completedLeadTypeFilter !== 'all' ||
+           completedServiceSubTypeFilter !== 'all' ||
+           completedByFilter !== 'all');
         // Pass date/day-range filter for completed jobs and day filter for denied jobs
         let dateFilter: string | { startDate: string; endDate: string } | undefined = undefined;
         if (filter === 'COMPLETED') {
@@ -1161,13 +1166,23 @@ const AdminDashboard = () => {
         } else if (filter === 'CANCELLED') {
           dateFilter = deniedDateFilter;
         }
-        const { data, error, count, totalPages: pages } = await db.jobs.getByStatusPaginated(statuses, page, pageSize, dateFilter);
+        // When completed client-side filters are active, fetch a broader set so filtering is correct.
+        // Otherwise keep normal server pagination.
+        const requestPage = hasCompletedClientFiltersActive ? 1 : page;
+        const requestPageSize = hasCompletedClientFiltersActive ? 5000 : pageSize;
+        const { data, error, count, totalPages: pages } = await db.jobs.getByStatusPaginated(statuses, requestPage, requestPageSize, dateFilter);
         if (error) {
           setJobs([]);
         } else {
           setJobs(data || []);
-          setTotalCount(count || 0);
-          setTotalPages(pages || 0);
+          if (hasCompletedClientFiltersActive) {
+            // Render-layer filtering handles these; hide backend pagination metadata.
+            setTotalCount((data || []).length);
+            setTotalPages(1);
+          } else {
+            setTotalCount(count || 0);
+            setTotalPages(pages || 0);
+          }
         }
       } else if (filter === 'RESCHEDULED') {
         // Load follow-up jobs (usually not too many)
@@ -1185,7 +1200,7 @@ const AdminDashboard = () => {
     } finally {
       setLoading(false);
     }
-  }, [pageSize, deniedDateFilter, completedDateFilter, completedDatePreset, completedRangeStartDate, completedRangeEndDate]);
+  }, [pageSize, deniedDateFilter, completedDateFilter, completedDatePreset, completedRangeStartDate, completedRangeEndDate, completedLeadTypeFilter, completedServiceSubTypeFilter, completedByFilter]);
 
   // Reload follow-up jobs for glow whenever filter changes (so Followup card border glow is correct for today/tomorrow)
   useEffect(() => {
