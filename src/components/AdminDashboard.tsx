@@ -769,6 +769,7 @@ const AdminDashboard = () => {
   const [isDeletingCustomerPhoto, setIsDeletingCustomerPhoto] = useState(false);
   const [photoViewerOpen, setPhotoViewerOpen] = useState(false);
   const loadJobsRequestRef = useRef(0);
+  const completedBroadFetchCacheRef = useRef<{ key: string; data: Job[] } | null>(null);
   
   // Job assignment states
   const [assignJobDialogOpen, setAssignJobDialogOpen] = useState(false);
@@ -1174,8 +1175,32 @@ const AdminDashboard = () => {
         // Otherwise keep normal server pagination.
         const requestPage = hasCompletedClientFiltersActive ? 1 : page;
         const requestPageSize = hasCompletedClientFiltersActive ? 5000 : pageSize;
-        const { data, error, count, totalPages: pages } = await db.jobs.getByStatusPaginated(statuses, requestPage, requestPageSize, dateFilter);
-        if (requestId !== loadJobsRequestRef.current) return;
+        const completedDateKey = typeof dateFilter === 'string'
+          ? `day:${dateFilter}`
+          : dateFilter && typeof dateFilter === 'object'
+            ? `range:${dateFilter.startDate}:${dateFilter.endDate}`
+            : 'none';
+        const broadCacheKey = `completed:${completedDateKey}`;
+        let data: any[] = [];
+        let error: any = null;
+        let count = 0;
+        let pages = 0;
+
+        if (hasCompletedClientFiltersActive && completedBroadFetchCacheRef.current?.key === broadCacheKey) {
+          data = completedBroadFetchCacheRef.current.data;
+          count = data.length;
+          pages = 1;
+        } else {
+          const response = await db.jobs.getByStatusPaginated(statuses, requestPage, requestPageSize, dateFilter);
+          if (requestId !== loadJobsRequestRef.current) return;
+          data = response.data || [];
+          error = response.error;
+          count = response.count || 0;
+          pages = response.totalPages || 0;
+          if (hasCompletedClientFiltersActive && !error) {
+            completedBroadFetchCacheRef.current = { key: broadCacheKey, data: data as Job[] };
+          }
+        }
         if (error) {
           setJobs([]);
         } else {
