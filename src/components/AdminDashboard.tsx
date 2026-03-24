@@ -8243,14 +8243,6 @@ const AdminDashboard = () => {
                         placeholder="Pick date"
                         className="flex-1 w-full"
                       />
-                      <Button
-                        variant="outline"
-                        type="button"
-                        size="sm"
-                        onClick={() => setDraftCompletedDateFilter(getTodayLocalDate())}
-                      >
-                        Today
-                      </Button>
                     </div>
                   </div>
                 ) : (
