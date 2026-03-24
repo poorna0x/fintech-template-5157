@@ -7091,16 +7091,32 @@ const AdminDashboard = () => {
     };
     return map[lower] || map[lower.replace(/[\s_-]+/g, '')] || raw;
   };
+  const technicianNameByIdLower = useMemo(() => {
+    const map = new Map<string, string>();
+    technicians.forEach((t) => {
+      if (t.id) map.set(t.id.toLowerCase(), (t.fullName || '').trim());
+    });
+    return map;
+  }, [technicians]);
+  const technicianNameByNameLower = useMemo(() => {
+    const map = new Map<string, string>();
+    technicians.forEach((t) => {
+      const name = (t.fullName || '').trim();
+      if (name) map.set(name.toLowerCase(), name);
+    });
+    return map;
+  }, [technicians]);
   const getCompletedJobTechnicianName = (job: any): string => {
     const completedByIdOrName = (job?.completed_by || job?.completedBy || '').toString().trim();
     const completedByName = (job?.completed_by_name || '').toString().trim();
     if (completedByIdOrName) {
-      const tech = technicians.find((t) => t.id === completedByIdOrName || t.fullName === completedByIdOrName);
-      if (tech?.fullName) return tech.fullName.trim();
+      const key = completedByIdOrName.toLowerCase();
+      if (technicianNameByIdLower.has(key)) return technicianNameByIdLower.get(key)!;
+      if (technicianNameByNameLower.has(key)) return technicianNameByNameLower.get(key)!;
     }
     if (completedByName) {
-      const tech = technicians.find((t) => t.fullName === completedByName);
-      if (tech?.fullName) return tech.fullName.trim();
+      const key = completedByName.toLowerCase();
+      if (technicianNameByNameLower.has(key)) return technicianNameByNameLower.get(key)!;
     }
     return '';
   };
@@ -8073,25 +8089,29 @@ const AdminDashboard = () => {
               <div className="flex flex-wrap items-center gap-2">
                 {completedDatePreset === 'day' ? (
                   <>
-                    <DatePicker
-                      value={completedDateFilter}
-                      onChange={(v) => {
-                        const next = v ?? getTodayLocalDate();
-                        setCompletedDatePreset('day');
-                        setCompletedDateFilter(next);
-                        setCompletedRangeStartDate(next);
-                        setCompletedRangeEndDate(next);
-                        // Quick single-day pick should behave like date-only mode
-                        setCompletedLeadTypeFilter('all');
-                        setCompletedServiceSubTypeFilter('all');
-                        setCompletedByFilter('all');
-                      }}
-                      placeholder="Pick date"
-                    />
+                    <div className="w-36 sm:w-40">
+                      <DatePicker
+                        value={completedDateFilter}
+                        onChange={(v) => {
+                          const next = v ?? getTodayLocalDate();
+                          setCompletedDatePreset('day');
+                          setCompletedDateFilter(next);
+                          setCompletedRangeStartDate(next);
+                          setCompletedRangeEndDate(next);
+                          // Quick single-day pick should behave like date-only mode
+                          setCompletedLeadTypeFilter('all');
+                          setCompletedServiceSubTypeFilter('all');
+                          setCompletedByFilter('all');
+                        }}
+                        placeholder="Pick date"
+                        className="w-full"
+                      />
+                    </div>
                     <Button
                       variant="outline"
                       size="sm"
                       type="button"
+                      className="w-36 sm:w-40"
                       onClick={() => {
                         const today = getTodayLocalDate();
                         setCompletedDatePreset('day');
@@ -8549,13 +8569,9 @@ const AdminDashboard = () => {
                           // Show denied jobs (DENIED status)
                           jobsToShow = allJobs.filter(job => job.status === 'DENIED');
                         } else if (statusFilter === 'COMPLETED') {
-                          // Apply completed date/range + lead/service subtype + customer id range filters
-                          jobsToShow = completedJobs
-                            .filter((job) => doesCompletedJobMatchFilters(job))
-                            .sort((a, b) => {
-                              // Default: latest completed first
-                              return getJobCompletionDate(b) - getJobCompletionDate(a);
-                            });
+                          // For completed view, customer grouping already applied completed filters.
+                          // Avoid re-filtering here to keep rendering fast on large result sets.
+                          jobsToShow = [...completedJobs].sort((a, b) => getJobCompletionDate(b) - getJobCompletionDate(a));
                         } else {
                           jobsToShow = allJobs.filter(job => job.status === statusFilter);
                           // Sort follow-up jobs by closest date first
