@@ -768,6 +768,7 @@ const AdminDashboard = () => {
   const [deleteCustomerPhotoDialogOpen, setDeleteCustomerPhotoDialogOpen] = useState(false);
   const [isDeletingCustomerPhoto, setIsDeletingCustomerPhoto] = useState(false);
   const [photoViewerOpen, setPhotoViewerOpen] = useState(false);
+  const loadJobsRequestRef = useRef(0);
   
   // Job assignment states
   const [assignJobDialogOpen, setAssignJobDialogOpen] = useState(false);
@@ -1121,12 +1122,14 @@ const AdminDashboard = () => {
 
   // Load jobs based on current filter (optimized)
   const loadFilteredJobs = useCallback(async (filter: typeof statusFilter, page: number = 1) => {
+    const requestId = ++loadJobsRequestRef.current;
     try {
       setLoading(true);
       
       if (filter === 'ALL') {
         // For ALL, we need customers with their jobs - load ongoing jobs only for display
         const { data, error } = await db.jobs.getOngoing();
+        if (requestId !== loadJobsRequestRef.current) return;
         if (error) {
           setJobs([]);
         } else {
@@ -1135,6 +1138,7 @@ const AdminDashboard = () => {
       } else if (filter === 'ONGOING') {
         // Load all ongoing jobs (usually not too many)
         const { data, error } = await db.jobs.getOngoing();
+        if (requestId !== loadJobsRequestRef.current) return;
         if (error) {
           setJobs([]);
         } else {
@@ -1171,6 +1175,7 @@ const AdminDashboard = () => {
         const requestPage = hasCompletedClientFiltersActive ? 1 : page;
         const requestPageSize = hasCompletedClientFiltersActive ? 5000 : pageSize;
         const { data, error, count, totalPages: pages } = await db.jobs.getByStatusPaginated(statuses, requestPage, requestPageSize, dateFilter);
+        if (requestId !== loadJobsRequestRef.current) return;
         if (error) {
           setJobs([]);
         } else {
@@ -1187,6 +1192,7 @@ const AdminDashboard = () => {
       } else if (filter === 'RESCHEDULED') {
         // Load follow-up jobs (usually not too many)
         const { data, error, count, totalPages: pages } = await db.jobs.getByStatusPaginated(['FOLLOW_UP', 'RESCHEDULED'], page, pageSize);
+        if (requestId !== loadJobsRequestRef.current) return;
         if (error) {
           setJobs([]);
         } else {
@@ -1196,9 +1202,13 @@ const AdminDashboard = () => {
         }
       }
     } catch (error) {
-      setJobs([]);
+      if (requestId === loadJobsRequestRef.current) {
+        setJobs([]);
+      }
     } finally {
-      setLoading(false);
+      if (requestId === loadJobsRequestRef.current) {
+        setLoading(false);
+      }
     }
   }, [pageSize, deniedDateFilter, completedDateFilter, completedDatePreset, completedRangeStartDate, completedRangeEndDate, completedLeadTypeFilter, completedServiceSubTypeFilter, completedByFilter]);
 
@@ -8046,6 +8056,10 @@ const AdminDashboard = () => {
                         setCompletedDateFilter(next);
                         setCompletedRangeStartDate(next);
                         setCompletedRangeEndDate(next);
+                        // Quick single-day pick should behave like date-only mode
+                        setCompletedLeadTypeFilter('all');
+                        setCompletedServiceSubTypeFilter('all');
+                        setCompletedByFilter('all');
                       }}
                       placeholder="Pick date"
                     />
@@ -8059,6 +8073,10 @@ const AdminDashboard = () => {
                         setCompletedDateFilter(today);
                         setCompletedRangeStartDate(today);
                         setCompletedRangeEndDate(today);
+                        // Quick Today should clear advanced completed filters
+                        setCompletedLeadTypeFilter('all');
+                        setCompletedServiceSubTypeFilter('all');
+                        setCompletedByFilter('all');
                       }}
                     >
                       Today
@@ -8079,6 +8097,10 @@ const AdminDashboard = () => {
                         setCompletedDateFilter(today);
                         setCompletedRangeStartDate(today);
                         setCompletedRangeEndDate(today);
+                        // Switching back to single day should reset hidden advanced filters
+                        setCompletedLeadTypeFilter('all');
+                        setCompletedServiceSubTypeFilter('all');
+                        setCompletedByFilter('all');
                       }}
                     >
                       Switch to single day
