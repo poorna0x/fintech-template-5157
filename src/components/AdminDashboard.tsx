@@ -770,6 +770,7 @@ const AdminDashboard = () => {
   const [photoViewerOpen, setPhotoViewerOpen] = useState(false);
   const loadJobsRequestRef = useRef(0);
   const completedBroadFetchCacheRef = useRef<{ key: string; data: Job[] } | null>(null);
+  const completedBroadFetchInFlightRef = useRef<Set<string>>(new Set());
   
   // Job assignment states
   const [assignJobDialogOpen, setAssignJobDialogOpen] = useState(false);
@@ -1173,8 +1174,8 @@ const AdminDashboard = () => {
         }
         // When completed client-side filters are active, fetch a broader set so filtering is correct.
         // Otherwise keep normal server pagination.
-        const requestPage = hasCompletedClientFiltersActive ? 1 : page;
-        const requestPageSize = hasCompletedClientFiltersActive ? 5000 : pageSize;
+        const requestPage = page;
+        const requestPageSize = pageSize;
         const completedDateKey = typeof dateFilter === 'string'
           ? `day:${dateFilter}`
           : dateFilter && typeof dateFilter === 'object'
@@ -1197,22 +1198,47 @@ const AdminDashboard = () => {
           error = response.error;
           count = response.count || 0;
           pages = response.totalPages || 0;
-          if (hasCompletedClientFiltersActive && !error) {
-            completedBroadFetchCacheRef.current = { key: broadCacheKey, data: data as Job[] };
-          }
         }
         if (error) {
           setJobs([]);
         } else {
           setJobs(data || []);
           if (hasCompletedClientFiltersActive) {
-            // Render-layer filtering handles these; hide backend pagination metadata.
+            // Quick first paint from paginated data. Full filtered set loads in background below.
             setTotalCount((data || []).length);
             setTotalPages(1);
           } else {
             setTotalCount(count || 0);
             setTotalPages(pages || 0);
           }
+        }
+
+        // For advanced completed filters, refine using broad fetch in background.
+        // This keeps UI responsive while still reaching correct full-set results.
+        if (
+          hasCompletedClientFiltersActive &&
+          completedBroadFetchCacheRef.current?.key !== broadCacheKey &&
+          !completedBroadFetchInFlightRef.current.has(broadCacheKey)
+        ) {
+          completedBroadFetchInFlightRef.current.add(broadCacheKey);
+          db.jobs
+            .getByStatusPaginated(statuses, 1, 5000, dateFilter)
+            .then((response) => {
+              completedBroadFetchInFlightRef.current.delete(broadCacheKey);
+              if (requestId !== loadJobsRequestRef.current) return;
+              if (response.error) return;
+              const fullData = response.data || [];
+              completedBroadFetchCacheRef.current = { key: broadCacheKey, data: fullData as Job[] };
+              // Only update if user is still on the same completed filter context.
+              if (filter === 'COMPLETED') {
+                setJobs(fullData);
+                setTotalCount(fullData.length);
+                setTotalPages(1);
+              }
+            })
+            .catch(() => {
+              completedBroadFetchInFlightRef.current.delete(broadCacheKey);
+            });
         }
       } else if (filter === 'RESCHEDULED') {
         // Load follow-up jobs (usually not too many)
