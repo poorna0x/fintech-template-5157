@@ -8089,7 +8089,7 @@ const AdminDashboard = () => {
               <div className="flex flex-wrap items-center gap-2">
                 {completedDatePreset === 'day' ? (
                   <>
-                    <div className="w-36 sm:w-40">
+                    <div>
                       <DatePicker
                         value={completedDateFilter}
                         onChange={(v) => {
@@ -8104,14 +8104,14 @@ const AdminDashboard = () => {
                           setCompletedByFilter('all');
                         }}
                         placeholder="Pick date"
-                        className="w-full"
+                        className="h-10"
                       />
                     </div>
                     <Button
                       variant="outline"
                       size="sm"
                       type="button"
-                      className="w-36 sm:w-40"
+                      className="h-10 px-4"
                       onClick={() => {
                         const today = getTodayLocalDate();
                         setCompletedDatePreset('day');
