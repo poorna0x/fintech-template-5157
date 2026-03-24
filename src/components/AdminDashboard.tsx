@@ -734,6 +734,13 @@ const AdminDashboard = () => {
   const [completedByFilter, setCompletedByFilter] = useState<string>('all');
   const [completedFilterDialogOpen, setCompletedFilterDialogOpen] = useState(false);
   const [completedFilterSourceJobs, setCompletedFilterSourceJobs] = useState<any[]>([]);
+  const [draftCompletedDatePreset, setDraftCompletedDatePreset] = useState<'day' | 'week' | 'month' | 'custom'>('day');
+  const [draftCompletedDateFilter, setDraftCompletedDateFilter] = useState<string>(() => getTodayLocalDate());
+  const [draftCompletedRangeStartDate, setDraftCompletedRangeStartDate] = useState<string>(() => getTodayLocalDate());
+  const [draftCompletedRangeEndDate, setDraftCompletedRangeEndDate] = useState<string>(() => getTodayLocalDate());
+  const [draftCompletedLeadTypeFilter, setDraftCompletedLeadTypeFilter] = useState<string>('all');
+  const [draftCompletedServiceSubTypeFilter, setDraftCompletedServiceSubTypeFilter] = useState<string>('all');
+  const [draftCompletedByFilter, setDraftCompletedByFilter] = useState<string>('all');
   // Job counts for stats cards (loaded separately)
   const [jobCounts, setJobCounts] = useState<{ongoing: number; followup: number; denied: number; completed: number}>({
     ongoing: 0,
@@ -1423,6 +1430,33 @@ const AdminDashboard = () => {
     };
     loadCompletedFilterSource();
   }, [isInitialLoad, statusFilter, completedFilterDialogOpen]);
+
+  useEffect(() => {
+    if (!completedFilterDialogOpen) return;
+    setDraftCompletedDatePreset(completedDatePreset);
+    setDraftCompletedDateFilter(completedDateFilter);
+    setDraftCompletedRangeStartDate(completedRangeStartDate);
+    setDraftCompletedRangeEndDate(completedRangeEndDate);
+    setDraftCompletedLeadTypeFilter(completedLeadTypeFilter);
+    setDraftCompletedServiceSubTypeFilter(completedServiceSubTypeFilter);
+    setDraftCompletedByFilter(completedByFilter);
+  }, [
+    completedFilterDialogOpen,
+    completedDatePreset,
+    completedDateFilter,
+    completedRangeStartDate,
+    completedRangeEndDate,
+    completedLeadTypeFilter,
+    completedServiceSubTypeFilter,
+    completedByFilter
+  ]);
+
+  // Reset to first page when completed sub-filters change, so results don't look empty due to pagination
+  useEffect(() => {
+    if (isInitialLoad || statusFilter !== 'COMPLETED') return;
+    setCurrentPage(1);
+    loadFilteredJobs(statusFilter, 1);
+  }, [completedLeadTypeFilter, completedServiceSubTypeFilter, completedByFilter, isInitialLoad, statusFilter, loadFilteredJobs]);
 
   // Restore scroll position when WhatsApp dialog opens (after assign/reassign) so page doesn't jump to top
   useEffect(() => {
@@ -6969,6 +7003,44 @@ const AdminDashboard = () => {
   const getCompletedJobServiceSubType = (job: any): string => {
     return ((job?.service_sub_type || job?.serviceSubType || '') as string).trim();
   };
+  const normalizeLeadType = (value: string): string => {
+    const raw = (value || '').trim();
+    if (!raw) return '';
+    const key = raw.toLowerCase().replace(/[\s_-]+/g, '');
+    const map: Record<string, string> = {
+      website: 'Website',
+      directcall: 'Direct call',
+      googleleads: 'Google-Leads',
+      rocareindia: 'RO care india',
+      hometriangle: 'Home Triangle',
+      hometrianglesrujan: 'Home Triangle-Srujan',
+      localramu: 'Local Ramu',
+      other: 'Other'
+    };
+    return map[key] || raw;
+  };
+  const normalizeServiceSubType = (value: string): string => {
+    const raw = (value || '').trim();
+    if (!raw) return '';
+    const lower = raw.toLowerCase();
+    const map: Record<string, string> = {
+      service: 'Service',
+      installation: 'Installation',
+      reinstallation: 'Reinstallation',
+      'return complaint': 'Return Complaint',
+      amcservice: 'AMC Service',
+      'amc service': 'AMC Service',
+      'new purifier installation': 'New Purifier Installation',
+      'un-installation': 'Un-Installation',
+      uninstallation: 'Un-Installation',
+      repair: 'Repair',
+      maintenance: 'Maintenance',
+      replacement: 'Replacement',
+      inspection: 'Inspection',
+      other: 'Other'
+    };
+    return map[lower] || map[lower.replace(/[\s_-]+/g, '')] || raw;
+  };
   const getCompletedJobTechnicianName = (job: any): string => {
     const completedByIdOrName = (job?.completed_by || job?.completedBy || '').toString().trim();
     const completedByName = (job?.completed_by_name || '').toString().trim();
@@ -6983,9 +7055,9 @@ const AdminDashboard = () => {
     return '';
   };
   function doesCompletedJobMatchFilters(job: any): boolean {
-    if (completedLeadTypeFilter !== 'all' && getCompletedJobLeadType(job) !== completedLeadTypeFilter) return false;
-    if (completedServiceSubTypeFilter !== 'all' && getCompletedJobServiceSubType(job) !== completedServiceSubTypeFilter) return false;
-    if (completedByFilter !== 'all' && getCompletedJobTechnicianName(job) !== completedByFilter) return false;
+    if (completedLeadTypeFilter !== 'all' && normalizeLeadType(getCompletedJobLeadType(job)) !== normalizeLeadType(completedLeadTypeFilter)) return false;
+    if (completedServiceSubTypeFilter !== 'all' && normalizeServiceSubType(getCompletedJobServiceSubType(job)) !== normalizeServiceSubType(completedServiceSubTypeFilter)) return false;
+    if (completedByFilter !== 'all' && getCompletedJobTechnicianName(job).toLowerCase() !== completedByFilter.toLowerCase()) return false;
     return true;
   }
 
@@ -7034,11 +7106,9 @@ const AdminDashboard = () => {
       // Group loaded jobs by customer
       const customerMap = new Map<string, { customer: Customer; todayJobs: Job[] }>();
       
-      // First, collect all customers who have jobs for the selected date
-      // Note: jobs array is paginated, so if there are multiple pages, 
+      // First, collect all customers who have jobs for the selected date/range.
+      // Note: jobs array is paginated, so if there are multiple pages,
       // we only see customers from the current page. This is intentional for performance.
-      // Also filter out customers that have been deleted (verify customer still exists)
-      const existingCustomerIds = new Set(baseCustomers.map(c => c.id));
 
       jobs.forEach(job => {
         const customer = (job as any).customer || job.customer;
@@ -7063,20 +7133,6 @@ const AdminDashboard = () => {
             console.warn('Customer missing ID:', customer);
           }
           return;
-        }
-        
-        // IMPORTANT: Filter out customers that have been deleted
-        // If customer was deleted, their ID won't be in the customers array
-        if (!existingCustomerIds.has(customerId)) {
-          if (import.meta.env.DEV) {
-            console.warn('Skipping job with deleted customer:', {
-              jobId: job.id,
-              jobNumber: job.job_number || job.jobNumber,
-              customerId: customerId,
-              customerName: customer.full_name || customer.fullName
-            });
-          }
-          return; // Skip jobs for deleted customers
         }
         
         if (!customerMap.has(customerId)) {
@@ -7482,15 +7538,14 @@ const AdminDashboard = () => {
     'Other'
   ];
   const dataLeadTypeOptions = completedJobsInSelectedWindow
-    .map((job) => findLeadSource(parseJobRequirements((job as any).requirements || job.requirements || [])) || 'Direct call')
-    .map((v) => v.trim())
+    .map((job) => normalizeLeadType(findLeadSource(parseJobRequirements((job as any).requirements || job.requirements || [])) || 'Direct call'))
     .filter(Boolean);
   const completedLeadTypeOptions = Array.from(new Set([
     ...MASTER_LEAD_TYPES,
     ...dataLeadTypeOptions
   ])).sort((a, b) => a.localeCompare(b));
   const dataServiceSubTypeOptions = completedJobsInSelectedWindow
-    .map((job) => ((job as any).service_sub_type || job.serviceSubType || '').trim())
+    .map((job) => normalizeServiceSubType((job as any).service_sub_type || job.serviceSubType || ''))
     .filter(Boolean);
   const completedServiceSubTypeOptions = Array.from(new Set([
     ...MASTER_SERVICE_SUB_TYPES,
@@ -7501,6 +7556,10 @@ const AdminDashboard = () => {
       .map((tech) => (tech.fullName || '').trim())
       .filter(Boolean)
   )).sort((a, b) => a.localeCompare(b));
+  const hasCompletedClientFilters =
+    completedLeadTypeFilter !== 'all' ||
+    completedServiceSubTypeFilter !== 'all' ||
+    completedByFilter !== 'all';
   
   // New stats for the dashboard cards (filtered by today)
   const ongoingJobs = jobs.filter(job => {
@@ -7962,31 +8021,55 @@ const AdminDashboard = () => {
           <div className="mb-4 rounded-lg border border-input bg-muted/20 px-3 py-2">
             <div className="flex flex-col gap-2 min-w-0">
               <div className="flex flex-wrap items-center gap-2">
-                <DatePicker
-                  value={completedDateFilter}
-                  onChange={(v) => {
-                    const next = v ?? getTodayLocalDate();
-                    setCompletedDatePreset('day');
-                    setCompletedDateFilter(next);
-                    setCompletedRangeStartDate(next);
-                    setCompletedRangeEndDate(next);
-                  }}
-                  placeholder="Pick date"
-                />
-                <Button
-                  variant="outline"
-                  size="sm"
-                  type="button"
-                  onClick={() => {
-                    const today = getTodayLocalDate();
-                    setCompletedDatePreset('day');
-                    setCompletedDateFilter(today);
-                    setCompletedRangeStartDate(today);
-                    setCompletedRangeEndDate(today);
-                  }}
-                >
-                  Today
-                </Button>
+                {completedDatePreset === 'day' ? (
+                  <>
+                    <DatePicker
+                      value={completedDateFilter}
+                      onChange={(v) => {
+                        const next = v ?? getTodayLocalDate();
+                        setCompletedDatePreset('day');
+                        setCompletedDateFilter(next);
+                        setCompletedRangeStartDate(next);
+                        setCompletedRangeEndDate(next);
+                      }}
+                      placeholder="Pick date"
+                    />
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      type="button"
+                      onClick={() => {
+                        const today = getTodayLocalDate();
+                        setCompletedDatePreset('day');
+                        setCompletedDateFilter(today);
+                        setCompletedRangeStartDate(today);
+                        setCompletedRangeEndDate(today);
+                      }}
+                    >
+                      Today
+                    </Button>
+                  </>
+                ) : (
+                  <>
+                    <span className="text-xs sm:text-sm text-muted-foreground">
+                      Range: {new Date(completedRangeStartDate).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })} to {new Date(completedRangeEndDate).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
+                    </span>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      type="button"
+                      onClick={() => {
+                        const today = getTodayLocalDate();
+                        setCompletedDatePreset('day');
+                        setCompletedDateFilter(today);
+                        setCompletedRangeStartDate(today);
+                        setCompletedRangeEndDate(today);
+                      }}
+                    >
+                      Switch to single day
+                    </Button>
+                  </>
+                )}
                 <Button variant="outline" size="sm" onClick={() => setCompletedFilterDialogOpen(true)} className="shrink-0 ml-auto">
                   <Filter className="w-4 h-4 mr-1" />
                   Filters
@@ -8006,27 +8089,27 @@ const AdminDashboard = () => {
                 <div className="space-y-1">
                   <Label className="text-xs text-muted-foreground">Date Filter</Label>
                   <Select
-                    value={completedDatePreset}
+                    value={draftCompletedDatePreset}
                     onValueChange={(value: 'day' | 'week' | 'month' | 'custom') => {
                       const today = new Date();
                       const todayStr = getTodayLocalDate();
-                      setCompletedDatePreset(value);
+                      setDraftCompletedDatePreset(value);
                       if (value === 'day') {
-                        setCompletedDateFilter(todayStr);
+                        setDraftCompletedDateFilter(todayStr);
                       } else if (value === 'week') {
                         const weekStart = new Date(today);
                         weekStart.setDate(today.getDate() - 6);
                         const start = `${weekStart.getFullYear()}-${String(weekStart.getMonth() + 1).padStart(2, '0')}-${String(weekStart.getDate()).padStart(2, '0')}`;
-                        setCompletedRangeStartDate(start);
-                        setCompletedRangeEndDate(todayStr);
+                        setDraftCompletedRangeStartDate(start);
+                        setDraftCompletedRangeEndDate(todayStr);
                       } else if (value === 'month') {
                         const monthStart = new Date(today.getFullYear(), today.getMonth(), 1);
                         const start = `${monthStart.getFullYear()}-${String(monthStart.getMonth() + 1).padStart(2, '0')}-${String(monthStart.getDate()).padStart(2, '0')}`;
-                        setCompletedRangeStartDate(start);
-                        setCompletedRangeEndDate(todayStr);
+                        setDraftCompletedRangeStartDate(start);
+                        setDraftCompletedRangeEndDate(todayStr);
                       } else if (value === 'custom') {
-                        if (!completedRangeStartDate) setCompletedRangeStartDate(todayStr);
-                        if (!completedRangeEndDate) setCompletedRangeEndDate(todayStr);
+                        if (!draftCompletedRangeStartDate) setDraftCompletedRangeStartDate(todayStr);
+                        if (!draftCompletedRangeEndDate) setDraftCompletedRangeEndDate(todayStr);
                       }
                     }}
                   >
@@ -8042,13 +8125,13 @@ const AdminDashboard = () => {
                   </Select>
                 </div>
 
-                {completedDatePreset === 'day' ? (
+                {draftCompletedDatePreset === 'day' ? (
                   <div className="space-y-1">
                     <Label className="text-xs text-muted-foreground">Completed On</Label>
                     <div className="inline-flex w-full items-center gap-2">
                       <DatePicker
-                        value={completedDateFilter}
-                        onChange={(v) => setCompletedDateFilter(v ?? getTodayLocalDate())}
+                        value={draftCompletedDateFilter}
+                        onChange={(v) => setDraftCompletedDateFilter(v ?? getTodayLocalDate())}
                         placeholder="Pick date"
                         className="flex-1 w-full"
                       />
@@ -8056,7 +8139,7 @@ const AdminDashboard = () => {
                         variant="outline"
                         type="button"
                         size="sm"
-                        onClick={() => setCompletedDateFilter(getTodayLocalDate())}
+                        onClick={() => setDraftCompletedDateFilter(getTodayLocalDate())}
                       >
                         Today
                       </Button>
@@ -8067,13 +8150,13 @@ const AdminDashboard = () => {
                     <div className="space-y-1 min-w-0">
                       <Label className="text-xs text-muted-foreground">From</Label>
                       <DatePicker
-                        value={completedRangeStartDate}
+                        value={draftCompletedRangeStartDate}
                         onChange={(v) => {
-                          const nextStart = v ?? completedRangeStartDate;
+                          const nextStart = v ?? draftCompletedRangeStartDate;
                           if (!nextStart) return;
-                          setCompletedRangeStartDate(nextStart);
-                          if (completedRangeEndDate && nextStart > completedRangeEndDate) {
-                            setCompletedRangeEndDate(nextStart);
+                          setDraftCompletedRangeStartDate(nextStart);
+                          if (draftCompletedRangeEndDate && nextStart > draftCompletedRangeEndDate) {
+                            setDraftCompletedRangeEndDate(nextStart);
                           }
                         }}
                         placeholder="Start date"
@@ -8083,13 +8166,13 @@ const AdminDashboard = () => {
                     <div className="space-y-1 min-w-0">
                       <Label className="text-xs text-muted-foreground">To</Label>
                       <DatePicker
-                        value={completedRangeEndDate}
+                        value={draftCompletedRangeEndDate}
                         onChange={(v) => {
-                          const nextEnd = v ?? completedRangeEndDate;
+                          const nextEnd = v ?? draftCompletedRangeEndDate;
                           if (!nextEnd) return;
-                          setCompletedRangeEndDate(nextEnd);
-                          if (completedRangeStartDate && nextEnd < completedRangeStartDate) {
-                            setCompletedRangeStartDate(nextEnd);
+                          setDraftCompletedRangeEndDate(nextEnd);
+                          if (draftCompletedRangeStartDate && nextEnd < draftCompletedRangeStartDate) {
+                            setDraftCompletedRangeStartDate(nextEnd);
                           }
                         }}
                         placeholder="End date"
@@ -8101,7 +8184,7 @@ const AdminDashboard = () => {
 
                 <div className="space-y-1">
                   <Label className="text-xs text-muted-foreground">Lead Type</Label>
-                  <Select value={completedLeadTypeFilter} onValueChange={setCompletedLeadTypeFilter}>
+                  <Select value={draftCompletedLeadTypeFilter} onValueChange={setDraftCompletedLeadTypeFilter}>
                     <SelectTrigger>
                       <SelectValue placeholder="All lead types" />
                     </SelectTrigger>
@@ -8116,7 +8199,7 @@ const AdminDashboard = () => {
 
                 <div className="space-y-1">
                   <Label className="text-xs text-muted-foreground">Service Sub Type</Label>
-                  <Select value={completedServiceSubTypeFilter} onValueChange={setCompletedServiceSubTypeFilter}>
+                  <Select value={draftCompletedServiceSubTypeFilter} onValueChange={setDraftCompletedServiceSubTypeFilter}>
                     <SelectTrigger>
                       <SelectValue placeholder="All service sub types" />
                     </SelectTrigger>
@@ -8131,7 +8214,7 @@ const AdminDashboard = () => {
 
                 <div className="space-y-1">
                   <Label className="text-xs text-muted-foreground">Completed By</Label>
-                  <Select value={completedByFilter} onValueChange={setCompletedByFilter}>
+                  <Select value={draftCompletedByFilter} onValueChange={setDraftCompletedByFilter}>
                     <SelectTrigger>
                       <SelectValue placeholder="All technicians" />
                     </SelectTrigger>
@@ -8158,11 +8241,32 @@ const AdminDashboard = () => {
                     setCompletedLeadTypeFilter('all');
                     setCompletedServiceSubTypeFilter('all');
                     setCompletedByFilter('all');
+                    setDraftCompletedDatePreset('day');
+                    setDraftCompletedDateFilter(today);
+                    setDraftCompletedRangeStartDate(today);
+                    setDraftCompletedRangeEndDate(today);
+                    setDraftCompletedLeadTypeFilter('all');
+                    setDraftCompletedServiceSubTypeFilter('all');
+                    setDraftCompletedByFilter('all');
                   }}
                 >
                   Reset Filters
                 </Button>
-                <Button type="button" onClick={() => setCompletedFilterDialogOpen(false)}>Apply</Button>
+                <Button
+                  type="button"
+                  onClick={() => {
+                    setCompletedDatePreset(draftCompletedDatePreset);
+                    setCompletedDateFilter(draftCompletedDateFilter);
+                    setCompletedRangeStartDate(draftCompletedRangeStartDate);
+                    setCompletedRangeEndDate(draftCompletedRangeEndDate);
+                    setCompletedLeadTypeFilter(draftCompletedLeadTypeFilter);
+                    setCompletedServiceSubTypeFilter(draftCompletedServiceSubTypeFilter);
+                    setCompletedByFilter(draftCompletedByFilter);
+                    setCompletedFilterDialogOpen(false);
+                  }}
+                >
+                  Apply
+                </Button>
               </DialogFooter>
             </DialogContent>
           </Dialog>
@@ -8248,7 +8352,7 @@ const AdminDashboard = () => {
                   })()                                                                             
                 : statusFilter === 'COMPLETED'
                 ? (() => {
-                    const pageInfo = totalPages > 1 ? ` (page ${currentPage}/${totalPages}, ${totalCount} total jobs)` : '';
+                    const pageInfo = !hasCompletedClientFilters && totalPages > 1 ? ` (page ${currentPage}/${totalPages}, ${totalCount} total jobs)` : '';
                     if (completedDatePreset === 'day') {
                       return `Showing ${displayedCustomers.length} customer${displayedCustomers.length !== 1 ? 's' : ''} with completed jobs for ${new Date(completedDateFilter).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}${pageInfo}`;
                     }
@@ -9229,7 +9333,7 @@ const AdminDashboard = () => {
           </div>
           
           {/* Pagination Controls - Only show for paginated views */}
-          {(statusFilter === 'COMPLETED' || statusFilter === 'CANCELLED' || statusFilter === 'RESCHEDULED') && totalPages > 1 && (
+          {(statusFilter === 'CANCELLED' || statusFilter === 'RESCHEDULED' || (statusFilter === 'COMPLETED' && !hasCompletedClientFilters)) && totalPages > 1 && (
             <div className="mt-6 flex items-center justify-between">
               <div className="text-sm text-gray-600">
                 Showing page {currentPage} of {totalPages} ({totalCount} total)
