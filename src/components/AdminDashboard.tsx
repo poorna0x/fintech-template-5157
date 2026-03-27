@@ -9196,6 +9196,19 @@ const AdminDashboard = () => {
                                       }
                                       return null;
                                     })()}
+
+                                    {/* Service Brand */}
+                                    {(job as any).service_brand && (
+                                      <div className="flex items-start gap-2 sm:items-center">
+                                        <Tag className="w-4 h-4 text-gray-400 flex-shrink-0 mt-0.5 sm:mt-0" />
+                                        <div className="min-w-0 flex-1">
+                                          <div className="text-xs text-gray-500">Served As</div>
+                                          <div className="font-medium text-gray-900 break-words">
+                                            {(job as any).service_brand === 'elevenro' ? 'ElevenRO' : (job as any).service_brand === 'hydrogenro' ? 'HydrogenRO' : (job as any).service_brand}
+                                          </div>
+                                        </div>
+                                      </div>
+                                    )}
                                     
                                   </div>
 
@@ -10626,7 +10639,11 @@ const AdminDashboard = () => {
                     completion_notes: completedJobEditData.completionNotes || '',
                     completed_by: newCompletedBy,
                     lead_cost: leadCost,
-                    requirements: JSON.stringify(requirements)
+                    requirements: JSON.stringify(requirements),
+                    service_brand:
+                      completedJobEditData.serviceBrand === 'elevenro'
+                        ? 'elevenro'
+                        : 'hydrogenro'
                   };
                   const paymentScreenshotsUrls = Array.isArray(completedJobEditData.paymentScreenshots)
                     ? completedJobEditData.paymentScreenshots.filter((u: any) => typeof u === 'string' && u.trim())

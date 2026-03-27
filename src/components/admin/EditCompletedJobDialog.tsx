@@ -12,6 +12,8 @@ import { toast } from 'sonner';
 import { ImagePlus, X } from 'lucide-react';
 import { cloudinaryService, compressImage, validateImageFile } from '@/lib/cloudinary';
 
+type ServiceBrand = 'elevenro' | 'hydrogenro';
+
 interface EditCompletedJobDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -118,6 +120,38 @@ const EditCompletedJobDialog: React.FC<EditCompletedJobDialogProps> = ({
         </DialogHeader>
         
         <div className="space-y-4 py-4">
+          {/* Service brand */}
+          <div className="space-y-3">
+            <Label className="text-base font-semibold">Serviced as brand</Label>
+            <p className="text-sm text-gray-600">
+              This will be used for this job’s customer message and booking details next time.
+            </p>
+            <div className="grid grid-cols-2 gap-4">
+              <button
+                type="button"
+                onClick={() => onEditDataChange({ ...editData, serviceBrand: 'elevenro' as ServiceBrand })}
+                className={`p-4 rounded-lg border-2 transition-all duration-200 ${
+                  editData.serviceBrand === 'elevenro'
+                    ? 'border-black bg-black text-white shadow-md'
+                    : 'border-gray-300 bg-white text-gray-700 hover:border-gray-400 hover:bg-gray-50'
+                }`}
+              >
+                <span className="font-medium text-sm">ElevenRO</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => onEditDataChange({ ...editData, serviceBrand: 'hydrogenro' as ServiceBrand })}
+                className={`p-4 rounded-lg border-2 transition-all duration-200 ${
+                  editData.serviceBrand === 'hydrogenro'
+                    ? 'border-black bg-black text-white shadow-md'
+                    : 'border-gray-300 bg-white text-gray-700 hover:border-gray-400 hover:bg-gray-50'
+                }`}
+              >
+                <span className="font-medium text-sm">HydrogenRO</span>
+              </button>
+            </div>
+          </div>
+
           {/* Amount */}
           <div>
             <Label htmlFor="edit-amount">Amount (₹)</Label>

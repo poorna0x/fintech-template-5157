@@ -161,6 +161,7 @@ export interface Job {
   completionNotes?: string;
   completedBy?: string;
   completedAt?: string;
+  service_brand?: 'elevenro' | 'hydrogenro' | string;
 
   // Timestamps
   createdAt: string;

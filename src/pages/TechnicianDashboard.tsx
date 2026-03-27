@@ -184,6 +184,24 @@ const extractLocationFromAddressString = (completeAddress: string): string | nul
   return bestMatch;
 };
 
+type ServiceBrand = 'elevenro' | 'hydrogenro';
+
+const normalizeServiceBrand = (value: unknown): ServiceBrand | null => {
+  if (typeof value !== 'string') return null;
+  const normalized = value.trim().toLowerCase();
+  if (normalized === 'elevenro' || normalized === 'hydrogenro') return normalized;
+  return null;
+};
+
+const getServiceBrandLabel = (brand: ServiceBrand) => (brand === 'elevenro' ? 'ElevenRO' : 'HydrogenRO');
+
+// Normalize job statuses coming from DB (handles casing differences).
+const normalizeJobStatus = (value: unknown): string => {
+  if (value === null || value === undefined) return '';
+  if (typeof value !== 'string') return String(value);
+  return value.trim().toUpperCase().replace(/\s+/g, '_');
+};
+
 /** Main square color for AMC / Google review / prior (returning) customer — Technician lists. Blue only when no AMC and no Google review (green/red/orange unchanged). */
 function technicianCustomerIndicatorMainClass(hasAmc: boolean, hasG: boolean, hasPrior: boolean): string {
   if (hasAmc && hasG) return 'bg-orange-500 ring-2 ring-orange-300 shadow-[0_0_12px_rgba(249,115,22,0.9)]';
@@ -367,6 +385,9 @@ const TechnicianDashboard = () => {
   const [paymentPhotos, setPaymentPhotos] = useState<string[]>([]);
   const [otpInput, setOtpInput] = useState<string[]>(['', '', '', '']);
   const [otpError, setOtpError] = useState<string>('');
+  const [serviceBrand, setServiceBrand] = useState<ServiceBrand>('hydrogenro');
+  const [lastServiceBrand, setLastServiceBrand] = useState<ServiceBrand | null>(null);
+  const [isLoadingServiceBrand, setIsLoadingServiceBrand] = useState(false);
   const otpInputRefs = useRef<(HTMLInputElement | null)[]>([]);
   const [amcDateGiven, setAmcDateGiven] = useState<string>('');
   const [amcEndDate, setAmcEndDate] = useState<string>('');
@@ -1552,12 +1573,12 @@ const TechnicianDashboard = () => {
     if (statusFilter === 'ONGOING') {
       // Show ongoing jobs (pending, assigned, en_route, in-progress)
       filtered = filtered.filter(job => {
-        const status = (job as any).status || job.status;
+        const status = normalizeJobStatus((job as any).status || job.status);
         return ['PENDING', 'ASSIGNED', 'EN_ROUTE', 'IN_PROGRESS'].includes(status);
       });
     } else if (statusFilter === 'RESCHEDULED') {
       // Filter for follow-up jobs (FOLLOW_UP status)
-      filtered = filtered.filter(job => job.status === 'FOLLOW_UP');
+      filtered = filtered.filter(job => normalizeJobStatus(job.status) === 'FOLLOW_UP');
     } else if (statusFilter === 'CANCELLED') {
       // Filter for denied jobs (DENIED status) - only show jobs denied by this technician today
       const technicianName = user?.fullName || '';
@@ -1567,7 +1588,7 @@ const TechnicianDashboard = () => {
       tomorrow.setDate(tomorrow.getDate() + 1); // Start of tomorrow
       
       filtered = filtered.filter(job => {
-        if (job.status !== 'DENIED') return false;
+        if (normalizeJobStatus(job.status) !== 'DENIED') return false;
         const deniedBy = (job as any).denied_by || job.deniedBy || '';
         const deniedAt = (job as any).denied_at || job.deniedAt || null;
         
@@ -1586,7 +1607,7 @@ const TechnicianDashboard = () => {
       const rY = targetDay.getFullYear(), rM = targetDay.getMonth(), rD = targetDay.getDate();
 
       filtered = filtered.filter(job => {
-        const status = (job as any).status || job.status;
+        const status = normalizeJobStatus((job as any).status || job.status);
         if (status !== 'COMPLETED') return false;
 
         const completedBy = (job as any).completed_by || (job as any).completedBy;
@@ -1604,7 +1625,7 @@ const TechnicianDashboard = () => {
       });
     } else if (statusFilter !== 'ALL') {
       filtered = filtered.filter(job => {
-        const status = (job as any).status || job.status;
+        const status = normalizeJobStatus((job as any).status || job.status);
         return status === statusFilter;
       });
     }
@@ -2021,6 +2042,51 @@ const TechnicianDashboard = () => {
       setOtpInput(['', '', '', '']);
       setOtpError('');
       otpInputRefs.current = [];
+
+    // Service brand: default HydrogenRO, lookup last used
+    setServiceBrand('hydrogenro');
+    setLastServiceBrand(null);
+    setIsLoadingServiceBrand(false);
+
+    const customerId =
+      (jobWithCustomer.customer as any)?.id ||
+      jobWithCustomer.customer?.id ||
+      (jobWithCustomer as any)?.customer_id ||
+      (jobWithCustomer as any)?.customerId ||
+      jobWithCustomer.customer_id;
+
+    if (customerId) {
+      setIsLoadingServiceBrand(true);
+      (async () => {
+        try {
+          const { data, error } = await supabase
+            .from('jobs')
+            .select('service_brand, completed_at, end_time, created_at')
+            .eq('customer_id', customerId)
+            .eq('status', 'COMPLETED')
+            .not('service_brand', 'is', null)
+            .order('completed_at', { ascending: false, nullsFirst: false })
+            .order('end_time', { ascending: false, nullsFirst: false })
+            .order('created_at', { ascending: false })
+            .limit(1);
+
+          setIsLoadingServiceBrand(false);
+          if (error) {
+            console.warn('[TechnicianDashboard] Failed to load last service brand:', error);
+            return;
+          }
+          const latest = data?.[0];
+          const normalized = normalizeServiceBrand((latest as any)?.service_brand);
+          if (normalized) {
+            setLastServiceBrand(normalized);
+            setServiceBrand(normalized);
+          }
+        } catch (err) {
+          console.warn('[TechnicianDashboard] Error loading service brand:', err);
+          setIsLoadingServiceBrand(false);
+        }
+      })();
+    }
     
     // Initialize customerHasPrefilter from customer's existing value if available
     const customerPrefilter = jobWithCustomer.customer 
@@ -2972,6 +3038,7 @@ const TechnicianDashboard = () => {
           completion_notes: completionNotes.trim(),
           completed_by: user?.id || user?.technicianId || null,
           completed_at: new Date().toISOString(),
+          service_brand: serviceBrand,
           actual_cost: parseFloat(billAmount) || 0,
           payment_amount: paymentAmount,
           payment_method: dbPaymentMethod || (isBillAmountZero() ? null : 'CASH'),
@@ -3813,7 +3880,7 @@ const TechnicianDashboard = () => {
   };
 
   const getStatusActions = (job: Job) => {
-    const status = (job as any).status || job.status;
+    const status = normalizeJobStatus((job as any).status || job.status);
     
     switch (status) {
       case 'ASSIGNED':
@@ -6058,6 +6125,9 @@ const TechnicianDashboard = () => {
             setSelectedQrCodeId('');
             setPaymentScreenshot('');
             setIsSubmittingJobCompletion(false);
+            setServiceBrand('hydrogenro');
+            setLastServiceBrand(null);
+            setIsLoadingServiceBrand(false);
           }
         }}>
           <DialogContent className="w-[95vw] sm:w-[500px] max-w-[500px] h-[85vh] sm:h-[600px] max-h-[85vh] flex flex-col p-0">
@@ -6070,7 +6140,7 @@ const TechnicianDashboard = () => {
                   </span>
                 ) : (
                   <>
-                    {completeJobStep === 1 && 'Enter the bill amount for this job'}
+                    {completeJobStep === 1 && 'Select service brand & enter bill amount'}
                     {completeJobStep === 2 && 'Upload bill photo (optional)'}
                     {completeJobStep === 3 && 'AMC Information (Optional - Can Skip)'}
                     {completeJobStep === 4 && 'Select payment mode and QR code'}
@@ -6268,9 +6338,43 @@ const TechnicianDashboard = () => {
                 </div>
               </div>
 
-              {/* Step 1: Bill Amount */}
+              {/* Step 1: Service Brand + Bill Amount */}
               {completeJobStep === 1 && (
                 <div className="space-y-4">
+                <div className="space-y-3">
+                  <Label className="text-base font-semibold">Service brand for this visit *</Label>
+                  <p className="text-sm text-gray-600">
+                    {isLoadingServiceBrand
+                      ? 'Checking last completed job...'
+                      : lastServiceBrand
+                        ? `Last time served as ${getServiceBrandLabel(lastServiceBrand)}`
+                        : 'No previous brand history found. Defaulting to HydrogenRO.'}
+                  </p>
+                  <div className="grid grid-cols-2 gap-4">
+                    <button
+                      type="button"
+                      onClick={() => setServiceBrand('elevenro')}
+                      className={`p-4 rounded-lg border-2 transition-all duration-200 ${
+                        serviceBrand === 'elevenro'
+                          ? 'border-black bg-black text-white shadow-md'
+                          : 'border-gray-300 bg-white text-gray-700 hover:border-gray-400 hover:bg-gray-50'
+                      }`}
+                    >
+                      <span className="font-medium text-sm">ElevenRO</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setServiceBrand('hydrogenro')}
+                      className={`p-4 rounded-lg border-2 transition-all duration-200 ${
+                        serviceBrand === 'hydrogenro'
+                          ? 'border-black bg-black text-white shadow-md'
+                          : 'border-gray-300 bg-white text-gray-700 hover:border-gray-400 hover:bg-gray-50'
+                      }`}
+                    >
+                      <span className="font-medium text-sm">HydrogenRO</span>
+                    </button>
+                  </div>
+                </div>
               <div>
                     <Label htmlFor="bill-amount">Bill Amount *</Label>
                     <Input
@@ -7081,6 +7185,9 @@ const TechnicianDashboard = () => {
       setOtpInput(['', '', '', '']);
       setOtpError('');
       otpInputRefs.current = [];
+      setServiceBrand('hydrogenro');
+      setLastServiceBrand(null);
+      setIsLoadingServiceBrand(false);
                   }
                 }}
               >
@@ -7565,7 +7672,7 @@ const TechnicianDashboard = () => {
                 <FileText className="w-4 h-4 mr-2" />
                 Reports
               </Button>
-              {(selectedJobForOptions.status === 'ASSIGNED' || selectedJobForOptions.status === 'EN_ROUTE' || selectedJobForOptions.status === 'IN_PROGRESS') && (
+              {(normalizeJobStatus(selectedJobForOptions.status) === 'ASSIGNED' || normalizeJobStatus(selectedJobForOptions.status) === 'EN_ROUTE' || normalizeJobStatus(selectedJobForOptions.status) === 'IN_PROGRESS') && (
                 <Button
                   variant="outline"
                   className="w-full justify-start"
@@ -7579,7 +7686,7 @@ const TechnicianDashboard = () => {
                   Schedule Follow-up
                 </Button>
               )}
-              {(selectedJobForOptions.status === 'ASSIGNED' || selectedJobForOptions.status === 'EN_ROUTE') && (
+              {(normalizeJobStatus(selectedJobForOptions.status) === 'ASSIGNED' || normalizeJobStatus(selectedJobForOptions.status) === 'EN_ROUTE') && (
                 <Button
                   variant="outline"
                   className="w-full justify-start text-red-600 hover:text-red-700 hover:bg-red-50"

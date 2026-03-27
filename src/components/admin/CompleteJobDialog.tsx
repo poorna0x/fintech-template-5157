@@ -9,7 +9,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Textarea } from '@/components/ui/textarea';
 import ImageUpload from '@/components/ImageUpload';
 import { Job, Technician } from '@/types';
-import { db } from '@/lib/supabase';
+import { db, supabase } from '@/lib/supabase';
 import { toast } from 'sonner';
 import { getCachedQrCodes, CommonQrCode } from '@/lib/qrCodeManager';
 import { useAuth } from '@/contexts/AuthContext';
@@ -35,6 +35,17 @@ const getTodayLocalDate = () => {
   const day = String(today.getDate()).padStart(2, '0');
   return `${year}-${month}-${day}`;
 };
+
+type ServiceBrand = 'elevenro' | 'hydrogenro';
+
+const normalizeServiceBrand = (value: unknown): ServiceBrand | null => {
+  if (typeof value !== 'string') return null;
+  const normalized = value.trim().toLowerCase();
+  if (normalized === 'elevenro' || normalized === 'hydrogenro') return normalized;
+  return null;
+};
+
+const getServiceBrandLabel = (brand: ServiceBrand) => (brand === 'elevenro' ? 'ElevenRO' : 'HydrogenRO');
 
 export const CompleteJobDialog: React.FC<CompleteJobDialogProps> = ({
   open,
@@ -90,6 +101,9 @@ export const CompleteJobDialog: React.FC<CompleteJobDialogProps> = ({
   const [isPaymentScreenshotUploading, setIsPaymentScreenshotUploading] = useState(false);
   const [otpInput, setOtpInput] = useState<string[]>(['', '', '', '']);
   const [otpError, setOtpError] = useState<string>('');
+  const [serviceBrand, setServiceBrand] = useState<ServiceBrand>('hydrogenro');
+  const [lastServiceBrand, setLastServiceBrand] = useState<ServiceBrand | null>(null);
+  const [isLoadingServiceBrand, setIsLoadingServiceBrand] = useState(false);
   const otpInputRefs = useRef<(HTMLInputElement | null)[]>([]);
 
   // Helper functions
@@ -156,6 +170,8 @@ export const CompleteJobDialog: React.FC<CompleteJobDialogProps> = ({
 
   // Initialize form when dialog opens
   useEffect(() => {
+    let cancelled = false;
+
     if (open && job) {
       setCompletionNotes('');
       setCompleteJobStep(1);
@@ -186,8 +202,53 @@ export const CompleteJobDialog: React.FC<CompleteJobDialogProps> = ({
       setIsPaymentScreenshotUploading(false);
       setOtpInput(['', '', '', '']);
       setOtpError('');
+      setServiceBrand('hydrogenro');
+      setLastServiceBrand(null);
+      setIsLoadingServiceBrand(false);
       otpInputRefs.current = [];
+
+      const customerId =
+        (job.customer as any)?.id ||
+        job.customer?.id ||
+        (job as any)?.customer_id ||
+        (job as any)?.customerId ||
+        job.customer_id;
+
+      if (customerId) {
+        setIsLoadingServiceBrand(true);
+        (async () => {
+          const { data, error } = await supabase
+            .from('jobs')
+            .select('service_brand, completed_at, end_time, created_at')
+            .eq('customer_id', customerId)
+            .eq('status', 'COMPLETED')
+            .not('service_brand', 'is', null)
+            .order('completed_at', { ascending: false, nullsFirst: false })
+            .order('end_time', { ascending: false, nullsFirst: false })
+            .order('created_at', { ascending: false })
+            .limit(1);
+
+          if (cancelled) return;
+          setIsLoadingServiceBrand(false);
+
+          if (error) {
+            console.warn('[CompleteJobDialog] Failed to load last service brand:', error);
+            return;
+          }
+
+          const latest = data?.[0];
+          const normalized = normalizeServiceBrand((latest as any)?.service_brand);
+          if (normalized) {
+            setLastServiceBrand(normalized);
+            setServiceBrand(normalized);
+          }
+        })();
+      }
     }
+
+    return () => {
+      cancelled = true;
+    };
   }, [open, job]);
 
   // Always show AMC question first when entering step 3
@@ -240,6 +301,9 @@ export const CompleteJobDialog: React.FC<CompleteJobDialogProps> = ({
     setIsPaymentScreenshotUploading(false);
     setOtpInput(['', '', '', '']);
     setOtpError('');
+    setServiceBrand('hydrogenro');
+    setLastServiceBrand(null);
+    setIsLoadingServiceBrand(false);
     otpInputRefs.current = [];
     onOpenChange(false);
   };
@@ -305,6 +369,7 @@ export const CompleteJobDialog: React.FC<CompleteJobDialogProps> = ({
         completion_notes: completionNotes.trim(),
         completed_by: completedByTechnicianId,
         completed_at: new Date().toISOString(),
+        service_brand: serviceBrand,
         actual_cost: parseFloat(billAmount) || 0,
         payment_amount: paymentAmount,
         payment_method: dbPaymentMethod || (isBillAmountZero() ? null : 'CASH'),
@@ -935,6 +1000,40 @@ export const CompleteJobDialog: React.FC<CompleteJobDialogProps> = ({
             {/* Step 1: Bill Amount */}
             {completeJobStep === 1 && (
               <div className="space-y-4">
+                <div className="space-y-3">
+                  <Label className="text-base font-semibold">Service brand for this visit *</Label>
+                  <p className="text-sm text-gray-600">
+                    {isLoadingServiceBrand
+                      ? 'Checking last completed job...'
+                      : lastServiceBrand
+                        ? `Last time served as ${getServiceBrandLabel(lastServiceBrand)}`
+                        : 'No previous brand history found. Defaulting to HydrogenRO.'}
+                  </p>
+                  <div className="grid grid-cols-2 gap-4">
+                    <button
+                      type="button"
+                      onClick={() => setServiceBrand('elevenro')}
+                      className={`p-4 rounded-lg border-2 transition-all duration-200 ${
+                        serviceBrand === 'elevenro'
+                          ? 'border-black bg-black text-white shadow-md'
+                          : 'border-gray-300 bg-white text-gray-700 hover:border-gray-400 hover:bg-gray-50'
+                      }`}
+                    >
+                      <span className="font-medium text-sm">ElevenRO</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setServiceBrand('hydrogenro')}
+                      className={`p-4 rounded-lg border-2 transition-all duration-200 ${
+                        serviceBrand === 'hydrogenro'
+                          ? 'border-black bg-black text-white shadow-md'
+                          : 'border-gray-300 bg-white text-gray-700 hover:border-gray-400 hover:bg-gray-50'
+                      }`}
+                    >
+                      <span className="font-medium text-sm">HydrogenRO</span>
+                    </button>
+                  </div>
+                </div>
                 <div>
                   <Label htmlFor="bill-amount">Bill Amount *</Label>
                   <Input

@@ -165,6 +165,19 @@ export const CompletedJobSection: React.FC<CompletedJobSectionProps> = ({
             <span className="text-gray-500 font-medium">Lead Source:</span> {leadSource || 'Direct call'}
           </div>
 
+          {/* Service Brand */}
+          {(() => {
+            const rawBrand = (job as any).service_brand;
+            const normalized =
+              rawBrand === 'elevenro' ? 'elevenro' : 'hydrogenro';
+            const label = normalized === 'elevenro' ? 'ElevenRO' : 'HydrogenRO';
+            return (
+              <div className="text-gray-700 break-words">
+                <span className="text-gray-500 font-medium">Served As:</span> {label}
+              </div>
+            );
+          })()}
+
           {/* Raw Water TDS */}
           {((job as any).customer?.raw_water_tds != null && (job as any).customer?.raw_water_tds > 0) && (
             <div className="text-gray-700 break-words">
@@ -390,6 +403,12 @@ export const CompletedJobSection: React.FC<CompletedJobSectionProps> = ({
               const editData: any = {
                 amount: actualCost || paymentAmount || '',
                 paymentMethod: paymentMethod || 'CASH',
+                serviceBrand:
+                  (job as any).service_brand === 'elevenro'
+                    ? 'elevenro'
+                    : (job as any).service_brand === 'hydrogenro'
+                      ? 'hydrogenro'
+                      : 'hydrogenro',
                 leadSource: leadSourceValue,
                 leadSourceCustom: leadSourceCustomValue,
                 leadCost: leadCost,
