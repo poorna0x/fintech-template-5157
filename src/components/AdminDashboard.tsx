@@ -1165,7 +1165,7 @@ const AdminDashboard = () => {
         } else if (filter === 'CANCELLED') {
           dateFilter = deniedDateFilter;
         }
-        const { data, error, count, totalPages: pages } = await db.jobs.getByStatusPaginated(statuses, page, pageSize, dateFilter);
+        const { data, error, count, totalPages: pages } = await db.jobs.getByStatusPaginatedSlim(statuses, page, pageSize, dateFilter);
         if (requestId !== loadJobsRequestRef.current) return;
         if (error) {
           setJobs([]);
@@ -1670,7 +1670,7 @@ const AdminDashboard = () => {
     // One-time seed: mark currently completed jobs so we don't play sound for them on connect
     const seedCompletedIds = async () => {
       try {
-        const { data: completed, error } = await db.jobs.getByStatusPaginated(['COMPLETED'], 1, 15);
+        const { data: completed, error } = await db.jobs.getByStatusPaginatedSlim(['COMPLETED'], 1, 15);
         if (!error && completed?.length) {
           completed.forEach((j: any) => jobIdsCompletedByAdminRef.current.add(j.id));
         }

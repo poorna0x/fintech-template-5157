@@ -57,6 +57,7 @@ const JobPartsUsedDialog: React.FC<JobPartsUsedDialogProps> = ({
   const [inventorySearchQuery, setInventorySearchQuery] = useState('');
   const [debouncedSearchQuery, setDebouncedSearchQuery] = useState('');
   const [loading, setLoading] = useState(true);
+  const [hasLoadedParts, setHasLoadedParts] = useState(false);
   const [applyingBundle, setApplyingBundle] = useState(false);
   const [addPartInventoryLoading, setAddPartInventoryLoading] = useState(false);
 
@@ -125,14 +126,23 @@ const JobPartsUsedDialog: React.FC<JobPartsUsedDialogProps> = ({
     }
   }, [job?.id]);
 
-  // Load only parts used when main dialog opens (technician inventory is lazy-loaded when Add Part / Add Bundle is opened)
+  const loadPartsUsedOnDemand = useCallback(async () => {
+    if (!job?.id) return;
+    setLoading(true);
+    await loadPartsUsed().finally(() => setLoading(false));
+    setHasLoadedParts(true);
+  }, [job?.id, loadPartsUsed]);
+
+  // Do not auto-load parts on dialog open (explicit load only to reduce egress).
+  // Technician inventory remains lazy-loaded when Add Part / Add Bundle opens.
   useEffect(() => {
     if (open && job && technician) {
-      setLoading(true);
-      loadPartsUsed().finally(() => setLoading(false));
+      setLoading(false);
+      setHasLoadedParts(false);
     } else if (!open) {
       setTechnicianInventory([]);
       setPartsUsed([]);
+      setHasLoadedParts(false);
       setMainInventoryItems([]);
       setMainInventoryLoaded(false);
       setInventorySearchQuery('');
@@ -140,7 +150,7 @@ const JobPartsUsedDialog: React.FC<JobPartsUsedDialogProps> = ({
       setAddBundleDialogOpen(false);
       setAddPartInventoryLoading(false);
     }
-  }, [open, job?.id, technician?.id, loadPartsUsed]);
+  }, [open, job?.id, technician?.id]);
 
   // Lazy-load technician inventory only when Add Part or Add Bundle dialog opens (reduces load when user only views parts)
   useEffect(() => {
@@ -508,11 +518,24 @@ const JobPartsUsedDialog: React.FC<JobPartsUsedDialogProps> = ({
           <div className="flex-1 min-h-0 overflow-y-auto space-y-4 -mx-1 px-1">
             {/* Add Part / Add Bundle */}
             <div className="flex justify-end gap-2">
-              <Button onClick={handleAddPart} size="sm">
+              <Button
+                onClick={async () => {
+                  if (!hasLoadedParts) await loadPartsUsedOnDemand();
+                  handleAddPart();
+                }}
+                size="sm"
+              >
                 <Plus className="w-4 h-4 mr-2" />
                 Add Part
               </Button>
-              <Button onClick={() => setAddBundleDialogOpen(true)} size="sm" variant="outline">
+              <Button
+                onClick={async () => {
+                  if (!hasLoadedParts) await loadPartsUsedOnDemand();
+                  setAddBundleDialogOpen(true);
+                }}
+                size="sm"
+                variant="outline"
+              >
                 <Layers className="w-4 h-4 mr-2" />
                 Add Bundle
               </Button>
@@ -521,6 +544,19 @@ const JobPartsUsedDialog: React.FC<JobPartsUsedDialogProps> = ({
             {/* Parts List */}
             {loading ? (
               <div className="text-center py-8 text-gray-500">Loading...</div>
+            ) : !hasLoadedParts ? (
+              <div className="text-center py-8 text-gray-500">
+                <Package className="w-12 h-12 mx-auto mb-2 text-gray-400" />
+                <p>Parts used are not loaded yet.</p>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="mt-3"
+                  onClick={loadPartsUsedOnDemand}
+                >
+                  Load Parts Used
+                </Button>
+              </div>
             ) : partsUsed.length === 0 ? (
               <div className="text-center py-8 text-gray-500">
                 <Package className="w-12 h-12 mx-auto mb-2 text-gray-400" />

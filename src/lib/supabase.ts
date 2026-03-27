@@ -692,6 +692,146 @@ export const db = {
       };
     },
 
+    /**
+     * Slim paginated jobs list (low-egress).
+     * - Avoids `jobs.*` (which includes photo arrays / large payload fields)
+     * - Avoids customer `address/location/notes` JSON
+     * Use this for list views like Admin COMPLETED/CANCELLED where full detail isn't needed.
+     */
+    async getByStatusPaginatedSlim(
+      statuses: string[],
+      page: number = 1,
+      pageSize: number = 20,
+      dateFilter?: string | { startDate: string; endDate: string }
+    ) {
+      const from = (page - 1) * pageSize;
+      const to = from + pageSize - 1;
+
+      const toLocalDayBounds = (dateStr: string) => {
+        const [year, month, day] = dateStr.split('-').map(Number);
+        const localStart = new Date(year, month - 1, day, 0, 0, 0, 0);
+        const localNext = new Date(year, month - 1, day + 1, 0, 0, 0, 0);
+        return { startISO: localStart.toISOString(), nextISO: localNext.toISOString() };
+      };
+
+      // Explicit job cols (no before_photos/after_photos/service_address/service_location/etc.)
+      const jobCols = [
+        'id',
+        'job_number',
+        'customer_id',
+        'status',
+        'priority',
+        'service_type',
+        'service_sub_type',
+        'scheduled_date',
+        'scheduled_time_slot',
+        'created_at',
+        'updated_at',
+        'completed_at',
+        'end_time',
+        'denied_at',
+        'denial_reason',
+        'assigned_technician_id',
+        'completed_by',
+        'completed_by_name',
+        'payment_amount',
+        'actual_cost',
+        'estimated_cost',
+        'payment_method',
+        'service_brand',
+        // Keep requirements for lead-source parsing in the list UI.
+        // If this is still too heavy, we can lazy-load it per job on expand/click.
+        'requirements',
+      ].join(',');
+
+      // Explicit customer cols (no address/location/notes JSON)
+      const customerCols = [
+        'id',
+        'customer_id',
+        'full_name',
+        'phone',
+        'alternate_phone',
+        'email',
+        'visible_address',
+        'service_type',
+        'brand',
+        'model',
+        'last_service_date',
+        'has_prefilter',
+        'has_google_review',
+        'customer_tier',
+        'raw_water_tds',
+      ].join(',');
+
+      let query = supabase
+        .from('jobs')
+        .select(`${jobCols},customer:customers(${customerCols})`, { count: 'exact' });
+
+      if (dateFilter) {
+        const hasRangeObject = typeof dateFilter === 'object' && !!(dateFilter as any).startDate && !!(dateFilter as any).endDate;
+        const singleDate = typeof dateFilter === 'string' ? dateFilter : undefined;
+        const rangeStartDate = hasRangeObject ? (dateFilter as any).startDate : undefined;
+        const rangeEndDate = hasRangeObject ? (dateFilter as any).endDate : undefined;
+
+        if (statuses.includes('DENIED')) {
+          if (statuses.includes('CANCELLED')) {
+            if (singleDate) {
+              const { startISO, nextISO } = toLocalDayBounds(singleDate);
+              query = query.or(`and(status.eq.DENIED,denied_at.gte.${startISO},denied_at.lt.${nextISO}),status.eq.CANCELLED`);
+            } else {
+              query = query.in('status', statuses);
+            }
+          } else {
+            if (singleDate) {
+              const { startISO, nextISO } = toLocalDayBounds(singleDate);
+              query = query.eq('status', 'DENIED').gte('denied_at', startISO).lt('denied_at', nextISO);
+            } else {
+              query = query.eq('status', 'DENIED');
+            }
+          }
+        } else if (statuses.includes('COMPLETED')) {
+          let startISO: string | null = null;
+          let nextDayISO: string | null = null;
+
+          if (singleDate) {
+            const bounds = toLocalDayBounds(singleDate);
+            startISO = bounds.startISO;
+            nextDayISO = bounds.nextISO;
+          } else if (rangeStartDate && rangeEndDate) {
+            const startBounds = toLocalDayBounds(rangeStartDate);
+            const endBounds = toLocalDayBounds(rangeEndDate);
+            startISO = startBounds.startISO;
+            nextDayISO = endBounds.nextISO;
+          }
+
+          if (startISO && nextDayISO) {
+            query = query
+              .eq('status', 'COMPLETED')
+              .or(`and(completed_at.gte.${startISO},completed_at.lt.${nextDayISO}),and(end_time.gte.${startISO},end_time.lt.${nextDayISO})`);
+          } else {
+            query = query.eq('status', 'COMPLETED');
+          }
+        } else {
+          query = query.in('status', statuses);
+        }
+      } else {
+        query = query.in('status', statuses);
+      }
+
+      const { data, error, count } = await query
+        .order('created_at', { ascending: false })
+        .range(from, to);
+
+      return {
+        data: data || [],
+        error,
+        count: count || 0,
+        page,
+        pageSize,
+        totalPages: count ? Math.ceil(count / pageSize) : 0,
+      };
+    },
+
     /** Minimal fetch for follow-up glow: only jobs with follow_up_date today or tomorrow (local date). Returns id, status, follow_up_date only. */
     async getFollowUpForGlow() {
       const now = new Date();
