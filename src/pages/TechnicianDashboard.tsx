@@ -188,7 +188,11 @@ type ServiceBrand = 'elevenro' | 'hydrogenro';
 
 const normalizeServiceBrand = (value: unknown): ServiceBrand | null => {
   if (typeof value !== 'string') return null;
-  const normalized = value.trim().toLowerCase();
+  // Normalize common variations like "HydrogenRO", "Hydrogen RO", "hydrogen_ro", etc.
+  const normalized = value
+    .trim()
+    .toLowerCase()
+    .replace(/[\s_]+/g, '');
   if (normalized === 'elevenro' || normalized === 'hydrogenro') return normalized;
   return null;
 };
@@ -220,6 +224,8 @@ const TechnicianDashboard = () => {
   const [jobsLoading, setJobsLoading] = useState(false); // Start as false to prevent flash
   const [customerAMCStatus, setCustomerAMCStatus] = useState<Record<string, boolean>>({}); // Map customer ID to hasActiveAMC
   const [customerPriorServiceStatus, setCustomerPriorServiceStatus] = useState<Record<string, boolean>>({}); // ≥1 completed job (returning)
+  const [customerLastServiceBrand, setCustomerLastServiceBrand] = useState<Record<string, ServiceBrand | null>>({});
+  const loadedLastBrandCustomerIdsRef = useRef<Set<string>>(new Set());
   const techCustomerHasPriorService = useCallback((customer: any) => {
     const cid = customer?.id;
     if (!cid) return false;
@@ -458,6 +464,52 @@ const TechnicianDashboard = () => {
   const [selectedJobForAddress, setSelectedJobForAddress] = useState<Job | null>(null);
 
   // Define loadAssignedJobs before useEffect hooks that use it
+  const loadCustomerLastServiceBrands = useCallback(async (customerIds: string[]) => {
+    const uniqueIds = Array.from(new Set((customerIds || []).filter(Boolean)));
+    const missingIds = uniqueIds.filter((id) => !loadedLastBrandCustomerIdsRef.current.has(id));
+    if (missingIds.length === 0) return;
+
+    // Simple concurrency pool to avoid flooding the DB with parallel requests.
+    const concurrency = 4;
+    let cursor = 0;
+
+    const results: Record<string, ServiceBrand | null> = {};
+
+    const worker = async () => {
+      while (cursor < missingIds.length) {
+        const customerId = missingIds[cursor++];
+        // Mark as loaded to avoid repeated queries if the component re-renders quickly.
+        loadedLastBrandCustomerIdsRef.current.add(customerId);
+
+        try {
+          const { data, error } = await supabase
+            .from('jobs')
+            .select('service_brand')
+            .eq('customer_id', customerId)
+            .eq('status', 'COMPLETED')
+            .not('service_brand', 'is', null)
+            .order('completed_at', { ascending: false, nullsFirst: false })
+            .order('end_time', { ascending: false, nullsFirst: false })
+            .order('created_at', { ascending: false })
+            .limit(1);
+
+          if (error) throw error;
+
+          const latest = data?.[0] as any;
+          const normalized = normalizeServiceBrand(latest?.service_brand);
+          results[customerId] = normalized;
+        } catch {
+          // Keep it as null on failure; UI will just not show the badge.
+          results[customerId] = null;
+        }
+      }
+    };
+
+    await Promise.all(Array.from({ length: concurrency }, () => worker()));
+
+    setCustomerLastServiceBrand((prev) => ({ ...prev, ...results }));
+  }, []);
+
   const loadAssignedJobs = useCallback(async (retryCount = 0) => {
     if (!user?.technicianId) return;
 
@@ -535,6 +587,23 @@ const TechnicianDashboard = () => {
         }
         return next;
       });
+
+      // Prefetch "last served as" brand for returning customers to show it on the cards.
+      const priorCustomerIds = new Set<string>();
+      for (const j of allJobs) {
+        const cid = (j as any).customer_id || (j.customer as any)?.id;
+        if (!cid) continue;
+        const st = (j as any).status || j.status;
+        const c = j.customer as any;
+        const isPrior = st === 'COMPLETED' || Boolean(c?.last_service_date ?? c?.lastServiceDate);
+        if (isPrior) priorCustomerIds.add(cid);
+      }
+      if (priorCustomerIds.size > 0) {
+        // Defer slightly so the main list paints first.
+        setTimeout(() => {
+          loadCustomerLastServiceBrands(Array.from(priorCustomerIds)).catch(() => {});
+        }, 100);
+      }
       
       // Load AMC status in background (non-blocking) - defer for mobile performance
       if (data && data.length > 0) {
@@ -630,6 +699,32 @@ const TechnicianDashboard = () => {
       cancelled = true;
     };
   }, []);
+
+  // Prefetch "last served brand" for every customer that is considered returning
+  // (including returning customers served by OTHER technicians).
+  useEffect(() => {
+    const idsToPrefetch = new Set<string>();
+
+    for (const j of jobs) {
+      const cid = (j as any)?.customer_id || (j.customer as any)?.id;
+      if (!cid) continue;
+      if (customerPriorServiceStatus[cid]) idsToPrefetch.add(cid);
+    }
+
+    for (const req of assignmentRequests) {
+      const job = req.job as any;
+      const cid =
+        job?.customer_id ||
+        job?.customer?.id ||
+        job?.customer?.customer_id;
+      if (!cid) continue;
+      if (customerPriorServiceStatus[cid]) idsToPrefetch.add(cid);
+    }
+
+    if (idsToPrefetch.size === 0) return;
+
+    loadCustomerLastServiceBrands(Array.from(idsToPrefetch)).catch(() => {});
+  }, [assignmentRequests, customerPriorServiceStatus, jobs, loadCustomerLastServiceBrands]);
 
   // Always show AMC question first when entering step 3
   useEffect(() => {
@@ -4269,6 +4364,16 @@ const TechnicianDashboard = () => {
                               <span className={`font-bold text-lg text-gray-900 ${customerNameClassName(customer)}`}>
                                 {customer?.full_name || 'N/A'}
                               </span>
+                              {(() => {
+                                const cid = customer?.id as string | undefined;
+                                const lastBrand = cid ? customerLastServiceBrand[cid] : null;
+                                return hasPriorR && lastBrand ? (
+                                  <Badge className="bg-blue-100 text-blue-800 border-0 text-xs font-medium ml-2">
+                                    Last served:
+                                    <span className="block">{getServiceBrandLabel(lastBrand)}</span>
+                                  </Badge>
+                                ) : null;
+                              })()}
                               <Badge className="bg-orange-100 text-orange-800 border-0">
                                 <Clock className="w-3 h-3 mr-1" />
                                 Pending Response
@@ -4791,6 +4896,20 @@ const TechnicianDashboard = () => {
                             </div>
                           )}
                         </div>
+                      {(() => {
+                        const jc = job.customer as any;
+                        const hasPriorJ = techCustomerHasPriorService(jc);
+                        const cid = jc?.id as string | undefined;
+                        const lastBrand = cid ? customerLastServiceBrand[cid] : null;
+                        return hasPriorJ && lastBrand ? (
+                          <div className="mb-2">
+                            <Badge className="bg-blue-100 text-blue-800 border-0 text-xs font-medium">
+                              Last served:
+                              <span className="block">{getServiceBrandLabel(lastBrand)}</span>
+                            </Badge>
+                          </div>
+                        ) : null;
+                      })()}
                       {/* Service type with Brand/Model */}
                       <div className="mb-3 space-y-1">
                         <div className="text-sm">

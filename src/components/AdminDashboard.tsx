@@ -1433,13 +1433,29 @@ const AdminDashboard = () => {
   useEffect(() => {
     if (isInitialLoad || statusFilter !== 'COMPLETED' || !completedFilterDialogOpen) return;
     const loadCompletedFilterSource = async () => {
-      // Fetch all completed options once (lightweight columns), not just current date,
-      // so lead/subtype dropdowns always show the full set of values.
-      const { data } = await db.jobs.getCompletedJobsFilterSource(undefined);
+      // Egress optimization: only fetch a bounded window for dropdown options.
+      // This keeps the dropdowns useful while avoiding pulling thousands of historical rows.
+      let dateFilter: string | { startDate: string; endDate: string } | undefined = undefined;
+      if (completedDatePreset === 'day') {
+        dateFilter = completedDateFilter;
+      } else {
+        const start = completedRangeStartDate <= completedRangeEndDate ? completedRangeStartDate : completedRangeEndDate;
+        const end = completedRangeStartDate <= completedRangeEndDate ? completedRangeEndDate : completedRangeStartDate;
+        dateFilter = { startDate: start, endDate: end };
+      }
+      const { data } = await db.jobs.getCompletedJobsFilterSource(dateFilter, 1200);
       setCompletedFilterSourceJobs(data || []);
     };
     loadCompletedFilterSource();
-  }, [isInitialLoad, statusFilter, completedFilterDialogOpen]);
+  }, [
+    isInitialLoad,
+    statusFilter,
+    completedFilterDialogOpen,
+    completedDatePreset,
+    completedDateFilter,
+    completedRangeStartDate,
+    completedRangeEndDate,
+  ]);
 
   useEffect(() => {
     if (!completedFilterDialogOpen) return;
@@ -1540,34 +1556,8 @@ const AdminDashboard = () => {
     }
   }, [technicians]);
 
-  // Load all jobs for customers when COMPLETED filter is active
-  // This is for the Service History dialog, NOT for the customer card grouping
-  // The customer card grouping uses paginated jobs directly
-  useEffect(() => {
-    if (statusFilter !== 'COMPLETED' || isInitialLoad || jobs.length === 0) return;
-    
-    // Extract unique customers from the paginated completed jobs
-    // Only load history if not already loaded (for Service History dialog)
-    const customerIds = new Set<string>();
-    jobs.forEach(job => {
-      const customer = (job as any).customer || job.customer;
-      if (customer) {
-        const customerIdStr = (customer as any).customer_id || customer.customerId;
-        // Only load if not already in history (for Service History dialog use)
-        if (customerIdStr && !customerHistory[customerIdStr]) {
-          customerIds.add(customerIdStr);
-        }
-      }
-    });
-    
-    // Load history for all customers who don't have it loaded yet
-    // This is used by the Service History dialog, not the customer card grouping
-    if (customerIds.size > 0) {
-      customerIds.forEach(customerId => {
-        loadCustomerHistory(customerId);
-      });
-    }
-  }, [statusFilter, jobs, customerHistory, isInitialLoad, loadCustomerHistory]);
+  // Egress optimization: do NOT prefetch full customer history for every customer in COMPLETED view.
+  // Service history is fetched on-demand when the user clicks "View History" (see handleViewHistory).
 
   // Reload jobs when page changes (for paginated views)
   useEffect(() => {
