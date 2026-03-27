@@ -9140,7 +9140,33 @@ const AdminDashboard = () => {
                                         }
                                       }
                                       
-                                      if (leadSource && leadSource !== 'Website') {
+                                      // Fallback to new source-tracking columns when requirements.lead_source is missing
+                                      const bookingSource = ((job as any).booking_source || '').toString().toLowerCase();
+                                      const bookingDomain = (job as any).booking_domain || '';
+                                      if (leadSource === 'Website') {
+                                        if (bookingSource === 'elevenro') {
+                                          leadSource = 'Website (ElevenRO)';
+                                        } else if (bookingSource === 'hydrogenro') {
+                                          leadSource = 'Website (HydrogenRO)';
+                                        } else if (bookingDomain) {
+                                          leadSource = `Website (${bookingDomain})`;
+                                        }
+                                      }
+                                      if (!leadSource) {
+                                        if (bookingSource === 'elevenro') {
+                                          leadSource = 'Website (ElevenRO)';
+                                        } else if (bookingSource === 'hydrogenro') {
+                                          leadSource = 'Website (HydrogenRO)';
+                                        } else if (bookingDomain) {
+                                          leadSource = `Website (${bookingDomain})`;
+                                        }
+                                      }
+
+                                      const isWebsiteLead =
+                                        typeof leadSource === 'string' &&
+                                        leadSource.toLowerCase().includes('website');
+
+                                      if (leadSource && !isWebsiteLead) {
                                         return (
                                           <div className="flex items-start gap-2 sm:items-center">
                                             <Tag className="w-4 h-4 text-gray-400 flex-shrink-0 mt-0.5 sm:mt-0" />
@@ -9151,7 +9177,7 @@ const AdminDashboard = () => {
                                           </div>
                                         );
                                       }
-                                      if (leadSource === 'Website') {
+                                      if (isWebsiteLead) {
                                         const bookedAt = (job as any).created_at || (job as any).createdAt;
                                         if (bookedAt) {
                                           const d = new Date(bookedAt);
@@ -9161,7 +9187,7 @@ const AdminDashboard = () => {
                                               <Tag className="w-4 h-4 text-gray-400 flex-shrink-0 mt-0.5 sm:mt-0" />
                                               <div className="min-w-0 flex-1">
                                                 <div className="text-xs text-gray-500">Lead Source</div>
-                                                <div className="font-medium text-gray-900 break-words">Website</div>
+                                                <div className="font-medium text-gray-900 break-words">{leadSource}</div>
                                                 <div className="text-xs text-gray-500 mt-0.5">Booked at: {formatted}</div>
                                               </div>
                                             </div>
