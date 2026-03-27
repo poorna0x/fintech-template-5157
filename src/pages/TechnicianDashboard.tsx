@@ -385,7 +385,7 @@ const TechnicianDashboard = () => {
   const [paymentPhotos, setPaymentPhotos] = useState<string[]>([]);
   const [otpInput, setOtpInput] = useState<string[]>(['', '', '', '']);
   const [otpError, setOtpError] = useState<string>('');
-  const [serviceBrand, setServiceBrand] = useState<ServiceBrand>('hydrogenro');
+  const [serviceBrand, setServiceBrand] = useState<ServiceBrand | null>(null);
   const [lastServiceBrand, setLastServiceBrand] = useState<ServiceBrand | null>(null);
   const [isLoadingServiceBrand, setIsLoadingServiceBrand] = useState(false);
   const otpInputRefs = useRef<(HTMLInputElement | null)[]>([]);
@@ -2043,8 +2043,8 @@ const TechnicianDashboard = () => {
       setOtpError('');
       otpInputRefs.current = [];
 
-    // Service brand: default HydrogenRO, lookup last used
-    setServiceBrand('hydrogenro');
+    // Service brand: no default, prefer last used when available
+    setServiceBrand(null);
     setLastServiceBrand(null);
     setIsLoadingServiceBrand(false);
 
@@ -2488,6 +2488,10 @@ const TechnicianDashboard = () => {
 
     // Step 1: Bill Amount - validate and show confirmation
     if (completeJobStep === 1) {
+      if (!serviceBrand) {
+        toast.error('Please select service brand');
+        return;
+      }
       const billAmountNum = parseFloat(billAmount);
       if (!billAmount || isNaN(billAmountNum) || billAmountNum < 0) {
         toast.error('Please enter a valid bill amount');
@@ -6125,7 +6129,7 @@ const TechnicianDashboard = () => {
             setSelectedQrCodeId('');
             setPaymentScreenshot('');
             setIsSubmittingJobCompletion(false);
-            setServiceBrand('hydrogenro');
+            setServiceBrand(null);
             setLastServiceBrand(null);
             setIsLoadingServiceBrand(false);
           }
@@ -6348,7 +6352,7 @@ const TechnicianDashboard = () => {
                       ? 'Checking last completed job...'
                       : lastServiceBrand
                         ? `Last time served as ${getServiceBrandLabel(lastServiceBrand)}`
-                        : 'No previous brand history found. Defaulting to HydrogenRO.'}
+                        : 'No previous brand history found. Please select the service brand.'}
                   </p>
                   <div className="grid grid-cols-2 gap-4">
                     <button
@@ -7185,7 +7189,7 @@ const TechnicianDashboard = () => {
       setOtpInput(['', '', '', '']);
       setOtpError('');
       otpInputRefs.current = [];
-      setServiceBrand('hydrogenro');
+      setServiceBrand(null);
       setLastServiceBrand(null);
       setIsLoadingServiceBrand(false);
                   }
@@ -7244,6 +7248,7 @@ const TechnicianDashboard = () => {
                 className="bg-black hover:bg-gray-800 !text-white font-semibold"
                 disabled={
                   isSubmittingJobCompletion ||
+                  (completeJobStep === 1 && !serviceBrand) ||
                   // Only check upload states on final step (step 6) - allow proceeding on steps 2 and 5
                   (completeJobStep === 6 && (isBillPhotosUploading || isPaymentScreenshotUploading || isOptionalCompletionPhotosUploading || isExtraPhotosStep6Uploading)) ||
                   // Step 6 validation: Raw water TDS required for RO jobs

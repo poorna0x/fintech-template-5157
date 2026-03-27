@@ -101,7 +101,7 @@ export const CompleteJobDialog: React.FC<CompleteJobDialogProps> = ({
   const [isPaymentScreenshotUploading, setIsPaymentScreenshotUploading] = useState(false);
   const [otpInput, setOtpInput] = useState<string[]>(['', '', '', '']);
   const [otpError, setOtpError] = useState<string>('');
-  const [serviceBrand, setServiceBrand] = useState<ServiceBrand>('hydrogenro');
+  const [serviceBrand, setServiceBrand] = useState<ServiceBrand | null>(null);
   const [lastServiceBrand, setLastServiceBrand] = useState<ServiceBrand | null>(null);
   const [isLoadingServiceBrand, setIsLoadingServiceBrand] = useState(false);
   const otpInputRefs = useRef<(HTMLInputElement | null)[]>([]);
@@ -202,7 +202,7 @@ export const CompleteJobDialog: React.FC<CompleteJobDialogProps> = ({
       setIsPaymentScreenshotUploading(false);
       setOtpInput(['', '', '', '']);
       setOtpError('');
-      setServiceBrand('hydrogenro');
+      setServiceBrand(null);
       setLastServiceBrand(null);
       setIsLoadingServiceBrand(false);
       otpInputRefs.current = [];
@@ -301,7 +301,7 @@ export const CompleteJobDialog: React.FC<CompleteJobDialogProps> = ({
     setIsPaymentScreenshotUploading(false);
     setOtpInput(['', '', '', '']);
     setOtpError('');
-    setServiceBrand('hydrogenro');
+    setServiceBrand(null);
     setLastServiceBrand(null);
     setIsLoadingServiceBrand(false);
     otpInputRefs.current = [];
@@ -581,6 +581,10 @@ export const CompleteJobDialog: React.FC<CompleteJobDialogProps> = ({
 
     // Step 1: Bill Amount - validate and show confirmation
     if (completeJobStep === 1) {
+      if (!serviceBrand) {
+        toast.error('Please select service brand');
+        return;
+      }
       const billAmountNum = parseFloat(billAmount);
       if (!billAmount || isNaN(billAmountNum) || billAmountNum < 0) {
         toast.error('Please enter a valid bill amount');
@@ -1007,7 +1011,7 @@ export const CompleteJobDialog: React.FC<CompleteJobDialogProps> = ({
                       ? 'Checking last completed job...'
                       : lastServiceBrand
                         ? `Last time served as ${getServiceBrandLabel(lastServiceBrand)}`
-                        : 'No previous brand history found. Defaulting to HydrogenRO.'}
+                        : 'No previous brand history found. Please select the service brand.'}
                   </p>
                   <div className="grid grid-cols-2 gap-4">
                     <button
@@ -1696,6 +1700,7 @@ export const CompleteJobDialog: React.FC<CompleteJobDialogProps> = ({
               className="bg-black hover:bg-gray-800 !text-white font-semibold"
               disabled={
                 isSubmittingJobCompletion || 
+                (completeJobStep === 1 && !serviceBrand) ||
                 (completeJobStep === 6 && (isBillPhotosUploading || isPaymentScreenshotUploading)) ||
                 // Step 6 validation: Raw water TDS required for RO jobs
                 (completeJobStep === 6 && !isSoftenerService() && !rawWaterTds.trim()) ||
