@@ -1525,6 +1525,20 @@ const Booking: React.FC = () => {
                   : null)
           };
 
+      const hostname = window.location.hostname.toLowerCase();
+      const bookingSource =
+        hostname.includes('elevenro.com')
+          ? 'elevenro'
+          : hostname.includes('hydrogenro.com')
+            ? 'hydrogenro'
+            : 'unknown';
+      const websiteLeadSource =
+        bookingSource === 'elevenro'
+          ? 'Website (ElevenRO)'
+          : bookingSource === 'hydrogenro'
+            ? 'Website (HydrogenRO)'
+            : `Website (${hostname})`;
+
       const jobData = {
         job_number: generateJobNumber(formData.serviceType),
         customer_id: customer.id,
@@ -1542,11 +1556,13 @@ const Booking: React.FC = () => {
         service_address: jobServiceAddress,
         service_location: jobServiceLocation,
         requirements: [{
-          lead_source: 'Website',
+          lead_source: websiteLeadSource,
           custom_time: formData.preferredTime === 'CUSTOM' && formData.preferredTimeCustom ? formData.preferredTimeCustom : null
         }],
         estimated_cost: 0,
         payment_status: 'PENDING' as const,
+        booking_source: bookingSource,
+        booking_domain: hostname,
       };
 
       // Retry once on connection-like failures (transient network/Supabase issues)

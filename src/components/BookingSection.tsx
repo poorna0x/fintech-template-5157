@@ -376,6 +376,20 @@ const BookingSection = () => {
         throw new Error(customerError.message);
       }
 
+      const hostname = window.location.hostname.toLowerCase();
+      const bookingSource =
+        hostname.includes('elevenro.com')
+          ? 'elevenro'
+          : hostname.includes('hydrogenro.com')
+            ? 'hydrogenro'
+            : 'unknown';
+      const websiteLeadSource =
+        bookingSource === 'elevenro'
+          ? 'Website (ElevenRO)'
+          : bookingSource === 'hydrogenro'
+            ? 'Website (HydrogenRO)'
+            : `Website (${hostname})`;
+
       // Create job record
       const jobData = {
         job_number: generateJobNumber(formData.serviceType.toUpperCase()),
@@ -392,10 +406,12 @@ const BookingSection = () => {
         status: 'PENDING' as const,
         priority: 'MEDIUM' as const,
         description: formData.problemDescription,
-        requirements: [{ lead_source: 'Website' }],
+        requirements: [{ lead_source: websiteLeadSource }],
         estimated_cost: 0,
         payment_status: 'PENDING' as const,
         before_photos: formData.images,
+        booking_source: bookingSource,
+        booking_domain: hostname,
       };
 
       const { data: job, error: jobError } = await db.jobs.create(jobData);
