@@ -133,12 +133,13 @@ const JobPartsUsedDialog: React.FC<JobPartsUsedDialogProps> = ({
     setHasLoadedParts(true);
   }, [job?.id, loadPartsUsed]);
 
-  // Do not auto-load parts on dialog open (explicit load only to reduce egress).
-  // Technician inventory remains lazy-loaded when Add Part / Add Bundle opens.
+  // Load parts only when this dialog opens (not during completed list load),
+  // so egress stays low until user explicitly clicks Parts.
   useEffect(() => {
     if (open && job && technician) {
-      setLoading(false);
+      setLoading(true);
       setHasLoadedParts(false);
+      loadPartsUsedOnDemand();
     } else if (!open) {
       setTechnicianInventory([]);
       setPartsUsed([]);
@@ -150,7 +151,7 @@ const JobPartsUsedDialog: React.FC<JobPartsUsedDialogProps> = ({
       setAddBundleDialogOpen(false);
       setAddPartInventoryLoading(false);
     }
-  }, [open, job?.id, technician?.id]);
+  }, [open, job?.id, technician?.id, loadPartsUsedOnDemand]);
 
   // Lazy-load technician inventory only when Add Part or Add Bundle dialog opens (reduces load when user only views parts)
   useEffect(() => {
@@ -519,20 +520,14 @@ const JobPartsUsedDialog: React.FC<JobPartsUsedDialogProps> = ({
             {/* Add Part / Add Bundle */}
             <div className="flex justify-end gap-2">
               <Button
-                onClick={async () => {
-                  if (!hasLoadedParts) await loadPartsUsedOnDemand();
-                  handleAddPart();
-                }}
+                onClick={handleAddPart}
                 size="sm"
               >
                 <Plus className="w-4 h-4 mr-2" />
                 Add Part
               </Button>
               <Button
-                onClick={async () => {
-                  if (!hasLoadedParts) await loadPartsUsedOnDemand();
-                  setAddBundleDialogOpen(true);
-                }}
+                onClick={() => setAddBundleDialogOpen(true)}
                 size="sm"
                 variant="outline"
               >
@@ -547,15 +542,7 @@ const JobPartsUsedDialog: React.FC<JobPartsUsedDialogProps> = ({
             ) : !hasLoadedParts ? (
               <div className="text-center py-8 text-gray-500">
                 <Package className="w-12 h-12 mx-auto mb-2 text-gray-400" />
-                <p>Parts used are not loaded yet.</p>
-                <Button
-                  size="sm"
-                  variant="outline"
-                  className="mt-3"
-                  onClick={loadPartsUsedOnDemand}
-                >
-                  Load Parts Used
-                </Button>
+                <p>Unable to load parts used.</p>
               </div>
             ) : partsUsed.length === 0 ? (
               <div className="text-center py-8 text-gray-500">
