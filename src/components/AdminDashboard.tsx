@@ -769,8 +769,6 @@ const AdminDashboard = () => {
   const [isDeletingCustomerPhoto, setIsDeletingCustomerPhoto] = useState(false);
   const [photoViewerOpen, setPhotoViewerOpen] = useState(false);
   const loadJobsRequestRef = useRef(0);
-  const completedBroadFetchCacheRef = useRef<{ key: string; data: Job[] } | null>(null);
-  const completedBroadFetchInFlightRef = useRef<Set<string>>(new Set());
   
   // Job assignment states
   const [assignJobDialogOpen, setAssignJobDialogOpen] = useState(false);
@@ -1151,11 +1149,6 @@ const AdminDashboard = () => {
       } else if (filter === 'COMPLETED' || filter === 'CANCELLED') {
         // Use pagination for completed and denied jobs
         const statuses = filter === 'COMPLETED' ? ['COMPLETED'] : ['DENIED', 'CANCELLED'];
-        const hasCompletedClientFiltersActive =
-          filter === 'COMPLETED' &&
-          (completedLeadTypeFilter !== 'all' ||
-           completedServiceSubTypeFilter !== 'all' ||
-           completedByFilter !== 'all');
         // Pass date/day-range filter for completed jobs and day filter for denied jobs
         let dateFilter: string | { startDate: string; endDate: string } | undefined = undefined;
         if (filter === 'COMPLETED') {
@@ -1172,73 +1165,14 @@ const AdminDashboard = () => {
         } else if (filter === 'CANCELLED') {
           dateFilter = deniedDateFilter;
         }
-        // When completed client-side filters are active, fetch a broader set so filtering is correct.
-        // Otherwise keep normal server pagination.
-        const requestPage = page;
-        const requestPageSize = pageSize;
-        const completedDateKey = typeof dateFilter === 'string'
-          ? `day:${dateFilter}`
-          : dateFilter && typeof dateFilter === 'object'
-            ? `range:${dateFilter.startDate}:${dateFilter.endDate}`
-            : 'none';
-        const broadCacheKey = `completed:${completedDateKey}`;
-        let data: any[] = [];
-        let error: any = null;
-        let count = 0;
-        let pages = 0;
-
-        if (hasCompletedClientFiltersActive && completedBroadFetchCacheRef.current?.key === broadCacheKey) {
-          data = completedBroadFetchCacheRef.current.data;
-          count = data.length;
-          pages = 1;
-        } else {
-          const response = await db.jobs.getByStatusPaginated(statuses, requestPage, requestPageSize, dateFilter);
-          if (requestId !== loadJobsRequestRef.current) return;
-          data = response.data || [];
-          error = response.error;
-          count = response.count || 0;
-          pages = response.totalPages || 0;
-        }
+        const { data, error, count, totalPages: pages } = await db.jobs.getByStatusPaginated(statuses, page, pageSize, dateFilter);
+        if (requestId !== loadJobsRequestRef.current) return;
         if (error) {
           setJobs([]);
         } else {
           setJobs(data || []);
-          if (hasCompletedClientFiltersActive) {
-            // Quick first paint from paginated data. Full filtered set loads in background below.
-            setTotalCount((data || []).length);
-            setTotalPages(1);
-          } else {
-            setTotalCount(count || 0);
-            setTotalPages(pages || 0);
-          }
-        }
-
-        // For advanced completed filters, refine using broad fetch in background.
-        // This keeps UI responsive while still reaching correct full-set results.
-        if (
-          hasCompletedClientFiltersActive &&
-          completedBroadFetchCacheRef.current?.key !== broadCacheKey &&
-          !completedBroadFetchInFlightRef.current.has(broadCacheKey)
-        ) {
-          completedBroadFetchInFlightRef.current.add(broadCacheKey);
-          db.jobs
-            .getByStatusPaginated(statuses, 1, 5000, dateFilter)
-            .then((response) => {
-              completedBroadFetchInFlightRef.current.delete(broadCacheKey);
-              if (requestId !== loadJobsRequestRef.current) return;
-              if (response.error) return;
-              const fullData = response.data || [];
-              completedBroadFetchCacheRef.current = { key: broadCacheKey, data: fullData as Job[] };
-              // Only update if user is still on the same completed filter context.
-              if (filter === 'COMPLETED') {
-                setJobs(fullData);
-                setTotalCount(fullData.length);
-                setTotalPages(1);
-              }
-            })
-            .catch(() => {
-              completedBroadFetchInFlightRef.current.delete(broadCacheKey);
-            });
+          setTotalCount(count || 0);
+          setTotalPages(pages || 0);
         }
       } else if (filter === 'RESCHEDULED') {
         // Load follow-up jobs (usually not too many)
@@ -1261,7 +1195,7 @@ const AdminDashboard = () => {
         setLoading(false);
       }
     }
-  }, [pageSize, deniedDateFilter, completedDateFilter, completedDatePreset, completedRangeStartDate, completedRangeEndDate, completedLeadTypeFilter, completedServiceSubTypeFilter, completedByFilter]);
+  }, [pageSize, deniedDateFilter, completedDateFilter, completedDatePreset, completedRangeStartDate, completedRangeEndDate]);
 
   // Reload follow-up jobs for glow whenever filter changes (so Followup card border glow is correct for today/tomorrow)
   useEffect(() => {
@@ -9429,7 +9363,7 @@ const AdminDashboard = () => {
           </div>
           
           {/* Pagination Controls - Only show for paginated views */}
-          {(statusFilter === 'CANCELLED' || statusFilter === 'RESCHEDULED' || (statusFilter === 'COMPLETED' && !hasCompletedClientFilters)) && totalPages > 1 && (
+          {(statusFilter === 'CANCELLED' || statusFilter === 'RESCHEDULED' || statusFilter === 'COMPLETED') && totalPages > 1 && (
             <div className="mt-6 flex items-center justify-between">
               <div className="text-sm text-gray-600">
                 Showing page {currentPage} of {totalPages} ({totalCount} total)
