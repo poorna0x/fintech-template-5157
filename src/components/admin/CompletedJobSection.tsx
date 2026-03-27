@@ -40,6 +40,10 @@ interface CompletedJobSectionProps {
   setSelectedBillPhotos: (photos: string[]) => void;
   setSelectedPhoto: (photo: { url: string; index: number; total: number }) => void;
   setPhotoViewerOpen: (open: boolean) => void;
+  minimalMode?: boolean;
+  detailsLoaded?: boolean;
+  loadingDetails?: boolean;
+  onLoadDetails?: () => void;
 }
 
 export const CompletedJobSection: React.FC<CompletedJobSectionProps> = ({
@@ -65,6 +69,10 @@ export const CompletedJobSection: React.FC<CompletedJobSectionProps> = ({
   setSelectedPhoto,
   setPhotoViewerOpen,
   onAddReminder,
+  minimalMode,
+  detailsLoaded,
+  loadingDetails,
+  onLoadDetails,
 }) => {
   const [partsUsedDialogOpen, setPartsUsedDialogOpen] = useState(false);
   const [sparePartsCost, setSparePartsCost] = useState<number>(0);
@@ -113,6 +121,40 @@ export const CompletedJobSection: React.FC<CompletedJobSectionProps> = ({
   const otpRequirement = requirements.find((r: any) => r?.require_otp === true);
   const otpVerified = otpRequirement?.otp_verified === true;
   const otpEntered = otpRequirement?.otp_entered || otpRequirement?.otp_code;
+
+  // Advanced completed filters mode: show only minimal info until explicitly loaded.
+  if (minimalMode && !detailsLoaded) {
+    return (
+      <div className="mt-4 mb-2 w-full min-w-0">
+        <div className="flex flex-col sm:flex-row items-start justify-between gap-3 rounded-md border border-green-200 bg-green-50 px-3 py-2 w-full min-w-0 overflow-hidden">
+          <CheckCircle className="w-4 h-4 text-green-600 mt-0.5 flex-shrink-0" />
+          <div className="space-y-2 text-sm text-gray-900 flex-1 min-w-0 w-full overflow-hidden">
+            <div className="font-semibold text-green-900">Job Completed</div>
+            <div className="text-gray-700 break-words">
+              <span className="text-gray-500 font-medium">Customer:</span>{' '}
+              <span className={customerNameClassName((job as any).customer)}>
+                {(job as any).customer?.full_name || (job as any).customer?.fullName || 'N/A'}
+              </span>
+            </div>
+            <div className="text-gray-700 break-words">
+              <span className="text-gray-500 font-medium">Amount:</span> ₹{billAmount || 0}
+            </div>
+          </div>
+          <div className="flex flex-shrink-0 flex-nowrap items-center gap-2 mt-2 sm:mt-0 w-full sm:w-auto">
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => onLoadDetails?.()}
+              disabled={loadingDetails}
+              className="text-xs flex-1 sm:flex-none justify-center py-2 px-3"
+            >
+              {loadingDetails ? 'Loading…' : 'Load details'}
+            </Button>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="mt-4 mb-2 w-full min-w-0">

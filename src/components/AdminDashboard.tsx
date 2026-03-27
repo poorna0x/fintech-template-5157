@@ -684,6 +684,8 @@ const AdminDashboard = () => {
   const [selectedCustomerForReport, setSelectedCustomerForReport] = useState<Customer | null>(null);
   const [customerReportJobs, setCustomerReportJobs] = useState<any[]>([]);
   const [loadingCustomerReportJobs, setLoadingCustomerReportJobs] = useState(false);
+  const [loadedCompletedJobDetails, setLoadedCompletedJobDetails] = useState<Record<string, any>>({});
+  const [loadingCompletedJobDetails, setLoadingCompletedJobDetails] = useState<Record<string, boolean>>({});
   const [editCompletedJobDialogOpen, setEditCompletedJobDialogOpen] = useState(false);
   const [selectedCompletedJob, setSelectedCompletedJob] = useState<any | null>(null);
   const [completedJobEditData, setCompletedJobEditData] = useState<any>({});
@@ -1165,7 +1167,69 @@ const AdminDashboard = () => {
         } else if (filter === 'CANCELLED') {
           dateFilter = deniedDateFilter;
         }
-        const { data, error, count, totalPages: pages } = await db.jobs.getByStatusPaginatedSlim(statuses, page, pageSize, dateFilter);
+
+        // Cache: default Completed->Today page1 loads (low egress, avoids re-downloading on refresh/navigation).
+        // Only cache the *default* view: today, page=1, no client sub-filters.
+        const canUseCompletedTodayCache =
+          filter === 'COMPLETED' &&
+          completedDatePreset === 'day' &&
+          completedDateFilter === getTodayLocalDate() &&
+          page === 1 &&
+          completedLeadTypeFilter === 'all' &&
+          completedServiceSubTypeFilter === 'all' &&
+          completedByFilter === 'all';
+
+        const cacheKey = canUseCompletedTodayCache
+          ? `admin_completed_today_v1:${completedDateFilter}:p${page}:s${pageSize}`
+          : null;
+
+        const CACHE_TTL_MS = 2 * 60 * 1000; // 2 minutes
+        if (cacheKey) {
+          try {
+            const raw = localStorage.getItem(cacheKey);
+            if (raw) {
+              const parsed = JSON.parse(raw) as { ts: number; data: any[]; count: number; pages: number };
+              if (parsed?.data && Array.isArray(parsed.data) && typeof parsed.ts === 'number') {
+                const age = Date.now() - parsed.ts;
+                // Fresh cache: render immediately and skip network.
+                if (age >= 0 && age <= CACHE_TTL_MS) {
+                  if (requestId !== loadJobsRequestRef.current) return;
+                  setJobs(parsed.data);
+                  setTotalCount(parsed.count || 0);
+                  setTotalPages(parsed.pages || 0);
+                  return;
+                }
+                // Stale cache: render immediately, then continue to refresh from network.
+                if (requestId !== loadJobsRequestRef.current) return;
+                setJobs(parsed.data);
+                setTotalCount(parsed.count || 0);
+                setTotalPages(parsed.pages || 0);
+              }
+            }
+          } catch {
+            // ignore cache errors
+          }
+        }
+
+        let data: any[] = [];
+        let error: any = null;
+        let count = 0;
+        let pages = 0;
+
+        // Prefer slim query for low egress; fallback to legacy query if slim fails.
+        const slimResult = await db.jobs.getByStatusPaginatedSlim(statuses, page, pageSize, dateFilter);
+        data = slimResult.data || [];
+        error = slimResult.error;
+        count = slimResult.count || 0;
+        pages = slimResult.totalPages || 0;
+
+        if (error) {
+          const fallback = await db.jobs.getByStatusPaginated(statuses, page, pageSize, dateFilter);
+          data = fallback.data || [];
+          error = fallback.error;
+          count = fallback.count || 0;
+          pages = fallback.totalPages || 0;
+        }
         if (requestId !== loadJobsRequestRef.current) return;
         if (error) {
           setJobs([]);
@@ -1173,6 +1237,14 @@ const AdminDashboard = () => {
           setJobs(data || []);
           setTotalCount(count || 0);
           setTotalPages(pages || 0);
+
+          if (cacheKey) {
+            try {
+              localStorage.setItem(cacheKey, JSON.stringify({ ts: Date.now(), data: data || [], count: count || 0, pages: pages || 0 }));
+            } catch {
+              // ignore cache errors
+            }
+          }
         }
       } else if (filter === 'RESCHEDULED') {
         // Load follow-up jobs (usually not too many)
@@ -1231,6 +1303,23 @@ const AdminDashboard = () => {
 
     fetchCustomerReportJobs();
   }, [customerReportDialogOpen, selectedCustomerForReport]);
+
+  const loadCompletedJobDetails = useCallback(async (jobId: string) => {
+    if (!jobId) return;
+    if (loadedCompletedJobDetails[jobId]) return;
+    if (loadingCompletedJobDetails[jobId]) return;
+    setLoadingCompletedJobDetails((prev) => ({ ...prev, [jobId]: true }));
+    try {
+      const { data, error } = await db.jobs.getById(jobId);
+      if (error || !data) throw error || new Error('Job not found');
+      setLoadedCompletedJobDetails((prev) => ({ ...prev, [jobId]: data }));
+    } catch (e) {
+      console.error('Failed to load job details:', e);
+      toast.error('Failed to load job details');
+    } finally {
+      setLoadingCompletedJobDetails((prev) => ({ ...prev, [jobId]: false }));
+    }
+  }, [loadedCompletedJobDetails, loadingCompletedJobDetails]);
 
   const loadDashboardData = async () => {
     try {
@@ -8619,10 +8708,23 @@ const AdminDashboard = () => {
                           const timeStr = `${displayHours}:${displayMinutes} ${ampm}`;
                           return `${month} ${day}${getOrdinalSuffix(day)} ${year} at ${timeStr}`;
                         })() : null;
-                        const completedBy = (job as any).completed_by || job.completedBy || null;
-                        const actualCost = (job as any).actual_cost || job.actual_cost || null;
-                        const paymentAmount = (job as any).payment_amount || job.payment_amount || null;
-                        const paymentMethod = (job as any).payment_method || job.payment_method || null;
+                        const isDefaultCompletedDateFilter =
+                          completedDatePreset === 'day' &&
+                          completedDateFilter === getTodayLocalDate();
+                        const hasAnyCompletedFilterSelected =
+                          !isDefaultCompletedDateFilter ||
+                          completedLeadTypeFilter !== 'all' ||
+                          completedServiceSubTypeFilter !== 'all' ||
+                          completedByFilter !== 'all';
+                        const minimalCompletedMode = hasAnyCompletedFilterSelected;
+                        const fullJob = loadedCompletedJobDetails[job.id] || job;
+                        const detailsLoaded = Boolean(loadedCompletedJobDetails[job.id]);
+                        const isLoadingDetails = Boolean(loadingCompletedJobDetails[job.id]);
+
+                        const completedBy = (fullJob as any).completed_by || (fullJob as any).completedBy || null;
+                        const actualCost = (fullJob as any).actual_cost || (fullJob as any).actualCost || null;
+                        const paymentAmount = (fullJob as any).payment_amount || (fullJob as any).paymentAmount || null;
+                        const paymentMethod = (fullJob as any).payment_method || (fullJob as any).paymentMethod || null;
                         
                         // Get technician name who completed the job
                         let completedByName = 'Unknown';
@@ -8636,10 +8738,18 @@ const AdminDashboard = () => {
                         }
                         
                         // Parse requirements to get AMC info, bill photos, payment screenshot
-                        const requirements = parseJobRequirements((job as any).requirements || job.requirements);
-                        
-                        const amcInfo = requirements.find((r: any) => r?.amc_info)?.amc_info || null;
-                        const qrPhotos = requirements.find((r: any) => r?.qr_photos)?.qr_photos || null;
+                        // IMPORTANT: In minimal mode, don't parse anything until user clicks "Load details".
+                        const requirements = minimalCompletedMode && !detailsLoaded
+                          ? []
+                          : parseJobRequirements((fullJob as any).requirements || (fullJob as any).requirements || []);
+
+                        const amcInfo = minimalCompletedMode && !detailsLoaded
+                          ? null
+                          : requirements.find((r: any) => r?.amc_info)?.amc_info || null;
+
+                        const qrPhotos = minimalCompletedMode && !detailsLoaded
+                          ? null
+                          : requirements.find((r: any) => r?.qr_photos)?.qr_photos || null;
                         
                         // Extract payment screenshot from multiple sources:
                         // 1. qr_photos.payment_screenshot (for ONLINE payments)
@@ -8672,12 +8782,12 @@ const AdminDashboard = () => {
                         }
                         
                         // Extract all photos from after_photos field (includes both bill photos and payment screenshot)
-                        const afterPhotosExtracted = extractPhotoUrls(afterPhotos);
-                        
+                        const afterPhotosExtracted = minimalCompletedMode && !detailsLoaded ? [] : extractPhotoUrls(afterPhotos);
+
                         // Also get bill photos from requirements (for backward compatibility)
-                        const billPhotosFromRequirements = extractPhotoUrls(
-                          requirements.find((r: any) => r?.bill_photos)?.bill_photos || []
-                        );
+                        const billPhotosFromRequirements = minimalCompletedMode && !detailsLoaded
+                          ? []
+                          : extractPhotoUrls(requirements.find((r: any) => r?.bill_photos)?.bill_photos || []);
                         
                         // Use after_photos as primary source (it contains all photos including payment screenshot)
                         // If after_photos is empty, fallback to requirements.bill_photos
@@ -8742,7 +8852,7 @@ const AdminDashboard = () => {
                         return (
                           <div key={job.id}>
                             <CompletedJobSection
-                              job={job}
+                              job={fullJob}
                               technicians={technicians}
                               requirements={requirements}
                               actualCost={actualCost}
@@ -8763,6 +8873,10 @@ const AdminDashboard = () => {
                               setSelectedBillPhotos={setSelectedBillPhotos}
                               setSelectedPhoto={setSelectedPhoto}
                               setPhotoViewerOpen={setPhotoViewerOpen}
+                              minimalMode={minimalCompletedMode}
+                              detailsLoaded={detailsLoaded}
+                              loadingDetails={isLoadingDetails}
+                              onLoadDetails={() => loadCompletedJobDetails(job.id)}
                             />
                             <DeniedJobSection
                               job={job}
