@@ -1138,15 +1138,56 @@ const AdminDashboard = () => {
           setJobs(data || []);
         }
       } else if (filter === 'ONGOING') {
-        // Load all ongoing jobs (usually not too many)
+        // Stale-while-revalidate cache for fast tab switch:
+        // show cached ongoing jobs immediately, then refresh in background.
+        const ongoingCacheKey = 'admin_ongoing_jobs_v1';
+        const ONGOING_CACHE_TTL_MS = 45 * 1000; // 45 seconds
+        let usedOngoingCache = false;
+        try {
+          const raw = localStorage.getItem(ongoingCacheKey);
+          if (raw) {
+            const parsed = JSON.parse(raw) as { ts: number; data: any[] };
+            if (parsed?.data && Array.isArray(parsed.data) && typeof parsed.ts === 'number') {
+              const age = Date.now() - parsed.ts;
+              if (age >= 0) {
+                if (requestId !== loadJobsRequestRef.current) return;
+                // Always render cache instantly (fresh or stale) for speed.
+                setJobs(parsed.data);
+                setTotalCount(parsed.data.length || 0);
+                setTotalPages(1);
+                usedOngoingCache = true;
+                // Avoid full-screen loader blocking the cached render.
+                setLoading(false);
+
+                // Fresh cache still gets background refresh to keep latest data.
+                if (age <= ONGOING_CACHE_TTL_MS) {
+                  // no-op: continue to network below
+                }
+              }
+            }
+          }
+        } catch {
+          // ignore cache errors
+        }
+
+        // Load all ongoing jobs from network (usually not too many)
         const { data, error } = await db.jobs.getOngoing();
         if (requestId !== loadJobsRequestRef.current) return;
         if (error) {
-          setJobs([]);
+          if (!usedOngoingCache) {
+            setJobs([]);
+            setTotalCount(0);
+            setTotalPages(1);
+          }
         } else {
           setJobs(data || []);
           setTotalCount(data?.length || 0);
           setTotalPages(1);
+          try {
+            localStorage.setItem(ongoingCacheKey, JSON.stringify({ ts: Date.now(), data: data || [] }));
+          } catch {
+            // ignore cache errors
+          }
         }
       } else if (filter === 'COMPLETED' || filter === 'CANCELLED') {
         // Use pagination for completed and denied jobs
