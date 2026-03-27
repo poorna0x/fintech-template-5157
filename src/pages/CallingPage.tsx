@@ -177,6 +177,16 @@ const CallingPage = ({ hideHeader = false, onBack }: CallingPageProps = {}) => {
     setPaginatedCustomers(filteredCustomers.slice(startIndex, endIndex));
   }, [filteredCustomers, currentPage, itemsPerPage]);
 
+  // Clamp current page when result size changes (prevents empty pages after filtering).
+  useEffect(() => {
+    const totalPages = Math.max(1, Math.ceil(filteredCustomers.length / itemsPerPage));
+    if (currentPage > totalPages) {
+      setCurrentPage(totalPages);
+    } else if (currentPage < 1) {
+      setCurrentPage(1);
+    }
+  }, [filteredCustomers.length, itemsPerPage, currentPage]);
+
   const loadCustomers = async () => {
     try {
       setLoading(true);
@@ -585,8 +595,12 @@ const CallingPage = ({ hideHeader = false, onBack }: CallingPageProps = {}) => {
         throw new Error(`Customer not found: ${customerError?.message || 'Unknown error'}`);
       }
       
-      // Now fetch jobs using the customer's UUID
-      const { data: jobs, error } = await db.jobs.getByCustomerId(customer.id);
+      // Egress optimization: fetch only columns needed for photo extraction (avoid jobs.select('*')).
+      const { data: jobs, error } = await supabase
+        .from('jobs')
+        .select('id, before_photos, after_photos, requirements, created_at')
+        .eq('customer_id', customer.id)
+        .order('created_at', { ascending: false });
       
       if (error) {
         throw error;
@@ -1424,67 +1438,71 @@ const CallingPage = ({ hideHeader = false, onBack }: CallingPageProps = {}) => {
       )}
 
       {/* Customer Report Dialog */}
-      <CustomerReportDialog
-        open={customerReportDialogOpen}
-        customer={selectedCustomerForReport}
-        technicians={technicians}
-        onOpenChange={(open) => {
-          setCustomerReportDialogOpen(open);
-          if (!open) {
-            setSelectedCustomerForReport(null);
-          }
-        }}
-        onPhotoClick={(url, index, total) => {
-          setReportSelectedBillPhotos(null);
-          setReportSelectedPhoto({ url, index, total });
-          setReportPhotoViewerOpen(true);
-        }}
-        onBillPhotosClick={(photos, index) => {
-          setReportSelectedBillPhotos(photos);
-          setReportSelectedPhoto({ url: photos[index], index, total: photos.length });
-          setReportPhotoViewerOpen(true);
-        }}
-      />
+      {customerReportDialogOpen && (
+        <CustomerReportDialog
+          open={customerReportDialogOpen}
+          customer={selectedCustomerForReport}
+          technicians={technicians}
+          onOpenChange={(open) => {
+            setCustomerReportDialogOpen(open);
+            if (!open) {
+              setSelectedCustomerForReport(null);
+            }
+          }}
+          onPhotoClick={(url, index, total) => {
+            setReportSelectedBillPhotos(null);
+            setReportSelectedPhoto({ url, index, total });
+            setReportPhotoViewerOpen(true);
+          }}
+          onBillPhotosClick={(photos, index) => {
+            setReportSelectedBillPhotos(photos);
+            setReportSelectedPhoto({ url: photos[index], index, total: photos.length });
+            setReportPhotoViewerOpen(true);
+          }}
+        />
+      )}
 
       {/* Photo viewer for report images (payment/bill click-to-view) */}
-      <PhotoViewerDialog
-        open={reportPhotoViewerOpen}
-        onOpenChange={setReportPhotoViewerOpen}
-        selectedPhoto={reportSelectedPhoto}
-        selectedBillPhotos={reportSelectedBillPhotos}
-        selectedJobPhotos={null}
-        onPrevious={() => {
-          if (!reportSelectedPhoto || !reportSelectedBillPhotos || reportSelectedBillPhotos.length <= 1) return;
-          const newIndex = reportSelectedPhoto.index > 0 ? reportSelectedPhoto.index - 1 : reportSelectedBillPhotos.length - 1;
-          setReportSelectedPhoto({
-            url: reportSelectedBillPhotos[newIndex],
-            index: newIndex,
-            total: reportSelectedBillPhotos.length
-          });
-        }}
-        onNext={() => {
-          if (!reportSelectedPhoto || !reportSelectedBillPhotos || reportSelectedBillPhotos.length <= 1) return;
-          const newIndex = reportSelectedPhoto.index < reportSelectedBillPhotos.length - 1 ? reportSelectedPhoto.index + 1 : 0;
-          setReportSelectedPhoto({
-            url: reportSelectedBillPhotos[newIndex],
-            index: newIndex,
-            total: reportSelectedBillPhotos.length
-          });
-        }}
-        onDownload={(photoUrl, photoIndex) => {
-          const link = document.createElement('a');
-          link.href = photoUrl;
-          link.download = `photo-${photoIndex + 1}.jpg`;
-          link.target = '_blank';
-          link.rel = 'noopener noreferrer';
-          link.click();
-        }}
-        onClose={() => {
-          setReportPhotoViewerOpen(false);
-          setReportSelectedPhoto(null);
-          setReportSelectedBillPhotos(null);
-        }}
-      />
+      {reportPhotoViewerOpen && (
+        <PhotoViewerDialog
+          open={reportPhotoViewerOpen}
+          onOpenChange={setReportPhotoViewerOpen}
+          selectedPhoto={reportSelectedPhoto}
+          selectedBillPhotos={reportSelectedBillPhotos}
+          selectedJobPhotos={null}
+          onPrevious={() => {
+            if (!reportSelectedPhoto || !reportSelectedBillPhotos || reportSelectedBillPhotos.length <= 1) return;
+            const newIndex = reportSelectedPhoto.index > 0 ? reportSelectedPhoto.index - 1 : reportSelectedBillPhotos.length - 1;
+            setReportSelectedPhoto({
+              url: reportSelectedBillPhotos[newIndex],
+              index: newIndex,
+              total: reportSelectedBillPhotos.length
+            });
+          }}
+          onNext={() => {
+            if (!reportSelectedPhoto || !reportSelectedBillPhotos || reportSelectedBillPhotos.length <= 1) return;
+            const newIndex = reportSelectedPhoto.index < reportSelectedBillPhotos.length - 1 ? reportSelectedPhoto.index + 1 : 0;
+            setReportSelectedPhoto({
+              url: reportSelectedBillPhotos[newIndex],
+              index: newIndex,
+              total: reportSelectedBillPhotos.length
+            });
+          }}
+          onDownload={(photoUrl, photoIndex) => {
+            const link = document.createElement('a');
+            link.href = photoUrl;
+            link.download = `photo-${photoIndex + 1}.jpg`;
+            link.target = '_blank';
+            link.rel = 'noopener noreferrer';
+            link.click();
+          }}
+          onClose={() => {
+            setReportPhotoViewerOpen(false);
+            setReportSelectedPhoto(null);
+            setReportSelectedBillPhotos(null);
+          }}
+        />
+      )}
     </div>
   );
 };
