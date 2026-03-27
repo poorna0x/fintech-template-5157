@@ -106,7 +106,7 @@ export const useDashboardData = () => {
       // OPTIMIZATION: Parallelize all independent data loading operations
       // OPTIMIZATION: Use reasonable limits to reduce data transfer (Supabase free tier)
       const [customersResult, techniciansResult, amcContractsResult, jobCountsResult] = await Promise.all([
-        db.customers.getAll(1000), // Limit to 1000 most recent customers
+        db.customers.getAllSlim(1000), // Limit to 1000 most recent customers (slim)
         db.technicians.getAll(100), // Limit to 100 technicians
         supabase
           .from('amc_contracts')

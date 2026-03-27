@@ -168,7 +168,7 @@ function PendingPaymentFormDialogV2({
     setHasAttemptedCustomerSearch(true);
     setCustomerLoading(true);
     try {
-      const { data, error } = await db.customers.search(q, 20);
+      const { data, error } = await db.customers.searchSlim(q, 20);
       if (error) throw error;
       setCustomerResults((data || []).map(getCustomerLabelFromRow));
     } catch (err: any) {

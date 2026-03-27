@@ -40,7 +40,7 @@ const processQueuedCompletion = async (completion: OfflineJobCompletion): Promis
     };
 
     // Handle requirements - merge bill photos and AMC info
-    const { data: jobData } = await db.jobs.getById(completion.jobId);
+    const { data: jobData } = await db.jobs.getByIdFull(completion.jobId);
     if (!jobData) {
       throw new Error('Job not found');
     }

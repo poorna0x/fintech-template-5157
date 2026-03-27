@@ -1286,7 +1286,8 @@ const AdminDashboard = () => {
 
       setLoadingCustomerReportJobs(true);
       try {
-        const { data, error } = await db.jobs.getByCustomerId(selectedCustomerForReport.id);
+        // Explicit: report dialog needs full job payload (requirements/photos/etc.)
+        const { data, error } = await db.jobs.getByCustomerIdFull(selectedCustomerForReport.id);
         if (error) {
           console.error('Error fetching customer jobs for report:', error);
           setCustomerReportJobs([]);
@@ -1310,7 +1311,7 @@ const AdminDashboard = () => {
     if (loadingCompletedJobDetails[jobId]) return;
     setLoadingCompletedJobDetails((prev) => ({ ...prev, [jobId]: true }));
     try {
-      const { data, error } = await db.jobs.getById(jobId);
+      const { data, error } = await db.jobs.getByIdFull(jobId);
       if (error || !data) throw error || new Error('Job not found');
       setLoadedCompletedJobDetails((prev) => ({ ...prev, [jobId]: data }));
     } catch (e) {
@@ -1598,7 +1599,7 @@ const AdminDashboard = () => {
       }
 
       // Fetch all jobs for this customer from database
-      const { data: customerJobs, error: jobsError } = await db.jobs.getByCustomerId(customer.id);
+      const { data: customerJobs, error: jobsError } = await db.jobs.getByCustomerIdFull(customer.id);
       
       if (jobsError) {
         toast.error('Failed to load service history');
@@ -3817,7 +3818,7 @@ const AdminDashboard = () => {
       }
       
       // Now fetch jobs using the customer's UUID
-      const { data: jobs, error } = await db.jobs.getByCustomerId(customer.id);
+      const { data: jobs, error } = await db.jobs.getByCustomerIdFull(customer.id);
       
       if (error) {
         throw error;
@@ -4084,7 +4085,7 @@ const AdminDashboard = () => {
           }
 
           // Get customer's latest job
-          const { data: customerJobs, error: jobsError } = await db.jobs.getByCustomerId(customer.id);
+          const { data: customerJobs, error: jobsError } = await db.jobs.getByCustomerIdFull(customer.id);
           if (jobsError) {
             throw new Error('Failed to fetch customer jobs');
           }
@@ -4758,7 +4759,7 @@ const AdminDashboard = () => {
     setSearchTerm(trimmedQuery);
     setSearchQuery(trimmedQuery);
     if (trimmedQuery) {
-      const { data, error } = await db.customers.search(trimmedQuery);
+      const { data, error } = await db.customers.searchSlim(trimmedQuery);
       if (error) {
         toast.error('Search failed');
         setSearchResults([]);
@@ -6201,7 +6202,7 @@ const AdminDashboard = () => {
     let jobWithCustomer = job;
     if (!job.customer || !(job.customer as any)?.full_name && !job.customer?.fullName) {
       try {
-        const { data: fullJob, error } = await db.jobs.getById(job.id);
+        const { data: fullJob, error } = await db.jobs.getByIdFull(job.id);
         if (!error && fullJob) {
           jobWithCustomer = fullJob as Job;
         }
@@ -6365,7 +6366,7 @@ const AdminDashboard = () => {
     let jobWithCustomer = job;
     if (!job.customer || !job.serviceType) {
       try {
-        const { data: fullJob, error } = await db.jobs.getById(job.id);
+        const { data: fullJob, error } = await db.jobs.getByIdFull(job.id);
         if (!error && fullJob) {
           jobWithCustomer = fullJob as Job;
         }
@@ -6792,7 +6793,7 @@ const AdminDashboard = () => {
       }
 
       // Get all jobs for this customer (may be empty if photos were added without a job)
-      const { data: customerJobsData, error: jobsError } = await db.jobs.getByCustomerId(customer.id);
+      const { data: customerJobsData, error: jobsError } = await db.jobs.getByCustomerIdFull(customer.id);
       if (jobsError) {
         throw new Error(jobsError.message);
       }

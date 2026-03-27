@@ -1058,7 +1058,8 @@ const TechnicianDashboard = () => {
       try {
         const customerId = selectedCustomerForReport.id || selectedCustomerForReport.customer_id;
         if (customerId) {
-          const { data, error } = await db.jobs.getByCustomerId(customerId);
+        // Explicit: customer report needs full job payload (photos/requirements/etc.)
+        const { data, error } = await db.jobs.getByCustomerIdFull(customerId);
           if (error) {
             console.error('Error fetching customer jobs for report:', error);
             setCustomerReportJobs([]);
@@ -1181,7 +1182,7 @@ const TechnicianDashboard = () => {
 
           processingJobsRef.current.add(updatedJob.id);
           try {
-            const { data: fullJob, error } = await db.jobs.getById(updatedJob.id);
+            const { data: fullJob, error } = await db.jobs.getByIdFull(updatedJob.id);
             if (!isMounted.current) return;
             if (error || !fullJob) {
               processingJobsRef.current.delete(updatedJob.id);
@@ -2099,7 +2100,7 @@ const TechnicianDashboard = () => {
     let jobWithCustomer = job;
     if (!job.customer || !job.serviceType) {
       try {
-        const { data: fullJob, error } = await db.jobs.getById(job.id);
+        const { data: fullJob, error } = await db.jobs.getByIdFull(job.id);
         if (!error && fullJob) {
           jobWithCustomer = fullJob as Job;
         }
@@ -3144,7 +3145,7 @@ const TechnicianDashboard = () => {
         };
 
         // Fetch latest job data to ensure we have the most up-to-date requirements
-        const { data: latestJobData, error: fetchError } = await db.jobs.getById(selectedJobForComplete.id);
+        const { data: latestJobData, error: fetchError } = await db.jobs.getByIdFull(selectedJobForComplete.id);
         if (fetchError) {
           console.warn('⚠️ Could not fetch latest job data, using cached data:', fetchError);
         }
@@ -3341,7 +3342,7 @@ const TechnicianDashboard = () => {
         }
         
         // Verify requirements were saved correctly
-        const { data: verifyJobData } = await db.jobs.getById(selectedJobForComplete.id);
+        const { data: verifyJobData } = await db.jobs.getByIdFull(selectedJobForComplete.id);
         if (verifyJobData) {
           const savedRequirements = typeof verifyJobData.requirements === 'string' 
             ? JSON.parse(verifyJobData.requirements) 
@@ -3668,7 +3669,8 @@ const TechnicianDashboard = () => {
         if (!customerError && customer) customerRecord = customer;
       }
       
-      const { data: customerJobs, error } = await db.jobs.getByCustomerId(customerUuid);
+      // Explicit: photo aggregation needs before/after photos + requirements
+      const { data: customerJobs, error } = await db.jobs.getByCustomerIdFull(customerUuid);
       
       if (error) {
         console.error('Error fetching customer jobs:', error);

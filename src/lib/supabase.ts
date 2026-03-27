@@ -193,6 +193,41 @@ export const db = {
       return { data, error };
     },
 
+    /** Low-egress customers list for dashboards/autocomplete. */
+    async getAllSlim(limit?: number) {
+      const cols = [
+        'id',
+        'customer_id',
+        'full_name',
+        'phone',
+        'alternate_phone',
+        'email',
+        'visible_address',
+        'service_type',
+        'brand',
+        'model',
+        'last_service_date',
+        'has_prefilter',
+        'has_google_review',
+        'customer_tier',
+        'raw_water_tds',
+        'created_at',
+        'updated_at',
+      ].join(', ');
+
+      let query = supabase
+        .from('customers')
+        .select(cols)
+        .order('created_at', { ascending: false });
+
+      if (limit && limit > 0) {
+        query = query.limit(limit);
+      }
+
+      const { data, error } = await query;
+      return { data, error };
+    },
+
     async search(query: string, limit: number = 50) {
       const trimmed = (query ?? '').trim();
       if (!trimmed) {
@@ -221,6 +256,61 @@ export const db = {
         .or(orParts.join(','))
         .order('created_at', { ascending: false });
       if (limit > 0) q = q.limit(limit);
+      const { data, error } = await q;
+      return { data, error };
+    },
+
+    /** Low-egress customer search for pickers/lists. */
+    async searchSlim(query: string, limit: number = 50) {
+      const trimmed = (query ?? '').trim();
+      if (!trimmed) {
+        return { data: [], error: null };
+      }
+      const cols = [
+        'id',
+        'customer_id',
+        'full_name',
+        'phone',
+        'alternate_phone',
+        'email',
+        'visible_address',
+        'service_type',
+        'brand',
+        'model',
+        'last_service_date',
+        'has_prefilter',
+        'has_google_review',
+        'customer_tier',
+        'raw_water_tds',
+        'created_at',
+        'updated_at',
+      ].join(', ');
+
+      const escaped = escapeForLike(trimmed);
+      const orParts: string[] = [
+        `customer_id.ilike.%${escaped}%`,
+        `full_name.ilike.%${escaped}%`,
+        `phone.ilike.%${escaped}%`,
+        `alternate_phone.ilike.%${escaped}%`,
+        `email.ilike.%${escaped}%`,
+      ];
+      const normalizedPhone = normalizePhoneForSearch(trimmed);
+      if (normalizedPhone.length >= 10) {
+        orParts.push(`phone.ilike.%${normalizedPhone}%`, `alternate_phone.ilike.%${normalizedPhone}%`);
+        if (normalizedPhone.length === 10) {
+          const first4 = normalizedPhone.slice(0, 4);
+          const last6 = normalizedPhone.slice(4);
+          orParts.push(`phone.ilike.%${first4}%${last6}%`, `alternate_phone.ilike.%${first4}%${last6}%`);
+        }
+      }
+
+      let q = supabase
+        .from('customers')
+        .select(cols)
+        .or(orParts.join(','))
+        .order('created_at', { ascending: false });
+      if (limit > 0) q = q.limit(limit);
+
       const { data, error } = await q;
       return { data, error };
     },
@@ -287,6 +377,71 @@ export const db = {
     },
     
     async getById(id: string) {
+      // Backward-compatible default now uses SLIM select to reduce egress.
+      // Use getByIdFull() when you explicitly need photos/address/location/etc.
+      return this.getByIdSlim(id);
+    },
+
+    /** Low-egress jobs-by-id fetch. Avoids large payload fields and customer JSON. */
+    async getByIdSlim(id: string) {
+      const jobCols = [
+        'id',
+        'job_number',
+        'customer_id',
+        'status',
+        'priority',
+        'service_type',
+        'service_sub_type',
+        'scheduled_date',
+        'scheduled_time_slot',
+        'created_at',
+        'updated_at',
+        'completed_at',
+        'end_time',
+        'denied_at',
+        'denial_reason',
+        'assigned_technician_id',
+        'completed_by',
+        'completed_by_name',
+        'payment_amount',
+        'actual_cost',
+        'estimated_cost',
+        'payment_method',
+        'service_brand',
+        'lead_cost',
+        'parts_cost_total',
+        'requirements',
+      ].join(', ');
+
+      const customerCols = [
+        'id',
+        'customer_id',
+        'full_name',
+        'phone',
+        'alternate_phone',
+        'email',
+        'visible_address',
+        'service_type',
+        'brand',
+        'model',
+        'last_service_date',
+        'has_prefilter',
+        'has_google_review',
+        'customer_tier',
+        'raw_water_tds',
+      ].join(', ');
+
+      const { data, error } = await supabase
+        .from('jobs')
+        .select(`${jobCols},customer:customers(${customerCols})`)
+        .eq('id', id)
+        .single();
+
+      return { data, error };
+    },
+
+    /** Full jobs-by-id fetch. Use only when explicitly requested (photos/full details). */
+    async getByIdFull(id: string) {
       const { data, error } = await supabase
         .from('jobs')
         .select(`
@@ -295,17 +450,64 @@ export const db = {
         `)
         .eq('id', id)
         .single();
-      
+
       return { data, error };
     },
     
     async getByCustomerId(customerId: string) {
+      // Backward-compatible default now uses SLIM select to reduce egress.
+      // Use getByCustomerIdFull() when you explicitly need photos/address/location/etc.
+      return this.getByCustomerIdSlim(customerId);
+    },
+
+    /** Low-egress jobs-by-customer list. Avoids big payload fields. */
+    async getByCustomerIdSlim(customerId: string) {
+      const cols = [
+        'id',
+        'job_number',
+        'customer_id',
+        'status',
+        'priority',
+        'service_type',
+        'service_sub_type',
+        'scheduled_date',
+        'scheduled_time_slot',
+        'created_at',
+        'updated_at',
+        'completed_at',
+        'end_time',
+        'denied_at',
+        'denial_reason',
+        'assigned_technician_id',
+        'completed_by',
+        'completed_by_name',
+        'payment_amount',
+        'actual_cost',
+        'estimated_cost',
+        'payment_method',
+        'service_brand',
+        'lead_cost',
+        'parts_cost_total',
+        // Keep requirements for places that parse lead/QR in detail views; still far smaller than selecting * with photos.
+        'requirements',
+      ].join(', ');
+
+      const { data, error } = await supabase
+        .from('jobs')
+        .select(cols)
+        .eq('customer_id', customerId)
+        .order('created_at', { ascending: false });
+
+      return { data, error };
+    },
+
+    /** Full jobs-by-customer fetch. Use only when explicitly requested (photos, full details). */
+    async getByCustomerIdFull(customerId: string) {
       const { data, error } = await supabase
         .from('jobs')
         .select('*')
         .eq('customer_id', customerId)
         .order('created_at', { ascending: false });
-      
       return { data, error };
     },
     

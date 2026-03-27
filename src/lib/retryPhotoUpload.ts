@@ -44,7 +44,7 @@ const processQueuedPhoto = async (photo: QueuedPhoto): Promise<boolean> => {
     // If photo is linked to a job, update the job's requirements with the new photo URL
     if (photo.jobId && photo.photoType) {
       try {
-        const { data: jobData } = await db.jobs.getById(photo.jobId);
+        const { data: jobData } = await db.jobs.getByIdFull(photo.jobId);
         if (jobData) {
           const currentRequirements = (jobData as any).requirements || [];
           let requirements: any[] = [];
