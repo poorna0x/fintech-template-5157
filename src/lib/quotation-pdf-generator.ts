@@ -945,12 +945,6 @@ function createQuotationContent(data: PDFQuotationData): string {
         </div>
       </div>
       
-      ${data.terms ? `
-      <div class="validity-note">
-        ${sanitizeForTemplate(data.terms).replace(/\n/g, '<br />')}
-      </div>
-      ` : ''}
-      
       ${(data as any).gstOption === 'exclude' ? `
         <div class="gst-note">
           <strong>GST Note:</strong> GST not included in the above prices. Applicable GST will be charged separately if required.
@@ -1080,6 +1074,13 @@ function createQuotationContent(data: PDFQuotationData): string {
               </div>` : ''}
           </div>
           ${data.bankDetails.note ? `<div class="bank-note">${sanitizeForTemplate(data.bankDetails.note)}</div>` : ''}
+        </div>
+      ` : ''}
+
+      <!-- Terms (Above Signatures / Seal) -->
+      ${data.terms ? `
+        <div class="validity-note">
+          ${sanitizeForTemplate(data.terms).replace(/\n/g, '<br />')}
         </div>
       ` : ''}
       
@@ -1429,12 +1430,6 @@ function generateQuotationHTML(data: PDFQuotationData): string {
           </div>
         </div>
         
-        ${data.terms ? `
-        <div class="validity-note">
-          ${sanitizeForTemplate(data.terms).replace(/\n/g, '<br />')}
-        </div>
-        ` : ''}
-        
         ${(data as any).gstOption === 'exclude' ? `
           <div class="gst-note">
             <strong>GST Note:</strong> GST not included in the above prices. Applicable GST will be charged separately if required.
@@ -1538,6 +1533,13 @@ function generateQuotationHTML(data: PDFQuotationData): string {
                 </div>` : ''}
             </div>
             ${data.bankDetails.note ? `<div class="bank-note">${sanitizeForTemplate(data.bankDetails.note)}</div>` : ''}
+          </div>
+        ` : ''}
+
+        <!-- Terms (Above Signatures / Seal) -->
+        ${data.terms ? `
+          <div class="validity-note">
+            ${sanitizeForTemplate(data.terms).replace(/\n/g, '<br />')}
           </div>
         ` : ''}
         

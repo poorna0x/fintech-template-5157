@@ -76,6 +76,10 @@ export default function QuotationGenerator({ customer, onPrint }: QuotationGener
   const [editingNoteIndex, setEditingNoteIndex] = useState<number | null>(null);
   const [validityNote, setValidityNote] = useState('This quotation is valid for 30 days from the date of issue. Prices are subject to change without prior notice.');
   const [showValidityNote, setShowValidityNote] = useState(true);
+  const [termsConditions, setTermsConditions] = useState<string>(
+    '1. Goods once sold will not be taken back and refund or exchange will be as per company policy.\n2. Prices are subject to change without prior notice.\n3. Service warranty, if any, will be as per service agreement.'
+  );
+  const [showTermsConditions, setShowTermsConditions] = useState<boolean>(false);
   const [gstOption, setGstOption] = useState<'normal' | 'exclude' | 'include'>('include'); // Default to including GST
   const [addGSTNoteToNotes, setAddGSTNoteToNotes] = useState(false); // Option to add GST note to Additional Info
   const [showBankDetails, setShowBankDetails] = useState(false);
@@ -292,7 +296,12 @@ export default function QuotationGenerator({ customer, onPrint }: QuotationGener
       paymentStatus: 'pending',
       paymentMethod: 'cash',
       notes: notes.join('\n'),
-      terms: showValidityNote ? validityNote : '', // Include validity note as terms for quotations
+      terms: [
+        showValidityNote ? validityNote : '',
+        showTermsConditions ? termsConditions : ''
+      ]
+        .filter(Boolean)
+        .join('\n\n'),
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString()
     } as any;
@@ -828,6 +837,47 @@ export default function QuotationGenerator({ customer, onPrint }: QuotationGener
             </div>
           </CardContent>
         )}
+      </Card>
+
+      {/* Terms & Conditions Section (AMC-style) */}
+      <Card>
+        <CardHeader>
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+            <CardTitle>Quotation Terms & Conditions</CardTitle>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setShowTermsConditions(!showTermsConditions)}
+              className="w-full sm:w-auto"
+            >
+              <Edit className="w-4 h-4 mr-2" />
+              {showTermsConditions ? 'View' : 'Edit'}
+            </Button>
+          </div>
+        </CardHeader>
+
+        <CardContent>
+          {showTermsConditions ? (
+            <div className="space-y-3">
+              <Textarea
+                value={termsConditions}
+                onChange={(e) => setTermsConditions(e.target.value)}
+                placeholder="Enter terms and conditions..."
+                rows={10}
+                className="font-mono text-sm"
+              />
+              <div className="text-xs text-gray-500">
+                💡 Tip: Write each term on a new line. This text will be included in the quotation PDF.
+              </div>
+            </div>
+          ) : (
+            <div className="space-y-3">
+              <div className="text-sm whitespace-pre-wrap">
+                {termsConditions.trim() ? termsConditions : 'No terms added yet.'}
+              </div>
+            </div>
+          )}
+        </CardContent>
       </Card>
 
       {/* Additional Info Section */}

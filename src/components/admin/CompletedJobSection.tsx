@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { CheckCircle, Edit, ShoppingCart, Bell } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
@@ -85,10 +85,6 @@ export const CompletedJobSection: React.FC<CompletedJobSectionProps> = ({
 
   const jobPartsTotal = (job as any).parts_cost_total;
   const hasPartsCostTotal = jobPartsTotal !== undefined && jobPartsTotal !== null && typeof jobPartsTotal === 'number';
-
-  useEffect(() => {
-    if (!hasPartsCostTotal) fetchSparePartsCost();
-  }, [job?.id, job?.status, hasPartsCostTotal]);
 
   if (job.status !== 'COMPLETED') return null;
 
@@ -435,7 +431,10 @@ export const CompletedJobSection: React.FC<CompletedJobSectionProps> = ({
             <Button
               size="sm"
               variant="outline"
-              onClick={() => setPartsUsedDialogOpen(true)}
+              onClick={() => {
+                if (!hasPartsCostTotal) fetchSparePartsCost();
+                setPartsUsedDialogOpen(true);
+              }}
               title="Add Parts"
               className="text-xs flex-1 min-w-0 justify-center py-2 px-2"
             >
