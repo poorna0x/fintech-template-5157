@@ -9198,7 +9198,7 @@ const AdminDashboard = () => {
                                     })()}
 
                                     {/* Service Brand */}
-                                    {(job as any).service_brand && (
+                                    {job.status === 'COMPLETED' && (job as any).service_brand && (
                                       <div className="flex items-start gap-2 sm:items-center">
                                         <Tag className="w-4 h-4 text-gray-400 flex-shrink-0 mt-0.5 sm:mt-0" />
                                         <div className="min-w-0 flex-1">
