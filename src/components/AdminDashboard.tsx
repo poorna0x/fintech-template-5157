@@ -135,20 +135,6 @@ declare global {
 
 // Utility functions moved to @/lib/adminUtils
 
-/** Drop Admin Completed->Today localStorage cache so deleted jobs cannot reappear from stale cache. */
-function clearAdminCompletedTodayLocalCache() {
-  try {
-    for (let i = localStorage.length - 1; i >= 0; i--) {
-      const key = localStorage.key(i);
-      if (key?.startsWith('admin_completed_today_v1:')) {
-        localStorage.removeItem(key);
-      }
-    }
-  } catch {
-    // ignore
-  }
-}
-
 const AdminDashboard = () => {
   const navigate = useNavigate();
   const { user, isAdmin, loading: authLoading, logout } = useAuth();
@@ -1152,56 +1138,15 @@ const AdminDashboard = () => {
           setJobs(data || []);
         }
       } else if (filter === 'ONGOING') {
-        // Stale-while-revalidate cache for fast tab switch:
-        // show cached ongoing jobs immediately, then refresh in background.
-        const ongoingCacheKey = 'admin_ongoing_jobs_v1';
-        const ONGOING_CACHE_TTL_MS = 45 * 1000; // 45 seconds
-        let usedOngoingCache = false;
-        try {
-          const raw = localStorage.getItem(ongoingCacheKey);
-          if (raw) {
-            const parsed = JSON.parse(raw) as { ts: number; data: any[] };
-            if (parsed?.data && Array.isArray(parsed.data) && typeof parsed.ts === 'number') {
-              const age = Date.now() - parsed.ts;
-              if (age >= 0) {
-                if (requestId !== loadJobsRequestRef.current) return;
-                // Always render cache instantly (fresh or stale) for speed.
-                setJobs(parsed.data);
-                setTotalCount(parsed.data.length || 0);
-                setTotalPages(1);
-                usedOngoingCache = true;
-                // Avoid full-screen loader blocking the cached render.
-                setLoading(false);
-
-                // Fresh cache still gets background refresh to keep latest data.
-                if (age <= ONGOING_CACHE_TTL_MS) {
-                  // no-op: continue to network below
-                }
-              }
-            }
-          }
-        } catch {
-          // ignore cache errors
-        }
-
-        // Load all ongoing jobs from network (usually not too many)
+        // Load all ongoing jobs (usually not too many)
         const { data, error } = await db.jobs.getOngoing();
         if (requestId !== loadJobsRequestRef.current) return;
         if (error) {
-          if (!usedOngoingCache) {
-            setJobs([]);
-            setTotalCount(0);
-            setTotalPages(1);
-          }
+          setJobs([]);
         } else {
           setJobs(data || []);
           setTotalCount(data?.length || 0);
           setTotalPages(1);
-          try {
-            localStorage.setItem(ongoingCacheKey, JSON.stringify({ ts: Date.now(), data: data || [] }));
-          } catch {
-            // ignore cache errors
-          }
         }
       } else if (filter === 'COMPLETED' || filter === 'CANCELLED') {
         // Use pagination for completed and denied jobs
@@ -1221,49 +1166,6 @@ const AdminDashboard = () => {
           }
         } else if (filter === 'CANCELLED') {
           dateFilter = deniedDateFilter;
-        }
-
-        // Cache: default Completed->Today page1 loads (low egress, avoids re-downloading on refresh/navigation).
-        // Only cache the *default* view: today, page=1, no client sub-filters.
-        const canUseCompletedTodayCache =
-          filter === 'COMPLETED' &&
-          completedDatePreset === 'day' &&
-          completedDateFilter === getTodayLocalDate() &&
-          page === 1 &&
-          completedLeadTypeFilter === 'all' &&
-          completedServiceSubTypeFilter === 'all' &&
-          completedByFilter === 'all';
-
-        const cacheKey = canUseCompletedTodayCache
-          ? `admin_completed_today_v1:${completedDateFilter}:p${page}:s${pageSize}`
-          : null;
-
-        const CACHE_TTL_MS = 2 * 60 * 1000; // 2 minutes
-        if (cacheKey) {
-          try {
-            const raw = localStorage.getItem(cacheKey);
-            if (raw) {
-              const parsed = JSON.parse(raw) as { ts: number; data: any[]; count: number; pages: number };
-              if (parsed?.data && Array.isArray(parsed.data) && typeof parsed.ts === 'number') {
-                const age = Date.now() - parsed.ts;
-                // Fresh cache: render immediately and skip network.
-                if (age >= 0 && age <= CACHE_TTL_MS) {
-                  if (requestId !== loadJobsRequestRef.current) return;
-                  setJobs(parsed.data);
-                  setTotalCount(parsed.count || 0);
-                  setTotalPages(parsed.pages || 0);
-                  return;
-                }
-                // Stale cache: render immediately, then continue to refresh from network.
-                if (requestId !== loadJobsRequestRef.current) return;
-                setJobs(parsed.data);
-                setTotalCount(parsed.count || 0);
-                setTotalPages(parsed.pages || 0);
-              }
-            }
-          } catch {
-            // ignore cache errors
-          }
         }
 
         let data: any[] = [];
@@ -1292,14 +1194,6 @@ const AdminDashboard = () => {
           setJobs(data || []);
           setTotalCount(count || 0);
           setTotalPages(pages || 0);
-
-          if (cacheKey) {
-            try {
-              localStorage.setItem(cacheKey, JSON.stringify({ ts: Date.now(), data: data || [], count: count || 0, pages: pages || 0 }));
-            } catch {
-              // ignore cache errors
-            }
-          }
         }
       } else if (filter === 'RESCHEDULED') {
         // Load follow-up jobs (usually not too many)
@@ -6496,8 +6390,6 @@ const AdminDashboard = () => {
       if (error) {
         throw new Error(error.message);
       }
-
-      clearAdminCompletedTodayLocalCache();
 
       const deletedId = jobToDelete.id;
       // Update local state
