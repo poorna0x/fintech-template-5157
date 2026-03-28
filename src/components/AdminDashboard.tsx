@@ -135,6 +135,20 @@ declare global {
 
 // Utility functions moved to @/lib/adminUtils
 
+/** Drop Admin Completed->Today localStorage cache so deleted jobs cannot reappear from stale cache. */
+function clearAdminCompletedTodayLocalCache() {
+  try {
+    for (let i = localStorage.length - 1; i >= 0; i--) {
+      const key = localStorage.key(i);
+      if (key?.startsWith('admin_completed_today_v1:')) {
+        localStorage.removeItem(key);
+      }
+    }
+  } catch {
+    // ignore
+  }
+}
+
 const AdminDashboard = () => {
   const navigate = useNavigate();
   const { user, isAdmin, loading: authLoading, logout } = useAuth();
@@ -6483,15 +6497,33 @@ const AdminDashboard = () => {
         throw new Error(error.message);
       }
 
+      clearAdminCompletedTodayLocalCache();
+
+      const deletedId = jobToDelete.id;
       // Update local state
-      setJobs(prev => prev.filter(job => job.id !== jobToDelete.id));
+      setJobs(prev => prev.filter(job => job.id !== deletedId));
       setCustomerJobs(prev => {
         const updated = { ...prev };
         Object.keys(updated).forEach(customerId => {
-          updated[customerId] = updated[customerId].filter(job => job.id !== jobToDelete.id);
+          updated[customerId] = updated[customerId].filter(job => job.id !== deletedId);
         });
         return updated;
       });
+      setLoadedCompletedJobDetails((prev) => {
+        if (!prev[deletedId]) return prev;
+        const next = { ...prev };
+        delete next[deletedId];
+        return next;
+      });
+      setLoadingCompletedJobDetails((prev) => {
+        if (!prev[deletedId]) return prev;
+        const next = { ...prev };
+        delete next[deletedId];
+        return next;
+      });
+      if (statusFilter === 'COMPLETED' || statusFilter === 'CANCELLED') {
+        setTotalCount((prev) => Math.max(0, prev - 1));
+      }
 
       toast.success(`Job ${jobToDelete.job_number || jobToDelete.jobNumber} deleted successfully`);
       setDeleteJobDialogOpen(false);
