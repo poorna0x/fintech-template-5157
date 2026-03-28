@@ -2,7 +2,7 @@ import React, { useEffect, useState, useCallback } from 'react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { format, addMonths } from 'date-fns';
-import { Bell, Calendar, CalendarClock } from 'lucide-react';
+import { Bell, Calendar, CalendarClock, IndianRupee } from 'lucide-react';
 import { db } from '@/lib/supabase';
 import { toast } from 'sonner';
 import { useAuth } from '@/contexts/AuthContext';
@@ -10,6 +10,32 @@ import { AddReminderDialog } from './AddReminderDialog';
 import type { Reminder } from '@/types';
 
 type CustomerLabel = { name: string; customerId: string };
+
+/** Must match pending-payment reminders in Settings (see PendingPaymentsDialogV2). */
+const PENDING_PAYMENT_TITLE = 'Pending payment';
+
+function parsePendingPaymentNotes(notes: string | null | undefined): { amount_pending: number; note?: string } {
+  const raw = (notes ?? '').toString().trim();
+  if (!raw) return { amount_pending: 0 };
+  if (raw.startsWith('{')) {
+    try {
+      const parsed = JSON.parse(raw) as { amount_pending?: unknown; note?: unknown };
+      const amount_pending =
+        typeof parsed.amount_pending === 'number'
+          ? parsed.amount_pending
+          : Number(String(raw).replace(/[^0-9.-]/g, '')) || 0;
+      const note = typeof parsed.note === 'string' ? parsed.note : undefined;
+      return { amount_pending, note };
+    } catch {
+      // fallthrough
+    }
+  }
+  const n = Number(raw.replace(/[^0-9.-]/g, ''));
+  return { amount_pending: Number.isFinite(n) ? n : 0, note: undefined };
+}
+
+/** Session cache: reuse today's reminder list for up to 6h to reduce refetches. */
+const REMINDERS_POPUP_SESSION_CACHE_ENABLED = true;
 
 export function TodayRemindersPopup() {
   const { user } = useAuth();
@@ -40,8 +66,7 @@ export function TodayRemindersPopup() {
     });
   }, []);
 
-  // Show popup whenever there are reminders for today. Cache result 6h to avoid refetch on every refresh.
-  const REMINDERS_CACHE_TTL_MS = 6 * 60 * 60 * 1000; // 6 hours
+  const REMINDERS_CACHE_TTL_MS = 6 * 60 * 60 * 1000; // 6 hours (only if REMINDERS_POPUP_SESSION_CACHE_ENABLED)
   const REMINDERS_CACHE_KEY = 'reminders_today_cache';
 
   useEffect(() => {
@@ -50,10 +75,15 @@ export function TodayRemindersPopup() {
 
     const applyReminders = (forToday: Reminder[], list: Reminder[]) => {
       if (forToday.length > 0) {
-        setTodayReminders(forToday);
+        const sorted = [...forToday].sort((a, b) => {
+          const pa = a.title === PENDING_PAYMENT_TITLE ? 0 : 1;
+          const pb = b.title === PENDING_PAYMENT_TITLE ? 0 : 1;
+          return pa - pb;
+        });
+        setTodayReminders(sorted);
         setOpen(true);
         const customerIds = [...new Set(
-          forToday
+          sorted
             .filter((r) => r.entity_type === 'customer' && r.entity_id)
             .map((r) => r.entity_id as string)
         )];
@@ -68,17 +98,19 @@ export function TodayRemindersPopup() {
     };
 
     const tryLoad = (isRetry = false) => {
-      const cached = typeof sessionStorage !== 'undefined' ? sessionStorage.getItem(REMINDERS_CACHE_KEY) : null;
-      if (cached && !isRetry) {
-        try {
-          const { date, data: list, fetchedAt } = JSON.parse(cached) as { date: string; data: Reminder[]; fetchedAt: number };
-          if (date === today && Date.now() - fetchedAt < REMINDERS_CACHE_TTL_MS && Array.isArray(list)) {
-            const forToday = list.filter((r) => r.reminder_at === today);
-            applyReminders(forToday, list);
-            return;
+      if (REMINDERS_POPUP_SESSION_CACHE_ENABLED) {
+        const cached = typeof sessionStorage !== 'undefined' ? sessionStorage.getItem(REMINDERS_CACHE_KEY) : null;
+        if (cached && !isRetry) {
+          try {
+            const { date, data: list, fetchedAt } = JSON.parse(cached) as { date: string; data: Reminder[]; fetchedAt: number };
+            if (date === today && Date.now() - fetchedAt < REMINDERS_CACHE_TTL_MS && Array.isArray(list)) {
+              const forToday = list.filter((r) => r.reminder_at === today);
+              applyReminders(forToday, list);
+              return;
+            }
+          } catch {
+            // ignore invalid cache
           }
-        } catch {
-          // ignore invalid cache
         }
       }
 
@@ -95,7 +127,7 @@ export function TodayRemindersPopup() {
           return;
         }
         const list = (data || []) as Reminder[];
-        if (typeof sessionStorage !== 'undefined') {
+        if (REMINDERS_POPUP_SESSION_CACHE_ENABLED && typeof sessionStorage !== 'undefined') {
           sessionStorage.setItem(REMINDERS_CACHE_KEY, JSON.stringify({ date: today, data: list, fetchedAt: Date.now() }));
         }
         const forToday = list.filter((r) => r.reminder_at === today);
@@ -129,7 +161,9 @@ export function TodayRemindersPopup() {
       toast.error(error.message);
       return;
     }
-    if (typeof sessionStorage !== 'undefined') sessionStorage.removeItem('reminders_today_cache');
+    if (REMINDERS_POPUP_SESSION_CACHE_ENABLED && typeof sessionStorage !== 'undefined') {
+      sessionStorage.removeItem(REMINDERS_CACHE_KEY);
+    }
     if (r.interval_type === 'months' && r.interval_value) {
       const base = new Date(r.reminder_at);
       const nextDate = addMonths(base, r.interval_value);
@@ -172,33 +206,49 @@ export function TodayRemindersPopup() {
           <DialogHeader className="flex-shrink-0">
             <DialogTitle className="flex items-center gap-2 text-base sm:text-lg">
               <Bell className="h-5 w-5 text-amber-500 shrink-0" />
-              Reminders for today
+              Today&apos;s reminders
             </DialogTitle>
           </DialogHeader>
           <div className="space-y-2 sm:space-y-3 max-h-[50vh] sm:max-h-[60vh] overflow-y-auto min-h-0 -mx-1 px-1">
             {todayReminders.map((r) => {
               const customer = r.entity_type === 'customer' && r.entity_id ? customerLabels[r.entity_id] : null;
+              const isPendingPayment = r.title === PENDING_PAYMENT_TITLE;
+              const pendingParsed = isPendingPayment ? parsePendingPaymentNotes(r.notes) : null;
               return (
                 <div
                   key={r.id}
                   className="flex flex-col gap-2 rounded-lg border border-amber-200 bg-amber-50 dark:bg-amber-950/30 dark:border-amber-800 p-2.5 sm:p-3"
                 >
                   <div className="flex items-start gap-2 sm:gap-3">
-                    <Calendar className="h-4 w-4 text-amber-600 mt-0.5 shrink-0" />
+                    {isPendingPayment ? (
+                      <IndianRupee className="h-4 w-4 text-amber-600 mt-0.5 shrink-0" />
+                    ) : (
+                      <Calendar className="h-4 w-4 text-amber-600 mt-0.5 shrink-0" />
+                    )}
                     <div className="min-w-0 flex-1">
-                      <p className="font-medium text-sm sm:text-base text-gray-900 dark:text-gray-100">{r.title}</p>
+                      <p className="font-medium text-sm sm:text-base text-gray-900 dark:text-gray-100">
+                        {isPendingPayment ? 'Pending payment due' : r.title}
+                      </p>
                       {customer && (
                         <p className="text-xs sm:text-sm text-gray-700 dark:text-gray-300 mt-0.5">
                           {customer.name} <span className="font-mono text-gray-500">({customer.customerId})</span>
                         </p>
                       )}
-                      {r.notes && (
+                      {isPendingPayment && pendingParsed && pendingParsed.amount_pending > 0 && (
+                        <p className="text-sm font-semibold text-amber-900 dark:text-amber-200 mt-0.5">
+                          ₹{pendingParsed.amount_pending.toLocaleString('en-IN', { maximumFractionDigits: 2 })}
+                        </p>
+                      )}
+                      {isPendingPayment && pendingParsed?.note && (
+                        <p className="text-xs sm:text-sm text-gray-600 dark:text-gray-400 mt-0.5">{pendingParsed.note}</p>
+                      )}
+                      {!isPendingPayment && r.notes && (
                         <p className="text-xs sm:text-sm text-gray-600 dark:text-gray-400 mt-0.5">{r.notes}</p>
                       )}
                       <p className="text-xs text-gray-500 mt-0.5 sm:mt-1">
                         Due: {format(new Date(r.reminder_at), 'PPP')}
                       </p>
-                      {r.interval_type === 'months' && r.interval_value && (
+                      {!isPendingPayment && r.interval_type === 'months' && r.interval_value && (
                         <p className="text-xs text-amber-700 dark:text-amber-400 mt-0.5">
                           Repeats every {r.interval_value} months – next reminder will be created for {format(addMonths(new Date(r.reminder_at), r.interval_value), 'PPP')} when you click Got it.
                         </p>
@@ -228,7 +278,9 @@ export function TodayRemindersPopup() {
               {markingDone ? 'Marking...' : 'Got it'}
             </Button>
           </div>
-          <p className="text-xs text-muted-foreground pt-1">&quot;Got it&quot; marks the job as completed (when linked to a job) and marks reminders done. The popup will show again whenever there are reminders for today that are not completed.</p>
+          <p className="text-xs text-muted-foreground pt-1">
+            &quot;Got it&quot; marks the job as completed when a reminder is linked to a job, marks all listed reminders (including pending payments) as done, and creates the next recurring reminder when applicable. This popup opens when there is anything due today that is not completed.
+          </p>
         </DialogContent>
       </Dialog>
 
@@ -250,7 +302,9 @@ export function TodayRemindersPopup() {
         editReminder={rescheduleReminder || undefined}
         onSaved={() => {
           setRescheduleReminder(null);
-          if (typeof sessionStorage !== 'undefined') sessionStorage.removeItem('reminders_today_cache');
+          if (REMINDERS_POPUP_SESSION_CACHE_ENABLED && typeof sessionStorage !== 'undefined') {
+            sessionStorage.removeItem(REMINDERS_CACHE_KEY);
+          }
           loadToday();
         }}
       />
