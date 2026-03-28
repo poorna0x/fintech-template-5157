@@ -15,7 +15,6 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
-import { Pagination, PaginationContent, PaginationItem, PaginationLink, PaginationNext, PaginationPrevious } from '@/components/ui/pagination';
 import { 
   Users, 
   UserPlus,
@@ -9471,67 +9470,41 @@ const AdminDashboard = () => {
             })}
           </div>
           
-          {/* Pagination Controls - Only show for paginated views */}
+          {/* Pagination — compact, wraps on small screens (no horizontal scroll) */}
           {(statusFilter === 'CANCELLED' || statusFilter === 'RESCHEDULED' || statusFilter === 'COMPLETED') && totalPages > 1 && (
-            <div className="mt-6 flex items-center justify-between">
-              <div className="text-sm text-gray-600">
-                Showing page {currentPage} of {totalPages} ({totalCount} total)
+            <div className="mt-6 w-full min-w-0 max-w-full px-1">
+              <div className="flex flex-col items-center gap-2">
+                <div className="flex flex-wrap items-center justify-center gap-2 w-full max-w-full">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="h-9 shrink-0 touch-manipulation"
+                    disabled={currentPage <= 1}
+                    onClick={() => currentPage > 1 && setCurrentPage(currentPage - 1)}
+                  >
+                    <ArrowLeft className="h-4 w-4 sm:mr-1" />
+                    <span className="hidden sm:inline">Previous</span>
+                  </Button>
+                  <span className="text-sm text-gray-700 dark:text-gray-300 tabular-nums px-2 text-center min-w-[5.5rem]">
+                    {currentPage} / {totalPages}
+                  </span>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="h-9 shrink-0 touch-manipulation"
+                    disabled={currentPage >= totalPages}
+                    onClick={() => currentPage < totalPages && setCurrentPage(currentPage + 1)}
+                  >
+                    <span className="hidden sm:inline">Next</span>
+                    <ArrowRight className="h-4 w-4 sm:ml-1" />
+                  </Button>
+                </div>
+                <p className="text-xs text-gray-500 text-center w-full">
+                  {totalCount} total jobs
+                </p>
               </div>
-              <Pagination>
-                <PaginationContent>
-                  <PaginationItem>
-                    <PaginationPrevious 
-                      href="#" 
-                      onClick={(e) => {
-                        e.preventDefault();
-                        if (currentPage > 1) {
-                          setCurrentPage(currentPage - 1);
-                        }
-                      }}
-                      className={currentPage === 1 ? 'pointer-events-none opacity-50' : 'cursor-pointer'}
-                    />
-                  </PaginationItem>
-                  {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
-                    let pageNum;
-                    if (totalPages <= 5) {
-                      pageNum = i + 1;
-                    } else if (currentPage <= 3) {
-                      pageNum = i + 1;
-                    } else if (currentPage >= totalPages - 2) {
-                      pageNum = totalPages - 4 + i;
-                    } else {
-                      pageNum = currentPage - 2 + i;
-                    }
-                    return (
-                      <PaginationItem key={pageNum}>
-                        <PaginationLink
-                          href="#"
-                          onClick={(e) => {
-                            e.preventDefault();
-                            setCurrentPage(pageNum);
-                          }}
-                          isActive={currentPage === pageNum}
-                          className="cursor-pointer"
-                        >
-                          {pageNum}
-                        </PaginationLink>
-                      </PaginationItem>
-                    );
-                  })}
-                  <PaginationItem>
-                    <PaginationNext 
-                      href="#" 
-                      onClick={(e) => {
-                        e.preventDefault();
-                        if (currentPage < totalPages) {
-                          setCurrentPage(currentPage + 1);
-                        }
-                      }}
-                      className={currentPage === totalPages ? 'pointer-events-none opacity-50' : 'cursor-pointer'}
-                    />
-                  </PaginationItem>
-                </PaginationContent>
-              </Pagination>
             </div>
           )}
         </div>
