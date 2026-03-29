@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -7,7 +7,7 @@ import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { Calendar } from '@/components/ui/calendar';
-import { Calendar as CalendarIcon } from 'lucide-react';
+import { Calendar as CalendarIcon, Search } from 'lucide-react';
 import { format, addMonths } from 'date-fns';
 import { cn } from '@/lib/utils';
 import { db } from '@/lib/supabase';
@@ -63,6 +63,7 @@ export function AddReminderDialog({
   const [customerQuery, setCustomerQuery] = useState('');
   const [customerResults, setCustomerResults] = useState<SlimCustomer[]>([]);
   const [customerSearchLoading, setCustomerSearchLoading] = useState(false);
+  const [customerSearchDone, setCustomerSearchDone] = useState(false);
   const [selectedCustomer, setSelectedCustomer] = useState<SlimCustomer | null>(null);
 
   const isEdit = !!editReminder?.id;
@@ -86,9 +87,6 @@ export function AddReminderDialog({
     [requireCustomerPick, isEdit, entity.type, entity.id]
   );
 
-  const showCustomerSearch =
-    showCustomerPickerOnly || (showLinkChoice && attachMode === 'customer');
-
   useEffect(() => {
     if (open) {
       if (editReminder) {
@@ -108,37 +106,40 @@ export function AddReminderDialog({
         setAttachMode(requireCustomerPick ? 'customer' : 'general');
         setCustomerQuery('');
         setCustomerResults([]);
+        setCustomerSearchDone(false);
         setSelectedCustomer(null);
       }
     }
   }, [open, editReminder, requireCustomerPick]);
 
-  useEffect(() => {
-    if (!open || isEdit || !showCustomerSearch) {
-      if (!open || isEdit) {
-        setCustomerSearchLoading(false);
-      }
-      return;
-    }
+  const runCustomerSearch = useCallback(async () => {
     const q = customerQuery.trim();
     if (!q) {
-      setCustomerResults([]);
-      setCustomerSearchLoading(false);
+      toast.error('Enter a name, phone, or customer ID, then search');
       return;
     }
     setCustomerSearchLoading(true);
-    const t = window.setTimeout(() => {
-      db.customers.searchSlim(q, 30).then(({ data, error }) => {
-        setCustomerSearchLoading(false);
-        if (error) {
-          setCustomerResults([]);
-          return;
-        }
-        setCustomerResults((data as SlimCustomer[]) || []);
-      });
-    }, 300);
-    return () => window.clearTimeout(t);
-  }, [customerQuery, open, isEdit, showCustomerSearch]);
+    try {
+      const { data, error } = await db.customers.searchSlim(q, 30);
+      if (error) {
+        setCustomerResults([]);
+        setCustomerSearchDone(true);
+        toast.error(error.message);
+        return;
+      }
+      setCustomerResults((data as SlimCustomer[]) || []);
+      setCustomerSearchDone(true);
+    } finally {
+      setCustomerSearchLoading(false);
+    }
+  }, [customerQuery]);
+
+  const onCustomerQueryChange = (value: string) => {
+    setCustomerQuery(value);
+    setSelectedCustomer(null);
+    setCustomerResults([]);
+    setCustomerSearchDone(false);
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -242,6 +243,7 @@ export function AddReminderDialog({
                     setSelectedCustomer(null);
                     setCustomerQuery('');
                     setCustomerResults([]);
+                    setCustomerSearchDone(false);
                   }
                 }}
                 className="grid gap-2"
@@ -258,17 +260,35 @@ export function AddReminderDialog({
               {attachMode === 'customer' && (
                 <div className="space-y-2 pt-1">
                   <Label htmlFor="reminder-customer-search">Find customer</Label>
-                  <Input
-                    id="reminder-customer-search"
-                    value={customerQuery}
-                    onChange={(e) => {
-                      setCustomerQuery(e.target.value);
-                      setSelectedCustomer(null);
-                    }}
-                    placeholder="Name, phone, or customer ID"
-                    className="min-h-9"
-                    autoComplete="off"
-                  />
+                  <p className="text-xs text-muted-foreground">Type a name, phone, or ID, then press search or Enter.</p>
+                  <div className="flex gap-2">
+                    <Input
+                      id="reminder-customer-search"
+                      value={customerQuery}
+                      onChange={(e) => onCustomerQueryChange(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') {
+                          e.preventDefault();
+                          void runCustomerSearch();
+                        }
+                      }}
+                      placeholder="Name, phone, or customer ID"
+                      className="min-h-9 flex-1"
+                      autoComplete="off"
+                    />
+                    <Button
+                      type="button"
+                      variant="secondary"
+                      size="icon"
+                      className="h-9 w-9 shrink-0"
+                      onClick={() => void runCustomerSearch()}
+                      disabled={customerSearchLoading}
+                      title="Search customers"
+                    >
+                      <Search className="h-4 w-4" />
+                      <span className="sr-only">Search customers</span>
+                    </Button>
+                  </div>
                   {selectedCustomer && (
                     <p className="text-xs text-muted-foreground">
                       Selected:{' '}
@@ -283,7 +303,7 @@ export function AddReminderDialog({
                   {customerSearchLoading && (
                     <p className="text-xs text-muted-foreground">Searching…</p>
                   )}
-                  {!customerSearchLoading && customerQuery.trim() && customerResults.length === 0 && (
+                  {customerSearchDone && !customerSearchLoading && customerResults.length === 0 && (
                     <p className="text-xs text-muted-foreground">No matches.</p>
                   )}
                   {customerResults.length > 0 && (
@@ -315,17 +335,35 @@ export function AddReminderDialog({
           {showCustomerPickerOnly && (
             <div className="space-y-2 rounded-lg border border-border bg-muted/30 p-3">
               <Label htmlFor="reminder-customer-search-only">Find customer *</Label>
-              <Input
-                id="reminder-customer-search-only"
-                value={customerQuery}
-                onChange={(e) => {
-                  setCustomerQuery(e.target.value);
-                  setSelectedCustomer(null);
-                }}
-                placeholder="Name, phone, or customer ID"
-                className="min-h-9"
-                autoComplete="off"
-              />
+              <p className="text-xs text-muted-foreground">Type a name, phone, or ID, then press search or Enter.</p>
+              <div className="flex gap-2">
+                <Input
+                  id="reminder-customer-search-only"
+                  value={customerQuery}
+                  onChange={(e) => onCustomerQueryChange(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      e.preventDefault();
+                      void runCustomerSearch();
+                    }
+                  }}
+                  placeholder="Name, phone, or customer ID"
+                  className="min-h-9 flex-1"
+                  autoComplete="off"
+                />
+                <Button
+                  type="button"
+                  variant="secondary"
+                  size="icon"
+                  className="h-9 w-9 shrink-0"
+                  onClick={() => void runCustomerSearch()}
+                  disabled={customerSearchLoading}
+                  title="Search customers"
+                >
+                  <Search className="h-4 w-4" />
+                  <span className="sr-only">Search customers</span>
+                </Button>
+              </div>
               {selectedCustomer && (
                 <p className="text-xs text-muted-foreground">
                   Selected:{' '}
@@ -338,7 +376,7 @@ export function AddReminderDialog({
                 </p>
               )}
               {customerSearchLoading && <p className="text-xs text-muted-foreground">Searching…</p>}
-              {!customerSearchLoading && customerQuery.trim() && customerResults.length === 0 && (
+              {customerSearchDone && !customerSearchLoading && customerResults.length === 0 && (
                 <p className="text-xs text-muted-foreground">No matches.</p>
               )}
               {customerResults.length > 0 && (
