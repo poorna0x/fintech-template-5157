@@ -1515,12 +1515,30 @@ const AdminDashboard = () => {
     completedByFilter
   ]);
 
-  // Reset to first page when completed sub-filters change, so results don't look empty due to pagination
+  // Reset to first page when completed sub-filters change, so results don't look empty due to pagination.
+  // For a single calendar day with only one page of results, the list is already fully loaded — advanced
+  // filters (lead / sub-type / completed-by) are applied client-side in getFilteredCustomers via
+  // doesCompletedJobMatchFilters, so refetching would only waste egress.
   useEffect(() => {
     if (isInitialLoad || statusFilter !== 'COMPLETED') return;
     setCurrentPage(1);
+    const completedSingleDay =
+      completedDatePreset === 'day' ||
+      (completedDatePreset === 'custom' &&
+        completedRangeStartDate === completedRangeEndDate);
+    if (completedSingleDay && totalPages === 1) {
+      return;
+    }
     loadFilteredJobs(statusFilter, 1);
-  }, [completedLeadTypeFilter, completedServiceSubTypeFilter, completedByFilter, isInitialLoad, statusFilter, loadFilteredJobs]);
+  }, [
+    completedLeadTypeFilter,
+    completedServiceSubTypeFilter,
+    completedByFilter,
+    isInitialLoad,
+    statusFilter,
+    loadFilteredJobs,
+    totalPages,
+  ]);
 
   // Restore scroll position when WhatsApp dialog opens (after assign/reassign) so page doesn't jump to top
   useEffect(() => {
