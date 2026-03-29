@@ -33,7 +33,8 @@ import {
   ListTodo,
   PhoneCall,
   RefreshCw,
-  DollarSign
+  DollarSign,
+  Bell
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { db, supabase } from '@/lib/supabase';
@@ -43,6 +44,7 @@ import { CommonQrCode, invalidateQrCodesCache } from '@/lib/qrCodeManager';
 import JSZip from 'jszip';
 import CallingPage from '@/pages/CallingPage';
 import { SettingsRemindersDialog } from '@/components/reminders/SettingsRemindersDialog';
+import { AddReminderDialog } from '@/components/reminders/AddReminderDialog';
 import { SettingsPendingPaymentsDialogV2 } from '@/components/reminders/PendingPaymentsDialogV2';
 
 const Settings = () => {
@@ -118,8 +120,9 @@ const Settings = () => {
   // Calling view state
   const [showCallingPage, setShowCallingPage] = useState(false);
 
-  // Reminders dialog (view/search, no add)
   const [remindersDialogOpen, setRemindersDialogOpen] = useState(false);
+  const [addGeneralReminderOpen, setAddGeneralReminderOpen] = useState(false);
+  const [addCustomerReminderOpen, setAddCustomerReminderOpen] = useState(false);
 
   // Pending payments dialog (lazy load, add/edit/complete)
   const [pendingPaymentsDialogOpen, setPendingPaymentsDialogOpen] = useState(false);
@@ -1443,7 +1446,7 @@ const Settings = () => {
             </CardContent>
           </Card>
 
-          {/* Reminders - dialog: recent completed, show all, search */}
+          {/* Reminders: add general / customer, then load list dialog */}
           <Card>
             <CardHeader>
               <CardTitle className="flex items-center gap-2 text-lg sm:text-xl">
@@ -1451,20 +1454,53 @@ const Settings = () => {
                 Reminders
               </CardTitle>
               <CardDescription className="text-sm mt-1">
-                View and search reminders by customer. Recent completed and show all options.
+                Add a general reminder, one tied to a customer, or load the list to search, filter, and edit.
               </CardDescription>
             </CardHeader>
             <CardContent className="p-4 sm:p-6">
-              <Button
-                variant="outline"
-                className="w-full sm:w-auto"
-                onClick={() => setRemindersDialogOpen(true)}
-              >
-                <ListTodo className="w-4 h-4 mr-2" />
-                Open Reminders
-              </Button>
+              <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:gap-2">
+                <Button
+                  type="button"
+                  className="w-full min-h-10 justify-center sm:min-w-0 sm:flex-1 sm:max-w-none"
+                  onClick={() => setAddGeneralReminderOpen(true)}
+                >
+                  <Bell className="w-4 h-4 mr-2 shrink-0" />
+                  Add general reminder
+                </Button>
+                <Button
+                  type="button"
+                  variant="secondary"
+                  className="w-full min-h-10 justify-center sm:min-w-0 sm:flex-1 sm:max-w-none"
+                  onClick={() => setAddCustomerReminderOpen(true)}
+                >
+                  <User className="w-4 h-4 mr-2 shrink-0" />
+                  Add customer reminder
+                </Button>
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="w-full min-h-10 justify-center sm:min-w-0 sm:flex-1 sm:max-w-none"
+                  onClick={() => setRemindersDialogOpen(true)}
+                >
+                  <ListTodo className="w-4 h-4 mr-2 shrink-0" />
+                  Load reminders
+                </Button>
+              </div>
             </CardContent>
           </Card>
+          <AddReminderDialog
+            open={addGeneralReminderOpen}
+            onOpenChange={setAddGeneralReminderOpen}
+            entity={{ type: 'general', id: null }}
+            dialogTitle="Add general reminder"
+          />
+          <AddReminderDialog
+            open={addCustomerReminderOpen}
+            onOpenChange={setAddCustomerReminderOpen}
+            entity={{ type: 'general', id: null }}
+            requireCustomerPick
+            dialogTitle="Add customer reminder"
+          />
           <SettingsRemindersDialog
             open={remindersDialogOpen}
             onOpenChange={setRemindersDialogOpen}

@@ -87,7 +87,8 @@ export default function SettingsRemindersPage() {
         (label.name.toLowerCase().includes(q) || label.customerId.toLowerCase().includes(q));
       const matchTitle =
         r.title.toLowerCase().includes(q) || (r.notes && r.notes.toLowerCase().includes(q));
-      return !!(matchLabel || matchTitle);
+      const matchGeneral = r.entity_type === 'general' && q.includes('general');
+      return !!(matchLabel || matchTitle || matchGeneral);
     });
   }, [reminders, customerLabels, searchQuery]);
 
@@ -164,7 +165,7 @@ export default function SettingsRemindersPage() {
                   Reminders
                 </CardTitle>
                 <CardDescription className="text-sm mt-1">
-                  Load reminders to view and edit. Today = amber, Tomorrow = blue, Overdue = red.
+                  Load reminders to view and edit. Add general reminders (not linked to a customer) or link one to a customer. Today = amber, Tomorrow = blue, Overdue = red.
                 </CardDescription>
               </div>
               {!loaded ? (
@@ -189,7 +190,7 @@ export default function SettingsRemindersPage() {
                   <div className="relative">
                     <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                     <Input
-                      placeholder="Search by customer name, ID, or reminder title..."
+                      placeholder="Search by customer, title, notes, or “general”…"
                       value={searchQuery}
                       onChange={(e) => {
                         setSearchQuery(e.target.value);
@@ -288,6 +289,7 @@ export default function SettingsRemindersPage() {
             if (!o) load();
           }}
           entity={{ type: 'general', id: null }}
+          allowChooseCustomer
           onSaved={load}
         />
         <AddReminderDialog

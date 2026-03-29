@@ -111,7 +111,8 @@ export function SettingsRemindersDialog({ open, onOpenChange }: SettingsReminder
           (label.name.toLowerCase().includes(q) || label.customerId.toLowerCase().includes(q));
         const matchTitle =
           r.title.toLowerCase().includes(q) || (r.notes && r.notes.toLowerCase().includes(q));
-        return !!(matchLabel || matchTitle);
+        const matchGeneral = r.entity_type === 'general' && q.includes('general');
+        return !!(matchLabel || matchTitle || matchGeneral);
       });
     }
     if (showUpcomingOnly) {
@@ -257,7 +258,7 @@ export function SettingsRemindersDialog({ open, onOpenChange }: SettingsReminder
               <div className="relative">
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                 <Input
-                  placeholder="Search by customer name, ID, or reminder title..."
+                  placeholder="Search by customer, title, notes, or “general”…"
                   value={searchQuery}
                   onChange={(e) => {
                     setSearchQuery(e.target.value);

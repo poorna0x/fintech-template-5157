@@ -85,6 +85,11 @@ export function ReminderRow({
               Every {r.interval_value} months
             </span>
           )}
+          {r.entity_type === 'general' && (
+            <span className="text-xs font-medium px-2 py-0.5 rounded bg-slate-200 text-slate-800 dark:bg-slate-700 dark:text-slate-200">
+              General
+            </span>
+          )}
         </div>
         {customerLabel && (
           <p className="text-xs sm:text-sm text-gray-700 dark:text-gray-300 mt-0.5">
