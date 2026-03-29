@@ -8,6 +8,11 @@ import { toast } from 'sonner';
 import { AddReminderDialog } from './AddReminderDialog';
 import type { Reminder } from '@/types';
 import {
+  isPendingPaymentReminderTitle,
+  parsePendingPaymentReminderNotes,
+  parseReminderAtLocalDate,
+} from '@/lib/pendingPaymentReminder';
+import {
   AlertDialog,
   AlertDialogAction,
   AlertDialogCancel,
@@ -50,6 +55,9 @@ export function ReminderRow({
     : 'bg-gray-50 border-gray-200 dark:bg-gray-800 dark:border-gray-700';
 
   const badge = isToday ? 'Today' : isTomorrow ? 'Tomorrow' : isPast ? 'Overdue' : null;
+  const isPendingPayment = isPendingPaymentReminderTitle(r.title);
+  const pendingParsed = isPendingPayment ? parsePendingPaymentReminderNotes(r.notes) : null;
+  const dueDate = parseReminderAtLocalDate(r.reminder_at);
 
   return (
     <div
@@ -83,11 +91,19 @@ export function ReminderRow({
             {customerLabel.name} <span className="font-mono text-muted-foreground">({customerLabel.customerId})</span>
           </p>
         )}
-        {r.notes && (
+        {isPendingPayment && pendingParsed && pendingParsed.amount_pending > 0 && (
+          <p className="text-sm font-semibold text-gray-900 dark:text-gray-100 mt-0.5">
+            ₹{pendingParsed.amount_pending.toLocaleString('en-IN', { maximumFractionDigits: 2 })}
+          </p>
+        )}
+        {isPendingPayment && pendingParsed?.note && (
+          <p className="text-xs sm:text-sm text-gray-600 dark:text-gray-400 mt-0.5">{pendingParsed.note}</p>
+        )}
+        {!isPendingPayment && r.notes && (
           <p className="text-sm text-gray-600 dark:text-gray-400 mt-0.5">{r.notes}</p>
         )}
         <p className="text-xs text-gray-500 mt-1">
-          {format(new Date(r.reminder_at), 'PPP')}
+          Due: {format(dueDate, 'PPP')}
           {r.entity_type !== 'general' && !customerLabel && (
             <span className="ml-2 text-muted-foreground">({r.entity_type})</span>
           )}

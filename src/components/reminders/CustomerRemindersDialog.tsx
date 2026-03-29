@@ -9,6 +9,11 @@ import { AddReminderDialog } from './AddReminderDialog';
 import type { Reminder } from '@/types';
 import type { Customer } from '@/types';
 import {
+  isPendingPaymentReminderTitle,
+  parsePendingPaymentReminderNotes,
+  parseReminderAtLocalDate,
+} from '@/lib/pendingPaymentReminder';
+import {
   AlertDialog,
   AlertDialogAction,
   AlertDialogCancel,
@@ -44,6 +49,9 @@ function ReminderRow({
     ? 'bg-red-50 border-red-200 dark:bg-red-950/30 dark:border-red-800'
     : 'bg-gray-50 border-gray-200 dark:bg-gray-800 dark:border-gray-700';
   const badge = isToday ? 'Today' : isTomorrow ? 'Tomorrow' : isPast ? 'Overdue' : null;
+  const isPendingPayment = isPendingPaymentReminderTitle(r.title);
+  const pendingParsed = isPendingPayment ? parsePendingPaymentReminderNotes(r.notes) : null;
+  const dueDate = parseReminderAtLocalDate(r.reminder_at);
 
   return (
     <div className={`flex items-start gap-2 sm:gap-3 rounded-lg border p-2.5 sm:p-3 ${bgClass}`}>
@@ -68,9 +76,19 @@ function ReminderRow({
             </span>
           )}
         </div>
-        {r.notes && <p className="text-xs sm:text-sm text-gray-600 dark:text-gray-400 mt-0.5">{r.notes}</p>}
+        {isPendingPayment && pendingParsed && pendingParsed.amount_pending > 0 && (
+          <p className="text-sm font-semibold text-gray-900 dark:text-gray-100 mt-0.5">
+            ₹{pendingParsed.amount_pending.toLocaleString('en-IN', { maximumFractionDigits: 2 })}
+          </p>
+        )}
+        {isPendingPayment && pendingParsed?.note && (
+          <p className="text-xs sm:text-sm text-gray-600 dark:text-gray-400 mt-0.5">{pendingParsed.note}</p>
+        )}
+        {!isPendingPayment && r.notes && (
+          <p className="text-xs sm:text-sm text-gray-600 dark:text-gray-400 mt-0.5">{r.notes}</p>
+        )}
         <p className="text-xs text-gray-500 mt-0.5 sm:mt-1">
-          {format(new Date(r.reminder_at), 'PPP')}
+          Due: {format(dueDate, 'PPP')}
           {r.completed_at && (
             <span className="block text-green-600 dark:text-green-500 mt-0.5">Completed {format(new Date(r.completed_at), 'PPP')}</span>
           )}

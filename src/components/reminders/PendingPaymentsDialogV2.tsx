@@ -30,8 +30,9 @@ import type { Reminder } from '@/types';
 import { db, supabase } from '@/lib/supabase';
 import { formatPhoneForWhatsApp } from '@/lib/utils';
 import { WhatsAppIcon } from '@/components/WhatsAppIcon';
+import { PENDING_PAYMENT_REMINDER_TITLE, parseReminderAtLocalDate } from '@/lib/pendingPaymentReminder';
 
-const PENDING_PAYMENT_TITLE = 'Pending payment';
+const PENDING_PAYMENT_TITLE = PENDING_PAYMENT_REMINDER_TITLE;
 const PAGE_SIZE = 20;
 
 function parsePendingAmount(notes: string | null | undefined): number {
@@ -758,7 +759,7 @@ Thanks & regards 🙏`;
 
               <div className="space-y-3">
                 {filteredPayments.map((p) => {
-                  const due = p.reminder_at ? new Date(p.reminder_at) : null;
+                  const due = p.reminder_at ? parseReminderAtLocalDate(p.reminder_at) : null;
                   const customer = p.entity_id ? customerLabels[p.entity_id as string] : undefined;
                   const dueLabel =
                     due && !Number.isNaN(due.getTime()) ? format(due, 'PPP') : '—';

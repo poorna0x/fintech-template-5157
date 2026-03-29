@@ -8,31 +8,13 @@ import { toast } from 'sonner';
 import { useAuth } from '@/contexts/AuthContext';
 import { AddReminderDialog } from './AddReminderDialog';
 import type { Reminder } from '@/types';
+import {
+  isPendingPaymentReminderTitle,
+  parsePendingPaymentReminderNotes,
+  parseReminderAtLocalDate,
+} from '@/lib/pendingPaymentReminder';
 
 type CustomerLabel = { name: string; customerId: string };
-
-/** Must match pending-payment reminders in Settings (see PendingPaymentsDialogV2). */
-const PENDING_PAYMENT_TITLE = 'Pending payment';
-
-function parsePendingPaymentNotes(notes: string | null | undefined): { amount_pending: number; note?: string } {
-  const raw = (notes ?? '').toString().trim();
-  if (!raw) return { amount_pending: 0 };
-  if (raw.startsWith('{')) {
-    try {
-      const parsed = JSON.parse(raw) as { amount_pending?: unknown; note?: unknown };
-      const amount_pending =
-        typeof parsed.amount_pending === 'number'
-          ? parsed.amount_pending
-          : Number(String(raw).replace(/[^0-9.-]/g, '')) || 0;
-      const note = typeof parsed.note === 'string' ? parsed.note : undefined;
-      return { amount_pending, note };
-    } catch {
-      // fallthrough
-    }
-  }
-  const n = Number(raw.replace(/[^0-9.-]/g, ''));
-  return { amount_pending: Number.isFinite(n) ? n : 0, note: undefined };
-}
 
 /** Session cache: reuse today's reminder list for up to 6h to reduce refetches. */
 const REMINDERS_POPUP_SESSION_CACHE_ENABLED = true;
@@ -165,7 +147,7 @@ export function TodayRemindersPopup() {
       sessionStorage.removeItem(REMINDERS_CACHE_KEY);
     }
     if (r.interval_type === 'months' && r.interval_value) {
-      const base = new Date(r.reminder_at);
+      const base = parseReminderAtLocalDate(r.reminder_at);
       const nextDate = addMonths(base, r.interval_value);
       const nextAt = format(nextDate, 'yyyy-MM-dd');
       await db.reminders.create({
@@ -212,8 +194,9 @@ export function TodayRemindersPopup() {
           <div className="space-y-2 sm:space-y-3 max-h-[50vh] sm:max-h-[60vh] overflow-y-auto min-h-0 -mx-1 px-1">
             {todayReminders.map((r) => {
               const customer = r.entity_type === 'customer' && r.entity_id ? customerLabels[r.entity_id] : null;
-              const isPendingPayment = r.title === PENDING_PAYMENT_TITLE;
-              const pendingParsed = isPendingPayment ? parsePendingPaymentNotes(r.notes) : null;
+              const isPendingPayment = isPendingPaymentReminderTitle(r.title);
+              const pendingParsed = isPendingPayment ? parsePendingPaymentReminderNotes(r.notes) : null;
+              const dueDate = parseReminderAtLocalDate(r.reminder_at);
               return (
                 <div
                   key={r.id}
@@ -246,11 +229,11 @@ export function TodayRemindersPopup() {
                         <p className="text-xs sm:text-sm text-gray-600 dark:text-gray-400 mt-0.5">{r.notes}</p>
                       )}
                       <p className="text-xs text-gray-500 mt-0.5 sm:mt-1">
-                        Due: {format(new Date(r.reminder_at), 'PPP')}
+                        Due: {format(dueDate, 'PPP')}
                       </p>
                       {!isPendingPayment && r.interval_type === 'months' && r.interval_value && (
                         <p className="text-xs text-amber-700 dark:text-amber-400 mt-0.5">
-                          Repeats every {r.interval_value} months – next reminder will be created for {format(addMonths(new Date(r.reminder_at), r.interval_value), 'PPP')} when you click Got it.
+                          Repeats every {r.interval_value} months – next reminder will be created for {format(addMonths(dueDate, r.interval_value), 'PPP')} when you click Got it.
                         </p>
                       )}
                     </div>
