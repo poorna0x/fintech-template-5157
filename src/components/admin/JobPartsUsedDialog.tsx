@@ -8,6 +8,7 @@ import { Package, Plus, Search, Trash2, Layers } from 'lucide-react';
 import { db } from '@/lib/supabase';
 import { toast } from 'sonner';
 import { inventoryCache } from '@/lib/inventoryCache';
+import { vibrate } from '@/lib/haptics';
 import { Job, Technician } from '@/types';
 
 interface InventoryItem {
@@ -669,7 +670,10 @@ const JobPartsUsedDialog: React.FC<JobPartsUsedDialogProps> = ({
                           size="sm"
                           variant="outline"
                           className="h-8 w-8 min-w-[2rem] shrink-0 bg-white text-gray-900 transition-colors hover:!bg-gray-800 hover:!text-white hover:!border-gray-800"
-                          onClick={() => handleQuickAddPart(item.inventory_id)}
+                          onClick={() => {
+                            vibrate(10);
+                            handleQuickAddPart(item.inventory_id);
+                          }}
                           disabled={item.quantity < 1}
                           title="Add 1 qty"
                         >
