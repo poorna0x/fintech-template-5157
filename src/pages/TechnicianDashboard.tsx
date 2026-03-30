@@ -49,7 +49,7 @@ import {
   Package
 } from 'lucide-react';
 import { toast } from 'sonner';
-import { hapticConfirm, hapticTap } from '@/lib/haptics';
+import { canVibrate, hapticConfirm, hapticTap } from '@/lib/haptics';
 import { db, supabase, fetchCustomerIdsWithCompletedJobsMap } from '@/lib/supabase';
 import { Job, JobAssignmentRequest } from '@/types';
 import { sendNotification, createJobCompletedNotification, createJobAssignmentRequestNotification, createJobAssignmentAcceptedNotification, createJobAssignmentRejectedNotification, requestNotificationPermission } from '@/lib/notifications';
@@ -224,25 +224,54 @@ const TechnicianDashboard = () => {
   // Guard against double-vibrate when specific handlers also vibrate.
   const lastHapticAtRef = useRef<number>(0);
   useEffect(() => {
-    const handler = (e: MouseEvent) => {
-      const target = e.target as HTMLElement | null;
-      if (!target) return;
+    if (!canVibrate()) return;
 
-      const el = target.closest('button,[role="button"]') as HTMLElement | null;
-      if (!el) return;
-
-      // Skip disabled buttons / aria-disabled.
+    const shouldHapticForTarget = (target: EventTarget | null) => {
+      const node = target as HTMLElement | null;
+      if (!node) return null;
+      const el = node.closest('button,[role="button"]') as HTMLElement | null;
+      if (!el) return null;
       const disabled = (el as HTMLButtonElement).disabled || el.getAttribute('aria-disabled') === 'true';
-      if (disabled) return;
+      if (disabled) return null;
+      return el;
+    };
 
+    const fire = () => {
       const now = Date.now();
       if (now - lastHapticAtRef.current < 120) return;
       lastHapticAtRef.current = now;
       hapticTap();
     };
 
-    document.addEventListener('click', handler, true);
-    return () => document.removeEventListener('click', handler, true);
+    const onPointerDown = (e: PointerEvent) => {
+      if (!shouldHapticForTarget(e.target)) return;
+      fire();
+    };
+
+    const onTouchStart = (e: TouchEvent) => {
+      if (!shouldHapticForTarget(e.target)) return;
+      fire();
+    };
+
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key !== 'Enter' && e.key !== ' ') return;
+      if (!shouldHapticForTarget(e.target)) return;
+      fire();
+    };
+
+    // Prefer earliest gesture events for maximum browser support.
+    document.addEventListener('pointerdown', onPointerDown, true);
+    document.addEventListener('touchstart', onTouchStart, { capture: true, passive: true });
+    document.addEventListener('keydown', onKeyDown, true);
+    // Keep click as a fallback for older browsers.
+    document.addEventListener('click', onPointerDown as any, true);
+
+    return () => {
+      document.removeEventListener('pointerdown', onPointerDown, true);
+      document.removeEventListener('touchstart', onTouchStart as any, true);
+      document.removeEventListener('keydown', onKeyDown, true);
+      document.removeEventListener('click', onPointerDown as any, true);
+    };
   }, []);
   
   const [jobs, setJobs] = useState<Job[]>([]);
