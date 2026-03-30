@@ -76,7 +76,7 @@ import { normalizePhoneForSearch } from '@/lib/utils';
 import { customerNameClassName } from '@/lib/customerDisplay';
 import FollowUpModal from '@/components/FollowUpModal';
 import { sendNotification, createJobAssignedNotification, createJobCompletedNotification, createJobCancelledNotification, createJobAssignmentRequestNotification } from '@/lib/notifications';
-import { hapticSwitch } from '@/lib/haptics';
+import { hapticSwitch, hapticTap } from '@/lib/haptics';
 import BillModal from './BillModal';
 import AMCModal from './AMCModal';
 import QuotationModal from './QuotationModal';
@@ -222,6 +222,7 @@ const AdminDashboard = () => {
   // Preserve scroll position when WhatsApp dialog opens after assign/reassign (so page doesn't jump to top)
   const scrollPositionBeforeWhatsAppRef = useRef(0);
   const handleViewChange = (view: 'dashboard' | 'payments' | 'billing' | 'analytics' | 'inventory') => {
+    hapticSwitch();
     setCurrentView(view);
   };
 
@@ -3057,6 +3058,7 @@ const AdminDashboard = () => {
   };
 
   const handleAddCustomer = () => {
+    hapticTap();
     setAddFormData({
       full_name: '',
       phone: '',
@@ -4722,6 +4724,7 @@ const AdminDashboard = () => {
 
   const handleSearch = async () => {
     const trimmedQuery = searchQuery.trim();
+    hapticTap();
     setIsSearching(true);
     setSearchTerm(trimmedQuery);
     setSearchQuery(trimmedQuery);
@@ -4740,6 +4743,7 @@ const AdminDashboard = () => {
   };
 
   const handleClearSearch = () => {
+    hapticTap();
     setSearchQuery('');
     setSearchTerm('');
     setSearchResults(null);
@@ -7896,11 +7900,7 @@ const AdminDashboard = () => {
               </Button>
               {searchQuery && (
                 <Button
-                  onClick={() => {
-                    setSearchQuery('');
-                    setSearchTerm('');
-                    setIsSearching(false);
-                  }}
+                  onClick={handleClearSearch}
                   variant="outline"
                   className="px-4"
                   title="Clear"
@@ -7913,6 +7913,7 @@ const AdminDashboard = () => {
                 className="px-4"
                 title="Refresh data (no full page reload)"
                 onClick={async () => {
+                  hapticTap();
                   await loadDashboardData();
                 }}
               >
@@ -7927,7 +7928,10 @@ const AdminDashboard = () => {
                 variant="outline"
                 className="flex items-center justify-center gap-2 w-full sm:w-auto sm:px-3"
                 title="Settings"
-                onClick={() => navigate('/settings')}
+                onClick={() => {
+                  hapticTap();
+                  navigate('/settings');
+                }}
               >
                 <Settings className="w-4 h-4" />
                 <span className="hidden sm:inline">Settings</span>
@@ -7935,7 +7939,10 @@ const AdminDashboard = () => {
               <Button
                 variant="outline"
                   className="flex items-center justify-center gap-2 w-full sm:w-auto sm:px-3"
-                onClick={() => setRecentAccountsDialogOpen(true)}
+                onClick={() => {
+                  hapticTap();
+                  setRecentAccountsDialogOpen(true);
+                }}
                   title="Recent"
               >
                 <Clock className="w-4 h-4" />
@@ -8036,11 +8043,7 @@ const AdminDashboard = () => {
             </Button>
             {searchQuery && (
               <Button
-                onClick={() => {
-                  setSearchQuery('');
-                  setSearchTerm('');
-                  setIsSearching(false);
-                }}
+                onClick={handleClearSearch}
                 variant="outline"
                 className="px-4"
                 title="Clear"
@@ -8053,6 +8056,7 @@ const AdminDashboard = () => {
               className="px-4"
               title="Refresh data (no full page reload)"
               onClick={async () => {
+                hapticTap();
                 await loadDashboardData();
               }}
             >
