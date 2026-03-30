@@ -49,7 +49,7 @@ import {
   Package
 } from 'lucide-react';
 import { toast } from 'sonner';
-import { hapticConfirm, hapticSwitch, hapticTap } from '@/lib/haptics';
+import { hapticConfirm, hapticTap } from '@/lib/haptics';
 import { db, supabase, fetchCustomerIdsWithCompletedJobsMap } from '@/lib/supabase';
 import { Job, JobAssignmentRequest } from '@/types';
 import { sendNotification, createJobCompletedNotification, createJobAssignmentRequestNotification, createJobAssignmentAcceptedNotification, createJobAssignmentRejectedNotification, requestNotificationPermission } from '@/lib/notifications';
@@ -219,6 +219,31 @@ function technicianCustomerIndicatorMainClass(hasAmc: boolean, hasG: boolean, ha
 const TechnicianDashboard = () => {
   const { user, logout, isTechnician, loading } = useAuth();
   const navigate = useNavigate();
+
+  // Global haptics for any button press (supported browsers only).
+  // Guard against double-vibrate when specific handlers also vibrate.
+  const lastHapticAtRef = useRef<number>(0);
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      const target = e.target as HTMLElement | null;
+      if (!target) return;
+
+      const el = target.closest('button,[role="button"]') as HTMLElement | null;
+      if (!el) return;
+
+      // Skip disabled buttons / aria-disabled.
+      const disabled = (el as HTMLButtonElement).disabled || el.getAttribute('aria-disabled') === 'true';
+      if (disabled) return;
+
+      const now = Date.now();
+      if (now - lastHapticAtRef.current < 120) return;
+      lastHapticAtRef.current = now;
+      hapticTap();
+    };
+
+    document.addEventListener('click', handler, true);
+    return () => document.removeEventListener('click', handler, true);
+  }, []);
   
   const [jobs, setJobs] = useState<Job[]>([]);
   const [filteredJobs, setFilteredJobs] = useState<Job[]>([]);
@@ -3991,6 +4016,7 @@ const TechnicianDashboard = () => {
             <Button
               size="default"
               onClick={() => {
+                lastHapticAtRef.current = Date.now();
                 hapticConfirm();
                 markJobAsSeen(job.id);
                 handleStartJob(job);
@@ -4021,6 +4047,7 @@ const TechnicianDashboard = () => {
             <Button
               size="default"
               onClick={() => {
+                lastHapticAtRef.current = Date.now();
                 hapticConfirm();
                 markJobAsSeen(job.id);
                 handleStartWork(job);
@@ -4051,6 +4078,7 @@ const TechnicianDashboard = () => {
             <Button
               size="default"
               onClick={() => {
+                lastHapticAtRef.current = Date.now();
                 hapticConfirm();
                 markJobAsSeen(job.id);
                 handleCompleteJob(job);
