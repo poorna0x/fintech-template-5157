@@ -668,12 +668,12 @@ const JobPartsUsedDialog: React.FC<JobPartsUsedDialogProps> = ({
                         <Button
                           size="sm"
                           variant="outline"
-                          className="h-8 w-8 min-w-[2rem] shrink-0 bg-transparent hover:bg-transparent group-hover:bg-transparent text-muted-foreground hover:text-black"
+                          className="h-8 w-8 min-w-[2rem] shrink-0 bg-white text-gray-900 transition-colors hover:!bg-gray-800 hover:!text-white hover:!border-gray-800"
                           onClick={() => handleQuickAddPart(item.inventory_id)}
                           disabled={item.quantity < 1}
                           title="Add 1 qty"
                         >
-                          <Plus className="w-4 h-4" />
+                          <Plus className="w-4 h-4 text-current" />
                         </Button>
                       </div>
                     );
