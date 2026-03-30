@@ -13,7 +13,7 @@ import { User, Plus, Edit, Trash2, Package, Search, Check, ChevronsUpDown, X, Re
 import { db, supabase } from '@/lib/supabase';
 import TechnicianTopUpDialog from '@/components/TechnicianTopUpDialog';
 import { toast } from 'sonner';
-import { vibrate } from '@/lib/haptics';
+import { hapticTap } from '@/lib/haptics';
 import { cn } from '@/lib/utils';
 import { inventoryCache, debounce } from '@/lib/inventoryCache';
 
@@ -1017,7 +1017,7 @@ const TechnicianInventoryManagement: React.FC<TechnicianInventoryManagementProps
                               variant="outline"
                               className="h-8 w-8 min-w-[2rem] shrink-0 bg-white text-gray-900 transition-colors hover:!bg-gray-800 hover:!text-white hover:!border-gray-800"
                               onClick={() => {
-                                vibrate(10);
+                                hapticTap();
                                 handleQuickAssignInventory(item.id);
                               }}
                               disabled={!canAdd}

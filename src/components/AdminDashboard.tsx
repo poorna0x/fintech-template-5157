@@ -76,6 +76,7 @@ import { normalizePhoneForSearch } from '@/lib/utils';
 import { customerNameClassName } from '@/lib/customerDisplay';
 import FollowUpModal from '@/components/FollowUpModal';
 import { sendNotification, createJobAssignedNotification, createJobCompletedNotification, createJobCancelledNotification, createJobAssignmentRequestNotification } from '@/lib/notifications';
+import { hapticSwitch } from '@/lib/haptics';
 import BillModal from './BillModal';
 import AMCModal from './AMCModal';
 import QuotationModal from './QuotationModal';
@@ -8071,7 +8072,10 @@ const AdminDashboard = () => {
         {/* Stats Cards - Clickable Filter Buttons */}
         <StatsCards
           statusFilter={statusFilter}
-          onFilterChange={(filter) => setStatusFilter(filter as typeof statusFilter)}
+          onFilterChange={(filter) => {
+            hapticSwitch();
+            setStatusFilter(filter as typeof statusFilter);
+          }}
           jobCounts={jobCounts}
           pendingJobs={pendingJobs}
           inProgressJobs={inProgressJobs}

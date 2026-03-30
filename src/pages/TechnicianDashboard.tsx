@@ -49,6 +49,7 @@ import {
   Package
 } from 'lucide-react';
 import { toast } from 'sonner';
+import { hapticConfirm, hapticSwitch, hapticTap } from '@/lib/haptics';
 import { db, supabase, fetchCustomerIdsWithCompletedJobsMap } from '@/lib/supabase';
 import { Job, JobAssignmentRequest } from '@/types';
 import { sendNotification, createJobCompletedNotification, createJobAssignmentRequestNotification, createJobAssignmentAcceptedNotification, createJobAssignmentRejectedNotification, requestNotificationPermission } from '@/lib/notifications';
@@ -3990,6 +3991,7 @@ const TechnicianDashboard = () => {
             <Button
               size="default"
               onClick={() => {
+                hapticConfirm();
                 markJobAsSeen(job.id);
                 handleStartJob(job);
               }}
@@ -4019,6 +4021,7 @@ const TechnicianDashboard = () => {
             <Button
               size="default"
               onClick={() => {
+                hapticConfirm();
                 markJobAsSeen(job.id);
                 handleStartWork(job);
               }}
@@ -4048,6 +4051,7 @@ const TechnicianDashboard = () => {
             <Button
               size="default"
               onClick={() => {
+                hapticConfirm();
                 markJobAsSeen(job.id);
                 handleCompleteJob(job);
               }}
