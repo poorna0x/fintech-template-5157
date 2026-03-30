@@ -76,7 +76,7 @@ import { normalizePhoneForSearch } from '@/lib/utils';
 import { customerNameClassName } from '@/lib/customerDisplay';
 import FollowUpModal from '@/components/FollowUpModal';
 import { sendNotification, createJobAssignedNotification, createJobCompletedNotification, createJobCancelledNotification, createJobAssignmentRequestNotification } from '@/lib/notifications';
-import { hapticSwitch, hapticTap } from '@/lib/haptics';
+import { canVibrate, hapticSwitch, hapticTap } from '@/lib/haptics';
 import BillModal from './BillModal';
 import AMCModal from './AMCModal';
 import QuotationModal from './QuotationModal';
@@ -138,6 +138,57 @@ declare global {
 const AdminDashboard = () => {
   const navigate = useNavigate();
   const { user, isAdmin, loading: authLoading, logout } = useAuth();
+
+  // Global haptics for any button press (supported browsers only).
+  // Use a shared guard so per-action haptics don't double-vibrate.
+  const lastHapticAtRef = useRef<number>(0);
+  const fireHaptic = useCallback((fn: () => void) => {
+    const now = Date.now();
+    if (now - lastHapticAtRef.current < 120) return;
+    lastHapticAtRef.current = now;
+    fn();
+  }, []);
+  const fireTap = useCallback(() => fireHaptic(hapticTap), [fireHaptic]);
+  const fireSwitch = useCallback(() => fireHaptic(hapticSwitch), [fireHaptic]);
+
+  useEffect(() => {
+    if (!canVibrate()) return;
+
+    const shouldHapticForTarget = (target: EventTarget | null) => {
+      const node = target as HTMLElement | null;
+      if (!node) return null;
+      const el = node.closest('button,[role="button"]') as HTMLElement | null;
+      if (!el) return null;
+      const disabled = (el as HTMLButtonElement).disabled || el.getAttribute('aria-disabled') === 'true';
+      if (disabled) return null;
+      return el;
+    };
+
+    const onPointerDown = (e: PointerEvent) => {
+      if (!shouldHapticForTarget(e.target)) return;
+      fireTap();
+    };
+    const onTouchStart = (e: TouchEvent) => {
+      if (!shouldHapticForTarget(e.target)) return;
+      fireTap();
+    };
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key !== 'Enter' && e.key !== ' ') return;
+      if (!shouldHapticForTarget(e.target)) return;
+      fireTap();
+    };
+
+    document.addEventListener('pointerdown', onPointerDown, true);
+    document.addEventListener('touchstart', onTouchStart, { capture: true, passive: true });
+    document.addEventListener('keydown', onKeyDown, true);
+    document.addEventListener('click', onPointerDown as any, true);
+    return () => {
+      document.removeEventListener('pointerdown', onPointerDown, true);
+      document.removeEventListener('touchstart', onTouchStart as any, true);
+      document.removeEventListener('keydown', onKeyDown, true);
+      document.removeEventListener('click', onPointerDown as any, true);
+    };
+  }, [fireTap]);
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [jobs, setJobs] = useState<Job[]>([]);
   const [allFollowUpJobs, setAllFollowUpJobs] = useState<Job[]>([]); // All follow-up jobs for glow effect
@@ -222,7 +273,7 @@ const AdminDashboard = () => {
   // Preserve scroll position when WhatsApp dialog opens after assign/reassign (so page doesn't jump to top)
   const scrollPositionBeforeWhatsAppRef = useRef(0);
   const handleViewChange = (view: 'dashboard' | 'payments' | 'billing' | 'analytics' | 'inventory') => {
-    hapticSwitch();
+    fireSwitch();
     setCurrentView(view);
   };
 
@@ -3058,7 +3109,7 @@ const AdminDashboard = () => {
   };
 
   const handleAddCustomer = () => {
-    hapticTap();
+    fireTap();
     setAddFormData({
       full_name: '',
       phone: '',
@@ -4724,7 +4775,7 @@ const AdminDashboard = () => {
 
   const handleSearch = async () => {
     const trimmedQuery = searchQuery.trim();
-    hapticTap();
+    fireTap();
     setIsSearching(true);
     setSearchTerm(trimmedQuery);
     setSearchQuery(trimmedQuery);
@@ -4743,7 +4794,7 @@ const AdminDashboard = () => {
   };
 
   const handleClearSearch = () => {
-    hapticTap();
+    fireTap();
     setSearchQuery('');
     setSearchTerm('');
     setSearchResults(null);
@@ -7913,7 +7964,7 @@ const AdminDashboard = () => {
                 className="px-4"
                 title="Refresh data (no full page reload)"
                 onClick={async () => {
-                  hapticTap();
+                  fireTap();
                   await loadDashboardData();
                 }}
               >
@@ -7929,7 +7980,7 @@ const AdminDashboard = () => {
                 className="flex items-center justify-center gap-2 w-full sm:w-auto sm:px-3"
                 title="Settings"
                 onClick={() => {
-                  hapticTap();
+                  fireTap();
                   navigate('/settings');
                 }}
               >
@@ -7940,7 +7991,7 @@ const AdminDashboard = () => {
                 variant="outline"
                   className="flex items-center justify-center gap-2 w-full sm:w-auto sm:px-3"
                 onClick={() => {
-                  hapticTap();
+                  fireTap();
                   setRecentAccountsDialogOpen(true);
                 }}
                   title="Recent"
@@ -8056,7 +8107,7 @@ const AdminDashboard = () => {
               className="px-4"
               title="Refresh data (no full page reload)"
               onClick={async () => {
-                hapticTap();
+                fireTap();
                 await loadDashboardData();
               }}
             >
@@ -8077,7 +8128,7 @@ const AdminDashboard = () => {
         <StatsCards
           statusFilter={statusFilter}
           onFilterChange={(filter) => {
-            hapticSwitch();
+            fireSwitch();
             setStatusFilter(filter as typeof statusFilter);
           }}
           jobCounts={jobCounts}
