@@ -646,14 +646,14 @@ const JobPartsUsedDialog: React.FC<JobPartsUsedDialogProps> = ({
                     : 'No parts with available quantity.'}
                 </div>
               ) : (
-                <div className="overflow-y-auto overflow-x-hidden max-h-[min(50vh,280px)] sm:max-h-[320px] w-full min-w-0 pl-0 pr-4">
+                <div className="overflow-y-auto overflow-x-hidden max-h-[min(50vh,280px)] sm:max-h-[320px] w-full min-w-0 pl-0 pr-0 [scrollbar-gutter:stable] [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden">
                   {filteredInventoryItems.map((item) => {
                     const productName = item.inventory?.product_name || inventoryMap.get(item.inventory_id)?.product_name || 'Unknown';
                     const code = item.inventory?.code || inventoryMap.get(item.inventory_id)?.code || '';
                     return (
                       <div
                         key={item.id}
-                        className="flex items-center gap-2 sm:gap-3 pl-3 pr-2 py-2.5 border-b last:border-b-0 bg-background hover:bg-muted/50 w-full max-w-full overflow-hidden"
+                        className="group flex items-center gap-2 sm:gap-3 px-3 py-2.5 border-b last:border-b-0 bg-background hover:bg-muted/50 w-full max-w-full overflow-hidden"
                       >
                         <div className="min-w-0 flex-1 overflow-hidden">
                           <span className="text-sm font-medium truncate block">
@@ -667,8 +667,8 @@ const JobPartsUsedDialog: React.FC<JobPartsUsedDialogProps> = ({
                         </div>
                         <Button
                           size="sm"
-                          variant="default"
-                          className="h-8 w-8 min-w-[2rem] shrink-0"
+                          variant="outline"
+                          className="h-8 w-8 min-w-[2rem] shrink-0 bg-transparent hover:bg-transparent group-hover:bg-transparent text-muted-foreground hover:text-black"
                           onClick={() => handleQuickAddPart(item.inventory_id)}
                           disabled={item.quantity < 1}
                           title="Add 1 qty"

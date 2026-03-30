@@ -991,7 +991,7 @@ const TechnicianInventoryManagement: React.FC<TechnicianInventoryManagementProps
                       {inventoryItems.length === 0 ? 'No products in main inventory.' : debouncedInventorySearchQuery.trim() ? 'No products match your search.' : 'No products.'}
                     </div>
                   ) : (
-                    <div className="overflow-y-auto overflow-x-hidden max-h-[min(50vh,280px)] sm:max-h-[320px] w-full min-w-0 pl-0 pr-4">
+                    <div className="overflow-y-auto overflow-x-hidden max-h-[min(50vh,280px)] sm:max-h-[320px] w-full min-w-0 pl-0 pr-0 [scrollbar-gutter:stable] [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden">
                       {                    filteredInventoryItems.map((item) => {
                         const qty = item.quantity ?? 0;
                         const isAll = formData.technician_id === ASSIGN_ALL_TECHNICIANS;
@@ -1000,7 +1000,7 @@ const TechnicianInventoryManagement: React.FC<TechnicianInventoryManagementProps
                         return (
                           <div
                             key={item.id}
-                            className="flex items-center gap-2 sm:gap-3 pl-3 pr-2 py-2.5 border-b last:border-b-0 bg-background hover:bg-muted/50 w-full max-w-full overflow-hidden"
+                            className="group flex items-center gap-2 sm:gap-3 px-3 py-2.5 border-b last:border-b-0 bg-background hover:bg-muted/50 w-full max-w-full overflow-hidden"
                           >
                             <div className="min-w-0 flex-1 overflow-hidden">
                               <span className="text-sm font-medium truncate block">{item.product_name}</span>
@@ -1013,8 +1013,8 @@ const TechnicianInventoryManagement: React.FC<TechnicianInventoryManagementProps
                             </div>
                             <Button
                               size="sm"
-                              variant="default"
-                              className="h-8 w-8 min-w-[2rem] shrink-0"
+                              variant="outline"
+                              className="h-8 w-8 min-w-[2rem] shrink-0 bg-transparent hover:bg-transparent group-hover:bg-transparent text-muted-foreground hover:text-black"
                               onClick={() => handleQuickAssignInventory(item.id)}
                               disabled={!canAdd}
                               title={isAll ? `Assign 1 to each (need ${minQty})` : 'Assign 1 qty'}
