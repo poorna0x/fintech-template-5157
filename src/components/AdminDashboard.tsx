@@ -1197,8 +1197,25 @@ const AdminDashboard = () => {
           setTotalPages(pages || 0);
         }
       } else if (filter === 'RESCHEDULED') {
-        // Load follow-up jobs (usually not too many)
-        const { data, error, count, totalPages: pages } = await db.jobs.getByStatusPaginated(['FOLLOW_UP', 'RESCHEDULED'], page, pageSize);
+        // Follow-up / rescheduled: slim query + photo fields + full customer embed (low egress vs jobs.*)
+        let data: any[] = [];
+        let error: any = null;
+        let count = 0;
+        let pages = 0;
+        const slimFu = await db.jobs.getByStatusPaginatedSlim(['FOLLOW_UP', 'RESCHEDULED'], page, pageSize, undefined, {
+          includePhotoFields: true,
+        });
+        data = slimFu.data || [];
+        error = slimFu.error;
+        count = slimFu.count || 0;
+        pages = slimFu.totalPages || 0;
+        if (error) {
+          const fallback = await db.jobs.getByStatusPaginated(['FOLLOW_UP', 'RESCHEDULED'], page, pageSize);
+          data = fallback.data || [];
+          error = fallback.error;
+          count = fallback.count || 0;
+          pages = fallback.totalPages || 0;
+        }
         if (requestId !== loadJobsRequestRef.current) return;
         if (error) {
           setJobs([]);

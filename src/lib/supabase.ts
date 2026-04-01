@@ -627,18 +627,12 @@ export const db = {
     async getByTechnicianId(technicianId: string) {
       // Optimized query for mobile - only fetch essential fields
       // Include jobs where technician is assigned OR is a team member
+      // Note: no assigned_technician embed — UI uses assigned_technician_id + technicians list; saves nested join egress
       const { data, error } = await supabase
         .from('jobs')
         .select(`
           *,
-          customer:customers(*),
-          assigned_technician:technicians!assigned_technician_id(
-            id,
-            full_name,
-            phone,
-            email,
-            employee_id
-          )
+          customer:customers(*)
         `)
         .or(`assigned_technician_id.eq.${technicianId},team_members.cs.["${technicianId}"]`)
         .order('created_at', { ascending: false })
@@ -904,7 +898,8 @@ export const db = {
       statuses: string[],
       page: number = 1,
       pageSize: number = 20,
-      dateFilter?: string | { startDate: string; endDate: string }
+      dateFilter?: string | { startDate: string; endDate: string },
+      opts?: { includePhotoFields?: boolean }
     ) {
       const from = (page - 1) * pageSize;
       const to = from + pageSize - 1;
@@ -916,8 +911,8 @@ export const db = {
         return { startISO: localStart.toISOString(), nextISO: localNext.toISOString() };
       };
 
-      // Explicit job cols (no before_photos/after_photos/service_address/service_location/etc.)
-      const jobCols = [
+      // Explicit job cols (COMPLETED/CANCELLED: omit photo JSON by default to cut egress)
+      const jobColList = [
         'id',
         'job_number',
         'customer_id',
@@ -934,6 +929,12 @@ export const db = {
         'denied_at',
         'denial_reason',
         'assigned_technician_id',
+        'team_members',
+        'follow_up_date',
+        'follow_up_time',
+        'follow_up_notes',
+        'follow_up_scheduled_by',
+        'follow_up_scheduled_at',
         'completed_by',
         'completed_by_name',
         'payment_amount',
@@ -941,13 +942,22 @@ export const db = {
         'estimated_cost',
         'payment_method',
         'service_brand',
+        'service_address',
+        'service_location',
+        'description',
+        'assigned_by',
+        'assigned_date',
+        'completion_notes',
         // Keep requirements for lead-source parsing in the list UI.
-        // If this is still too heavy, we can lazy-load it per job on expand/click.
         'requirements',
-      ].join(',');
+      ];
+      if (opts?.includePhotoFields) {
+        jobColList.push('before_photos', 'after_photos', 'images');
+      }
+      const jobCols = jobColList.join(',');
 
-      // Explicit customer cols (no address/location/notes JSON)
-      const customerCols = [
+      // Slim customer by default (low egress). Follow-up/reschedule lists need address/location for maps + same card as legacy.
+      const customerColsSlim = [
         'id',
         'customer_id',
         'full_name',
@@ -963,7 +973,22 @@ export const db = {
         'has_google_review',
         'customer_tier',
         'raw_water_tds',
-      ].join(',');
+      ];
+      const customerColsFat = [
+        ...customerColsSlim,
+        'address',
+        'location',
+        'notes',
+        'installation_date',
+        'warranty_expiry',
+        'status',
+        'customer_since',
+        'preferred_time_slot',
+        'preferred_language',
+        'created_at',
+        'updated_at',
+      ];
+      const customerCols = (opts?.includePhotoFields ? customerColsFat : customerColsSlim).join(',');
 
       let query = supabase
         .from('jobs')

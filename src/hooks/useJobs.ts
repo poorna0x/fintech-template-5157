@@ -61,11 +61,25 @@ export const useJobs = (pageSize: number = 20) => {
           setTotalPages(1);
         }
       } else if (filter === 'COMPLETED' || filter === 'CANCELLED') {
-        // Use pagination for completed and denied jobs
+        // Prefer slim pagination (low PostgREST egress); fallback to legacy if needed
         const statuses = filter === 'COMPLETED' ? ['COMPLETED'] : ['DENIED', 'CANCELLED'];
-        // Pass date filter for completed or denied jobs
         const dateFilter = filter === 'COMPLETED' ? completedDateFilter : deniedDateFilter;
-        const { data, error, count, totalPages: pages } = await db.jobs.getByStatusPaginated(statuses, page, pageSize, dateFilter);
+        let data: Job[] = [];
+        let error: unknown = null;
+        let count = 0;
+        let pages = 0;
+        const slim = await db.jobs.getByStatusPaginatedSlim(statuses, page, pageSize, dateFilter);
+        data = (slim.data || []) as Job[];
+        error = slim.error;
+        count = slim.count || 0;
+        pages = slim.totalPages || 0;
+        if (error) {
+          const fallback = await db.jobs.getByStatusPaginated(statuses, page, pageSize, dateFilter);
+          data = (fallback.data || []) as Job[];
+          error = fallback.error;
+          count = fallback.count || 0;
+          pages = fallback.totalPages || 0;
+        }
         if (error) {
           setJobs([]);
         } else {
@@ -74,8 +88,24 @@ export const useJobs = (pageSize: number = 20) => {
           setTotalPages(pages || 0);
         }
       } else if (filter === 'RESCHEDULED') {
-        // Load follow-up jobs (usually not too many)
-        const { data, error, count, totalPages: pages } = await db.jobs.getByStatusPaginated(['FOLLOW_UP', 'RESCHEDULED'], page, pageSize);
+        let data: Job[] = [];
+        let error: unknown = null;
+        let count = 0;
+        let pages = 0;
+        const slimFu = await db.jobs.getByStatusPaginatedSlim(['FOLLOW_UP', 'RESCHEDULED'], page, pageSize, undefined, {
+          includePhotoFields: true,
+        });
+        data = (slimFu.data || []) as Job[];
+        error = slimFu.error;
+        count = slimFu.count || 0;
+        pages = slimFu.totalPages || 0;
+        if (error) {
+          const fallback = await db.jobs.getByStatusPaginated(['FOLLOW_UP', 'RESCHEDULED'], page, pageSize);
+          data = (fallback.data || []) as Job[];
+          error = fallback.error;
+          count = fallback.count || 0;
+          pages = fallback.totalPages || 0;
+        }
         if (error) {
           setJobs([]);
         } else {
