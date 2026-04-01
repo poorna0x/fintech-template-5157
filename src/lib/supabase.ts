@@ -106,6 +106,108 @@ export const supabase = createClient<Database>(buildTimeUrl, buildTimeKey, {
   },
 });
 
+/** Explicit job columns for ongoing admin list + technician job list (avoids jobs.* unknown/heavy columns). */
+const JOB_SELECT_ONGOING_AND_TECH = [
+  'id',
+  'job_number',
+  'customer_id',
+  'status',
+  'priority',
+  'service_type',
+  'service_sub_type',
+  'scheduled_date',
+  'scheduled_time_slot',
+  'created_at',
+  'updated_at',
+  'completed_at',
+  'end_time',
+  'denied_at',
+  'denial_reason',
+  'denied_by',
+  'assigned_technician_id',
+  'team_members',
+  'follow_up_date',
+  'follow_up_time',
+  'follow_up_notes',
+  'follow_up_scheduled_by',
+  'follow_up_scheduled_at',
+  'completed_by',
+  'completed_by_name',
+  'payment_amount',
+  'actual_cost',
+  'estimated_cost',
+  'payment_method',
+  'service_brand',
+  'service_address',
+  'service_location',
+  'description',
+  'assigned_by',
+  'assigned_date',
+  'completion_notes',
+  'requirements',
+  'before_photos',
+  'after_photos',
+  'images',
+  'start_time',
+  'actual_duration',
+  'payment_status',
+].join(',');
+
+/** Customer embed for technician job list (maps/cards); omit notes/history to cut egress vs customers(*). */
+const CUSTOMER_EMBED_FOR_TECH_JOBS = [
+  'id',
+  'customer_id',
+  'full_name',
+  'phone',
+  'alternate_phone',
+  'email',
+  'visible_address',
+  'address',
+  'location',
+  'service_type',
+  'brand',
+  'model',
+  'last_service_date',
+  'service_cost',
+  'cost_agreed',
+  'has_prefilter',
+  'has_google_review',
+  'customer_tier',
+  'raw_water_tds',
+].join(',');
+
+/** Customer embed for admin ongoing list (matches prior getOngoing shape; not customers(*)). */
+const CUSTOMER_EMBED_FOR_ONGOING_ADMIN = [
+  'id',
+  'customer_id',
+  'full_name',
+  'phone',
+  'email',
+  'alternate_phone',
+  'visible_address',
+  'address',
+  'location',
+  'service_type',
+  'brand',
+  'model',
+  'installation_date',
+  'warranty_expiry',
+  'status',
+  'customer_since',
+  'last_service_date',
+  'service_cost',
+  'cost_agreed',
+  'notes',
+  'preferred_time_slot',
+  'preferred_language',
+  'has_prefilter',
+  'has_google_review',
+  'customer_tier',
+  'raw_water_tds',
+  'created_at',
+  'updated_at',
+].join(',');
+
 // Database helper functions
 export const db = {
   // Customer operations
@@ -625,19 +727,15 @@ export const db = {
     },
     
     async getByTechnicianId(technicianId: string) {
-      // Optimized query for mobile - only fetch essential fields
+      // Explicit columns + slim customer embed (not jobs.* / customers(*)) to reduce PostgREST egress.
       // Include jobs where technician is assigned OR is a team member
-      // Note: no assigned_technician embed — UI uses assigned_technician_id + technicians list; saves nested join egress
       const { data, error } = await supabase
         .from('jobs')
-        .select(`
-          *,
-          customer:customers(*)
-        `)
+        .select(`${JOB_SELECT_ONGOING_AND_TECH},customer:customers(${CUSTOMER_EMBED_FOR_TECH_JOBS})`)
         .or(`assigned_technician_id.eq.${technicianId},team_members.cs.["${technicianId}"]`)
         .order('created_at', { ascending: false })
-        .limit(100); // Limit to 100 jobs for mobile performance
-      
+        .limit(100);
+
       return { data, error };
     },
     
@@ -1278,41 +1376,11 @@ export const db = {
     async getOngoing(limit: number = 100) {
       const { data, error } = await supabase
         .from('jobs')
-        .select(`
-          *,
-          customer:customers(
-            id,
-            customer_id,
-            full_name,
-            phone,
-            email,
-            alternate_phone,
-            visible_address,
-            address,
-            location,
-            service_type,
-            brand,
-            model,
-            installation_date,
-            warranty_expiry,
-            status,
-            customer_since,
-            last_service_date,
-            notes,
-            preferred_time_slot,
-            preferred_language,
-            has_prefilter,
-            has_google_review,
-            customer_tier,
-            raw_water_tds,
-            created_at,
-            updated_at
-          )
-        `)
+        .select(`${JOB_SELECT_ONGOING_AND_TECH},customer:customers(${CUSTOMER_EMBED_FOR_ONGOING_ADMIN})`)
         .in('status', ['PENDING', 'ASSIGNED', 'EN_ROUTE', 'IN_PROGRESS'])
         .order('created_at', { ascending: false })
         .limit(limit);
-      
+
       return { data: data || [], error };
     }
   },
