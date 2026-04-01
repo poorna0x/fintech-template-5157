@@ -111,10 +111,12 @@ const JOB_SELECT_ONGOING_AND_TECH = [
   'id',
   'job_number',
   'customer_id',
-  'status',
-  'priority',
   'service_type',
   'service_sub_type',
+  'brand',
+  'model',
+  'status',
+  'priority',
   'scheduled_date',
   'scheduled_time_slot',
   'created_at',
@@ -136,6 +138,7 @@ const JOB_SELECT_ONGOING_AND_TECH = [
   'payment_amount',
   'actual_cost',
   'estimated_cost',
+  'estimated_duration',
   'payment_method',
   'service_brand',
   'service_address',
@@ -151,6 +154,8 @@ const JOB_SELECT_ONGOING_AND_TECH = [
   'start_time',
   'actual_duration',
   'payment_status',
+  'lead_cost',
+  'parts_cost_total',
 ].join(',');
 
 /** Customer embed for technician job list (maps/cards); omit notes/history to cut egress vs customers(*). */
@@ -168,8 +173,6 @@ const CUSTOMER_EMBED_FOR_TECH_JOBS = [
   'brand',
   'model',
   'last_service_date',
-  'service_cost',
-  'cost_agreed',
   'has_prefilter',
   'has_google_review',
   'customer_tier',
@@ -195,8 +198,6 @@ const CUSTOMER_EMBED_FOR_ONGOING_ADMIN = [
   'status',
   'customer_since',
   'last_service_date',
-  'service_cost',
-  'cost_agreed',
   'notes',
   'preferred_time_slot',
   'preferred_language',
@@ -727,16 +728,29 @@ export const db = {
     },
     
     async getByTechnicianId(technicianId: string) {
-      // Explicit columns + slim customer embed (not jobs.* / customers(*)) to reduce PostgREST egress.
-      // Include jobs where technician is assigned OR is a team member
-      const { data, error } = await supabase
+      // Explicit columns + slim customer embed; fallback if DB is missing optional columns.
+      const orFilter = `assigned_technician_id.eq.${technicianId},team_members.cs.["${technicianId}"]`;
+      const slim = await supabase
         .from('jobs')
         .select(`${JOB_SELECT_ONGOING_AND_TECH},customer:customers(${CUSTOMER_EMBED_FOR_TECH_JOBS})`)
-        .or(`assigned_technician_id.eq.${technicianId},team_members.cs.["${technicianId}"]`)
+        .or(orFilter)
         .order('created_at', { ascending: false })
         .limit(100);
 
-      return { data, error };
+      if (!slim.error) return { data: slim.data, error: slim.error };
+
+      if (import.meta.env.DEV) {
+        console.warn('[db.jobs.getByTechnicianId] Slim select failed, using full select:', slim.error?.message);
+      }
+
+      const legacy = await supabase
+        .from('jobs')
+        .select('*, customer:customers(*)')
+        .or(orFilter)
+        .order('created_at', { ascending: false })
+        .limit(100);
+
+      return { data: legacy.data, error: legacy.error };
     },
     
     // Legacy function - keeping for backward compatibility
@@ -1374,14 +1388,27 @@ export const db = {
 
     // Get ongoing jobs (PENDING, ASSIGNED, IN_PROGRESS). Limit 100 to cap egress if count grows.
     async getOngoing(limit: number = 100) {
-      const { data, error } = await supabase
+      const slim = await supabase
         .from('jobs')
         .select(`${JOB_SELECT_ONGOING_AND_TECH},customer:customers(${CUSTOMER_EMBED_FOR_ONGOING_ADMIN})`)
         .in('status', ['PENDING', 'ASSIGNED', 'EN_ROUTE', 'IN_PROGRESS'])
         .order('created_at', { ascending: false })
         .limit(limit);
 
-      return { data: data || [], error };
+      if (!slim.error) return { data: slim.data || [], error: slim.error };
+
+      if (import.meta.env.DEV) {
+        console.warn('[db.jobs.getOngoing] Slim select failed, using full select:', slim.error?.message);
+      }
+
+      const legacy = await supabase
+        .from('jobs')
+        .select('*, customer:customers(*)')
+        .in('status', ['PENDING', 'ASSIGNED', 'EN_ROUTE', 'IN_PROGRESS'])
+        .order('created_at', { ascending: false })
+        .limit(limit);
+
+      return { data: legacy.data || [], error: legacy.error };
     }
   },
   
