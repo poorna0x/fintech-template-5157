@@ -207,6 +207,34 @@ const CUSTOMER_EMBED_FOR_ONGOING_ADMIN = [
   'updated_at',
 ].join(',');
 
+/** Per-customer job lists: no before_photos/after_photos/images (large JSON). Shared by slim + report helpers. */
+const JOB_BY_CUSTOMER_SLIM_COLS = [
+  'id',
+  'job_number',
+  'customer_id',
+  'status',
+  'priority',
+  'service_type',
+  'service_sub_type',
+  'scheduled_date',
+  'scheduled_time_slot',
+  'created_at',
+  'updated_at',
+  'completed_at',
+  'end_time',
+  'denied_at',
+  'denial_reason',
+  'assigned_technician_id',
+  'completed_by',
+  'payment_amount',
+  'actual_cost',
+  'estimated_cost',
+  'payment_method',
+  'lead_cost',
+  'parts_cost_total',
+  'requirements',
+] as const;
+
 // Database helper functions
 export const db = {
   // Customer operations
@@ -571,38 +599,61 @@ export const db = {
     },
     
     async getByCustomerId(customerId: string) {
-      // Backward-compatible default now uses SLIM select to reduce egress.
-      // Use getByCustomerIdFull() when you explicitly need photos/address/location/etc.
+      // Backward-compatible default uses slim list; use getByCustomerIdForReport / getByCustomerIdForPhotoAggregation / getByCustomerIdFull as needed.
       return this.getByCustomerIdSlim(customerId);
     },
 
     /** Low-egress jobs-by-customer list. Avoids big payload fields. */
     async getByCustomerIdSlim(customerId: string) {
+      const cols = JOB_BY_CUSTOMER_SLIM_COLS.join(', ');
+
+      const { data, error } = await supabase
+        .from('jobs')
+        .select(cols)
+        .eq('customer_id', customerId)
+        .order('created_at', { ascending: false });
+
+      return { data, error };
+    },
+
+    /**
+     * Customer / technician “report” UI: needs requirements, costs, completion narrative — not every jobs.* column.
+     * Omits before_photos/after_photos/images unless `includeAfterPhotos` (technician inline report parses after_photos).
+     */
+    async getByCustomerIdForReport(
+      customerId: string,
+      opts?: { includeAfterPhotos?: boolean }
+    ) {
+      const cols = [
+        ...JOB_BY_CUSTOMER_SLIM_COLS,
+        'completion_notes',
+        'description',
+        ...(opts?.includeAfterPhotos ? (['after_photos'] as const) : []),
+      ].join(', ');
+
+      const { data, error } = await supabase
+        .from('jobs')
+        .select(cols)
+        .eq('customer_id', customerId)
+        .order('created_at', { ascending: false });
+
+      return { data, error };
+    },
+
+    /**
+     * Gallery / delete-photo flows: only fields used to aggregate or mutate photo URLs.
+     * Much smaller than getByCustomerIdFull (*).
+     */
+    async getByCustomerIdForPhotoAggregation(customerId: string) {
       const cols = [
         'id',
-        'job_number',
-        'customer_id',
-        'status',
-        'priority',
-        'service_type',
-        'service_sub_type',
-        'scheduled_date',
-        'scheduled_time_slot',
         'created_at',
         'updated_at',
         'completed_at',
         'end_time',
-        'denied_at',
-        'denial_reason',
-        'assigned_technician_id',
-        'completed_by',
-        'payment_amount',
-        'actual_cost',
-        'estimated_cost',
-        'payment_method',
-        'lead_cost',
-        'parts_cost_total',
-        // Keep requirements for places that parse lead/QR in detail views; still far smaller than selecting * with photos.
+        'before_photos',
+        'after_photos',
+        'images',
         'requirements',
       ].join(', ');
 
@@ -615,7 +666,22 @@ export const db = {
       return { data, error };
     },
 
-    /** Full jobs-by-customer fetch. Use only when explicitly requested (photos, full details). */
+    /**
+     * Single latest job (for merging new customer-gallery uploads into before_photos).
+     */
+    async getLatestJobForCustomerPhotoUpload(customerId: string) {
+      const { data, error } = await supabase
+        .from('jobs')
+        .select('id, before_photos, created_at')
+        .eq('customer_id', customerId)
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      return { data, error };
+    },
+
+    /** Full jobs-by-customer fetch (`*`): prefer getByCustomerIdSlim / getByCustomerIdForReport / getByCustomerIdForPhotoAggregation when possible. */
     async getByCustomerIdFull(customerId: string) {
       const { data, error } = await supabase
         .from('jobs')

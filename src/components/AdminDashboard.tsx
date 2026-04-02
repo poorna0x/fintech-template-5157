@@ -683,8 +683,6 @@ const AdminDashboard = () => {
   const [commonQrCodes, setCommonQrCodes] = useState<CommonQrCode[]>([]);
   const [customerReportDialogOpen, setCustomerReportDialogOpen] = useState(false);
   const [selectedCustomerForReport, setSelectedCustomerForReport] = useState<Customer | null>(null);
-  const [customerReportJobs, setCustomerReportJobs] = useState<any[]>([]);
-  const [loadingCustomerReportJobs, setLoadingCustomerReportJobs] = useState(false);
   const [loadedCompletedJobDetails, setLoadedCompletedJobDetails] = useState<Record<string, any>>({});
   const [loadingCompletedJobDetails, setLoadingCompletedJobDetails] = useState<Record<string, boolean>>({});
   const [editCompletedJobDialogOpen, setEditCompletedJobDialogOpen] = useState(false);
@@ -1243,35 +1241,6 @@ const AdminDashboard = () => {
     }).catch(() => {});
   }, [statusFilter]);
 
-  // Fetch all jobs for customer when report dialog opens
-  useEffect(() => {
-    const fetchCustomerReportJobs = async () => {
-      if (!customerReportDialogOpen || !selectedCustomerForReport) {
-        setCustomerReportJobs([]);
-        return;
-      }
-
-      setLoadingCustomerReportJobs(true);
-      try {
-        // Explicit: report dialog needs full job payload (requirements/photos/etc.)
-        const { data, error } = await db.jobs.getByCustomerIdFull(selectedCustomerForReport.id);
-        if (error) {
-          console.error('Error fetching customer jobs for report:', error);
-          setCustomerReportJobs([]);
-        } else {
-          setCustomerReportJobs(data || []);
-        }
-      } catch (error) {
-        console.error('Error fetching customer jobs for report:', error);
-        setCustomerReportJobs([]);
-      } finally {
-        setLoadingCustomerReportJobs(false);
-      }
-    };
-
-    fetchCustomerReportJobs();
-  }, [customerReportDialogOpen, selectedCustomerForReport]);
-
   const loadCompletedJobDetails = useCallback(async (jobId: string) => {
     if (!jobId) return;
     if (loadedCompletedJobDetails[jobId]) return;
@@ -1583,8 +1552,7 @@ const AdminDashboard = () => {
         return;
       }
 
-      // Fetch all jobs for this customer from database
-      const { data: customerJobs, error: jobsError } = await db.jobs.getByCustomerIdFull(customer.id);
+      const { data: customerJobs, error: jobsError } = await db.jobs.getByCustomerIdSlim(customer.id);
       
       if (jobsError) {
         toast.error('Failed to load service history');
@@ -3803,8 +3771,7 @@ const AdminDashboard = () => {
         throw new Error(`Customer not found: ${customerError?.message || 'Unknown error'}`);
       }
       
-      // Now fetch jobs using the customer's UUID
-      const { data: jobs, error } = await db.jobs.getByCustomerIdFull(customer.id);
+      const { data: jobs, error } = await db.jobs.getByCustomerIdForPhotoAggregation(customer.id);
       
       if (error) {
         throw error;
@@ -4070,15 +4037,15 @@ const AdminDashboard = () => {
             throw new Error('Customer not found');
           }
 
-          // Get customer's latest job
-          const { data: customerJobs, error: jobsError } = await db.jobs.getByCustomerIdFull(customer.id);
+          const { data: latestJob, error: jobsError } = await db.jobs.getLatestJobForCustomerPhotoUpload(
+            customer.id
+          );
           if (jobsError) {
             throw new Error('Failed to fetch customer jobs');
           }
 
-          if (customerJobs && customerJobs.length > 0) {
+          if (latestJob) {
             // Update the latest job with new photos (gallery only - use Edit Completed Job to add completion/bill photos)
-            const latestJob = customerJobs[0]; // Jobs are ordered by created_at desc
             const currentPhotos = Array.isArray(latestJob.before_photos || latestJob.beforePhotos) ? (latestJob.before_photos || latestJob.beforePhotos) : [];
             const updatedPhotos = [...currentPhotos, ...uploadedPhotos];
 
@@ -6798,8 +6765,9 @@ const AdminDashboard = () => {
         throw new Error('Customer not found');
       }
 
-      // Get all jobs for this customer (may be empty if photos were added without a job)
-      const { data: customerJobsData, error: jobsError } = await db.jobs.getByCustomerIdFull(customer.id);
+      const { data: customerJobsData, error: jobsError } = await db.jobs.getByCustomerIdForPhotoAggregation(
+        customer.id
+      );
       if (jobsError) {
         throw new Error(jobsError.message);
       }

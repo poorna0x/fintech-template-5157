@@ -41,8 +41,7 @@ const CustomerReportDialog: React.FC<CustomerReportDialogProps> = ({
     
     setLoadingCustomerReportJobs(true);
     try {
-      // Explicit: reports need requirements/photos fields, so use full fetch.
-      const { data, error } = await db.jobs.getByCustomerIdFull(customer.id);
+      const { data, error } = await db.jobs.getByCustomerIdForReport(customer.id);
       if (error) {
         console.error('Error loading customer report jobs:', error);
         return;

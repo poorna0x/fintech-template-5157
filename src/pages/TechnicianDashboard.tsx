@@ -1113,8 +1113,9 @@ const TechnicianDashboard = () => {
       try {
         const customerId = selectedCustomerForReport.id || selectedCustomerForReport.customer_id;
         if (customerId) {
-        // Explicit: customer report needs full job payload (photos/requirements/etc.)
-        const { data, error } = await db.jobs.getByCustomerIdFull(customerId);
+        const { data, error } = await db.jobs.getByCustomerIdForReport(customerId, {
+          includeAfterPhotos: true,
+        });
           if (error) {
             console.error('Error fetching customer jobs for report:', error);
             setCustomerReportJobs([]);
@@ -3724,8 +3725,7 @@ const TechnicianDashboard = () => {
         if (!customerError && customer) customerRecord = customer;
       }
       
-      // Explicit: photo aggregation needs before/after photos + requirements
-      const { data: customerJobs, error } = await db.jobs.getByCustomerIdFull(customerUuid);
+      const { data: customerJobs, error } = await db.jobs.getByCustomerIdForPhotoAggregation(customerUuid);
       
       if (error) {
         console.error('Error fetching customer jobs:', error);
