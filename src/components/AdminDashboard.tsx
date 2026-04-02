@@ -4746,7 +4746,9 @@ const AdminDashboard = () => {
     setSearchTerm(trimmedQuery);
     setSearchQuery(trimmedQuery);
     if (trimmedQuery) {
-      const { data, error } = await db.customers.searchSlim(trimmedQuery);
+      const { data, error } = await db.customers.searchSlim(trimmedQuery, 50, {
+        includeAddressAndLocation: true,
+      });
       if (error) {
         toast.error('Search failed');
         setSearchResults([]);

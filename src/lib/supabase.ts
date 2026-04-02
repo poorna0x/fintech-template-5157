@@ -134,13 +134,11 @@ const JOB_SELECT_ONGOING_AND_TECH = [
   'follow_up_scheduled_by',
   'follow_up_scheduled_at',
   'completed_by',
-  'completed_by_name',
   'payment_amount',
   'actual_cost',
   'estimated_cost',
   'estimated_duration',
   'payment_method',
-  'service_brand',
   'service_address',
   'service_location',
   'description',
@@ -363,8 +361,12 @@ export const db = {
       return { data, error };
     },
 
-    /** Low-egress customer search for pickers/lists. */
-    async searchSlim(query: string, limit: number = 50) {
+    /** Low-egress customer search for pickers/lists. Set includeAddressAndLocation for admin map/address UI. */
+    async searchSlim(
+      query: string,
+      limit: number = 50,
+      opts?: { includeAddressAndLocation?: boolean }
+    ) {
       const trimmed = (query ?? '').trim();
       if (!trimmed) {
         return { data: [], error: null };
@@ -387,6 +389,19 @@ export const db = {
         'raw_water_tds',
         'created_at',
         'updated_at',
+        ...(opts?.includeAddressAndLocation
+          ? ([
+              'address',
+              'location',
+              'notes',
+              'preferred_time_slot',
+              'preferred_language',
+              'installation_date',
+              'warranty_expiry',
+              'status',
+              'customer_since',
+            ] as const)
+          : []),
       ].join(', ');
 
       const escaped = escapeForLike(trimmed);
@@ -505,12 +520,10 @@ export const db = {
         'denial_reason',
         'assigned_technician_id',
         'completed_by',
-        'completed_by_name',
         'payment_amount',
         'actual_cost',
         'estimated_cost',
         'payment_method',
-        'service_brand',
         'lead_cost',
         'parts_cost_total',
         'requirements',
@@ -583,12 +596,10 @@ export const db = {
         'denial_reason',
         'assigned_technician_id',
         'completed_by',
-        'completed_by_name',
         'payment_amount',
         'actual_cost',
         'estimated_cost',
         'payment_method',
-        'service_brand',
         'lead_cost',
         'parts_cost_total',
         // Keep requirements for places that parse lead/QR in detail views; still far smaller than selecting * with photos.
@@ -1048,12 +1059,10 @@ export const db = {
         'follow_up_scheduled_by',
         'follow_up_scheduled_at',
         'completed_by',
-        'completed_by_name',
         'payment_amount',
         'actual_cost',
         'estimated_cost',
         'payment_method',
-        'service_brand',
         'service_address',
         'service_location',
         'description',
@@ -1359,7 +1368,7 @@ export const db = {
 
       let query = supabase
         .from('jobs')
-        .select('id,requirements,service_sub_type,completed_by,completed_by_name,completed_at,end_time')
+        .select('id,requirements,service_sub_type,completed_by,completed_at,end_time')
         .eq('status', 'COMPLETED')
         .order('created_at', { ascending: false })
         .limit(limit);
