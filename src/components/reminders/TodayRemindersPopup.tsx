@@ -56,11 +56,14 @@ export function TodayRemindersPopup() {
     let retryTimeoutId: ReturnType<typeof setTimeout> | null = null;
 
     const applyReminders = (forToday: Reminder[], list: Reminder[]) => {
-      if (forToday.length > 0) {
-        const sorted = [...forToday].sort((a, b) => {
-          const pa = a.title === PENDING_PAYMENT_TITLE ? 0 : 1;
-          const pb = b.title === PENDING_PAYMENT_TITLE ? 0 : 1;
-          return pa - pb;
+      // If there are only pending-payment reminders due today, they are already visible
+      // in the pending payments UI; don't show them again as a popup.
+      const visibleReminders = forToday.filter((r) => !isPendingPaymentReminderTitle(r.title));
+
+      if (visibleReminders.length > 0) {
+        const sorted = [...visibleReminders].sort((a, b) => {
+          // Keep non-pending reminders stable; sort by title as a deterministic fallback.
+          return String(a.title).localeCompare(String(b.title));
         });
         setTodayReminders(sorted);
         setOpen(true);
@@ -262,7 +265,7 @@ export function TodayRemindersPopup() {
             </Button>
           </div>
           <p className="text-xs text-muted-foreground pt-1">
-            &quot;Got it&quot; marks the job as completed when a reminder is linked to a job, marks all listed reminders (including pending payments) as done, and creates the next recurring reminder when applicable. This popup opens when there is anything due today that is not completed.
+            &quot;Got it&quot; marks the job as completed when a reminder is linked to a job, marks all listed reminders as done, and creates the next recurring reminder when applicable. This popup opens when there is anything due today that is not completed.
           </p>
         </DialogContent>
       </Dialog>
