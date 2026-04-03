@@ -4828,7 +4828,7 @@ const TechnicianDashboard = () => {
                   >
                 <CardContent className="p-6">
                   {/* Denial information inside the card */}
-                  {job.status === 'DENIED' && (() => {
+                      {job.status === 'DENIED' && (() => {
                     const denialReason = (job as any).denial_reason || job.denialReason || '';
                     const deniedBy = (job as any).denied_by || job.deniedBy || '';
                     const deniedAt = (job as any).denied_at || job.deniedAt || null;
@@ -4837,7 +4837,7 @@ const TechnicianDashboard = () => {
                     if (!denialReason && !deniedBy && !deniedAt) return null;
                     
                     return (
-                      <div className="mb-4 -mt-2 -mx-2">
+                      <div className="mb-4 -mt-2 mx-0 sm:-mx-2">
                         <div className="rounded-md border border-red-200 bg-red-50 px-4 py-3">
                           <div className="flex items-start gap-3 mb-3">
                             <XCircle className="w-5 h-5 text-red-600 mt-0.5 flex-shrink-0" />
@@ -4868,8 +4868,8 @@ const TechnicianDashboard = () => {
                   })()}
                   {/* Follow-up information inside the card */}
                   {job.status === 'FOLLOW_UP' && (formattedFollowUpDate || formattedFollowUpTime || followUpNotes) && (
-                    <div className="mb-4 -mt-2 -mx-2">
-                      <div className="rounded-md border border-purple-200 bg-purple-50 px-4 py-3">
+                    <div className="mb-4 -mt-2 mx-0 sm:-mx-2">
+                      <div className="rounded-md border border-purple-200 bg-purple-50 px-3 py-3 sm:px-4 min-w-0">
                         <div className="flex items-start gap-3 mb-3">
                         <CalendarPlus className="w-5 h-5 text-purple-600 mt-0.5 flex-shrink-0" />
                         <div className="space-y-1 text-sm text-gray-900 flex-1">
@@ -4884,8 +4884,8 @@ const TechnicianDashboard = () => {
                             )}
                           </div>
                         </div>
-                        {/* Action buttons for follow-up */}
-                        <div className="flex flex-wrap gap-2 mt-3 pt-3 border-t border-purple-200">
+                        {/* Action buttons: full-width stack on narrow phones (Button is whitespace-nowrap — side-by-side overflows) */}
+                        <div className="mt-3 pt-3 border-t border-purple-200 flex flex-col gap-2 sm:flex-row sm:flex-nowrap sm:gap-2">
                           <Button
                             size="sm"
                             variant="outline"
@@ -4894,9 +4894,9 @@ const TechnicianDashboard = () => {
                               handleScheduleFollowUp(job);
                             }}
                             disabled={isUpdating}
-                            className="flex-1 min-w-[120px] border-purple-300 text-purple-700 hover:bg-purple-100"
+                            className="w-full sm:flex-1 sm:min-w-0 border-purple-300 text-purple-700 hover:bg-purple-100"
                           >
-                            <CalendarPlus className="w-4 h-4 mr-2" />
+                            <CalendarPlus className="w-4 h-4 mr-2 shrink-0" />
                             Schedule Again
                           </Button>
                           <Button
@@ -4907,9 +4907,9 @@ const TechnicianDashboard = () => {
                               handleMoveToOngoing(job);
                             }}
                             disabled={isUpdating}
-                            className="flex-1 min-w-[120px] border-blue-300 text-blue-700 hover:bg-blue-100"
+                            className="w-full sm:flex-1 sm:min-w-0 border-blue-300 text-blue-700 hover:bg-blue-100"
                           >
-                            <ArrowRight className="w-4 h-4 mr-2" />
+                            <ArrowRight className="w-4 h-4 mr-2 shrink-0" />
                             Move to Ongoing
                           </Button>
                         </div>
