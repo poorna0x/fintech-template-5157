@@ -2874,7 +2874,7 @@ const Settings = () => {
           setNewTodoText('');
         }
       }}>
-        <DialogContent className="sm:max-w-md mx-4">
+        <DialogContent className="!w-[calc(100vw-2rem)] !max-w-[calc(100vw-2rem)] sm:!w-full sm:!max-w-md max-h-[85vh] overflow-y-auto p-5 sm:p-6">
           <DialogHeader>
             <DialogTitle>Add New Task</DialogTitle>
             <DialogDescription>
