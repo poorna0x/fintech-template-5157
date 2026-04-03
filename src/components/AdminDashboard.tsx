@@ -8131,11 +8131,11 @@ const AdminDashboard = () => {
         {/* Completed Jobs quick filter summary + dialog trigger */}
         {statusFilter === 'COMPLETED' && (
           <div className="mb-4 rounded-lg border border-input bg-muted/20 px-3 py-2">
-            <div className="flex flex-col gap-2 min-w-0">
-              <div className="flex flex-wrap items-center gap-2">
+            <div className="flex items-start justify-between gap-2 min-w-0">
+              <div className="flex flex-wrap items-center gap-2 min-w-0 flex-1">
                 {completedDatePreset === 'day' ? (
                   <>
-                    <div>
+                    <div className="min-w-0">
                       <DatePicker
                         value={completedDateFilter}
                         onChange={(v) => {
@@ -8157,7 +8157,7 @@ const AdminDashboard = () => {
                       variant="outline"
                       size="sm"
                       type="button"
-                      className="h-10 px-4"
+                      className="h-10 shrink-0 px-3 sm:px-4"
                       onClick={() => {
                         const today = getTodayLocalDate();
                         setCompletedDatePreset('day');
@@ -8175,13 +8175,14 @@ const AdminDashboard = () => {
                   </>
                 ) : (
                   <>
-                    <span className="text-xs sm:text-sm text-muted-foreground">
+                    <span className="text-xs sm:text-sm text-muted-foreground min-w-0 max-w-[min(100%,18rem)] sm:max-w-none leading-snug">
                       Range: {new Date(completedRangeStartDate).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })} to {new Date(completedRangeEndDate).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
                     </span>
                     <Button
                       variant="outline"
                       size="sm"
                       type="button"
+                      className="shrink-0 text-xs sm:text-sm"
                       onClick={() => {
                         const today = getTodayLocalDate();
                         setCompletedDatePreset('day');
@@ -8194,15 +8195,23 @@ const AdminDashboard = () => {
                         setCompletedByFilter('all');
                       }}
                     >
-                      Switch to single day
+                      <span className="sm:hidden">Single day</span>
+                      <span className="hidden sm:inline">Switch to single day</span>
                     </Button>
                   </>
                 )}
-                <Button variant="outline" size="sm" onClick={() => setCompletedFilterDialogOpen(true)} className="shrink-0 ml-auto">
-                  <Filter className="w-4 h-4 mr-1" />
-                  Filters
-                </Button>
               </div>
+              <Button
+                variant="outline"
+                size="sm"
+                type="button"
+                onClick={() => setCompletedFilterDialogOpen(true)}
+                className="shrink-0 h-10 w-10 p-0 sm:w-auto sm:px-3"
+                aria-label="Completed jobs filters"
+              >
+                <Filter className="h-4 w-4 sm:mr-1.5" aria-hidden />
+                <span className="hidden sm:inline">Filters</span>
+              </Button>
             </div>
           </div>
         )}
