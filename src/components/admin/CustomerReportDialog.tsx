@@ -41,7 +41,7 @@ const CustomerReportDialog: React.FC<CustomerReportDialogProps> = ({
     
     setLoadingCustomerReportJobs(true);
     try {
-      const { data, error } = await db.jobs.getByCustomerIdForReport(customer.id);
+      const { data, error } = await db.jobs.getByCustomerIdForReport(customer.id, { includeAfterPhotos: true });
       if (error) {
         console.error('Error loading customer report jobs:', error);
         return;
@@ -186,20 +186,31 @@ const CustomerReportDialog: React.FC<CustomerReportDialogProps> = ({
                   const amcInfo = requirements.find((r: any) => r?.amc_info)?.amc_info || null;
                   const qrPhotos = requirements.find((r: any) => r?.qr_photos)?.qr_photos || null;
                   const billPhotosReq = requirements.find((r: any) => r?.bill_photos)?.bill_photos;
-                  const billPhotos = Array.isArray(billPhotosReq) ? billPhotosReq : [];
-
                   const toUrl = (v: any): string | null => {
                     if (!v) return null;
                     if (typeof v === 'string') {
                       const s = v.trim();
                       return s.startsWith('http') ? s : null;
                     }
-                    if (typeof v === 'object' && v.secure_url && typeof v.secure_url === 'string') {
-                      const s = v.secure_url.trim();
-                      return s.startsWith('http') ? s : null;
+                    if (typeof v === 'object') {
+                      const s =
+                        (typeof v.secure_url === 'string' ? v.secure_url : null) ||
+                        (typeof v.url === 'string' ? v.url : null);
+                      if (s) {
+                        const trimmed = s.trim();
+                        return trimmed.startsWith('http') ? trimmed : null;
+                      }
                     }
                     return null;
                   };
+
+                  const billPhotos = Array.isArray(billPhotosReq)
+                    ? billPhotosReq.map(toUrl).filter((u): u is string => !!u)
+                    : [];
+
+                  const afterPhotoUrls: string[] = Array.isArray((job as any).after_photos || (job as any).afterPhotos)
+                    ? ((job as any).after_photos || (job as any).afterPhotos).map(toUrl).filter((u): u is string => !!u)
+                    : [];
 
                   // All payment screenshots: from qr_photos.payment_screenshot (online) and payment_photos (CASH or all)
                   const paymentScreenshots: string[] = [];
@@ -217,10 +228,16 @@ const CustomerReportDialog: React.FC<CustomerReportDialogProps> = ({
                   }
                   // Exclude all payment URLs from bill photos so they only show under Payment (no limit)
                   const paymentNormSet = new Set(paymentScreenshots.map(u => u.split('?')[0].toLowerCase()));
-                  const billPhotosOnly = billPhotos.filter((url: string) => {
+                  let billPhotosOnly = billPhotos.filter((url: string) => {
                     const norm = typeof url === 'string' ? url.split('?')[0].toLowerCase() : '';
                     return norm && !paymentNormSet.has(norm);
                   });
+
+                  // Fallback: if requirements didn't include bill/payment photos but we have after_photos saved,
+                  // show them so Reports still displays photos for older/inconsistent job rows.
+                  if (paymentScreenshots.length === 0 && billPhotosOnly.length === 0 && afterPhotoUrls.length > 0) {
+                    billPhotosOnly = afterPhotoUrls;
+                  }
 
                   return (
                     <div key={job.id} className="border border-gray-200 rounded-lg p-4 bg-white">

@@ -334,17 +334,45 @@ export const bangaloreAreas = [
   'Vidyaranyapura', 'Yelahanka New Town', 'Jakkur', 'Sahakar Nagar'
 ];
 
+/** Single photo entry from DB / JSON (string, Cloudinary object, etc.) → usable https URL or null. */
+export const normalizePhotoUrl = (input: unknown): string | null => {
+  if (input == null) return null;
+  if (typeof input === 'string') {
+    const s = input.trim();
+    if (!s) return null;
+    if (
+      s.startsWith('http://') ||
+      s.startsWith('https://') ||
+      s.startsWith('blob:') ||
+      s.startsWith('data:image/')
+    ) {
+      return s;
+    }
+    return null;
+  }
+  if (typeof input === 'object') {
+    const o = input as Record<string, unknown>;
+    const raw =
+      (typeof o.secure_url === 'string' && o.secure_url.trim()) ||
+      (typeof o.url === 'string' && o.url.trim()) ||
+      '';
+    const s = String(raw).trim();
+    if (
+      s.startsWith('http://') ||
+      s.startsWith('https://') ||
+      s.startsWith('blob:') ||
+      s.startsWith('data:image/')
+    ) {
+      return s;
+    }
+  }
+  return null;
+};
+
 // Extract photo URLs from various formats
 export const extractPhotoUrls = (photos: any[]): string[] => {
   if (!Array.isArray(photos)) return [];
-  return photos.map(photo => {
-    if (typeof photo === 'string') {
-      return photo;
-    } else if (photo && typeof photo === 'object' && photo.secure_url) {
-      return photo.secure_url;
-    }
-    return null;
-  }).filter(url => url !== null) as string[];
+  return photos.map((p) => normalizePhotoUrl(p)).filter((url): url is string => url !== null);
 };
 
 // Parse job requirements - handles string, array, or object formats

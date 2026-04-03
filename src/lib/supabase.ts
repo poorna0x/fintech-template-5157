@@ -344,8 +344,9 @@ const PRODUCT_QR_ROW_COLUMNS =
 const TECHNICIAN_EXPENSE_ROW_COLUMNS =
   'id,technician_id,amount,description,expense_date,category,receipt_url,notes,added_by,created_at,updated_at';
 
+/** Matches `schema.sql` technician_advances (uses paid_by, not added_by). */
 const TECHNICIAN_ADVANCE_ROW_COLUMNS =
-  'id,technician_id,amount,description,advance_date,payment_method,payment_reference,notes,added_by,created_at,updated_at';
+  'id,technician_id,amount,description,advance_date,payment_method,payment_reference,notes,paid_by,created_at,updated_at';
 
 const JOB_ASSIGNMENT_REQUEST_ROW =
   'id,job_id,technician_id,status,assigned_by,assigned_at,responded_at,response_notes,created_at,updated_at';
@@ -1350,6 +1351,10 @@ export const db = {
       }
       if (opts?.includePhotoFields) {
         jobColList.push('before_photos', 'after_photos', 'images');
+      } else if (isCompletedOnly) {
+        // Bill / payment shots are often stored in after_photos only; reports load these but slim list did not,
+        // so "Payment & Bill Documents" on the card was empty while Customer Report still showed photos.
+        jobColList.push('before_photos', 'after_photos');
       }
       const jobCols = jobColList.join(',');
 

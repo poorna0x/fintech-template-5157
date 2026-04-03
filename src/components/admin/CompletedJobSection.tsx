@@ -13,7 +13,8 @@ import {
 } from '@/components/ui/alert-dialog';
 import { Job, Technician } from '@/types';
 import { WhatsAppIcon } from '../WhatsAppIcon';
-import { findLeadSource } from '@/lib/adminUtils';
+import { extractPhotoUrls, findLeadSource, normalizePhotoUrl } from '@/lib/adminUtils';
+import { toast } from 'sonner';
 import JobPartsUsedDialog from './JobPartsUsedDialog';
 import { db } from '@/lib/supabase';
 import { customerNameClassName } from '@/lib/customerDisplay';
@@ -116,6 +117,10 @@ export const CompletedJobSection: React.FC<CompletedJobSectionProps> = ({
   const messageSentAt = requirements.find((r: any) => r?.message_sent_at)?.message_sent_at;
   const dontSendMessage = requirements.some((r: any) => r?.dont_send_message === true);
   const customerName = (job as any).customer?.full_name || (job as any).customer?.fullName || 'customer';
+
+  // Use normalized URLs only (count + viewer) so "View Bill Photos (1)" matches a real image URL
+  const billPhotoUrls = extractPhotoUrls(Array.isArray(billPhotos) ? billPhotos : []);
+  const paymentPhotoUrl = normalizePhotoUrl(paymentScreenshot);
   
   // Extract OTP information
   const otpRequirement = requirements.find((r: any) => r?.require_otp === true);
@@ -248,36 +253,35 @@ export const CompletedJobSection: React.FC<CompletedJobSectionProps> = ({
           )}
           
           {/* Payment Screenshot & Bill Photos - Combined */}
-          {paymentScreenshot || (billPhotos && Array.isArray(billPhotos) && billPhotos.length > 0) ? (
+          {paymentPhotoUrl || billPhotoUrls.length > 0 ? (
             <div className="text-gray-700 mt-2 pt-2 border-t border-green-200">
               <span className="text-gray-500 font-medium">Payment & Bill Documents:</span>
               <button
                 onClick={() => {
-                  const allPhotos: string[] = [];
-                  if (billPhotos && Array.isArray(billPhotos)) {
-                    allPhotos.push(...billPhotos);
+                  const allPhotos: string[] = [...billPhotoUrls];
+                  if (paymentPhotoUrl) {
+                    allPhotos.push(paymentPhotoUrl);
                   }
-                  if (paymentScreenshot) {
-                    allPhotos.push(paymentScreenshot);
+
+                  if (allPhotos.length === 0) {
+                    toast.error('No valid photo links for this job');
+                    return;
                   }
-                  
-                  if (allPhotos.length > 0) {
-                    setSelectedBillPhotos(allPhotos);
-                    setSelectedPhoto({ 
-                      url: allPhotos[0], 
-                      index: 0, 
-                      total: allPhotos.length 
-                    });
-                    setPhotoViewerOpen(true);
-                  }
+                  setSelectedBillPhotos(allPhotos);
+                  setSelectedPhoto({
+                    url: allPhotos[0],
+                    index: 0,
+                    total: allPhotos.length,
+                  });
+                  setPhotoViewerOpen(true);
                 }}
                 className="ml-2 text-blue-600 hover:underline break-all cursor-pointer"
               >
                 {(() => {
-                  const billCount = billPhotos && Array.isArray(billPhotos) ? billPhotos.length : 0;
-                  const hasPayment = !!paymentScreenshot;
+                  const billCount = billPhotoUrls.length;
+                  const hasPayment = !!paymentPhotoUrl;
                   const totalCount = billCount + (hasPayment ? 1 : 0);
-                  
+
                   if (hasPayment && billCount > 0) {
                     return `View Payment Photo & Bill Photos (${totalCount})`;
                   } else if (hasPayment) {

@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Calendar, X } from 'lucide-react';
@@ -26,6 +26,14 @@ const PhotoViewerDialog: React.FC<PhotoViewerDialogProps> = ({
   onDownload,
   onClose
 }) => {
+  const [loadError, setLoadError] = useState(false);
+
+  useEffect(() => {
+    if (open && selectedPhoto?.url) {
+      setLoadError(false);
+    }
+  }, [open, selectedPhoto?.url]);
+
   const handleClose = (open: boolean) => {
     if (!open) {
       onClose();
@@ -119,15 +127,19 @@ const PhotoViewerDialog: React.FC<PhotoViewerDialogProps> = ({
           )}
 
           {/* Main photo */}
-          {selectedPhoto && (
+          {selectedPhoto && !loadError && (
             <img
               src={selectedPhoto.url}
               alt={`Photo ${selectedPhoto.index + 1}`}
               className="max-w-full max-h-full object-contain"
-              onError={(e) => {
-                e.currentTarget.style.display = 'none';
-              }}
+              onError={() => setLoadError(true)}
             />
+          )}
+          {selectedPhoto && loadError && (
+            <div className="text-center text-white px-6 max-w-lg">
+              <p className="text-lg font-medium mb-2">Could not load this image</p>
+              <p className="text-sm text-white/80 break-all">{selectedPhoto.url}</p>
+            </div>
           )}
         </div>
       </DialogContent>

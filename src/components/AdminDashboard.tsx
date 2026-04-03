@@ -88,7 +88,7 @@ import TechnicianPayments from './TechnicianPayments';
 import BillingStats from './BillingStats';
 import Analytics from './Analytics';
 import InventoryManagement from './InventoryManagement';
-import { generateJobNumber, formatPreferredTimeSlot, mapServiceTypesToDbValue, extractLocationFromAddressString, bangaloreAreas, levenshteinDistance, calculateSimilarity, extractPhotoUrls, parseJobRequirements, getFormattedTimeSlot, findLeadSource, normalizeLeadType, normalizeServiceSubType, serviceSubTypeDbMatchValues, completedJobLeadSourceContainVariants } from '@/lib/adminUtils';
+import { generateJobNumber, formatPreferredTimeSlot, mapServiceTypesToDbValue, extractLocationFromAddressString, bangaloreAreas, levenshteinDistance, calculateSimilarity, extractPhotoUrls, normalizePhotoUrl, parseJobRequirements, getFormattedTimeSlot, findLeadSource, normalizeLeadType, normalizeServiceSubType, serviceSubTypeDbMatchValues, completedJobLeadSourceContainVariants } from '@/lib/adminUtils';
 import { formatPhoneForWhatsApp } from '@/lib/utils';
 import { StatusBadge } from './admin/StatusBadge';
 import { CustomerCardHeader } from './admin/CustomerCardHeader';
@@ -6364,6 +6364,10 @@ const AdminDashboard = () => {
         toast.success('Message sent confirmation saved');
         // Close the dialog
         setSendMessageDialogOpen(false);
+        // Ensure the updated `requirements` are reflected in the Completed Jobs UI.
+        // The main Completed filter list can be fetched in "slim" mode where `requirements` are omitted,
+        // so we explicitly load the full job details for this job id.
+        await loadCompletedJobDetails(jobId);
         // Reload jobs to reflect the change - pass current filter and page
         await loadFilteredJobs(statusFilter, currentPage);
       }
@@ -8772,25 +8776,14 @@ const AdminDashboard = () => {
                         
                         // First, try to get from qr_photos (ONLINE payments)
                         if (qrPhotos?.payment_screenshot) {
-                          if (typeof qrPhotos.payment_screenshot === 'string') {
-                            paymentScreenshot = qrPhotos.payment_screenshot.trim();
-                          } else if (qrPhotos.payment_screenshot && typeof qrPhotos.payment_screenshot === 'object' && qrPhotos.payment_screenshot.secure_url) {
-                            paymentScreenshot = qrPhotos.payment_screenshot.secure_url.trim();
-                          }
-                          // Validate it's a valid URL (handles both primary and secondary Cloudinary accounts)
-                          if (paymentScreenshot && !paymentScreenshot.startsWith('http://') && !paymentScreenshot.startsWith('https://')) {
-                            paymentScreenshot = null; // Invalid format
-                          }
+                          paymentScreenshot = normalizePhotoUrl(qrPhotos.payment_screenshot);
                         }
-                        
+
                         // If not found in qr_photos, check payment_photos in requirements (CASH payments)
                         if (!paymentScreenshot) {
                           const paymentPhotosReq = requirements.find((r: any) => r?.payment_photos);
                           if (paymentPhotosReq?.payment_photos && Array.isArray(paymentPhotosReq.payment_photos) && paymentPhotosReq.payment_photos.length > 0) {
-                            const paymentPhotoUrl = paymentPhotosReq.payment_photos[0];
-                            if (typeof paymentPhotoUrl === 'string' && (paymentPhotoUrl.startsWith('http://') || paymentPhotoUrl.startsWith('https://'))) {
-                              paymentScreenshot = paymentPhotoUrl.trim();
-                            }
+                            paymentScreenshot = normalizePhotoUrl(paymentPhotosReq.payment_photos[0]);
                           }
                         }
                         
