@@ -8128,104 +8128,86 @@ const AdminDashboard = () => {
           </div>
         )}
 
-        {/* Completed Jobs quick filter summary + dialog trigger — single compact toolbar (no stretched “gap”) */}
+        {/* Completed Jobs quick filters: range preset shows only switch-to-day + filters (no inline range label). */}
         {statusFilter === 'COMPLETED' && (
-          <div className="mb-4 min-w-0">
-            <div className="flex flex-wrap items-center gap-2 rounded-lg border border-input bg-background/90 px-2.5 py-2 shadow-sm">
-              {completedDatePreset === 'day' ? (
-                <>
-                  <div className="min-w-0 shrink-0">
-                    <DatePicker
-                      value={completedDateFilter}
-                      onChange={(v) => {
-                        const next = v ?? getTodayLocalDate();
+          <div className="mb-4 rounded-lg border border-input bg-muted/20 px-3 py-2">
+            <div className="flex items-start justify-between gap-2 min-w-0">
+              <div className="flex flex-wrap items-center gap-2 min-w-0 flex-1">
+                {completedDatePreset === 'day' ? (
+                  <>
+                    <div className="min-w-0">
+                      <DatePicker
+                        value={completedDateFilter}
+                        onChange={(v) => {
+                          const next = v ?? getTodayLocalDate();
+                          setCompletedDatePreset('day');
+                          setCompletedDateFilter(next);
+                          setCompletedRangeStartDate(next);
+                          setCompletedRangeEndDate(next);
+                          // Quick single-day pick should behave like date-only mode
+                          setCompletedLeadTypeFilter('all');
+                          setCompletedServiceSubTypeFilter('all');
+                          setCompletedByFilter('all');
+                        }}
+                        placeholder="Pick date"
+                        className="h-10"
+                      />
+                    </div>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      type="button"
+                      className="h-10 shrink-0 px-3 sm:px-4"
+                      onClick={() => {
+                        const today = getTodayLocalDate();
                         setCompletedDatePreset('day');
-                        setCompletedDateFilter(next);
-                        setCompletedRangeStartDate(next);
-                        setCompletedRangeEndDate(next);
+                        setCompletedDateFilter(today);
+                        setCompletedRangeStartDate(today);
+                        setCompletedRangeEndDate(today);
+                        // Quick Today should clear advanced completed filters
                         setCompletedLeadTypeFilter('all');
                         setCompletedServiceSubTypeFilter('all');
                         setCompletedByFilter('all');
                       }}
-                      placeholder="Pick date"
-                      className="h-10"
-                    />
-                  </div>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    type="button"
-                    className="h-10 shrink-0 px-3 sm:px-4"
-                    onClick={() => {
-                      const today = getTodayLocalDate();
-                      setCompletedDatePreset('day');
-                      setCompletedDateFilter(today);
-                      setCompletedRangeStartDate(today);
-                      setCompletedRangeEndDate(today);
-                      setCompletedLeadTypeFilter('all');
-                      setCompletedServiceSubTypeFilter('all');
-                      setCompletedByFilter('all');
-                    }}
-                  >
-                    Today
-                  </Button>
-                </>
-              ) : (
-                <>
-                  {(() => {
-                    const s = new Date(completedRangeStartDate);
-                    const e = new Date(completedRangeEndDate);
-                    const dm: Intl.DateTimeFormatOptions = { day: 'numeric', month: 'short' };
-                    const dmy: Intl.DateTimeFormatOptions = { day: 'numeric', month: 'short', year: 'numeric' };
-                    const sameYear = s.getFullYear() === e.getFullYear();
-                    const compact =
-                      sameYear
-                        ? `${s.toLocaleDateString('en-IN', dm)}\u2009–\u2009${e.toLocaleDateString('en-IN', dm)}, ${s.getFullYear()}`
-                        : `${s.toLocaleDateString('en-IN', dmy)}\u2009–\u2009${e.toLocaleDateString('en-IN', dmy)}`;
-                    const fullBounds = `${s.toLocaleDateString('en-IN', dmy)}\u2009–\u2009${e.toLocaleDateString('en-IN', dmy)}`;
-                    return (
-                      <span
-                        className="min-w-0 shrink text-xs text-muted-foreground sm:text-sm"
-                        title={fullBounds}
-                      >
-                        <span className="font-medium text-foreground sm:font-normal">{compact}</span>
-                      </span>
-                    );
-                  })()}
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    type="button"
-                    className="h-10 w-10 shrink-0 p-0"
-                    aria-label="Switch to single day"
-                    title="Single day"
-                    onClick={() => {
-                      const today = getTodayLocalDate();
-                      setCompletedDatePreset('day');
-                      setCompletedDateFilter(today);
-                      setCompletedRangeStartDate(today);
-                      setCompletedRangeEndDate(today);
-                      setCompletedLeadTypeFilter('all');
-                      setCompletedServiceSubTypeFilter('all');
-                      setCompletedByFilter('all');
-                    }}
-                  >
-                    <Calendar className="h-4 w-4" aria-hidden />
-                  </Button>
-                </>
-              )}
-              <div className="h-6 w-px shrink-0 bg-border" aria-hidden />
+                    >
+                      Today
+                    </Button>
+                  </>
+                ) : (
+                  <>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      type="button"
+                      className="shrink-0 text-xs sm:text-sm"
+                      onClick={() => {
+                        const today = getTodayLocalDate();
+                        setCompletedDatePreset('day');
+                        setCompletedDateFilter(today);
+                        setCompletedRangeStartDate(today);
+                        setCompletedRangeEndDate(today);
+                        // Switching back to single day should reset hidden advanced filters
+                        setCompletedLeadTypeFilter('all');
+                        setCompletedServiceSubTypeFilter('all');
+                        setCompletedByFilter('all');
+                      }}
+                    >
+                      <span className="sm:hidden">Single day</span>
+                      <span className="hidden sm:inline">Switch to single day</span>
+                    </Button>
+                  </>
+                )}
+              </div>
               <Button
                 variant="outline"
                 size="sm"
                 type="button"
                 onClick={() => setCompletedFilterDialogOpen(true)}
-                className="h-10 shrink-0 gap-1.5 px-3 sm:px-3"
-                aria-label="More filters: date presets, lead, service type, technician"
-                title="Filters"
+                className="shrink-0 h-10 w-10 p-0 sm:w-auto sm:px-3"
+                aria-label="Completed jobs filters"
               >
-                <Filter className="h-4 w-4 shrink-0" aria-hidden />
-                <span className="text-sm">Filters</span>
+                <Filter className="h-4 w-4 sm:mr-1.5" aria-hidden />
+                <span className="hidden sm:inline">Filters</span>
               </Button>
             </div>
           </div>
