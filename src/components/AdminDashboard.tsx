@@ -8131,7 +8131,7 @@ const AdminDashboard = () => {
         {/* Completed Jobs quick filters: range preset shows only switch-to-day + filters (no inline range label). */}
         {statusFilter === 'COMPLETED' && (
           <div className="mb-4 rounded-lg border border-input bg-muted/20 px-3 py-2">
-            <div className="flex items-start justify-between gap-2 min-w-0">
+            <div className="flex items-center justify-between gap-2 min-w-0">
               <div className="flex flex-wrap items-center gap-2 min-w-0 flex-1">
                 {completedDatePreset === 'day' ? (
                   <>
@@ -8179,7 +8179,7 @@ const AdminDashboard = () => {
                       variant="outline"
                       size="sm"
                       type="button"
-                      className="shrink-0 text-xs sm:text-sm"
+                      className="h-10 shrink-0 px-3 text-xs sm:px-4 sm:text-sm"
                       onClick={() => {
                         const today = getTodayLocalDate();
                         setCompletedDatePreset('day');
