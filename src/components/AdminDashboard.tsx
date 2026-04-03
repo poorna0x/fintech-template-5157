@@ -64,7 +64,7 @@ import {
   ChevronDown,
   ChevronUp
 } from 'lucide-react';
-import { db, supabase, fetchCustomerIdsWithCompletedJobsMap, CUSTOMER_ROW_COLUMNS } from '@/lib/supabase';
+import { db, supabase, fetchCustomerIdsWithCompletedJobsMap, CUSTOMER_ROW_COLUMNS, CUSTOMER_ADMIN_LIST_PATCH_COLUMNS } from '@/lib/supabase';
 import { registerAdminPWA, disablePWA } from '@/lib/pwa';
 import { Customer, Job, Technician } from '@/types';
 import { cloudinaryService, compressImage, validateImageFile } from '@/lib/cloudinary';
@@ -88,7 +88,7 @@ import TechnicianPayments from './TechnicianPayments';
 import BillingStats from './BillingStats';
 import Analytics from './Analytics';
 import InventoryManagement from './InventoryManagement';
-import { generateJobNumber, formatPreferredTimeSlot, mapServiceTypesToDbValue, extractLocationFromAddressString, bangaloreAreas, levenshteinDistance, calculateSimilarity, extractPhotoUrls, parseJobRequirements, getFormattedTimeSlot, findLeadSource } from '@/lib/adminUtils';
+import { generateJobNumber, formatPreferredTimeSlot, mapServiceTypesToDbValue, extractLocationFromAddressString, bangaloreAreas, levenshteinDistance, calculateSimilarity, extractPhotoUrls, parseJobRequirements, getFormattedTimeSlot, findLeadSource, normalizeLeadType, normalizeServiceSubType, serviceSubTypeDbMatchValues, completedJobLeadSourceContainVariants } from '@/lib/adminUtils';
 import { formatPhoneForWhatsApp } from '@/lib/utils';
 import { StatusBadge } from './admin/StatusBadge';
 import { CustomerCardHeader } from './admin/CustomerCardHeader';
@@ -1172,15 +1172,69 @@ const AdminDashboard = () => {
         let count = 0;
         let pages = 0;
 
+        // When admin applies "completed by" / service sub-type, filter on the server so pagination
+        // and counts match the rows (client-only filter on a single page could show 0 cards while totalCount stayed huge).
+        let completedListFilters:
+          | {
+              completedByUserId?: string;
+              serviceSubTypeIn?: string[];
+              leadRequirementsContainVariants?: string[];
+            }
+          | undefined;
+        if (filter === 'COMPLETED') {
+          const parts: {
+            completedByUserId?: string;
+            serviceSubTypeIn?: string[];
+            leadRequirementsContainVariants?: string[];
+          } = {};
+          if (completedByFilter !== 'all') {
+            const t = technicians.find(
+              (x) => (x.fullName || '').trim().toLowerCase() === completedByFilter.trim().toLowerCase()
+            );
+            if (t?.id) parts.completedByUserId = t.id;
+          }
+          if (completedServiceSubTypeFilter !== 'all') {
+            const subVals = serviceSubTypeDbMatchValues(completedServiceSubTypeFilter);
+            if (subVals.length) parts.serviceSubTypeIn = subVals;
+          }
+          if (completedLeadTypeFilter !== 'all') {
+            const leadVars = completedJobLeadSourceContainVariants(completedLeadTypeFilter);
+            if (leadVars.length) parts.leadRequirementsContainVariants = leadVars;
+          }
+          if (Object.keys(parts).length > 0) completedListFilters = parts;
+        }
+
+        const isDefaultCompletedDateFilter =
+          completedDatePreset === 'day' && completedDateFilter === getTodayLocalDate();
+        const hasCompletedSubFilters =
+          completedLeadTypeFilter !== 'all' ||
+          completedServiceSubTypeFilter !== 'all' ||
+          completedByFilter !== 'all';
+        const omitRequirementsFromFetch = !isDefaultCompletedDateFilter || hasCompletedSubFilters;
+
+        const slimOpts =
+          filter === 'COMPLETED'
+            ? {
+                ...(completedListFilters || {}),
+                omitRequirements: omitRequirementsFromFetch,
+              }
+            : undefined;
+
         // Prefer slim query for low egress; fallback to legacy query if slim fails.
-        const slimResult = await db.jobs.getByStatusPaginatedSlim(statuses, page, pageSize, dateFilter);
+        const slimResult = await db.jobs.getByStatusPaginatedSlim(statuses, page, pageSize, dateFilter, slimOpts);
         data = slimResult.data || [];
         error = slimResult.error;
         count = slimResult.count || 0;
         pages = slimResult.totalPages || 0;
 
         if (error) {
-          const fallback = await db.jobs.getByStatusPaginated(statuses, page, pageSize, dateFilter);
+          const fallback = await db.jobs.getByStatusPaginated(
+            statuses,
+            page,
+            pageSize,
+            dateFilter,
+            completedListFilters
+          );
           data = fallback.data || [];
           error = fallback.error;
           count = fallback.count || 0;
@@ -1190,7 +1244,28 @@ const AdminDashboard = () => {
         if (error) {
           setJobs([]);
         } else {
-          setJobs(data || []);
+          let finalData = data || [];
+          // Jobs without embedded customer (RLS/orphan rows) still need customer for grouping cards.
+          if ((filter === 'COMPLETED' || filter === 'CANCELLED') && finalData.length > 0) {
+            const missingIds = [
+              ...new Set(
+                finalData
+                  .filter((j: any) => j.customer_id && !(j as any).customer)
+                  .map((j: any) => j.customer_id as string)
+              ),
+            ];
+            if (missingIds.length > 0) {
+              const { data: custRows } = await supabase
+                .from('customers')
+                .select(CUSTOMER_ADMIN_LIST_PATCH_COLUMNS)
+                .in('id', missingIds);
+              const byId = new Map((custRows || []).map((row: any) => [row.id, row]));
+              finalData = finalData.map((j: any) =>
+                (j as any).customer || !j.customer_id ? j : { ...j, customer: byId.get(j.customer_id) ?? null }
+              );
+            }
+          }
+          setJobs(finalData);
           setTotalCount(count || 0);
           setTotalPages(pages || 0);
         }
@@ -1232,7 +1307,18 @@ const AdminDashboard = () => {
         setLoading(false);
       }
     }
-  }, [pageSize, deniedDateFilter, completedDateFilter, completedDatePreset, completedRangeStartDate, completedRangeEndDate]);
+  }, [
+    pageSize,
+    deniedDateFilter,
+    completedDateFilter,
+    completedDatePreset,
+    completedRangeStartDate,
+    completedRangeEndDate,
+    technicians,
+    completedByFilter,
+    completedServiceSubTypeFilter,
+    completedLeadTypeFilter,
+  ]);
 
   const loadCompletedJobDetails = useCallback(async (jobId: string) => {
     if (!jobId) return;
@@ -1497,9 +1583,8 @@ const AdminDashboard = () => {
   ]);
 
   // Reset to first page when completed sub-filters change, so results don't look empty due to pagination.
-  // For a single calendar day with only one page of results, the list is already fully loaded — advanced
-  // filters (lead / sub-type / completed-by) are applied client-side in getFilteredCustomers via
-  // doesCompletedJobMatchFilters, so refetching would only waste egress.
+  // Lead / sub-type / completed-by also narrow the Supabase query so counts and pages stay aligned;
+  // doesCompletedJobMatchFilters still verifies each row client-side.
   useEffect(() => {
     if (isInitialLoad || statusFilter !== 'COMPLETED') return;
     setCurrentPage(1);
@@ -7040,44 +7125,6 @@ const AdminDashboard = () => {
   const getCompletedJobServiceSubType = (job: any): string => {
     return ((job?.service_sub_type || job?.serviceSubType || '') as string).trim();
   };
-  const normalizeLeadType = (value: string): string => {
-    const raw = (value || '').trim();
-    if (!raw) return '';
-    const key = raw.toLowerCase().replace(/[\s_-]+/g, '');
-    const map: Record<string, string> = {
-      website: 'Website',
-      directcall: 'Direct call',
-      googleleads: 'Google-Leads',
-      rocareindia: 'RO care india',
-      hometriangle: 'Home Triangle',
-      hometrianglesrujan: 'Home Triangle-Srujan',
-      localramu: 'Local Ramu',
-      other: 'Other'
-    };
-    return map[key] || raw;
-  };
-  const normalizeServiceSubType = (value: string): string => {
-    const raw = (value || '').trim();
-    if (!raw) return '';
-    const lower = raw.toLowerCase();
-    const map: Record<string, string> = {
-      service: 'Service',
-      installation: 'Installation',
-      reinstallation: 'Reinstallation',
-      'return complaint': 'Return Complaint',
-      amcservice: 'AMC Service',
-      'amc service': 'AMC Service',
-      'new purifier installation': 'New Purifier Installation',
-      'un-installation': 'Un-Installation',
-      uninstallation: 'Un-Installation',
-      repair: 'Repair',
-      maintenance: 'Maintenance',
-      replacement: 'Replacement',
-      inspection: 'Inspection',
-      other: 'Other'
-    };
-    return map[lower] || map[lower.replace(/[\s_-]+/g, '')] || raw;
-  };
   const technicianNameByIdLower = useMemo(() => {
     const map = new Map<string, string>();
     technicians.forEach((t) => {
@@ -7108,9 +7155,18 @@ const AdminDashboard = () => {
     return '';
   };
   function doesCompletedJobMatchFilters(job: any): boolean {
-    if (completedLeadTypeFilter !== 'all' && normalizeLeadType(getCompletedJobLeadType(job)) !== normalizeLeadType(completedLeadTypeFilter)) return false;
+    // When completedLeadTypeFilter !== 'all', lead is narrowed in Supabase; list rows may omit `requirements`.
     if (completedServiceSubTypeFilter !== 'all' && normalizeServiceSubType(getCompletedJobServiceSubType(job)) !== normalizeServiceSubType(completedServiceSubTypeFilter)) return false;
-    if (completedByFilter !== 'all' && getCompletedJobTechnicianName(job).toLowerCase() !== completedByFilter.toLowerCase()) return false;
+    if (completedByFilter !== 'all') {
+      const filterNameLower = completedByFilter.trim().toLowerCase();
+      const tech = technicians.find(
+        (x) => (x.fullName || '').trim().toLowerCase() === filterNameLower
+      );
+      const jobBy = (job?.completed_by || job?.completedBy || '').toString().trim();
+      const idMatch = !!tech?.id && jobBy.toLowerCase() === tech.id.toLowerCase();
+      const nameMatch = getCompletedJobTechnicianName(job).toLowerCase() === filterNameLower;
+      if (!idMatch && !nameMatch) return false;
+    }
     return true;
   }
 

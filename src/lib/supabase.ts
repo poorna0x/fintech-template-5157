@@ -353,6 +353,71 @@ const JOB_ASSIGNMENT_REQUEST_ROW =
 const CALL_HISTORY_ROW_COLUMNS =
   'id,customer_id,contact_type,contact_method,phone_number,message_sent,status,notes,contacted_at,created_at,updated_at';
 
+/** Local calendar `YYYY-MM-DD` → UTC bounds for `completed_at` / `end_time` / `denied_at` filters. */
+function jobLocalDayBounds(dateStr: string): { startISO: string; nextISO: string } {
+  const [year, month, day] = dateStr.split('-').map(Number);
+  const localStart = new Date(year, month - 1, day, 0, 0, 0, 0);
+  const localNext = new Date(year, month - 1, day + 1, 0, 0, 0, 0);
+  return { startISO: localStart.toISOString(), nextISO: localNext.toISOString() };
+}
+
+type AdminCompletedListFilters = {
+  completedByUserId?: string;
+  serviceSubTypeIn?: string[];
+  leadRequirementsContainVariants?: string[];
+};
+
+function applyAdminCompletedListFilters(query: any, listFilters?: AdminCompletedListFilters) {
+  if (!listFilters) return query;
+  if (listFilters.completedByUserId) {
+    query = query.eq('completed_by', listFilters.completedByUserId);
+  }
+  if (listFilters.serviceSubTypeIn?.length) {
+    query = query.in('service_sub_type', listFilters.serviceSubTypeIn);
+  }
+  if (listFilters.leadRequirementsContainVariants?.length) {
+    const variants = listFilters.leadRequirementsContainVariants;
+    if (variants.length === 1) {
+      query = query.contains('requirements', JSON.stringify([{ lead_source: variants[0] }]));
+    } else {
+      query = query.or(
+        variants.map((v) => `requirements.cs.${JSON.stringify([{ lead_source: v }])}`).join(',')
+      );
+    }
+  }
+  return query;
+}
+
+/** Customer columns for patching jobs missing embedded `customer` (omits `photos` json). */
+export const CUSTOMER_ADMIN_LIST_PATCH_COLUMNS = [
+  'id',
+  'customer_id',
+  'full_name',
+  'phone',
+  'alternate_phone',
+  'email',
+  'visible_address',
+  'address',
+  'location',
+  'service_type',
+  'brand',
+  'model',
+  'installation_date',
+  'warranty_expiry',
+  'status',
+  'customer_since',
+  'last_service_date',
+  'notes',
+  'preferred_time_slot',
+  'preferred_language',
+  'has_prefilter',
+  'has_google_review',
+  'customer_tier',
+  'raw_water_tds',
+  'created_at',
+  'updated_at',
+].join(',');
+
 // Database helper functions
 export const db = {
   // Customer operations
@@ -590,7 +655,7 @@ export const db = {
       return { data, error };
     }
   },
-  
+
   // Job operations
   jobs: {
     async create(job: Database['public']['Tables']['jobs']['Insert'], retryCount: number = 0) {
@@ -1054,7 +1119,14 @@ export const db = {
       statuses: string[],
       page: number = 1,
       pageSize: number = 20,
-      dateFilter?: string | { startDate: string; endDate: string }
+      dateFilter?: string | { startDate: string; endDate: string },
+      listFilters?: {
+        completedByUserId?: string;
+        /** DB values for `in('service_sub_type', …)` — include casing/legacy aliases. */
+        serviceSubTypeIn?: string[];
+        /** `lead_source` values for jsonb `requirements` contains (see adminUtils). */
+        leadRequirementsContainVariants?: string[];
+      }
     ) {
       const from = (page - 1) * pageSize;
       const to = from + pageSize - 1;
@@ -1092,13 +1164,6 @@ export const db = {
             updated_at
           )
         `, { count: 'exact' });
-      
-      const toLocalDayBounds = (dateStr: string) => {
-        const [year, month, day] = dateStr.split('-').map(Number);
-        const localStart = new Date(year, month - 1, day, 0, 0, 0, 0);
-        const localNext = new Date(year, month - 1, day + 1, 0, 0, 0, 0);
-        return { startISO: localStart.toISOString(), nextISO: localNext.toISOString() };
-      };
 
       // If date filter is provided, filter by date based on status
       if (dateFilter) {
@@ -1112,7 +1177,7 @@ export const db = {
           // Filter: DENIED jobs with denied_at in date range, OR CANCELLED jobs (show all cancelled regardless of date)
           if (statuses.includes('CANCELLED')) {
             if (singleDate) {
-              const { startISO, nextISO } = toLocalDayBounds(singleDate);
+              const { startISO, nextISO } = jobLocalDayBounds(singleDate);
               query = query.or(`and(status.eq.DENIED,denied_at.gte.${startISO},denied_at.lt.${nextISO}),status.eq.CANCELLED`);
             } else {
               query = query.in('status', statuses);
@@ -1121,7 +1186,7 @@ export const db = {
             // Only DENIED jobs, filter by date
             // Use start of next day with lt (less than) for reliability
             if (singleDate) {
-              const { startISO, nextISO } = toLocalDayBounds(singleDate);
+              const { startISO, nextISO } = jobLocalDayBounds(singleDate);
               query = query
                 .eq('status', 'DENIED')
                 .gte('denied_at', startISO)
@@ -1138,12 +1203,12 @@ export const db = {
           let nextDayISO: string | null = null;
 
           if (singleDate) {
-            const bounds = toLocalDayBounds(singleDate);
+            const bounds = jobLocalDayBounds(singleDate);
             startISO = bounds.startISO;
             nextDayISO = bounds.nextISO;
           } else if (rangeStartDate && rangeEndDate) {
-            const startBounds = toLocalDayBounds(rangeStartDate);
-            const endBounds = toLocalDayBounds(rangeEndDate);
+            const startBounds = jobLocalDayBounds(rangeStartDate);
+            const endBounds = jobLocalDayBounds(rangeEndDate);
             startISO = startBounds.startISO;
             nextDayISO = endBounds.nextISO;
           }
@@ -1178,6 +1243,8 @@ export const db = {
         // No date filter, use normal status filter
         query = query.in('status', statuses);
       }
+
+      query = applyAdminCompletedListFilters(query, listFilters);
       
       const { data, error, count } = await query
         .order('created_at', { ascending: false })
@@ -1204,20 +1271,25 @@ export const db = {
       page: number = 1,
       pageSize: number = 20,
       dateFilter?: string | { startDate: string; endDate: string },
-      opts?: { includePhotoFields?: boolean }
+      opts?: {
+        includePhotoFields?: boolean;
+        completedByUserId?: string;
+        serviceSubTypeIn?: string[];
+        leadRequirementsContainVariants?: string[];
+        /** When true, drop `requirements` jsonb from rows (admin “minimal” list; details on demand). */
+        omitRequirements?: boolean;
+        /** Prefer Postgres `estimated` count for faster pagination metadata (slight variance vs `exact` on huge tables). */
+        countMode?: 'exact' | 'estimated' | 'planned';
+      }
     ) {
       const from = (page - 1) * pageSize;
       const to = from + pageSize - 1;
 
-      const toLocalDayBounds = (dateStr: string) => {
-        const [year, month, day] = dateStr.split('-').map(Number);
-        const localStart = new Date(year, month - 1, day, 0, 0, 0, 0);
-        const localNext = new Date(year, month - 1, day + 1, 0, 0, 0, 0);
-        return { startISO: localStart.toISOString(), nextISO: localNext.toISOString() };
-      };
+      const isCompletedOnly = statuses.length === 1 && statuses[0] === 'COMPLETED';
+      const needsDenialCols = statuses.includes('DENIED') || statuses.includes('CANCELLED');
+      const countPref = opts?.countMode ?? 'estimated';
 
-      // Explicit job cols (COMPLETED/CANCELLED: omit photo JSON by default to cut egress)
-      const jobColList = [
+      const jobColList: string[] = [
         'id',
         'job_number',
         'customer_id',
@@ -1231,15 +1303,7 @@ export const db = {
         'updated_at',
         'completed_at',
         'end_time',
-        'denied_at',
-        'denial_reason',
         'assigned_technician_id',
-        'team_members',
-        'follow_up_date',
-        'follow_up_time',
-        'follow_up_notes',
-        'follow_up_scheduled_by',
-        'follow_up_scheduled_at',
         'completed_by',
         'payment_amount',
         'actual_cost',
@@ -1247,19 +1311,35 @@ export const db = {
         'payment_method',
         'service_address',
         'service_location',
-        'description',
         'assigned_by',
         'assigned_date',
         'completion_notes',
-        // Keep requirements for lead-source parsing in the list UI.
-        'requirements',
       ];
+
+      if (!isCompletedOnly) {
+        jobColList.push(
+          'team_members',
+          'follow_up_date',
+          'follow_up_time',
+          'follow_up_notes',
+          'follow_up_scheduled_by',
+          'follow_up_scheduled_at'
+        );
+      }
+      if (needsDenialCols) {
+        jobColList.push('denied_at', 'denial_reason');
+      }
+      if (!isCompletedOnly || !opts?.omitRequirements) {
+        jobColList.push('description');
+      }
+      if (!opts?.omitRequirements) {
+        jobColList.push('requirements');
+      }
       if (opts?.includePhotoFields) {
         jobColList.push('before_photos', 'after_photos', 'images');
       }
       const jobCols = jobColList.join(',');
 
-      // Slim customer by default (low egress). Follow-up/reschedule lists need address/location for maps + same card as legacy.
       const customerColsSlim = [
         'id',
         'customer_id',
@@ -1295,7 +1375,7 @@ export const db = {
 
       let query = supabase
         .from('jobs')
-        .select(`${jobCols},customer:customers(${customerCols})`, { count: 'exact' });
+        .select(`${jobCols},customer:customers(${customerCols})`, { count: countPref });
 
       if (dateFilter) {
         const hasRangeObject = typeof dateFilter === 'object' && !!(dateFilter as any).startDate && !!(dateFilter as any).endDate;
@@ -1306,14 +1386,14 @@ export const db = {
         if (statuses.includes('DENIED')) {
           if (statuses.includes('CANCELLED')) {
             if (singleDate) {
-              const { startISO, nextISO } = toLocalDayBounds(singleDate);
+              const { startISO, nextISO } = jobLocalDayBounds(singleDate);
               query = query.or(`and(status.eq.DENIED,denied_at.gte.${startISO},denied_at.lt.${nextISO}),status.eq.CANCELLED`);
             } else {
               query = query.in('status', statuses);
             }
           } else {
             if (singleDate) {
-              const { startISO, nextISO } = toLocalDayBounds(singleDate);
+              const { startISO, nextISO } = jobLocalDayBounds(singleDate);
               query = query.eq('status', 'DENIED').gte('denied_at', startISO).lt('denied_at', nextISO);
             } else {
               query = query.eq('status', 'DENIED');
@@ -1324,12 +1404,12 @@ export const db = {
           let nextDayISO: string | null = null;
 
           if (singleDate) {
-            const bounds = toLocalDayBounds(singleDate);
+            const bounds = jobLocalDayBounds(singleDate);
             startISO = bounds.startISO;
             nextDayISO = bounds.nextISO;
           } else if (rangeStartDate && rangeEndDate) {
-            const startBounds = toLocalDayBounds(rangeStartDate);
-            const endBounds = toLocalDayBounds(rangeEndDate);
+            const startBounds = jobLocalDayBounds(rangeStartDate);
+            const endBounds = jobLocalDayBounds(rangeEndDate);
             startISO = startBounds.startISO;
             nextDayISO = endBounds.nextISO;
           }
@@ -1347,6 +1427,12 @@ export const db = {
       } else {
         query = query.in('status', statuses);
       }
+
+      query = applyAdminCompletedListFilters(query, {
+        completedByUserId: opts?.completedByUserId,
+        serviceSubTypeIn: opts?.serviceSubTypeIn,
+        leadRequirementsContainVariants: opts?.leadRequirementsContainVariants,
+      });
 
       const { data, error, count } = await query
         .order('created_at', { ascending: false })
@@ -1541,13 +1627,6 @@ export const db = {
       dateFilter?: string | { startDate: string; endDate: string },
       limit: number = 5000
     ) {
-      const toLocalDayBounds = (dateStr: string) => {
-        const [year, month, day] = dateStr.split('-').map(Number);
-        const localStart = new Date(year, month - 1, day, 0, 0, 0, 0);
-        const localNext = new Date(year, month - 1, day + 1, 0, 0, 0, 0);
-        return { startISO: localStart.toISOString(), nextISO: localNext.toISOString() };
-      };
-
       let query = supabase
         .from('jobs')
         .select('id,requirements,service_sub_type,completed_by,completed_at,end_time')
@@ -1559,12 +1638,12 @@ export const db = {
         let startISO: string | null = null;
         let nextDayISO: string | null = null;
         if (typeof dateFilter === 'string') {
-          const bounds = toLocalDayBounds(dateFilter);
+          const bounds = jobLocalDayBounds(dateFilter);
           startISO = bounds.startISO;
           nextDayISO = bounds.nextISO;
         } else if (dateFilter.startDate && dateFilter.endDate) {
-          const startBounds = toLocalDayBounds(dateFilter.startDate);
-          const endBounds = toLocalDayBounds(dateFilter.endDate);
+          const startBounds = jobLocalDayBounds(dateFilter.startDate);
+          const endBounds = jobLocalDayBounds(dateFilter.endDate);
           startISO = startBounds.startISO;
           nextDayISO = endBounds.nextISO;
         }

@@ -433,6 +433,101 @@ export const findLeadSource = (requirements: any[]): string | null => {
   return leadSource;
 };
 
+const SERVICE_SUB_TYPE_NORMALIZE_MAP: Record<string, string> = {
+  service: 'Service',
+  installation: 'Installation',
+  reinstallation: 'Reinstallation',
+  'return complaint': 'Return Complaint',
+  amcservice: 'AMC Service',
+  'amc service': 'AMC Service',
+  'new purifier installation': 'New Purifier Installation',
+  'un-installation': 'Un-Installation',
+  uninstallation: 'Un-Installation',
+  repair: 'Repair',
+  maintenance: 'Maintenance',
+  replacement: 'Replacement',
+  inspection: 'Inspection',
+  other: 'Other',
+};
+
+const LEAD_TYPE_NORMALIZE_MAP: Record<string, string> = {
+  website: 'Website',
+  directcall: 'Direct call',
+  googleleads: 'Google-Leads',
+  rocareindia: 'RO care india',
+  hometriangle: 'Home Triangle',
+  hometrianglesrujan: 'Home Triangle-Srujan',
+  localramu: 'Local Ramu',
+  other: 'Other',
+};
+
+/** Same canonical labels as the admin completed-jobs list (picker + client filter). */
+export function normalizeServiceSubType(value: string): string {
+  const raw = (value || '').trim();
+  if (!raw) return '';
+  const lower = raw.toLowerCase();
+  const compact = lower.replace(/[\s_-]+/g, '');
+  return (
+    SERVICE_SUB_TYPE_NORMALIZE_MAP[lower] ||
+    SERVICE_SUB_TYPE_NORMALIZE_MAP[compact] ||
+    raw
+  );
+}
+
+export function normalizeLeadType(value: string): string {
+  const raw = (value || '').trim();
+  if (!raw) return '';
+  const key = raw.toLowerCase().replace(/[\s_-]+/g, '');
+  return LEAD_TYPE_NORMALIZE_MAP[key] || raw;
+}
+
+/**
+ * Values for PostgREST `in('service_sub_type', …)` so DB casing / legacy labels still match
+ * the same normalization used client-side in `doesCompletedJobMatchFilters`.
+ */
+export function serviceSubTypeDbMatchValues(uiFilterChoice: string): string[] {
+  const trimmed = (uiFilterChoice || '').trim();
+  if (!trimmed) return [];
+  const canon = normalizeServiceSubType(trimmed);
+  const out = new Set<string>();
+  out.add(trimmed);
+  if (canon) out.add(canon);
+  const lower = trimmed.toLowerCase();
+  if (lower) out.add(lower);
+  if (canon && canon.toLowerCase() !== lower) out.add(canon.toLowerCase());
+  for (const [k, v] of Object.entries(SERVICE_SUB_TYPE_NORMALIZE_MAP)) {
+    if (v === canon) {
+      out.add(k);
+      if (k.includes('-')) out.add(k.replace(/-/g, ' '));
+    }
+  }
+  return [...out].filter(Boolean);
+}
+
+/**
+ * `lead_source` strings to use with PostgREST `requirements` `cs` (jsonb contains) so pagination
+ * matches the lead filter. Array containment treats `[{"lead_source":"X"}]` as a subset of rows
+ * whose requirements array has an object that includes that key/value (extra keys OK).
+ */
+export function completedJobLeadSourceContainVariants(uiFilterChoice: string): string[] {
+  const trimmed = (uiFilterChoice || '').trim();
+  if (!trimmed) return [];
+
+  const canon = normalizeLeadType(trimmed);
+  const vals = new Set<string>();
+  vals.add(canon);
+  if (trimmed !== canon) vals.add(trimmed);
+
+  const tl = trimmed.toLowerCase();
+  const cl = canon.toLowerCase();
+  if (tl !== cl) vals.add(tl);
+
+  for (const [k, v] of Object.entries(LEAD_TYPE_NORMALIZE_MAP)) {
+    if (v === canon && k !== cl && k !== tl) vals.add(k);
+  }
+  return [...vals];
+}
+
 // Normalize string for comparison - handles variations like "J.P Nagar" vs "JP Nagar" (exported for Analytics location grouping)
 export const normalizeForComparison = (str: string): string => {
   return str
