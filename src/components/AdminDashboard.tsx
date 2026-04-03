@@ -8182,16 +8182,13 @@ const AdminDashboard = () => {
                       sameYear
                         ? `${s.toLocaleDateString('en-IN', dm)}\u2009–\u2009${e.toLocaleDateString('en-IN', dm)}, ${s.getFullYear()}`
                         : `${s.toLocaleDateString('en-IN', dmy)}\u2009–\u2009${e.toLocaleDateString('en-IN', dmy)}`;
-                    const verbose = `Range: ${s.toLocaleDateString('en-IN', dmy)} to ${e.toLocaleDateString('en-IN', dmy)}`;
+                    const fullBounds = `${s.toLocaleDateString('en-IN', dmy)}\u2009–\u2009${e.toLocaleDateString('en-IN', dmy)}`;
                     return (
                       <span
                         className="min-w-0 shrink text-xs text-muted-foreground sm:text-sm"
-                        title={verbose}
+                        title={fullBounds}
                       >
-                        <span className="font-medium text-foreground sm:font-normal">
-                          <span className="sm:hidden">{compact}</span>
-                          <span className="hidden sm:inline">{verbose}</span>
-                        </span>
+                        <span className="font-medium text-foreground sm:font-normal">{compact}</span>
                       </span>
                     );
                   })()}
