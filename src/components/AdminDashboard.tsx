@@ -8128,108 +8128,107 @@ const AdminDashboard = () => {
           </div>
         )}
 
-        {/* Completed Jobs quick filter summary + dialog trigger */}
+        {/* Completed Jobs quick filter summary + dialog trigger — single compact toolbar (no stretched “gap”) */}
         {statusFilter === 'COMPLETED' && (
-          <div className="mb-4 rounded-lg border border-input bg-muted/20 px-3 py-2">
-            <div className="flex items-center justify-between gap-2 min-w-0">
-              <div className="flex flex-nowrap items-center gap-1.5 sm:gap-2 min-w-0 flex-1 overflow-x-auto pb-0.5 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden touch-pan-x">
-                {completedDatePreset === 'day' ? (
-                  <>
-                    <div className="min-w-0 shrink-0">
-                      <DatePicker
-                        value={completedDateFilter}
-                        onChange={(v) => {
-                          const next = v ?? getTodayLocalDate();
-                          setCompletedDatePreset('day');
-                          setCompletedDateFilter(next);
-                          setCompletedRangeStartDate(next);
-                          setCompletedRangeEndDate(next);
-                          // Quick single-day pick should behave like date-only mode
-                          setCompletedLeadTypeFilter('all');
-                          setCompletedServiceSubTypeFilter('all');
-                          setCompletedByFilter('all');
-                        }}
-                        placeholder="Pick date"
-                        className="h-10"
-                      />
-                    </div>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      type="button"
-                      className="h-10 shrink-0 px-3 sm:px-4"
-                      onClick={() => {
-                        const today = getTodayLocalDate();
+          <div className="mb-4 min-w-0">
+            <div className="flex flex-wrap items-center gap-2 rounded-lg border border-input bg-background/90 px-2.5 py-2 shadow-sm">
+              {completedDatePreset === 'day' ? (
+                <>
+                  <div className="min-w-0 shrink-0">
+                    <DatePicker
+                      value={completedDateFilter}
+                      onChange={(v) => {
+                        const next = v ?? getTodayLocalDate();
                         setCompletedDatePreset('day');
-                        setCompletedDateFilter(today);
-                        setCompletedRangeStartDate(today);
-                        setCompletedRangeEndDate(today);
-                        // Quick Today should clear advanced completed filters
+                        setCompletedDateFilter(next);
+                        setCompletedRangeStartDate(next);
+                        setCompletedRangeEndDate(next);
                         setCompletedLeadTypeFilter('all');
                         setCompletedServiceSubTypeFilter('all');
                         setCompletedByFilter('all');
                       }}
-                    >
-                      Today
-                    </Button>
-                  </>
-                ) : (
-                  <>
-                    {(() => {
-                      const s = new Date(completedRangeStartDate);
-                      const e = new Date(completedRangeEndDate);
-                      const dm: Intl.DateTimeFormatOptions = { day: 'numeric', month: 'short' };
-                      const dmy: Intl.DateTimeFormatOptions = { day: 'numeric', month: 'short', year: 'numeric' };
-                      const sameYear = s.getFullYear() === e.getFullYear();
-                      const compact =
-                        sameYear
-                          ? `${s.toLocaleDateString('en-IN', dm)}\u2009–\u2009${e.toLocaleDateString('en-IN', dm)}, ${s.getFullYear()}`
-                          : `${s.toLocaleDateString('en-IN', dmy)}\u2009–\u2009${e.toLocaleDateString('en-IN', dmy)}`;
-                      const verbose = `Range: ${s.toLocaleDateString('en-IN', dmy)} to ${e.toLocaleDateString('en-IN', dmy)}`;
-                      return (
-                        <span
-                          className="text-[11px] leading-none text-muted-foreground whitespace-nowrap sm:text-sm sm:leading-normal shrink-0"
-                          title={verbose}
-                        >
+                      placeholder="Pick date"
+                      className="h-10"
+                    />
+                  </div>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    type="button"
+                    className="h-10 shrink-0 px-3 sm:px-4"
+                    onClick={() => {
+                      const today = getTodayLocalDate();
+                      setCompletedDatePreset('day');
+                      setCompletedDateFilter(today);
+                      setCompletedRangeStartDate(today);
+                      setCompletedRangeEndDate(today);
+                      setCompletedLeadTypeFilter('all');
+                      setCompletedServiceSubTypeFilter('all');
+                      setCompletedByFilter('all');
+                    }}
+                  >
+                    Today
+                  </Button>
+                </>
+              ) : (
+                <>
+                  {(() => {
+                    const s = new Date(completedRangeStartDate);
+                    const e = new Date(completedRangeEndDate);
+                    const dm: Intl.DateTimeFormatOptions = { day: 'numeric', month: 'short' };
+                    const dmy: Intl.DateTimeFormatOptions = { day: 'numeric', month: 'short', year: 'numeric' };
+                    const sameYear = s.getFullYear() === e.getFullYear();
+                    const compact =
+                      sameYear
+                        ? `${s.toLocaleDateString('en-IN', dm)}\u2009–\u2009${e.toLocaleDateString('en-IN', dm)}, ${s.getFullYear()}`
+                        : `${s.toLocaleDateString('en-IN', dmy)}\u2009–\u2009${e.toLocaleDateString('en-IN', dmy)}`;
+                    const verbose = `Range: ${s.toLocaleDateString('en-IN', dmy)} to ${e.toLocaleDateString('en-IN', dmy)}`;
+                    return (
+                      <span
+                        className="min-w-0 shrink text-xs text-muted-foreground sm:text-sm"
+                        title={verbose}
+                      >
+                        <span className="font-medium text-foreground sm:font-normal">
                           <span className="sm:hidden">{compact}</span>
                           <span className="hidden sm:inline">{verbose}</span>
                         </span>
-                      );
-                    })()}
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      type="button"
-                      className="h-10 w-10 shrink-0 p-0 sm:w-auto sm:px-3"
-                      aria-label="Switch to single day"
-                      onClick={() => {
-                        const today = getTodayLocalDate();
-                        setCompletedDatePreset('day');
-                        setCompletedDateFilter(today);
-                        setCompletedRangeStartDate(today);
-                        setCompletedRangeEndDate(today);
-                        // Switching back to single day should reset hidden advanced filters
-                        setCompletedLeadTypeFilter('all');
-                        setCompletedServiceSubTypeFilter('all');
-                        setCompletedByFilter('all');
-                      }}
-                    >
-                      <Calendar className="h-4 w-4 sm:hidden" aria-hidden />
-                      <span className="hidden sm:inline">Switch to single day</span>
-                    </Button>
-                  </>
-                )}
-              </div>
+                      </span>
+                    );
+                  })()}
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    type="button"
+                    className="h-10 w-10 shrink-0 p-0"
+                    aria-label="Switch to single day"
+                    title="Single day"
+                    onClick={() => {
+                      const today = getTodayLocalDate();
+                      setCompletedDatePreset('day');
+                      setCompletedDateFilter(today);
+                      setCompletedRangeStartDate(today);
+                      setCompletedRangeEndDate(today);
+                      setCompletedLeadTypeFilter('all');
+                      setCompletedServiceSubTypeFilter('all');
+                      setCompletedByFilter('all');
+                    }}
+                  >
+                    <Calendar className="h-4 w-4" aria-hidden />
+                  </Button>
+                </>
+              )}
+              <div className="h-6 w-px shrink-0 bg-border" aria-hidden />
               <Button
                 variant="outline"
                 size="sm"
                 type="button"
                 onClick={() => setCompletedFilterDialogOpen(true)}
-                className="shrink-0 h-10 w-10 p-0 sm:w-auto sm:px-3"
-                aria-label="Completed jobs filters"
+                className="h-10 shrink-0 gap-1.5 px-3 sm:px-3"
+                aria-label="More filters: date presets, lead, service type, technician"
+                title="Filters"
               >
-                <Filter className="h-4 w-4 sm:mr-1.5" aria-hidden />
-                <span className="hidden sm:inline">Filters</span>
+                <Filter className="h-4 w-4 shrink-0" aria-hidden />
+                <span className="text-sm">Filters</span>
               </Button>
             </div>
           </div>
