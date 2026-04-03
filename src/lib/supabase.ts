@@ -1245,11 +1245,24 @@ export const db = {
       }
 
       query = applyAdminCompletedListFilters(query, listFilters);
-      
-      const { data, error, count } = await query
-        .order('created_at', { ascending: false })
-        .range(from, to);
-      
+
+      const completedOnly = statuses.length === 1 && statuses[0] === 'COMPLETED';
+      const deniedCancelledList =
+        statuses.includes('DENIED') && statuses.includes('CANCELLED');
+      if (completedOnly) {
+        query = query
+          .order('completed_at', { ascending: false, nullsFirst: false })
+          .order('end_time', { ascending: false, nullsFirst: false });
+      } else if (deniedCancelledList) {
+        query = query
+          .order('denied_at', { ascending: false, nullsFirst: false })
+          .order('created_at', { ascending: false });
+      } else {
+        query = query.order('created_at', { ascending: false });
+      }
+
+      const { data, error, count } = await query.range(from, to);
+
       return { 
         data: data || [], 
         error, 
@@ -1434,9 +1447,21 @@ export const db = {
         leadRequirementsContainVariants: opts?.leadRequirementsContainVariants,
       });
 
-      const { data, error, count } = await query
-        .order('created_at', { ascending: false })
-        .range(from, to);
+      const deniedCancelledList =
+        statuses.includes('DENIED') && statuses.includes('CANCELLED');
+      if (isCompletedOnly) {
+        query = query
+          .order('completed_at', { ascending: false, nullsFirst: false })
+          .order('end_time', { ascending: false, nullsFirst: false });
+      } else if (deniedCancelledList) {
+        query = query
+          .order('denied_at', { ascending: false, nullsFirst: false })
+          .order('created_at', { ascending: false });
+      } else {
+        query = query.order('created_at', { ascending: false });
+      }
+
+      const { data, error, count } = await query.range(from, to);
 
       return {
         data: data || [],
@@ -1631,7 +1656,8 @@ export const db = {
         .from('jobs')
         .select('id,requirements,service_sub_type,completed_by,completed_at,end_time')
         .eq('status', 'COMPLETED')
-        .order('created_at', { ascending: false })
+        .order('completed_at', { ascending: false, nullsFirst: false })
+        .order('end_time', { ascending: false, nullsFirst: false })
         .limit(limit);
 
       if (dateFilter) {
