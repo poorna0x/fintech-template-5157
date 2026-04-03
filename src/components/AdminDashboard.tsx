@@ -8131,11 +8131,11 @@ const AdminDashboard = () => {
         {/* Completed Jobs quick filter summary + dialog trigger */}
         {statusFilter === 'COMPLETED' && (
           <div className="mb-4 rounded-lg border border-input bg-muted/20 px-3 py-2">
-            <div className="flex items-start justify-between gap-2 min-w-0">
-              <div className="flex flex-wrap items-center gap-2 min-w-0 flex-1">
+            <div className="flex items-center justify-between gap-2 min-w-0">
+              <div className="flex flex-nowrap items-center gap-1.5 sm:gap-2 min-w-0 flex-1 overflow-x-auto pb-0.5 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden touch-pan-x">
                 {completedDatePreset === 'day' ? (
                   <>
-                    <div className="min-w-0">
+                    <div className="min-w-0 shrink-0">
                       <DatePicker
                         value={completedDateFilter}
                         onChange={(v) => {
@@ -8175,14 +8175,33 @@ const AdminDashboard = () => {
                   </>
                 ) : (
                   <>
-                    <span className="text-xs sm:text-sm text-muted-foreground min-w-0 max-w-[min(100%,18rem)] sm:max-w-none leading-snug">
-                      Range: {new Date(completedRangeStartDate).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })} to {new Date(completedRangeEndDate).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
-                    </span>
+                    {(() => {
+                      const s = new Date(completedRangeStartDate);
+                      const e = new Date(completedRangeEndDate);
+                      const dm: Intl.DateTimeFormatOptions = { day: 'numeric', month: 'short' };
+                      const dmy: Intl.DateTimeFormatOptions = { day: 'numeric', month: 'short', year: 'numeric' };
+                      const sameYear = s.getFullYear() === e.getFullYear();
+                      const compact =
+                        sameYear
+                          ? `${s.toLocaleDateString('en-IN', dm)}\u2009–\u2009${e.toLocaleDateString('en-IN', dm)}, ${s.getFullYear()}`
+                          : `${s.toLocaleDateString('en-IN', dmy)}\u2009–\u2009${e.toLocaleDateString('en-IN', dmy)}`;
+                      const verbose = `Range: ${s.toLocaleDateString('en-IN', dmy)} to ${e.toLocaleDateString('en-IN', dmy)}`;
+                      return (
+                        <span
+                          className="text-[11px] leading-none text-muted-foreground whitespace-nowrap sm:text-sm sm:leading-normal shrink-0"
+                          title={verbose}
+                        >
+                          <span className="sm:hidden">{compact}</span>
+                          <span className="hidden sm:inline">{verbose}</span>
+                        </span>
+                      );
+                    })()}
                     <Button
                       variant="outline"
                       size="sm"
                       type="button"
-                      className="shrink-0 text-xs sm:text-sm"
+                      className="h-10 w-10 shrink-0 p-0 sm:w-auto sm:px-3"
+                      aria-label="Switch to single day"
                       onClick={() => {
                         const today = getTodayLocalDate();
                         setCompletedDatePreset('day');
@@ -8195,7 +8214,7 @@ const AdminDashboard = () => {
                         setCompletedByFilter('all');
                       }}
                     >
-                      <span className="sm:hidden">Single day</span>
+                      <Calendar className="h-4 w-4 sm:hidden" aria-hidden />
                       <span className="hidden sm:inline">Switch to single day</span>
                     </Button>
                   </>
