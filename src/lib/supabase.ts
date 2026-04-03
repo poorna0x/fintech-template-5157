@@ -2,6 +2,7 @@ import { createClient } from '@supabase/supabase-js';
 import { Database } from '@/types';
 import { chromeStorage } from './storage';
 import { escapeForLike, normalizePhoneForSearch } from './utils';
+import { cacheGet, cacheSet, cacheInvalidate } from './supabaseQueryCache';
 
 // Supabase configuration
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
@@ -235,6 +236,123 @@ const JOB_BY_CUSTOMER_SLIM_COLS = [
   'requirements',
 ] as const;
 
+/** Full customer row for getById / getByPhone / getByCustomerId (no `*`). */
+export const CUSTOMER_ROW_COLUMNS = [
+  'id',
+  'customer_id',
+  'full_name',
+  'phone',
+  'alternate_phone',
+  'email',
+  'address',
+  'location',
+  'visible_address',
+  'custom_time',
+  'service_type',
+  'brand',
+  'model',
+  'installation_date',
+  'warranty_expiry',
+  'status',
+  'customer_since',
+  'last_service_date',
+  'notes',
+  'preferred_time_slot',
+  'preferred_language',
+  'has_prefilter',
+  'has_google_review',
+  'customer_tier',
+  'raw_water_tds',
+  'photos',
+  'created_at',
+  'updated_at',
+].join(',');
+
+/** Technician list/detail without password / push_subscription. */
+const TECHNICIAN_ROW_COLUMNS = [
+  'id',
+  'full_name',
+  'phone',
+  'email',
+  'employee_id',
+  'skills',
+  'service_areas',
+  'status',
+  'current_location',
+  'work_schedule',
+  'performance',
+  'vehicle',
+  'salary',
+  'qr_code',
+  'photo',
+  'visible_qr_codes',
+  'common_qr_code_ids',
+  'account_status',
+  'created_at',
+  'updated_at',
+].join(',');
+
+export const REMINDER_ROW_COLUMNS = [
+  'id',
+  'entity_type',
+  'entity_id',
+  'title',
+  'notes',
+  'reminder_at',
+  'created_by',
+  'created_at',
+  'completed_at',
+  'interval_type',
+  'interval_value',
+].join(',');
+
+export const FOLLOW_UP_ROW_COLUMNS = [
+  'id',
+  'job_id',
+  'parent_follow_up_id',
+  'follow_up_date',
+  'follow_up_time',
+  'reason',
+  'notes',
+  'scheduled_by',
+  'scheduled_at',
+  'completed',
+  'completed_at',
+  'created_at',
+  'updated_at',
+].join(',');
+
+export const AMC_CONTRACT_ROW_COLUMNS = [
+  'id',
+  'customer_id',
+  'job_id',
+  'start_date',
+  'end_date',
+  'years',
+  'includes_prefilter',
+  'additional_info',
+  'status',
+  'renewed_from_amc_id',
+  'service_period_months',
+  'created_at',
+  'updated_at',
+].join(',');
+
+const PRODUCT_QR_ROW_COLUMNS =
+  'id,name,qr_code_url,product_image_url,product_name,product_description,product_mrp,created_at,updated_at';
+
+const TECHNICIAN_EXPENSE_ROW_COLUMNS =
+  'id,technician_id,amount,description,expense_date,category,receipt_url,notes,added_by,created_at,updated_at';
+
+const TECHNICIAN_ADVANCE_ROW_COLUMNS =
+  'id,technician_id,amount,description,advance_date,payment_method,payment_reference,notes,added_by,created_at,updated_at';
+
+const JOB_ASSIGNMENT_REQUEST_ROW =
+  'id,job_id,technician_id,status,assigned_by,assigned_at,responded_at,response_notes,created_at,updated_at';
+
+const CALL_HISTORY_ROW_COLUMNS =
+  'id,customer_id,contact_type,contact_method,phone_number,message_sent,status,notes,contacted_at,created_at,updated_at';
+
 // Database helper functions
 export const db = {
   // Customer operations
@@ -264,7 +382,7 @@ export const db = {
     async getById(id: string) {
       const { data, error } = await supabase
         .from('customers')
-        .select('*')
+        .select(CUSTOMER_ROW_COLUMNS)
         .eq('id', id)
         .single();
       
@@ -284,7 +402,7 @@ export const db = {
     async getByPhone(phone: string) {
       const { data, error } = await supabase
         .from('customers')
-        .select('*')
+        .select(CUSTOMER_ROW_COLUMNS)
         .eq('phone', phone)
         .maybeSingle();
       
@@ -310,7 +428,7 @@ export const db = {
     async getAll(limit?: number) {
       let query = supabase
         .from('customers')
-        .select('*')
+        .select(CUSTOMER_ROW_COLUMNS)
         .order('created_at', { ascending: false });
       
       // Add limit if provided to reduce data transfer
@@ -359,34 +477,8 @@ export const db = {
 
     async search(query: string, limit: number = 50) {
       const trimmed = (query ?? '').trim();
-      if (!trimmed) {
-        return { data: [], error: null };
-      }
-      const escaped = escapeForLike(trimmed);
-      const orParts: string[] = [
-        `customer_id.ilike.%${escaped}%`,
-        `full_name.ilike.%${escaped}%`,
-        `phone.ilike.%${escaped}%`,
-        `alternate_phone.ilike.%${escaped}%`,
-        `email.ilike.%${escaped}%`,
-      ];
-      const normalizedPhone = normalizePhoneForSearch(trimmed);
-      if (normalizedPhone.length >= 10) {
-        orParts.push(`phone.ilike.%${normalizedPhone}%`, `alternate_phone.ilike.%${normalizedPhone}%`);
-        if (normalizedPhone.length === 10) {
-          const first4 = normalizedPhone.slice(0, 4);
-          const last6 = normalizedPhone.slice(4);
-          orParts.push(`phone.ilike.%${first4}%${last6}%`, `alternate_phone.ilike.%${first4}%${last6}%`);
-        }
-      }
-      let q = supabase
-        .from('customers')
-        .select('*')
-        .or(orParts.join(','))
-        .order('created_at', { ascending: false });
-      if (limit > 0) q = q.limit(limit);
-      const { data, error } = await q;
-      return { data, error };
+      if (!trimmed) return { data: [], error: null };
+      return this.searchSlim(trimmed, limit, { includeAddressAndLocation: true });
     },
 
     /** Low-egress customer search for pickers/lists. Set includeAddressAndLocation for admin map/address UI. */
@@ -424,6 +516,8 @@ export const db = {
               'notes',
               'preferred_time_slot',
               'preferred_language',
+              'custom_time',
+              'photos',
               'installation_date',
               'warranty_expiry',
               'status',
@@ -468,7 +562,7 @@ export const db = {
       const end = new Date(d.getFullYear(), d.getMonth(), d.getDate(), 23, 59, 59, 999);
       const { data, error } = await supabase
         .from('customers')
-        .select('*')
+        .select(CUSTOMER_ROW_COLUMNS)
         .gte('customer_since', start.toISOString())
         .lte('customer_since', end.toISOString())
         .order('customer_since', { ascending: false })
@@ -479,7 +573,7 @@ export const db = {
     async getByCustomerId(customerId: string) {
       const { data, error } = await supabase
         .from('customers')
-        .select('*')
+        .select(CUSTOMER_ROW_COLUMNS)
         .eq('customer_id', customerId)
         .single();
       
@@ -500,10 +594,11 @@ export const db = {
   // Job operations
   jobs: {
     async create(job: Database['public']['Tables']['jobs']['Insert'], retryCount: number = 0) {
+      // Return same shape as getOngoing (explicit columns + customer) so UI can prepend without refetch.
       const { data, error } = await supabase
         .from('jobs')
         .insert(job)
-        .select()
+        .select(`${JOB_SELECT_ONGOING_AND_TECH},customer:customers(${CUSTOMER_EMBED_FOR_ONGOING_ADMIN})`)
         .single();
       
       // If duplicate job_number error and we haven't retried too many times, retry with new job number
@@ -518,7 +613,13 @@ export const db = {
         // Retry with new job number
         return this.create({ ...job, job_number: newJobNumber }, retryCount + 1);
       }
-      
+
+      if (!error) {
+        cacheInvalidate('job_counts_v1');
+        if ((job as { status?: string })?.status === 'COMPLETED') {
+          cacheInvalidate('completed_customers_map_v1');
+        }
+      }
       return { data, error };
     },
     
@@ -681,32 +782,26 @@ export const db = {
       return { data, error };
     },
 
-    /** Full jobs-by-customer fetch (`*`): prefer getByCustomerIdSlim / getByCustomerIdForReport / getByCustomerIdForPhotoAggregation when possible. */
+    /** Full jobs-by-customer fetch: explicit columns (same width as ongoing list + photos JSON). */
     async getByCustomerIdFull(customerId: string) {
       const { data, error } = await supabase
         .from('jobs')
-        .select('*')
+        .select(JOB_SELECT_ONGOING_AND_TECH)
         .eq('customer_id', customerId)
         .order('created_at', { ascending: false });
       return { data, error };
     },
     
     async getAll(limit?: number, includeCustomer?: boolean) {
-      // OPTIMIZATION: By default, don't fetch nested customer data to reduce payload size
-      // Only fetch customer data when explicitly needed
       let query;
       if (includeCustomer) {
         query = supabase
           .from('jobs')
-          .select(`
-            *,
-            customer:customers(*)
-          `);
+          .select(`${JOB_SELECT_ONGOING_AND_TECH},customer:customers(${CUSTOMER_EMBED_FOR_ONGOING_ADMIN})`);
       } else {
-        // Fetch only job data without nested customer (much smaller payload)
         query = supabase
           .from('jobs')
-          .select('*');
+          .select(JOB_SELECT_ONGOING_AND_TECH);
       }
       
       query = query.order('created_at', { ascending: false });
@@ -761,7 +856,10 @@ export const db = {
             error: selectError,
             id
           });
-          // Update succeeded, but select failed - return success anyway
+          cacheInvalidate('job_counts_v1');
+          if ((updates as { status?: string })?.status === 'COMPLETED') {
+            cacheInvalidate('completed_customers_map_v1');
+          }
           return { data: null, error: null };
       }
       
@@ -770,6 +868,10 @@ export const db = {
           updatedData: data
         });
         
+        cacheInvalidate('job_counts_v1');
+        if ((updates as { status?: string })?.status === 'COMPLETED') {
+          cacheInvalidate('completed_customers_map_v1');
+        }
         return { data: data || null, error: null };
       } catch (err: any) {
         console.error('❌ [db.jobs.update] Exception:', {
@@ -794,10 +896,7 @@ export const db = {
     async getByStatus(status: string) {
       const { data, error } = await supabase
         .from('jobs')
-        .select(`
-          *,
-          customer:customers(*)
-        `)
+        .select(`${JOB_SELECT_ONGOING_AND_TECH},customer:customers(${CUSTOMER_EMBED_FOR_ONGOING_ADMIN})`)
         .eq('status', status)
         .order('created_at', { ascending: false });
       
@@ -822,7 +921,7 @@ export const db = {
 
       const legacy = await supabase
         .from('jobs')
-        .select('*, customer:customers(*)')
+        .select(`${JOB_SELECT_ONGOING_AND_TECH},customer:customers(${CUSTOMER_EMBED_FOR_ONGOING_ADMIN})`)
         .or(orFilter)
         .order('created_at', { ascending: false })
         .limit(100);
@@ -861,7 +960,10 @@ export const db = {
         .from('jobs')
         .delete()
         .eq('id', id);
-      
+      if (!error) {
+        cacheInvalidate('job_counts_v1');
+        cacheInvalidate('completed_customers_map_v1');
+      }
       return { data: null, error };
     },
 
@@ -874,6 +976,16 @@ export const db = {
         const year = today.getFullYear();
         const month = today.getMonth();
         const day = today.getDate();
+
+        const dayKey = `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+        const countsCacheKey = `job_counts_v1:${dayKey}`;
+        const cached = cacheGet<{
+          ongoing: number;
+          followup: number;
+          denied: number;
+          completed: number;
+        }>(countsCacheKey);
+        if (cached) return { data: cached, error: null };
         
         // Create date objects in local timezone (start and end of today)
         // new Date(year, month, day, hour, min, sec) creates a date at that LOCAL time
@@ -914,15 +1026,19 @@ export const db = {
             .eq('status', 'COMPLETED')
             .or(`and(completed_at.gte.${todayStart},completed_at.lt.${todayStartNextDay}),and(end_time.gte.${todayStart},end_time.lt.${todayStartNextDay})`)
         ]);
-        
+
+        const countsData = {
+          ongoing: ongoingResult.count || 0,
+          followup: followupResult.count || 0,
+          denied: deniedResult.count || 0,
+          completed: completedResult.count || 0,
+        };
+        const err = ongoingResult.error || followupResult.error || deniedResult.error || completedResult.error;
+        if (!err) cacheSet(countsCacheKey, countsData, 25_000);
+
         return {
-          data: {
-            ongoing: ongoingResult.count || 0,
-            followup: followupResult.count || 0,
-            denied: deniedResult.count || 0,
-            completed: completedResult.count || 0
-          },
-          error: ongoingResult.error || followupResult.error || deniedResult.error || completedResult.error
+          data: countsData,
+          error: err,
         };
       } catch (error) {
         console.error('Error in getCounts:', error);
@@ -1478,7 +1594,7 @@ export const db = {
 
       const legacy = await supabase
         .from('jobs')
-        .select('*, customer:customers(*)')
+        .select(`${JOB_SELECT_ONGOING_AND_TECH},customer:customers(${CUSTOMER_EMBED_FOR_ONGOING_ADMIN})`)
         .in('status', ['PENDING', 'ASSIGNED', 'EN_ROUTE', 'IN_PROGRESS'])
         .order('created_at', { ascending: false })
         .limit(limit);
@@ -1502,7 +1618,7 @@ export const db = {
     async getById(id: string) {
       const { data, error } = await supabase
         .from('technicians')
-        .select('*')
+        .select(TECHNICIAN_ROW_COLUMNS)
         .eq('id', id)
         .single();
       
@@ -1512,7 +1628,7 @@ export const db = {
     async getAll(limit?: number) {
       let query = supabase
         .from('technicians')
-        .select('*')
+        .select(TECHNICIAN_ROW_COLUMNS)
         .order('created_at', { ascending: false });
       
       // Add limit if provided to reduce data transfer
@@ -1540,7 +1656,7 @@ export const db = {
     async getAvailable() {
       const { data, error } = await supabase
         .from('technicians')
-        .select('*')
+        .select(TECHNICIAN_ROW_COLUMNS)
         .eq('status', 'AVAILABLE')
         .order('created_at', { ascending: false });
       
@@ -1597,7 +1713,7 @@ export const db = {
       const { data, error } = await supabase
         .from('job_assignment_requests')
         .select(`
-          *,
+          ${JOB_ASSIGNMENT_REQUEST_ROW},
           job:jobs(
             id,
             job_number,
@@ -1640,7 +1756,7 @@ export const db = {
       const { data, error } = await supabase
         .from('job_assignment_requests')
         .select(`
-          *,
+          ${JOB_ASSIGNMENT_REQUEST_ROW},
           technician:technicians(
             id,
             full_name,
@@ -1660,7 +1776,7 @@ export const db = {
       const { data, error } = await supabase
         .from('job_assignment_requests')
         .select(`
-          *,
+          ${JOB_ASSIGNMENT_REQUEST_ROW},
           job:jobs(
             id,
             job_number,
@@ -1695,7 +1811,7 @@ export const db = {
       const { data, error } = await supabase
         .from('job_assignment_requests')
         .select(`
-          *,
+          ${JOB_ASSIGNMENT_REQUEST_ROW},
           job:jobs(
             id,
             job_number,
@@ -1953,7 +2069,7 @@ export const db = {
     async getById(id: string) {
       const { data, error } = await supabase
         .from('product_qr_codes')
-        .select('*')
+        .select(PRODUCT_QR_ROW_COLUMNS)
         .eq('id', id)
         .single();
       
@@ -2305,7 +2421,7 @@ export const db = {
     async getByCustomerId(customerId: string) {
       const { data, error } = await supabase
         .from('amc_contracts')
-        .select('*')
+        .select(AMC_CONTRACT_ROW_COLUMNS)
         .eq('customer_id', customerId)
         .order('created_at', { ascending: false });
       
@@ -2315,7 +2431,7 @@ export const db = {
     async getActiveByCustomerId(customerId: string) {
       const { data, error } = await supabase
         .from('amc_contracts')
-        .select('*')
+        .select(AMC_CONTRACT_ROW_COLUMNS)
         .eq('customer_id', customerId)
         .eq('status', 'ACTIVE')
         .single();
@@ -2326,7 +2442,7 @@ export const db = {
     async getAll(limit: number = 100, offset: number = 0) {
       let query = supabase
         .from('amc_contracts')
-        .select('*, customers(id, full_name, phone, email, customer_id, brand, model)', { count: 'exact' })
+        .select(`${AMC_CONTRACT_ROW_COLUMNS},customers(id, full_name, phone, email, customer_id, brand, model)`, { count: 'exact' })
         .order('created_at', { ascending: false });
 
       if (limit > 0 && limit < 100000) {
@@ -2342,7 +2458,7 @@ export const db = {
     async getById(id: string) {
       const { data, error } = await supabase
         .from('amc_contracts')
-        .select('*, customers(id, full_name, phone, email, customer_id, brand, model)')
+        .select(`${AMC_CONTRACT_ROW_COLUMNS},customers(id, full_name, phone, email, customer_id, brand, model)`)
         .eq('id', id)
         .single();
       
@@ -2384,7 +2500,7 @@ export const db = {
       
       const { data, error } = await supabase
         .from('amc_contracts')
-        .select('*, customers(full_name, phone, email, customer_id)')
+        .select(`${AMC_CONTRACT_ROW_COLUMNS},customers(full_name, phone, email, customer_id)`)
         .eq('status', 'ACTIVE')
         .gte('end_date', today.toISOString().split('T')[0])
         .lte('end_date', futureDate.toISOString().split('T')[0])
@@ -2437,7 +2553,7 @@ export const db = {
       // Try with RLS bypass or check if we can access the table
       const { data: activeAMCsRaw, error: amcError } = await supabase
         .from('amc_contracts')
-        .select('*')
+        .select(AMC_CONTRACT_ROW_COLUMNS)
         .eq('status', 'ACTIVE');
 
       if (amcError) {
@@ -2710,7 +2826,7 @@ export const db = {
         const { data: createdJobsData, error: createError } = await supabase
           .from('jobs')
           .insert(jobsToCreate)
-          .select();
+          .select('id,job_number,customer_id,status,service_sub_type,created_at');
 
         if (createError) {
           console.error('❌ Error creating jobs:', createError);
@@ -2735,7 +2851,7 @@ export const db = {
     async getAll(technicianId?: string, startDate?: string, endDate?: string) {
       let query = supabase
         .from('technician_expenses')
-        .select('*')
+        .select(TECHNICIAN_EXPENSE_ROW_COLUMNS)
         .order('expense_date', { ascending: false });
       
       if (technicianId) {
@@ -2789,7 +2905,7 @@ export const db = {
     async getAll(technicianId?: string, startDate?: string, endDate?: string) {
       let query = supabase
         .from('technician_advances')
-        .select('*')
+        .select(TECHNICIAN_ADVANCE_ROW_COLUMNS)
         .order('advance_date', { ascending: false });
       
       if (technicianId) {
@@ -2897,7 +3013,7 @@ export const db = {
     async getAll(technicianId?: string, startDate?: string, endDate?: string) {
       let query = supabase
         .from('technician_holidays')
-        .select('*')
+        .select('id,technician_id,holiday_date,is_manual,reason,notes,added_by,created_at,updated_at')
         .order('holiday_date', { ascending: false });
       
       if (technicianId) {
@@ -2952,7 +3068,7 @@ export const db = {
     async getAll(startDate?: string, endDate?: string) {
       let query = supabase
         .from('business_expenses')
-        .select('*')
+        .select('id,amount,description,expense_date,category,receipt_url,notes,added_by,created_at,updated_at')
         .order('expense_date', { ascending: false });
       
       if (startDate) {
@@ -3003,7 +3119,7 @@ export const db = {
     async getAll(startDate?: string, endDate?: string) {
       let query = supabase
         .from('other_expenses')
-        .select('*')
+        .select('id,amount,description,expense_date,category,receipt_url,notes,added_by,created_at,updated_at')
         .order('expense_date', { ascending: false });
 
       if (startDate) {
@@ -3313,7 +3429,7 @@ export const db = {
     async getByCustomerId(customerId: string) {
       const { data, error } = await supabase
         .from('call_history')
-        .select('*')
+        .select(CALL_HISTORY_ROW_COLUMNS)
         .eq('customer_id', customerId)
         .order('contacted_at', { ascending: false });
       
@@ -3326,7 +3442,7 @@ export const db = {
       
       const { data, error } = await supabase
         .from('call_history')
-        .select('*')
+        .select(CALL_HISTORY_ROW_COLUMNS)
         .gte('contacted_at', cutoffDate.toISOString())
         .order('contacted_at', { ascending: false });
       
@@ -3336,7 +3452,7 @@ export const db = {
     async getAll() {
       const { data, error } = await supabase
         .from('call_history')
-        .select('*')
+        .select(CALL_HISTORY_ROW_COLUMNS)
         .order('contacted_at', { ascending: false });
       
       return { data, error };
@@ -3390,7 +3506,7 @@ export const db = {
     async getById(id: string) {
       const { data, error } = await supabase
         .from('inventory')
-        .select('*')
+        .select('id, product_name, code, price, quantity, created_at, updated_at')
         .eq('id', id)
         .single();
       
@@ -3839,7 +3955,7 @@ export const db = {
       const tomorrow = `${tomorrowDate.getFullYear()}-${String(tomorrowDate.getMonth() + 1).padStart(2, '0')}-${String(tomorrowDate.getDate()).padStart(2, '0')}`;
       const { data, error } = await supabase
         .from('reminders')
-        .select('*')
+        .select(REMINDER_ROW_COLUMNS)
         .in('reminder_at', [today, tomorrow])
         .is('completed_at', null)
         .order('reminder_at', { ascending: true })
@@ -3849,7 +3965,7 @@ export const db = {
     async getAll(includeCompleted = false, limitCount = 1000) {
       let query = supabase
         .from('reminders')
-        .select('*')
+        .select(REMINDER_ROW_COLUMNS)
         .order('reminder_at', { ascending: true })
         .order('created_at', { ascending: false })
         .limit(Math.min(limitCount, 2000));
@@ -3863,7 +3979,7 @@ export const db = {
       if (!entityId) return { data: [], error: null };
       let query = supabase
         .from('reminders')
-        .select('*')
+        .select(REMINDER_ROW_COLUMNS)
         .eq('entity_type', entityType)
         .eq('entity_id', entityId)
         .order('reminder_at', { ascending: true })
@@ -3913,8 +4029,12 @@ export const validatePincode = async (pincode: string): Promise<boolean> => {
 
 /** Customer UUID → true if they have at least one COMPLETED job (returning / prior service). Paginates past default row limits. */
 export async function fetchCustomerIdsWithCompletedJobsMap(): Promise<Record<string, boolean>> {
+  const cacheKey = 'completed_customers_map_v1';
+  const hit = cacheGet<Record<string, boolean>>(cacheKey);
+  if (hit) return hit;
+
   const map: Record<string, boolean> = {};
-  const pageSize = 1000;
+  const pageSize = 2500;
   let from = 0;
   for (;;) {
     const { data, error } = await supabase
@@ -3936,5 +4056,6 @@ export async function fetchCustomerIdsWithCompletedJobsMap(): Promise<Record<str
     if (data.length < pageSize) break;
     from += pageSize;
   }
+  cacheSet(cacheKey, map, 120_000);
   return map;
 }

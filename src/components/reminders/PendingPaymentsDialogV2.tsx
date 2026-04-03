@@ -27,7 +27,7 @@ import { format } from 'date-fns';
 import { Check, ChevronsUpDown, Edit3, PhoneCall, Plus, RefreshCw, Search } from 'lucide-react';
 import { toast } from 'sonner';
 import type { Reminder } from '@/types';
-import { db, supabase } from '@/lib/supabase';
+import { db, supabase, REMINDER_ROW_COLUMNS } from '@/lib/supabase';
 import { formatPhoneForWhatsApp } from '@/lib/utils';
 import { WhatsAppIcon } from '@/components/WhatsAppIcon';
 import { PENDING_PAYMENT_REMINDER_TITLE, parseReminderAtLocalDate } from '@/lib/pendingPaymentReminder';
@@ -543,7 +543,7 @@ Thanks & regards 🙏`;
       const to = PAGE_SIZE - 1;
       const { data: reminderRows, error: reminderError } = await supabase
         .from('reminders')
-        .select('*')
+        .select(REMINDER_ROW_COLUMNS)
         .eq('entity_type', 'customer')
         .eq('title', PENDING_PAYMENT_TITLE)
         .is('completed_at', null)

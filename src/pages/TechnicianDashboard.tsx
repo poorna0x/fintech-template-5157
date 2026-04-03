@@ -7817,16 +7817,7 @@ const TechnicianDashboard = () => {
                       });
                       setAmcInfoDialogOpen(true);
                       
-                      // Load AMC contract details
-                      const { data, error } = await supabase
-                        .from('amc_contracts')
-                        .select('*')
-                        .eq('customer_id', customerId)
-                        .eq('status', 'ACTIVE')
-                        .order('start_date', { ascending: false })
-                        .limit(1)
-                        .single();
-                      
+                      const { data, error } = await db.amcContracts.getActiveByCustomerId(customerId);
                       if (!error && data) {
                         setAmcInfo(data);
                       } else {

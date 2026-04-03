@@ -10,7 +10,7 @@ import { Badge } from '@/components/ui/badge';
 import { X, Calendar as CalendarIcon, Plus, CheckCircle2 } from 'lucide-react';
 import { format } from 'date-fns';
 import { Job } from '@/types';
-import { supabase } from '@/lib/supabase';
+import { supabase, FOLLOW_UP_ROW_COLUMNS } from '@/lib/supabase';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
 
@@ -97,7 +97,7 @@ export default function FollowUpModal({ isOpen, onClose, job, onScheduleFollowUp
     try {
       const { data, error } = await supabase
         .from('follow_ups')
-        .select('*')
+        .select(FOLLOW_UP_ROW_COLUMNS)
         .eq('job_id', job.id)
         .order('created_at', { ascending: false });
       

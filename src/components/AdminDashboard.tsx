@@ -64,7 +64,7 @@ import {
   ChevronDown,
   ChevronUp
 } from 'lucide-react';
-import { db, supabase, fetchCustomerIdsWithCompletedJobsMap } from '@/lib/supabase';
+import { db, supabase, fetchCustomerIdsWithCompletedJobsMap, CUSTOMER_ROW_COLUMNS } from '@/lib/supabase';
 import { registerAdminPWA, disablePWA } from '@/lib/pwa';
 import { Customer, Job, Technician } from '@/types';
 import { cloudinaryService, compressImage, validateImageFile } from '@/lib/cloudinary';
@@ -1234,13 +1234,6 @@ const AdminDashboard = () => {
     }
   }, [pageSize, deniedDateFilter, completedDateFilter, completedDatePreset, completedRangeStartDate, completedRangeEndDate]);
 
-  // Reload follow-up jobs for glow whenever filter changes (so Followup card border glow is correct for today/tomorrow)
-  useEffect(() => {
-    db.jobs.getFollowUpForGlow().then(({ data }) => {
-      if (data) setAllFollowUpJobs(data as Job[]);
-    }).catch(() => {});
-  }, [statusFilter]);
-
   const loadCompletedJobDetails = useCallback(async (jobId: string) => {
     if (!jobId) return;
     if (loadedCompletedJobDetails[jobId]) return;
@@ -1675,47 +1668,20 @@ const AdminDashboard = () => {
 
 
 
-  // Realtime for new jobs — refresh list when a job is inserted (no 30s poll)
-  useEffect(() => {
-    if (isInitialLoad || !isPollingEnabled) return;
-
-    const channel = supabase
-      .channel('admin-new-jobs')
-      .on(
-        'postgres_changes',
-        {
-          event: 'INSERT',
-          schema: 'public',
-          table: 'jobs',
-        },
-        (payload: { new: Record<string, unknown> }) => {
-          const row = payload.new as { id: string; status?: string };
-          if (row.id) setLastCheckedJobId(row.id);
-          // Optimistic count: new jobs are typically PENDING (counted in ongoing). Skip loadJobCounts() to save 4 count queries per new job.
-          const status = (row.status || 'PENDING') as string;
-          if (['PENDING', 'ASSIGNED', 'EN_ROUTE', 'IN_PROGRESS'].includes(status)) {
-            setJobCounts((prev) => ({ ...prev, ongoing: (prev.ongoing || 0) + 1 }));
-          }
-          loadFilteredJobs(statusFilter, 1);
-        }
-      )
-      .subscribe();
-
-    return () => {
-      supabase.removeChannel(channel);
-    };
-  }, [isInitialLoad, isPollingEnabled, statusFilter, loadFilteredJobs, loadJobCounts]);
-
-  // Admin: realtime for job completion only — play sound when a job is completed (no polling)
+  // Single channel: new job INSERT (when polling enabled) + COMPLETED UPDATE (completion sound)
   useEffect(() => {
     if (isInitialLoad) return;
 
-    // One-time seed: mark currently completed jobs so we don't play sound for them on connect
     const seedCompletedIds = async () => {
       try {
-        const { data: completed, error } = await db.jobs.getByStatusPaginatedSlim(['COMPLETED'], 1, 15);
-        if (!error && completed?.length) {
-          completed.forEach((j: any) => jobIdsCompletedByAdminRef.current.add(j.id));
+        const { data: rows, error } = await supabase
+          .from('jobs')
+          .select('id')
+          .eq('status', 'COMPLETED')
+          .order('created_at', { ascending: false })
+          .limit(15);
+        if (!error && rows?.length) {
+          rows.forEach((j: { id: string }) => jobIdsCompletedByAdminRef.current.add(j.id));
         }
       } catch {
         // ignore
@@ -1723,8 +1689,23 @@ const AdminDashboard = () => {
     };
     const seedTimeout = setTimeout(seedCompletedIds, 2000);
 
-    const channel = supabase
-      .channel('admin-job-completed')
+    let channel = supabase.channel('admin-jobs-realtime');
+    if (isPollingEnabled) {
+      channel = channel.on(
+        'postgres_changes',
+        { event: 'INSERT', schema: 'public', table: 'jobs' },
+        (payload: { new: Record<string, unknown> }) => {
+          const row = payload.new as { id: string; status?: string };
+          if (row.id) setLastCheckedJobId(row.id);
+          const status = (row.status || 'PENDING') as string;
+          if (['PENDING', 'ASSIGNED', 'EN_ROUTE', 'IN_PROGRESS'].includes(status)) {
+            setJobCounts((prev) => ({ ...prev, ongoing: (prev.ongoing || 0) + 1 }));
+          }
+          loadFilteredJobs(statusFilter, 1);
+        }
+      );
+    }
+    channel
       .on(
         'postgres_changes',
         {
@@ -1739,7 +1720,7 @@ const AdminDashboard = () => {
           const completedAt = row.completed_at || row.end_time;
           if (completedAt) {
             const t = new Date(completedAt).getTime();
-            if (Date.now() - t > 60000) return; // older than 60s, skip (e.g. late delivery)
+            if (Date.now() - t > 60000) return;
           }
           jobIdsCompletedByAdminRef.current.add(row.id);
           playNotificationSound();
@@ -1751,7 +1732,7 @@ const AdminDashboard = () => {
       clearTimeout(seedTimeout);
       supabase.removeChannel(channel);
     };
-  }, [isInitialLoad, playNotificationSound]);
+  }, [isInitialLoad, isPollingEnabled, statusFilter, loadFilteredJobs, playNotificationSound]);
 
   const handleDeleteCustomer = async () => {
     if (!customerToDelete) return;
@@ -3073,7 +3054,7 @@ const AdminDashboard = () => {
       if (byPhone) return transformCustomerData(byPhone);
       const { data: byAlt } = await supabase
         .from('customers')
-        .select('*')
+        .select(CUSTOMER_ROW_COLUMNS)
         .eq('alternate_phone', formattedPhone)
         .maybeSingle();
       if (byAlt) return transformCustomerData(byAlt);
@@ -3081,7 +3062,7 @@ const AdminDashboard = () => {
     if (email && email.trim()) {
       const { data: byEmail } = await supabase
         .from('customers')
-        .select('*')
+        .select(CUSTOMER_ROW_COLUMNS)
         .ilike('email', email.trim())
         .maybeSingle();
       if (byEmail) return transformCustomerData(byEmail);
@@ -4787,15 +4768,7 @@ const AdminDashboard = () => {
     setLoadingAMCInfo(true);
     
     try {
-      const { data, error } = await supabase
-        .from('amc_contracts')
-        .select('*')
-        .eq('customer_id', customer.id)
-        .eq('status', 'ACTIVE')
-        .order('start_date', { ascending: false })
-        .limit(1)
-        .single();
-      
+      const { data, error } = await db.amcContracts.getActiveByCustomerId(customer.id);
       if (!error && data) {
         setAmcInfo(data);
       } else {
