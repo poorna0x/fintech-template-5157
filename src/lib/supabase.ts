@@ -1326,6 +1326,8 @@ export const db = {
         'payment_amount',
         'actual_cost',
         'estimated_cost',
+        'lead_cost',
+        'parts_cost_total',
         'payment_method',
         'service_address',
         'service_location',

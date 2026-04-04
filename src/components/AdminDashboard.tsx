@@ -8705,7 +8705,28 @@ const AdminDashboard = () => {
                           completedServiceSubTypeFilter !== 'all' ||
                           completedByFilter !== 'all';
                         const minimalCompletedMode = hasAnyCompletedFilterSelected;
-                        const fullJob = loadedCompletedJobDetails[job.id] || job;
+                        // Cached "full" job is only fetched once per id; list rows refresh after edits.
+                        // Overlay list financial columns so lead_cost / parts / payment stay accurate on the card.
+                        const cachedCompleted = loadedCompletedJobDetails[job.id];
+                        const fullJob = cachedCompleted
+                          ? (() => {
+                              const c = cachedCompleted as any;
+                              const j = job as any;
+                              const out = { ...c };
+                              for (const k of [
+                                'lead_cost',
+                                'parts_cost_total',
+                                'payment_amount',
+                                'actual_cost',
+                                'payment_method',
+                              ] as const) {
+                                if (j[k] !== undefined && j[k] !== null) {
+                                  out[k] = j[k];
+                                }
+                              }
+                              return out;
+                            })()
+                          : job;
                         const detailsLoaded = Boolean(loadedCompletedJobDetails[job.id]);
                         const isLoadingDetails = Boolean(loadingCompletedJobDetails[job.id]);
 
@@ -8854,14 +8875,6 @@ const AdminDashboard = () => {
                               detailsLoaded={detailsLoaded}
                               loadingDetails={isLoadingDetails}
                               onLoadDetails={() => loadCompletedJobDetails(job.id)}
-                              onAddReminder={(j) => {
-                                setReminderEntity({ type: 'job', id: j.id });
-                                const cust = (j as any).customer || j.customer;
-                                const name = cust?.full_name || cust?.fullName || 'Customer';
-                                const jn = (j as any).job_number || j.jobNumber || j.id;
-                                setReminderContextLabel(`Job ${jn} · ${name}`);
-                                setAddReminderDialogOpen(true);
-                              }}
                             />
                             <DeniedJobSection
                               job={job}
@@ -10549,6 +10562,34 @@ const AdminDashboard = () => {
                 try {
                   if (!selectedCompletedJob) return;
 
+                  const pm = completedJobEditData.paymentMethod || 'CASH';
+                  if (pm === 'PARTIAL') {
+                    const cashStr = String(completedJobEditData.partialCashAmount ?? '').trim();
+                    const onlineStr = String(completedJobEditData.partialOnlineAmount ?? '').trim();
+                    if (!cashStr || !onlineStr) {
+                      toast.error('Partial payment requires both cash and online amounts.');
+                      return;
+                    }
+                    const pc = parseFloat(cashStr);
+                    const po = parseFloat(onlineStr);
+                    if (!Number.isFinite(pc) || !Number.isFinite(po) || pc <= 0 || po <= 0) {
+                      toast.error('Cash and online amounts must be greater than zero.');
+                      return;
+                    }
+                    const totalShown = parseFloat(String(completedJobEditData.amount ?? '').trim());
+                    const sum = Math.round((pc + po) * 100) / 100;
+                    if (!Number.isFinite(totalShown) || Math.abs(totalShown - sum) > 0.02) {
+                      toast.error('Total amount must equal cash plus online amounts.');
+                      return;
+                    }
+                  } else {
+                    const amtStr = String(completedJobEditData.amount ?? '').trim();
+                    if (amtStr === '' || !Number.isFinite(parseFloat(amtStr)) || parseFloat(amtStr) < 0) {
+                      toast.error('Enter a valid bill amount.');
+                      return;
+                    }
+                  }
+
                   // Update requirements with edited data
                   let requirements: any[] = [];
                   try {
@@ -10703,11 +10744,20 @@ const AdminDashboard = () => {
                   // If completed_by is changed to a technician, also update assigned_technician_id
                   const newCompletedBy = completedJobEditData.completedBy || 'admin';
                   const oldAssignedTechnicianId = (selectedCompletedJob as any).assigned_technician_id;
+
+                  // UI: CASH | ONLINE | PARTIAL → DB: CASH | UPI | PARTIAL
+                  const uiPaymentMethod = completedJobEditData.paymentMethod || 'CASH';
+                  const jobsPaymentMethod =
+                    uiPaymentMethod === 'ONLINE'
+                      ? 'UPI'
+                      : uiPaymentMethod === 'PARTIAL'
+                        ? 'PARTIAL'
+                        : 'CASH';
                   
                   const updateData: any = {
                     actual_cost: amount,
                     payment_amount: amount,
-                    payment_method: completedJobEditData.paymentMethod || 'CASH',
+                    payment_method: jobsPaymentMethod,
                     payment_status: amount > 0 ? 'PAID' : 'PENDING',
                     completion_notes: completedJobEditData.completionNotes || '',
                     completed_by: newCompletedBy,
@@ -10858,6 +10908,14 @@ const AdminDashboard = () => {
                     setEditCompletedJobDialogOpen(false);
                     // Reload jobs
                     await loadFilteredJobs(statusFilter, currentPage);
+                    // Drop stale full-job cache so profit/amounts match DB (list row is fresh after reload).
+                    const updatedId = selectedCompletedJob.id;
+                    setLoadedCompletedJobDetails((prev) => {
+                      if (!prev[updatedId]) return prev;
+                      const next = { ...prev };
+                      delete next[updatedId];
+                      return next;
+                    });
                   }
                 } catch (error: any) {
                   toast.error('Error updating job: ' + error.message);

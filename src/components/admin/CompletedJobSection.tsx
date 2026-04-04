@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { CheckCircle, Edit, ShoppingCart, Bell } from 'lucide-react';
+import React, { useEffect, useState } from 'react';
+import { CheckCircle, Edit, ShoppingCart } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
   AlertDialog,
@@ -69,7 +69,6 @@ export const CompletedJobSection: React.FC<CompletedJobSectionProps> = ({
   setSelectedBillPhotos,
   setSelectedPhoto,
   setPhotoViewerOpen,
-  onAddReminder,
   minimalMode,
   detailsLoaded,
   loadingDetails,
@@ -92,16 +91,39 @@ export const CompletedJobSection: React.FC<CompletedJobSectionProps> = ({
     });
   };
 
-  const jobPartsTotal = (job as any).parts_cost_total;
-  const hasPartsCostTotal = jobPartsTotal !== undefined && jobPartsTotal !== null && typeof jobPartsTotal === 'number';
+  // Supabase may return numeric columns as number or string; treat any finite parsed value as authoritative (incl. 0).
+  const rawPartsTotal = (job as any).parts_cost_total;
+  const partsTotalParsed =
+    rawPartsTotal != null && rawPartsTotal !== '' ? Number(rawPartsTotal) : NaN;
+  const hasPartsCostTotal = Number.isFinite(partsTotalParsed);
+
+  useEffect(() => {
+    if (job.status !== 'COMPLETED' || !job?.id) return;
+    if (hasPartsCostTotal) return;
+    fetchSparePartsCost();
+  }, [job.id, job.status, hasPartsCostTotal]);
 
   if (job.status !== 'COMPLETED') return null;
 
   const leadSource = findLeadSource(requirements);
   const leadCost = Number((job as any).lead_cost) || 0;
-  const billAmount = Number(actualCost || paymentAmount) || 0;
+  // Match Analytics / billing: prefer recorded payment, then actual_cost (partial breakdown when DB totals missing).
+  const payNum = Number(paymentAmount) || 0;
+  const actNum = Number(actualCost) || 0;
+  let billAmount = payNum > 0 ? payNum : actNum;
+  if (billAmount <= 0 && paymentMethod === 'PARTIAL' && Array.isArray(requirements)) {
+    const partialReq = requirements.find(
+      (r: any) => r?.partial_cash_amount != null || r?.partial_online_amount != null
+    );
+    if (partialReq) {
+      const cash = Number(partialReq.partial_cash_amount) || 0;
+      const online = Number(partialReq.partial_online_amount) || 0;
+      const sum = cash + online;
+      if (sum > 0) billAmount = sum;
+    }
+  }
   const commission10 = billAmount * 0.1;
-  const sparePartsCostDisplay = hasPartsCostTotal ? Number(jobPartsTotal) : sparePartsCost;
+  const sparePartsCostDisplay = hasPartsCostTotal ? partsTotalParsed : sparePartsCost;
   const profit = billAmount - sparePartsCostDisplay - leadCost - commission10;
   const showProfit = billAmount > 0;
   
@@ -446,9 +468,37 @@ export const CompletedJobSection: React.FC<CompletedJobSectionProps> = ({
                 ? (job as any).lead_cost.toString() 
                 : '0';
 
+              // Amount: use nullish so ₹0 is not dropped (|| would treat 0 as missing)
+              const rawAmount =
+                (job as any).actual_cost ??
+                (job as any).payment_amount ??
+                actualCost ??
+                paymentAmount;
+              const amountStr =
+                rawAmount === null || rawAmount === undefined || rawAmount === ''
+                  ? ''
+                  : String(rawAmount);
+
+              let paymentMethodForEdit = (paymentMethod || 'CASH') as string;
+              if (paymentMethodForEdit === 'UPI' || paymentMethodForEdit === 'CARD' || paymentMethodForEdit === 'BANK_TRANSFER') {
+                paymentMethodForEdit = 'ONLINE';
+              }
+
+              const partialReq = requirements.find(
+                (r: any) => r?.partial_cash_amount != null || r?.partial_online_amount != null
+              );
+
               const editData: any = {
-                amount: actualCost || paymentAmount || '',
-                paymentMethod: paymentMethod || 'CASH',
+                amount: amountStr,
+                paymentMethod: paymentMethodForEdit,
+                partialCashAmount:
+                  partialReq && partialReq.partial_cash_amount != null
+                    ? String(partialReq.partial_cash_amount)
+                    : '',
+                partialOnlineAmount:
+                  partialReq && partialReq.partial_online_amount != null
+                    ? String(partialReq.partial_online_amount)
+                    : '',
                 serviceBrand:
                   (job as any).service_brand === 'elevenro'
                     ? 'elevenro'
@@ -504,17 +554,6 @@ export const CompletedJobSection: React.FC<CompletedJobSectionProps> = ({
               className="text-xs flex-1 min-w-0 justify-center py-2 px-2"
             >
               <ShoppingCart className="w-4 h-4 shrink-0" />
-            </Button>
-          )}
-          {onAddReminder && (
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={() => onAddReminder(job)}
-              title="Add Reminder"
-              className="text-xs flex-1 min-w-0 justify-center py-2 px-2"
-            >
-              <Bell className="w-4 h-4 shrink-0" />
             </Button>
           )}
         </div>

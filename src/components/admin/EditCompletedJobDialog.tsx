@@ -109,6 +109,21 @@ const EditCompletedJobDialog: React.FC<EditCompletedJobDialogProps> = ({
     }
   }, [qrCodesFetched]);
 
+  /** Partial: when cash/online change, total amount follows their sum; if both cleared, keep current total. */
+  const amountFromPartialStrings = (cashStr: string, onlineStr: string): string => {
+    const cashT = String(cashStr ?? '').trim();
+    const onlineT = String(onlineStr ?? '').trim();
+    const c = parseFloat(cashT);
+    const o = parseFloat(onlineT);
+    const cN = Number.isFinite(c) ? c : 0;
+    const oN = Number.isFinite(o) ? o : 0;
+    if (!cashT && !onlineT) {
+      return editData.amount === '' || editData.amount == null ? '' : String(editData.amount);
+    }
+    const sum = cN + oN;
+    return String(Math.round(sum * 100) / 100);
+  };
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-2xl max-h-[90vh] overflow-y-auto">
@@ -152,24 +167,49 @@ const EditCompletedJobDialog: React.FC<EditCompletedJobDialogProps> = ({
             </div>
           </div>
 
-          {/* Amount */}
+          {/* Amount: for Partial, defaults from job; editing cash/online updates this to their sum; you can still edit total directly. */}
           <div>
             <Label htmlFor="edit-amount">Amount (₹)</Label>
             <Input
               id="edit-amount"
               type="number"
-              value={editData.amount || ''}
+              value={
+                editData.amount === '' || editData.amount === undefined || editData.amount === null
+                  ? ''
+                  : String(editData.amount)
+              }
               onChange={(e) => onEditDataChange({ ...editData, amount: e.target.value })}
               placeholder="Enter amount"
             />
+            {editData.paymentMethod === 'PARTIAL' && (
+              <p className="text-xs text-gray-500 mt-1">
+                Changing cash or online below updates this total automatically; you can adjust the total here too.
+              </p>
+            )}
           </div>
 
-          {/* Payment Method */}
+          {/* Payment Method — Cash / Online / Partial only (DB stores UPI for online) */}
           <div>
             <Label htmlFor="edit-payment-method">Payment Method</Label>
             <Select
-              value={editData.paymentMethod || 'CASH'}
-              onValueChange={(value) => onEditDataChange({ ...editData, paymentMethod: value })}
+              value={
+                editData.paymentMethod === 'UPI' ||
+                editData.paymentMethod === 'CARD' ||
+                editData.paymentMethod === 'BANK_TRANSFER'
+                  ? 'ONLINE'
+                  : editData.paymentMethod || 'CASH'
+              }
+              onValueChange={(value) => {
+                const next: any = { ...editData, paymentMethod: value };
+                if (value !== 'PARTIAL') {
+                  next.partialCashAmount = '';
+                  next.partialOnlineAmount = '';
+                }
+                if (value === 'CASH') {
+                  next.qrCodeName = '';
+                }
+                onEditDataChange(next);
+              }}
             >
               <SelectTrigger>
                 <SelectValue />
@@ -177,41 +217,68 @@ const EditCompletedJobDialog: React.FC<EditCompletedJobDialogProps> = ({
               <SelectContent>
                 <SelectItem value="CASH">Cash</SelectItem>
                 <SelectItem value="ONLINE">Online</SelectItem>
-                <SelectItem value="UPI">UPI</SelectItem>
-                <SelectItem value="CARD">Card</SelectItem>
-                <SelectItem value="BANK_TRANSFER">Bank Transfer</SelectItem>
                 <SelectItem value="PARTIAL">Partial (Cash + Online)</SelectItem>
               </SelectContent>
             </Select>
           </div>
 
-          {/* Partial amounts - only when PARTIAL */}
+          {/* Partial amounts - required when PARTIAL */}
           {editData.paymentMethod === 'PARTIAL' && (
             <div className="grid grid-cols-2 gap-3">
               <div>
-                <Label htmlFor="edit-partial-cash">Cash amount (₹)</Label>
+                <Label htmlFor="edit-partial-cash">
+                  Cash amount (₹) <span className="text-red-600">*</span>
+                </Label>
                 <Input
                   id="edit-partial-cash"
                   type="number"
                   min={0}
                   step={0.01}
+                  required
                   value={editData.partialCashAmount ?? ''}
-                  onChange={(e) => onEditDataChange({ ...editData, partialCashAmount: e.target.value })}
-                  placeholder="0"
+                  onChange={(e) => {
+                    const v = e.target.value;
+                    onEditDataChange({
+                      ...editData,
+                      partialCashAmount: v,
+                      amount: amountFromPartialStrings(v, String(editData.partialOnlineAmount ?? '')),
+                    });
+                  }}
+                  placeholder="Required"
                 />
               </div>
               <div>
-                <Label htmlFor="edit-partial-online">Online amount (₹)</Label>
+                <Label htmlFor="edit-partial-online">
+                  Online amount (₹) <span className="text-red-600">*</span>
+                </Label>
                 <Input
                   id="edit-partial-online"
                   type="number"
                   min={0}
                   step={0.01}
+                  required
                   value={editData.partialOnlineAmount ?? ''}
-                  onChange={(e) => onEditDataChange({ ...editData, partialOnlineAmount: e.target.value })}
-                  placeholder="0"
+                  onChange={(e) => {
+                    const v = e.target.value;
+                    onEditDataChange({
+                      ...editData,
+                      partialOnlineAmount: v,
+                      amount: amountFromPartialStrings(String(editData.partialCashAmount ?? ''), v),
+                    });
+                  }}
+                  placeholder="Required"
                 />
               </div>
+              {(() => {
+                const c = parseFloat(String(editData.partialCashAmount ?? '').trim()) || 0;
+                const o = parseFloat(String(editData.partialOnlineAmount ?? '').trim()) || 0;
+                if (c <= 0 && o <= 0) return null;
+                return (
+                  <p className="text-sm text-gray-700 col-span-2">
+                    Total (cash + online): <span className="font-semibold">₹{(c + o).toLocaleString('en-IN', { minimumFractionDigits: 0, maximumFractionDigits: 2 })}</span>
+                  </p>
+                );
+              })()}
             </div>
           )}
 
@@ -291,8 +358,8 @@ const EditCompletedJobDialog: React.FC<EditCompletedJobDialogProps> = ({
             <p className="text-xs text-gray-500 mt-1">Edit if you need to update lead cost for this job</p>
           </div>
 
-          {/* QR Code Name (if online payment) - dropdown, fetches list only when opened */}
-          {(editData.paymentMethod === 'UPI' || editData.paymentMethod === 'CARD' || editData.paymentMethod === 'BANK_TRANSFER' || editData.paymentMethod === 'ONLINE' || editData.paymentMethod === 'PARTIAL') && (
+          {/* QR code for online portion (online or partial) */}
+          {(editData.paymentMethod === 'ONLINE' || editData.paymentMethod === 'PARTIAL') && (
             <div>
               <Label htmlFor="edit-qr-code">QR Code Name</Label>
               <Select
