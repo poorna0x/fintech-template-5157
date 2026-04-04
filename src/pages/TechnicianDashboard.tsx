@@ -58,9 +58,12 @@ import { registerTechnicianPWA, disablePWA } from '@/lib/pwa';
 import {
   cacheQrCodes,
   cacheTechnicianQrCode,
+  commonQrDisplaySrc,
   CommonQrCode,
+  getTechnicianCommonQrImageCache,
   getTechnicianQrSnapshot,
   normalizeTechnicianAssignedCommonQrIds,
+  prefetchTechnicianCommonQrImages,
   QR_NETWORK_MIN_INTERVAL_MS,
   saveTechnicianQrSnapshot,
   TechnicianQrPickerRow,
@@ -518,6 +521,8 @@ const TechnicianDashboard = () => {
   const [commonQrCodesForTechnician, setCommonQrCodesForTechnician] = useState<CommonQrCode[]>([]);
   const [commonQrDialogOpen, setCommonQrDialogOpen] = useState(false);
   const [expandedCommonQr, setExpandedCommonQr] = useState<CommonQrCode | null>(null);
+  /** Data URLs for assigned Common QRs — filled while online for offline image display. */
+  const [commonQrImageDataById, setCommonQrImageDataById] = useState<Record<string, string>>({});
 
   // Photos dialog state
   const [photosDialogOpen, setPhotosDialogOpen] = useState(false);
@@ -820,6 +825,7 @@ const TechnicianDashboard = () => {
         setCommonQrCodesForTechnician(snap.commonQrCodesForTechnician);
         setTechnicianVisibleQrCodes(snap.technicianVisibleQrCodes);
         setAllTechniciansForReports(snap.allTechniciansForReports);
+        setCommonQrImageDataById(getTechnicianCommonQrImageCache(technicianId));
       };
 
       const cached = getTechnicianQrSnapshot(technicianId);
@@ -971,6 +977,11 @@ const TechnicianDashboard = () => {
           technicianVisibleQrCodes: currentTechnicianVisibleQrCodes,
           allTechniciansForReports: allTechniciansForReportsData,
         });
+
+        void prefetchTechnicianCommonQrImages(
+          technicianId,
+          assignedCommonQrs.map((q) => ({ id: q.id, qrCodeUrl: q.qrCodeUrl }))
+        ).then((map) => setCommonQrImageDataById(map));
       } catch (error) {
         console.error('Error loading QR codes:', error);
       }
@@ -8886,7 +8897,11 @@ const TechnicianDashboard = () => {
                       onClick={() => setExpandedCommonQr(qr)}
                       className="flex min-w-[140px] shrink-0 snap-center flex-col items-center gap-2 rounded-lg border border-gray-200 bg-white p-3 transition-colors hover:border-primary/50 hover:bg-gray-50 active:scale-[0.98] focus:outline-none focus:ring-2 focus:ring-primary/20"
                     >
-                      <img src={qr.qrCodeUrl} alt={qr.name} className="h-32 w-32 object-contain" />
+                      <img
+                        src={commonQrDisplaySrc(qr.id, qr.qrCodeUrl, commonQrImageDataById)}
+                        alt={qr.name}
+                        className="h-32 w-32 object-contain"
+                      />
                       <p className="text-sm font-medium text-gray-900 truncate w-full text-center">{qr.name}</p>
                     </button>
                   ))}
@@ -8900,7 +8915,11 @@ const TechnicianDashboard = () => {
                       onClick={() => setExpandedCommonQr(qr)}
                       className="flex flex-col items-center gap-2 rounded-lg border border-gray-200 bg-white p-3 w-full max-w-[180px] transition-colors hover:border-primary/50 hover:bg-gray-50 active:scale-[0.98] focus:outline-none focus:ring-2 focus:ring-primary/20"
                     >
-                      <img src={qr.qrCodeUrl} alt={qr.name} className="h-36 w-36 object-contain md:h-40 md:w-40" />
+                      <img
+                        src={commonQrDisplaySrc(qr.id, qr.qrCodeUrl, commonQrImageDataById)}
+                        alt={qr.name}
+                        className="h-36 w-36 object-contain md:h-40 md:w-40"
+                      />
                       <p className="text-sm font-medium text-gray-900 truncate w-full text-center">{qr.name}</p>
                     </button>
                   ))}
@@ -8931,7 +8950,11 @@ const TechnicianDashboard = () => {
               <div className="flex flex-col items-center gap-4 py-2">
                 <div className="rounded-xl border-2 border-border bg-white p-4 shadow-inner">
                   <img
-                    src={expandedCommonQr.qrCodeUrl}
+                    src={commonQrDisplaySrc(
+                      expandedCommonQr.id,
+                      expandedCommonQr.qrCodeUrl,
+                      commonQrImageDataById
+                    )}
                     alt={expandedCommonQr.name}
                     className="h-56 w-56 object-contain sm:h-64 sm:w-64"
                   />

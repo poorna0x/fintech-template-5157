@@ -45,6 +45,118 @@ const QR_CODES_CACHE_EXPIRY = 90 * 24 * 60 * 60 * 1000; // 90 days
 const TECH_QR_SNAPSHOT_KEY = (technicianId: string) =>
   `hydrogenro_tech_qr_snapshot_v1_${technicianId}`;
 
+/** Data URLs for assigned Common QR images (offline mobile). */
+const TECH_QR_ASSIGNED_IMG_CACHE_KEY = (technicianId: string) =>
+  `hydrogenro_tech_common_qr_img_v1_${technicianId}`;
+
+const MAX_QR_IMAGE_BYTES = 2 * 1024 * 1024; // skip unusually large responses
+
+function blobToDataUrl(blob: Blob): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const fr = new FileReader();
+    fr.onloadend = () => resolve(fr.result as string);
+    fr.onerror = () => reject(new Error('FileReader failed'));
+    fr.readAsDataURL(blob);
+  });
+}
+
+/** Cached data URLs keyed by technician_common_qr id (current assignments only). */
+export function getTechnicianCommonQrImageCache(technicianId: string): Record<string, string> {
+  if (typeof window === 'undefined' || !technicianId) return {};
+  try {
+    const raw = localStorage.getItem(TECH_QR_ASSIGNED_IMG_CACHE_KEY(technicianId));
+    if (!raw) return {};
+    const parsed = JSON.parse(raw) as { v?: number; urls?: Record<string, string> };
+    if (parsed?.v === 1 && parsed.urls && typeof parsed.urls === 'object') return parsed.urls;
+    return {};
+  } catch {
+    return {};
+  }
+}
+
+function saveTechnicianCommonQrImageCache(technicianId: string, urls: Record<string, string>): void {
+  if (typeof window === 'undefined' || !technicianId) return;
+  const payload = JSON.stringify({ v: 1, savedAt: Date.now(), urls });
+  try {
+    localStorage.setItem(TECH_QR_ASSIGNED_IMG_CACHE_KEY(technicianId), payload);
+  } catch (e) {
+    if (e instanceof DOMException && e.name === 'QuotaExceededError') {
+      try {
+        const ids = Object.keys(urls);
+        const trimmed: Record<string, string> = {};
+        for (const id of ids.slice(-2)) trimmed[id] = urls[id];
+        localStorage.setItem(
+          TECH_QR_ASSIGNED_IMG_CACHE_KEY(technicianId),
+          JSON.stringify({ v: 1, savedAt: Date.now(), urls: trimmed })
+        );
+      } catch {
+        /* ignore */
+      }
+    }
+  }
+}
+
+export function clearTechnicianCommonQrImageCache(technicianId: string): void {
+  if (typeof window === 'undefined' || !technicianId) return;
+  try {
+    localStorage.removeItem(TECH_QR_ASSIGNED_IMG_CACHE_KEY(technicianId));
+  } catch {
+    /* ignore */
+  }
+}
+
+/**
+ * While online, download assigned Common QR images and store as data URLs for offline use.
+ * Replaces cache entries to match the current assignment list only.
+ */
+export async function prefetchTechnicianCommonQrImages(
+  technicianId: string,
+  items: { id: string; qrCodeUrl: string }[]
+): Promise<Record<string, string>> {
+  if (typeof window === 'undefined' || !technicianId) {
+    return {};
+  }
+  if (!items.length) {
+    saveTechnicianCommonQrImageCache(technicianId, {});
+    return {};
+  }
+
+  const prev = getTechnicianCommonQrImageCache(technicianId);
+  const next: Record<string, string> = {};
+
+  for (const it of items) {
+    const url = (it.qrCodeUrl || '').trim();
+    if (!url.startsWith('http')) {
+      if (prev[it.id]) next[it.id] = prev[it.id];
+      continue;
+    }
+    let fetched: string | null = null;
+    try {
+      const res = await fetch(url, { mode: 'cors', credentials: 'omit', cache: 'force-cache' });
+      if (!res.ok) throw new Error(String(res.status));
+      const blob = await res.blob();
+      if (blob.size === 0 || blob.size > MAX_QR_IMAGE_BYTES) throw new Error('size');
+      fetched = await blobToDataUrl(blob);
+    } catch {
+      fetched = null;
+    }
+    if (fetched) next[it.id] = fetched;
+    else if (prev[it.id]) next[it.id] = prev[it.id];
+  }
+
+  saveTechnicianCommonQrImageCache(technicianId, next);
+  return next;
+}
+
+export function commonQrDisplaySrc(
+  qrId: string,
+  remoteUrl: string,
+  imageCache: Record<string, string>
+): string {
+  const local = imageCache[qrId];
+  return local && local.startsWith('data:') ? local : remoteUrl;
+}
+
 /** Skip background network refresh if snapshot is newer than this (unless `force`). */
 export const QR_NETWORK_MIN_INTERVAL_MS = 45 * 60 * 1000; // 45 minutes
 
@@ -184,6 +296,7 @@ export const clearTechnicianQrSnapshot = (technicianId: string): void => {
   if (typeof window === 'undefined' || !technicianId) return;
   try {
     localStorage.removeItem(TECH_QR_SNAPSHOT_KEY(technicianId));
+    clearTechnicianCommonQrImageCache(technicianId);
   } catch (e) {
     console.error('Error clearing technician QR snapshot:', e);
   }
