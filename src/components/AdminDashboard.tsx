@@ -944,6 +944,42 @@ const AdminDashboard = () => {
     updatedAt: customer.updated_at
   });
 
+  // Slim job lists embed customers without address/location JSON; hydrate full row when address dialog opens.
+  useEffect(() => {
+    const openCustomerIds = Object.entries(addressDialogOpen)
+      .filter(([, isOpen]) => isOpen)
+      .map(([id]) => id);
+    if (!openCustomerIds.length) return;
+
+    let cancelled = false;
+    (async () => {
+      for (const customerId of openCustomerIds) {
+        const { data, error } = await db.customers.getById(customerId);
+        if (cancelled || error || !data) continue;
+        const transformed = transformCustomerData(data);
+        if (cancelled) return;
+        setCustomers((prev) => {
+          const idx = prev.findIndex((c) => c.id === customerId);
+          if (idx === -1) return prev;
+          const next = [...prev];
+          next[idx] = transformed;
+          return next;
+        });
+        setSearchResults((prev) => {
+          if (!prev?.length) return prev;
+          const idx = prev.findIndex((c) => c.id === customerId);
+          if (idx === -1) return prev;
+          const next = [...prev];
+          next[idx] = transformed;
+          return next;
+        });
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [addressDialogOpen]);
+
   // Reset selected technician when dialog closes
   useEffect(() => {
     if (!assignJobDialogOpen) {

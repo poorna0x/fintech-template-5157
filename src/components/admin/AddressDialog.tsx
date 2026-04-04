@@ -49,8 +49,35 @@ const AddressDialog: React.FC<AddressDialogProps> = ({
               </DialogDescription>
             </DialogHeader>
             <div className="py-4 space-y-4">
-              <div className="text-sm text-gray-900 whitespace-pre-wrap break-words">
-                {formatAddressForDisplay(customer.address) || 'No address available'}
+              <div className="text-sm text-gray-900 whitespace-pre-wrap break-words space-y-2">
+                {(() => {
+                  const fullAddr = formatAddressForDisplay(customer.address)?.trim();
+                  const vis = String(
+                    (customer.address as any)?.visible_address ||
+                      (customer as any).visible_address ||
+                      ''
+                  ).trim();
+                  const loc = customer.location as any;
+                  const locFa = String(loc?.formattedAddress || loc?.formatted_address || '').trim();
+                  const gLoc = typeof loc?.googleLocation === 'string' ? loc.googleLocation.trim() : '';
+
+                  if (fullAddr) return <span>{fullAddr}</span>;
+                  if (vis) return <span>{vis}</span>;
+                  if (locFa) return <span>{locFa}</span>;
+                  if (gLoc) {
+                    return (
+                      <a
+                        href={gLoc}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-blue-600 hover:text-blue-800 break-all underline-offset-2 hover:underline"
+                      >
+                        {gLoc}
+                      </a>
+                    );
+                  }
+                  return <span className="text-gray-500">No address available</span>;
+                })()}
               </div>
               
               {/* Distance and Time */}
@@ -72,8 +99,17 @@ const AddressDialog: React.FC<AddressDialogProps> = ({
                       
                       // If no coordinates from location, try to extract from Google Maps link
                       if (!finalCustomerLocation || finalCustomerLocation.latitude === 0 || finalCustomerLocation.longitude === 0) {
-                        const googleMapsLink = customer.location?.formattedAddress;
-                        if (googleMapsLink && (googleMapsLink.includes('google.com/maps') || googleMapsLink.includes('maps.app.goo.gl'))) {
+                        const locAny = customer.location as any;
+                        const googleMapsLink =
+                          locAny?.formattedAddress ||
+                          locAny?.formatted_address ||
+                          (typeof locAny?.googleLocation === 'string' ? locAny.googleLocation : '');
+                        if (
+                          googleMapsLink &&
+                          (googleMapsLink.includes('google.com/maps') ||
+                            googleMapsLink.includes('maps.app.goo.gl') ||
+                            googleMapsLink.includes('goo.gl/maps'))
+                        ) {
                           finalCustomerLocation = extractCoordinates({ formattedAddress: googleMapsLink });
                         }
                       }
