@@ -40,7 +40,7 @@ import { toast } from 'sonner';
 import { db, supabase } from '@/lib/supabase';
 import { Technician } from '@/types';
 import ImageUpload from '@/components/ImageUpload';
-import { CommonQrCode, invalidateQrCodesCache } from '@/lib/qrCodeManager';
+import { CommonQrCode, invalidateQrCodesCache, normalizeTechnicianAssignedCommonQrIds } from '@/lib/qrCodeManager';
 import JSZip from 'jszip';
 import CallingPage from '@/pages/CallingPage';
 import { SettingsRemindersDialog } from '@/components/reminders/SettingsRemindersDialog';
@@ -167,7 +167,10 @@ const Settings = () => {
     qrCode: tech.qr_code || tech.qrCode || '',
     photo: tech.photo || '',
     visibleQrCodes: tech.visible_qr_codes || [],
-    commonQrCodeIds: Array.isArray(tech.common_qr_code_ids) ? tech.common_qr_code_ids : (tech.common_qr_code_id ? [tech.common_qr_code_id] : []),
+    commonQrCodeIds: normalizeTechnicianAssignedCommonQrIds({
+      common_qr_code_ids: tech.common_qr_code_ids,
+      common_qr_code_id: (tech as any).common_qr_code_id,
+    }),
     createdAt: tech.created_at,
     updatedAt: tech.updated_at
   });

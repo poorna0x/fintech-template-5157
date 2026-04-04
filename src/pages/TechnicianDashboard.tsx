@@ -55,7 +55,17 @@ import { Job, JobAssignmentRequest } from '@/types';
 import { sendNotification, createJobCompletedNotification, createJobAssignmentRequestNotification, createJobAssignmentAcceptedNotification, createJobAssignmentRejectedNotification, requestNotificationPermission } from '@/lib/notifications';
 import FollowUpModal from '@/components/FollowUpModal';
 import { registerTechnicianPWA, disablePWA } from '@/lib/pwa';
-import { getCachedQrCodes, cacheQrCodes, shouldUseCache, getCachedTechnicianQrCode, cacheTechnicianQrCode, CommonQrCode } from '@/lib/qrCodeManager';
+import {
+  cacheQrCodes,
+  cacheTechnicianQrCode,
+  CommonQrCode,
+  getTechnicianQrSnapshot,
+  normalizeTechnicianAssignedCommonQrIds,
+  QR_NETWORK_MIN_INTERVAL_MS,
+  saveTechnicianQrSnapshot,
+  TechnicianQrPickerRow,
+  TechnicianQrSnapshotV1,
+} from '@/lib/qrCodeManager';
 import { extractCoordinates, formatAddressForDisplay } from '@/lib/maps';
 import ImageUpload from '@/components/ImageUpload';
 import { Label } from '@/components/ui/label';
@@ -788,48 +798,54 @@ const TechnicianDashboard = () => {
     }
   }, [completeJobStep, completeDialogOpen]);
 
-  // Load QR codes function (extracted so it can be called manually)
-  const loadQrCodes = useCallback(async () => {
-      // Only load if user is a technician
+  // Load QR codes: hydrate from localStorage first (offline + fast paint), network only when needed.
+  const loadQrCodes = useCallback(
+    async (options?: { force?: boolean }) => {
+      const force = options?.force === true;
       if (!user) {
-        console.log('⚠️ No user found, skipping QR code load');
         return;
       }
 
       if (user.role !== 'technician') {
-        console.log('⚠️ User is not a technician, skipping QR code load. Role:', user.role);
         return;
       }
 
-      // Get technician ID - use technicianId if available, otherwise use user.id
       const technicianId = user.technicianId || user.id;
-      console.log('✅ Loading QR codes for technician:', { 
-        userId: user.id, 
-        technicianId: user.technicianId, 
-        usingId: technicianId,
-        email: user.email,
-        fullName: user.fullName
-      });
+
+      const applyQrSnapshot = (snap: TechnicianQrSnapshotV1) => {
+        setAllCommonQrCodes(snap.allCommonQrCodes);
+        setCommonQrCodes(snap.commonQrCodes);
+        setAllTechnicians(snap.allTechnicians);
+        setTechnicians(snap.technicians);
+        setCommonQrCodesForTechnician(snap.commonQrCodesForTechnician);
+        setTechnicianVisibleQrCodes(snap.technicianVisibleQrCodes);
+        setAllTechniciansForReports(snap.allTechniciansForReports);
+      };
+
+      const cached = getTechnicianQrSnapshot(technicianId);
+      if (cached) {
+        applyQrSnapshot(cached);
+      }
+
+      const online = typeof navigator !== 'undefined' && navigator.onLine;
+      if (!online) {
+        return;
+      }
+
+      if (!force && cached && Date.now() - cached.savedAt < QR_NETWORK_MIN_INTERVAL_MS) {
+        return;
+      }
 
       try {
-        // Check cache first (for mobile)
-        if (shouldUseCache()) {
-          const cachedCommon = getCachedQrCodes();
-          if (cachedCommon) {
-            setCommonQrCodes(cachedCommon);
-          }
-          
-        }
-
-        // Always fetch from database (cache will be updated)
-        // OPTIMIZATION: Limit technicians fetch. Common QR (non-payment) from technician_common_qr.
-        const [commonResult, allTechniciansResult, technicianCommonQrResult] = await Promise.all([
+        // Always fetch this technician by id: getAll(100) only returns the newest 100 rows, so older techs
+        // were missing from the roster and got no common_qr_code_ids / visible_qr_codes (looked "unassigned").
+        const [commonResult, allTechniciansResult, technicianCommonQrResult, meResult] = await Promise.all([
           db.commonQrCodes.getAll(),
           db.technicians.getAll(100),
-          db.technicianCommonQr.getAll()
+          db.technicianCommonQr.getAll(),
+          db.technicians.getById(technicianId),
         ]);
 
-        // Transform common QR codes
         let allCommonQrCodesData: CommonQrCode[] = [];
         if (commonResult.data) {
           allCommonQrCodesData = commonResult.data.map((qr: any) => ({
@@ -837,125 +853,130 @@ const TechnicianDashboard = () => {
             name: qr.name,
             qrCodeUrl: qr.qr_code_url,
             createdAt: qr.created_at,
-            updatedAt: qr.updated_at
+            updatedAt: qr.updated_at,
           }));
           setAllCommonQrCodes(allCommonQrCodesData);
-          
-          // Update cache
-          if (shouldUseCache()) {
-            cacheQrCodes(allCommonQrCodesData);
-          }
+          cacheQrCodes(allCommonQrCodesData);
         }
 
-        // Transform technicians with QR codes
-        let allTechniciansData: any[] = [];
-        let currentTechnicianVisibleQrCodes: string[] = ['all']; // Default to showing all (backward compatibility)
-        let rawVisibleQrCodes: any = null; // Store raw value to distinguish null/undefined from empty array
-        
-        if (allTechniciansResult.data) {
-          // Store ALL technicians for reports lookup (not filtered)
-          const allTechniciansForReportsData = allTechniciansResult.data.map((tech: any) => ({
+        let allTechniciansData: TechnicianQrPickerRow[] = [];
+        let allTechniciansForReportsData: TechnicianQrSnapshotV1['allTechniciansForReports'] = [];
+        let currentTechnicianVisibleQrCodes: string[] = ['all'];
+        let rawVisibleQrCodes: any = null;
+        let assignedCommonQrs: CommonQrCode[] = [];
+
+        const roster = allTechniciansResult.data || [];
+        const me = meResult.data;
+
+        if (roster.length > 0) {
+          allTechniciansForReportsData = roster.map((tech: any) => ({
             id: tech.id,
             fullName: tech.full_name,
-            full_name: tech.full_name // Keep both for compatibility
+            full_name: tech.full_name,
           }));
           setAllTechniciansForReports(allTechniciansForReportsData);
-          
-          // Filter only those with QR codes for QR code selection
-          allTechniciansData = allTechniciansResult.data
+
+          allTechniciansData = roster
             .filter((tech: any) => tech.qr_code && tech.qr_code.trim() !== '')
             .map((tech: any) => ({
               id: tech.id,
               fullName: tech.full_name,
               qrCode: tech.qr_code,
-              visibleQrCodes: tech.visible_qr_codes || []
+              visibleQrCodes: tech.visible_qr_codes || [],
             }));
-          
+
           setAllTechnicians(allTechniciansData);
-          
-          // Get current technician's visibility settings
-          const currentTech = allTechniciansResult.data.find((tech: any) => tech.id === technicianId);
-          // If visible_qr_codes is null/undefined, default to showing all (backward compatibility)
-          // If it's an empty array [], that means explicitly set to show none
-          rawVisibleQrCodes = currentTech?.visible_qr_codes;
-          currentTechnicianVisibleQrCodes = rawVisibleQrCodes === null || rawVisibleQrCodes === undefined ? ['all'] : rawVisibleQrCodes;
+        } else {
+          setAllTechniciansForReports([]);
+          setAllTechnicians([]);
+        }
+
+        const currentTech = me ?? roster.find((tech: any) => tech.id === technicianId);
+        if (currentTech) {
+          rawVisibleQrCodes = currentTech.visible_qr_codes;
+          currentTechnicianVisibleQrCodes =
+            rawVisibleQrCodes === null || rawVisibleQrCodes === undefined ? ['all'] : rawVisibleQrCodes;
           setTechnicianVisibleQrCodes(currentTechnicianVisibleQrCodes);
-          // Common QRs (non-payment) assigned to this technician - from technician_common_qr table (multiple allowed)
-          const commonQrIds: string[] = Array.isArray(currentTech?.common_qr_code_ids)
-            ? currentTech.common_qr_code_ids
-            : (currentTech?.common_qr_code_id ? [currentTech.common_qr_code_id] : []);
+
+          const commonQrIds = normalizeTechnicianAssignedCommonQrIds({
+            common_qr_code_ids: currentTech.common_qr_code_ids,
+            common_qr_code_id: (currentTech as any).common_qr_code_id,
+          });
+          const idSet = new Set(commonQrIds.map((x) => String(x)));
           const technicianCommonQrList: CommonQrCode[] = (technicianCommonQrResult.data || []).map((q: any) => ({
             id: q.id,
             name: q.name,
             qrCodeUrl: q.qr_code_url,
             createdAt: q.created_at,
-            updatedAt: q.updated_at
+            updatedAt: q.updated_at,
           }));
-          const assigned = technicianCommonQrList.filter((q: CommonQrCode) => commonQrIds.includes(q.id));
-          setCommonQrCodesForTechnician(assigned);
-          
-          // Cache current technician's QR code if available
-          const currentTechWithQr = allTechniciansData.find(t => t.id === technicianId);
-          if (currentTechWithQr && shouldUseCache()) {
-            cacheTechnicianQrCode(technicianId, currentTechWithQr.qrCode);
+          assignedCommonQrs = technicianCommonQrList.filter((q: CommonQrCode) => idSet.has(String(q.id)));
+          setCommonQrCodesForTechnician(assignedCommonQrs);
+
+          const paymentQr =
+            (currentTech as any).qr_code && String((currentTech as any).qr_code).trim()
+              ? String((currentTech as any).qr_code).trim()
+              : allTechniciansData.find((t) => t.id === technicianId)?.qrCode;
+          if (paymentQr) {
+            cacheTechnicianQrCode(technicianId, paymentQr);
           }
+        } else {
+          setTechnicianVisibleQrCodes(['all']);
+          setCommonQrCodesForTechnician([]);
         }
 
-        // Filter QR codes based on visibility settings
-        // If visibleQrCodes is null/undefined → show all (default, backward compatibility)
-        // If visibleQrCodes is empty array [] → show none (explicitly set to none)
-        // If visibleQrCodes includes 'all' → show all
-        // Otherwise → show only the specified QR codes
-        
-        if (currentTechnicianVisibleQrCodes.length === 0 && rawVisibleQrCodes !== null && rawVisibleQrCodes !== undefined) {
-          // Empty array (explicitly set) = show none
+        let snapshotCommon: CommonQrCode[] = [];
+        let snapshotTechs: TechnicianQrPickerRow[] = [];
+
+        if (
+          currentTechnicianVisibleQrCodes.length === 0 &&
+          rawVisibleQrCodes !== null &&
+          rawVisibleQrCodes !== undefined
+        ) {
           setCommonQrCodes([]);
           setTechnicians([]);
-          console.log('✅ QR code visibility: None (explicitly set to empty array)');
+          snapshotCommon = [];
+          snapshotTechs = [];
         } else if (currentTechnicianVisibleQrCodes.includes('all')) {
-          // 'all' = show everything
           setCommonQrCodes(allCommonQrCodesData);
           setTechnicians(allTechniciansData);
-          console.log('✅ QR code visibility: All', { common: allCommonQrCodesData.length, technicians: allTechniciansData.length });
+          snapshotCommon = allCommonQrCodesData;
+          snapshotTechs = allTechniciansData;
         } else {
-          // Specific IDs = filter
-          // Ensure all IDs are strings for comparison
-          const visibleQrCodesStr = currentTechnicianVisibleQrCodes.map(id => String(id));
-          
-          console.log('🔍 Filtering QR codes:', {
-            visibleQrCodes: visibleQrCodesStr,
-            allCommonQrCodes: allCommonQrCodesData.map(qr => ({ id: qr.id, name: qr.name, formattedId: `common_${String(qr.id)}` })),
-            allTechnicians: allTechniciansData.map(tech => ({ id: tech.id, name: tech.fullName, formattedId: `technician_${String(tech.id)}` }))
-          });
-          
-          const filteredCommon = allCommonQrCodesData.filter(qr => {
+          const visibleQrCodesStr = currentTechnicianVisibleQrCodes.map((id) => String(id));
+
+          const filteredCommon = allCommonQrCodesData.filter((qr) => {
             const formattedId = `common_${String(qr.id)}`;
-            const isIncluded = visibleQrCodesStr.includes(formattedId);
-            console.log(`  Checking common QR ${qr.name}: ${formattedId} -> ${isIncluded ? '✅' : '❌'}`);
-            return isIncluded;
+            return visibleQrCodesStr.includes(formattedId);
           });
-          
-          const filteredTechnicians = allTechniciansData.filter(tech => {
+
+          const filteredTechnicians = allTechniciansData.filter((tech) => {
             const formattedId = `technician_${String(tech.id)}`;
-            const isIncluded = visibleQrCodesStr.includes(formattedId);
-            console.log(`  Checking technician QR ${tech.fullName}: ${formattedId} -> ${isIncluded ? '✅' : '❌'}`);
-            return isIncluded;
+            return visibleQrCodesStr.includes(formattedId);
           });
-          
+
           setCommonQrCodes(filteredCommon);
           setTechnicians(filteredTechnicians);
-          console.log('✅ QR code visibility: Specific', { 
-            visible: visibleQrCodesStr,
-            common: filteredCommon.length, 
-            technicians: filteredTechnicians.length,
-            filteredCommon: filteredCommon.map(qr => qr.name),
-            filteredTechnicians: filteredTechnicians.map(tech => tech.fullName)
-          });
+          snapshotCommon = filteredCommon;
+          snapshotTechs = filteredTechnicians;
         }
+
+        saveTechnicianQrSnapshot(technicianId, {
+          savedAt: Date.now(),
+          allCommonQrCodes: allCommonQrCodesData,
+          commonQrCodes: snapshotCommon,
+          allTechnicians: allTechniciansData,
+          technicians: snapshotTechs,
+          commonQrCodesForTechnician: assignedCommonQrs,
+          technicianVisibleQrCodes: currentTechnicianVisibleQrCodes,
+          allTechniciansForReports: allTechniciansForReportsData,
+        });
       } catch (error) {
         console.error('Error loading QR codes:', error);
       }
-    }, [user]);
+    },
+    [user]
+  );
 
   // Load QR codes on mount and when user changes
   useEffect(() => {
@@ -990,12 +1011,8 @@ const TechnicianDashboard = () => {
         const now = new Date();
         const timeSinceLastActive = now.getTime() - lastActiveTimeRef.current.getTime();
         
-        // Reload QR codes when page becomes visible (to get latest visibility settings)
-        if (user && user.role === 'technician') {
-          console.log('🔄 Page visible, refreshing QR codes...');
-          loadQrCodes();
-        }
-        
+        // QR codes: served from local snapshot + min-interval network refresh (realtime handles admin edits).
+
         // Only check for new jobs if app was inactive for more than 5 seconds
         if (timeSinceLastActive > 5000 && user?.technicianId) {
           // Reload jobs to check for new assignments
@@ -1025,7 +1042,7 @@ const TechnicianDashboard = () => {
       document.removeEventListener('visibilitychange', handleVisibilityChange);
       window.removeEventListener('focus', handleFocus);
     };
-  }, [user?.technicianId, loadAssignedJobs, user, loadQrCodes]);
+  }, [user?.technicianId, loadAssignedJobs, user]);
 
   // Realtime for QR codes — refetch only when common_qr_codes, technician_common_qr, or this technician's row changes (no 30s poll)
   useEffect(() => {
@@ -1037,12 +1054,12 @@ const TechnicianDashboard = () => {
       .on(
         'postgres_changes',
         { event: '*', schema: 'public', table: 'common_qr_codes' },
-        () => loadQrCodes()
+        () => loadQrCodes({ force: true })
       )
       .on(
         'postgres_changes',
         { event: '*', schema: 'public', table: 'technician_common_qr' },
-        () => loadQrCodes()
+        () => loadQrCodes({ force: true })
       )
       .on(
         'postgres_changes',
@@ -1052,14 +1069,22 @@ const TechnicianDashboard = () => {
           table: 'technicians',
           filter: `id=eq.${technicianId}`,
         },
-        () => loadQrCodes()
+        () => loadQrCodes({ force: true })
       )
       .subscribe();
 
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [user?.id, user?.technicianId, user?.role]);
+  }, [user?.id, user?.technicianId, user?.role, loadQrCodes]);
+
+  // When connectivity returns, refresh QR lists (realtime may have been missed offline).
+  useEffect(() => {
+    if (!user || user.role !== 'technician') return;
+    const onOnline = () => loadQrCodes({ force: true });
+    window.addEventListener('online', onOnline);
+    return () => window.removeEventListener('online', onOnline);
+  }, [user?.role, loadQrCodes]);
 
   // Setup offline photo upload retry mechanism
   useEffect(() => {
@@ -4348,8 +4373,9 @@ const TechnicianDashboard = () => {
             <Button
               variant="ghost"
               className="justify-start h-12 px-4 text-base"
-              onClick={() => {
+              onClick={async () => {
                 setHeaderOptionsDialogOpen(false);
+                await loadQrCodes({ force: true });
                 setCommonQrDialogOpen(true);
               }}
             >
