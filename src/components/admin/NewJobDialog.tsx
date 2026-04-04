@@ -62,9 +62,9 @@ const NewJobDialog: React.FC<NewJobDialogProps> = ({
   const getDefaultLeadCost = (leadSource: string): string => {
     switch (leadSource) {
       case 'Home Triangle':
-        return '200';
+        return '300';
       case 'Home Triangle-Srujan':
-        return '200';
+        return '300';
       case 'Direct call':
         return '0';
       case 'RO care india':
