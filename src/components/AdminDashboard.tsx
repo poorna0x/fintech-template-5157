@@ -133,6 +133,14 @@ declare global {
   }
 }
 
+function waitTwoAnimationFrames(): Promise<void> {
+  return new Promise((resolve) => {
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => resolve());
+    });
+  });
+}
+
 // Utility functions moved to @/lib/adminUtils
 
 const AdminDashboard = () => {
@@ -4940,10 +4948,11 @@ const AdminDashboard = () => {
   const handleAssignJob = async (job: Job) => {
     setJobToAssign(job);
     setSelectedTechnicianId('');
-    setAssignJobDialogOpen(true);
-
-    // Reload technicians to get latest data
+    // Reload before opening dialog (same as reassign) so the list doesn’t pop in a second later and flash
     await reloadTechnicians();
+    // Let the ⋮ menu finish closing before the modal mounts (avoids stacked Radix animations / focus fights)
+    await waitTwoAnimationFrames();
+    setAssignJobDialogOpen(true);
   };
 
   const handleSaveJobAssignment = async () => {
@@ -5158,6 +5167,7 @@ const AdminDashboard = () => {
     setSelectedTechnicianForReassign(technicianId);
     // Load technicians when dialog opens
     await reloadTechnicians();
+    await waitTwoAnimationFrames();
     setReassignDialogOpen(true);
   };
 
@@ -9348,7 +9358,11 @@ const AdminDashboard = () => {
                                         <MoreVertical className="h-4 w-4" />
                                       </Button>
                                     </DropdownMenuTrigger>
-                                    <DropdownMenuContent align="end" className="w-48">
+                                    <DropdownMenuContent
+                                      align="end"
+                                      className="w-48"
+                                      onCloseAutoFocus={(e) => e.preventDefault()}
+                                    >
                                       {/* Assign to Technician - First option for PENDING status */}
                                       {job.status === 'PENDING' && (
                                         <DropdownMenuItem onClick={() => handleAssignJob(job)}>

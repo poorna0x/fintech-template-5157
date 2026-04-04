@@ -423,7 +423,7 @@ const ReassignJobDialog: React.FC<ReassignJobDialogProps> = ({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="w-[95vw] sm:w-[90vw] md:w-[600px] max-w-[600px] max-h-[90vh] flex flex-col">
+      <DialogContent className="w-[95vw] sm:w-[90vw] md:w-[600px] max-w-[600px] max-h-[90vh] flex flex-col duration-150 ease-out">
         <DialogHeader>
           <DialogTitle className="text-lg sm:text-xl">Reassign Job to Technician</DialogTitle>
           <DialogDescription className="text-sm">
