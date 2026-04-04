@@ -2665,12 +2665,16 @@ export const db = {
         if (isDev) console.warn('AMC job creation: not authenticated', authError);
         return { data: null, error: authError || new Error('Not authenticated'), created: 0 };
       }
-      
-      // Try with RLS bypass or check if we can access the table
+
+      const today = new Date();
+      const todayStr = today.toISOString().split('T')[0];
+
+      // Only contracts still in force: ACTIVE and not past end_date (avoids jobs if status was never flipped to EXPIRED)
       const { data: activeAMCsRaw, error: amcError } = await supabase
         .from('amc_contracts')
         .select(AMC_CONTRACT_ROW_COLUMNS)
-        .eq('status', 'ACTIVE');
+        .eq('status', 'ACTIVE')
+        .gte('end_date', todayStr);
 
       if (amcError) {
         console.error('❌ Error fetching AMC contracts:', amcError);
@@ -2704,9 +2708,6 @@ export const db = {
         ...amc,
         customers: customersData?.find(c => c.id === amc.customer_id) || null
       }));
-
-      const today = new Date();
-      const todayStr = today.toISOString().split('T')[0];
 
       // Default AMC service period from settings (localStorage); only in browser
       const getDefaultServicePeriodMonths = (): number => {
