@@ -1136,10 +1136,17 @@ const AdminDashboard = () => {
 
 
   // Load jobs based on current filter (optimized)
-  const loadFilteredJobs = useCallback(async (filter: typeof statusFilter, page: number = 1) => {
+  const loadFilteredJobs = useCallback(async (
+    filter: typeof statusFilter,
+    page: number = 1,
+    opts?: { silent?: boolean }
+  ) => {
+    const silent = opts?.silent === true;
     const requestId = ++loadJobsRequestRef.current;
     try {
-      setLoading(true);
+      if (!silent) {
+        setLoading(true);
+      }
       
       if (filter === 'ALL') {
         // For ALL, we need customers with their jobs - load ongoing jobs only for display
@@ -1317,7 +1324,7 @@ const AdminDashboard = () => {
         setJobs([]);
       }
     } finally {
-      if (requestId === loadJobsRequestRef.current) {
+      if (!silent && requestId === loadJobsRequestRef.current) {
         setLoading(false);
       }
     }
@@ -1351,9 +1358,12 @@ const AdminDashboard = () => {
     }
   }, [loadedCompletedJobDetails, loadingCompletedJobDetails]);
 
-  const loadDashboardData = async () => {
+  const loadDashboardData = async (options?: { silent?: boolean }) => {
+    const silent = options?.silent === true;
     try {
-      setLoading(true);
+      if (!silent) {
+        setLoading(true);
+      }
       
       // OPTIMIZATION: Run AMC job creation in background without blocking initial load
       // Check auth once and proceed - no wait loop
@@ -1431,7 +1441,7 @@ const AdminDashboard = () => {
       // Load brands/models and jobs in parallel; await so loading stays true until done (avoids double refresh blink)
       await Promise.all([
         loadBrandsAndModels(),
-        loadFilteredJobs(statusFilter, currentPage),
+        loadFilteredJobs(statusFilter, currentPage, { silent }),
         db.jobs.getFollowUpForGlow().then(({ data }) => {
           if (data) setAllFollowUpJobs(data as Job[]);
         }).catch(() => {
@@ -1441,7 +1451,9 @@ const AdminDashboard = () => {
     } catch (error) {
       toast.error(`Failed to load dashboard data: ${error instanceof Error ? error.message : 'Unknown error'}`);
     } finally {
-      setLoading(false);
+      if (!silent) {
+        setLoading(false);
+      }
     }
   };
 
@@ -9581,7 +9593,9 @@ const AdminDashboard = () => {
         onOpenChange={setAddDialogOpen}
         customers={customers}
         onCustomerCreated={async (newCustomer) => {
-          await loadDashboardData();
+          // Silent refresh: full loadDashboardData would set loading=true and swap the whole UI for
+          // "Loading dashboard..." — visible blink after Add Customer + job closes.
+          await loadDashboardData({ silent: true });
           // Append new customer if not already in list (e.g. created without job), so they appear in list and Recent Accounts
           if (newCustomer) {
             const transformed = transformCustomerData(newCustomer);

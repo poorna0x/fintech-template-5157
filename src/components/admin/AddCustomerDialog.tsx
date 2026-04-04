@@ -939,10 +939,26 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
               // Send notification to assigned technician
               try {
                 const { sendNotification, createJobAssignedNotification } = await import('@/lib/notifications');
-                const notification = createJobAssignedNotification(newJob as any, technicians.find(t => t.id === step5JobData.assigned_technician_id));
-                if (notification) {
-                  await sendNotification(notification);
-                }
+                const assignedTechRow = technicians.find((t) => t.id === step5JobData.assigned_technician_id);
+                const jobNumberStr =
+                  (newJob as any).job_number || (newJob as any).jobNumber || 'Job';
+                const customerNameStr =
+                  (newCustomer as any).full_name ||
+                  (newCustomer as any).fullName ||
+                  addFormData.full_name ||
+                  'Customer';
+                const technicianNameStr =
+                  assignedTechRow?.full_name ||
+                  assignedTechRow?.fullName ||
+                  'Technician';
+                const notification = createJobAssignedNotification(
+                  jobNumberStr,
+                  customerNameStr,
+                  technicianNameStr,
+                  (newJob as any).id,
+                  step5JobData.assigned_technician_id
+                );
+                await sendNotification(notification);
               } catch (notifError) {
                 console.error('Error sending notification:', notifError);
                 // Don't fail the job creation if notification fails
@@ -961,10 +977,12 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
       // Show combined toast message
       if (shouldCreateJob && newJob) {
         const jobNumber = (newJob as any).job_number || (newJob as any).jobNumber || 'N/A';
-        const assignedTech = step5JobData.assigned_technician_id 
-          ? technicians.find(t => t.id === step5JobData.assigned_technician_id)
+        const assignedTech = step5JobData.assigned_technician_id
+          ? technicians.find((t) => t.id === step5JobData.assigned_technician_id)
           : null;
-        const techName = assignedTech ? ` and assigned to ${assignedTech.full_name}` : '';
+        const techName = assignedTech
+          ? ` and assigned to ${assignedTech.full_name || assignedTech.fullName || 'technician'}`
+          : '';
         toast.success(`Customer ${newCustomer.customer_id || newCustomer.customerId} and Job ${jobNumber} created${techName}!`);
       } else if (shouldCreateJob && jobError) {
         toast.success(`Customer ${newCustomer.customer_id || newCustomer.customerId} created successfully!`);
