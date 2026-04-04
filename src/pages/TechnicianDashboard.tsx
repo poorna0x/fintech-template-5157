@@ -1089,10 +1089,10 @@ const TechnicianDashboard = () => {
     };
   }, [user?.id, user?.technicianId, user?.role, loadQrCodes]);
 
-  // When connectivity returns, refresh QR lists (realtime may have been missed offline).
+  // Reconnect: soft refresh only (respects long min-interval; avoids refetch on every tab resume).
   useEffect(() => {
     if (!user || user.role !== 'technician') return;
-    const onOnline = () => loadQrCodes({ force: true });
+    const onOnline = () => loadQrCodes({ force: false });
     window.addEventListener('online', onOnline);
     return () => window.removeEventListener('online', onOnline);
   }, [user?.role, loadQrCodes]);
@@ -4384,9 +4384,9 @@ const TechnicianDashboard = () => {
             <Button
               variant="ghost"
               className="justify-start h-12 px-4 text-base"
-              onClick={async () => {
+              onClick={() => {
                 setHeaderOptionsDialogOpen(false);
-                await loadQrCodes({ force: true });
+                // Uses cached snapshot + image data URLs; no forced network (rarely changes; realtime handles admin edits).
                 setCommonQrDialogOpen(true);
               }}
             >

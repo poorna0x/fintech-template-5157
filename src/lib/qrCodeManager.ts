@@ -157,8 +157,11 @@ export function commonQrDisplaySrc(
   return local && local.startsWith('data:') ? local : remoteUrl;
 }
 
-/** Skip background network refresh if snapshot is newer than this (unless `force`). */
-export const QR_NETWORK_MIN_INTERVAL_MS = 45 * 60 * 1000; // 45 minutes
+/**
+ * Skip voluntary network refresh if snapshot is newer than this (unless `force`).
+ * Common / assigned QRs change rarely; realtime still pushes updates when online.
+ */
+export const QR_NETWORK_MIN_INTERVAL_MS = 30 * 24 * 60 * 60 * 1000; // 30 days
 
 /** Drop snapshot only if absurdly old (corrupt / migration). */
 const SNAPSHOT_HARD_EXPIRY_MS = 365 * 24 * 60 * 60 * 1000; // 1 year
