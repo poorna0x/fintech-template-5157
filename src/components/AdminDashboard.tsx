@@ -88,7 +88,7 @@ import TechnicianPayments from './TechnicianPayments';
 import BillingStats from './BillingStats';
 import Analytics from './Analytics';
 import InventoryManagement from './InventoryManagement';
-import { generateJobNumber, formatPreferredTimeSlot, mapServiceTypesToDbValue, extractLocationFromAddressString, bangaloreAreas, levenshteinDistance, calculateSimilarity, extractPhotoUrls, normalizePhotoUrl, parseJobRequirements, getFormattedTimeSlot, findLeadSource, normalizeLeadType, normalizeServiceSubType, serviceSubTypeDbMatchValues, completedJobLeadSourceContainVariants } from '@/lib/adminUtils';
+import { generateJobNumber, formatPreferredTimeSlot, mapServiceTypesToDbValue, extractLocationFromAddressString, bangaloreAreas, levenshteinDistance, calculateSimilarity, extractPhotoUrls, normalizePhotoUrl, parseJobRequirements, getFormattedTimeSlot, findLeadSource, normalizeLeadType, normalizeServiceSubType } from '@/lib/adminUtils';
 import { formatPhoneForWhatsApp } from '@/lib/utils';
 import { StatusBadge } from './admin/StatusBadge';
 import { CustomerCardHeader } from './admin/CustomerCardHeader';
@@ -1193,56 +1193,11 @@ const AdminDashboard = () => {
         let count = 0;
         let pages = 0;
 
-        // When admin applies "completed by" / service sub-type, filter on the server so pagination
-        // and counts match the rows (client-only filter on a single page could show 0 cards while totalCount stayed huge).
-        let completedListFilters:
-          | {
-              completedByUserId?: string;
-              serviceSubTypeIn?: string[];
-              leadRequirementsContainVariants?: string[];
-            }
-          | undefined;
-        if (filter === 'COMPLETED') {
-          const parts: {
-            completedByUserId?: string;
-            serviceSubTypeIn?: string[];
-            leadRequirementsContainVariants?: string[];
-          } = {};
-          if (completedByFilter !== 'all') {
-            const t = technicians.find(
-              (x) => (x.fullName || '').trim().toLowerCase() === completedByFilter.trim().toLowerCase()
-            );
-            if (t?.id) parts.completedByUserId = t.id;
-          }
-          if (completedServiceSubTypeFilter !== 'all') {
-            const subVals = serviceSubTypeDbMatchValues(completedServiceSubTypeFilter);
-            if (subVals.length) parts.serviceSubTypeIn = subVals;
-          }
-          if (completedLeadTypeFilter !== 'all') {
-            const leadVars = completedJobLeadSourceContainVariants(completedLeadTypeFilter);
-            if (leadVars.length) parts.leadRequirementsContainVariants = leadVars;
-          }
-          if (Object.keys(parts).length > 0) completedListFilters = parts;
-        }
-
-        const isDefaultCompletedDateFilter =
-          completedDatePreset === 'day' && completedDateFilter === getTodayLocalDate();
-        const hasCompletedSubFilters =
-          completedLeadTypeFilter !== 'all' ||
-          completedServiceSubTypeFilter !== 'all' ||
-          completedByFilter !== 'all';
-        const omitRequirementsFromFetch = !isDefaultCompletedDateFilter || hasCompletedSubFilters;
-
-        const slimOpts =
-          filter === 'COMPLETED'
-            ? {
-                ...(completedListFilters || {}),
-                omitRequirements: omitRequirementsFromFetch,
-              }
-            : undefined;
+        // Completed lead / service / completed-by: filter client-side in doesCompletedJobMatchFilters (same as pre-6dc11df).
+        // Server only narrows by date — avoids jsonb `contains` exact-string misses and omitted `requirements`.
 
         // Prefer slim query for low egress; fallback to legacy query if slim fails.
-        const slimResult = await db.jobs.getByStatusPaginatedSlim(statuses, page, pageSize, dateFilter, slimOpts);
+        const slimResult = await db.jobs.getByStatusPaginatedSlim(statuses, page, pageSize, dateFilter);
         data = slimResult.data || [];
         error = slimResult.error;
         count = slimResult.count || 0;
@@ -1253,8 +1208,7 @@ const AdminDashboard = () => {
             statuses,
             page,
             pageSize,
-            dateFilter,
-            completedListFilters
+            dateFilter
           );
           data = fallback.data || [];
           error = fallback.error;
@@ -1335,10 +1289,6 @@ const AdminDashboard = () => {
     completedDatePreset,
     completedRangeStartDate,
     completedRangeEndDate,
-    technicians,
-    completedByFilter,
-    completedServiceSubTypeFilter,
-    completedLeadTypeFilter,
   ]);
 
   const loadCompletedJobDetails = useCallback(async (jobId: string) => {
@@ -1608,9 +1558,8 @@ const AdminDashboard = () => {
     completedByFilter
   ]);
 
-  // Reset to first page when completed sub-filters change, so results don't look empty due to pagination.
-  // Lead / sub-type / completed-by also narrow the Supabase query so counts and pages stay aligned;
-  // doesCompletedJobMatchFilters still verifies each row client-side.
+  // Reset to first page when completed sub-filters change. Lead / service / completed-by are client-side;
+  // for a single day with one page of results, skip refetch (same jobs; doesCompletedJobMatchFilters narrows UI).
   useEffect(() => {
     if (isInitialLoad || statusFilter !== 'COMPLETED') return;
     setCurrentPage(1);
@@ -7190,18 +7139,9 @@ const AdminDashboard = () => {
     return '';
   };
   function doesCompletedJobMatchFilters(job: any): boolean {
-    // When completedLeadTypeFilter !== 'all', lead is narrowed in Supabase; list rows may omit `requirements`.
+    if (completedLeadTypeFilter !== 'all' && normalizeLeadType(getCompletedJobLeadType(job)) !== normalizeLeadType(completedLeadTypeFilter)) return false;
     if (completedServiceSubTypeFilter !== 'all' && normalizeServiceSubType(getCompletedJobServiceSubType(job)) !== normalizeServiceSubType(completedServiceSubTypeFilter)) return false;
-    if (completedByFilter !== 'all') {
-      const filterNameLower = completedByFilter.trim().toLowerCase();
-      const tech = technicians.find(
-        (x) => (x.fullName || '').trim().toLowerCase() === filterNameLower
-      );
-      const jobBy = (job?.completed_by || job?.completedBy || '').toString().trim();
-      const idMatch = !!tech?.id && jobBy.toLowerCase() === tech.id.toLowerCase();
-      const nameMatch = getCompletedJobTechnicianName(job).toLowerCase() === filterNameLower;
-      if (!idMatch && !nameMatch) return false;
-    }
+    if (completedByFilter !== 'all' && getCompletedJobTechnicianName(job).toLowerCase() !== completedByFilter.trim().toLowerCase()) return false;
     return true;
   }
 
