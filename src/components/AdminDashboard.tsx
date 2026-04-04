@@ -8455,9 +8455,9 @@ const AdminDashboard = () => {
                 ? (() => {
                     const pageInfo = !hasCompletedClientFilters && totalPages > 1 ? ` (page ${currentPage}/${totalPages}, ${totalCount} total jobs)` : '';
                     if (completedDatePreset === 'day') {
-                      return `Showing ${displayedCustomers.length} customer${displayedCustomers.length !== 1 ? 's' : ''} with completed jobs for ${new Date(completedDateFilter).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}${pageInfo}`;
+                      return `Customers with completed jobs for ${new Date(completedDateFilter).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}${pageInfo}`;
                     }
-                    return `Showing ${displayedCustomers.length} customer${displayedCustomers.length !== 1 ? 's' : ''} with completed jobs from ${new Date(completedRangeStartDate).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })} to ${new Date(completedRangeEndDate).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}${pageInfo}`;
+                    return `Customers with completed jobs from ${new Date(completedRangeStartDate).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })} to ${new Date(completedRangeEndDate).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}${pageInfo}`;
                   })()                                                                             
                 : `Showing ${displayedCustomers.length} customers with ${statusFilter.toLowerCase().replace('_', ' ')} jobs`                                    
               }
@@ -9517,9 +9517,11 @@ const AdminDashboard = () => {
                     <ArrowRight className="h-4 w-4 sm:ml-1" />
                   </Button>
                 </div>
-                <p className="text-xs text-gray-500 text-center w-full">
-                  {totalCount} total jobs
-                </p>
+                {statusFilter !== 'COMPLETED' && (
+                  <p className="text-xs text-gray-500 text-center w-full">
+                    {totalCount} total jobs
+                  </p>
+                )}
               </div>
             </div>
           )}

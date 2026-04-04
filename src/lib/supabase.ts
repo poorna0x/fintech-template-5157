@@ -926,7 +926,7 @@ export const db = {
             id
           });
           cacheInvalidate('job_counts_v1');
-          if ((updates as { status?: string })?.status === 'COMPLETED') {
+          if ((updates as { status?: string }).status !== undefined) {
             cacheInvalidate('completed_customers_map_v1');
           }
           return { data: null, error: null };
@@ -938,7 +938,7 @@ export const db = {
         });
         
         cacheInvalidate('job_counts_v1');
-        if ((updates as { status?: string })?.status === 'COMPLETED') {
+        if ((updates as { status?: string }).status !== undefined) {
           cacheInvalidate('completed_customers_map_v1');
         }
         return { data: data || null, error: null };
