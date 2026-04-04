@@ -2631,9 +2631,9 @@ export const db = {
       if (dryRun) console.log('🔵 [DRY RUN] AMC service job creation preview...');
       else if (isDev) console.log('🔵 Starting AMC service job creation...');
 
-      // Throttle: run at most once per 6 hours on refresh to avoid heavy work every time (admin mount/refresh)
-      const AMC_THROTTLE_MS = 6 * 60 * 60 * 1000; // 6 hours
-      if (!dryRun && typeof window !== 'undefined') {
+      // Throttle: run at most once per 6 hours on refresh (prod). In DEV, no throttle so AMC jobs can be tested immediately.
+      const AMC_THROTTLE_MS = isDev ? 0 : 6 * 60 * 60 * 1000;
+      if (!dryRun && typeof window !== 'undefined' && AMC_THROTTLE_MS > 0) {
         const lastRun = window.localStorage.getItem('amc_service_jobs_last_run');
         if (lastRun) {
           const elapsed = Date.now() - parseInt(lastRun, 10);

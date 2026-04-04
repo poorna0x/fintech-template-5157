@@ -48,7 +48,8 @@ export function TodayRemindersPopup() {
     });
   }, []);
 
-  const REMINDERS_CACHE_TTL_MS = 6 * 60 * 60 * 1000; // 6 hours (only if REMINDERS_POPUP_SESSION_CACHE_ENABLED)
+  // Prod: 6h session cache to limit refetches. DEV: 0 so new/edited reminders show on refresh immediately.
+  const REMINDERS_CACHE_TTL_MS = import.meta.env.DEV ? 0 : 6 * 60 * 60 * 1000;
   const REMINDERS_CACHE_KEY = 'reminders_today_cache';
 
   useEffect(() => {
