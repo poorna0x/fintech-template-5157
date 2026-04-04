@@ -2722,6 +2722,9 @@ const TechnicianDashboard = () => {
         toast.error('Please enter a valid bill amount');
         return;
       }
+      if (jobHasZeroExistingPhotos && (isOptionalCompletionPhotosUploading || hasPendingOptionalCompletionPhotos())) {
+        return;
+      }
       // Save progress before showing confirmation
       saveJobCompletionProgress(selectedJobForComplete.id, {
         billPhotos,
@@ -2733,10 +2736,9 @@ const TechnicianDashboard = () => {
       return;
     }
 
-    // Step 2: Bill photos optional — never show "skip photos?" while upload is running or slots hold local placeholders
+    // Step 2: Bill photos optional — no skip dialog while uploads run (Next/Skip disabled until done)
     if (completeJobStep === 2) {
       if (isBillPhotosUploading || hasPendingBillPhotosInState()) {
-        toast.error('Please wait for bill photo(s) to finish uploading.');
         return;
       }
       const hasAnyBillSlot = billPhotos.some((u) => typeof u === 'string' && u.trim() !== '');
@@ -2980,6 +2982,9 @@ const TechnicianDashboard = () => {
 
     // Step 5: Payment screenshot (optional) — uploads still validated at submit if present
     if (completeJobStep === 5) {
+      if (!isBillAmountZero() && (isPaymentScreenshotUploading || hasPendingPaymentScreenshotState())) {
+        return;
+      }
       // Check if OTP is required
       const needsOtp = requiresOtp();
       
@@ -3101,7 +3106,6 @@ const TechnicianDashboard = () => {
     
     // Single place we require every photo slot to be finished (covers step 6 and softener fall-through from 5 / 7)
     if (hasAnyPendingCompletionUploads()) {
-      toast.error('Please wait for all photos to finish uploading.');
       return;
     }
 
@@ -3121,7 +3125,6 @@ const TechnicianDashboard = () => {
       
       if (nonUploadedPhotos.length > 0) {
         console.warn('⚠️ Non-uploaded photos detected:', nonUploadedPhotos);
-        toast.error(`Please wait for ${nonUploadedPhotos.length} photo(s) to finish uploading before completing the job.`);
         setIsSubmittingJobCompletion(false);
         return;
       }
@@ -3130,7 +3133,6 @@ const TechnicianDashboard = () => {
       const optionalUploaded = optionalCompletionPhotos.filter(isUploadedMediaUrl);
       const optionalNonUploaded = optionalCompletionPhotos.filter(u => u && typeof u === 'string' && !isUploadedMediaUrl(u));
       if (optionalNonUploaded.length > 0) {
-        toast.error(`Please wait for ${optionalNonUploaded.length} optional photo(s) to finish uploading before completing the job.`);
         setIsSubmittingJobCompletion(false);
         return;
       }
@@ -3138,7 +3140,6 @@ const TechnicianDashboard = () => {
       const extraStep6Uploaded = extraPhotosStep6.filter(isUploadedMediaUrl);
       const extraStep6NonUploaded = extraPhotosStep6.filter(u => u && typeof u === 'string' && !isUploadedMediaUrl(u));
       if (extraStep6NonUploaded.length > 0) {
-        toast.error(`Please wait for ${extraStep6NonUploaded.length} photo(s) to finish uploading before completing the job.`);
         setIsSubmittingJobCompletion(false);
         return;
       }
@@ -3149,7 +3150,6 @@ const TechnicianDashboard = () => {
         paymentScreenshot.trim() !== '' &&
         !isUploadedMediaUrl(paymentScreenshot)
       ) {
-        toast.error('Please wait for the payment screenshot to finish uploading before completing the job.');
         setIsSubmittingJobCompletion(false);
         return;
       }
@@ -3735,6 +3735,39 @@ const TechnicianDashboard = () => {
     const existing = [...extractPhotoUrls(before), ...extractPhotoUrls(after), ...extractPhotoUrls(images)];
     return existing.length === 0;
   }, [selectedJobForComplete]);
+
+  /** Disable Next / Complete while optional, bill, payment, or extra photos are still uploading (background; no toast). */
+  const completeJobNextDisabledByUploads = useMemo(() => {
+    if (completeJobStep === 1 && jobHasZeroExistingPhotos) {
+      if (isOptionalCompletionPhotosUploading || optionalCompletionPhotos.some(hasPendingLocalOrUploadingPhoto)) {
+        return true;
+      }
+    }
+    if (completeJobStep === 2 && (isBillPhotosUploading || billPhotos.some(hasPendingLocalOrUploadingPhoto))) {
+      return true;
+    }
+    const billZero =
+      billAmount === '' || isNaN(parseFloat(billAmount)) || parseFloat(billAmount) === 0;
+    if (completeJobStep === 5 && !billZero) {
+      if (isPaymentScreenshotUploading || hasPendingPaymentScreenshotState()) return true;
+    }
+    if (completeJobStep === 6 && (isExtraPhotosStep6Uploading || extraPhotosStep6.some(hasPendingLocalOrUploadingPhoto))) {
+      return true;
+    }
+    return false;
+  }, [
+    completeJobStep,
+    jobHasZeroExistingPhotos,
+    isOptionalCompletionPhotosUploading,
+    optionalCompletionPhotos,
+    isBillPhotosUploading,
+    billPhotos,
+    billAmount,
+    isPaymentScreenshotUploading,
+    paymentScreenshot,
+    isExtraPhotosStep6Uploading,
+    extraPhotosStep6,
+  ]);
 
   // Helper function to get all photos for a customer (from jobs + customer-level photos without a job)
   const getAllCustomerPhotos = async (customerId: string): Promise<string[]> => {
@@ -6097,6 +6130,9 @@ const TechnicianDashboard = () => {
               <AlertDialogCancel>Cancel</AlertDialogCancel>
               <AlertDialogAction
                 onClick={() => {
+                  if (jobHasZeroExistingPhotos && (isOptionalCompletionPhotosUploading || optionalCompletionPhotos.some(hasPendingLocalOrUploadingPhoto))) {
+                    return;
+                  }
                   setBillAmountConfirmOpen(false);
                   setCompleteJobStep(2);
                 }}
@@ -7436,8 +7472,10 @@ const TechnicianDashboard = () => {
               {completeJobStep === 2 && (
                 <Button
                   variant="outline"
+                  disabled={isBillPhotosUploading || billPhotos.some(hasPendingLocalOrUploadingPhoto)}
                   onClick={() => {
                     if (!selectedJobForComplete) return;
+                    if (isBillPhotosUploading || billPhotos.some(hasPendingLocalOrUploadingPhoto)) return;
                     setBillPhotosSkipConfirmOpen(true);
                   }}
                 >
@@ -7479,30 +7517,24 @@ const TechnicianDashboard = () => {
                 className="bg-black hover:bg-gray-800 !text-white font-semibold"
                 disabled={
                   isSubmittingJobCompletion ||
+                  completeJobNextDisabledByUploads ||
                   (completeJobStep === 1 && !serviceBrand) ||
-                  // Bill/payment/optional photos upload in the background until Complete — then wait once here
                   (isCompleteJobFooterSubmit() && hasAnyPendingCompletionUploads()) ||
-                  // Step 6 validation: Raw water TDS required for RO jobs
                   (completeJobStep === 6 && !isSoftenerService() && !rawWaterTds.trim()) ||
-                  // Step 4 validation: only require payment mode if bill amount is not zero
-                  (completeJobStep === 4 && !isBillAmountZero() && !paymentMode) || 
+                  (completeJobStep === 4 && !isBillAmountZero() && !paymentMode) ||
                   (completeJobStep === 4 && !isBillAmountZero() && (paymentMode === 'ONLINE' || paymentMode === 'PARTIAL') && (paymentMode === 'ONLINE' ? !selectedQrCodeId : (parseFloat(partialOnlineAmount) > 0 && !selectedQrCodeId))) ||
-                  // Step 7 validation: require OTP if step is 7
                   (completeJobStep === 7 && otpInput.join('').length !== 4)
                 }
               >
-                {isSubmittingJobCompletion ||
-                (isCompleteJobFooterSubmit() && hasAnyPendingCompletionUploads()) ? (
+                {isSubmittingJobCompletion ? (
                   <>
                     <RefreshCw className="w-4 h-4 mr-2 animate-spin" />
-                    {!isSubmittingJobCompletion && hasAnyPendingCompletionUploads()
-                      ? 'Waiting for uploads…'
-                      : 'Submitting…'}
+                    Submitting…
                   </>
+                ) : isCompleteJobFooterSubmit() ? (
+                  'Complete Job'
                 ) : (
-                  isCompleteJobFooterSubmit()
-                    ? 'Complete Job'
-                    : 'Next'
+                  'Next'
                 )}
               </Button>
             </DialogFooter>
