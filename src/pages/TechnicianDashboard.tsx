@@ -611,7 +611,7 @@ const TechnicianDashboard = () => {
           }
         });
       }
-      
+
       // Calculate ongoing jobs count (PENDING, ASSIGNED, EN_ROUTE, IN_PROGRESS)
       const ongoingJobs = allJobs.filter(job => {
         const status = (job as any).status || job.status;
@@ -690,19 +690,7 @@ const TechnicianDashboard = () => {
         }, 100); // Defer by 100ms to let jobs render first
       }
       
-      // Check for new jobs when app becomes active (only if we have previous job IDs to compare)
-      if (lastJobIdsRef.current.size > 0) {
-        const currentJobIds = new Set(allJobs.map(j => j.id));
-        const newJobIds = Array.from(currentJobIds).filter(id => !lastJobIdsRef.current.has(id));
-        const newAssignedJobs = allJobs.filter(j => 
-          newJobIds.includes(j.id) && 
-          ((j as any).status || j.status) === 'ASSIGNED'
-        );
-        
-        // Removed toast notification - jobs will show with blue border and NEW tag
-      }
-      
-      // Update last job IDs for next comparison
+      // Update last job IDs for next comparison (new-assignment toast removed; list uses NEW tag)
       lastJobIdsRef.current = new Set(allJobs.map(j => j.id));
     } catch (error) {
       console.error('Error loading assigned jobs:', error);

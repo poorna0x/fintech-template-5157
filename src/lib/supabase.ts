@@ -107,7 +107,7 @@ export const supabase = createClient<Database>(buildTimeUrl, buildTimeKey, {
   },
 });
 
-/** Explicit job columns for ongoing admin list + technician job list (avoids jobs.* unknown/heavy columns). */
+/** Explicit job columns for ongoing admin list + technician job list (no before/after/images — use getPhotoFieldsForJobIds). */
 const JOB_SELECT_ONGOING_AND_TECH = [
   'id',
   'job_number',
@@ -148,15 +148,30 @@ const JOB_SELECT_ONGOING_AND_TECH = [
   'assigned_date',
   'completion_notes',
   'requirements',
-  'before_photos',
-  'after_photos',
-  'images',
   'start_time',
   'actual_duration',
   'payment_status',
   'lead_cost',
   'parts_cost_total',
 ].join(',');
+
+/** Large JSON arrays — omitted from `JOB_SELECT_ONGOING_AND_TECH`; batch-fetch when UI needs thumbnails. */
+const JOB_PHOTO_ARRAY_COLUMNS = 'before_photos,after_photos,images';
+
+function mergeJobPhotoFieldsIntoRows<T extends { id: string }>(rows: T[], photoRows: Record<string, unknown>[] | null | undefined): T[] {
+  if (!rows.length || !photoRows?.length) return rows;
+  const byId = new Map(photoRows.map((r: any) => [r.id, r]));
+  return rows.map((j) => {
+    const p = byId.get(j.id) as any;
+    if (!p) return j;
+    return {
+      ...j,
+      before_photos: p.before_photos,
+      after_photos: p.after_photos,
+      images: p.images,
+    };
+  });
+}
 
 /** Customer embed for technician job list (maps/cards); omit notes/history to cut egress vs customers(*). */
 const CUSTOMER_EMBED_FOR_TECH_JOBS = [
@@ -659,7 +674,7 @@ export const db = {
       const { data, error } = await supabase
         .from('jobs')
         .insert(job)
-        .select(`${JOB_SELECT_ONGOING_AND_TECH},customer:customers(${CUSTOMER_EMBED_FOR_ONGOING_ADMIN})`)
+        .select(`${JOB_SELECT_ONGOING_AND_TECH},${JOB_PHOTO_ARRAY_COLUMNS},customer:customers(${CUSTOMER_EMBED_FOR_ONGOING_ADMIN})`)
         .single();
       
       // If duplicate job_number error and we haven't retried too many times, retry with new job number
@@ -844,14 +859,27 @@ export const db = {
       return { data, error };
     },
 
-    /** Full jobs-by-customer fetch: explicit columns (same width as ongoing list + photos JSON). */
+    /** Full jobs-by-customer fetch: ongoing column set plus photo JSON arrays. */
     async getByCustomerIdFull(customerId: string) {
       const { data, error } = await supabase
         .from('jobs')
-        .select(JOB_SELECT_ONGOING_AND_TECH)
+        .select(`${JOB_SELECT_ONGOING_AND_TECH},${JOB_PHOTO_ARRAY_COLUMNS}`)
         .eq('customer_id', customerId)
         .order('created_at', { ascending: false });
       return { data, error };
+    },
+
+    /** Load only photo array fields for many jobs (follows slim list query). */
+    async getPhotoFieldsForJobIds(jobIds: string[]) {
+      const ids = [...new Set(jobIds.filter(Boolean))];
+      if (ids.length === 0) {
+        return { data: [] as Record<string, unknown>[], error: null };
+      }
+      const { data, error } = await supabase
+        .from('jobs')
+        .select(`id,${JOB_PHOTO_ARRAY_COLUMNS}`)
+        .in('id', ids);
+      return { data: data || [], error };
     },
     
     async getAll(limit?: number, includeCustomer?: boolean) {
@@ -975,20 +1003,32 @@ export const db = {
         .order('created_at', { ascending: false })
         .limit(100);
 
-      if (!slim.error) return { data: slim.data, error: slim.error };
+      let rows = slim.data || [];
+      let err = slim.error;
 
-      if (import.meta.env.DEV) {
-        console.warn('[db.jobs.getByTechnicianId] Slim select failed, using full select:', slim.error?.message);
+      if (err) {
+        if (import.meta.env.DEV) {
+          console.warn('[db.jobs.getByTechnicianId] Slim select failed, using full select:', slim.error?.message);
+        }
+        const legacy = await supabase
+          .from('jobs')
+          .select(`${JOB_SELECT_ONGOING_AND_TECH},customer:customers(${CUSTOMER_EMBED_FOR_ONGOING_ADMIN})`)
+          .or(orFilter)
+          .order('created_at', { ascending: false })
+          .limit(100);
+        rows = legacy.data || [];
+        err = legacy.error;
       }
 
-      const legacy = await supabase
-        .from('jobs')
-        .select(`${JOB_SELECT_ONGOING_AND_TECH},customer:customers(${CUSTOMER_EMBED_FOR_ONGOING_ADMIN})`)
-        .or(orFilter)
-        .order('created_at', { ascending: false })
-        .limit(100);
+      if (err || !rows.length) {
+        return { data: rows, error: err };
+      }
 
-      return { data: legacy.data, error: legacy.error };
+      const { data: photoRows, error: photoErr } = await this.getPhotoFieldsForJobIds(rows.map((r: any) => r.id));
+      if (photoErr || !photoRows?.length) {
+        return { data: rows, error: null };
+      }
+      return { data: mergeJobPhotoFieldsIntoRows(rows, photoRows as Record<string, unknown>[]), error: null };
     },
     
     // Legacy function - keeping for backward compatibility
@@ -1695,20 +1735,32 @@ export const db = {
         .order('created_at', { ascending: false })
         .limit(limit);
 
-      if (!slim.error) return { data: slim.data || [], error: slim.error };
+      let rows = slim.data || [];
+      let err = slim.error;
 
-      if (import.meta.env.DEV) {
-        console.warn('[db.jobs.getOngoing] Slim select failed, using full select:', slim.error?.message);
+      if (err) {
+        if (import.meta.env.DEV) {
+          console.warn('[db.jobs.getOngoing] Slim select failed, using full select:', slim.error?.message);
+        }
+        const legacy = await supabase
+          .from('jobs')
+          .select(`${JOB_SELECT_ONGOING_AND_TECH},customer:customers(${CUSTOMER_EMBED_FOR_ONGOING_ADMIN})`)
+          .in('status', ['PENDING', 'ASSIGNED', 'EN_ROUTE', 'IN_PROGRESS'])
+          .order('created_at', { ascending: false })
+          .limit(limit);
+        rows = legacy.data || [];
+        err = legacy.error;
       }
 
-      const legacy = await supabase
-        .from('jobs')
-        .select(`${JOB_SELECT_ONGOING_AND_TECH},customer:customers(${CUSTOMER_EMBED_FOR_ONGOING_ADMIN})`)
-        .in('status', ['PENDING', 'ASSIGNED', 'EN_ROUTE', 'IN_PROGRESS'])
-        .order('created_at', { ascending: false })
-        .limit(limit);
+      if (err || !rows.length) {
+        return { data: rows, error: err };
+      }
 
-      return { data: legacy.data || [], error: legacy.error };
+      const { data: photoRows, error: photoErr } = await this.getPhotoFieldsForJobIds(rows.map((r: any) => r.id));
+      if (photoErr || !photoRows?.length) {
+        return { data: rows, error: null };
+      }
+      return { data: mergeJobPhotoFieldsIntoRows(rows, photoRows as Record<string, unknown>[]), error: null };
     }
   },
   
