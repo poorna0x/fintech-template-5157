@@ -179,34 +179,27 @@ const CUSTOMER_EMBED_FOR_TECH_JOBS = [
   'raw_water_tds',
 ].join(',');
 
-/** Customer embed for admin ongoing list (matches prior getOngoing shape; not customers(*)). */
+/**
+ * Customer embed for admin ongoing + ALL-tab lists (low egress).
+ * Omits address, location, notes, etc. — same shape as completed slim embed.
+ * UI loads full row via db.customers.getById when user opens edit, address, bills, new job, reports, etc.
+ */
 const CUSTOMER_EMBED_FOR_ONGOING_ADMIN = [
   'id',
   'customer_id',
   'full_name',
   'phone',
-  'email',
   'alternate_phone',
+  'email',
   'visible_address',
-  'address',
-  'location',
   'service_type',
   'brand',
   'model',
-  'installation_date',
-  'warranty_expiry',
-  'status',
-  'customer_since',
   'last_service_date',
-  'notes',
-  'preferred_time_slot',
-  'preferred_language',
   'has_prefilter',
   'has_google_review',
   'customer_tier',
   'raw_water_tds',
-  'created_at',
-  'updated_at',
 ].join(',');
 
 /** Per-customer job lists: no before_photos/after_photos/images (large JSON). Shared by slim + report helpers. */

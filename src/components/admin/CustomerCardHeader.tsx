@@ -22,8 +22,8 @@ interface CustomerCardHeaderProps {
   onGenerateQuotation: (customer: Customer) => void;
   onGenerateAMC: (customer: Customer) => void;
   onGenerateTaxInvoice: (customer: Customer) => void;
-  onSetSelectedCustomerForReport: (customer: Customer) => void;
-  onSetCustomerReportDialogOpen: (open: boolean) => void;
+  /** Hydrate full customer if needed, then set report state and open dialog (parent may be async). */
+  onOpenCustomerReport: (customer: Customer) => void | Promise<void>;
   onSetMoreOptionsDialogOpen: (updater: (prev: Record<string, boolean>) => Record<string, boolean>) => void;
   onViewAMCInfo?: (customer: Customer) => void;
   onAddReminder?: (customer: Customer) => void;
@@ -46,8 +46,7 @@ export const CustomerCardHeader: React.FC<CustomerCardHeaderProps> = ({
   onGenerateQuotation,
   onGenerateAMC,
   onGenerateTaxInvoice,
-  onSetSelectedCustomerForReport,
-  onSetCustomerReportDialogOpen,
+  onOpenCustomerReport,
   onSetMoreOptionsDialogOpen,
   onViewAMCInfo,
   onAddReminder,
@@ -165,8 +164,7 @@ export const CustomerCardHeader: React.FC<CustomerCardHeaderProps> = ({
           size="sm" 
           className="flex items-center justify-center gap-2 h-10 bg-white hover:bg-gray-50 border-gray-300 hover:border-gray-400 text-gray-700 hover:text-gray-900 transition-all duration-200 rounded-md text-sm"
           onClick={() => {
-            onSetSelectedCustomerForReport(customer);
-            onSetCustomerReportDialogOpen(true);
+            void onOpenCustomerReport(customer);
           }}
         >
           <FileText className="w-4 h-4" />
@@ -392,8 +390,7 @@ export const CustomerCardHeader: React.FC<CustomerCardHeaderProps> = ({
             size="sm" 
             className="flex items-center gap-2 h-8 px-3 bg-white hover:bg-gray-50 border-gray-300 hover:border-gray-400 text-gray-700 hover:text-gray-900 transition-all duration-200 rounded-md text-xs"
             onClick={() => {
-              onSetSelectedCustomerForReport(customer);
-              onSetCustomerReportDialogOpen(true);
+              void onOpenCustomerReport(customer);
             }}
           >
             <FileText className="w-3 h-3" />

@@ -1922,176 +1922,185 @@ const AdminDashboard = () => {
     }
   };
 
-  const handleEditCustomer = (customer: Customer) => {
-    setEditingCustomer(customer);
-    
+  /** Ongoing/ALL job lists use a slim customer embed; fetch full row when an action needs address/location/notes. */
+  const loadFullCustomerForAction = useCallback(async (customer: Customer): Promise<Customer> => {
+    try {
+      const { data, error } = await db.customers.getById(customer.id);
+      if (error || !data) return customer;
+      return transformCustomerData(data);
+    } catch {
+      return customer;
+    }
+  }, []);
+
+  const handleOpenCustomerReport = async (customer: Customer) => {
+    const c = await loadFullCustomerForAction(customer);
+    setSelectedCustomerForReport(c);
+    setCustomerReportDialogOpen(true);
+  };
+
+  const handleEditCustomer = async (customer: Customer) => {
+    const c = await loadFullCustomerForAction(customer);
+    setEditingCustomer(c);
+
     // Parse service types from the database value
-    const serviceTypes = parseDbServiceType(customer.service_type || '');
-    
+    const serviceTypes = parseDbServiceType(c.service_type || '');
+
     // Parse equipment from brands and models
-    const equipment: {[serviceType: string]: {brand: string, model: string}} = {};
-    
+    const equipment: { [serviceType: string]: { brand: string; model: string } } = {};
+
     // Always initialize equipment for all service types, even if brand/model is empty
     if (serviceTypes.length > 0) {
-      // Parse brands and models (handle empty strings)
-      const brands = (customer.brand || '').split(',').map((s: string) => s.trim());
-      const models = (customer.model || '').split(',').map((s: string) => s.trim());
-      
+      const brands = (c.brand || '').split(',').map((s: string) => s.trim());
+      const models = (c.model || '').split(',').map((s: string) => s.trim());
+
       console.log('🔧 Initializing equipment from customer:', {
         serviceTypes,
-        brand: customer.brand,
-        model: customer.model,
+        brand: c.brand,
+        model: c.model,
         brandsArray: brands,
-        modelsArray: models
+        modelsArray: models,
       });
-      
+
       serviceTypes.forEach((serviceType: string, index: number) => {
         const brandValue = brands[index] || '';
         const modelValue = models[index] || '';
         equipment[serviceType] = {
           brand: brandValue === 'Not specified' || brandValue.toLowerCase() === 'not specified' ? '' : brandValue,
-          model: modelValue === 'Not specified' || modelValue.toLowerCase() === 'not specified' ? '' : modelValue
+          model: modelValue === 'Not specified' || modelValue.toLowerCase() === 'not specified' ? '' : modelValue,
         };
         console.log(`  ${serviceType}: brand="${equipment[serviceType].brand}", model="${equipment[serviceType].model}"`);
       });
     } else {
-      // If no service types, still initialize empty equipment
       console.log('⚠️ No service types found, initializing empty equipment');
     }
-    
+
     setEditFormData({
-      full_name: customer.full_name || customer.fullName || '',
-      phone: customer.phone || '',
-      alternate_phone: customer.alternate_phone || customer.alternatePhone || '',
-      email: customer.email || '',
+      full_name: c.full_name || c.fullName || '',
+      phone: c.phone || '',
+      alternate_phone: c.alternate_phone || c.alternatePhone || '',
+      email: c.email || '',
       service_types: serviceTypes,
       equipment: equipment,
-      behavior: customer.behavior || '',
-      native_language: customer.preferredLanguage || '',
-      status: customer.status || '',
-      notes: customer.notes || '',
+      behavior: c.behavior || '',
+      native_language: c.preferredLanguage || '',
+      status: c.status || '',
+      notes: c.notes || '',
       has_prefilter: (() => {
-        const prefilterValue = (customer as any).has_prefilter ?? null;
+        const prefilterValue = (c as any).has_prefilter ?? null;
         console.log('🔍 Loading prefilter for edit:', {
-          customerId: customer.id,
-          customerName: customer.full_name || customer.fullName,
+          customerId: c.id,
+          customerName: c.full_name || c.fullName,
           has_prefilter: prefilterValue,
-          type: typeof prefilterValue
+          type: typeof prefilterValue,
         });
         return prefilterValue;
       })(),
       google_location: (() => {
-        // First check for googleLocation field (actual Google Maps URL - including short URLs)
-        if ((customer.location as any)?.googleLocation) {
-          const googleLoc = (customer.location as any).googleLocation;
-          // Accept any Google Maps URL (including short URLs like maps.app.goo.gl)
-          if (googleLoc && typeof googleLoc === 'string' && 
-              (googleLoc.includes('google.com/maps') || googleLoc.includes('maps.app.goo.gl') || googleLoc.includes('goo.gl/maps')) &&
-              !googleLoc.includes('localhost') && 
-              !googleLoc.includes('127.0.0.1')) {
+        if ((c.location as any)?.googleLocation) {
+          const googleLoc = (c.location as any).googleLocation;
+          if (
+            googleLoc &&
+            typeof googleLoc === 'string' &&
+            (googleLoc.includes('google.com/maps') ||
+              googleLoc.includes('maps.app.goo.gl') ||
+              googleLoc.includes('goo.gl/maps')) &&
+            !googleLoc.includes('localhost') &&
+            !googleLoc.includes('127.0.0.1')
+          ) {
             return googleLoc;
           }
         }
-        // If we have coordinates, always generate Google Maps link from coordinates
-        if (customer.location?.latitude && customer.location?.longitude && 
-            customer.location.latitude !== 0 && customer.location.longitude !== 0) {
-          return `https://www.google.com/maps/place/${customer.location.latitude},${customer.location.longitude}`;
+        if (c.location?.latitude && c.location?.longitude && c.location.latitude !== 0 && c.location.longitude !== 0) {
+          return `https://www.google.com/maps/place/${c.location.latitude},${c.location.longitude}`;
         }
-        // Only use formattedAddress if it's actually a proper Google Maps URL (not localhost)
-        if (customer.location?.formattedAddress && 
-            typeof customer.location.formattedAddress === 'string' &&
-            (customer.location.formattedAddress.includes('google.com/maps') || customer.location.formattedAddress.includes('maps.app.goo.gl')) &&
-            !customer.location.formattedAddress.includes('localhost') &&
-            !customer.location.formattedAddress.includes('127.0.0.1')) {
-          return customer.location.formattedAddress;
+        if (
+          c.location?.formattedAddress &&
+          typeof c.location.formattedAddress === 'string' &&
+          (c.location.formattedAddress.includes('google.com/maps') || c.location.formattedAddress.includes('maps.app.goo.gl')) &&
+          !c.location.formattedAddress.includes('localhost') &&
+          !c.location.formattedAddress.includes('127.0.0.1')
+        ) {
+          return c.location.formattedAddress;
         }
         return '';
       })(),
       visible_address: (() => {
-        // Get existing location from database
-        const existingLocation = (customer as any).visible_address || (customer.address as any)?.visible_address || '';
-        
-        // Just return existing location - don't auto-extract
+        const existingLocation = (c as any).visible_address || (c.address as any)?.visible_address || '';
         return existingLocation;
       })(),
-      custom_time: customer.customTime || (customer as any).custom_time || '',
+      custom_time: c.customTime || (c as any).custom_time || '',
       address: {
-        // If street already contains a full address (has commas or is long), use it as-is
-        // Otherwise, join all address components
         street: (() => {
-          const existingStreet = customer.address?.street || '';
-          // If street already looks like a full address (contains commas or is substantial), use it
+          const existingStreet = c.address?.street || '';
           if (existingStreet.includes(',') || existingStreet.length > 30) {
             return existingStreet;
           }
-          // Otherwise, join all components
-          const joined = [
-            customer.address?.street,
-            customer.address?.area,
-            customer.address?.city,
-            customer.address?.state,
-            customer.address?.pincode
-          ].filter(Boolean).join(', ');
+          const joined = [c.address?.street, c.address?.area, c.address?.city, c.address?.state, c.address?.pincode]
+            .filter(Boolean)
+            .join(', ');
           return joined || existingStreet || '';
         })(),
-        area: customer.address?.area || '',
-        city: customer.address?.city || '',
-        state: customer.address?.state || '',
-        pincode: customer.address?.pincode || ''
+        area: c.address?.area || '',
+        city: c.address?.city || '',
+        state: c.address?.state || '',
+        pincode: c.address?.pincode || '',
       },
       location: {
-        latitude: customer.location?.latitude || 0,
-        longitude: customer.location?.longitude || 0,
-        formattedAddress: customer.location?.formattedAddress || ''
+        latitude: c.location?.latitude || 0,
+        longitude: c.location?.longitude || 0,
+        formattedAddress: c.location?.formattedAddress || '',
       },
-      service_cost: customer.serviceCost || 0,
-      cost_agreed: customer.costAgreed || false
+      service_cost: c.serviceCost || 0,
+      cost_agreed: c.costAgreed || false,
     });
-    // Initialize last saved form data for auto-save tracking
     lastSavedFormDataRef.current = JSON.stringify({
-      full_name: customer.full_name || customer.fullName || '',
-      phone: customer.phone || '',
-      alternate_phone: customer.alternate_phone || customer.alternatePhone || '',
-      email: customer.email || '',
+      full_name: c.full_name || c.fullName || '',
+      phone: c.phone || '',
+      alternate_phone: c.alternate_phone || c.alternatePhone || '',
+      email: c.email || '',
       service_types: serviceTypes,
       equipment: equipment,
-      behavior: customer.behavior || '',
-      native_language: customer.preferredLanguage || '',
-      status: customer.status || '',
-      notes: customer.notes || '',
+      behavior: c.behavior || '',
+      native_language: c.preferredLanguage || '',
+      status: c.status || '',
+      notes: c.notes || '',
       google_location: (() => {
-        if ((customer.location as any)?.googleLocation) {
-          const googleLoc = (customer.location as any).googleLocation;
-          if (googleLoc && typeof googleLoc === 'string' && 
-              (googleLoc.includes('google.com/maps') || googleLoc.includes('maps.app.goo.gl') || googleLoc.includes('goo.gl/maps')) &&
-              !googleLoc.includes('localhost') && 
-              !googleLoc.includes('127.0.0.1')) {
+        if ((c.location as any)?.googleLocation) {
+          const googleLoc = (c.location as any).googleLocation;
+          if (
+            googleLoc &&
+            typeof googleLoc === 'string' &&
+            (googleLoc.includes('google.com/maps') ||
+              googleLoc.includes('maps.app.goo.gl') ||
+              googleLoc.includes('goo.gl/maps')) &&
+            !googleLoc.includes('localhost') &&
+            !googleLoc.includes('127.0.0.1')
+          ) {
             return googleLoc;
           }
         }
-        if (customer.location?.latitude && customer.location?.longitude && 
-            customer.location.latitude !== 0 && customer.location.longitude !== 0) {
-          return `https://www.google.com/maps/place/${customer.location.latitude},${customer.location.longitude}`;
+        if (c.location?.latitude && c.location?.longitude && c.location.latitude !== 0 && c.location.longitude !== 0) {
+          return `https://www.google.com/maps/place/${c.location.latitude},${c.location.longitude}`;
         }
-        if (customer.location?.formattedAddress && 
-            typeof customer.location.formattedAddress === 'string' &&
-            (customer.location.formattedAddress.includes('google.com/maps') || customer.location.formattedAddress.includes('maps.app.goo.gl')) &&
-            !customer.location.formattedAddress.includes('localhost') &&
-            !customer.location.formattedAddress.includes('127.0.0.1')) {
-          return customer.location.formattedAddress;
+        if (
+          c.location?.formattedAddress &&
+          typeof c.location.formattedAddress === 'string' &&
+          (c.location.formattedAddress.includes('google.com/maps') || c.location.formattedAddress.includes('maps.app.goo.gl')) &&
+          !c.location.formattedAddress.includes('localhost') &&
+          !c.location.formattedAddress.includes('127.0.0.1')
+        ) {
+          return c.location.formattedAddress;
         }
         return '';
       })(),
       visible_address: (() => {
-        // Get existing location from database - don't auto-extract, just use what's saved
-        const existingLocation = (customer as any).visible_address || (customer.address as any)?.visible_address || '';
+        const existingLocation = (c as any).visible_address || (c.address as any)?.visible_address || '';
         return existingLocation;
       })(),
-      custom_time: customer.customTime || (customer as any).custom_time || ''
+      custom_time: c.customTime || (c as any).custom_time || '',
     });
     hasUnsavedChangesRef.current = false;
-    // Don't reset locationManuallyEditedRef - preserve manual edits
-    // Clear any existing auto-save timer
     if (autoSaveTimerRef.current) {
       clearTimeout(autoSaveTimerRef.current);
       autoSaveTimerRef.current = null;
@@ -3395,43 +3404,38 @@ const AdminDashboard = () => {
   };
 
   // Job creation functions
-  const handleNewJob = (customer: Customer) => {
-    setSelectedCustomerForJob(customer);
-    
+  const handleNewJob = async (customer: Customer) => {
+    const c = await loadFullCustomerForAction(customer);
+    setSelectedCustomerForJob(c);
+
     // Get today's date in local timezone
     const todayDateString = getTodayLocalDate();
-    
+
     // Get current time
     const now = new Date();
     const currentTime = now.toTimeString().slice(0, 5); // HH:MM format
-    
-    // Extract brand and model from customer (may be comma-separated for multiple service types)
-    // For new job, we'll use the first brand/model or the one matching the service type
-    let customerBrand = customer.brand || '';
-    let customerModel = customer.model || '';
-    
-    // If comma-separated, try to match with service type or use first
+
+    let customerBrand = c.brand || '';
+    let customerModel = c.model || '';
+
     if (customerBrand.includes(',')) {
       const brands = customerBrand.split(',').map(b => b.trim());
       const models = customerModel.split(',').map(m => m.trim());
-      const serviceTypes = parseDbServiceType(customer.service_type || '');
-      
-      // Use first brand/model, or try to match with service type
+      const serviceTypes = parseDbServiceType(c.service_type || '');
+
       customerBrand = brands[0] || '';
       customerModel = models[0] || '';
-      
-      // If service type is RO or SOFTENER, try to find matching brand/model
-      const svcType = (customer as any).service_type || customer.serviceType;
-      const selectedServiceType = (svcType === 'SOFTENER' ? 'SOFTENER' : 'RO');
+
+      const svcType = (c as any).service_type || c.serviceType;
+      const selectedServiceType = svcType === 'SOFTENER' ? 'SOFTENER' : 'RO';
       const serviceTypeIndex = serviceTypes.indexOf(selectedServiceType);
       if (serviceTypeIndex >= 0 && brands[serviceTypeIndex]) {
         customerBrand = brands[serviceTypeIndex];
         customerModel = models[serviceTypeIndex] || '';
       }
     }
-    
-    // Initialize form data with proper defaults
-    const svcType = (customer as any).service_type || customer.serviceType;
+
+    const svcType = (c as any).service_type || c.serviceType;
     const initialFormData = {
       service_type: (svcType === 'SOFTENER' ? 'SOFTENER' : 'RO') as 'RO' | 'SOFTENER',
       service_sub_type: 'Service',
@@ -4833,8 +4837,9 @@ const AdminDashboard = () => {
     setPhonePopupOpen(true);
   };
 
-  const handleGenerateBill = (customer: Customer) => {
-    setSelectedCustomerForBill(customer);
+  const handleGenerateBill = async (customer: Customer) => {
+    const c = await loadFullCustomerForAction(customer);
+    setSelectedCustomerForBill(c);
     setBillModalOpen(true);
   };
 
@@ -4843,8 +4848,9 @@ const AdminDashboard = () => {
     setSelectedCustomerForBill(null);
   };
 
-  const handleGenerateQuotation = (customer: Customer) => {
-    setSelectedCustomerForQuotation(customer);
+  const handleGenerateQuotation = async (customer: Customer) => {
+    const c = await loadFullCustomerForAction(customer);
+    setSelectedCustomerForQuotation(c);
     setQuotationModalOpen(true);
   };
 
@@ -4853,8 +4859,9 @@ const AdminDashboard = () => {
     setSelectedCustomerForQuotation(null);
   };
 
-  const handleGenerateAMC = (customer: Customer) => {
-    setSelectedCustomerForAMC(customer);
+  const handleGenerateAMC = async (customer: Customer) => {
+    const c = await loadFullCustomerForAction(customer);
+    setSelectedCustomerForAMC(c);
     setAmcModalOpen(true);
   };
 
@@ -4917,8 +4924,9 @@ const AdminDashboard = () => {
     }
   };
 
-  const handleGenerateTaxInvoice = (customer: Customer) => {
-    setSelectedCustomerForTaxInvoice(customer);
+  const handleGenerateTaxInvoice = async (customer: Customer) => {
+    const c = await loadFullCustomerForAction(customer);
+    setSelectedCustomerForTaxInvoice(c);
     setTaxInvoiceModalOpen(true);
   };
 
@@ -8546,8 +8554,7 @@ const AdminDashboard = () => {
                   onGenerateQuotation={handleGenerateQuotation}
                   onGenerateAMC={handleGenerateAMC}
                   onGenerateTaxInvoice={handleGenerateTaxInvoice}
-                  onSetSelectedCustomerForReport={setSelectedCustomerForReport}
-                  onSetCustomerReportDialogOpen={setCustomerReportDialogOpen}
+                  onOpenCustomerReport={handleOpenCustomerReport}
                   onSetMoreOptionsDialogOpen={setMoreOptionsDialogOpen}
                   onViewAMCInfo={handleViewAMCInfo}
                   onAddReminder={(customer) => {
