@@ -14,6 +14,8 @@ interface AssignJobDialogProps {
   onOpenChange: (open: boolean) => void;
   job: Job | null;
   technicians: Technician[];
+  /** True while a background reload is fetching latest technicians (dialog already open). */
+  techniciansRefreshing?: boolean;
   selectedTechnicianId: string;
   onTechnicianSelect: (technicianId: string) => void;
   onReloadTechnicians: () => Promise<void>;
@@ -33,6 +35,7 @@ const AssignJobDialog: React.FC<AssignJobDialogProps> = ({
   onOpenChange,
   job,
   technicians,
+  techniciansRefreshing = false,
   selectedTechnicianId,
   onTechnicianSelect,
   onReloadTechnicians,
@@ -466,9 +469,14 @@ const AssignJobDialog: React.FC<AssignJobDialogProps> = ({
     return getLocationLink(serviceLocation);
   })();
 
+  const inactiveTechnicians = (techniciansWithDistances.length > 0 ? techniciansWithDistances : technicians).filter(
+    (tech) => tech.account_status !== 'INACTIVE'
+  );
+  const technicianPickerBlocked = techniciansRefreshing && inactiveTechnicians.length === 0;
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="w-[95vw] sm:w-[90vw] md:w-[600px] max-w-[600px] max-h-[90vh] flex flex-col duration-150 ease-out">
+      <DialogContent className="w-[95vw] sm:w-[90vw] md:w-[600px] max-w-[600px] max-h-[90vh] flex flex-col duration-100 ease-out data-[state=open]:zoom-in-100 data-[state=closed]:zoom-out-100 data-[state=open]:slide-in-from-left-0 data-[state=open]:slide-in-from-top-0 data-[state=closed]:slide-out-to-left-0 data-[state=closed]:slide-out-to-top-0">
         <DialogHeader>
           <DialogTitle className="text-lg sm:text-xl">Assign Job to Technician</DialogTitle>
           <DialogDescription className="text-sm">
@@ -552,13 +560,21 @@ const AssignJobDialog: React.FC<AssignJobDialogProps> = ({
           {/* Technician Selection */}
           <div className="space-y-3">
             <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
-              <Label htmlFor="technician-select" className="text-sm sm:text-base">Select Technician</Label>
+              <div className="flex flex-col gap-1">
+                <Label htmlFor="technician-select" className="text-sm sm:text-base">Select Technician</Label>
+                {techniciansRefreshing && inactiveTechnicians.length > 0 && (
+                  <span className="text-xs text-muted-foreground flex items-center gap-1">
+                    <Loader2 className="h-3 w-3 animate-spin shrink-0" />
+                    Updating technician list…
+                  </span>
+                )}
+              </div>
               <Button
                 type="button"
                 variant="outline"
                 size="sm"
                 onClick={calculateDistances}
-                disabled={isCalculatingDistances || !jobLocation}
+                disabled={technicianPickerBlocked || isCalculatingDistances || !jobLocation}
                 className="text-xs w-full sm:w-auto"
                 title={!jobLocation ? "Job location not available" : "Calculate distances from job location"}
               >
@@ -575,40 +591,45 @@ const AssignJobDialog: React.FC<AssignJobDialogProps> = ({
                 )}
               </Button>
             </div>
-            <Select value={selectedTechnicianId} onValueChange={onTechnicianSelect}>
+            <Select
+              value={selectedTechnicianId}
+              onValueChange={onTechnicianSelect}
+              disabled={technicianPickerBlocked}
+            >
               <SelectTrigger className="w-full border border-gray-300 focus:border-blue-500 focus:ring-0 focus:ring-offset-0">
-                <SelectValue placeholder="Choose a technician" />
+                <SelectValue
+                  placeholder={technicianPickerBlocked ? 'Loading technicians…' : 'Choose a technician'}
+                />
               </SelectTrigger>
               <SelectContent className="max-h-[300px] overflow-y-auto">
-                {(techniciansWithDistances.length > 0 ? techniciansWithDistances : technicians).length === 0 ? (
+                {technicianPickerBlocked ? (
+                  <SelectItem value="__loading__" disabled>
+                    Loading technicians…
+                  </SelectItem>
+                ) : inactiveTechnicians.length === 0 ? (
                   <SelectItem value="no-technicians" disabled>
                     No technicians available
                   </SelectItem>
                 ) : (
-                  (techniciansWithDistances.length > 0 ? techniciansWithDistances : technicians)
-                    .filter(tech => tech.account_status !== 'INACTIVE')
-                    .map((technician) => {
-                      const techWithDist = technician as TechnicianWithDistance;
-                      return (
-                        <SelectItem
-                          key={technician.id}
-                          value={technician.id || 'unknown'}
-                        >
-                          <div className="flex items-center justify-between w-full gap-2">
-                            <span className="truncate flex-1 min-w-0">{technician.fullName || 'Unknown Technician'}</span>
-                            {techWithDist.distance && techWithDist.distance !== 'N/A' && (
-                              <div className="flex items-center gap-1 text-xs text-current opacity-70 shrink-0">
-                                <Navigation className="w-3 h-3" />
-                                <span>{techWithDist.distance}</span>
-                                {techWithDist.duration && techWithDist.duration !== 'N/A' && (
-                                  <span className="opacity-100">• {techWithDist.duration}</span>
-                                )}
-                              </div>
-                            )}
-                          </div>
-                        </SelectItem>
-                      );
-                    })
+                  inactiveTechnicians.map((technician) => {
+                    const techWithDist = technician as TechnicianWithDistance;
+                    return (
+                      <SelectItem key={technician.id} value={technician.id || 'unknown'}>
+                        <div className="flex items-center justify-between w-full gap-2">
+                          <span className="truncate flex-1 min-w-0">{technician.fullName || 'Unknown Technician'}</span>
+                          {techWithDist.distance && techWithDist.distance !== 'N/A' && (
+                            <div className="flex items-center gap-1 text-xs text-current opacity-70 shrink-0">
+                              <Navigation className="w-3 h-3" />
+                              <span>{techWithDist.distance}</span>
+                              {techWithDist.duration && techWithDist.duration !== 'N/A' && (
+                                <span className="opacity-100">• {techWithDist.duration}</span>
+                              )}
+                            </div>
+                          )}
+                        </div>
+                      </SelectItem>
+                    );
+                  })
                 )}
               </SelectContent>
             </Select>
@@ -630,7 +651,7 @@ const AssignJobDialog: React.FC<AssignJobDialogProps> = ({
           </Button>
           <Button
             onClick={onSave}
-            disabled={!selectedTechnicianId}
+            disabled={technicianPickerBlocked || !selectedTechnicianId}
             className="bg-blue-600 hover:bg-blue-700 w-full sm:w-auto"
           >
             Assign Job

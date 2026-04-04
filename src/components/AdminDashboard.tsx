@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef, startTransition } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import AdminHeader from '@/components/AdminHeader';
@@ -131,14 +131,6 @@ declare global {
     google: any;
     initMap: () => void;
   }
-}
-
-function waitTwoAnimationFrames(): Promise<void> {
-  return new Promise((resolve) => {
-    requestAnimationFrame(() => {
-      requestAnimationFrame(() => resolve());
-    });
-  });
 }
 
 // Utility functions moved to @/lib/adminUtils
@@ -783,6 +775,8 @@ const AdminDashboard = () => {
   const [assignJobDialogOpen, setAssignJobDialogOpen] = useState(false);
   const [jobToAssign, setJobToAssign] = useState<Job | null>(null);
   const [selectedTechnicianId, setSelectedTechnicianId] = useState('');
+  const [assignTechniciansRefreshing, setAssignTechniciansRefreshing] = useState(false);
+  const [reassignTechniciansRefreshing, setReassignTechniciansRefreshing] = useState(false);
   
   // Add Team Dialog state
   const [addTeamDialogOpen, setAddTeamDialogOpen] = useState(false);
@@ -865,7 +859,7 @@ const AdminDashboard = () => {
   });
 
   // Reload technicians to get latest location data
-  const reloadTechnicians = useCallback(async () => {
+  const reloadTechnicians = useCallback(async (options?: { transition?: boolean }) => {
     try {
       // OPTIMIZATION: Use limit to reduce data transfer
       const { data, error } = await db.technicians.getAll(100);
@@ -892,7 +886,12 @@ const AdminDashboard = () => {
             status: t.status
           }))
         });
-        setTechnicians(transformedTechnicians);
+        const apply = () => setTechnicians(transformedTechnicians);
+        if (options?.transition) {
+          startTransition(apply);
+        } else {
+          apply();
+        }
       }
     } catch (error) {
       console.error('Error reloading technicians:', error);
@@ -949,8 +948,15 @@ const AdminDashboard = () => {
   useEffect(() => {
     if (!assignJobDialogOpen) {
       setSelectedTechnicianId('');
+      setAssignTechniciansRefreshing(false);
     }
   }, [assignJobDialogOpen]);
+
+  useEffect(() => {
+    if (!reassignDialogOpen) {
+      setReassignTechniciansRefreshing(false);
+    }
+  }, [reassignDialogOpen]);
 
   // Load technicians only when assign job dialog opens (not on every visibility change)
   // Technicians will be loaded when handleAssignJob is called (which opens the dialog)
@@ -4945,14 +4951,16 @@ const AdminDashboard = () => {
 
 
   // Job assignment functions
-  const handleAssignJob = async (job: Job) => {
+  const handleAssignJob = (job: Job) => {
     setJobToAssign(job);
     setSelectedTechnicianId('');
-    // Reload before opening dialog (same as reassign) so the list doesn’t pop in a second later and flash
-    await reloadTechnicians();
-    // Let the ⋮ menu finish closing before the modal mounts (avoids stacked Radix animations / focus fights)
-    await waitTwoAnimationFrames();
     setAssignJobDialogOpen(true);
+    // Avoid reload on open when the dashboard already has technicians — that setTechnicians
+    // re-renders this huge tree and makes the dialog visibly "pop" a moment after it opens.
+    if (technicians.length === 0) {
+      setAssignTechniciansRefreshing(true);
+      void reloadTechnicians({ transition: true }).finally(() => setAssignTechniciansRefreshing(false));
+    }
   };
 
   const handleSaveJobAssignment = async () => {
@@ -5156,7 +5164,7 @@ const AdminDashboard = () => {
   };
 
   // Handle job status update
-  const handleReassignJob = async (job: Job) => {
+  const handleReassignJob = (job: Job) => {
     setJobToReassign(job);
     // Check for assigned technician ID in multiple possible fields
     const technicianId = 
@@ -5165,10 +5173,11 @@ const AdminDashboard = () => {
       (job as any).assignedTechnician?.id ||
       '';
     setSelectedTechnicianForReassign(technicianId);
-    // Load technicians when dialog opens
-    await reloadTechnicians();
-    await waitTwoAnimationFrames();
     setReassignDialogOpen(true);
+    if (technicians.length === 0) {
+      setReassignTechniciansRefreshing(true);
+      void reloadTechnicians({ transition: true }).finally(() => setReassignTechniciansRefreshing(false));
+    }
   };
 
   const handleReassignSubmit = async () => {
@@ -9826,6 +9835,7 @@ const AdminDashboard = () => {
         onOpenChange={setAssignJobDialogOpen}
         job={jobToAssign}
         technicians={technicians}
+        techniciansRefreshing={assignTechniciansRefreshing}
         selectedTechnicianId={selectedTechnicianId}
         onTechnicianSelect={setSelectedTechnicianId}
         onReloadTechnicians={reloadTechnicians}
@@ -10066,6 +10076,7 @@ const AdminDashboard = () => {
         onOpenChange={setReassignDialogOpen}
         job={jobToReassign}
         technicians={technicians}
+        techniciansRefreshing={reassignTechniciansRefreshing}
         selectedTechnicianId={selectedTechnicianForReassign}
         onTechnicianSelect={setSelectedTechnicianForReassign}
         onReloadTechnicians={reloadTechnicians}
