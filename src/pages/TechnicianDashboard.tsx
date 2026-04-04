@@ -443,7 +443,6 @@ const TechnicianDashboard = () => {
   const completeJobScrollRef = useRef<HTMLDivElement>(null);
   const [billAmount, setBillAmount] = useState<string>('');
   const [billPhotos, setBillPhotos] = useState<string[]>([]);
-  const [paymentPhotos, setPaymentPhotos] = useState<string[]>([]);
   const [otpInput, setOtpInput] = useState<string[]>(['', '', '', '']);
   const [otpError, setOtpError] = useState<string>('');
   const [serviceBrand, setServiceBrand] = useState<ServiceBrand | null>(null);
@@ -461,6 +460,7 @@ const TechnicianDashboard = () => {
   const [hasAMC, setHasAMC] = useState<boolean | null>(null);
   const [paymentMode, setPaymentMode] = useState<'CASH' | 'ONLINE' | 'PARTIAL' | ''>('');
   const [billAmountConfirmOpen, setBillAmountConfirmOpen] = useState(false);
+  const [billPhotosSkipConfirmOpen, setBillPhotosSkipConfirmOpen] = useState(false);
   const [customerHasPrefilter, setCustomerHasPrefilter] = useState<boolean | null>(null);
   const [rawWaterTds, setRawWaterTds] = useState<string>('');
   const [qrCodeType, setQrCodeType] = useState<string>('');
@@ -2173,7 +2173,6 @@ const TechnicianDashboard = () => {
       setCompleteJobStep(1);
       setBillAmount('');
       setBillPhotos([]);
-      setPaymentPhotos([]);
       setOptionalCompletionPhotos([]);
       const today = new Date().toISOString().split('T')[0];
       setAmcDateGiven(today);
@@ -2635,6 +2634,80 @@ const TechnicianDashboard = () => {
     return null;
   };
 
+  /** Remote URL / Cloudinary — local file placeholders fail this until upload finishes. */
+  const isUploadedMediaUrl = (u: unknown): u is string =>
+    typeof u === 'string' &&
+    u.trim().length > 0 &&
+    (u.startsWith('http://') || u.startsWith('https://') || u.includes('cloudinary.com'));
+
+  /** Non-empty slot that is not a finished remote URL yet (background upload still in progress or failed). */
+  const hasPendingLocalOrUploadingPhoto = (u: unknown) =>
+    typeof u === 'string' && u.trim() !== '' && !isUploadedMediaUrl(u);
+
+  const hasPendingBillPhotosInState = () => billPhotos.some(hasPendingLocalOrUploadingPhoto);
+  const hasPendingOptionalCompletionPhotos = () => optionalCompletionPhotos.some(hasPendingLocalOrUploadingPhoto);
+  const hasPendingExtraStep6Photos = () => extraPhotosStep6.some(hasPendingLocalOrUploadingPhoto);
+  const hasPendingPaymentScreenshotState = () =>
+    typeof paymentScreenshot === 'string' &&
+    paymentScreenshot.trim() !== '' &&
+    !isUploadedMediaUrl(paymentScreenshot);
+
+  /** Final step: block Complete until all photo pipelines are idle and every slot is either empty or a real URL. */
+  const hasAnyPendingCompletionUploads = () =>
+    isBillPhotosUploading ||
+    isPaymentScreenshotUploading ||
+    isOptionalCompletionPhotosUploading ||
+    isExtraPhotosStep6Uploading ||
+    hasPendingBillPhotosInState() ||
+    hasPendingPaymentScreenshotState() ||
+    hasPendingOptionalCompletionPhotos() ||
+    hasPendingExtraStep6Photos();
+
+  /** Primary button shows "Complete Job" — same steps that can trigger DB submit in one click. */
+  const isCompleteJobFooterSubmit = () =>
+    completeJobStep === 6 ||
+    (completeJobStep === 3 && isBillAmountZero() && isSoftenerService() && !requiresOtp()) ||
+    (completeJobStep === 5 && isSoftenerService() && !requiresOtp());
+
+  /** Advance past step 2 with the bill photo URLs to persist (empty = skipped). */
+  const advanceFromStep2 = (billPhotosForSave: string[]) => {
+    if (!selectedJobForComplete) return;
+    setBillPhotos(billPhotosForSave);
+
+    const billIsZero = isBillAmountZero();
+    const isSoftener = isSoftenerService();
+    const shouldSkipAMC = billIsZero || isSoftener;
+
+    const needsOtp = requiresOtp();
+    let nextStep: 3 | 4 | 6 | 7 = 3;
+    if (shouldSkipAMC) {
+      if (billIsZero) {
+        nextStep = needsOtp ? 7 : 6;
+      } else {
+        nextStep = 4;
+      }
+    }
+
+    saveJobCompletionProgress(selectedJobForComplete.id, {
+      billPhotos: billPhotosForSave,
+      billAmount,
+      currentStep: nextStep,
+    });
+
+    if (shouldSkipAMC && billIsZero && isSoftener) {
+      setHasAMC(false);
+      setCustomerHasPrefilter(null);
+      setRawWaterTds('');
+      if (needsOtp) {
+        setCompleteJobStep(7);
+      } else {
+        setCompleteJobStep(6);
+      }
+      return;
+    }
+    setCompleteJobStep(nextStep);
+  };
+
   const handleCompleteJobSubmit = async () => {
     if (!selectedJobForComplete) return;
 
@@ -2660,52 +2733,15 @@ const TechnicianDashboard = () => {
       return;
     }
 
-    // Step 2: Bill Photo (optional) - move to next step
+    // Step 2: Bill photos optional — uploads may finish in background; confirm only if not adding any bill shots
     if (completeJobStep === 2) {
-      // Check if we should skip AMC step (step 3)
-      const billIsZero = isBillAmountZero();
-      const isSoftener = isSoftenerService();
-      const shouldSkipAMC = billIsZero || isSoftener;
-      
-      // Determine next step:
-      // - If should skip AMC: go directly to step 4 (payment) or step 7 (OTP) or step 6 (prefilter/submit)
-      // - If not skipping AMC: go to step 3 (AMC)
-      const needsOtp = requiresOtp();
-      let nextStep: 3 | 4 | 6 | 7 = 3;
-      if (shouldSkipAMC) {
-        if (billIsZero) {
-          // Skip AMC and payment steps
-          // If OTP required, go to step 7, otherwise go to prefilter (step 6) or submit if softener
-          nextStep = needsOtp ? 7 : 6;
-        } else {
-          // Skip AMC but go to payment step (step 4)
-          nextStep = 4;
-        }
-      }
-      
-      // Save progress before moving to next step
-      saveJobCompletionProgress(selectedJobForComplete.id, {
-        billPhotos,
-        billAmount,
-        currentStep: nextStep,
-      });
-      
-      // If skipping AMC and bill is zero and softener, check OTP first
-      if (shouldSkipAMC && billIsZero && isSoftener) {
-        setHasAMC(false);
-        setCustomerHasPrefilter(null);
-        setRawWaterTds('');
-        if (needsOtp) {
-          setCompleteJobStep(7);
-          return;
-        } else {
-          setCompleteJobStep(6);
-          // Continue to submit logic - don't return here
-        }
+      const hasAnyBillSlot = billPhotos.some((u) => typeof u === 'string' && u.trim() !== '');
+      if (hasAnyBillSlot) {
+        advanceFromStep2([...billPhotos]);
       } else {
-        setCompleteJobStep(nextStep);
-        return;
+        setBillPhotosSkipConfirmOpen(true);
       }
+      return;
     }
 
     // Step 3: AMC Information (optional, can skip) - move to next step
@@ -2938,7 +2974,7 @@ const TechnicianDashboard = () => {
         return;
     }
 
-    // Step 5: Payment Screenshot (optional) - move to step 7 (OTP) if required, or step 6 (Prefilter)
+    // Step 5: Payment screenshot (optional) — uploads still validated at submit if present
     if (completeJobStep === 5) {
       // Check if OTP is required
       const needsOtp = requiresOtp();
@@ -3033,7 +3069,7 @@ const TechnicianDashboard = () => {
           return;
         }
       }
-      
+
       // Determine payment mode - if bill is zero, payment mode should be empty
       const finalPaymentMode = isBillAmountZero() ? '' : (paymentMode as 'CASH' | 'ONLINE' | '');
       const finalPaymentScreenshot = isBillAmountZero() ? '' : paymentScreenshot;
@@ -3056,23 +3092,27 @@ const TechnicianDashboard = () => {
         customerHasPrefilter: isSoftenerService() ? null : customerHasPrefilter,
         currentStep: 6,
       });
-      // Proceed to submit - button is already disabled while uploads are in progress
+      // Submit path below waits once for all bill/payment/optional/step-6 photos to be real URLs
     }
     
+    // Single place we require every photo slot to be finished (covers step 6 and softener fall-through from 5 / 7)
+    if (hasAnyPendingCompletionUploads()) {
+      toast.error('Please wait for all photos to finish uploading.');
+      return;
+    }
+
     setIsSubmittingJobCompletion(true);
     
     try {
       // STEP 1: Ensure all photos are uploaded to Cloudinary (must be URLs, not local files)
       console.log('📸 All bill photos before filtering:', billPhotos);
-      const uploadedBillPhotos = billPhotos.filter(url => 
-        url && typeof url === 'string' && (url.startsWith('http://') || url.startsWith('https://'))
-      );
+      const uploadedBillPhotos = billPhotos.filter(isUploadedMediaUrl);
       console.log('📸 Uploaded bill photos (http/https URLs):', uploadedBillPhotos);
       console.log('📸 Uploaded bill photos count:', uploadedBillPhotos.length);
       
       // Check if there are any non-uploaded photos
       const nonUploadedPhotos = billPhotos.filter(url => 
-        url && typeof url === 'string' && !url.startsWith('http://') && !url.startsWith('https://')
+        url && typeof url === 'string' && !isUploadedMediaUrl(url)
       );
       
       if (nonUploadedPhotos.length > 0) {
@@ -3083,52 +3123,33 @@ const TechnicianDashboard = () => {
       }
 
       // Wait for optional completion photos (when job had zero photos) to finish uploading
-      const optionalUploaded = optionalCompletionPhotos.filter((u): u is string => !!u && typeof u === 'string' && (u.startsWith('http://') || u.startsWith('https://')));
-      const optionalNonUploaded = optionalCompletionPhotos.filter(u => u && typeof u === 'string' && !u.startsWith('http://') && !u.startsWith('https://'));
+      const optionalUploaded = optionalCompletionPhotos.filter(isUploadedMediaUrl);
+      const optionalNonUploaded = optionalCompletionPhotos.filter(u => u && typeof u === 'string' && !isUploadedMediaUrl(u));
       if (optionalNonUploaded.length > 0) {
         toast.error(`Please wait for ${optionalNonUploaded.length} optional photo(s) to finish uploading before completing the job.`);
         setIsSubmittingJobCompletion(false);
         return;
       }
       // Wait for extra photos (step 6) to finish uploading
-      const extraStep6Uploaded = extraPhotosStep6.filter((u): u is string => !!u && typeof u === 'string' && (u.startsWith('http://') || u.startsWith('https://')));
-      const extraStep6NonUploaded = extraPhotosStep6.filter(u => u && typeof u === 'string' && !u.startsWith('http://') && !u.startsWith('https://'));
+      const extraStep6Uploaded = extraPhotosStep6.filter(isUploadedMediaUrl);
+      const extraStep6NonUploaded = extraPhotosStep6.filter(u => u && typeof u === 'string' && !isUploadedMediaUrl(u));
       if (extraStep6NonUploaded.length > 0) {
         toast.error(`Please wait for ${extraStep6NonUploaded.length} photo(s) to finish uploading before completing the job.`);
         setIsSubmittingJobCompletion(false);
         return;
       }
-      
-      // Check payment screenshot if ONLINE payment
-      console.log('📸 Payment screenshot check:', {
-        paymentScreenshot,
-        paymentMode,
-        isString: typeof paymentScreenshot === 'string',
-        length: paymentScreenshot?.length || 0,
-        startsWithHttp: paymentScreenshot?.startsWith('http://') || paymentScreenshot?.startsWith('https://'),
-        includesCloudinary: paymentScreenshot?.includes('cloudinary.com')
-      });
-      
-      if (paymentMode === 'ONLINE' && paymentScreenshot) {
-        // Check if payment screenshot is a valid uploaded URL (http/https or Cloudinary URL)
-        const isValidUrl = paymentScreenshot && typeof paymentScreenshot === 'string' && (
-          paymentScreenshot.startsWith('http://') || 
-          paymentScreenshot.startsWith('https://') ||
-          paymentScreenshot.includes('cloudinary.com')
-        );
-        
-        if (!isValidUrl) {
-          console.warn('⚠️ Payment screenshot not uploaded yet or invalid format:', paymentScreenshot);
-          toast.error('Please wait for payment screenshot to finish uploading before completing the job.');
-          setIsSubmittingJobCompletion(false);
-          return;
-        } else {
-          console.log('✅ Payment screenshot is uploaded and valid:', paymentScreenshot);
-        }
-      } else if (paymentMode === 'ONLINE' && !paymentScreenshot) {
-        console.log('ℹ️ Payment mode is ONLINE but no payment screenshot provided (optional)');
-      }
 
+      if (
+        paymentScreenshot &&
+        typeof paymentScreenshot === 'string' &&
+        paymentScreenshot.trim() !== '' &&
+        !isUploadedMediaUrl(paymentScreenshot)
+      ) {
+        toast.error('Please wait for the payment screenshot to finish uploading before completing the job.');
+        setIsSubmittingJobCompletion(false);
+        return;
+      }
+      
       // STEP 2: Get QR code details
       // Note: QR codes are NOT uploaded to Cloudinary - we use the existing URL directly
       // QR codes are already stored in the database (common_qr_codes table) or technician profiles
@@ -3299,6 +3320,15 @@ const TechnicianDashboard = () => {
             });
           }
         }
+
+        // Step 6 "extra" completion photos → after_photos so admin reports / completed cards see them (also merged into job.images below).
+        for (const url of extraPhotosStep6.filter(isUploadedMediaUrl)) {
+          const n2 = url.split('?')[0].split('#')[0].trim().toLowerCase();
+          const dup = allAfterPhotos.some((u) =>
+            (u || '').split('?')[0].split('#')[0].trim().toLowerCase() === n2
+          );
+          if (!dup) allAfterPhotos.push(url);
+        }
         
         // Add qr_photos to requirements for ONLINE and PARTIAL (online part) payments
         if (paymentMode === 'ONLINE' || (paymentMode === 'PARTIAL' && selectedQrCodeId)) {
@@ -3344,8 +3374,8 @@ const TechnicianDashboard = () => {
         }
 
         // When job had zero photos and technician added optional photos, plus any extra photos at step 6 → store in job.images
-        const optionalUploadedForSave = optionalCompletionPhotos.filter((u): u is string => !!u && typeof u === 'string' && (u.startsWith('http://') || u.startsWith('https://')));
-        const extraStep6ForSave = extraPhotosStep6.filter((u): u is string => !!u && typeof u === 'string' && (u.startsWith('http://') || u.startsWith('https://')));
+        const optionalUploadedForSave = optionalCompletionPhotos.filter(isUploadedMediaUrl);
+        const extraStep6ForSave = extraPhotosStep6.filter(isUploadedMediaUrl);
         const allExtraImages = [...optionalUploadedForSave, ...extraStep6ForSave];
         if (allExtraImages.length > 0) {
           const existingImages = Array.isArray(latestJobData?.images) ? latestJobData.images : [];
@@ -3382,7 +3412,6 @@ const TechnicianDashboard = () => {
         }
 
         // Always update requirements (even if empty) to ensure job is marked as completed
-        // Job completion should succeed even if photos aren't uploaded yet
         updateData.requirements = JSON.stringify(requirements);
 
         // Wrap database update with timeout (30 seconds)
@@ -6075,6 +6104,26 @@ const TechnicianDashboard = () => {
           </AlertDialogContent>
         </AlertDialog>
 
+        <AlertDialog open={billPhotosSkipConfirmOpen} onOpenChange={setBillPhotosSkipConfirmOpen}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>Are you sure you want to skip bill photos?</AlertDialogTitle>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel>Cancel</AlertDialogCancel>
+              <AlertDialogAction
+                onClick={() => {
+                  setBillPhotosSkipConfirmOpen(false);
+                  advanceFromStep2([]);
+                }}
+                className="bg-black hover:bg-gray-800 !text-white font-semibold"
+              >
+                Yes
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
+
         {/* Move to Ongoing Dialog */}
         <Dialog open={moveToOngoingDialogOpen} onOpenChange={setMoveToOngoingDialogOpen}>
           <DialogContent>
@@ -6314,6 +6363,7 @@ const TechnicianDashboard = () => {
             setServiceBrand(null);
             setLastServiceBrand(null);
             setIsLoadingServiceBrand(false);
+            setBillPhotosSkipConfirmOpen(false);
           }
         }}>
           <DialogContent className="w-[95vw] sm:w-[500px] max-w-[500px] h-[85vh] sm:h-[600px] max-h-[85vh] flex flex-col p-0">
@@ -6605,7 +6655,7 @@ const TechnicianDashboard = () => {
               {completeJobStep === 2 && (
                 <div className="space-y-4">
                   <div>
-                    <Label>Upload Bill Photo (Optional)</Label>
+                    <Label>Upload bill photo (optional)</Label>
                     <ImageUpload
                       onImagesChange={(images) => {
                         setBillPhotos(images);
@@ -7073,11 +7123,11 @@ const TechnicianDashboard = () => {
               {completeJobStep === 5 && !isBillAmountZero() && (
                 <div className="space-y-4">
                   <div>
-                        <Label>Payment Screenshot (Optional)</Label>
+                        <Label>Payment screenshot (optional)</Label>
                     <p className="text-sm text-gray-500 mb-2">
-                      {paymentMode === 'ONLINE' 
-                        ? 'Upload payment confirmation screenshot' 
-                        : 'Upload payment screenshot if available (optional)'}
+                      {paymentMode === 'ONLINE'
+                        ? 'Upload payment confirmation screenshot if available'
+                        : 'Upload payment screenshot if available'}
                     </p>
                         <ImageUpload
                           onImagesChange={(images) => {
@@ -7383,13 +7433,8 @@ const TechnicianDashboard = () => {
                 <Button
                   variant="outline"
                   onClick={() => {
-                    // Skip bill photo step
-                    saveJobCompletionProgress(selectedJobForComplete.id, {
-                      billPhotos: [],
-                      billAmount,
-                      currentStep: 3,
-                    });
-                    setCompleteJobStep(3);
+                    if (!selectedJobForComplete) return;
+                    setBillPhotosSkipConfirmOpen(true);
                   }}
                 >
                   Skip
@@ -7431,8 +7476,8 @@ const TechnicianDashboard = () => {
                 disabled={
                   isSubmittingJobCompletion ||
                   (completeJobStep === 1 && !serviceBrand) ||
-                  // Only check upload states on final step (step 6) - allow proceeding on steps 2 and 5
-                  (completeJobStep === 6 && (isBillPhotosUploading || isPaymentScreenshotUploading || isOptionalCompletionPhotosUploading || isExtraPhotosStep6Uploading)) ||
+                  // Bill/payment/optional photos upload in the background until Complete — then wait once here
+                  (isCompleteJobFooterSubmit() && hasAnyPendingCompletionUploads()) ||
                   // Step 6 validation: Raw water TDS required for RO jobs
                   (completeJobStep === 6 && !isSoftenerService() && !rawWaterTds.trim()) ||
                   // Step 4 validation: only require payment mode if bill amount is not zero
@@ -7442,19 +7487,17 @@ const TechnicianDashboard = () => {
                   (completeJobStep === 7 && otpInput.join('').length !== 4)
                 }
               >
-                {isSubmittingJobCompletion || (completeJobStep === 6 && (isBillPhotosUploading || isPaymentScreenshotUploading || isOptionalCompletionPhotosUploading || isExtraPhotosStep6Uploading)) ? (
+                {isSubmittingJobCompletion ||
+                (isCompleteJobFooterSubmit() && hasAnyPendingCompletionUploads()) ? (
                   <>
                     <RefreshCw className="w-4 h-4 mr-2 animate-spin" />
-                    {completeJobStep === 6 && (isBillPhotosUploading || isPaymentScreenshotUploading || isOptionalCompletionPhotosUploading || isExtraPhotosStep6Uploading)
-                      ? 'Waiting for uploads...' 
-                      : completeJobStep === 6 
-                        ? 'Submitting...' 
-                        : 'Saving...'}
+                    {!isSubmittingJobCompletion && hasAnyPendingCompletionUploads()
+                      ? 'Waiting for uploads…'
+                      : 'Submitting…'}
                   </>
                 ) : (
-                  // Show "Complete Job" on step 6, or if we're on step 3/5 and skipping to submit (but not if OTP is required)
-                  (completeJobStep === 6 || (completeJobStep === 3 && isBillAmountZero() && isSoftenerService() && !requiresOtp()) || (completeJobStep === 5 && isSoftenerService() && !requiresOtp())) 
-                    ? 'Complete Job' 
+                  isCompleteJobFooterSubmit()
+                    ? 'Complete Job'
                     : 'Next'
                 )}
               </Button>
