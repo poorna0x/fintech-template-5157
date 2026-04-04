@@ -2733,8 +2733,12 @@ const TechnicianDashboard = () => {
       return;
     }
 
-    // Step 2: Bill photos optional — uploads may finish in background; confirm only if not adding any bill shots
+    // Step 2: Bill photos optional — never show "skip photos?" while upload is running or slots hold local placeholders
     if (completeJobStep === 2) {
+      if (isBillPhotosUploading || hasPendingBillPhotosInState()) {
+        toast.error('Please wait for bill photo(s) to finish uploading.');
+        return;
+      }
       const hasAnyBillSlot = billPhotos.some((u) => typeof u === 'string' && u.trim() !== '');
       if (hasAnyBillSlot) {
         advanceFromStep2([...billPhotos]);

@@ -2949,6 +2949,10 @@ export const db = {
 
         createdCount = createdJobsData?.length || 0;
         if (isDev) console.log(`✅ Successfully created ${createdCount} AMC service jobs`);
+        if (createdCount > 0) {
+          // Batch insert bypasses db.jobs.create — keep dashboard count cache in sync
+          cacheInvalidate('job_counts_v1');
+        }
         if (typeof window !== 'undefined') window.localStorage.setItem('amc_service_jobs_last_run', String(Date.now()));
         return { data: createdJobsData, error: null, created: createdCount };
       }

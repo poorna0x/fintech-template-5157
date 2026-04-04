@@ -8854,6 +8854,14 @@ const AdminDashboard = () => {
                               detailsLoaded={detailsLoaded}
                               loadingDetails={isLoadingDetails}
                               onLoadDetails={() => loadCompletedJobDetails(job.id)}
+                              onAddReminder={(j) => {
+                                setReminderEntity({ type: 'job', id: j.id });
+                                const cust = (j as any).customer || j.customer;
+                                const name = cust?.full_name || cust?.fullName || 'Customer';
+                                const jn = (j as any).job_number || j.jobNumber || j.id;
+                                setReminderContextLabel(`Job ${jn} · ${name}`);
+                                setAddReminderDialogOpen(true);
+                              }}
                             />
                             <DeniedJobSection
                               job={job}
