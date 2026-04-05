@@ -770,7 +770,9 @@ const AdminDashboard = () => {
   const [isDeletingCustomerPhoto, setIsDeletingCustomerPhoto] = useState(false);
   const [photoViewerOpen, setPhotoViewerOpen] = useState(false);
   const loadJobsRequestRef = useRef(0);
-  
+  /** Newly created customers (row + optional job) until they appear in embedded job payloads — avoids derive-from-jobs wiping them. */
+  const pendingNewCustomersRef = useRef<Map<string, Customer>>(new Map());
+
   // Job assignment states
   const [assignJobDialogOpen, setAssignJobDialogOpen] = useState(false);
   const [jobToAssign, setJobToAssign] = useState<Job | null>(null);
@@ -1500,7 +1502,33 @@ const AdminDashboard = () => {
     return list;
   };
   useEffect(() => {
-    setCustomers(deriveCustomersFromJobs(jobs));
+    setCustomers((prev) => {
+      const derived = deriveCustomersFromJobs(jobs);
+      const derivedIds = new Set(derived.map((c) => c.id));
+      const pending = pendingNewCustomersRef.current;
+      for (const id of [...pending.keys()]) {
+        if (derivedIds.has(id)) pending.delete(id);
+      }
+      const extras = [...pending.values()].filter((c) => !derivedIds.has(c.id));
+      if (extras.length === 0) {
+        return derived;
+      }
+      const seen = new Set<string>();
+      const merged: Customer[] = [];
+      for (const c of extras) {
+        if (!seen.has(c.id)) {
+          seen.add(c.id);
+          merged.push(c);
+        }
+      }
+      for (const c of derived) {
+        if (!seen.has(c.id)) {
+          seen.add(c.id);
+          merged.push(c);
+        }
+      }
+      return merged;
+    });
   }, [jobs]);
 
   // Recent Accounts: scoped fetch when dialog opens (large-scale pattern – no full customer load)
@@ -9599,14 +9627,15 @@ const AdminDashboard = () => {
         onOpenChange={setAddDialogOpen}
         customers={customers}
         onCustomerCreated={async (newCustomer) => {
-          // Silent refresh: full loadDashboardData would set loading=true and swap the whole UI for
-          // "Loading dashboard..." — visible blink after Add Customer + job closes.
-          await loadDashboardData({ silent: true });
-          // Append new customer if not already in list (e.g. created without job), so they appear in list and Recent Accounts
           if (newCustomer) {
             const transformed = transformCustomerData(newCustomer);
-            setCustomers(prev => (prev.some(c => c.id === transformed.id) ? prev : [...prev, transformed]));
+            pendingNewCustomersRef.current.set(transformed.id, transformed);
           }
+          // Light refresh only: full loadDashboardData pulled technicians, AMC, brands, follow-ups — slow and unnecessary here.
+          await Promise.all([
+            loadFilteredJobs(statusFilter, currentPage, { silent: true }),
+            loadJobCounts(),
+          ]);
         }}
         onCheckExistingCustomer={checkExistingCustomer}
         onExistingCustomerFound={(customer) => {
