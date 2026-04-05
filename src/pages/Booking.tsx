@@ -1,6 +1,8 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
+import { Link } from 'react-router-dom';
 import Header from '@/components/Header';
 import { Button } from '@/components/ui/button';
+import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
@@ -74,6 +76,7 @@ const Booking: React.FC = () => {
   const loadingRef = useRef(false);
   const [brandSuggestions, setBrandSuggestions] = useState<string[]>([]);
   const [showConfirmation, setShowConfirmation] = useState(false);
+  const [acceptLegal, setAcceptLegal] = useState(false);
   const [bookingDetails, setBookingDetails] = useState<any>(null);
   const [showSuccessLoader, setShowSuccessLoader] = useState(false);
   const [modelSuggestions, setModelSuggestions] = useState<string[]>([]);
@@ -2556,6 +2559,33 @@ const Booking: React.FC = () => {
                 </CardContent>
               </Card>
             </div>
+
+            <div className="rounded-lg border border-border p-4 space-y-2">
+              <div className="flex items-start gap-3">
+                <Checkbox
+                  id="booking-legal-consent"
+                  checked={acceptLegal}
+                  onCheckedChange={(c) => setAcceptLegal(c === true)}
+                  className="mt-0.5"
+                />
+                <label htmlFor="booking-legal-consent" className="text-sm text-muted-foreground leading-snug cursor-pointer">
+                  I agree to the{' '}
+                  <Link to="/terms-of-service" className="text-primary underline hover:no-underline" target="_blank" rel="noopener noreferrer">
+                    Terms of Service
+                  </Link>
+                  ,{' '}
+                  <Link to="/privacy-policy" className="text-primary underline hover:no-underline" target="_blank" rel="noopener noreferrer">
+                    Privacy Policy
+                  </Link>
+                  , and{' '}
+                  <Link to="/disclaimer" className="text-primary underline hover:no-underline" target="_blank" rel="noopener noreferrer">
+                    Disclaimer
+                  </Link>
+                  . I consent to Hydrogen RO using my contact details to arrange and perform this service, including
+                  calls, SMS, or WhatsApp where I have provided those details.
+                </label>
+              </div>
+            </div>
             
             {/* Background ALTCHA verification - runs silently in background (hidden) */}
             {currentStep === 5 && !isCaptchaVerified && !backgroundVerificationFailed && (
@@ -2628,7 +2658,7 @@ const Booking: React.FC = () => {
       case 4:
         return formData.serviceDate && formData.preferredTime;
       case 5:
-        return true;
+        return acceptLegal;
       case 6:
         return isCaptchaVerified;
       default:

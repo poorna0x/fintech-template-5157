@@ -1,6 +1,7 @@
 import React, { useEffect } from 'react';
+import { Link } from 'react-router-dom';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Shield, Lock, Database, Eye, Users, Phone, Mail, MapPin, Calendar } from 'lucide-react';
+import { Lock, Database, Users, Phone, Mail, MapPin, Calendar } from 'lucide-react';
 import Header from '@/components/Header';
 import Footer from '@/components/Footer';
 
@@ -40,9 +41,44 @@ const PrivacyPolicy = () => {
                 <CardHeader>
                   <CardTitle>Introduction</CardTitle>
                 </CardHeader>
-                <CardContent className="space-y-4">
+                <CardContent className="space-y-4 text-muted-foreground">
                   <p>
-                    At Hydrogen RO Water Purifier Services, we are committed to protecting your privacy and personal information. This Privacy Policy explains how we collect, use, disclose, and safeguard your information when you use our services.
+                    At Hydrogen RO Water Purifier Services, we are committed to protecting your privacy. This
+                    Privacy Policy describes how we handle personal data when you use our website, book services,
+                    or interact with us offline or by phone, SMS, or messaging apps.
+                  </p>
+                  <p>
+                    By using our services, you acknowledge this policy. Our{' '}
+                    <Link to="/terms-of-service" className="text-primary underline hover:no-underline">
+                      Terms of Service
+                    </Link>
+                    ,{' '}
+                    <Link to="/cookie-policy" className="text-primary underline hover:no-underline">
+                      Cookie Policy
+                    </Link>
+                    , and{' '}
+                    <Link to="/disclaimer" className="text-primary underline hover:no-underline">
+                      Disclaimer
+                    </Link>{' '}
+                    apply together with this policy.
+                  </p>
+                </CardContent>
+              </Card>
+
+              <Card>
+                <CardHeader>
+                  <CardTitle>Who we are and where this applies</CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-4 text-muted-foreground">
+                  <p>
+                    Hydrogen RO operates field water-purifier services with a place of business in Bengaluru,
+                    Karnataka, India. This policy applies to personal data processed in connection with those
+                    services and this website.
+                  </p>
+                  <p>
+                    We design this notice to reflect common expectations under India&apos;s privacy framework,
+                    including the Digital Personal Data Protection Act, 2023 (DPDP Act), where it applies. It does
+                    not replace legal advice; please consult a qualified lawyer for your specific situation.
                   </p>
                 </CardContent>
               </Card>
@@ -103,18 +139,72 @@ const PrivacyPolicy = () => {
               {/* Information Sharing */}
               <Card>
                 <CardHeader>
-                  <CardTitle>Information Sharing</CardTitle>
+                  <CardTitle>Processors, service providers, and sharing</CardTitle>
                 </CardHeader>
-                <CardContent className="space-y-4">
-                  <p>We may share your information with:</p>
-                  <ul className="list-disc list-inside space-y-2 text-muted-foreground">
-                    <li><strong>Service Technicians:</strong> To perform scheduled services</li>
-                    <li><strong>Payment Processors:</strong> To process payments securely</li>
-                    <li><strong>Legal Authorities:</strong> When required by law</li>
-                    <li><strong>Business Partners:</strong> With your explicit consent</li>
+                <CardContent className="space-y-4 text-muted-foreground">
+                  <p>
+                    We use trusted providers to run our business. They may process personal data only as needed to
+                    deliver their service to us, under appropriate safeguards:
+                  </p>
+                  <ul className="list-disc list-inside space-y-2">
+                    <li>
+                      <strong>Cloud database and auth (e.g. Supabase):</strong> storing customer, job, and account
+                      data; hosting may be in regions chosen in our project settings.
+                    </li>
+                    <li>
+                      <strong>Email and notifications:</strong> sending booking confirmations and service-related
+                      messages.
+                    </li>
+                    <li>
+                      <strong>Maps and location:</strong> address lookup, routing, or map embeds (e.g. Google Maps)
+                      when you use those features.
+                    </li>
+                    <li>
+                      <strong>Analytics:</strong> Google Analytics (GA4) or similar, to understand site traffic—see
+                      our{' '}
+                      <Link to="/cookie-policy" className="text-primary underline hover:no-underline">
+                        Cookie Policy
+                      </Link>
+                      .
+                    </li>
+                    <li>
+                      <strong>Media / CDN:</strong> hosting photos you upload for service jobs where we use such a
+                      service.
+                    </li>
+                    <li>
+                      <strong>Security / anti-abuse:</strong> challenge widgets (e.g. Altcha) to reduce spam
+                      bookings.
+                    </li>
+                    <li>
+                      <strong>Payment processors:</strong> when you pay digitally, the processor handles card/UPI
+                      data according to its own terms and PCI practices—we do not store full card numbers on our
+                      servers.
+                    </li>
+                    <li>
+                      <strong>Field technicians and staff:</strong> name, phone, address, and job details needed to
+                      perform the visit.
+                    </li>
+                    <li>
+                      <strong>Legal and safety:</strong> regulators, courts, or law enforcement when required by
+                      applicable law, or to protect rights, safety, and fraud prevention.
+                    </li>
                   </ul>
                   <p className="mt-3">
-                    We do not sell, rent, or trade your personal information to third parties for marketing purposes.
+                    We do not sell or rent your personal data to data brokers. Marketing use beyond service-related
+                    communication will be based on consent where required.
+                  </p>
+                </CardContent>
+              </Card>
+
+              <Card>
+                <CardHeader>
+                  <CardTitle>Cross-border transfers</CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-4 text-muted-foreground">
+                  <p>
+                    Some providers may process data outside India depending on their infrastructure. Where required,
+                    we rely on lawful mechanisms such as your consent for certain transfers, standard contractual
+                    terms offered by providers, or other valid grounds under applicable law.
                   </p>
                 </CardContent>
               </Card>
@@ -151,18 +241,22 @@ const PrivacyPolicy = () => {
               {/* Your Rights */}
               <Card>
                 <CardHeader>
-                  <CardTitle>Your Rights</CardTitle>
+                  <CardTitle>Your choices and rights</CardTitle>
                 </CardHeader>
-                <CardContent className="space-y-4">
-                  <p>You have the right to:</p>
-                  <ul className="list-disc list-inside space-y-2 text-muted-foreground">
-                    <li>Access your personal information</li>
-                    <li>Correct inaccurate or incomplete data</li>
-                    <li>Request deletion of your information</li>
-                    <li>Object to processing of your data</li>
-                    <li>Data portability and transfer</li>
-                    <li>Withdraw consent at any time</li>
+                <CardContent className="space-y-4 text-muted-foreground">
+                  <p>Depending on applicable law, you may have the right to:</p>
+                  <ul className="list-disc list-inside space-y-2">
+                    <li>Request access to personal data we hold about you</li>
+                    <li>Request correction of inaccurate or incomplete data</li>
+                    <li>Request deletion or erasure where legally applicable</li>
+                    <li>Withdraw consent for processing that is consent-based (e.g. certain marketing)</li>
+                    <li>Object to or restrict certain types of processing, where the law allows</li>
+                    <li>Seek redress through our grievance channel below, and applicable regulatory routes</li>
                   </ul>
+                  <p>
+                    We may need to verify your identity before fulfilling requests. Some requests cannot be honored
+                    if we must retain data for legal, accounting, or dispute-resolution reasons.
+                  </p>
                 </CardContent>
               </Card>
 
@@ -200,11 +294,14 @@ const PrivacyPolicy = () => {
               {/* Children's Privacy */}
               <Card>
                 <CardHeader>
-                  <CardTitle>Children's Privacy</CardTitle>
+                  <CardTitle>Children&apos;s privacy</CardTitle>
                 </CardHeader>
-                <CardContent className="space-y-4">
+                <CardContent className="space-y-4 text-muted-foreground">
                   <p>
-                    Our services are not directed to children under 13 years of age. We do not knowingly collect personal information from children under 13. If we become aware that we have collected such information, we will take steps to delete it promptly.
+                    Our booking and service flows are intended for adults or guardians arranging service for a
+                    household. We do not knowingly collect personal data from children without appropriate
+                    authority. If you believe a child&apos;s data was submitted improperly, contact us and we will
+                    take appropriate steps.
                   </p>
                 </CardContent>
               </Card>
@@ -224,30 +321,36 @@ const PrivacyPolicy = () => {
               {/* Contact Information */}
               <Card>
                 <CardHeader>
-                  <CardTitle>Contact Us</CardTitle>
+                  <CardTitle>Contact and grievance redressal</CardTitle>
                 </CardHeader>
                 <CardContent className="space-y-4">
+                  <p className="text-sm text-muted-foreground">
+                    For privacy questions, access/correction/deletion requests, or complaints, contact us using the
+                    details below. We will acknowledge and work to resolve genuine requests within a reasonable
+                    time (typically within 30 days for non-urgent inquiries), subject to legal exceptions.
+                  </p>
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div className="flex items-center gap-3">
-                      <Phone className="w-5 h-5 text-primary" />
+                    <div className="flex items-center gap-3 text-muted-foreground">
+                      <Phone className="w-5 h-5 text-primary shrink-0" />
                       <span>+91-8884944288</span>
                     </div>
-                    <div className="flex items-center gap-3">
-                      <Mail className="w-5 h-5 text-primary" />
+                    <div className="flex items-center gap-3 text-muted-foreground">
+                      <Mail className="w-5 h-5 text-primary shrink-0" />
                       <span>privacy@hydrogenro.com</span>
                     </div>
-                    <div className="flex items-center gap-3">
-                      <MapPin className="w-5 h-5 text-primary" />
+                    <div className="flex items-center gap-3 text-muted-foreground">
+                      <MapPin className="w-5 h-5 text-primary shrink-0" />
                       <span>Bengaluru, Karnataka, India</span>
                     </div>
-                    <div className="flex items-center gap-3">
-                      <Calendar className="w-5 h-5 text-primary" />
+                    <div className="flex items-center gap-3 text-muted-foreground">
+                      <Calendar className="w-5 h-5 text-primary shrink-0" />
                       <span>Mon-Sun: 8:00 AM - 8:00 PM</span>
                     </div>
                   </div>
-                  <div className="space-y-2 text-sm text-muted-foreground">
-                    <p><strong>Response Time:</strong> We respond to privacy inquiries within 30 days</p>
-                  </div>
+                  <p className="text-xs text-muted-foreground">
+                    You may also have the right to escalate to the Data Protection Board of India or other
+                    regulators as provided under law from time to time.
+                  </p>
                 </CardContent>
               </Card>
             </div>

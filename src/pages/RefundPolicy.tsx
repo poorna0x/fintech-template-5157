@@ -1,4 +1,5 @@
 import React, { useEffect } from 'react';
+import { Link } from 'react-router-dom';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { RefreshCw, Shield, Clock, CheckCircle, XCircle, Phone, Mail, MapPin, Calendar } from 'lucide-react';
 import Header from '@/components/Header';
@@ -40,9 +41,24 @@ const RefundPolicy = () => {
                 <CardHeader>
                   <CardTitle>Introduction</CardTitle>
                 </CardHeader>
-                <CardContent className="space-y-4">
+                <CardContent className="space-y-4 text-muted-foreground">
                   <p>
                     At Hydrogen RO Water Purifier Services, we strive to provide excellent service and customer satisfaction. This Refund Policy outlines the terms and conditions for refunds for our water purifier services.
+                  </p>
+                  <p className="text-sm">
+                    Read alongside our{' '}
+                    <Link to="/terms-of-service" className="text-primary underline hover:no-underline">
+                      Terms of Service
+                    </Link>
+                    ,{' '}
+                    <Link to="/privacy-policy" className="text-primary underline hover:no-underline">
+                      Privacy Policy
+                    </Link>
+                    , and{' '}
+                    <Link to="/disclaimer" className="text-primary underline hover:no-underline">
+                      Disclaimer
+                    </Link>
+                    .
                   </p>
                 </CardContent>
               </Card>

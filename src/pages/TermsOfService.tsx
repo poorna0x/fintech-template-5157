@@ -1,4 +1,5 @@
 import React, { useEffect } from 'react';
+import { Link } from 'react-router-dom';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Shield, Phone, Mail, MapPin, Calendar } from 'lucide-react';
 import Header from '@/components/Header';
@@ -41,8 +42,26 @@ const TermsOfService = () => {
                   <CardTitle>Introduction</CardTitle>
                 </CardHeader>
                 <CardContent className="space-y-4">
-                  <p>
-                    Welcome to Hydrogen RO Water Purifier Services. These Terms of Service ("Terms") govern your use of our website and services. By accessing or using our services, you agree to be bound by these Terms.
+                  <p className="text-muted-foreground">
+                    Welcome to Hydrogen RO Water Purifier Services. These Terms of Service (&quot;Terms&quot;)
+                    govern your use of our website, bookings, and on-site services in India. By accessing or using
+                    our services, you agree to these Terms together with our{' '}
+                    <Link to="/privacy-policy" className="text-primary underline hover:no-underline">
+                      Privacy Policy
+                    </Link>
+                    ,{' '}
+                    <Link to="/cookie-policy" className="text-primary underline hover:no-underline">
+                      Cookie Policy
+                    </Link>
+                    ,{' '}
+                    <Link to="/refund-policy" className="text-primary underline hover:no-underline">
+                      Refund Policy
+                    </Link>
+                    , and{' '}
+                    <Link to="/disclaimer" className="text-primary underline hover:no-underline">
+                      Disclaimer
+                    </Link>
+                    .
                   </p>
                 </CardContent>
               </Card>
@@ -130,11 +149,38 @@ const TermsOfService = () => {
               {/* Limitation of Liability */}
               <Card>
                 <CardHeader>
-                  <CardTitle>Limitation of Liability</CardTitle>
+                  <CardTitle>Limitation of liability</CardTitle>
                 </CardHeader>
-                <CardContent className="space-y-4">
+                <CardContent className="space-y-4 text-muted-foreground">
                   <p>
-                    Hydrogen RO shall not be liable for any indirect, incidental, special, or consequential damages arising from the use of our services. Our total liability shall not exceed the amount paid for the specific service.
+                    To the fullest extent permitted by applicable law in India, Hydrogen RO shall not be liable
+                    for any indirect, incidental, special, consequential, or punitive damages, or loss of
+                    profits, data, or goodwill, arising from use of our website or services.
+                  </p>
+                  <p>
+                    Where liability cannot be excluded, our aggregate liability for any claim relating to a
+                    specific paid service is generally limited to the fees you paid to us for that service, unless
+                    a mandatory law requires otherwise.
+                  </p>
+                  <p>
+                    Website content is provided &quot;as is&quot;; see our{' '}
+                    <Link to="/disclaimer" className="text-primary underline hover:no-underline">
+                      Disclaimer
+                    </Link>{' '}
+                    for general limitations on information.
+                  </p>
+                </CardContent>
+              </Card>
+
+              <Card>
+                <CardHeader>
+                  <CardTitle>Governing law and disputes</CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-4 text-muted-foreground">
+                  <p>
+                    These Terms are governed by the laws of India. Subject to mandatory consumer-protection rules,
+                    courts at Bengaluru, Karnataka shall have exclusive jurisdiction over disputes arising from
+                    these Terms or our services, to the extent permitted by law.
                   </p>
                 </CardContent>
               </Card>
@@ -144,9 +190,14 @@ const TermsOfService = () => {
                 <CardHeader>
                   <CardTitle>Privacy</CardTitle>
                 </CardHeader>
-                <CardContent className="space-y-4">
+                <CardContent className="space-y-4 text-muted-foreground">
                   <p>
-                    Your privacy is important to us. Please review our Privacy Policy to understand how we collect, use, and protect your information.
+                    Your privacy is important to us. Please read our{' '}
+                    <Link to="/privacy-policy" className="text-primary underline hover:no-underline">
+                      Privacy Policy
+                    </Link>{' '}
+                    for how we collect, use, store, and share personal data, including rights and grievance
+                    handling.
                   </p>
                 </CardContent>
               </Card>

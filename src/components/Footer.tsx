@@ -20,6 +20,10 @@ const Footer = () => {
             <p className="text-muted-foreground max-w-xs mx-auto md:mx-0">
               Expert RO water purifier solutions for homes and offices across Bengaluru, Karnataka. Clean, safe water guaranteed with professional installation and maintenance services.
             </p>
+            <p className="text-xs text-muted-foreground max-w-md mx-auto md:mx-0 leading-relaxed">
+              Place of business: Bengaluru, Karnataka, India. Statutory business name, address, and GSTIN appear on
+              tax invoices and formal quotations where applicable.
+            </p>
             
             {/* Contact Information */}
             <div className="space-y-3 text-center md:text-left">
@@ -96,11 +100,12 @@ const Footer = () => {
         <div className="mt-16 pt-8 border-t border-border relative z-0">
           {/* Mobile Policy Links - Keep as is */}
           <div className="flex justify-center md:hidden mb-8">
-            <div className="grid grid-cols-2 gap-6 text-sm">
+            <div className="grid grid-cols-2 gap-x-6 gap-y-3 text-sm w-full max-w-sm">
               <Link to="/privacy-policy" className="text-muted-foreground hover:text-foreground transition-colors text-center">Privacy Policy</Link>
               <Link to="/terms-of-service" className="text-muted-foreground hover:text-foreground transition-colors text-center">Terms of Service</Link>
               <Link to="/refund-policy" className="text-muted-foreground hover:text-foreground transition-colors text-center">Refund Policy</Link>
               <Link to="/cookie-policy" className="text-muted-foreground hover:text-foreground transition-colors text-center">Cookie Policy</Link>
+              <Link to="/disclaimer" className="text-muted-foreground hover:text-foreground transition-colors text-center col-span-2">Disclaimer</Link>
             </div>
           </div>
           
@@ -109,11 +114,12 @@ const Footer = () => {
             <div>
               © {new Date().getFullYear()} Hydrogen RO - Best RO Water Purifier Services in Bengaluru, Karnataka. All rights reserved.
             </div>
-            <div className="flex items-center gap-6">
+            <div className="flex flex-wrap items-center justify-end gap-x-6 gap-y-2">
               <Link to="/privacy-policy" className="hover:text-foreground transition-colors">Privacy Policy</Link>
               <Link to="/terms-of-service" className="hover:text-foreground transition-colors">Terms of Service</Link>
               <Link to="/refund-policy" className="hover:text-foreground transition-colors">Refund Policy</Link>
               <Link to="/cookie-policy" className="hover:text-foreground transition-colors">Cookie Policy</Link>
+              <Link to="/disclaimer" className="hover:text-foreground transition-colors">Disclaimer</Link>
             </div>
           </div>
           
@@ -124,6 +130,7 @@ const Footer = () => {
           
           {/* Hidden SEO Links - Not visible but crawlable */}
           <div className="sr-only">
+            <Link to="/disclaimer">Disclaimer</Link>
             <a href="#services">RO Installation Bengaluru</a>
             <a href="#services">RO Repair & Maintenance</a>
             <a href="#services">RO Filter Replacement</a>

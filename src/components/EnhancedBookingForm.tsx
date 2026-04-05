@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { Link } from 'react-router-dom';
 import { useForm, Controller } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
@@ -9,12 +10,12 @@ import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Checkbox } from '@/components/ui/checkbox';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Calendar, Phone, MessageCircle, MapPin, User, Clock, ChevronLeft, ChevronRight, Check, Settings, Filter, Upload, Camera, Loader2, Mail } from 'lucide-react';
 import { toast } from 'sonner';
 import { db, generateJobNumber } from '@/lib/supabase';
 import { emailService } from '@/lib/email';
-import { BookingFormData } from '@/types';
 import AltchaWidget from '@/components/AltchaWidget';
 
 // Validation schema
@@ -58,6 +59,10 @@ const bookingSchema = z.object({
   description: z.string().min(10, 'Please provide a detailed description'),
   urgency: z.enum(['LOW', 'MEDIUM', 'HIGH', 'URGENT']),
   preferredLanguage: z.enum(['ENGLISH', 'HINDI', 'KANNADA', 'TAMIL', 'TELUGU']),
+
+  acceptLegal: z.boolean().refine((v) => v === true, {
+    message: 'Please accept the Terms of Service and Privacy Policy',
+  }),
 });
 
 type BookingFormValues = z.infer<typeof bookingSchema>;
@@ -74,6 +79,7 @@ const EnhancedBookingForm = () => {
 
   const {
     register,
+    control,
     handleSubmit,
     formState: { errors },
     setValue,
@@ -87,6 +93,7 @@ const EnhancedBookingForm = () => {
       urgency: 'MEDIUM',
       preferredLanguage: 'ENGLISH',
       preferredTimeSlot: 'MORNING',
+      acceptLegal: false,
       location: {
         latitude: 0,
         longitude: 0,
@@ -337,7 +344,7 @@ const EnhancedBookingForm = () => {
       case 4:
         return watchedValues.preferredDate && watchedValues.preferredTimeSlot;
       case 5:
-        return true;
+        return !!watchedValues.acceptLegal;
       case 6:
         return isCaptchaVerified;
       default:
@@ -941,6 +948,42 @@ const EnhancedBookingForm = () => {
                     </ul>
                   </div>
                 </div>
+
+                <div className="rounded-lg border border-border p-4 space-y-2">
+                  <Controller
+                    name="acceptLegal"
+                    control={control}
+                    render={({ field }) => (
+                      <div className="flex items-start gap-3">
+                        <Checkbox
+                          id="enhanced-booking-legal"
+                          checked={field.value}
+                          onCheckedChange={(c) => field.onChange(c === true)}
+                          className="mt-0.5"
+                        />
+                        <label htmlFor="enhanced-booking-legal" className="text-sm text-muted-foreground leading-snug cursor-pointer">
+                          I agree to the{' '}
+                          <Link to="/terms-of-service" className="text-primary underline hover:no-underline" target="_blank" rel="noopener noreferrer">
+                            Terms of Service
+                          </Link>
+                          ,{' '}
+                          <Link to="/privacy-policy" className="text-primary underline hover:no-underline" target="_blank" rel="noopener noreferrer">
+                            Privacy Policy
+                          </Link>
+                          , and{' '}
+                          <Link to="/disclaimer" className="text-primary underline hover:no-underline" target="_blank" rel="noopener noreferrer">
+                            Disclaimer
+                          </Link>
+                          . I consent to Hydrogen RO using my contact details to arrange and perform this service,
+                          including calls, SMS, or WhatsApp where I have provided those details.
+                        </label>
+                      </div>
+                    )}
+                  />
+                  {errors.acceptLegal && (
+                    <p className="text-sm text-destructive">{errors.acceptLegal.message}</p>
+                  )}
+                </div>
                 
                 {/* Contact Options */}
                 <div className="mt-6">
@@ -1042,7 +1085,7 @@ const EnhancedBookingForm = () => {
                 <Button
                   type="button"
                   onClick={handleNext}
-                  disabled={isSubmitting || !isCaptchaVerified}
+                  disabled={isSubmitting || !isCaptchaVerified || !watch('acceptLegal')}
                   className="flex items-center gap-2 bg-black dark:bg-white text-white dark:text-black hover:scale-105 transition-transform duration-300"
                 >
                   {isSubmitting ? (

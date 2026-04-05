@@ -123,6 +123,38 @@ const CookiePolicy: React.FC = () => {
                 </CardContent>
               </Card>
 
+              <Card>
+                <CardHeader>
+                  <CardTitle>Google Analytics (GA4)</CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-4 text-muted-foreground text-sm">
+                  <p>
+                    When a valid Google Analytics measurement ID is configured for this site, Google may set
+                    cookies such as <code className="text-foreground">_ga</code>,{' '}
+                    <code className="text-foreground">_gid</code>, and related identifiers to distinguish users and
+                    sessions. These cookies help us understand page views, navigation, and approximate geography
+                    (city-level) from IP addresses before they may be truncated by Google.
+                  </p>
+                  <p>
+                    Google&apos;s use of data is described in{' '}
+                    <a
+                      href="https://policies.google.com/privacy"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-primary underline hover:no-underline"
+                    >
+                      Google&apos;s Privacy Policy
+                    </a>
+                    . You can install the &quot;Google Analytics Opt-out Browser Add-on&quot; or use browser
+                    settings to limit analytics cookies.
+                  </p>
+                  <p>
+                    If no measurement ID is configured, the analytics script does not load and no GA4 cookies are set
+                    from our integration.
+                  </p>
+                </CardContent>
+              </Card>
+
               {/* Cookie Management */}
               <Card>
                 <CardHeader>
