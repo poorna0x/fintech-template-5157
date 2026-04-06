@@ -29,7 +29,6 @@ function SonnerInner({ ...props }: ToasterProps) {
       theme={isDark ? "dark" : "light"}
       className="toaster group"
       position="top-right"
-      richColors
       closeButton
       duration={5000}
       visibleToasts={5}
@@ -37,18 +36,19 @@ function SonnerInner({ ...props }: ToasterProps) {
         duration: 5000,
         classNames: {
           toast: cn(
-            "group toast group-[.toaster]:shadow-lg group-[.toaster]:border group-[.toaster]:border-border"
+            "group toast group-[.toaster]:bg-background group-[.toaster]:text-foreground",
+            "group-[.toaster]:border-border group-[.toaster]:shadow-lg"
           ),
-          description: "group-[.toast]:opacity-90",
+          description: "group-[.toast]:text-muted-foreground",
           actionButton:
             "group-[.toast]:bg-primary group-[.toast]:text-primary-foreground",
           cancelButton:
             "group-[.toast]:bg-muted group-[.toast]:text-muted-foreground",
           closeButton: cn(
-            "group-[.toast]:bg-background group-[.toast]:text-foreground",
-            "group-[.toast]:hover:bg-muted group-[.toast]:border group-[.toast]:border-border",
-            "group-[.toast]:rounded-full group-[.toast]:w-6 group-[.toast]:h-6",
-            "group-[.toast]:flex group-[.toast]:items-center group-[.toast]:justify-center group-[.toast]:text-xs"
+            "group-[.toast]:bg-gray-100 group-[.toast]:text-gray-600 group-[.toast]:hover:bg-gray-200",
+            "group-[.toast]:border group-[.toast]:border-gray-300 group-[.toast]:rounded-full",
+            "group-[.toast]:w-6 group-[.toast]:h-6 group-[.toast]:flex group-[.toast]:items-center group-[.toast]:justify-center",
+            "group-[.toast]:text-xs group-[.toast]:font-bold"
           ),
         },
       }}
