@@ -132,7 +132,7 @@ export async function prefetchTechnicianCommonQrImages(
     }
     let fetched: string | null = null;
     try {
-      const res = await fetch(url, { mode: 'cors', credentials: 'omit', cache: 'force-cache' });
+      const res = await fetch(url, { mode: 'cors', credentials: 'omit', cache: 'no-cache' });
       if (!res.ok) throw new Error(String(res.status));
       const blob = await res.blob();
       if (blob.size === 0 || blob.size > MAX_QR_IMAGE_BYTES) throw new Error('size');

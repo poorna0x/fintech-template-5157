@@ -230,6 +230,15 @@ function technicianCustomerIndicatorMainClass(hasAmc: boolean, hasG: boolean, ha
   return 'bg-gray-400';
 }
 
+/** Bust browser/CDN cache for remote QR images after admin replaces asset (same URL possible). */
+function appendQrCacheBust(url: string, version: number): string {
+  if (!url || version <= 0) return url;
+  if (url.startsWith('data:') || url.startsWith('blob:')) return url;
+  if (!url.startsWith('http://') && !url.startsWith('https://')) return url;
+  const sep = url.includes('?') ? '&' : '?';
+  return `${url}${sep}ro_qr_v=${version}`;
+}
+
 const TechnicianDashboard = () => {
   const { user, logout, isTechnician, loading } = useAuth();
   const navigate = useNavigate();
@@ -308,6 +317,8 @@ const TechnicianDashboard = () => {
   const [realtimeConnected, setRealtimeConnected] = useState(false);
   const processingJobsRef = useRef<Set<string>>(new Set()); // Track jobs being processed to prevent duplicates (use ref for synchronous access)
   const lastActiveTimeRef = useRef<Date>(new Date()); // Track when app was last active
+  /** Throttle forced QR refetch when returning to the app (Realtime/RLS may miss admin edits). */
+  const lastQrRefreshOnFocusRef = useRef<number>(0);
   const lastJobIdsRef = useRef<Set<string>>(new Set()); // Track job IDs from last active session
   const hasJobsRef = useRef<boolean>(false); // Track if we have loaded jobs at least once
   const shouldPreserveOrderRef = useRef<boolean>(false); // Track if we should preserve job order (true when updating status, false when loading from DB)
@@ -524,6 +535,8 @@ const TechnicianDashboard = () => {
   const [expandedCommonQr, setExpandedCommonQr] = useState<CommonQrCode | null>(null);
   /** Data URLs for assigned Common QRs — filled while online for offline image display. */
   const [commonQrImageDataById, setCommonQrImageDataById] = useState<Record<string, string>>({});
+  /** Incremented after each successful online QR snapshot fetch so remote <img> URLs refresh. */
+  const [qrAssetsVersion, setQrAssetsVersion] = useState(0);
 
   // Photos dialog state
   const [photosDialogOpen, setPhotosDialogOpen] = useState(false);
@@ -979,6 +992,8 @@ const TechnicianDashboard = () => {
           allTechniciansForReports: allTechniciansForReportsData,
         });
 
+        setQrAssetsVersion((v) => v + 1);
+
         void prefetchTechnicianCommonQrImages(
           technicianId,
           assignedCommonQrs.map((q) => ({ id: q.id, qrCodeUrl: q.qrCodeUrl }))
@@ -1023,7 +1038,14 @@ const TechnicianDashboard = () => {
         const now = new Date();
         const timeSinceLastActive = now.getTime() - lastActiveTimeRef.current.getTime();
         
-        // QR codes: served from local snapshot + min-interval network refresh (realtime handles admin edits).
+        // Pull latest payment/common QR assignments when returning — Realtime can miss rows if RLS/publication misconfigured.
+        if (user?.role === 'technician') {
+          const t = Date.now();
+          if (t - lastQrRefreshOnFocusRef.current > 15_000) {
+            lastQrRefreshOnFocusRef.current = t;
+            loadQrCodes({ force: true });
+          }
+        }
 
         // Only check for new jobs if app was inactive for more than 5 seconds
         if (timeSinceLastActive > 5000 && user?.technicianId) {
@@ -1040,6 +1062,14 @@ const TechnicianDashboard = () => {
       const now = new Date();
       const timeSinceLastActive = now.getTime() - lastActiveTimeRef.current.getTime();
       
+      if (user?.role === 'technician') {
+        const t = Date.now();
+        if (t - lastQrRefreshOnFocusRef.current > 15_000) {
+          lastQrRefreshOnFocusRef.current = t;
+          loadQrCodes({ force: true });
+        }
+      }
+
       if (timeSinceLastActive > 5000 && user?.technicianId) {
         loadAssignedJobs();
       }
@@ -1054,7 +1084,7 @@ const TechnicianDashboard = () => {
       document.removeEventListener('visibilitychange', handleVisibilityChange);
       window.removeEventListener('focus', handleFocus);
     };
-  }, [user?.technicianId, loadAssignedJobs, user]);
+  }, [user?.technicianId, user?.role, loadAssignedJobs, loadQrCodes, user]);
 
   // Realtime for QR codes — refetch only when common_qr_codes, technician_common_qr, or this technician's row changes (no 30s poll)
   useEffect(() => {
@@ -1076,7 +1106,7 @@ const TechnicianDashboard = () => {
       .on(
         'postgres_changes',
         {
-          event: 'UPDATE',
+          event: '*',
           schema: 'public',
           table: 'technicians',
           filter: `id=eq.${technicianId}`,
@@ -7139,7 +7169,7 @@ const TechnicianDashboard = () => {
                                 <div className="text-center">
                                   <p className="text-sm font-medium mb-3 text-gray-700">{selectedQr.name}</p>
                                   <img 
-                                    src={selectedQr.qrCodeUrl} 
+                                    src={appendQrCacheBust(selectedQr.qrCodeUrl, qrAssetsVersion)} 
                                     alt={selectedQr.name}
                                     className="w-64 h-64 object-contain mx-auto border-2 border-primary rounded-lg shadow-lg bg-white p-3"
                                     onError={(e) => {
@@ -7165,7 +7195,7 @@ const TechnicianDashboard = () => {
                                     {selectedTech.fullName}'s QR Code
                                   </p>
                                   <img 
-                                    src={(selectedTech as any).qrCode} 
+                                    src={appendQrCacheBust(String((selectedTech as any).qrCode || ''), qrAssetsVersion)} 
                                     alt={`${selectedTech.fullName}'s QR Code`}
                                     className="w-64 h-64 object-contain mx-auto border-2 border-primary rounded-lg shadow-lg bg-white p-3"
                                     onError={(e) => {
@@ -8899,7 +8929,10 @@ const TechnicianDashboard = () => {
                       className="flex min-w-[140px] shrink-0 snap-center flex-col items-center gap-2 rounded-lg border border-gray-200 bg-white p-3 transition-colors hover:border-primary/50 hover:bg-gray-50 active:scale-[0.98] focus:outline-none focus:ring-2 focus:ring-primary/20"
                     >
                       <img
-                        src={commonQrDisplaySrc(qr.id, qr.qrCodeUrl, commonQrImageDataById)}
+                        src={appendQrCacheBust(
+                          commonQrDisplaySrc(qr.id, qr.qrCodeUrl, commonQrImageDataById),
+                          qrAssetsVersion
+                        )}
                         alt={qr.name}
                         className="h-32 w-32 object-contain"
                       />
@@ -8917,7 +8950,10 @@ const TechnicianDashboard = () => {
                       className="flex flex-col items-center gap-2 rounded-lg border border-gray-200 bg-white p-3 w-full max-w-[180px] transition-colors hover:border-primary/50 hover:bg-gray-50 active:scale-[0.98] focus:outline-none focus:ring-2 focus:ring-primary/20"
                     >
                       <img
-                        src={commonQrDisplaySrc(qr.id, qr.qrCodeUrl, commonQrImageDataById)}
+                        src={appendQrCacheBust(
+                          commonQrDisplaySrc(qr.id, qr.qrCodeUrl, commonQrImageDataById),
+                          qrAssetsVersion
+                        )}
                         alt={qr.name}
                         className="h-36 w-36 object-contain md:h-40 md:w-40"
                       />
@@ -8951,10 +8987,13 @@ const TechnicianDashboard = () => {
               <div className="flex flex-col items-center gap-4 py-2">
                 <div className="rounded-xl border-2 border-border bg-white p-4 shadow-inner">
                   <img
-                    src={commonQrDisplaySrc(
-                      expandedCommonQr.id,
-                      expandedCommonQr.qrCodeUrl,
-                      commonQrImageDataById
+                    src={appendQrCacheBust(
+                      commonQrDisplaySrc(
+                        expandedCommonQr.id,
+                        expandedCommonQr.qrCodeUrl,
+                        commonQrImageDataById
+                      ),
+                      qrAssetsVersion
                     )}
                     alt={expandedCommonQr.name}
                     className="h-56 w-56 object-contain sm:h-64 sm:w-64"
