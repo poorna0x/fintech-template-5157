@@ -2142,7 +2142,12 @@ const Settings = () => {
           setSelectedTechnician(null);
         }
       }}>
-        <DialogContent className="w-full sm:w-full sm:max-w-md max-h-[90vh] overflow-y-auto rounded-none sm:rounded-lg">
+        <DialogContent
+          className="w-full sm:w-full sm:max-w-md max-h-[90vh] overflow-y-auto rounded-none sm:rounded-lg"
+          onOpenAutoFocus={(e) => {
+            if (editTechnicianDialogOpen) e.preventDefault();
+          }}
+        >
           <DialogHeader>
             <DialogTitle className="text-base sm:text-lg">
               {editTechnicianDialogOpen ? 'Edit Technician' : 'Add New Technician'}
