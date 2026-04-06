@@ -1048,14 +1048,7 @@ const EnhancedBookingForm = () => {
               </div>
             )}
 
-            {/* Hidden ALTCHA widget - runs verification in background */}
-            <div className="hidden">
-              <AltchaWidget 
-                onVerify={setIsCaptchaVerified}
-                autoStart={true}
-                hidden={true}
-              />
-            </div>
+            <AltchaWidget onVerify={setIsCaptchaVerified} autoStart={true} hidden={true} />
           </div>
 
           {/* Navigation Buttons */}

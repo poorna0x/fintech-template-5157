@@ -1,16 +1,9 @@
 // Cloudinary service for image uploads
 // This handles image uploads for the booking form
 
-/** Base URL for Netlify cloudinary-delete function (dev uses 8888 so secret stays server-side) */
+/** Netlify function URL; Vite proxies /.netlify/functions to :8888 in dev. */
 function getCloudinaryDeleteFunctionUrl(): string {
-  const path = '/.netlify/functions/cloudinary-delete';
-  if (import.meta.env.DEV && typeof window !== 'undefined') {
-    const hostname = window.location.hostname;
-    const isLocalNetwork = /^(192\.168\.|10\.|172\.(1[6-9]|2[0-9]|3[01])\.)/.test(hostname);
-    const base = isLocalNetwork ? `http://${hostname}:8888` : 'http://localhost:8888';
-    return `${base}${path}`;
-  }
-  return path;
+  return '/.netlify/functions/cloudinary-delete';
 }
 
 export interface CloudinaryUploadResult {

@@ -131,10 +131,7 @@ const AltchaCaptcha: React.FC<AltchaCaptchaProps> = ({
   // Get challenge from server
   const getChallenge = useCallback(async (): Promise<Challenge | null> => {
     try {
-      // In development, use localhost:8888 (dev server), otherwise use relative path
-      const apiUrl = import.meta.env.DEV
-        ? 'http://localhost:8888/.netlify/functions/altcha-verify'
-        : '/.netlify/functions/altcha-verify';
+      const apiUrl = '/.netlify/functions/altcha-verify';
 
       const response = await fetch(`${apiUrl}?complexity=${getComplexity()}`);
       
@@ -161,10 +158,7 @@ const AltchaCaptcha: React.FC<AltchaCaptchaProps> = ({
     try {
       incrementAttempts();
 
-      // In development, use localhost:8888 (dev server), otherwise use relative path
-      const apiUrl = import.meta.env.DEV
-        ? 'http://localhost:8888/.netlify/functions/altcha-verify'
-        : '/.netlify/functions/altcha-verify';
+      const apiUrl = '/.netlify/functions/altcha-verify';
 
       // Create payload
       const payload = btoa(JSON.stringify({

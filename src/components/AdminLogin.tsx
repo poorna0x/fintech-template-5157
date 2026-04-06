@@ -307,14 +307,8 @@ const AdminLogin = () => {
                 </div>
               </div>
 
-              {/* Hidden ALTCHA widget - runs verification in background */}
-              <div className="hidden">
-                <AltchaWidget
-                  onVerify={handleVerify}
-                  autoStart={true}
-                  hidden={true}
-                />
-              </div>
+              {/* Background ALTCHA (not display:none — widget needs layout to run) */}
+              <AltchaWidget onVerify={handleVerify} autoStart={true} hidden={true} />
 
               {/* Fallback: Show security widget if auto-verification failed or took too long */}
               {showSecurityStep && !isCaptchaVerified && (

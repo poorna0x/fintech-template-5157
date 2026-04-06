@@ -48,9 +48,16 @@ import { AddReminderDialog } from '@/components/reminders/AddReminderDialog';
 import { SettingsPendingPaymentsDialogV2 } from '@/components/reminders/PendingPaymentsDialogV2';
 
 const Settings = () => {
-  const { user, isAdmin, logout } = useAuth();
+  const { user, isAdmin, logout, loading: authLoading } = useAuth();
   const navigate = useNavigate();
-  
+
+  // Admin Settings lives at /settings; after logout there is no user but this route still mounted — send to /admin so AdminLogin shows.
+  useEffect(() => {
+    if (authLoading) return;
+    if (!user) {
+      navigate('/admin', { replace: true });
+    }
+  }, [user, authLoading, navigate]);
 
   // Technician management states
   const [technicians, setTechnicians] = useState<Technician[]>([]);
@@ -242,9 +249,7 @@ const Settings = () => {
 
   // Helper function to hash password using serverless function
   const hashPassword = async (password: string): Promise<string> => {
-    const apiUrl = import.meta.env.DEV
-      ? 'http://localhost:8888/.netlify/functions/hash-technician-password'
-      : '/.netlify/functions/hash-technician-password';
+    const apiUrl = '/.netlify/functions/hash-technician-password';
 
     try {
       const response = await fetch(apiUrl, {
@@ -2974,6 +2979,7 @@ const Settings = () => {
                 size="lg"
                 onClick={async () => {
                   await logout();
+                  navigate('/admin', { replace: true });
                 }}
                 className="text-red-600 hover:text-red-700 hover:bg-red-50 border-red-300 w-full sm:w-auto"
               >

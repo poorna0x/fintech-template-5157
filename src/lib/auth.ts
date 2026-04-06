@@ -101,22 +101,8 @@ export const authenticateUser = async (email: string, password: string): Promise
       if (isHashed) {
         // Password is hashed - use server-side verification
         // Detect if we're on mobile/local network and use the correct API URL
-        let apiUrl = '/.netlify/functions/verify-technician-password';
-        
-        if (import.meta.env.DEV) {
-          // In development, check if we're accessing from local network (mobile)
-          const hostname = window.location.hostname;
-          const isLocalNetwork = /^(192\.168\.|10\.|172\.(1[6-9]|2[0-9]|3[01])\.)/.test(hostname);
-          
-          if (isLocalNetwork) {
-            // Use the same hostname but port 8888 (dev server port)
-            apiUrl = `http://${hostname}:8888/.netlify/functions/verify-technician-password`;
-          } else {
-            // Localhost access - use netlify dev server
-            apiUrl = 'http://localhost:8888/.netlify/functions/verify-technician-password';
-          }
-        }
-        
+        const apiUrl = '/.netlify/functions/verify-technician-password';
+
         try {
           console.log('[auth.ts] 🔐 Password is hashed, calling verification API...');
           console.log('[auth.ts] API URL:', apiUrl);
