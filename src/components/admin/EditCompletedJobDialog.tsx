@@ -11,6 +11,7 @@ import { db } from '@/lib/supabase';
 import { toast } from 'sonner';
 import { ImagePlus, X } from 'lucide-react';
 import { cloudinaryService, compressImage, validateImageFile } from '@/lib/cloudinary';
+import { CustomAppointmentTimeSelect } from '@/components/admin/CustomAppointmentTimeSelect';
 
 type ServiceBrand = 'elevenro' | 'hydrogenro';
 
@@ -637,21 +638,18 @@ const EditCompletedJobDialog: React.FC<EditCompletedJobDialogProps> = ({
               </div>
               <div>
                 <Label htmlFor="edit-completion-time" className="text-sm">Time</Label>
-                <Input
+                <CustomAppointmentTimeSelect
                   id="edit-completion-time"
-                  type="time"
+                  className="mt-1"
+                  optional
                   value={editData.completedTime || ''}
-                  onChange={(e) => {
-                    const timeValue = e.target.value;
-                    // If date is already set, preserve it, otherwise use today
+                  onChange={(timeValue) => {
                     const existingDate = editData.completedDate || new Date().toISOString().split('T')[0];
-                    const existingCompletedAt = editData.completedAt ? new Date(editData.completedAt) : new Date();
-                    
                     if (timeValue) {
                       const [hours, minutes] = timeValue.split(':');
                       const newDate = new Date(`${existingDate}T${hours}:${minutes}:00`);
-                      onEditDataChange({ 
-                        ...editData, 
+                      onEditDataChange({
+                        ...editData,
                         completedTime: timeValue,
                         completedDate: existingDate,
                         completedAt: newDate.toISOString()

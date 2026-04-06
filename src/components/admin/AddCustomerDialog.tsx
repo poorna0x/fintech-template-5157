@@ -9,9 +9,11 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Customer } from '@/types';
 import { db } from '@/lib/supabase';
 import { toast } from 'sonner';
+import { TOAST_VALIDATION } from '@/lib/toastOptions';
 import { MapPin, Download, ExternalLink } from 'lucide-react';
 import { generateJobNumber, extractLocationFromAddressString, bangaloreAreas } from '@/lib/adminUtils';
 import ImageUpload from '@/components/ImageUpload';
+import { CustomAppointmentTimeSelect } from '@/components/admin/CustomAppointmentTimeSelect';
 
 // Brand and model data - RO and Softener brands including local (Aqua Grand, Aqua Smart, Dolphin, etc.)
 const brandData = {
@@ -120,7 +122,7 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
     service_sub_type: '', // Not selected by default; compulsory
     service_sub_type_custom: '',
     scheduled_date: '',
-    scheduled_time_slot: 'MORNING' as 'MORNING' | 'AFTERNOON' | 'EVENING' | 'CUSTOM',
+    scheduled_time_slot: 'MORNING' as 'MORNING' | 'AFTERNOON' | 'EVENING' | 'FLEXIBLE' | 'CUSTOM',
     scheduled_time_custom: '',
     description: '',
     lead_source: '', // Not selected by default; compulsory
@@ -683,43 +685,43 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
     if (currentStep === 5) {
       if (shouldCreateJob) {
         if (!step5JobData.scheduled_date) {
-          toast.error('Please select a scheduled date');
+          toast.error('Please select a scheduled date', TOAST_VALIDATION);
           return;
         }
         
         if (!step5JobData.service_sub_type || step5JobData.service_sub_type.trim() === '') {
-          toast.error('Please select a service sub type');
+          toast.error('Please select a service sub type', TOAST_VALIDATION);
           return;
         }
 
         if (step5JobData.service_sub_type === 'Custom' && (!step5JobData.service_sub_type_custom || step5JobData.service_sub_type_custom.trim() === '')) {
-          toast.error('Please enter a custom service sub type');
+          toast.error('Please enter a custom service sub type', TOAST_VALIDATION);
           return;
         }
 
         if (!step5JobData.lead_source || step5JobData.lead_source.trim() === '') {
-          toast.error('Please select a lead source');
+          toast.error('Please select a lead source', TOAST_VALIDATION);
           return;
         }
         
         if (step5JobData.lead_source === 'Other' && (!step5JobData.lead_source_custom || step5JobData.lead_source_custom.trim() === '')) {
-          toast.error('Please enter a custom lead source');
+          toast.error('Please enter a custom lead source', TOAST_VALIDATION);
           return;
         }
 
         if (!step5JobData.lead_cost || step5JobData.lead_cost.trim() === '') {
-          toast.error('Please enter lead cost');
+          toast.error('Please enter lead cost', TOAST_VALIDATION);
           return;
         }
 
         const leadCostNum = parseFloat(step5JobData.lead_cost);
         if (isNaN(leadCostNum) || leadCostNum < 0) {
-          toast.error('Lead cost must be a valid number');
+          toast.error('Lead cost must be a valid number', TOAST_VALIDATION);
           return;
         }
 
         if (step5JobData.scheduled_time_slot === 'CUSTOM' && (!step5JobData.scheduled_time_custom || step5JobData.scheduled_time_custom.trim() === '')) {
-          toast.error('Please enter a custom time');
+          toast.error('Please choose a visit time (list or exact time)', TOAST_VALIDATION);
           return;
         }
       }
@@ -847,7 +849,8 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
         try {
           let scheduledTimeSlot: 'MORNING' | 'AFTERNOON' | 'EVENING' = 'MORNING';
           let customTimeInRequirements = null;
-          
+          let isFlexible = false;
+
           if (step5JobData.scheduled_time_slot === 'CUSTOM' && step5JobData.scheduled_time_custom) {
             customTimeInRequirements = step5JobData.scheduled_time_custom;
             const [hours] = step5JobData.scheduled_time_custom.split(':').map(Number);
@@ -858,6 +861,9 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
             } else {
               scheduledTimeSlot = 'EVENING';
             }
+          } else if (step5JobData.scheduled_time_slot === 'FLEXIBLE') {
+            isFlexible = true;
+            scheduledTimeSlot = 'MORNING';
           } else {
             scheduledTimeSlot = step5JobData.scheduled_time_slot as 'MORNING' | 'AFTERNOON' | 'EVENING';
           }
@@ -872,7 +878,8 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
 
           const requirements: any[] = [{ 
             lead_source: step5JobData.lead_source === 'Other' ? (step5JobData.lead_source_custom || 'Other') : step5JobData.lead_source,
-            custom_time: customTimeInRequirements
+            custom_time: customTimeInRequirements,
+            flexible_time: isFlexible
           }];
 
           // Add OTP requirement if enabled
@@ -1019,7 +1026,7 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
         service_sub_type: '', // Not selected by default
         service_sub_type_custom: '',
         scheduled_date: '',
-        scheduled_time_slot: 'MORNING' as 'MORNING' | 'AFTERNOON' | 'EVENING' | 'CUSTOM',
+        scheduled_time_slot: 'MORNING' as 'MORNING' | 'AFTERNOON' | 'EVENING' | 'FLEXIBLE' | 'CUSTOM',
         scheduled_time_custom: '',
         description: '',
         lead_source: '', // Not selected by default
@@ -1588,7 +1595,7 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
                         value={step5JobData.scheduled_time_slot}
                         onValueChange={(value) => setStep5JobData(prev => ({ 
                           ...prev, 
-                          scheduled_time_slot: value as 'MORNING' | 'AFTERNOON' | 'EVENING' | 'CUSTOM'
+                          scheduled_time_slot: value as 'MORNING' | 'AFTERNOON' | 'EVENING' | 'FLEXIBLE' | 'CUSTOM'
                         }))}
                       >
                         <SelectTrigger>
@@ -1598,19 +1605,19 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
                           <SelectItem value="MORNING">Morning (9 AM - 1 PM)</SelectItem>
                           <SelectItem value="AFTERNOON">Afternoon (1 PM - 6 PM)</SelectItem>
                           <SelectItem value="EVENING">Evening (6 PM - 9 PM)</SelectItem>
-                          <SelectItem value="CUSTOM">Custom Time</SelectItem>
+                          <SelectItem value="FLEXIBLE">Flexible</SelectItem>
+                          <SelectItem value="CUSTOM">Custom time</SelectItem>
                         </SelectContent>
                       </Select>
                     </div>
 
                     {step5JobData.scheduled_time_slot === 'CUSTOM' && (
                       <div className="space-y-2 sm:col-span-2">
-                        <Label htmlFor="step5_scheduled_time_custom">Custom Time (HH:MM)</Label>
-                        <Input
+                        <Label htmlFor="step5_scheduled_time_custom">Visit time</Label>
+                        <CustomAppointmentTimeSelect
                           id="step5_scheduled_time_custom"
-                          type="time"
                           value={step5JobData.scheduled_time_custom}
-                          onChange={(e) => setStep5JobData(prev => ({ ...prev, scheduled_time_custom: e.target.value }))}
+                          onChange={(hhmm) => setStep5JobData(prev => ({ ...prev, scheduled_time_custom: hhmm }))}
                         />
                       </div>
                     )}

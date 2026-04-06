@@ -49,6 +49,7 @@ import {
   Package
 } from 'lucide-react';
 import { toast } from 'sonner';
+import { TOAST_VALIDATION } from '@/lib/toastOptions';
 import { canVibrate, hapticConfirm, hapticTap } from '@/lib/haptics';
 import { db, supabase, fetchCustomerIdsWithCompletedJobsMap } from '@/lib/supabase';
 import { Job, JobAssignmentRequest } from '@/types';
@@ -2398,12 +2399,12 @@ const TechnicianDashboard = () => {
     if (!selectedJobForMoveToOngoing) return;
 
     if (!moveToOngoingDate) {
-      toast.error('Please select a date');
+      toast.error('Please select a date', TOAST_VALIDATION);
       return;
     }
 
     if (moveToOngoingTimeSlot === 'CUSTOM' && !moveToOngoingCustomTime) {
-      toast.error('Please enter a custom time');
+      toast.error('Please choose a visit time (list or exact time)', TOAST_VALIDATION);
       return;
     }
 

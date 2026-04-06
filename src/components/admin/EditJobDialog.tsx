@@ -6,8 +6,10 @@ import { DatePicker } from '@/components/ui/date-picker';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { CustomAppointmentTimeSelect } from '@/components/admin/CustomAppointmentTimeSelect';
 import { Job } from '@/types';
 import { toast } from 'sonner';
+import { TOAST_VALIDATION } from '@/lib/toastOptions';
 import { db } from '@/lib/supabase';
 
 interface EditJobFormData {
@@ -38,7 +40,6 @@ const EditJobDialog: React.FC<EditJobDialogProps> = ({
   job,
   onJobUpdated
 }) => {
-  const [isClosing, setIsClosing] = useState(false);
   const [forceOpen, setForceOpen] = useState(true);
   const allowCloseRef = useRef(false);
   const initialFormDataRef = useRef<EditJobFormData | null>(null);
@@ -239,28 +240,14 @@ const EditJobDialog: React.FC<EditJobDialogProps> = ({
   useEffect(() => {
     if (open) {
       allowCloseRef.current = false;
-      setIsClosing(false);
       setForceOpen(true);
     }
   }, [open]);
 
-  // Check if there are unsaved changes
-  const hasUnsavedChanges = () => {
-    if (!initialFormDataRef.current) return false;
-    const initial = initialFormDataRef.current;
-    return (
-      initial.serviceType !== editJobFormData.serviceType ||
-      initial.serviceSubType !== editJobFormData.serviceSubType ||
-      initial.serviceSubTypeCustom !== editJobFormData.serviceSubTypeCustom ||
-      initial.description !== editJobFormData.description ||
-      initial.require_otp !== editJobFormData.require_otp ||
-      initial.scheduledDate !== editJobFormData.scheduledDate ||
-      initial.scheduledTimeSlot !== editJobFormData.scheduledTimeSlot ||
-      initial.scheduledTimeCustom !== editJobFormData.scheduledTimeCustom ||
-      initial.lead_source !== editJobFormData.lead_source ||
-      initial.lead_source_custom !== editJobFormData.lead_source_custom ||
-      initial.cost_agreed !== editJobFormData.cost_agreed
-    );
+  /** After a failed save/validation, parent still has open=true — keep dialog visible and reset close flags. */
+  const abortCloseAndStayOpen = () => {
+    allowCloseRef.current = false;
+    setForceOpen(true);
   };
 
   const handleSubmit = async () => {
@@ -268,14 +255,23 @@ const EditJobDialog: React.FC<EditJobDialogProps> = ({
 
     // Validate lead source
     if (!editJobFormData.lead_source || editJobFormData.lead_source.trim() === '') {
-      toast.error('Please select a lead source');
-      setIsClosing(false);
+      toast.error('Please select a lead source', TOAST_VALIDATION);
+      abortCloseAndStayOpen();
       return;
     }
     
     if (editJobFormData.lead_source === 'Other' && (!editJobFormData.lead_source_custom || editJobFormData.lead_source_custom.trim() === '')) {
-      toast.error('Please enter a custom lead source');
-      setIsClosing(false);
+      toast.error('Please enter a custom lead source', TOAST_VALIDATION);
+      abortCloseAndStayOpen();
+      return;
+    }
+
+    if (
+      editJobFormData.scheduledTimeSlot === 'CUSTOM' &&
+      (!editJobFormData.scheduledTimeCustom || !editJobFormData.scheduledTimeCustom.trim())
+    ) {
+      toast.error('Please choose a visit time (list or exact time)', TOAST_VALIDATION);
+      abortCloseAndStayOpen();
       return;
     }
 
@@ -382,30 +378,35 @@ const EditJobDialog: React.FC<EditJobDialogProps> = ({
         throw new Error(error.message);
       }
 
-      onJobUpdated(updatedJob);
+      let payload: Job | null = updatedJob as Job | null;
+      if (!payload) {
+        const { data: refetched } = await db.jobs.getByIdSlim(job.id);
+        payload = (refetched as Job) ?? null;
+      }
+      if (!payload) {
+        toast.error(
+          'Job saved but details could not be reloaded. Refresh the page to see changes.',
+          TOAST_VALIDATION
+        );
+        abortCloseAndStayOpen();
+        return;
+      }
+      onJobUpdated(payload);
       
       // Update initial form data ref after successful save
       initialFormDataRef.current = { ...editJobFormData };
       
-      // Only close if we're in the process of closing (user clicked Update or Cancel button)
-      if (isClosing && allowCloseRef.current) {
-        toast.success('Job updated successfully');
+      // Close after successful save (Update sets allowCloseRef before submit; do not use isClosing here — it is stale after await)
+      if (allowCloseRef.current) {
+        toast.success('Job updated successfully', { duration: 4500 });
         allowCloseRef.current = false;
-        setIsClosing(false);
-        setForceOpen(false);
-        onOpenChange(false);
-      } else {
-        // Silent save (from Cancel button with unsaved changes)
-        toast.success('Changes saved');
-        // After saving, close the dialog
         setForceOpen(false);
         onOpenChange(false);
       }
     } catch (error) {
       console.error('Error updating job:', error);
-      toast.error('Failed to update job');
-      // Don't close on error
-      setIsClosing(false);
+      toast.error('Failed to update job', TOAST_VALIDATION);
+      abortCloseAndStayOpen();
     }
   };
 
@@ -418,7 +419,6 @@ const EditJobDialog: React.FC<EditJobDialogProps> = ({
       // User is trying to close - only allow if we explicitly set allowCloseRef
       if (allowCloseRef.current) {
         allowCloseRef.current = false;
-        setIsClosing(false);
         setForceOpen(false);
         onOpenChange(false);
       } else {
@@ -432,7 +432,6 @@ const EditJobDialog: React.FC<EditJobDialogProps> = ({
       return;
     }
     // Dialog is opening - allow it and reset flags
-    setIsClosing(false);
     allowCloseRef.current = false;
     setForceOpen(true);
     if (isOpen) {
@@ -440,26 +439,18 @@ const EditJobDialog: React.FC<EditJobDialogProps> = ({
     }
   };
 
-  const handleCancel = async () => {
-    // Check if there are unsaved changes
-    if (hasUnsavedChanges()) {
-      // Save changes before closing
-      allowCloseRef.current = true;
-      setIsClosing(true);
-      setForceOpen(false);
-      await handleSubmit();
-    } else {
-      // No changes, just close
-      allowCloseRef.current = true;
-      setIsClosing(true);
-      setForceOpen(false);
-      onOpenChange(false);
+  const handleCancel = () => {
+    // Discard edits and close — do not auto-save (avoids validation when e.g. Custom time is incomplete)
+    if (initialFormDataRef.current) {
+      setEditJobFormData({ ...initialFormDataRef.current });
     }
+    allowCloseRef.current = true;
+    setForceOpen(false);
+    onOpenChange(false);
   };
 
   const handleUpdate = () => {
     allowCloseRef.current = true;
-    setIsClosing(true);
     handleSubmit();
   };
 
@@ -570,15 +561,15 @@ const EditJobDialog: React.FC<EditJobDialogProps> = ({
                   <SelectItem value="AFTERNOON">Afternoon (1 PM - 6 PM)</SelectItem>
                   <SelectItem value="EVENING">Evening (6 PM - 9 PM)</SelectItem>
                   <SelectItem value="FLEXIBLE">Flexible</SelectItem>
-                  <SelectItem value="CUSTOM">Custom Time</SelectItem>
+                  <SelectItem value="CUSTOM">Custom time</SelectItem>
                 </SelectContent>
               </Select>
               {editJobFormData.scheduledTimeSlot === 'CUSTOM' && (
-                <Input
+                <CustomAppointmentTimeSelect
+                  id="edit-scheduled-time-custom"
                   className="mt-2"
-                  type="time"
                   value={editJobFormData.scheduledTimeCustom}
-                  onChange={(e) => setEditJobFormData(prev => ({ ...prev, scheduledTimeCustom: e.target.value }))}
+                  onChange={(hhmm) => setEditJobFormData(prev => ({ ...prev, scheduledTimeCustom: hhmm }))}
                 />
               )}
             </div>

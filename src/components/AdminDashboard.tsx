@@ -69,6 +69,7 @@ import { registerAdminPWA, disablePWA } from '@/lib/pwa';
 import { Customer, Job, Technician } from '@/types';
 import { cloudinaryService, compressImage, validateImageFile } from '@/lib/cloudinary';
 import { toast } from 'sonner';
+import { TOAST_VALIDATION } from '@/lib/toastOptions';
 import { isIOS, isPWA, shouldUseFileInputFallback, requestCameraAccess, createVideoElement, checkCameraPermission } from '@/lib/cameraUtils';
 import { getCachedQrCodes, cacheQrCodes, shouldUseCache, CommonQrCode } from '@/lib/qrCodeManager';
 import { openInGoogleMaps, extractCoordinates, formatAddressForDisplay } from '@/lib/maps';
@@ -117,6 +118,7 @@ import { AddReminderDialog } from './reminders/AddReminderDialog';
 import { TodayRemindersPopup } from './reminders/TodayRemindersPopup';
 import { CustomerRemindersDialog } from './reminders/CustomerRemindersDialog';
 import EditJobDialog from './admin/EditJobDialog';
+import { CustomAppointmentTimeSelect } from './admin/CustomAppointmentTimeSelect';
 import PhoneNumbersDialog from './admin/PhoneNumbersDialog';
 import DescriptionDialog from './admin/DescriptionDialog';
 import JobAddressDialog from './admin/JobAddressDialog';
@@ -3214,27 +3216,27 @@ const AdminDashboard = () => {
       // Validate job data if creating job
       if (shouldCreateJob) {
         if (!step5JobData.scheduled_date) {
-          toast.error('Please select a scheduled date');
+          toast.error('Please select a scheduled date', TOAST_VALIDATION);
           return;
         }
         
         if (!step5JobData.lead_source || step5JobData.lead_source.trim() === '') {
-          toast.error('Please select a lead source');
+          toast.error('Please select a lead source', TOAST_VALIDATION);
           return;
         }
         
         if (step5JobData.lead_source === 'Other' && (!step5JobData.lead_source_custom || step5JobData.lead_source_custom.trim() === '')) {
-          toast.error('Please enter a custom lead source');
+          toast.error('Please enter a custom lead source', TOAST_VALIDATION);
           return;
         }
 
         if (step5JobData.service_sub_type === 'Custom' && (!step5JobData.service_sub_type_custom || step5JobData.service_sub_type_custom.trim() === '')) {
-          toast.error('Please enter a custom service sub type');
+          toast.error('Please enter a custom service sub type', TOAST_VALIDATION);
           return;
         }
 
         if (step5JobData.scheduled_time_slot === 'CUSTOM' && (!step5JobData.scheduled_time_custom || step5JobData.scheduled_time_custom.trim() === '')) {
-          toast.error('Please enter a custom time');
+          toast.error('Please choose a visit time (list or exact time)', TOAST_VALIDATION);
           return;
         }
       }
@@ -3491,17 +3493,17 @@ const AdminDashboard = () => {
 
     // Validate required fields
     if (!newJobFormData.scheduled_date) {
-      toast.error('Please select a scheduled date');
+      toast.error('Please select a scheduled date', TOAST_VALIDATION);
       return;
     }
     
     if (!newJobFormData.lead_source || newJobFormData.lead_source.trim() === '') {
-      toast.error('Please select a lead source');
+      toast.error('Please select a lead source', TOAST_VALIDATION);
       return;
     }
     
     if (newJobFormData.lead_source === 'Other' && (!newJobFormData.lead_source_custom || newJobFormData.lead_source_custom.trim() === '')) {
-      toast.error('Please enter a custom lead source');
+      toast.error('Please enter a custom lead source', TOAST_VALIDATION);
       return;
     }
 
@@ -6047,12 +6049,12 @@ const AdminDashboard = () => {
     if (!selectedJobForMoveToOngoing) return;
 
     if (!moveToOngoingDate) {
-      toast.error('Please select a date');
+      toast.error('Please select a date', TOAST_VALIDATION);
       return;
     }
 
     if (moveToOngoingTimeSlot === 'CUSTOM' && !moveToOngoingCustomTime) {
-      toast.error('Please enter a custom time');
+      toast.error('Please choose a visit time (list or exact time)', TOAST_VALIDATION);
       return;
     }
 
@@ -10153,7 +10155,11 @@ const AdminDashboard = () => {
             if (j.id !== updatedJob.id) return j;
             return { ...j, ...updatedJob };
           }));
-          const customerId = (jobToEdit as any)?.customer_id ?? (jobToEdit as any)?.customerId ?? (jobToEdit as any)?.customer?.id;
+          const customerId =
+            (updatedJob as any).customer_id ??
+            (jobToEdit as any)?.customer_id ??
+            (jobToEdit as any)?.customerId ??
+            (jobToEdit as any)?.customer?.id;
           if (customerId) {
             setCustomerJobs(prev => ({
               ...prev,
@@ -10414,14 +10420,12 @@ const AdminDashboard = () => {
               </div>
               {moveToOngoingTimeSlot === 'CUSTOM' && (
                 <div>
-                  <Label htmlFor="admin-ongoing-custom-time">Custom Time *</Label>
-                  <Input
+                  <Label htmlFor="admin-ongoing-custom-time">Visit time *</Label>
+                  <CustomAppointmentTimeSelect
                     id="admin-ongoing-custom-time"
-                    type="time"
-                    value={moveToOngoingCustomTime}
-                    onChange={(e) => setMoveToOngoingCustomTime(e.target.value)}
                     className="mt-1"
-                    required
+                    value={moveToOngoingCustomTime}
+                    onChange={setMoveToOngoingCustomTime}
                   />
                 </div>
               )}

@@ -5,9 +5,12 @@ import { Input } from '@/components/ui/input';
 import { DatePicker } from '@/components/ui/date-picker';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { CustomAppointmentTimeSelect } from '@/components/admin/CustomAppointmentTimeSelect';
 import { Upload } from 'lucide-react';
 import { Customer } from '@/types';
 import { toast } from 'sonner';
+import { TOAST_VALIDATION } from '@/lib/toastOptions';
 import { cloudinaryService, compressImage, validateImageFile } from '@/lib/cloudinary';
 import { generateJobNumber } from '@/lib/adminUtils';
 import { db } from '@/lib/supabase';
@@ -20,7 +23,7 @@ interface NewJobFormData {
   brand: string;
   model: string;
   scheduled_date: string;
-  scheduled_time_slot: 'MORNING' | 'AFTERNOON' | 'EVENING' | 'CUSTOM';
+  scheduled_time_slot: 'MORNING' | 'AFTERNOON' | 'EVENING' | 'FLEXIBLE' | 'CUSTOM';
   scheduled_time_custom: string;
   description: string;
   priority: 'LOW' | 'MEDIUM' | 'HIGH' | 'URGENT';
@@ -239,28 +242,36 @@ const NewJobDialog: React.FC<NewJobDialogProps> = ({
     if (!customer) return;
 
     if (!newJobFormData.scheduled_date) {
-      toast.error('Please select a scheduled date');
+      toast.error('Please select a scheduled date', TOAST_VALIDATION);
+      return;
+    }
+
+    if (
+      newJobFormData.scheduled_time_slot === 'CUSTOM' &&
+      (!newJobFormData.scheduled_time_custom || !newJobFormData.scheduled_time_custom.trim())
+    ) {
+      toast.error('Please choose a visit time (list or exact time)', TOAST_VALIDATION);
       return;
     }
     
     if (!newJobFormData.lead_source || newJobFormData.lead_source.trim() === '') {
-      toast.error('Please select a lead source');
+      toast.error('Please select a lead source', TOAST_VALIDATION);
       return;
     }
     
     if (newJobFormData.lead_source === 'Other' && (!newJobFormData.lead_source_custom || newJobFormData.lead_source_custom.trim() === '')) {
-      toast.error('Please enter a custom lead source');
+      toast.error('Please enter a custom lead source', TOAST_VALIDATION);
       return;
     }
 
     if (!newJobFormData.lead_cost || newJobFormData.lead_cost.trim() === '') {
-      toast.error('Please enter lead cost');
+      toast.error('Please enter lead cost', TOAST_VALIDATION);
       return;
     }
 
     const leadCostNum = parseFloat(newJobFormData.lead_cost);
     if (isNaN(leadCostNum) || leadCostNum < 0) {
-      toast.error('Lead cost must be a valid number');
+      toast.error('Lead cost must be a valid number', TOAST_VALIDATION);
       return;
     }
 
@@ -510,25 +521,26 @@ const NewJobDialog: React.FC<NewJobDialogProps> = ({
 
                 <div className="space-y-2">
                   <Label htmlFor="job_scheduled_time_slot">Time Slot</Label>
-                  <select
-                    id="job_scheduled_time_slot"
+                  <Select
                     value={newJobFormData.scheduled_time_slot || 'MORNING'}
-                    onChange={(e) => handleFormChange('scheduled_time_slot', e.target.value as any)}
-                    className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 appearance-none bg-white"
+                    onValueChange={(v) => handleFormChange('scheduled_time_slot', v as NewJobFormData['scheduled_time_slot'])}
                   >
-                    <option value="MORNING">Morning (9 AM - 1 PM)</option>
-                    <option value="AFTERNOON">Afternoon (1 PM - 6 PM)</option>
-                    <option value="EVENING">Evening (6 PM - 9 PM)</option>
-                    <option value="FLEXIBLE">Flexible</option>
-                    <option value="CUSTOM">Custom Time</option>
-                  </select>
+                    <SelectTrigger id="job_scheduled_time_slot" className="bg-background">
+                      <SelectValue placeholder="Select time slot" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="MORNING">Morning (9 AM - 1 PM)</SelectItem>
+                      <SelectItem value="AFTERNOON">Afternoon (1 PM - 6 PM)</SelectItem>
+                      <SelectItem value="EVENING">Evening (6 PM - 9 PM)</SelectItem>
+                      <SelectItem value="FLEXIBLE">Flexible</SelectItem>
+                      <SelectItem value="CUSTOM">Custom time</SelectItem>
+                    </SelectContent>
+                  </Select>
                   {newJobFormData.scheduled_time_slot === 'CUSTOM' && (
-                    <Input
+                    <CustomAppointmentTimeSelect
                       id="job_scheduled_time_custom"
-                      type="time"
                       value={newJobFormData.scheduled_time_custom}
-                      onChange={(e) => handleFormChange('scheduled_time_custom', e.target.value)}
-                      className="mt-2"
+                      onChange={(hhmm) => handleFormChange('scheduled_time_custom', hhmm)}
                     />
                   )}
                 </div>

@@ -934,11 +934,11 @@ export const db = {
           return { data: null, error: updateError };
         }
         
-        // Then fetch the updated row with minimal select to avoid relationship issues
+        // Re-fetch the row with the same column set as list views so merged client state shows edits without a manual refresh
         const { data, error: selectError } = await supabase
           .from('jobs')
-          .select('id, status, assigned_technician_id, completed_by, completed_at, end_time')
-        .eq('id', id)
+          .select(JOB_SELECT_ONGOING_AND_TECH)
+          .eq('id', id)
           .single();
       
         if (selectError) {
