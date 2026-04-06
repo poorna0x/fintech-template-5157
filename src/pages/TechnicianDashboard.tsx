@@ -348,6 +348,9 @@ const TechnicianDashboard = () => {
   /** Throttle rare full QR refetch when returning to the app (Realtime merge is primary). */
   const lastQrRefreshOnFocusRef = useRef<number>(0);
   const qrLiveRef = useRef<TechnicianQrLiveRef>(emptyTechnicianQrLiveRef());
+  /** Avoid repeated `loadQrCodes({ force })` on every deps tick while staying on payment step; still refresh on step entry or bill becoming eligible. */
+  const qrPaymentStepPrevStepRef = useRef<number | null>(null);
+  const qrPaymentStepHadBillRef = useRef(false);
   const lastJobIdsRef = useRef<Set<string>>(new Set()); // Track job IDs from last active session
   const hasJobsRef = useRef<boolean>(false); // Track if we have loaded jobs at least once
   const shouldPreserveOrderRef = useRef<boolean>(false); // Track if we should preserve job order (true when updating status, false when loading from DB)
@@ -1246,17 +1249,41 @@ const TechnicianDashboard = () => {
     [user, loadQrCodes, recomputeQrUiFromLiveRef]
   );
 
-  /** Payment step: always pull latest admin QR visibility/assignments (fixes stale picker + preview). */
+  /** Payment step: pull latest admin QR visibility/assignments once when entering step 4 or when bill becomes non-zero there (Realtime still updates in between). */
   useEffect(() => {
     if (!user || user.role !== 'technician') return;
-    if (!completeDialogOpen || completeJobStep !== 4) return;
+    if (!completeDialogOpen) {
+      qrPaymentStepPrevStepRef.current = null;
+      qrPaymentStepHadBillRef.current = false;
+      return;
+    }
+    if (completeJobStep !== 4) {
+      qrPaymentStepPrevStepRef.current = completeJobStep;
+      qrPaymentStepHadBillRef.current = false;
+      return;
+    }
+
     const n = parseFloat(billAmount);
-    if (billAmount === '' || Number.isNaN(n) || n === 0) return;
+    const billOk = billAmount !== '' && !Number.isNaN(n) && n !== 0;
+    const enteredStep4 = qrPaymentStepPrevStepRef.current !== 4;
+    qrPaymentStepPrevStepRef.current = 4;
+
+    if (!billOk) {
+      qrPaymentStepHadBillRef.current = false;
+      return;
+    }
+
+    const billBecameOk = !qrPaymentStepHadBillRef.current;
+    qrPaymentStepHadBillRef.current = true;
+
+    if (!enteredStep4 && !billBecameOk) return;
+
     loadQrCodes({ force: true });
   }, [completeDialogOpen, completeJobStep, billAmount, user, loadQrCodes]);
 
   /** If admin changes QR list while technician is on payment step, drop selection that no longer exists. */
   useEffect(() => {
+    if (!user || user.role !== 'technician') return;
     if (!completeDialogOpen || completeJobStep !== 4) return;
     if (!selectedQrCodeId || selectedQrCodeId === 'no-qr') return;
 
@@ -1286,6 +1313,7 @@ const TechnicianDashboard = () => {
     commonQrCodes,
     technicians,
     qrAssetsVersion,
+    user,
   ]);
 
   // Load QR codes on mount and when user changes
