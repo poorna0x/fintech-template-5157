@@ -8,6 +8,8 @@ import { MapPin, Loader2, Navigation } from 'lucide-react';
 import { toast } from 'sonner';
 import { calculateHaversineDistance } from '@/lib/distance';
 import { customerNameClassName } from '@/lib/customerDisplay';
+import { db } from '@/lib/supabase';
+import { getGoogleMapsLinkForJobRow, getJobLatLngFromJobRow } from '@/lib/jobLocationHelpers';
 
 interface AssignJobDialogProps {
   open: boolean;
@@ -105,24 +107,24 @@ const AssignJobDialog: React.FC<AssignJobDialogProps> = ({
   const calculateDistances = useCallback(async () => {
     if (!job || !open) return;
 
-    // Get job location coordinates (prefer customer location)
-    const customer = (job.customer as any) || job.customer;
-    const customerLocation = customer?.location || {};
-    const serviceLocation = (job.service_location as any) || job.serviceLocation || {};
-    
-    const jobLocation = (() => {
-      if (customerLocation.latitude && customerLocation.longitude && 
-          customerLocation.latitude !== 0 && customerLocation.longitude !== 0) {
-        return { lat: customerLocation.latitude, lng: customerLocation.longitude };
+    let effectiveJob: any = job;
+    let jobLocation = getJobLatLngFromJobRow(effectiveJob);
+    if (!jobLocation) {
+      try {
+        const { data, error } = await db.jobs.getByIdFull(job.id);
+        if (!error && data) {
+          effectiveJob = data;
+          jobLocation = getJobLatLngFromJobRow(effectiveJob);
+        }
+      } catch (e) {
+        console.warn('[AssignJobDialog] getByIdFull for distances failed:', e);
       }
-      if (serviceLocation.latitude && serviceLocation.longitude && 
-          serviceLocation.latitude !== 0 && serviceLocation.longitude !== 0) {
-        return { lat: serviceLocation.latitude, lng: serviceLocation.longitude };
-      }
-      return null;
-    })();
+    }
 
-    if (!jobLocation) return;
+    if (!jobLocation) {
+      toast.error('Job location not available. Try again after the address loads.');
+      return;
+    }
 
     // Filter technicians with valid locations
     const techniciansWithLocation = technicians.filter((tech) => {
@@ -411,63 +413,27 @@ const AssignJobDialog: React.FC<AssignJobDialogProps> = ({
 
   // Calculate variables after all hooks
   const customer = (job.customer as any) || job.customer;
-  const customerLocation = customer?.location || {};
-  const serviceLocation = (job.service_location as any) || job.serviceLocation || {};
-  
-  // Get job location coordinates (prefer customer location)
-  const jobLocation = (() => {
-    if (customerLocation.latitude && customerLocation.longitude && 
-        customerLocation.latitude !== 0 && customerLocation.longitude !== 0) {
-      return { lat: customerLocation.latitude, lng: customerLocation.longitude };
+
+  const jobLocation = getJobLatLngFromJobRow(job);
+  const googleMapsLink = getGoogleMapsLinkForJobRow(job);
+
+  const handleLazyOpenGoogleMaps = async () => {
+    const t = toast.loading('Loading location…');
+    try {
+      const { data, error } = await db.jobs.getByIdFull(job.id);
+      toast.dismiss(t);
+      if (error || !data) {
+        toast.error('Could not load location');
+        return;
+      }
+      const link = getGoogleMapsLinkForJobRow(data);
+      if (link) window.open(link, '_blank', 'noopener,noreferrer');
+      else toast.error('No map link for this job');
+    } catch {
+      toast.dismiss(t);
+      toast.error('Could not load location');
     }
-    if (serviceLocation.latitude && serviceLocation.longitude && 
-        serviceLocation.latitude !== 0 && serviceLocation.longitude !== 0) {
-      return { lat: serviceLocation.latitude, lng: serviceLocation.longitude };
-    }
-    return null;
-  })();
-  
-  // Generate Google Maps link - ALWAYS prefer customer's current location (from customer edit)
-  // over job's stored location, so all jobs of a customer show the same location
-  const googleMapsLink = (() => {
-    // Helper function to get Google Maps link from a location object
-    const getLocationLink = (location: any) => {
-      if (!location) return '';
-      
-      // First check for googleLocation field (actual Google Maps URL - including short URLs)
-      if (location.googleLocation || location.google_location) {
-        const googleLoc = location.googleLocation || location.google_location;
-        // Accept any Google Maps URL (including short URLs like maps.app.goo.gl)
-        if (googleLoc && typeof googleLoc === 'string' && 
-            (googleLoc.includes('google.com/maps') || googleLoc.includes('maps.app.goo.gl') || googleLoc.includes('goo.gl/maps')) &&
-            !googleLoc.includes('localhost') && 
-            !googleLoc.includes('127.0.0.1')) {
-          return googleLoc;
-        }
-      }
-      // If we have coordinates, always generate Google Maps link from coordinates (most reliable)
-      if (location.latitude && location.longitude && 
-          location.latitude !== 0 && location.longitude !== 0) {
-        return `https://www.google.com/maps/place/${location.latitude},${location.longitude}`;
-      }
-      // Only use formattedAddress if it's actually a proper Google Maps URL (not localhost)
-      if (location.formattedAddress && 
-          typeof location.formattedAddress === 'string' &&
-          (location.formattedAddress.includes('google.com/maps') || location.formattedAddress.includes('maps.app.goo.gl')) &&
-          !location.formattedAddress.includes('localhost') &&
-          !location.formattedAddress.includes('127.0.0.1')) {
-        return location.formattedAddress;
-      }
-      return '';
-    };
-    
-    // Priority 1: Use customer's current location (from customer edit) - this ensures all jobs show same location
-    const customerLink = getLocationLink(customerLocation);
-    if (customerLink) return customerLink;
-    
-    // Priority 2: Fall back to job's stored location (for backward compatibility)
-    return getLocationLink(serviceLocation);
-  })();
+  };
 
   const inactiveTechnicians = (techniciansWithDistances.length > 0 ? techniciansWithDistances : technicians).filter(
     (tech) => tech.account_status !== 'INACTIVE'
@@ -544,7 +510,7 @@ const AssignJobDialog: React.FC<AssignJobDialogProps> = ({
                 </div>
               ) : null;
             })()}
-            {googleMapsLink && (
+            {googleMapsLink ? (
               <a
                 href={googleMapsLink}
                 target="_blank"
@@ -554,6 +520,15 @@ const AssignJobDialog: React.FC<AssignJobDialogProps> = ({
                 <MapPin className="w-4 h-4" />
                 Open in Google Maps
               </a>
+            ) : (
+              <Button
+                type="button"
+                onClick={() => void handleLazyOpenGoogleMaps()}
+                className="inline-flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-xs font-medium rounded-lg transition-colors mt-2 w-full sm:w-auto justify-center sm:justify-start"
+              >
+                <MapPin className="w-4 h-4" />
+                Open in Google Maps
+              </Button>
             )}
           </div>
 
@@ -574,9 +549,9 @@ const AssignJobDialog: React.FC<AssignJobDialogProps> = ({
                 variant="outline"
                 size="sm"
                 onClick={calculateDistances}
-                disabled={technicianPickerBlocked || isCalculatingDistances || !jobLocation}
+                disabled={technicianPickerBlocked || isCalculatingDistances}
                 className="text-xs w-full sm:w-auto"
-                title={!jobLocation ? "Job location not available" : "Calculate distances from job location"}
+                title="Calculate distances from job location (loads full address if needed)"
               >
                 {isCalculatingDistances ? (
                   <>

@@ -924,7 +924,8 @@ const AdminDashboard = () => {
       longitude: customer.location?.longitude || 0,
       formattedAddress: customer.location?.formatted_address || customer.location?.formattedAddress || '',
       googlePlaceId: customer.location?.google_place_id,
-      googleLocation: customer.location?.googleLocation || null
+      googleLocation:
+        customer.location?.googleLocation || customer.location?.google_location || null
     } as any,
     serviceType: customer.service_type,
     brand: customer.brand,
@@ -983,6 +984,29 @@ const AdminDashboard = () => {
       cancelled = true;
     };
   }, [addressDialogOpen]);
+
+  /** Fetch full customer row when opening maps from a slim list card (only runs on demand). */
+  const hydrateCustomerForMaps = useCallback(async (customerId: string): Promise<Customer | null> => {
+    const { data, error } = await db.customers.getById(customerId);
+    if (error || !data) return null;
+    const transformed = transformCustomerData(data);
+    setCustomers((prev) => {
+      const idx = prev.findIndex((c) => c.id === customerId);
+      if (idx === -1) return prev;
+      const next = [...prev];
+      next[idx] = transformed;
+      return next;
+    });
+    setSearchResults((prev) => {
+      if (!prev?.length) return prev;
+      const idx = prev.findIndex((c) => c.id === customerId);
+      if (idx === -1) return prev;
+      const next = [...prev];
+      next[idx] = transformed;
+      return next;
+    });
+    return transformed;
+  }, []);
 
   // Reset selected technician when dialog closes
   useEffect(() => {
@@ -2635,6 +2659,41 @@ const AdminDashboard = () => {
     } catch (error) {
       return null;
     }
+  };
+
+  /** Lat/lng for job destination (customer location preferred). Works on slim or full job rows. */
+  const resolveJobDestinationCoords = (jobRow: Job | any): { lat: number; lng: number } | null => {
+    const customer = (jobRow?.customer as any) || jobRow?.customer;
+    const customerLocation = customer?.location || {};
+    const jobLocation = jobRow?.serviceLocation || jobRow?.service_location;
+
+    if (
+      customerLocation?.latitude != null &&
+      customerLocation?.longitude != null &&
+      customerLocation.latitude !== 0 &&
+      customerLocation.longitude !== 0
+    ) {
+      return { lat: Number(customerLocation.latitude), lng: Number(customerLocation.longitude) };
+    }
+    const custGl = customerLocation?.googleLocation || customerLocation?.google_location;
+    if (custGl && typeof custGl === 'string' && custGl.trim() !== '') {
+      const extracted = extractCoordinatesFromGoogleMapsLink(custGl);
+      if (extracted) return { lat: extracted.latitude, lng: extracted.longitude };
+    }
+    if (
+      jobLocation?.latitude != null &&
+      jobLocation?.longitude != null &&
+      jobLocation.latitude !== 0 &&
+      jobLocation.longitude !== 0
+    ) {
+      return { lat: Number(jobLocation.latitude), lng: Number(jobLocation.longitude) };
+    }
+    const jobGl = jobLocation?.googleLocation || jobLocation?.google_location;
+    if (jobGl && typeof jobGl === 'string' && jobGl.trim() !== '') {
+      const extracted = extractCoordinatesFromGoogleMapsLink(jobGl);
+      if (extracted) return { lat: extracted.latitude, lng: extracted.longitude };
+    }
+    return null;
   };
 
   // Helper function to ensure Google Maps is loaded
@@ -5416,108 +5475,39 @@ const AdminDashboard = () => {
   };
 
   const handleMeasureDistance = async (job: Job) => {
-    setSelectedJobForDistance(job);
-
     console.log('🔍 [AdminDashboard] handleMeasureDistance called for job:', {
       jobId: job.id,
       jobNumber: job.jobNumber || (job as any).job_number
     });
-    
-    // Get job location and customer location (prefer customer location as it's more up-to-date)
-    const jobLocation = job.serviceLocation || (job as any).service_location;
-    const customer = (job.customer as any) || job.customer;
-    const customerLocation = customer?.location || {};
-    
-    console.log('📍 [AdminDashboard] Location data:', {
-      jobLocation: {
-        hasServiceLocation: !!jobLocation,
-        latitude: jobLocation?.latitude,
-        longitude: jobLocation?.longitude,
-        googleLocation: jobLocation?.googleLocation || jobLocation?.google_location,
-        googleLocationType: typeof (jobLocation?.googleLocation || jobLocation?.google_location),
-        fullJobLocation: jobLocation
-      },
-      customerLocation: {
-        hasCustomer: !!customer,
-        hasCustomerLocation: !!customerLocation,
-        latitude: customerLocation?.latitude,
-        longitude: customerLocation?.longitude,
-        googleLocation: customerLocation?.googleLocation || customerLocation?.google_location,
-        googleLocationType: typeof (customerLocation?.googleLocation || customerLocation?.google_location),
-        fullCustomerLocation: customerLocation
-      },
-      customerId: customer?.id || job.customerId || (job as any).customer_id
-    });
-    
-    // Try to get coordinates from latitude/longitude first (prefer customer location)
-    let jobCoords: { lat: number; lng: number } | null = null;
-    
-    // Priority 1: Customer location with direct coordinates
-    if (customerLocation?.latitude && customerLocation?.longitude && 
-        customerLocation.latitude !== 0 && customerLocation.longitude !== 0) {
-      jobCoords = { lat: customerLocation.latitude, lng: customerLocation.longitude };
-      console.log('✅ [AdminDashboard] Using customer direct coordinates:', jobCoords);
-    }
-    // Priority 2: Customer location with googleLocation (check for null/undefined/empty string)
-    else if (customerLocation?.googleLocation || customerLocation?.google_location) {
-      const googleLocation = customerLocation.googleLocation || customerLocation.google_location;
-      console.log('🔗 [AdminDashboard] Attempting to extract from customer googleLocation:', googleLocation?.substring(0, 150));
-      
-      if (googleLocation && typeof googleLocation === 'string' && googleLocation.trim() !== '') {
-        const extractedCoords = extractCoordinatesFromGoogleMapsLink(googleLocation);
-        console.log('📍 [AdminDashboard] Customer extraction result:', extractedCoords);
-        
-        if (extractedCoords) {
-          jobCoords = { lat: extractedCoords.latitude, lng: extractedCoords.longitude };
-          console.log('✅ [AdminDashboard] Successfully extracted coordinates from customer:', jobCoords);
-        } else {
-          console.warn('⚠️ [AdminDashboard] Failed to extract coordinates from customer URL');
+
+    let workingJob: Job | any = job;
+    let jobCoords = resolveJobDestinationCoords(workingJob);
+
+    if (!jobCoords) {
+      try {
+        const { data, error } = await db.jobs.getByIdFull(job.id);
+        if (!error && data) {
+          workingJob = data;
+          jobCoords = resolveJobDestinationCoords(workingJob);
         }
-      } else {
-        console.warn('⚠️ [AdminDashboard] Customer googleLocation is not a valid string:', typeof googleLocation, googleLocation);
+      } catch (e) {
+        console.warn('[AdminDashboard] getByIdFull for measure distance failed:', e);
       }
     }
-    // Priority 3: Job service location with direct coordinates
-    else if (jobLocation?.latitude && jobLocation?.longitude && 
-        jobLocation.latitude !== 0 && jobLocation.longitude !== 0) {
-      jobCoords = { lat: jobLocation.latitude, lng: jobLocation.longitude };
-      console.log('✅ [AdminDashboard] Using job service direct coordinates:', jobCoords);
-    }
-    // Priority 4: Job service location with googleLocation (check for null/undefined/empty string)
-    else if (jobLocation?.googleLocation || jobLocation?.google_location) {
-      const googleLocation = jobLocation.googleLocation || jobLocation.google_location;
-      console.log('🔗 [AdminDashboard] Attempting to extract from job service googleLocation:', googleLocation?.substring(0, 150));
-      
-      if (googleLocation && typeof googleLocation === 'string' && googleLocation.trim() !== '') {
-        const extractedCoords = extractCoordinatesFromGoogleMapsLink(googleLocation);
-        console.log('📍 [AdminDashboard] Job service extraction result:', extractedCoords);
-        
-        if (extractedCoords) {
-          jobCoords = { lat: extractedCoords.latitude, lng: extractedCoords.longitude };
-          console.log('✅ [AdminDashboard] Successfully extracted coordinates from job service:', jobCoords);
-        } else {
-          console.warn('⚠️ [AdminDashboard] Failed to extract coordinates from job service URL');
-        }
-      } else {
-        console.warn('⚠️ [AdminDashboard] Job service googleLocation is not a valid string:', typeof googleLocation, googleLocation);
-      }
-    } else {
-      console.warn('⚠️ [AdminDashboard] No location data found in jobLocation or customerLocation:', {
-        jobLocation,
-        customerLocation
-      });
-    }
-    
+
+    setSelectedJobForDistance(workingJob as Job);
+
     if (!jobCoords) {
       console.error('❌ [AdminDashboard] No coordinates available for distance measurement');
       toast.error('Job location not available. Please ensure the job has valid coordinates or a Google Maps link.');
       return;
     }
-    
+
     console.log('✅ [AdminDashboard] Proceeding with distance calculation using:', jobCoords);
 
     // Get assigned technician ID - only process assigned technician
-    const assignedTechnicianId = (job as any).assigned_technician_id || job.assignedTechnicianId || null;
+    const assignedTechnicianId =
+      (workingJob as any).assigned_technician_id || workingJob.assignedTechnicianId || null;
     
     if (!assignedTechnicianId) {
       toast.error('No technician assigned to this job.');
@@ -5746,29 +5736,22 @@ const AdminDashboard = () => {
 
   // Get ETA for share-technician-info dialog (reuses same job coords and distance logic)
   const getEtaForShareDialog = useCallback(async (job: Job): Promise<{ durationText?: string; estimatedArrival?: string } | null> => {
-    const customer = (job as any).customer || job.customer;
-    const customerLocation = customer?.location || {};
-    const jobLocation = job.serviceLocation || (job as any).service_location;
-    let jobCoords: { lat: number; lng: number } | null = null;
-    if (customerLocation?.latitude != null && customerLocation?.longitude != null && customerLocation.latitude !== 0 && customerLocation.longitude !== 0) {
-      jobCoords = { lat: customerLocation.latitude, lng: customerLocation.longitude };
-    } else if (customerLocation?.googleLocation || customerLocation?.google_location) {
-      const gl = customerLocation.googleLocation || customerLocation.google_location;
-      if (gl && typeof gl === 'string' && gl.trim() !== '') {
-        const ex = extractCoordinatesFromGoogleMapsLink(gl);
-        if (ex) jobCoords = { lat: ex.latitude, lng: ex.longitude };
-      }
-    } else if (jobLocation?.latitude != null && jobLocation?.longitude != null && jobLocation.latitude !== 0 && jobLocation.longitude !== 0) {
-      jobCoords = { lat: jobLocation.latitude, lng: jobLocation.longitude };
-    } else if (jobLocation?.googleLocation || jobLocation?.google_location) {
-      const gl = jobLocation.googleLocation || jobLocation.google_location;
-      if (gl && typeof gl === 'string' && gl.trim() !== '') {
-        const ex = extractCoordinatesFromGoogleMapsLink(gl);
-        if (ex) jobCoords = { lat: ex.latitude, lng: ex.longitude };
+    let workingJob: any = job;
+    let jobCoords = resolveJobDestinationCoords(workingJob);
+    if (!jobCoords) {
+      try {
+        const { data, error } = await db.jobs.getByIdFull(job.id);
+        if (!error && data) {
+          workingJob = data;
+          jobCoords = resolveJobDestinationCoords(workingJob);
+        }
+      } catch {
+        /* ignore */
       }
     }
     if (!jobCoords) return null;
-    const assignedTechnicianId = (job as any).assigned_technician_id || (job as any).assignedTechnicianId;
+    const assignedTechnicianId =
+      workingJob.assigned_technician_id || workingJob.assignedTechnicianId;
     if (!assignedTechnicianId) return null;
     const assignedTechnician = technicians.find(t => t.id === assignedTechnicianId);
     const techLocation = assignedTechnician?.currentLocation || (assignedTechnician as any)?.current_location;
@@ -8605,6 +8588,7 @@ const AdminDashboard = () => {
                   setCurrentLocation={setCurrentLocation}
                   setIsGettingLocation={setIsGettingLocation}
                   setAddressDialogOpen={setAddressDialogOpen}
+                  hydrateCustomerForMaps={hydrateCustomerForMaps}
                 />
 
                                 {/* Services Section - Always show, even if no jobs */}
@@ -11155,11 +11139,14 @@ const AdminDashboard = () => {
               {selectedJobForDistance && (
                 <div className="mt-2">
                   <p className="font-medium">Job: {selectedJobForDistance.jobNumber || (selectedJobForDistance as any).job_number}</p>
-                  {selectedJobForDistance.serviceLocation && (
-                    <p className="text-sm text-gray-500 mt-1">
-                      Location: {selectedJobForDistance.serviceLocation.latitude?.toFixed(6)}, {selectedJobForDistance.serviceLocation.longitude?.toFixed(6)}
-                    </p>
-                  )}
+                  {(() => {
+                    const c = resolveJobDestinationCoords(selectedJobForDistance);
+                    return c ? (
+                      <p className="text-sm text-gray-500 mt-1">
+                        Location: {c.lat.toFixed(6)}, {c.lng.toFixed(6)}
+                      </p>
+                    ) : null;
+                  })()}
                 </div>
               )}
             </DialogDescription>

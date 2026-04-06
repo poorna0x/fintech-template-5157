@@ -15,6 +15,8 @@ interface ContactSectionProps {
   setCurrentLocation: (location: { lat: number; lng: number }) => void;
   setIsGettingLocation: (isGetting: boolean) => void;
   setAddressDialogOpen: React.Dispatch<React.SetStateAction<Record<string, boolean>>>;
+  /** Load full customer from DB when the list card only has a slim embed (e.g. map pin / coordinates). */
+  hydrateCustomerForMaps?: (customerId: string) => Promise<Customer | null>;
 }
 
 export const ContactSection: React.FC<ContactSectionProps> = ({
@@ -26,6 +28,7 @@ export const ContactSection: React.FC<ContactSectionProps> = ({
   setCurrentLocation,
   setIsGettingLocation,
   setAddressDialogOpen,
+  hydrateCustomerForMaps,
 }) => {
   return (
     <div className="p-4 border-b border-gray-100">
@@ -111,21 +114,48 @@ export const ContactSection: React.FC<ContactSectionProps> = ({
           <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-3">
             <div className="w-8 h-8 sm:w-10 sm:h-10 bg-gray-100 rounded-lg flex items-center justify-center flex-shrink-0">
               <button
-                onClick={() => {
-                  const googleLoc = (customer.location as any)?.googleLocation;
-                  if (googleLoc && typeof googleLoc === 'string' && 
+                onClick={async () => {
+                  const tryOpenForCustomer = (c: Customer): boolean => {
+                    const locAny = c.location as any;
+                    const googleLoc =
+                      (typeof locAny?.googleLocation === 'string' && locAny.googleLocation) ||
+                      (typeof locAny?.google_location === 'string' && locAny.google_location) ||
+                      '';
+                    if (
+                      googleLoc &&
                       (googleLoc.includes('google.com/maps') || googleLoc.includes('maps.app.goo.gl') || googleLoc.includes('goo.gl/maps')) &&
-                      !googleLoc.includes('localhost') && 
-                      !googleLoc.includes('127.0.0.1')) {
-                    window.open(googleLoc, '_blank', 'noopener,noreferrer');
-                  } else {
-                    const location = extractCoordinates(customer.location);
+                      !googleLoc.includes('localhost') &&
+                      !googleLoc.includes('127.0.0.1')
+                    ) {
+                      window.open(googleLoc, '_blank', 'noopener,noreferrer');
+                      return true;
+                    }
+                    const location = extractCoordinates(c.location);
                     if (location && location.latitude !== 0 && location.longitude !== 0) {
-                      window.open(`https://www.google.com/maps/place/${location.latitude},${location.longitude}`, '_blank', 'noopener,noreferrer');
-                    } else {
-                      toast.error('Location data not available');
+                      window.open(
+                        `https://www.google.com/maps/place/${location.latitude},${location.longitude}`,
+                        '_blank',
+                        'noopener,noreferrer'
+                      );
+                      return true;
+                    }
+                    return false;
+                  };
+
+                  if (tryOpenForCustomer(customer)) return;
+
+                  if (hydrateCustomerForMaps) {
+                    const t = toast.loading('Loading location…');
+                    try {
+                      const full = await hydrateCustomerForMaps(customer.id);
+                      toast.dismiss(t);
+                      if (full && tryOpenForCustomer(full)) return;
+                    } catch {
+                      toast.dismiss(t);
                     }
                   }
+
+                  toast.error('Location data not available');
                 }}
                 className="cursor-pointer"
               >
