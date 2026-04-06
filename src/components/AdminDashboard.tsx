@@ -11135,21 +11135,6 @@ const AdminDashboard = () => {
               <Navigation className="h-5 w-5" />
               Measure Distance to Job Location
             </DialogTitle>
-            <DialogDescription>
-              {selectedJobForDistance && (
-                <div className="mt-2">
-                  <p className="font-medium">Job: {selectedJobForDistance.jobNumber || (selectedJobForDistance as any).job_number}</p>
-                  {(() => {
-                    const c = resolveJobDestinationCoords(selectedJobForDistance);
-                    return c ? (
-                      <p className="text-sm text-gray-500 mt-1">
-                        Location: {c.lat.toFixed(6)}, {c.lng.toFixed(6)}
-                      </p>
-                    ) : null;
-                  })()}
-                </div>
-              )}
-            </DialogDescription>
           </DialogHeader>
 
           <div className="mt-4">
