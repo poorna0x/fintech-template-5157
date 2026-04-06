@@ -239,6 +239,34 @@ function appendQrCacheBust(url: string, version: number): string {
   return `${url}${sep}ro_qr_v=${version}`;
 }
 
+/** In-memory QR state for Realtime merges (avoid 4-query refetch on every admin edit). */
+type TechnicianQrLiveRef = {
+  technicianId: string;
+  allCommon: CommonQrCode[];
+  technicianCommonFull: CommonQrCode[];
+  allTechPicker: TechnicianQrPickerRow[];
+  visibleForPicker: string[];
+  rawVisibleQrCodes: string[] | null | undefined;
+  assignedCommonIds: string[];
+  allTechForReports: TechnicianQrSnapshotV1['allTechniciansForReports'];
+  /** True after first successful loadQrCodes — skip merge until then to avoid partial state. */
+  hydrated: boolean;
+};
+
+function emptyTechnicianQrLiveRef(): TechnicianQrLiveRef {
+  return {
+    technicianId: '',
+    allCommon: [],
+    technicianCommonFull: [],
+    allTechPicker: [],
+    visibleForPicker: ['all'],
+    rawVisibleQrCodes: undefined,
+    assignedCommonIds: [],
+    allTechForReports: [],
+    hydrated: false,
+  };
+}
+
 const TechnicianDashboard = () => {
   const { user, logout, isTechnician, loading } = useAuth();
   const navigate = useNavigate();
@@ -317,8 +345,9 @@ const TechnicianDashboard = () => {
   const [realtimeConnected, setRealtimeConnected] = useState(false);
   const processingJobsRef = useRef<Set<string>>(new Set()); // Track jobs being processed to prevent duplicates (use ref for synchronous access)
   const lastActiveTimeRef = useRef<Date>(new Date()); // Track when app was last active
-  /** Throttle forced QR refetch when returning to the app (Realtime/RLS may miss admin edits). */
+  /** Throttle rare full QR refetch when returning to the app (Realtime merge is primary). */
   const lastQrRefreshOnFocusRef = useRef<number>(0);
+  const qrLiveRef = useRef<TechnicianQrLiveRef>(emptyTechnicianQrLiveRef());
   const lastJobIdsRef = useRef<Set<string>>(new Set()); // Track job IDs from last active session
   const hasJobsRef = useRef<boolean>(false); // Track if we have loaded jobs at least once
   const shouldPreserveOrderRef = useRef<boolean>(false); // Track if we should preserve job order (true when updating status, false when loading from DB)
@@ -884,6 +913,8 @@ const TechnicianDashboard = () => {
         let currentTechnicianVisibleQrCodes: string[] = ['all'];
         let rawVisibleQrCodes: any = null;
         let assignedCommonQrs: CommonQrCode[] = [];
+        let technicianCommonQrCatalog: CommonQrCode[] = [];
+        let assignedCommonIdsForRef: string[] = [];
 
         const roster = allTechniciansResult.data || [];
         const me = meResult.data;
@@ -922,15 +953,16 @@ const TechnicianDashboard = () => {
             common_qr_code_ids: currentTech.common_qr_code_ids,
             common_qr_code_id: (currentTech as any).common_qr_code_id,
           });
-          const idSet = new Set(commonQrIds.map((x) => String(x)));
-          const technicianCommonQrList: CommonQrCode[] = (technicianCommonQrResult.data || []).map((q: any) => ({
+          assignedCommonIdsForRef = commonQrIds.map((x) => String(x));
+          const idSet = new Set(assignedCommonIdsForRef);
+          technicianCommonQrCatalog = (technicianCommonQrResult.data || []).map((q: any) => ({
             id: q.id,
             name: q.name,
             qrCodeUrl: q.qr_code_url,
             createdAt: q.created_at,
             updatedAt: q.updated_at,
           }));
-          assignedCommonQrs = technicianCommonQrList.filter((q: CommonQrCode) => idSet.has(String(q.id)));
+          assignedCommonQrs = technicianCommonQrCatalog.filter((q: CommonQrCode) => idSet.has(String(q.id)));
           setCommonQrCodesForTechnician(assignedCommonQrs);
 
           const paymentQr =
@@ -981,6 +1013,18 @@ const TechnicianDashboard = () => {
           snapshotTechs = filteredTechnicians;
         }
 
+        qrLiveRef.current = {
+          technicianId,
+          allCommon: allCommonQrCodesData,
+          technicianCommonFull: technicianCommonQrCatalog,
+          allTechPicker: allTechniciansData,
+          visibleForPicker: currentTechnicianVisibleQrCodes,
+          rawVisibleQrCodes,
+          assignedCommonIds: assignedCommonIdsForRef,
+          allTechForReports: allTechniciansForReportsData,
+          hydrated: true,
+        };
+
         saveTechnicianQrSnapshot(technicianId, {
           savedAt: Date.now(),
           allCommonQrCodes: allCommonQrCodesData,
@@ -1004,6 +1048,245 @@ const TechnicianDashboard = () => {
     },
     [user]
   );
+
+  /** Apply derived QR UI from qrLiveRef (used after Realtime merge — no extra DB round-trip). */
+  const recomputeQrUiFromLiveRef = useCallback(() => {
+    const {
+      technicianId,
+      allCommon,
+      technicianCommonFull,
+      allTechPicker,
+      visibleForPicker,
+      rawVisibleQrCodes,
+      assignedCommonIds,
+      allTechForReports,
+    } = qrLiveRef.current;
+
+    if (!technicianId) return;
+
+    const idSet = new Set(assignedCommonIds.map(String));
+    const assignedCommonQrs = technicianCommonFull.filter((q) => idSet.has(String(q.id)));
+    setCommonQrCodesForTechnician(assignedCommonQrs);
+    setTechnicianVisibleQrCodes(visibleForPicker);
+
+    let snapshotCommon: CommonQrCode[] = [];
+    let snapshotTechs: TechnicianQrPickerRow[] = [];
+
+    if (
+      visibleForPicker.length === 0 &&
+      rawVisibleQrCodes !== null &&
+      rawVisibleQrCodes !== undefined
+    ) {
+      setCommonQrCodes([]);
+      setTechnicians([]);
+      snapshotCommon = [];
+      snapshotTechs = [];
+    } else if (visibleForPicker.includes('all')) {
+      setCommonQrCodes(allCommon);
+      setTechnicians(allTechPicker);
+      snapshotCommon = allCommon;
+      snapshotTechs = allTechPicker;
+    } else {
+      const visibleQrCodesStr = visibleForPicker.map((id) => String(id));
+      const filteredCommon = allCommon.filter((qr) => {
+        const formattedId = `common_${String(qr.id)}`;
+        return visibleQrCodesStr.includes(formattedId);
+      });
+      const filteredTechnicians = allTechPicker.filter((tech) => {
+        const formattedId = `technician_${String(tech.id)}`;
+        return visibleQrCodesStr.includes(formattedId);
+      });
+      setCommonQrCodes(filteredCommon);
+      setTechnicians(filteredTechnicians);
+      snapshotCommon = filteredCommon;
+      snapshotTechs = filteredTechnicians;
+    }
+
+    const paymentQr = allTechPicker.find((t) => t.id === technicianId)?.qrCode;
+    if (paymentQr && String(paymentQr).trim()) {
+      cacheTechnicianQrCode(technicianId, String(paymentQr).trim());
+    }
+
+    setAllCommonQrCodes(allCommon);
+    setAllTechnicians(allTechPicker);
+    setAllTechniciansForReports(allTechForReports);
+
+    saveTechnicianQrSnapshot(technicianId, {
+      savedAt: Date.now(),
+      allCommonQrCodes: allCommon,
+      commonQrCodes: snapshotCommon,
+      allTechnicians: allTechPicker,
+      technicians: snapshotTechs,
+      commonQrCodesForTechnician: assignedCommonQrs,
+      technicianVisibleQrCodes: visibleForPicker,
+      allTechniciansForReports: allTechForReports,
+    });
+
+    setQrAssetsVersion((v) => v + 1);
+
+    void prefetchTechnicianCommonQrImages(
+      technicianId,
+      assignedCommonQrs.map((q) => ({ id: q.id, qrCodeUrl: q.qrCodeUrl }))
+    ).then((map) => setCommonQrImageDataById(map));
+  }, []);
+
+  /** Merge Realtime row into ref and refresh UI immediately (low egress vs loadQrCodes). */
+  const handleQrPostgresChange = useCallback(
+    (payload: {
+      table?: string;
+      eventType?: string;
+      new?: Record<string, any>;
+      old?: Record<string, any>;
+    }) => {
+      if (!user || user.role !== 'technician') return;
+      const technicianId = user.technicianId || user.id;
+      if (!technicianId || !payload?.table) return;
+
+      if (!qrLiveRef.current.hydrated || qrLiveRef.current.technicianId !== technicianId) {
+        loadQrCodes({ force: true });
+        return;
+      }
+
+      try {
+        if (payload.table === 'common_qr_codes') {
+          if (payload.eventType === 'DELETE' && payload.old?.id) {
+            qrLiveRef.current.allCommon = qrLiveRef.current.allCommon.filter((q) => q.id !== payload.old!.id);
+          } else if (payload.new?.id) {
+            const row = payload.new;
+            const item: CommonQrCode = {
+              id: row.id,
+              name: row.name ?? '',
+              qrCodeUrl: row.qr_code_url ?? '',
+              createdAt: row.created_at ?? '',
+              updatedAt: row.updated_at ?? '',
+            };
+            const prev = qrLiveRef.current.allCommon;
+            const i = prev.findIndex((q) => q.id === item.id);
+            qrLiveRef.current.allCommon =
+              i === -1 ? [...prev, item] : prev.map((q, idx) => (idx === i ? item : q));
+            cacheQrCodes(qrLiveRef.current.allCommon);
+          } else {
+            loadQrCodes({ force: true });
+            return;
+          }
+          recomputeQrUiFromLiveRef();
+          return;
+        }
+
+        if (payload.table === 'technician_common_qr') {
+          if (payload.eventType === 'DELETE' && payload.old?.id) {
+            qrLiveRef.current.technicianCommonFull = qrLiveRef.current.technicianCommonFull.filter(
+              (q) => q.id !== payload.old!.id
+            );
+          } else if (payload.new?.id) {
+            const row = payload.new;
+            const item: CommonQrCode = {
+              id: row.id,
+              name: row.name ?? '',
+              qrCodeUrl: row.qr_code_url ?? '',
+              createdAt: row.created_at ?? '',
+              updatedAt: row.updated_at ?? '',
+            };
+            const prev = qrLiveRef.current.technicianCommonFull;
+            const i = prev.findIndex((q) => q.id === item.id);
+            qrLiveRef.current.technicianCommonFull =
+              i === -1 ? [...prev, item] : prev.map((q, idx) => (idx === i ? item : q));
+          } else {
+            loadQrCodes({ force: true });
+            return;
+          }
+          recomputeQrUiFromLiveRef();
+          return;
+        }
+
+        if (payload.table === 'technicians' && payload.new?.id === technicianId) {
+          const row = payload.new;
+          const rawVis = row.visible_qr_codes;
+          qrLiveRef.current.rawVisibleQrCodes = rawVis;
+          qrLiveRef.current.visibleForPicker =
+            rawVis === null || rawVis === undefined ? ['all'] : rawVis;
+          qrLiveRef.current.assignedCommonIds = normalizeTechnicianAssignedCommonQrIds({
+            common_qr_code_ids: row.common_qr_code_ids,
+            common_qr_code_id: row.common_qr_code_id,
+          }).map(String);
+
+          const qr = String(row.qr_code || '').trim();
+          const prevPicker = qrLiveRef.current.allTechPicker;
+          const prevName =
+            row.full_name ||
+            prevPicker.find((t) => t.id === technicianId)?.fullName ||
+            '';
+          let nextPicker = prevPicker.filter((t) => t.id !== technicianId);
+          if (qr) {
+            nextPicker = [
+              ...nextPicker,
+              {
+                id: technicianId,
+                fullName: prevName,
+                qrCode: qr,
+                visibleQrCodes: row.visible_qr_codes || [],
+              },
+            ];
+          }
+          qrLiveRef.current.allTechPicker = nextPicker;
+          if (qr) cacheTechnicianQrCode(technicianId, qr);
+
+          qrLiveRef.current.allTechForReports = qrLiveRef.current.allTechForReports.map((t) =>
+            t.id === technicianId ? { ...t, fullName: prevName, full_name: prevName } : t
+          );
+
+          recomputeQrUiFromLiveRef();
+          return;
+        }
+      } catch (e) {
+        console.warn('[TechnicianDashboard] QR realtime merge failed, full refetch', e);
+        loadQrCodes({ force: true });
+      }
+    },
+    [user, loadQrCodes, recomputeQrUiFromLiveRef]
+  );
+
+  /** Payment step: always pull latest admin QR visibility/assignments (fixes stale picker + preview). */
+  useEffect(() => {
+    if (!user || user.role !== 'technician') return;
+    if (!completeDialogOpen || completeJobStep !== 4) return;
+    const n = parseFloat(billAmount);
+    if (billAmount === '' || Number.isNaN(n) || n === 0) return;
+    loadQrCodes({ force: true });
+  }, [completeDialogOpen, completeJobStep, billAmount, user, loadQrCodes]);
+
+  /** If admin changes QR list while technician is on payment step, drop selection that no longer exists. */
+  useEffect(() => {
+    if (!completeDialogOpen || completeJobStep !== 4) return;
+    if (!selectedQrCodeId || selectedQrCodeId === 'no-qr') return;
+
+    const listsPopulated = commonQrCodes.length > 0 || technicians.length > 0;
+    const catalogReady = qrLiveRef.current.hydrated;
+    if (!listsPopulated && !catalogReady) return;
+
+    if (listsPopulated || catalogReady) {
+      if (selectedQrCodeId.startsWith('common_')) {
+        const id = selectedQrCodeId.replace('common_', '');
+        if (!commonQrCodes.some((q) => String(q.id) === id)) {
+          setSelectedQrCodeId('');
+          setQrCodeType('');
+        }
+      } else if (selectedQrCodeId.startsWith('technician_')) {
+        const id = selectedQrCodeId.replace('technician_', '');
+        if (!technicians.some((t) => String(t.id) === id)) {
+          setSelectedQrCodeId('');
+          setQrCodeType('');
+        }
+      }
+    }
+  }, [
+    completeDialogOpen,
+    completeJobStep,
+    selectedQrCodeId,
+    commonQrCodes,
+    technicians,
+    qrAssetsVersion,
+  ]);
 
   // Load QR codes on mount and when user changes
   useEffect(() => {
@@ -1030,6 +1313,12 @@ const TechnicianDashboard = () => {
     }
   }, [user, loading, loadQrCodes]);
 
+  useEffect(() => {
+    if (!user) {
+      qrLiveRef.current = emptyTechnicianQrLiveRef();
+    }
+  }, [user]);
+
   // Track app visibility to show notifications when app becomes active and refresh QR codes
   useEffect(() => {
     const handleVisibilityChange = () => {
@@ -1041,7 +1330,7 @@ const TechnicianDashboard = () => {
         // Pull latest payment/common QR assignments when returning — Realtime can miss rows if RLS/publication misconfigured.
         if (user?.role === 'technician') {
           const t = Date.now();
-          if (t - lastQrRefreshOnFocusRef.current > 15_000) {
+          if (t - lastQrRefreshOnFocusRef.current > 300_000) {
             lastQrRefreshOnFocusRef.current = t;
             loadQrCodes({ force: true });
           }
@@ -1064,7 +1353,7 @@ const TechnicianDashboard = () => {
       
       if (user?.role === 'technician') {
         const t = Date.now();
-        if (t - lastQrRefreshOnFocusRef.current > 15_000) {
+        if (t - lastQrRefreshOnFocusRef.current > 300_000) {
           lastQrRefreshOnFocusRef.current = t;
           loadQrCodes({ force: true });
         }
@@ -1086,7 +1375,7 @@ const TechnicianDashboard = () => {
     };
   }, [user?.technicianId, user?.role, loadAssignedJobs, loadQrCodes, user]);
 
-  // Realtime for QR codes — refetch only when common_qr_codes, technician_common_qr, or this technician's row changes (no 30s poll)
+  // Realtime for QR codes — merge payload into local ref (immediate UI, no 4-query refetch; full fetch only if merge fails)
   useEffect(() => {
     if (!user || user.role !== 'technician') return;
     const technicianId = user.technicianId || user.id;
@@ -1096,12 +1385,12 @@ const TechnicianDashboard = () => {
       .on(
         'postgres_changes',
         { event: '*', schema: 'public', table: 'common_qr_codes' },
-        () => loadQrCodes({ force: true })
+        (payload) => handleQrPostgresChange(payload as any)
       )
       .on(
         'postgres_changes',
         { event: '*', schema: 'public', table: 'technician_common_qr' },
-        () => loadQrCodes({ force: true })
+        (payload) => handleQrPostgresChange(payload as any)
       )
       .on(
         'postgres_changes',
@@ -1111,19 +1400,19 @@ const TechnicianDashboard = () => {
           table: 'technicians',
           filter: `id=eq.${technicianId}`,
         },
-        () => loadQrCodes({ force: true })
+        (payload) => handleQrPostgresChange(payload as any)
       )
       .subscribe();
 
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [user?.id, user?.technicianId, user?.role, loadQrCodes]);
+  }, [user?.id, user?.technicianId, user?.role, handleQrPostgresChange]);
 
-  // Reconnect: soft refresh only (respects long min-interval; avoids refetch on every tab resume).
+  // Reconnect after offline: one full sync (infrequent; normal path is Realtime merge).
   useEffect(() => {
     if (!user || user.role !== 'technician') return;
-    const onOnline = () => loadQrCodes({ force: false });
+    const onOnline = () => loadQrCodes({ force: true });
     window.addEventListener('online', onOnline);
     return () => window.removeEventListener('online', onOnline);
   }, [user?.role, loadQrCodes]);
