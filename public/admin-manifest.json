@@ -1,6 +1,6 @@
 {
   "name": "Hydrogen RO Admin",
-  "short_name": "HRO Admin",
+  "short_name": "Admin",
   "description": "Admin dashboard for managing customers, jobs, and technicians",
   "id": "/admin",
   "scope": "/admin/",
