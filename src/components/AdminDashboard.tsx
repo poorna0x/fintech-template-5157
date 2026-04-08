@@ -2776,6 +2776,28 @@ const AdminDashboard = () => {
     });
   }, []);
 
+  const haversineDistanceMeters = (a: { lat: number; lng: number }, b: { lat: number; lng: number }): number => {
+    const toRad = (deg: number) => (deg * Math.PI) / 180;
+    const R = 6371000; // meters
+    const dLat = toRad(b.lat - a.lat);
+    const dLng = toRad(b.lng - a.lng);
+    const lat1 = toRad(a.lat);
+    const lat2 = toRad(b.lat);
+    const s1 = Math.sin(dLat / 2);
+    const s2 = Math.sin(dLng / 2);
+    const h = s1 * s1 + Math.cos(lat1) * Math.cos(lat2) * s2 * s2;
+    const c = 2 * Math.atan2(Math.sqrt(h), Math.sqrt(1 - h));
+    return R * c;
+  };
+
+  const formatDistanceKm = (meters: number): string => {
+    if (!Number.isFinite(meters) || meters <= 0) return '';
+    const km = meters / 1000;
+    if (km < 1) return `${km.toFixed(2)} km`;
+    if (km < 10) return `${km.toFixed(2)} km`;
+    return `${km.toFixed(1)} km`;
+  };
+
   // Calculate distance and time using Google Maps Distance Matrix API
   const calculateDistanceAndTime = useCallback(async (
     origin: { lat: number; lng: number },
@@ -2919,6 +2941,25 @@ const AdminDashboard = () => {
             } else {
               clearTimeout(timeoutId);
               console.error('Distance Matrix status error:', status);
+              // Mobile-safe fallback: show approximate straight-line distance when Maps route fails (API blocked, quota, referrer, etc.)
+              try {
+                const approxMeters = haversineDistanceMeters(originCoords, destCoords);
+                const approxText = formatDistanceKm(approxMeters);
+                if (approxText) {
+                  setCustomerDistances(prev => ({
+                    ...prev,
+                    [customerId]: {
+                      distance: approxText,
+                      duration: '',
+                      isCalculating: false,
+                    }
+                  }));
+                  toast.warning('Showing approximate distance (route unavailable)');
+                  return;
+                }
+              } catch {
+                // ignore
+              }
               setCustomerDistances(prev => ({
                 ...prev,
                 [customerId]: { ...prev[customerId], isCalculating: false }
@@ -2933,6 +2974,25 @@ const AdminDashboard = () => {
       tryCalculateDistance(window.google.maps.TravelMode.DRIVING, 'DRIVING', false);
     } catch (error) {
       console.error('Error calculating distance:', error);
+      // Mobile-safe fallback: approximate straight-line distance when Maps fails to load/call.
+      try {
+        const approxMeters = haversineDistanceMeters(origin, destination);
+        const approxText = formatDistanceKm(approxMeters);
+        if (approxText) {
+          setCustomerDistances(prev => ({
+            ...prev,
+            [customerId]: {
+              distance: approxText,
+              duration: '',
+              isCalculating: false,
+            }
+          }));
+          toast.warning('Showing approximate distance (route unavailable)');
+          return;
+        }
+      } catch {
+        // ignore
+      }
       setCustomerDistances(prev => ({
         ...prev,
         [customerId]: { ...prev[customerId], isCalculating: false }
@@ -5739,6 +5799,42 @@ const AdminDashboard = () => {
     } catch (error) {
       console.error('Error calculating distances:', error);
       setIsCalculatingDistances(false);
+      // Mobile-safe fallback: show approximate distance for assigned technician when Maps fails.
+      try {
+        const assignedTechnicianId =
+          (selectedJobForDistance as any)?.assigned_technician_id ||
+          (selectedJobForDistance as any)?.assignedTechnicianId ||
+          (selectedJobForDistance as any)?.assignedTechnician?.id ||
+          '';
+        const tech = assignedTechnicianId ? technicians.find((t) => String(t.id) === String(assignedTechnicianId)) : null;
+        const techLoc: any = (tech as any)?.currentLocation || (tech as any)?.current_location || null;
+        const jobCoords = selectedJobForDistance ? resolveJobDestinationCoords(selectedJobForDistance as any) : null;
+        if (techLoc?.latitude && techLoc?.longitude && jobCoords?.lat && jobCoords?.lng) {
+          const approxMeters = haversineDistanceMeters(
+            { lat: Number(techLoc.latitude), lng: Number(techLoc.longitude) },
+            { lat: Number(jobCoords.lat), lng: Number(jobCoords.lng) }
+          );
+          const approxText = formatDistanceKm(approxMeters);
+          if (approxText) {
+            setTechnicianDistances([{
+              technician: tech as any,
+              distance: approxText,
+              duration: '',
+              distanceValue: approxMeters,
+              durationValue: undefined,
+              estimatedArrival: undefined,
+              lastUpdated: techLoc?.lastUpdated ? new Date(techLoc.lastUpdated).toLocaleString('en-IN') : '',
+              hasLocation: true,
+              isCalculating: false,
+              isAssigned: true,
+            } as any]);
+            toast.warning('Showing approximate distance (route unavailable)');
+            return;
+          }
+        }
+      } catch {
+        // ignore
+      }
       toast.error(`Failed to calculate distances: ${error instanceof Error ? error.message : 'Unknown error'}`);
     }
   };
