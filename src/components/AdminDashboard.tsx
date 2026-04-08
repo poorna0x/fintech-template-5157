@@ -50,6 +50,7 @@ import {
   XCircle,
   CheckCircle2,
   Filter,
+  FilterX,
   Tag,
   MessageSquare,
   DollarSign,
@@ -700,6 +701,14 @@ const AdminDashboard = () => {
   const [viewRemindersCustomer, setViewRemindersCustomer] = useState<Customer | null>(null);
   const [messageSentFilter, setMessageSentFilter] = useState<'all' | 'sent' | 'not_sent'>('not_sent');
   const [statusFilter, setStatusFilter] = useState<'ALL' | 'ONGOING' | 'PENDING' | 'ASSIGNED' | 'EN_ROUTE' | 'IN_PROGRESS' | 'COMPLETED' | 'CANCELLED' | 'RESCHEDULED'>('ONGOING');
+  // Ongoing-only sub-filters (UI parity with completed filters, but only for ongoing section)
+  const [ongoingAssignmentFilter, setOngoingAssignmentFilter] = useState<'all' | 'assigned' | 'unassigned'>('all');
+  const [ongoingAssignedTechnicianFilter, setOngoingAssignedTechnicianFilter] = useState<string>('all');
+  const [ongoingServiceSubTypeFilter, setOngoingServiceSubTypeFilter] = useState<string>('all');
+  const [ongoingFilterDialogOpen, setOngoingFilterDialogOpen] = useState(false);
+  const [draftOngoingAssignmentFilter, setDraftOngoingAssignmentFilter] = useState<'all' | 'assigned' | 'unassigned'>('all');
+  const [draftOngoingAssignedTechnicianFilter, setDraftOngoingAssignedTechnicianFilter] = useState<string>('all');
+  const [draftOngoingServiceSubTypeFilter, setDraftOngoingServiceSubTypeFilter] = useState<string>('all');
   const [loadingCustomerJobs, setLoadingCustomerJobs] = useState<{[customerId: string]: boolean}>({});
   const [showAllFollowups, setShowAllFollowups] = useState<boolean>(false);
   // Pagination state
@@ -7354,7 +7363,7 @@ const AdminDashboard = () => {
     } else if (statusFilter === 'ONGOING') {
       // Show customers with ongoing jobs (pending, assigned, in-progress)
       filteredCustomers = customersWithJobs.filter(({ allJobs }) => 
-        allJobs.some(job => ['PENDING', 'ASSIGNED', 'EN_ROUTE', 'IN_PROGRESS'].includes(job.status))                                                                        
+        allJobs.some((job: any) => doesOngoingJobMatchFilters(job))
       );
     } else if (statusFilter === 'RESCHEDULED') {
       // For RESCHEDULED, use jobs if loaded via pagination, otherwise filter customersWithJobs
@@ -7478,6 +7487,96 @@ const AdminDashboard = () => {
     }
     return followUpDate.split('T')[0].trim();
   };
+
+  const getJobServiceSubTypeLabel = (job: any): string => {
+    return normalizeServiceSubType(String(job?.service_sub_type ?? job?.serviceSubType ?? '').trim()) || '';
+  };
+  const getJobAssignedTechnicianId = (job: any): string => {
+    return String(
+      job?.assigned_technician_id ??
+        job?.assignedTechnicianId ??
+        job?.assignedTechnician?.id ??
+        ''
+    ).trim();
+  };
+  const doesOngoingJobMatchFilters = useCallback((job: any): boolean => {
+    // status gate (Ongoing section only)
+    if (!['PENDING', 'ASSIGNED', 'EN_ROUTE', 'IN_PROGRESS'].includes(job?.status)) return false;
+
+    const assignedTechnicianId = getJobAssignedTechnicianId(job);
+    const isAssigned = Boolean(assignedTechnicianId);
+
+    if (ongoingAssignmentFilter === 'assigned' && !isAssigned) return false;
+    if (ongoingAssignmentFilter === 'unassigned' && isAssigned) return false;
+
+    if (ongoingAssignedTechnicianFilter !== 'all') {
+      if (!assignedTechnicianId) return false;
+      if (assignedTechnicianId !== String(ongoingAssignedTechnicianFilter)) return false;
+    }
+
+    if (ongoingServiceSubTypeFilter !== 'all') {
+      const st = getJobServiceSubTypeLabel(job);
+      if (!st) return false;
+      if (st !== String(ongoingServiceSubTypeFilter)) return false;
+    }
+
+    return true;
+  }, [ongoingAssignmentFilter, ongoingAssignedTechnicianFilter, ongoingServiceSubTypeFilter]);
+
+  const ongoingServiceSubTypeOptions = useMemo(() => {
+    if (statusFilter !== 'ONGOING') return [] as string[];
+    // Keep this local to avoid TDZ issues (completed master list is declared later in the file).
+    const MASTER_ONGOING_SERVICE_SUB_TYPES = [
+      'Service',
+      'Installation',
+      'Reinstallation',
+      'Return Complaint',
+      'AMC Service',
+      'New Purifier Installation',
+      'Un-Installation',
+      'Repair',
+      'Maintenance',
+      'Replacement',
+      'Inspection',
+      'Other',
+    ];
+    const set = new Set<string>();
+    customersWithJobs.forEach(({ allJobs }) => {
+      allJobs.forEach((job: any) => {
+        if (!['PENDING', 'ASSIGNED', 'EN_ROUTE', 'IN_PROGRESS'].includes(job?.status)) return;
+        const label = getJobServiceSubTypeLabel(job);
+        if (label) set.add(label);
+      });
+    });
+    const extras = Array.from(set).filter((x) => !MASTER_ONGOING_SERVICE_SUB_TYPES.includes(x));
+    return [...MASTER_ONGOING_SERVICE_SUB_TYPES, ...extras.sort((a, b) => a.localeCompare(b))];
+  }, [customersWithJobs, statusFilter]);
+
+  const hasOngoingClientFilters =
+    ongoingAssignmentFilter !== 'all' ||
+    ongoingAssignedTechnicianFilter !== 'all' ||
+    ongoingServiceSubTypeFilter !== 'all';
+
+  const clearOngoingFilters = useCallback(() => {
+    setOngoingAssignmentFilter('all');
+    setOngoingAssignedTechnicianFilter('all');
+    setOngoingServiceSubTypeFilter('all');
+    setDraftOngoingAssignmentFilter('all');
+    setDraftOngoingAssignedTechnicianFilter('all');
+    setDraftOngoingServiceSubTypeFilter('all');
+  }, []);
+
+  useEffect(() => {
+    if (!ongoingFilterDialogOpen) return;
+    setDraftOngoingAssignmentFilter(ongoingAssignmentFilter);
+    setDraftOngoingAssignedTechnicianFilter(ongoingAssignedTechnicianFilter);
+    setDraftOngoingServiceSubTypeFilter(ongoingServiceSubTypeFilter);
+  }, [
+    ongoingFilterDialogOpen,
+    ongoingAssignmentFilter,
+    ongoingAssignedTechnicianFilter,
+    ongoingServiceSubTypeFilter,
+  ]);
   const completedDateToStr = (dateValue: string | null | undefined): string | null => {
     if (!dateValue) return null;
     const d = new Date(dateValue);
@@ -7514,9 +7613,7 @@ const AdminDashboard = () => {
           return filtered.sort((a, b) => {
             // Get most recently created ongoing job for each customer
             const getMostRecentOngoingJobDate = (customer: typeof filtered[0]): number => {
-              const ongoingJobs = customer.allJobs.filter(job => 
-                ['PENDING', 'ASSIGNED', 'EN_ROUTE', 'IN_PROGRESS'].includes(job.status)
-              );
+              const ongoingJobs = customer.allJobs.filter((job: any) => doesOngoingJobMatchFilters(job));
               if (ongoingJobs.length === 0) return 0;
               
               const dates = ongoingJobs
@@ -8431,8 +8528,8 @@ const AdminDashboard = () => {
         )}
 
         {/* Customers with Jobs */}
-        <div className="mb-6">
-          <div className="flex items-center justify-between mb-1 flex-wrap gap-2">
+        <div className="mb-6 pb-2 sm:pb-0">
+          <div className={`flex items-center justify-between flex-wrap gap-2 ${statusFilter === 'ONGOING' ? 'mb-3 sm:mb-1' : 'mb-1'}`}>
             <h2 className="text-lg sm:text-xl font-bold text-gray-900">
               {statusFilter === 'ALL' ? 'All Customers' :
                statusFilter === 'ONGOING' ? 'Customers with Ongoing Jobs' : 
@@ -8441,6 +8538,31 @@ const AdminDashboard = () => {
                statusFilter === 'COMPLETED' ? 'Customers with Completed Jobs' :
                `Customers with ${statusFilter} Jobs`}
             </h2>
+
+            {statusFilter === 'ONGOING' && !searchTerm.trim() && (
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => {
+                  if (hasOngoingClientFilters) {
+                    clearOngoingFilters();
+                    return;
+                  }
+                  setOngoingFilterDialogOpen(true);
+                }}
+                className="flex items-center gap-2 text-xs sm:text-sm px-2 sm:px-3 py-1.5 sm:py-2 whitespace-nowrap"
+                title={hasOngoingClientFilters ? 'Clear ongoing filters' : 'Filter ongoing jobs'}
+                aria-label={hasOngoingClientFilters ? 'Clear ongoing filters' : 'Filter ongoing jobs'}
+              >
+                {hasOngoingClientFilters ? (
+                  <FilterX className="w-3 h-3 sm:w-4 sm:h-4 flex-shrink-0" />
+                ) : (
+                  <Filter className="w-3 h-3 sm:w-4 sm:h-4 flex-shrink-0" />
+                )}
+                <span className="hidden sm:inline">{hasOngoingClientFilters ? 'Clear' : 'Filter'}</span>
+              </Button>
+            )}
             
             {/* Show all followups button */}
             {statusFilter === 'RESCHEDULED' && !searchTerm.trim() && (() => {
@@ -8496,7 +8618,7 @@ const AdminDashboard = () => {
             })()}
           </div>
           {!searchTerm.trim() && (
-            <p className="text-xs text-gray-500 mb-3">
+            <p className={`text-xs text-gray-500 mb-3 ${statusFilter === 'ONGOING' ? 'hidden sm:block' : ''}`}>
               {statusFilter === 'ALL'
                 ? `Showing all ${displayedCustomers.length} customers (including those with no jobs)`
                 : statusFilter === 'ONGOING' 
@@ -8519,6 +8641,99 @@ const AdminDashboard = () => {
                 : `Showing ${displayedCustomers.length} customers with ${statusFilter.toLowerCase().replace('_', ' ')} jobs`                                    
               }
             </p>
+          )}
+
+          {statusFilter === 'ONGOING' && ongoingFilterDialogOpen && (
+            <Dialog open={ongoingFilterDialogOpen} onOpenChange={setOngoingFilterDialogOpen}>
+              <DialogContent className="sm:max-w-lg">
+                <DialogHeader>
+                  <DialogTitle>Ongoing Filters</DialogTitle>
+                  <DialogDescription>Filter ongoing jobs by assignment, technician, and service type.</DialogDescription>
+                </DialogHeader>
+
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 py-2">
+                  <div className="space-y-1">
+                    <Label className="text-xs text-muted-foreground">Assignment</Label>
+                    <Select value={draftOngoingAssignmentFilter} onValueChange={(v) => setDraftOngoingAssignmentFilter(v as any)}>
+                      <SelectTrigger className="h-9">
+                        <SelectValue placeholder="All" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="all">All</SelectItem>
+                        <SelectItem value="assigned">Assigned</SelectItem>
+                        <SelectItem value="unassigned">Unassigned</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  <div className="space-y-1">
+                    <Label className="text-xs text-muted-foreground">Assigned Technician</Label>
+                    <Select
+                      value={draftOngoingAssignedTechnicianFilter}
+                      onValueChange={setDraftOngoingAssignedTechnicianFilter}
+                      disabled={draftOngoingAssignmentFilter === 'unassigned'}
+                    >
+                      <SelectTrigger className="h-9">
+                        <SelectValue placeholder="All technicians" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="all">All technicians</SelectItem>
+                        {technicians.map((t) => (
+                          <SelectItem key={t.id} value={String(t.id)}>
+                            {t.fullName || (t as any).full_name}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  <div className="space-y-1">
+                    <Label className="text-xs text-muted-foreground">Service Sub Type</Label>
+                    <Select value={draftOngoingServiceSubTypeFilter} onValueChange={setDraftOngoingServiceSubTypeFilter}>
+                      <SelectTrigger className="h-9">
+                        <SelectValue placeholder="All service sub types" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="all">All service sub types</SelectItem>
+                        {ongoingServiceSubTypeOptions.map((st) => (
+                          <SelectItem key={st} value={st}>
+                            {st}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+
+                <DialogFooter>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => {
+                      setOngoingAssignmentFilter('all');
+                      setOngoingAssignedTechnicianFilter('all');
+                      setOngoingServiceSubTypeFilter('all');
+                      setDraftOngoingAssignmentFilter('all');
+                      setDraftOngoingAssignedTechnicianFilter('all');
+                      setDraftOngoingServiceSubTypeFilter('all');
+                    }}
+                  >
+                    Reset
+                  </Button>
+                  <Button
+                    type="button"
+                    onClick={() => {
+                      setOngoingAssignmentFilter(draftOngoingAssignmentFilter);
+                      setOngoingAssignedTechnicianFilter(draftOngoingAssignedTechnicianFilter);
+                      setOngoingServiceSubTypeFilter(draftOngoingServiceSubTypeFilter);
+                      setOngoingFilterDialogOpen(false);
+                    }}
+                  >
+                    Apply
+                  </Button>
+                </DialogFooter>
+              </DialogContent>
+            </Dialog>
           )}
           
           {/* Customer Cards with Jobs */}
@@ -8619,7 +8834,7 @@ const AdminDashboard = () => {
                           jobsToShow = allJobs;
                         } else if (statusFilter === 'ONGOING') {
                           // Show ongoing jobs (pending, assigned, in-progress)
-                          jobsToShow = allJobs.filter(job => ['PENDING', 'ASSIGNED', 'EN_ROUTE', 'IN_PROGRESS'].includes(job.status));
+                          jobsToShow = allJobs.filter((job: any) => doesOngoingJobMatchFilters(job));
                           // Sort by created_at (newest/recently created first)
                           jobsToShow.sort((a, b) => {
                             const aCreated = new Date((a as any).created_at || a.createdAt || 0).getTime();
