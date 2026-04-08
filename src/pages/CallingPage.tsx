@@ -9,19 +9,11 @@ import { Badge } from '@/components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Textarea } from '@/components/ui/textarea';
-import {
-  Pagination,
-  PaginationContent,
-  PaginationEllipsis,
-  PaginationItem,
-  PaginationLink,
-  PaginationNext,
-  PaginationPrevious,
-} from '@/components/ui/pagination';
 import { 
   Phone, 
   MessageCircle, 
-  ArrowLeft, 
+  ArrowLeft,
+  ArrowRight,
   Search, 
   Filter,
   Calendar,
@@ -764,6 +756,8 @@ const CallingPage = ({ hideHeader = false, onBack }: CallingPageProps = {}) => {
     }
   };
 
+  const callingTotalPages = Math.max(1, Math.ceil(filteredCustomers.length / itemsPerPage));
+
   // Show loading while checking auth or loading data
   if (authLoading || loading) {
     return (
@@ -1153,83 +1147,48 @@ const CallingPage = ({ hideHeader = false, onBack }: CallingPageProps = {}) => {
               </Card>
               ))}
 
-              {/* Pagination */}
-              {filteredCustomers.length > itemsPerPage && (
-                <div className="mt-6">
-                  <Pagination>
-                    <PaginationContent>
-                      <PaginationItem>
-                        <PaginationPrevious
-                          href="#"
-                          onClick={(e) => {
-                            e.preventDefault();
-                            if (currentPage > 1) {
-                              setCurrentPage(currentPage - 1);
-                              window.scrollTo({ top: 0, behavior: 'smooth' });
-                            }
-                          }}
-                          className={currentPage === 1 ? 'pointer-events-none opacity-50' : 'cursor-pointer'}
-                        />
-                      </PaginationItem>
-
-                      {/* Page numbers */}
-                      {Array.from({ length: Math.ceil(filteredCustomers.length / itemsPerPage) }, (_, i) => i + 1).map((page) => {
-                        // Show first page, last page, current page, and pages around current
-                        const totalPages = Math.ceil(filteredCustomers.length / itemsPerPage);
-                        const showPage = 
-                          page === 1 ||
-                          page === totalPages ||
-                          (page >= currentPage - 1 && page <= currentPage + 1);
-
-                        if (!showPage) {
-                          // Show ellipsis
-                          if (page === currentPage - 2 || page === currentPage + 2) {
-                            return (
-                              <PaginationItem key={page}>
-                                <PaginationEllipsis />
-                              </PaginationItem>
-                            );
+              {/* Pagination — compact, wraps on small screens (matches admin completed jobs) */}
+              {callingTotalPages > 1 && (
+                <div className="mt-6 w-full min-w-0 max-w-full px-1">
+                  <div className="flex flex-col items-center gap-2">
+                    <div className="flex flex-wrap items-center justify-center gap-2 w-full max-w-full">
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        className="h-9 shrink-0 touch-manipulation"
+                        disabled={currentPage <= 1}
+                        onClick={() => {
+                          if (currentPage > 1) {
+                            setCurrentPage(currentPage - 1);
+                            window.scrollTo({ top: 0, behavior: 'smooth' });
                           }
-                          return null;
-                        }
-
-                        return (
-                          <PaginationItem key={page}>
-                            <PaginationLink
-                              href="#"
-                              onClick={(e) => {
-                                e.preventDefault();
-                                setCurrentPage(page);
-                                window.scrollTo({ top: 0, behavior: 'smooth' });
-                              }}
-                              isActive={currentPage === page}
-                              className="cursor-pointer"
-                            >
-                              {page}
-                            </PaginationLink>
-                          </PaginationItem>
-                        );
-                      })}
-
-                      <PaginationItem>
-                        <PaginationNext
-                          href="#"
-                          onClick={(e) => {
-                            e.preventDefault();
-                            if (currentPage < Math.ceil(filteredCustomers.length / itemsPerPage)) {
-                              setCurrentPage(currentPage + 1);
-                              window.scrollTo({ top: 0, behavior: 'smooth' });
-                            }
-                          }}
-                          className={
-                            currentPage >= Math.ceil(filteredCustomers.length / itemsPerPage)
-                              ? 'pointer-events-none opacity-50'
-                              : 'cursor-pointer'
+                        }}
+                      >
+                        <ArrowLeft className="h-4 w-4 sm:mr-1" />
+                        <span className="hidden sm:inline">Previous</span>
+                      </Button>
+                      <span className="text-sm text-gray-700 dark:text-gray-300 tabular-nums px-2 text-center min-w-[5.5rem]">
+                        {currentPage} / {callingTotalPages}
+                      </span>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        className="h-9 shrink-0 touch-manipulation"
+                        disabled={currentPage >= callingTotalPages}
+                        onClick={() => {
+                          if (currentPage < callingTotalPages) {
+                            setCurrentPage(currentPage + 1);
+                            window.scrollTo({ top: 0, behavior: 'smooth' });
                           }
-                        />
-                      </PaginationItem>
-                    </PaginationContent>
-                  </Pagination>
+                        }}
+                      >
+                        <span className="hidden sm:inline">Next</span>
+                        <ArrowRight className="h-4 w-4 sm:ml-1" />
+                      </Button>
+                    </div>
+                  </div>
                 </div>
               )}
             </>
