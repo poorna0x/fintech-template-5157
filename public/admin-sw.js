@@ -1,5 +1,5 @@
-const STATIC_CACHE = 'admin-static-v1';
-const RUNTIME_CACHE = 'admin-runtime-v1';
+const STATIC_CACHE = 'admin-static-v2';
+const RUNTIME_CACHE = 'admin-runtime-v2';
 const OFFLINE_FALLBACK = '/admin';
 
 const PRECACHE_URLS = [
@@ -52,12 +52,15 @@ self.addEventListener('fetch', (event) => {
   const adminPaths = ['/admin', '/settings'];
   const isAdminPath = adminPaths.some((path) => url.pathname.startsWith(path));
 
-  // Do not intercept Google Maps / gstatic — SW fallback JSON (503) can break script/API
-  // responses; standalone PWA is more likely to hit this than the same page in a browser tab.
+  // Do not intercept Google Maps / Google CDNs — SW timeout + 503 JSON breaks scripts, tiles,
+  // Distance Matrix, Places, and XHRs that match isAPIRequest. Bypass all *.googleapis.com,
+  // *.gstatic.com, and *.google.com (tile servers e.g. mt0.google.com).
+  const h = url.hostname;
   if (
-    url.hostname === 'maps.googleapis.com' ||
-    url.hostname === 'maps.gstatic.com' ||
-    url.hostname.endsWith('.maps.gstatic.com')
+    h.endsWith('.googleapis.com') ||
+    h.endsWith('.gstatic.com') ||
+    h.endsWith('.google.com') ||
+    h.endsWith('.googleusercontent.com')
   ) {
     return;
   }
