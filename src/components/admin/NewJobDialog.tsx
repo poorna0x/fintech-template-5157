@@ -15,6 +15,7 @@ import { cloudinaryService, compressImage, validateImageFile } from '@/lib/cloud
 import { generateJobNumber } from '@/lib/adminUtils';
 import { db } from '@/lib/supabase';
 import { createJobAssignedNotification, sendNotification } from '@/lib/notifications';
+import { formatPhoneForWhatsApp } from '@/lib/utils';
 
 interface NewJobFormData {
   service_type: 'RO' | 'SOFTENER';
@@ -29,6 +30,7 @@ interface NewJobFormData {
   priority: 'LOW' | 'MEDIUM' | 'HIGH' | 'URGENT';
   assigned_technician_id: string;
   cost_agreed: string;
+  agreed_amount: string;
   lead_source: string;
   lead_source_custom: string;
   lead_cost: string;
@@ -96,6 +98,7 @@ const NewJobDialog: React.FC<NewJobDialogProps> = ({
     priority: 'MEDIUM',
     assigned_technician_id: '',
     cost_agreed: '',
+    agreed_amount: '',
     lead_source: '',
     lead_source_custom: '',
     lead_cost: '0',
@@ -315,6 +318,11 @@ const NewJobDialog: React.FC<NewJobDialogProps> = ({
         flexible_time: isFlexible
       }];
 
+      const agreedAmountNum = Number.parseFloat(String(newJobFormData.agreed_amount || '').trim());
+      if (Number.isFinite(agreedAmountNum) && agreedAmountNum > 0) {
+        requirements[0].agreed_amount = agreedAmountNum;
+      }
+
       // Add OTP requirement if enabled
       if (newJobFormData.require_otp && otpCode) {
         requirements.push({
@@ -424,6 +432,43 @@ const NewJobDialog: React.FC<NewJobDialogProps> = ({
             assignedTechnician.id
           );
           await sendNotification(notification);
+
+          const techPhone = (assignedTechnician as any).phone;
+          if (techPhone) {
+            const ok = window.confirm('Send WhatsApp message to assigned technician now?');
+            if (ok) {
+              const custPhone = (customer as any).phone || '';
+              const altPhone = (customer as any).alternate_phone || (customer as any).alternatePhone || '';
+              const loc = (customer as any).location || {};
+              const lat = loc?.latitude;
+              const lng = loc?.longitude;
+              const formattedAddress = loc?.formattedAddress || loc?.formatted_address || '';
+              const googleMapLink =
+                lat != null && lng != null
+                  ? `https://www.google.com/maps?q=${lat},${lng}`
+                  : formattedAddress
+                    ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(formattedAddress)}`
+                    : '';
+              const visibleAddr = String((customer as any).visible_address || (customer as any).visibleAddress || '').trim();
+              const addr = (customer as any).address || {};
+              const areaHint = visibleAddr || String(addr?.area || addr?.city || '').trim();
+              const serviceSubType = newJobFormData.service_sub_type === 'Other'
+                ? (newJobFormData.service_sub_type_custom || '')
+                : (newJobFormData.service_sub_type || '');
+              const lines = [
+                `*Job: ${newJob.job_number}*`,
+                `Service: ${newJobFormData.service_type}${serviceSubType ? ` - ${serviceSubType}` : ''}`,
+                `Name: ${customer.fullName}`,
+                ...(custPhone ? [`Phone: ${custPhone}`] : []),
+                ...(altPhone ? [`Alt. phone: ${altPhone}`] : []),
+                ...(areaHint ? [`Area: ${areaHint}`] : []),
+                ...(googleMapLink ? [`Location: ${googleMapLink}`] : []),
+              ];
+              const text = lines.join('\n');
+              const url = `https://wa.me/${formatPhoneForWhatsApp(String(techPhone))}?text=${encodeURIComponent(text)}`;
+              window.open(url, '_blank', 'noopener,noreferrer');
+            }
+          }
         }
       }
 
@@ -710,6 +755,19 @@ const NewJobDialog: React.FC<NewJobDialogProps> = ({
                   placeholder="e.g., 400 or 400-500"
                 />
                 <p className="text-xs text-gray-500">Enter a single amount or a range (e.g., 400-500)</p>
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="job_agreed_amount">Agreed Amount (₹) (Optional)</Label>
+                <Input
+                  id="job_agreed_amount"
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  value={newJobFormData.agreed_amount || ''}
+                  onChange={(e) => handleFormChange('agreed_amount', e.target.value)}
+                  placeholder="Enter agreed service amount"
+                />
               </div>
 
               <div className="space-y-2">

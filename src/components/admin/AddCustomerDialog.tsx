@@ -14,6 +14,7 @@ import { MapPin, Download, ExternalLink } from 'lucide-react';
 import { generateJobNumber, extractLocationFromAddressString, bangaloreAreas } from '@/lib/adminUtils';
 import ImageUpload from '@/components/ImageUpload';
 import { CustomAppointmentTimeSelect } from '@/components/admin/CustomAppointmentTimeSelect';
+import { formatPhoneForWhatsApp } from '@/lib/utils';
 
 // Brand and model data - RO and Softener brands including local (Aqua Grand, Aqua Smart, Dolphin, etc.)
 const brandData = {
@@ -128,6 +129,7 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
     lead_source: '', // Not selected by default; compulsory
     lead_source_custom: '',
     lead_cost: '0',
+    agreed_amount: '',
     priority: 'MEDIUM' as 'LOW' | 'MEDIUM' | 'HIGH' | 'URGENT',
     assigned_technician_id: '', // Add technician assignment field
     require_otp: false
@@ -882,6 +884,11 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
             flexible_time: isFlexible
           }];
 
+          const agreedAmountNum = Number.parseFloat(String(step5JobData.agreed_amount || '').trim());
+          if (Number.isFinite(agreedAmountNum) && agreedAmountNum > 0) {
+            requirements[0].agreed_amount = agreedAmountNum;
+          }
+
           // Add OTP requirement if enabled
           if (step5JobData.require_otp && otpCode) {
             requirements.push({
@@ -970,6 +977,54 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
                 console.error('Error sending notification:', notifError);
                 // Don't fail the job creation if notification fails
               }
+
+              // Offer WhatsApp message to assigned technician (same as manual assign flow)
+              const assignedTechRow = technicians.find((t) => t.id === step5JobData.assigned_technician_id);
+              const techPhone = assignedTechRow?.phone;
+              if (techPhone) {
+                const ok = window.confirm('Send WhatsApp message to assigned technician now?');
+                if (ok) {
+                  const jobNumberStr = (newJob as any).job_number || (newJob as any).jobNumber || 'Job';
+                  const customerNameStr =
+                    (newCustomer as any).full_name ||
+                    (newCustomer as any).fullName ||
+                    addFormData.full_name ||
+                    'Customer';
+                  const phoneStr = (newCustomer as any).phone || addFormData.phone || '';
+                  const altPhoneStr = (newCustomer as any).alternate_phone || addFormData.alternate_phone || '';
+                  const serviceType = step5JobData.service_type;
+                  const serviceSubType =
+                    step5JobData.service_sub_type === 'Custom'
+                      ? (step5JobData.service_sub_type_custom || '')
+                      : (step5JobData.service_sub_type || '');
+                  const loc = (customerData.location || {}) as any;
+                  const lat = loc?.latitude;
+                  const lng = loc?.longitude;
+                  const formattedAddress = loc?.formattedAddress || loc?.formatted_address || '';
+                  const googleMapLink =
+                    lat != null && lng != null
+                      ? `https://www.google.com/maps?q=${lat},${lng}`
+                      : formattedAddress
+                        ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(formattedAddress)}`
+                        : '';
+                  const visibleAddr = String(addFormData.visible_address || '').trim();
+                  const areaHint =
+                    visibleAddr ||
+                    String((customerData.address as any)?.area || (customerData.address as any)?.city || '').trim();
+                  const lines = [
+                    `*Job: ${jobNumberStr}*`,
+                    `Service: ${serviceType}${serviceSubType ? ` - ${serviceSubType}` : ''}`,
+                    `Name: ${customerNameStr}`,
+                    ...(phoneStr ? [`Phone: ${phoneStr}`] : []),
+                    ...(altPhoneStr ? [`Alt. phone: ${altPhoneStr}`] : []),
+                    ...(areaHint ? [`Area: ${areaHint}`] : []),
+                    ...(googleMapLink ? [`Location: ${googleMapLink}`] : []),
+                  ];
+                  const text = lines.join('\n');
+                  const url = `https://wa.me/${formatPhoneForWhatsApp(String(techPhone))}?text=${encodeURIComponent(text)}`;
+                  window.open(url, '_blank', 'noopener,noreferrer');
+                }
+              }
             }
           }
         } catch (error) {
@@ -1032,6 +1087,7 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
         lead_source: '', // Not selected by default
         lead_source_custom: '',
         lead_cost: '0',
+        agreed_amount: '',
         priority: 'MEDIUM' as 'LOW' | 'MEDIUM' | 'HIGH' | 'URGENT',
         assigned_technician_id: '', // Reset technician assignment
         require_otp: false
@@ -1701,6 +1757,20 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
                         />
                       </div>
                     )}
+
+                    <div className="space-y-2">
+                      <Label htmlFor="step5_agreed_amount">Agreed Amount (₹) (Optional)</Label>
+                      <Input
+                        id="step5_agreed_amount"
+                        type="number"
+                        min="0"
+                        step="0.01"
+                        value={step5JobData.agreed_amount || ''}
+                        onChange={(e) => setStep5JobData(prev => ({ ...prev, agreed_amount: e.target.value }))}
+                        placeholder="Enter agreed service amount"
+                      />
+                      <p className="text-xs text-gray-500">Saved with job and shown as “Agreed Amount”</p>
+                    </div>
 
                     <div className="space-y-2">
                       <Label htmlFor="step5_priority">Priority</Label>
