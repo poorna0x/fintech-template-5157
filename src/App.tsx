@@ -60,18 +60,42 @@ const queryClient = new QueryClient({
   },
 });
 
+const DEFAULT_SITE_TITLE =
+  'Hydrogen RO - #1 Best RO Service in Bengaluru Bangalore | 5★ Rated';
+
+function setNamedMetaContent(name: string, content: string) {
+  const el = document.querySelector(`meta[name="${name}"]`);
+  if (el) el.setAttribute('content', content);
+}
+
 // Component to handle PWA enable/disable based on route
 const PWARouteHandler = () => {
   const location = useLocation();
 
   useEffect(() => {
+    const path = location.pathname;
     // Only enable PWA on technician and admin pages
-    const isPWAPage = location.pathname.startsWith('/technician') || location.pathname.startsWith('/admin');
-    
+    const isPWAPage = path.startsWith('/technician') || path.startsWith('/admin');
+
+    // Match manifest short_name so browser / Custom Tab title bar is not the long SEO <title>
+    if (path.startsWith('/technician')) {
+      document.title = 'Technician';
+      setNamedMetaContent('apple-mobile-web-app-title', 'Technician');
+      setNamedMetaContent('application-name', 'Technician');
+    } else if (path.startsWith('/admin') || path.startsWith('/settings')) {
+      document.title = 'Admin';
+      setNamedMetaContent('apple-mobile-web-app-title', 'Admin');
+      setNamedMetaContent('application-name', 'Admin');
+    } else {
+      document.title = DEFAULT_SITE_TITLE;
+      setNamedMetaContent('apple-mobile-web-app-title', 'Hydrogen RO');
+      setNamedMetaContent('application-name', 'Hydrogen RO');
+    }
+
     if (!isPWAPage) {
       disablePWA();
     }
-    // Note: PWA is enabled by registerTechnicianPWA() or registerAdminPWA() 
+    // Note: PWA is enabled by registerTechnicianPWA() or registerAdminPWA()
     // when those components mount, so we don't need to enable it here
   }, [location.pathname]);
 
