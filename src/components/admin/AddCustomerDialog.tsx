@@ -94,6 +94,12 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
   const [whatsappServiceSubType, setWhatsappServiceSubType] = useState<string>('');
   const [whatsappCustomerName, setWhatsappCustomerName] = useState<string>('');
   const [whatsappLocation, setWhatsappLocation] = useState<string>('');
+  const [postCreateSummary, setPostCreateSummary] = useState<{
+    customerLabel: string;
+    jobLabel?: string;
+    technicianName?: string;
+    technicianPhone?: string;
+  } | null>(null);
   const [currentStep, setCurrentStep] = useState(1);
   const [formErrors, setFormErrors] = useState<{[key: string]: string}>({});
   const [isCreating, setIsCreating] = useState(false);
@@ -990,36 +996,6 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
         }
       }
 
-      // Close dialog immediately to prevent empty flash
-      onOpenChange(false);
-
-      // Open WhatsApp dialog after closing, if technician was assigned
-      if (shouldCreateJob && newJob && step5JobData.assigned_technician_id) {
-        const assignedTechRow = technicians.find((t) => t.id === step5JobData.assigned_technician_id);
-        const techName = assignedTechRow?.full_name || assignedTechRow?.fullName;
-        const techPhone = assignedTechRow?.phone;
-        if (techName && techPhone) {
-          const serviceSubType =
-            step5JobData.service_sub_type === 'Custom'
-              ? (step5JobData.service_sub_type_custom || '')
-              : (step5JobData.service_sub_type || '');
-          const visibleAddr = String(addFormData.visible_address || '').trim();
-          const areaHint =
-            visibleAddr ||
-            String((customerData.address as any)?.area || (customerData.address as any)?.city || '').trim();
-          const customerNameStr =
-            (newCustomer as any)?.full_name ||
-            (newCustomer as any)?.fullName ||
-            addFormData.full_name ||
-            'Customer';
-          setWhatsappTechnician({ name: techName, phone: String(techPhone) });
-          setWhatsappServiceSubType(serviceSubType || (step5JobData.service_type || 'Service'));
-          setWhatsappCustomerName(customerNameStr);
-          setWhatsappLocation(areaHint || '');
-          setWhatsappDialogOpen(true);
-        }
-      }
-
       // Show combined toast message
       if (shouldCreateJob && newJob) {
         const jobNumber = (newJob as any).job_number || (newJob as any).jobNumber || 'N/A';
@@ -1030,11 +1006,31 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
           ? ` and assigned to ${assignedTech.full_name || assignedTech.fullName || 'technician'}`
           : '';
         toast.success(`Customer ${newCustomer.customer_id || newCustomer.customerId} and Job ${jobNumber} created${techName}!`);
+
+        // Keep dialog open and show a "next actions" screen with WhatsApp option
+        const assignedTechRow = step5JobData.assigned_technician_id
+          ? technicians.find((t) => t.id === step5JobData.assigned_technician_id)
+          : null;
+        setPostCreateSummary({
+          customerLabel: String(newCustomer.customer_id || newCustomer.customerId || 'Customer'),
+          jobLabel: String(jobNumber),
+          technicianName: assignedTechRow?.full_name || assignedTechRow?.fullName || undefined,
+          technicianPhone: assignedTechRow?.phone || undefined,
+        });
+        setCurrentStep(6);
       } else if (shouldCreateJob && jobError) {
         toast.success(`Customer ${newCustomer.customer_id || newCustomer.customerId} created successfully!`);
         toast.error('Failed to create job. Please create it manually.');
+        setPostCreateSummary({
+          customerLabel: String(newCustomer.customer_id || newCustomer.customerId || 'Customer'),
+        });
+        setCurrentStep(6);
       } else {
         toast.success(`Customer ${newCustomer.customer_id || newCustomer.customerId} created successfully!`);
+        setPostCreateSummary({
+          customerLabel: String(newCustomer.customer_id || newCustomer.customerId || 'Customer'),
+        });
+        setCurrentStep(6);
       }
 
       // Reset form after dialog is closed
@@ -1088,7 +1084,17 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
 
   return (
     <>
-      <Dialog open={open} onOpenChange={onOpenChange}>
+      <Dialog
+        open={open}
+        onOpenChange={(nextOpen) => {
+          onOpenChange(nextOpen);
+          if (!nextOpen) {
+            setPostCreateSummary(null);
+            setWhatsappDialogOpen(false);
+            setWhatsappTechnician(null);
+          }
+        }}
+      >
         <DialogContent className="w-[95vw] sm:w-[90vw] md:w-[80vw] lg:w-[60vw] xl:w-[50vw] max-w-2xl h-[90vh] max-h-[90vh] overflow-hidden flex flex-col">
           <DialogHeader className="flex-shrink-0">
           <DialogTitle className="flex items-center gap-2 sm:gap-3">
@@ -1115,6 +1121,7 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
             {currentStep === 3 && "Select services and equipment details"}
             {currentStep === 4 && "Review and confirm customer information"}
             {currentStep === 5 && "Create a new job for this customer?"}
+            {currentStep === 6 && "Customer created. Next actions"}
           </DialogDescription>
         </DialogHeader>
         
@@ -1504,8 +1511,77 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
             </div>
           )}
 
+          {/* Step 6: Post-create actions */}
+          {currentStep === 6 && postCreateSummary && (
+            <div className="space-y-4">
+              <div className="bg-green-50 border border-green-200 rounded-lg p-4">
+                <div className="font-semibold text-green-900">
+                  Customer {postCreateSummary.customerLabel}
+                  {postCreateSummary.jobLabel ? ` and Job ${postCreateSummary.jobLabel}` : ''} created.
+                </div>
+                {postCreateSummary.technicianName ? (
+                  <div className="text-sm text-green-800 mt-1">
+                    Assigned to {postCreateSummary.technicianName}.
+                  </div>
+                ) : (
+                  <div className="text-sm text-green-800 mt-1">
+                    Not assigned to a technician.
+                  </div>
+                )}
+              </div>
+
+              {postCreateSummary.technicianName && postCreateSummary.technicianPhone && (
+                <Button
+                  type="button"
+                  className="w-full bg-green-600 hover:bg-green-700"
+                  onClick={() => {
+                    const serviceSubType =
+                      step5JobData.service_sub_type === 'Custom'
+                        ? (step5JobData.service_sub_type_custom || '')
+                        : (step5JobData.service_sub_type || '');
+                    const visibleAddr = String(addFormData.visible_address || '').trim();
+                    const areaHint =
+                      visibleAddr ||
+                      String((customerData.address as any)?.area || (customerData.address as any)?.city || '').trim();
+                    const customerNameStr = addFormData.full_name || 'Customer';
+                    setWhatsappTechnician({
+                      name: postCreateSummary.technicianName!,
+                      phone: String(postCreateSummary.technicianPhone),
+                    });
+                    setWhatsappServiceSubType(serviceSubType || (step5JobData.service_type || 'Service'));
+                    setWhatsappCustomerName(customerNameStr);
+                    setWhatsappLocation(areaHint || '');
+                    setWhatsappDialogOpen(true);
+                  }}
+                >
+                  Send WhatsApp to Technician
+                </Button>
+              )}
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => {
+                    setPostCreateSummary(null);
+                    setCurrentStep(1);
+                  }}
+                >
+                  Add Another Customer
+                </Button>
+                <Button
+                  type="button"
+                  onClick={() => onOpenChange(false)}
+                  className="bg-blue-600 hover:bg-blue-700"
+                >
+                  Close
+                </Button>
+              </div>
+            </div>
+          )}
+
           {/* Step 5: Create Job Option */}
-          {currentStep === 5 && (
+          {currentStep === 5 && !postCreateSummary && (
             <div className="space-y-4">
               <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-4">
                 <h3 className="font-semibold text-gray-900 mb-2">Create a New Job?</h3>
