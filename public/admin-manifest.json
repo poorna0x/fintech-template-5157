@@ -4,11 +4,8 @@
   "description": "Admin dashboard for managing customers, jobs, and technicians",
   "id": "/admin",
   "scope": "/",
-  "start_url": "/admin",
+  "start_url": "/admin/",
   "display": "standalone",
-  "launch_handler": {
-    "client_mode": "navigate-existing"
-  },
   "background_color": "#ffffff",
   "theme_color": "#ffffff",
   "orientation": "portrait-primary",
