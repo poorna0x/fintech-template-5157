@@ -1,13 +1,13 @@
 {
   "name": "Hydrogen RO Admin",
-  "short_name": "Admin",
+  "short_name": "HRO Admin",
   "description": "Admin dashboard for managing customers, jobs, and technicians",
   "id": "/admin",
   "scope": "/admin/",
   "start_url": "/admin/",
   "display": "standalone",
   "background_color": "#ffffff",
-  "theme_color": "#000000",
+  "theme_color": "#ffffff",
   "orientation": "portrait-primary",
   "icons": [
     {

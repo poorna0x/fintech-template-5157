@@ -1,13 +1,13 @@
 {
   "name": "Hydrogen RO Technician",
-  "short_name": "Technician",
+  "short_name": "HRO Technician",
   "description": "Technician dashboard for managing assigned jobs and completing service requests",
   "id": "/technician",
   "scope": "/technician/",
   "start_url": "/technician/",
   "display": "standalone",
   "background_color": "#ffffff",
-  "theme_color": "#000000",
+  "theme_color": "#ffffff",
   "orientation": "portrait-primary",
   "icons": [
     {
