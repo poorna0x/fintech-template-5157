@@ -180,6 +180,7 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
     lead_source: '', // Not selected by default; compulsory
     lead_source_custom: '',
     lead_cost: '0',
+    agreed_amount: '',
     priority: 'MEDIUM' as 'LOW' | 'MEDIUM' | 'HIGH' | 'URGENT',
     assigned_technician_id: '', // Add technician assignment field
     require_otp: false
@@ -933,6 +934,11 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
             custom_time: customTimeInRequirements,
             flexible_time: isFlexible
           }];
+
+          const agreedAmountNum = Number.parseFloat(String(step5JobData.agreed_amount || '').trim());
+          if (Number.isFinite(agreedAmountNum) && agreedAmountNum > 0) {
+            requirements[0].agreed_amount = agreedAmountNum;
+          }
 
           // Add OTP requirement if enabled
           if (step5JobData.require_otp && otpCode) {
@@ -1813,6 +1819,20 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
                         />
                       </div>
                     )}
+
+                    <div className="space-y-2">
+                      <Label htmlFor="step5_agreed_amount">Agreed Amount (₹) (Optional)</Label>
+                      <Input
+                        id="step5_agreed_amount"
+                        type="number"
+                        min="0"
+                        step="0.01"
+                        value={step5JobData.agreed_amount || ''}
+                        onChange={(e) => setStep5JobData(prev => ({ ...prev, agreed_amount: e.target.value }))}
+                        placeholder="Enter agreed service amount"
+                      />
+                      <p className="text-xs text-gray-500">Saved with job and shown as “Agreed Amount”</p>
+                    </div>
 
                     <div className="space-y-2">
                       <Label htmlFor="step5_priority">Priority</Label>
