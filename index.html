@@ -190,22 +190,6 @@
         }
         // Create manifest link with correct href immediately
         document.write('<link rel="manifest" href="' + manifestHref + '" id="pwa-manifest" />');
-
-        // Short tab/title bar label for admin & technician (matches manifest short_name).
-        // Default <title> is long SEO copy and shows in Chrome Custom Tab / in-browser chrome.
-        function setMetaName(name, content) {
-          var el = document.querySelector('meta[name="' + name + '"]');
-          if (el) el.setAttribute('content', content);
-        }
-        if (path.startsWith('/technician')) {
-          document.title = 'Technician';
-          setMetaName('apple-mobile-web-app-title', 'Technician');
-          setMetaName('application-name', 'Technician');
-        } else if (path.startsWith('/admin') || path.startsWith('/settings')) {
-          document.title = 'Admin';
-          setMetaName('apple-mobile-web-app-title', 'Admin');
-          setMetaName('application-name', 'Admin');
-        }
       })();
     </script>
     
