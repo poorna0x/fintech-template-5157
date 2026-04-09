@@ -65,8 +65,12 @@ const PWARouteHandler = () => {
   const location = useLocation();
 
   useEffect(() => {
-    // Only enable PWA on technician and admin pages
-    const isPWAPage = location.pathname.startsWith('/technician') || location.pathname.startsWith('/admin');
+    // Admin app routes (must match admin-manifest scope / install — do not disablePWA here)
+    const isPWAPage =
+      location.pathname.startsWith('/technician') ||
+      location.pathname.startsWith('/admin') ||
+      location.pathname.startsWith('/settings') ||
+      location.pathname.startsWith('/calling');
     
     if (!isPWAPage) {
       disablePWA();

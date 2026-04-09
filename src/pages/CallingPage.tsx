@@ -35,6 +35,7 @@ const WhatsAppIcon = ({ className }: { className?: string }) => (
   </svg>
 );
 import { toast } from 'sonner';
+import { registerAdminPWA } from '@/lib/pwa';
 import { db, supabase } from '@/lib/supabase';
 import { Customer } from '@/types';
 import { formatPhoneForWhatsApp, normalizePhoneForSearch } from '@/lib/utils';
@@ -110,6 +111,12 @@ const CallingPage = ({ hideHeader = false, onBack }: CallingPageProps = {}) => {
   const [reportPhotoViewerOpen, setReportPhotoViewerOpen] = useState(false);
   const [reportSelectedPhoto, setReportSelectedPhoto] = useState<{ url: string; index: number; total: number } | null>(null);
   const [reportSelectedBillPhotos, setReportSelectedBillPhotos] = useState<string[] | null>(null);
+
+  useEffect(() => {
+    if (!hideHeader) {
+      registerAdminPWA();
+    }
+  }, [hideHeader]);
 
   // Redirect to admin login if not authenticated or not admin (only if standalone page)
   useEffect(() => {

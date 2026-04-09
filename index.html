@@ -185,7 +185,11 @@
         let manifestHref = '/site.webmanifest';
         if (path.startsWith('/technician')) {
           manifestHref = '/technician-manifest.json';
-        } else if (path.startsWith('/admin')) {
+        } else if (
+          path.startsWith('/admin') ||
+          path.startsWith('/settings') ||
+          path.startsWith('/calling')
+        ) {
           manifestHref = '/admin-manifest.json';
         }
         // Create manifest link with correct href immediately

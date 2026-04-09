@@ -43,6 +43,7 @@ import ImageUpload from '@/components/ImageUpload';
 import { CommonQrCode, invalidateQrCodesCache, normalizeTechnicianAssignedCommonQrIds } from '@/lib/qrCodeManager';
 import JSZip from 'jszip';
 import CallingPage from '@/pages/CallingPage';
+import { registerAdminPWA } from '@/lib/pwa';
 import { SettingsRemindersDialog } from '@/components/reminders/SettingsRemindersDialog';
 import { AddReminderDialog } from '@/components/reminders/AddReminderDialog';
 import { SettingsPendingPaymentsDialogV2 } from '@/components/reminders/PendingPaymentsDialogV2';
@@ -50,6 +51,10 @@ import { SettingsPendingPaymentsDialogV2 } from '@/components/reminders/PendingP
 const Settings = () => {
   const { user, isAdmin, logout, loading: authLoading } = useAuth();
   const navigate = useNavigate();
+
+  useEffect(() => {
+    registerAdminPWA();
+  }, []);
 
   // Admin Settings lives at /settings; after logout there is no user but this route still mounted — send to /admin so AdminLogin shows.
   useEffect(() => {

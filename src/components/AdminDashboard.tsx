@@ -66,7 +66,7 @@ import {
   ChevronUp
 } from 'lucide-react';
 import { db, supabase, fetchCustomerIdsWithCompletedJobsMap, CUSTOMER_ROW_COLUMNS, CUSTOMER_ADMIN_LIST_PATCH_COLUMNS } from '@/lib/supabase';
-import { registerAdminPWA, disablePWA } from '@/lib/pwa';
+import { registerAdminPWA } from '@/lib/pwa';
 import { Customer, Job, Technician } from '@/types';
 import { cloudinaryService, compressImage, validateImageFile } from '@/lib/cloudinary';
 import { toast } from 'sonner';
@@ -803,11 +803,8 @@ const AdminDashboard = () => {
 
   useEffect(() => {
     registerAdminPWA();
-    
-    // Cleanup: disable PWA when component unmounts
-    return () => {
-      disablePWA();
-    };
+    // Do not disablePWA on unmount — navigating to /settings would reset manifest and break standalone.
+    // PWARouteHandler disables when leaving admin app routes (public pages).
   }, []);
 
   // Add noindex meta tag to prevent search engine indexing
