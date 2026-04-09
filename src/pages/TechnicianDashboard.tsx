@@ -578,6 +578,73 @@ const TechnicianDashboard = () => {
   // Address dialog state
   const [addressDialogOpen, setAddressDialogOpen] = useState<{[jobId: string]: boolean}>({});
   const [selectedJobForAddress, setSelectedJobForAddress] = useState<Job | null>(null);
+  const [mapOpeningByJobId, setMapOpeningByJobId] = useState<Record<string, boolean>>({});
+
+  const openMapForJob = useCallback(
+    async (job: any) => {
+      const jobId = String(job?.id || '');
+      if (!jobId) {
+        toast.error('Location data not available');
+        return;
+      }
+
+      setMapOpeningByJobId((prev) => ({ ...prev, [jobId]: true }));
+      try {
+        // Prefer job service_location/serviceLocation (included in slim job list); fall back to customer.location if present.
+        const jobServiceLoc = (job as any)?.serviceLocation || (job as any)?.service_location;
+        const customerLoc = (job?.customer as any)?.location;
+        const loc = jobServiceLoc || customerLoc;
+
+        const googleLoc = (loc as any)?.googleLocation || (loc as any)?.google_location;
+        if (
+          googleLoc &&
+          typeof googleLoc === 'string' &&
+          (googleLoc.includes('google.com/maps') || googleLoc.includes('maps.app.goo.gl') || googleLoc.includes('goo.gl/maps')) &&
+          !googleLoc.includes('localhost') &&
+          !googleLoc.includes('127.0.0.1')
+        ) {
+          window.open(googleLoc, '_blank', 'noopener,noreferrer');
+          return;
+        }
+
+        const coords = extractCoordinates(loc);
+        if (coords && coords.latitude !== 0 && coords.longitude !== 0) {
+          window.open(`https://www.google.com/maps/place/${coords.latitude},${coords.longitude}`, '_blank', 'noopener,noreferrer');
+          return;
+        }
+
+        // On-demand fetch: if slim customer embed omitted `location`, load full customer row now and retry.
+        const customerId = (job?.customer as any)?.id || (job as any)?.customer_id;
+        if (customerId) {
+          const { data: customerRow, error } = await db.customers.getById(String(customerId));
+          if (!error && customerRow) {
+            const loc2 = (customerRow as any)?.location;
+            const googleLoc2 = (loc2 as any)?.googleLocation || (loc2 as any)?.google_location;
+            if (
+              googleLoc2 &&
+              typeof googleLoc2 === 'string' &&
+              (googleLoc2.includes('google.com/maps') || googleLoc2.includes('maps.app.goo.gl') || googleLoc2.includes('goo.gl/maps')) &&
+              !googleLoc2.includes('localhost') &&
+              !googleLoc2.includes('127.0.0.1')
+            ) {
+              window.open(googleLoc2, '_blank', 'noopener,noreferrer');
+              return;
+            }
+            const coords2 = extractCoordinates(loc2);
+            if (coords2 && coords2.latitude !== 0 && coords2.longitude !== 0) {
+              window.open(`https://www.google.com/maps/place/${coords2.latitude},${coords2.longitude}`, '_blank', 'noopener,noreferrer');
+              return;
+            }
+          }
+        }
+
+        toast.error('Location data not available');
+      } finally {
+        setMapOpeningByJobId((prev) => ({ ...prev, [jobId]: false }));
+      }
+    },
+    [db.customers]
+  );
 
   // Define loadAssignedJobs before useEffect hooks that use it
   const loadCustomerLastServiceBrands = useCallback(async (customerIds: string[]) => {
@@ -639,7 +706,8 @@ const TechnicianDashboard = () => {
       // Use proper timeout handling - only timeout if request actually takes too long
       // The Supabase client already has a 30s timeout, so we don't need an additional timeout here
       // Just let the request complete naturally - if it's fast, it will be fast; if it's slow, Supabase will timeout
-      const { data, error } = await db.jobs.getByTechnicianId(user.technicianId);
+      // Low-egress list fetch: no photos, no full customer location/address.
+      const { data, error } = await db.jobs.getByTechnicianIdSlim(user.technicianId);
       console.timeEnd('loadAssignedJobs'); // Performance timing
       
       if (error) {
@@ -1610,32 +1678,31 @@ const TechnicianDashboard = () => {
 
           processingJobsRef.current.add(updatedJob.id);
           try {
-            const { data: fullJob, error } = await db.jobs.getByIdFull(updatedJob.id);
-            if (!isMounted.current) return;
-            if (error || !fullJob) {
-              processingJobsRef.current.delete(updatedJob.id);
-              return;
-            }
-            // Case 2: Job should be in list but isn't - add it
-            if (!isInList) {
+            // Reduce Postgres egress: avoid fetching a full job on every UPDATE.
+            // If the job is already in our list, merge payload fields into existing row (keep embedded customer as-is).
+            if (isInList) {
               setJobs((prev) => {
-                if (prev.some((j) => j.id === fullJob.id)) return prev;
-                const next = [fullJob, ...prev];
-                jobsRef.current = next;
-                return next;
-              });
-            } else {
-              // Case 3: Job is in list and should be - update it
-              setJobs((prev) => {
-                const idx = prev.findIndex((j) => j.id === fullJob.id);
+                const idx = prev.findIndex((j) => j.id === updatedJob.id);
                 if (idx < 0) return prev;
                 const next = [...prev];
-                next[idx] = fullJob;
+                next[idx] = { ...(next[idx] as any), ...updatedJob } as any;
                 shouldPreserveOrderRef.current = true;
                 jobsRef.current = next;
                 return next;
               });
+              return;
             }
+
+            // If it should be in list but isn't, fetch a slim row once (includes customer basics) and add it.
+            const { data: slimJob, error } = await db.jobs.getByIdSlim(updatedJob.id);
+            if (!isMounted.current) return;
+            if (error || !slimJob) return;
+            setJobs((prev) => {
+              if (prev.some((j) => j.id === slimJob.id)) return prev;
+              const next = [slimJob as any, ...prev];
+              jobsRef.current = next;
+              return next;
+            });
           } finally {
             processingJobsRef.current.delete(updatedJob.id);
           }
@@ -1974,10 +2041,18 @@ const TechnicianDashboard = () => {
   useEffect(() => {
     if (!user?.technicianId) return;
 
-    const intervalMs = realtimeConnected ? 30000 : 5000;
-    const pollInterval = setInterval(() => loadAssignedJobs(), intervalMs);
+    // Reduce Postgres egress: poll ONLY when realtime is down.
+    if (realtimeConnected) return;
+    const pollInterval = setInterval(() => loadAssignedJobs(), 5000);
     return () => clearInterval(pollInterval);
-  }, [user?.technicianId, realtimeConnected]);
+  }, [user?.technicianId, realtimeConnected, loadAssignedJobs]);
+
+  // When realtime comes back, do a one-time sync to ensure list is correct.
+  useEffect(() => {
+    if (!user?.technicianId) return;
+    if (!realtimeConnected) return;
+    loadAssignedJobs();
+  }, [realtimeConnected, user?.technicianId, loadAssignedJobs]);
 
   // Periodic location update (every 5 minutes) - ONLY when app is open and visible
   useEffect(() => {
@@ -4918,27 +4993,15 @@ const TechnicianDashboard = () => {
                                         <div className="w-8 h-8 sm:w-10 sm:h-10 bg-gray-100 rounded-lg flex items-center justify-center flex-shrink-0">
                                           <button
                                             onClick={() => {
-                                              // Open Google Maps exactly like in admin dashboard
-                                              const customerLocation = customer?.location;
-                                              const googleLoc = customerLocation?.googleLocation;
-                                              
-                                              if (googleLoc && typeof googleLoc === 'string' && 
-                                                  (googleLoc.includes('google.com/maps') || googleLoc.includes('maps.app.goo.gl') || googleLoc.includes('goo.gl/maps')) &&
-                                                  !googleLoc.includes('localhost') && 
-                                                  !googleLoc.includes('127.0.0.1')) {
-                                                window.open(googleLoc, '_blank', 'noopener,noreferrer');
-                                              } else {
-                                                const location = extractCoordinates(customerLocation);
-                                                if (location && location.latitude !== 0 && location.longitude !== 0) {
-                                                  window.open(`https://www.google.com/maps/place/${location.latitude},${location.longitude}`, '_blank', 'noopener,noreferrer');
-                                                } else {
-                                                  toast.error('Location data not available');
-                                                }
-                                              }
+                                              void openMapForJob(job as any);
                                             }}
                                             className="cursor-pointer"
                                           >
-                                            <MapPin className="w-4 h-4 sm:w-5 sm:h-5 text-gray-600" />
+                                            {mapOpeningByJobId[String((job as any)?.id)] ? (
+                                              <RefreshCw className="w-4 h-4 sm:w-5 sm:h-5 text-gray-600 animate-spin" />
+                                            ) : (
+                                              <MapPin className="w-4 h-4 sm:w-5 sm:h-5 text-gray-600" />
+                                            )}
                                           </button>
                               </div>
                                         <div className="flex-1 min-w-0">
@@ -5813,28 +5876,15 @@ const TechnicianDashboard = () => {
                                     e.stopPropagation();
                                     // Mark job as seen when clicking map button
                                     markJobAsSeen(job.id);
-                                    
-                                    // Open Google Maps exactly like in admin dashboard
-                                    const customerLocation = (job.customer as any)?.location;
-                                    const googleLoc = customerLocation?.googleLocation;
-                                    
-                                    if (googleLoc && typeof googleLoc === 'string' && 
-                                        (googleLoc.includes('google.com/maps') || googleLoc.includes('maps.app.goo.gl') || googleLoc.includes('goo.gl/maps')) &&
-                                        !googleLoc.includes('localhost') && 
-                                        !googleLoc.includes('127.0.0.1')) {
-                                      window.open(googleLoc, '_blank', 'noopener,noreferrer');
-                                    } else {
-                                      const location = extractCoordinates(customerLocation);
-                                      if (location && location.latitude !== 0 && location.longitude !== 0) {
-                                        window.open(`https://www.google.com/maps/place/${location.latitude},${location.longitude}`, '_blank', 'noopener,noreferrer');
-                                      } else {
-                                        toast.error('Location data not available');
-                                      }
-                                    }
+                                    void openMapForJob(job as any);
                                   }}
                                   className="cursor-pointer"
                                 >
-                                  <MapPin className="w-4 h-4 sm:w-5 sm:h-5 text-gray-600" />
+                                  {mapOpeningByJobId[String(job.id)] ? (
+                                    <RefreshCw className="w-4 h-4 sm:w-5 sm:h-5 text-gray-600 animate-spin" />
+                                  ) : (
+                                    <MapPin className="w-4 h-4 sm:w-5 sm:h-5 text-gray-600" />
+                                  )}
                                 </button>
                         </div>
                               <div className="flex-1 min-w-0">

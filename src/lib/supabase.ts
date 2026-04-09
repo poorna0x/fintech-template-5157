@@ -194,6 +194,24 @@ const CUSTOMER_EMBED_FOR_TECH_JOBS = [
   'raw_water_tds',
 ].join(',');
 
+/** Customer embed for technician job list (low-egress). Address/location are loaded on-demand when opening dialogs. */
+const CUSTOMER_EMBED_FOR_TECH_JOBS_SLIM = [
+  'id',
+  'customer_id',
+  'full_name',
+  'phone',
+  'alternate_phone',
+  'visible_address',
+  'service_type',
+  'brand',
+  'model',
+  'last_service_date',
+  'has_prefilter',
+  'has_google_review',
+  'customer_tier',
+  'raw_water_tds',
+].join(',');
+
 /**
  * Customer embed for admin ongoing + ALL-tab lists (low egress).
  * Omits address, location, notes, etc. — same shape as completed slim embed.
@@ -1029,6 +1047,34 @@ export const db = {
         return { data: rows, error: null };
       }
       return { data: mergeJobPhotoFieldsIntoRows(rows, photoRows as Record<string, unknown>[]), error: null };
+    },
+
+    /** Low-egress technician job list. No photo arrays; minimal customer embed. */
+    async getByTechnicianIdSlim(technicianId: string) {
+      const orFilter = `assigned_technician_id.eq.${technicianId},team_members.cs.["${technicianId}"]`;
+      const result = await supabase
+        .from('jobs')
+        .select(`${JOB_SELECT_ONGOING_AND_TECH},customer:customers(${CUSTOMER_EMBED_FOR_TECH_JOBS_SLIM})`)
+        .or(orFilter)
+        .order('created_at', { ascending: false })
+        .limit(100);
+
+      if (!result.error) {
+        return { data: result.data || [], error: null };
+      }
+
+      if (import.meta.env.DEV) {
+        console.warn('[db.jobs.getByTechnicianIdSlim] Slim select failed, using legacy admin embed:', result.error?.message);
+      }
+
+      const legacy = await supabase
+        .from('jobs')
+        .select(`${JOB_SELECT_ONGOING_AND_TECH},customer:customers(${CUSTOMER_EMBED_FOR_ONGOING_ADMIN})`)
+        .or(orFilter)
+        .order('created_at', { ascending: false })
+        .limit(100);
+
+      return { data: legacy.data || [], error: legacy.error };
     },
     
     // Legacy function - keeping for backward compatibility
