@@ -30,7 +30,6 @@ interface NewJobFormData {
   priority: 'LOW' | 'MEDIUM' | 'HIGH' | 'URGENT';
   assigned_technician_id: string;
   cost_agreed: string;
-  agreed_amount: string;
   lead_source: string;
   lead_source_custom: string;
   lead_cost: string;
@@ -103,7 +102,6 @@ const NewJobDialog: React.FC<NewJobDialogProps> = ({
     priority: 'MEDIUM',
     assigned_technician_id: '',
     cost_agreed: '',
-    agreed_amount: '',
     lead_source: '',
     lead_source_custom: '',
     lead_cost: '0',
@@ -322,11 +320,6 @@ const NewJobDialog: React.FC<NewJobDialogProps> = ({
         custom_time: customTimeInRequirements,
         flexible_time: isFlexible
       }];
-
-      const agreedAmountNum = Number.parseFloat(String(newJobFormData.agreed_amount || '').trim());
-      if (Number.isFinite(agreedAmountNum) && agreedAmountNum > 0) {
-        requirements[0].agreed_amount = agreedAmountNum;
-      }
 
       // Add OTP requirement if enabled
       if (newJobFormData.require_otp && otpCode) {
@@ -740,19 +733,6 @@ const NewJobDialog: React.FC<NewJobDialogProps> = ({
                   placeholder="e.g., 400 or 400-500"
                 />
                 <p className="text-xs text-gray-500">Enter a single amount or a range (e.g., 400-500)</p>
-              </div>
-
-              <div className="space-y-2">
-                <Label htmlFor="job_agreed_amount">Agreed Amount (₹) (Optional)</Label>
-                <Input
-                  id="job_agreed_amount"
-                  type="number"
-                  min="0"
-                  step="0.01"
-                  value={newJobFormData.agreed_amount || ''}
-                  onChange={(e) => handleFormChange('agreed_amount', e.target.value)}
-                  placeholder="Enter agreed service amount"
-                />
               </div>
 
               <div className="space-y-2">
