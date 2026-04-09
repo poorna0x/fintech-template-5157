@@ -52,6 +52,16 @@ self.addEventListener('fetch', (event) => {
   const adminPaths = ['/admin', '/settings'];
   const isAdminPath = adminPaths.some((path) => url.pathname.startsWith(path));
 
+  // Do not intercept Google Maps / gstatic — SW fallback JSON (503) can break script/API
+  // responses; standalone PWA is more likely to hit this than the same page in a browser tab.
+  if (
+    url.hostname === 'maps.googleapis.com' ||
+    url.hostname === 'maps.gstatic.com' ||
+    url.hostname.endsWith('.maps.gstatic.com')
+  ) {
+    return;
+  }
+
   // NEVER cache API requests - always fetch from network
   const isAPIRequest = 
     url.pathname.includes('/api/') ||
@@ -60,7 +70,6 @@ self.addEventListener('fetch', (event) => {
     url.hostname.includes('bigdatacloud.net') ||
     url.hostname.includes('api-bdc.io') ||
     url.hostname.includes('nominatim.openstreetmap.org') ||
-    url.hostname.includes('maps.googleapis.com') ||
     request.headers.get('X-Requested-With') === 'XMLHttpRequest';
 
   // For API requests, always fetch from network with timeout
