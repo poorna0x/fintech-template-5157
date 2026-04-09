@@ -15,7 +15,7 @@ import { cloudinaryService, compressImage, validateImageFile } from '@/lib/cloud
 import { generateJobNumber } from '@/lib/adminUtils';
 import { db } from '@/lib/supabase';
 import { createJobAssignedNotification, sendNotification } from '@/lib/notifications';
-import { formatPhoneForWhatsApp } from '@/lib/utils';
+import WhatsAppDialog from '@/components/admin/WhatsAppDialog';
 
 interface NewJobFormData {
   service_type: 'RO' | 'SOFTENER';
@@ -59,6 +59,11 @@ const NewJobDialog: React.FC<NewJobDialogProps> = ({
   onBrandsModelsReload,
   parseDbServiceType
 }) => {
+  const [whatsappDialogOpen, setWhatsappDialogOpen] = useState(false);
+  const [whatsappTechnician, setWhatsappTechnician] = useState<{ name: string; phone: string } | null>(null);
+  const [whatsappServiceSubType, setWhatsappServiceSubType] = useState<string>('');
+  const [whatsappCustomerName, setWhatsappCustomerName] = useState<string>('');
+  const [whatsappLocation, setWhatsappLocation] = useState<string>('');
   const [isDragOverNewJob, setIsDragOverNewJob] = useState(false);
   const [isCreatingJob, setIsCreatingJob] = useState(false);
   const [isUploadingPhotos, setIsUploadingPhotos] = useState(false);
@@ -433,41 +438,20 @@ const NewJobDialog: React.FC<NewJobDialogProps> = ({
           );
           await sendNotification(notification);
 
+          // Show the same WhatsApp dialog used on manual assignment (no browser confirm popup)
           const techPhone = (assignedTechnician as any).phone;
-          if (techPhone) {
-            const ok = window.confirm('Send WhatsApp message to assigned technician now?');
-            if (ok) {
-              const custPhone = (customer as any).phone || '';
-              const altPhone = (customer as any).alternate_phone || (customer as any).alternatePhone || '';
-              const loc = (customer as any).location || {};
-              const lat = loc?.latitude;
-              const lng = loc?.longitude;
-              const formattedAddress = loc?.formattedAddress || loc?.formatted_address || '';
-              const googleMapLink =
-                lat != null && lng != null
-                  ? `https://www.google.com/maps?q=${lat},${lng}`
-                  : formattedAddress
-                    ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(formattedAddress)}`
-                    : '';
-              const visibleAddr = String((customer as any).visible_address || (customer as any).visibleAddress || '').trim();
-              const addr = (customer as any).address || {};
-              const areaHint = visibleAddr || String(addr?.area || addr?.city || '').trim();
-              const serviceSubType = newJobFormData.service_sub_type === 'Other'
-                ? (newJobFormData.service_sub_type_custom || '')
-                : (newJobFormData.service_sub_type || '');
-              const lines = [
-                `*Job: ${newJob.job_number}*`,
-                `Service: ${newJobFormData.service_type}${serviceSubType ? ` - ${serviceSubType}` : ''}`,
-                `Name: ${customer.fullName}`,
-                ...(custPhone ? [`Phone: ${custPhone}`] : []),
-                ...(altPhone ? [`Alt. phone: ${altPhone}`] : []),
-                ...(areaHint ? [`Area: ${areaHint}`] : []),
-                ...(googleMapLink ? [`Location: ${googleMapLink}`] : []),
-              ];
-              const text = lines.join('\n');
-              const url = `https://wa.me/${formatPhoneForWhatsApp(String(techPhone))}?text=${encodeURIComponent(text)}`;
-              window.open(url, '_blank', 'noopener,noreferrer');
-            }
+          if (assignedTechnician.fullName && techPhone) {
+            const serviceSubType = newJobFormData.service_sub_type === 'Other'
+              ? (newJobFormData.service_sub_type_custom || '')
+              : (newJobFormData.service_sub_type || '');
+            const visibleAddr = String((customer as any).visible_address || (customer as any).visibleAddress || '').trim();
+            const addr = (customer as any).address || {};
+            const locationText = visibleAddr || String(addr?.area || addr?.city || '').trim();
+            setWhatsappTechnician({ name: assignedTechnician.fullName, phone: String(techPhone) });
+            setWhatsappServiceSubType(serviceSubType || (newJobFormData.service_type || 'Service'));
+            setWhatsappCustomerName(customer.fullName || 'Customer');
+            setWhatsappLocation(locationText || '');
+            setWhatsappDialogOpen(true);
           }
         }
       }
@@ -482,14 +466,15 @@ const NewJobDialog: React.FC<NewJobDialogProps> = ({
   };
 
   return (
-    <Dialog open={open} onOpenChange={handleClose}>
-      <DialogContent className="w-[95vw] sm:w-[90vw] md:w-[80vw] lg:w-[60vw] xl:w-[50vw] max-w-2xl h-[90vh] max-h-[90vh] overflow-hidden flex flex-col">
-        <DialogHeader>
-          <DialogTitle>Create New Job</DialogTitle>
-          <DialogDescription>
-            Create a new service job for {(customer as any)?.customer_id} - {(customer as any)?.full_name}
-          </DialogDescription>
-        </DialogHeader>
+    <>
+      <Dialog open={open} onOpenChange={handleClose}>
+        <DialogContent className="w-[95vw] sm:w-[90vw] md:w-[80vw] lg:w-[60vw] xl:w-[50vw] max-w-2xl h-[90vh] max-h-[90vh] overflow-hidden flex flex-col">
+          <DialogHeader>
+            <DialogTitle>Create New Job</DialogTitle>
+            <DialogDescription>
+              Create a new service job for {(customer as any)?.customer_id} - {(customer as any)?.full_name}
+            </DialogDescription>
+          </DialogHeader>
         
         {customer && (
           <div className="py-4 px-2 sm:px-4 space-y-6 flex-1 overflow-y-auto">
@@ -854,23 +839,36 @@ const NewJobDialog: React.FC<NewJobDialogProps> = ({
           </div>
         )}
         
-        <DialogFooter>
-          <Button
-            variant="outline"
-            onClick={handleClose}
-          >
-            Cancel
-          </Button>
-          <Button
-            onClick={handleCreateJob}
-            disabled={isCreatingJob}
-            className="bg-blue-600 hover:bg-blue-700"
-          >
-            {isCreatingJob ? 'Creating...' : 'Create Job'}
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={handleClose}
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={handleCreateJob}
+              disabled={isCreatingJob}
+              className="bg-blue-600 hover:bg-blue-700"
+            >
+              {isCreatingJob ? 'Creating...' : 'Create Job'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {whatsappTechnician && (
+        <WhatsAppDialog
+          open={whatsappDialogOpen}
+          onOpenChange={setWhatsappDialogOpen}
+          technicianName={whatsappTechnician.name}
+          technicianPhone={whatsappTechnician.phone}
+          serviceSubType={whatsappServiceSubType}
+          customerName={whatsappCustomerName}
+          location={whatsappLocation}
+        />
+      )}
+    </>
   );
 };
 

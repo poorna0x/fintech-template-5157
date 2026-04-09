@@ -14,7 +14,7 @@ import { MapPin, Download, ExternalLink } from 'lucide-react';
 import { generateJobNumber, extractLocationFromAddressString, bangaloreAreas } from '@/lib/adminUtils';
 import ImageUpload from '@/components/ImageUpload';
 import { CustomAppointmentTimeSelect } from '@/components/admin/CustomAppointmentTimeSelect';
-import { formatPhoneForWhatsApp } from '@/lib/utils';
+import WhatsAppDialog from '@/components/admin/WhatsAppDialog';
 
 // Brand and model data - RO and Softener brands including local (Aqua Grand, Aqua Smart, Dolphin, etc.)
 const brandData = {
@@ -89,6 +89,11 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
   onExistingCustomerFound,
   onCheckExistingCustomer
 }) => {
+  const [whatsappDialogOpen, setWhatsappDialogOpen] = useState(false);
+  const [whatsappTechnician, setWhatsappTechnician] = useState<{ name: string; phone: string } | null>(null);
+  const [whatsappServiceSubType, setWhatsappServiceSubType] = useState<string>('');
+  const [whatsappCustomerName, setWhatsappCustomerName] = useState<string>('');
+  const [whatsappLocation, setWhatsappLocation] = useState<string>('');
   const [currentStep, setCurrentStep] = useState(1);
   const [formErrors, setFormErrors] = useState<{[key: string]: string}>({});
   const [isCreating, setIsCreating] = useState(false);
@@ -977,54 +982,6 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
                 console.error('Error sending notification:', notifError);
                 // Don't fail the job creation if notification fails
               }
-
-              // Offer WhatsApp message to assigned technician (same as manual assign flow)
-              const assignedTechRow = technicians.find((t) => t.id === step5JobData.assigned_technician_id);
-              const techPhone = assignedTechRow?.phone;
-              if (techPhone) {
-                const ok = window.confirm('Send WhatsApp message to assigned technician now?');
-                if (ok) {
-                  const jobNumberStr = (newJob as any).job_number || (newJob as any).jobNumber || 'Job';
-                  const customerNameStr =
-                    (newCustomer as any).full_name ||
-                    (newCustomer as any).fullName ||
-                    addFormData.full_name ||
-                    'Customer';
-                  const phoneStr = (newCustomer as any).phone || addFormData.phone || '';
-                  const altPhoneStr = (newCustomer as any).alternate_phone || addFormData.alternate_phone || '';
-                  const serviceType = step5JobData.service_type;
-                  const serviceSubType =
-                    step5JobData.service_sub_type === 'Custom'
-                      ? (step5JobData.service_sub_type_custom || '')
-                      : (step5JobData.service_sub_type || '');
-                  const loc = (customerData.location || {}) as any;
-                  const lat = loc?.latitude;
-                  const lng = loc?.longitude;
-                  const formattedAddress = loc?.formattedAddress || loc?.formatted_address || '';
-                  const googleMapLink =
-                    lat != null && lng != null
-                      ? `https://www.google.com/maps?q=${lat},${lng}`
-                      : formattedAddress
-                        ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(formattedAddress)}`
-                        : '';
-                  const visibleAddr = String(addFormData.visible_address || '').trim();
-                  const areaHint =
-                    visibleAddr ||
-                    String((customerData.address as any)?.area || (customerData.address as any)?.city || '').trim();
-                  const lines = [
-                    `*Job: ${jobNumberStr}*`,
-                    `Service: ${serviceType}${serviceSubType ? ` - ${serviceSubType}` : ''}`,
-                    `Name: ${customerNameStr}`,
-                    ...(phoneStr ? [`Phone: ${phoneStr}`] : []),
-                    ...(altPhoneStr ? [`Alt. phone: ${altPhoneStr}`] : []),
-                    ...(areaHint ? [`Area: ${areaHint}`] : []),
-                    ...(googleMapLink ? [`Location: ${googleMapLink}`] : []),
-                  ];
-                  const text = lines.join('\n');
-                  const url = `https://wa.me/${formatPhoneForWhatsApp(String(techPhone))}?text=${encodeURIComponent(text)}`;
-                  window.open(url, '_blank', 'noopener,noreferrer');
-                }
-              }
             }
           }
         } catch (error) {
@@ -1035,6 +992,33 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
 
       // Close dialog immediately to prevent empty flash
       onOpenChange(false);
+
+      // Open WhatsApp dialog after closing, if technician was assigned
+      if (shouldCreateJob && newJob && step5JobData.assigned_technician_id) {
+        const assignedTechRow = technicians.find((t) => t.id === step5JobData.assigned_technician_id);
+        const techName = assignedTechRow?.full_name || assignedTechRow?.fullName;
+        const techPhone = assignedTechRow?.phone;
+        if (techName && techPhone) {
+          const serviceSubType =
+            step5JobData.service_sub_type === 'Custom'
+              ? (step5JobData.service_sub_type_custom || '')
+              : (step5JobData.service_sub_type || '');
+          const visibleAddr = String(addFormData.visible_address || '').trim();
+          const areaHint =
+            visibleAddr ||
+            String((customerData.address as any)?.area || (customerData.address as any)?.city || '').trim();
+          const customerNameStr =
+            (newCustomer as any)?.full_name ||
+            (newCustomer as any)?.fullName ||
+            addFormData.full_name ||
+            'Customer';
+          setWhatsappTechnician({ name: techName, phone: String(techPhone) });
+          setWhatsappServiceSubType(serviceSubType || (step5JobData.service_type || 'Service'));
+          setWhatsappCustomerName(customerNameStr);
+          setWhatsappLocation(areaHint || '');
+          setWhatsappDialogOpen(true);
+        }
+      }
 
       // Show combined toast message
       if (shouldCreateJob && newJob) {
@@ -1103,9 +1087,10 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
   };
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="w-[95vw] sm:w-[90vw] md:w-[80vw] lg:w-[60vw] xl:w-[50vw] max-w-2xl h-[90vh] max-h-[90vh] overflow-hidden flex flex-col">
-        <DialogHeader className="flex-shrink-0">
+    <>
+      <Dialog open={open} onOpenChange={onOpenChange}>
+        <DialogContent className="w-[95vw] sm:w-[90vw] md:w-[80vw] lg:w-[60vw] xl:w-[50vw] max-w-2xl h-[90vh] max-h-[90vh] overflow-hidden flex flex-col">
+          <DialogHeader className="flex-shrink-0">
           <DialogTitle className="flex items-center gap-2 sm:gap-3">
             <div className="flex items-center gap-2">
               <div className="w-6 h-6 sm:w-8 sm:h-8 rounded-full bg-blue-100 flex items-center justify-center text-blue-600 font-semibold text-xs sm:text-sm">
@@ -1897,9 +1882,22 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
               </Button>
             )}
           </div>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {whatsappTechnician && (
+        <WhatsAppDialog
+          open={whatsappDialogOpen}
+          onOpenChange={setWhatsappDialogOpen}
+          technicianName={whatsappTechnician.name}
+          technicianPhone={whatsappTechnician.phone}
+          serviceSubType={whatsappServiceSubType}
+          customerName={whatsappCustomerName}
+          location={whatsappLocation}
+        />
+      )}
+    </>
   );
 };
 
