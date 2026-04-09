@@ -104,6 +104,47 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
   const [formErrors, setFormErrors] = useState<{[key: string]: string}>({});
   const [isCreating, setIsCreating] = useState(false);
   const [shouldCreateJob, setShouldCreateJob] = useState(true); // Default to true
+
+  const resetForm = () => {
+    setAddFormData({
+      full_name: '',
+      phone: '',
+      alternate_phone: '',
+      email: '',
+      service_types: [],
+      equipment: {},
+      photos: {},
+      behavior: '',
+      native_language: '',
+      status: 'ACTIVE',
+      notes: '',
+      address: '',
+      visible_address: '',
+      google_location: '',
+      service_cost: 0,
+      cost_agreed: false
+    });
+    setCurrentStep(1);
+    setFormErrors({});
+    setDuplicateFoundOnBlur(null);
+    setShouldCreateJob(true); // Reset to true (default)
+    setStep5JobData({
+      service_type: 'RO' as 'RO' | 'SOFTENER',
+      service_sub_type: '', // Not selected by default
+      service_sub_type_custom: '',
+      scheduled_date: '',
+      scheduled_time_slot: 'MORNING' as 'MORNING' | 'AFTERNOON' | 'EVENING' | 'FLEXIBLE' | 'CUSTOM',
+      scheduled_time_custom: '',
+      description: '',
+      lead_source: '', // Not selected by default
+      lead_source_custom: '',
+      lead_cost: '0',
+      agreed_amount: '',
+      priority: 'MEDIUM' as 'LOW' | 'MEDIUM' | 'HIGH' | 'URGENT',
+      assigned_technician_id: '', // Reset technician assignment
+      require_otp: false
+    });
+  };
   const [addFormData, setAddFormData] = useState({
     full_name: '',
     phone: '',
@@ -1033,46 +1074,6 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
         setCurrentStep(6);
       }
 
-      // Reset form after dialog is closed
-      setAddFormData({
-        full_name: '',
-        phone: '',
-        alternate_phone: '',
-        email: '',
-        service_types: [],
-        equipment: {},
-        photos: {},
-        behavior: '',
-        native_language: '',
-        status: 'ACTIVE',
-        notes: '',
-        address: '',
-        visible_address: '',
-        google_location: '',
-        service_cost: 0,
-        cost_agreed: false
-      });
-      setCurrentStep(1);
-      setFormErrors({});
-      setDuplicateFoundOnBlur(null);
-      setShouldCreateJob(true); // Reset to true (default)
-      setStep5JobData({
-        service_type: 'RO' as 'RO' | 'SOFTENER',
-        service_sub_type: '', // Not selected by default
-        service_sub_type_custom: '',
-        scheduled_date: '',
-        scheduled_time_slot: 'MORNING' as 'MORNING' | 'AFTERNOON' | 'EVENING' | 'FLEXIBLE' | 'CUSTOM',
-        scheduled_time_custom: '',
-        description: '',
-        lead_source: '', // Not selected by default
-        lead_source_custom: '',
-        lead_cost: '0',
-        agreed_amount: '',
-        priority: 'MEDIUM' as 'LOW' | 'MEDIUM' | 'HIGH' | 'URGENT',
-        assigned_technician_id: '', // Reset technician assignment
-        require_otp: false
-      });
-
       // Call onCustomerCreated with the new customer so parent can append to list (e.g. when no job created)
       await onCustomerCreated(newCustomer ?? undefined);
     } catch (error) {
@@ -1092,6 +1093,7 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
             setPostCreateSummary(null);
             setWhatsappDialogOpen(false);
             setWhatsappTechnician(null);
+            resetForm();
           }
         }}
       >
@@ -1564,7 +1566,7 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
                   variant="outline"
                   onClick={() => {
                     setPostCreateSummary(null);
-                    setCurrentStep(1);
+                    resetForm();
                   }}
                 >
                   Add Another Customer
