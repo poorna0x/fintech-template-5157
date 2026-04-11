@@ -75,7 +75,6 @@ import ImageUpload from '@/components/ImageUpload';
 import { Label } from '@/components/ui/label';
 import { processQueuedPhotos, startRetryProcessing, setupOnlineListener, stopRetryProcessing } from '@/lib/retryPhotoUpload';
 import { getQueuedPhotosCount } from '@/lib/offlinePhotoQueue';
-import { saveJobCompletionProgress, getQueuedCompletionForJob } from '@/lib/offlineJobCompletion';
 import { withTimeout, isSlowNetworkError, isTimeoutError } from '@/lib/networkTimeout';
 import TechnicianInventoryView from '@/components/TechnicianInventoryView';
 import JobPartsUsedDialog from '@/components/admin/JobPartsUsedDialog';
@@ -270,6 +269,15 @@ function emptyTechnicianQrLiveRef(): TechnicianQrLiveRef {
 const TechnicianDashboard = () => {
   const { user, logout, isTechnician, loading } = useAuth();
   const navigate = useNavigate();
+
+  // Legacy: offline job-completion queue removed; clear stale drafts from older builds.
+  useEffect(() => {
+    try {
+      localStorage.removeItem('offline_job_completions');
+    } catch {
+      /* ignore */
+    }
+  }, []);
 
   // Global haptics for any button press (supported browsers only).
   // Guard against double-vibrate when specific handlers also vibrate.
@@ -3099,16 +3107,32 @@ const TechnicianDashboard = () => {
     paymentScreenshot.trim() !== '' &&
     !isUploadedMediaUrl(paymentScreenshot);
 
-  /** Final step: block Complete until all photo pipelines are idle and every slot is either empty or a real URL. */
-  const hasAnyPendingCompletionUploads = () =>
-    isBillPhotosUploading ||
-    isPaymentScreenshotUploading ||
-    isOptionalCompletionPhotosUploading ||
-    isExtraPhotosStep6Uploading ||
-    hasPendingBillPhotosInState() ||
-    hasPendingPaymentScreenshotState() ||
-    hasPendingOptionalCompletionPhotos() ||
-    hasPendingExtraStep6Photos();
+  /** Why completion is blocked, or null if every photo slot is idle and uploaded (or empty). */
+  const getCompletionMediaNotReadyReason = (): string | null => {
+    if (
+      isBillPhotosUploading ||
+      isPaymentScreenshotUploading ||
+      isOptionalCompletionPhotosUploading ||
+      isExtraPhotosStep6Uploading
+    ) {
+      return 'Photos are still uploading. Please wait before completing.';
+    }
+    if (hasPendingBillPhotosInState()) {
+      return 'Bill photo(s) must finish uploading before you can complete the job.';
+    }
+    if (hasPendingOptionalCompletionPhotos()) {
+      return 'Completion photo(s) must finish uploading before you can complete the job.';
+    }
+    if (hasPendingExtraStep6Photos()) {
+      return 'Extra photo(s) must finish uploading before you can complete the job.';
+    }
+    if (hasPendingPaymentScreenshotState()) {
+      return 'Payment screenshot must finish uploading before you can complete the job.';
+    }
+    return null;
+  };
+
+  const hasAnyPendingCompletionUploads = () => getCompletionMediaNotReadyReason() !== null;
 
   /** Primary button shows "Complete Job" — same steps that can trigger DB submit in one click. */
   const isCompleteJobFooterSubmit = () =>
@@ -3135,12 +3159,6 @@ const TechnicianDashboard = () => {
       }
     }
 
-    saveJobCompletionProgress(selectedJobForComplete.id, {
-      billPhotos: billPhotosForSave,
-      billAmount,
-      currentStep: nextStep,
-    });
-
     if (shouldSkipAMC && billIsZero && isSoftener) {
       setHasAMC(false);
       setCustomerHasPrefilter(null);
@@ -3157,6 +3175,7 @@ const TechnicianDashboard = () => {
 
   const handleCompleteJobSubmit = async () => {
     if (!selectedJobForComplete) return;
+    if (isSubmittingJobCompletion) return;
 
     // Step 1: Bill Amount - validate and show confirmation
     if (completeJobStep === 1) {
@@ -3170,14 +3189,14 @@ const TechnicianDashboard = () => {
         return;
       }
       if (jobHasZeroExistingPhotos && (isOptionalCompletionPhotosUploading || hasPendingOptionalCompletionPhotos())) {
+        toast.error(
+          isOptionalCompletionPhotosUploading
+            ? 'Completion photo(s) are still uploading.'
+            : 'Completion photo(s) must finish uploading first.',
+          TOAST_VALIDATION
+        );
         return;
       }
-      // Save progress before showing confirmation
-      saveJobCompletionProgress(selectedJobForComplete.id, {
-        billPhotos,
-        billAmount,
-        currentStep: 1,
-      });
       // Show confirmation dialog
       setBillAmountConfirmOpen(true);
       return;
@@ -3186,6 +3205,12 @@ const TechnicianDashboard = () => {
     // Step 2: Bill photos optional — no skip dialog while uploads run (Next/Skip disabled until done)
     if (completeJobStep === 2) {
       if (isBillPhotosUploading || hasPendingBillPhotosInState()) {
+        toast.error(
+          isBillPhotosUploading
+            ? 'Bill photo(s) are still uploading.'
+            : 'Bill photo(s) must finish uploading before continuing.',
+          TOAST_VALIDATION
+        );
         return;
       }
       const hasAnyBillSlot = billPhotos.some((u) => typeof u === 'string' && u.trim() !== '');
@@ -3206,22 +3231,6 @@ const TechnicianDashboard = () => {
         // Auto-skip AMC and proceed
         setHasAMC(false);
         const nextStep = billIsZeroStep3 ? 6 : 4;
-        saveJobCompletionProgress(selectedJobForComplete.id, {
-          billPhotos,
-          billAmount,
-          paymentMode: billIsZeroStep3 ? '' : (paymentMode as 'CASH' | 'ONLINE' | ''),
-          paymentScreenshot: billIsZeroStep3 ? '' : paymentScreenshot,
-          qrCodeType: billIsZeroStep3 ? '' : qrCodeType,
-          selectedQrCodeId: billIsZeroStep3 ? '' : selectedQrCodeId,
-          customerHasPrefilter: billIsZeroStep3 && isSoftenerStep3 ? null : customerHasPrefilter,
-          hasAMC: false,
-          amcDateGiven: '',
-          amcEndDate: '',
-          amcYears: 0,
-          amcIncludesPrefilter: false,
-          amcAdditionalInfo: '',
-          currentStep: nextStep,
-        });
         if (billIsZeroStep3 && isSoftenerStep3) {
           setCustomerHasPrefilter(null);
         setRawWaterTds('');
@@ -3290,24 +3299,6 @@ const TechnicianDashboard = () => {
         nextStep = needsOtp ? 7 : 6;
       }
       
-      // Save progress (AMC is optional, can skip)
-      saveJobCompletionProgress(selectedJobForComplete.id, {
-        billPhotos,
-        billAmount,
-        paymentMode: billIsZeroStep3Final ? '' : (paymentMode as 'CASH' | 'ONLINE' | ''),
-        paymentScreenshot: billIsZeroStep3Final ? '' : paymentScreenshot,
-        qrCodeType: billIsZeroStep3Final ? '' : qrCodeType,
-        selectedQrCodeId: billIsZeroStep3Final ? '' : selectedQrCodeId,
-        customerHasPrefilter,
-        hasAMC: effectiveHasAMC,
-        amcDateGiven: effectiveHasAMC ? amcDateGiven : '',
-        amcEndDate: effectiveHasAMC ? amcEndDate : '',
-        amcYears: effectiveHasAMC ? amcYears : 0,
-        amcIncludesPrefilter: effectiveHasAMC ? (amcIncludesPrefilter ?? false) : false,
-        amcAdditionalInfo: effectiveHasAMC ? amcAdditionalInfo : '',
-        currentStep: nextStep,
-      });
-      
       // If bill is zero and service is softener, check OTP first
       if (billIsZeroStep3Final && isSoftenerService()) {
         // Set customerHasPrefilter to null (not applicable for softener)
@@ -3334,22 +3325,6 @@ const TechnicianDashboard = () => {
         // Skip to step 7 (OTP) if required, or step 6 (prefilter) or submit if softener
         const isSoftener = isSoftenerService();
         const needsOtp = requiresOtp();
-        saveJobCompletionProgress(selectedJobForComplete.id, {
-          billPhotos,
-          billAmount,
-          paymentMode: '',
-          paymentScreenshot: '',
-          qrCodeType: '',
-          selectedQrCodeId: '',
-          customerHasPrefilter: isSoftener ? null : customerHasPrefilter,
-          hasAMC: false,
-          amcDateGiven: '',
-          amcEndDate: '',
-          amcYears: 0,
-          amcIncludesPrefilter: false,
-          amcAdditionalInfo: '',
-          currentStep: needsOtp ? 7 : 6,
-        });
         if (needsOtp) {
           setCompleteJobStep(7);
           return;
@@ -3370,18 +3345,6 @@ const TechnicianDashboard = () => {
         toast.error('Please select a payment mode');
         return;
       }
-      // Save progress
-      saveJobCompletionProgress(selectedJobForComplete.id, {
-        billPhotos,
-        billAmount,
-        paymentMode: paymentMode as 'CASH' | 'ONLINE' | '',
-        amcDateGiven,
-        amcEndDate,
-        amcYears,
-        amcIncludesPrefilter,
-        amcAdditionalInfo,
-        currentStep: 5,
-      });
       // If Online, need to check QR code selection first
       if (paymentMode === 'ONLINE') {
         if (!selectedQrCodeId) {
@@ -3406,21 +3369,6 @@ const TechnicianDashboard = () => {
             selectedQrCodeName = selectedTech.fullName || 'Technician';
           }
         }
-        saveJobCompletionProgress(selectedJobForComplete.id, {
-          billPhotos,
-          billAmount,
-          paymentMode: 'ONLINE',
-          qrCodeType,
-          selectedQrCodeId,
-          selectedQrCodeUrl,
-          selectedQrCodeName,
-          amcDateGiven,
-          amcEndDate,
-          amcYears,
-          amcIncludesPrefilter,
-          amcAdditionalInfo,
-          currentStep: 5,
-        });
       }
       // Move to step 5 (Payment Screenshot)
       setCompleteJobStep(5);
@@ -3430,26 +3378,16 @@ const TechnicianDashboard = () => {
     // Step 5: Payment screenshot (optional) — uploads still validated at submit if present
     if (completeJobStep === 5) {
       if (!isBillAmountZero() && (isPaymentScreenshotUploading || hasPendingPaymentScreenshotState())) {
+        toast.error(
+          isPaymentScreenshotUploading
+            ? 'Payment screenshot is still uploading.'
+            : 'Payment screenshot must finish uploading before continuing.',
+          TOAST_VALIDATION
+        );
         return;
       }
       // Check if OTP is required
       const needsOtp = requiresOtp();
-      
-      // Save progress
-      saveJobCompletionProgress(selectedJobForComplete.id, {
-        billPhotos,
-        billAmount,
-        paymentMode: paymentMode as 'CASH' | 'ONLINE' | '',
-        paymentScreenshot,
-        qrCodeType,
-        selectedQrCodeId,
-        amcDateGiven,
-        amcEndDate,
-        amcYears,
-        amcIncludesPrefilter,
-        amcAdditionalInfo,
-        currentStep: needsOtp ? 7 : 6,
-      });
       
       if (needsOtp) {
         // Go to OTP step (step 7)
@@ -3483,23 +3421,6 @@ const TechnicianDashboard = () => {
       // OTP entered (any 4 digits), proceed to prefilter step (step 6) or submit if softener
       setOtpError('');
       
-      // Save progress
-      saveJobCompletionProgress(selectedJobForComplete.id, {
-        billPhotos,
-        billAmount,
-        paymentMode: paymentMode as 'CASH' | 'ONLINE' | '',
-        paymentScreenshot,
-        qrCodeType,
-        selectedQrCodeId,
-        amcDateGiven,
-        amcEndDate,
-        amcYears,
-        amcIncludesPrefilter,
-        amcAdditionalInfo,
-        customerHasPrefilter: isSoftenerService() ? null : customerHasPrefilter,
-        currentStep: 6,
-      });
-      
       if (isSoftenerService()) {
         // Set customerHasPrefilter to null (not applicable for softener)
         setCustomerHasPrefilter(null);
@@ -3532,74 +3453,20 @@ const TechnicianDashboard = () => {
       const finalQrCodeType = isBillAmountZero() ? '' : qrCodeType;
       const finalSelectedQrCodeId = isBillAmountZero() ? '' : selectedQrCodeId;
       
-      // Save progress before submitting
-      saveJobCompletionProgress(selectedJobForComplete.id, {
-        billPhotos,
-        billAmount,
-        paymentMode: finalPaymentMode,
-        paymentScreenshot: finalPaymentScreenshot,
-        qrCodeType: finalQrCodeType,
-        selectedQrCodeId: finalSelectedQrCodeId,
-        amcDateGiven,
-        amcEndDate,
-        amcYears,
-        amcIncludesPrefilter,
-        amcAdditionalInfo,
-        customerHasPrefilter: isSoftenerService() ? null : customerHasPrefilter,
-        currentStep: 6,
-      });
-      // Submit path below waits once for all bill/payment/optional/step-6 photos to be real URLs
+      // Submit path below requires all bill/payment/optional/step-6 photos to be real URLs
     }
     
-    // Single place we require every photo slot to be finished (covers step 6 and softener fall-through from 5 / 7)
-    if (hasAnyPendingCompletionUploads()) {
+    const mediaNotReady = getCompletionMediaNotReadyReason();
+    if (mediaNotReady) {
+      toast.error(mediaNotReady, TOAST_VALIDATION);
       return;
     }
 
     setIsSubmittingJobCompletion(true);
     
     try {
-      // STEP 1: Ensure all photos are uploaded to Cloudinary (must be URLs, not local files)
-      console.log('📸 All bill photos before filtering:', billPhotos);
+      // STEP 1: Bill photos — gated by getCompletionMediaNotReadyReason(); only remote URLs here
       const uploadedBillPhotos = billPhotos.filter(isUploadedMediaUrl);
-      console.log('📸 Uploaded bill photos (http/https URLs):', uploadedBillPhotos);
-      console.log('📸 Uploaded bill photos count:', uploadedBillPhotos.length);
-      
-      // Check if there are any non-uploaded photos
-      const nonUploadedPhotos = billPhotos.filter(url => 
-        url && typeof url === 'string' && !isUploadedMediaUrl(url)
-      );
-      
-      if (nonUploadedPhotos.length > 0) {
-        console.warn('⚠️ Non-uploaded photos detected:', nonUploadedPhotos);
-        setIsSubmittingJobCompletion(false);
-        return;
-      }
-
-      // Wait for optional completion photos (when job had zero photos) to finish uploading
-      const optionalUploaded = optionalCompletionPhotos.filter(isUploadedMediaUrl);
-      const optionalNonUploaded = optionalCompletionPhotos.filter(u => u && typeof u === 'string' && !isUploadedMediaUrl(u));
-      if (optionalNonUploaded.length > 0) {
-        setIsSubmittingJobCompletion(false);
-        return;
-      }
-      // Wait for extra photos (step 6) to finish uploading
-      const extraStep6Uploaded = extraPhotosStep6.filter(isUploadedMediaUrl);
-      const extraStep6NonUploaded = extraPhotosStep6.filter(u => u && typeof u === 'string' && !isUploadedMediaUrl(u));
-      if (extraStep6NonUploaded.length > 0) {
-        setIsSubmittingJobCompletion(false);
-        return;
-      }
-
-      if (
-        paymentScreenshot &&
-        typeof paymentScreenshot === 'string' &&
-        paymentScreenshot.trim() !== '' &&
-        !isUploadedMediaUrl(paymentScreenshot)
-      ) {
-        setIsSubmittingJobCompletion(false);
-        return;
-      }
       
       // STEP 2: Get QR code details
       // Note: QR codes are NOT uploaded to Cloudinary - we use the existing URL directly
@@ -7911,24 +7778,6 @@ const TechnicianDashboard = () => {
                   variant="outline"
                   onClick={() => {
                     // Skip AMC step - go to payment step (step 4)
-                    // Since we're only showing this button when bill is not zero and not softener,
-                    // we always go to step 4
-                    saveJobCompletionProgress(selectedJobForComplete.id, {
-                      billPhotos,
-                      billAmount,
-                      paymentMode: paymentMode as 'CASH' | 'ONLINE' | '',
-                      paymentScreenshot,
-                      qrCodeType,
-                      selectedQrCodeId,
-                      customerHasPrefilter,
-                      hasAMC: false,
-                      amcDateGiven: '',
-                      amcEndDate: '',
-                      amcYears: 0,
-                      amcIncludesPrefilter: false,
-                      amcAdditionalInfo: '',
-                      currentStep: 4,
-                    });
                     setCompleteJobStep(4);
                   }}
                 >
