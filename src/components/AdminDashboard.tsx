@@ -1419,7 +1419,7 @@ const AdminDashboard = () => {
       
       // Don't load all customers – list comes from jobs (useEffect below). Duplicate check uses a single query when user adds customer.
       const [techniciansResult, amcContractsResult, jobCountsResult, priorCompletedMap] = await Promise.all([
-        db.technicians.getAll(100),
+        db.technicians.getAllForDashboard(100),
         supabase
           .from('amc_contracts')
           .select('customer_id, status')
@@ -1447,21 +1447,8 @@ const AdminDashboard = () => {
 
       if (techniciansResult.data) {
         const transformedTechnicians = techniciansResult.data.map(transformTechnicianData);
-        console.log('📊 Loaded technicians with locations:', {
-          rawData: techniciansResult.data.map((t: any) => ({
-            id: t.id,
-            name: t.full_name,
-            current_location: t.current_location,
-            currentLocationType: typeof t.current_location
-          })),
-          transformed: transformedTechnicians.map(t => ({
-            name: t.fullName,
-            id: t.id,
-            hasLocation: !!t.currentLocation,
-            location: t.currentLocation,
-            locationType: typeof t.currentLocation,
-            status: t.status
-          }))
+        console.log('📊 Loaded technicians (dashboard — live GPS omitted; refreshed on Settings / assign / measure distance):', {
+          count: transformedTechnicians.length,
         });
         setTechnicians(transformedTechnicians);
       } else {
@@ -5125,12 +5112,9 @@ const AdminDashboard = () => {
     setJobToAssign(job);
     setSelectedTechnicianId('');
     setAssignJobDialogOpen(true);
-    // Avoid reload on open when the dashboard already has technicians — that setTechnicians
-    // re-renders this huge tree and makes the dialog visibly "pop" a moment after it opens.
-    if (technicians.length === 0) {
-      setAssignTechniciansRefreshing(true);
-      void reloadTechnicians({ transition: true }).finally(() => setAssignTechniciansRefreshing(false));
-    }
+    // Full `current_location` for all technicians (assign-by-distance). Not fetched on dashboard load—only when this dialog opens.
+    setAssignTechniciansRefreshing(true);
+    void reloadTechnicians({ transition: true }).finally(() => setAssignTechniciansRefreshing(false));
   };
 
   const handleSaveJobAssignment = async () => {
@@ -5344,10 +5328,8 @@ const AdminDashboard = () => {
       '';
     setSelectedTechnicianForReassign(technicianId);
     setReassignDialogOpen(true);
-    if (technicians.length === 0) {
-      setReassignTechniciansRefreshing(true);
-      void reloadTechnicians({ transition: true }).finally(() => setReassignTechniciansRefreshing(false));
-    }
+    setReassignTechniciansRefreshing(true);
+    void reloadTechnicians({ transition: true }).finally(() => setReassignTechniciansRefreshing(false));
   };
 
   const handleReassignSubmit = async () => {
@@ -5959,7 +5941,23 @@ const AdminDashboard = () => {
       return;
     }
 
-    const assignedTechnician = technicians.find(t => t.id === assignedTechnicianId);
+    let assignedTechnician = technicians.find((t) => t.id === assignedTechnicianId);
+    try {
+      const { data: freshRow, error: freshErr } = await db.technicians.getById(assignedTechnicianId);
+      if (!freshErr && freshRow) {
+        const fresh = transformTechnicianData(freshRow);
+        assignedTechnician = fresh;
+        setTechnicians((prev) => {
+          const idx = prev.findIndex((t) => t.id === assignedTechnicianId);
+          if (idx === -1) return [...prev, fresh];
+          const next = [...prev];
+          next[idx] = fresh;
+          return next;
+        });
+      }
+    } catch (e) {
+      console.warn('[AdminDashboard] getById for measure distance (refresh technician location) failed:', e);
+    }
 
     if (!assignedTechnician) {
       toast.error('Assigned technician not found.');
@@ -11976,7 +11974,7 @@ const AdminDashboard = () => {
             <Button
               type="button"
               size="default"
-              className="w-full sm:w-auto sm:min-w-[12rem] justify-center"
+              className="w-full justify-center shrink-0"
               disabled={
                 isCalculatingDistances ||
                 isLoadingCustomDistance ||

@@ -320,6 +320,29 @@ const TECHNICIAN_ROW_COLUMNS = [
   'updated_at',
 ].join(',');
 
+/** Same as full row but omits `current_location` — admin dashboard initial load (live GPS loaded on demand). */
+const TECHNICIAN_DASHBOARD_COLUMNS = [
+  'id',
+  'full_name',
+  'phone',
+  'email',
+  'employee_id',
+  'skills',
+  'service_areas',
+  'status',
+  'work_schedule',
+  'performance',
+  'vehicle',
+  'salary',
+  'qr_code',
+  'photo',
+  'visible_qr_codes',
+  'common_qr_code_ids',
+  'account_status',
+  'created_at',
+  'updated_at',
+].join(',');
+
 export const REMINDER_ROW_COLUMNS = [
   'id',
   'entity_type',
@@ -1843,6 +1866,19 @@ export const db = {
         query = query.limit(limit);
       }
       
+      const { data, error } = await query;
+      return { data, error };
+    },
+
+    /** Admin list without live GPS blob — use `getById` / `reload` / measure-distance refresh for `current_location`. */
+    async getAllForDashboard(limit?: number) {
+      let query = supabase
+        .from('technicians')
+        .select(TECHNICIAN_DASHBOARD_COLUMNS)
+        .order('created_at', { ascending: false });
+      if (limit && limit > 0) {
+        query = query.limit(limit);
+      }
       const { data, error } = await query;
       return { data, error };
     },
