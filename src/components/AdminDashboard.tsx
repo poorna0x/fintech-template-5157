@@ -5726,26 +5726,27 @@ const AdminDashboard = () => {
     toast.success('Opening WhatsApp to share job details');
   };
 
-  const collectSameDayJobsForMeasure = (workingJob: Job | any): Job[] => {
+  /** Active route jobs for this technician (assigned / en route / in progress), any scheduled day — not only today. */
+  const collectOngoingJobsForMeasure = (workingJob: Job | any): Job[] => {
     const assignedTechnicianId =
       (workingJob as any).assigned_technician_id || workingJob.assignedTechnicianId || null;
     if (!assignedTechnicianId) return [workingJob as Job];
-    const scheduledDateKey = getJobScheduledDateKey(workingJob);
-    if (!scheduledDateKey) return [workingJob as Job];
     const ROUTE_STATUSES = new Set(['ASSIGNED', 'EN_ROUTE', 'IN_PROGRESS']);
-    let sameDayJobs = jobs.filter((j) => {
+    let routeJobs = jobs.filter((j) => {
       const tid = (j as any).assigned_technician_id || j.assignedTechnicianId;
       if (String(tid) !== String(assignedTechnicianId)) return false;
-      if (getJobScheduledDateKey(j) !== scheduledDateKey) return false;
       const st = (j as any).status || j.status;
       return ROUTE_STATUSES.has(st);
     });
-    if (!sameDayJobs.some((j) => j.id === workingJob.id)) {
-      sameDayJobs = [...sameDayJobs, workingJob as Job];
+    if (!routeJobs.some((j) => j.id === workingJob.id)) {
+      routeJobs = [...routeJobs, workingJob as Job];
     }
-    return [...sameDayJobs].sort((a, b) =>
-      routeSortKeyForJob(a).localeCompare(routeSortKeyForJob(b))
-    );
+    return [...routeJobs].sort((a, b) => {
+      const da = getJobScheduledDateKey(a) || '9999-12-31';
+      const db = getJobScheduledDateKey(b) || '9999-12-31';
+      if (da !== db) return da.localeCompare(db);
+      return routeSortKeyForJob(a).localeCompare(routeSortKeyForJob(b));
+    });
   };
 
   const resolveJobCoordsForMeasure = async (job: Job | any): Promise<{ lat: number; lng: number } | null> => {
@@ -5777,9 +5778,9 @@ const AdminDashboard = () => {
     const techLocation =
       assignedTechnician?.currentLocation || (assignedTechnician as any)?.current_location;
 
-    const dayJobs = collectSameDayJobsForMeasure(workingJob);
+    const ongoingJobsForRoute = collectOngoingJobsForMeasure(workingJob);
     const jobById = (id: string) =>
-      dayJobs.find((j) => j.id === id) || jobs.find((j) => j.id === id);
+      ongoingJobsForRoute.find((j) => j.id === id) || jobs.find((j) => j.id === id);
 
     const labelForStop = (stopId: string): string => {
       if (stopId === '__tech__') {
@@ -5897,7 +5898,7 @@ const AdminDashboard = () => {
     if (tech && tl?.latitude && tl?.longitude) {
       out.push({ value: '__tech__', label: `${tech.fullName} (last location)` });
     }
-    for (const j of collectSameDayJobsForMeasure(wj)) {
+    for (const j of collectOngoingJobsForMeasure(wj)) {
       out.push({ value: j.id, label: formatRouteStopLabel(j) });
     }
     return out;
@@ -5998,11 +5999,11 @@ const AdminDashboard = () => {
 
     setTechnicianDistances(initialDistances);
 
-    const dayList = collectSameDayJobsForMeasure(workingJob as Job);
+    const ongoingStops = collectOngoingJobsForMeasure(workingJob as Job);
     let fromId = '__tech__';
     let toId = workingJob.id;
     if (fromId === toId) {
-      const alt = dayList.find((j) => j.id !== fromId);
+      const alt = ongoingStops.find((j) => j.id !== fromId);
       if (alt) toId = alt.id;
     }
     setCustomDistanceFromId(fromId);
