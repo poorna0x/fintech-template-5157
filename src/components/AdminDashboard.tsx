@@ -320,6 +320,16 @@ const AdminDashboard = () => {
     isAssigned?: boolean; // Whether this technician is assigned to the job
   }>>([]);
   const [isCalculatingDistances, setIsCalculatingDistances] = useState(false);
+  /** Manual pair: technician (`__tech__`) or job id — driving distance only when user clicks Calculate */
+  const [customDistanceFromId, setCustomDistanceFromId] = useState<string>('');
+  const [customDistanceToId, setCustomDistanceToId] = useState<string>('');
+  const [customDistanceResult, setCustomDistanceResult] = useState<{
+    fromLabel: string;
+    toLabel: string;
+    distance: string;
+    duration: string;
+  } | null>(null);
+  const [isLoadingCustomDistance, setIsLoadingCustomDistance] = useState(false);
   
   // Authentication state hooks - MUST be declared before any conditional returns
   const [maxWaitReached, setMaxWaitReached] = useState(false);
@@ -5474,6 +5484,200 @@ const AdminDashboard = () => {
     return `${displayHours}:${displayMinutes} ${ampm}`;
   };
 
+  const getJobScheduledDateKey = (jobRow: Job | any): string | null => {
+    const raw = jobRow?.scheduled_date ?? jobRow?.scheduledDate;
+    if (!raw) return null;
+    if (typeof raw === 'string') return raw.split('T')[0];
+    try {
+      const d = new Date(raw);
+      if (isNaN(d.getTime())) return null;
+      return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+    } catch {
+      return null;
+    }
+  };
+
+  const parseCustomTimeMinutesFromJob = (jobRow: Job | any): number | null => {
+    let reqs = jobRow?.requirements;
+    if (typeof reqs === 'string') {
+      try {
+        reqs = JSON.parse(reqs);
+      } catch {
+        return null;
+      }
+    }
+    if (!Array.isArray(reqs)) return null;
+    const withTime = reqs.find((r: any) => r && typeof r === 'object' && r.custom_time);
+    const t = withTime?.custom_time;
+    if (!t || typeof t !== 'string') return null;
+    const parts = t.trim().split(':');
+    const h = parseInt(parts[0], 10);
+    const m = parseInt(parts[1] || '0', 10);
+    if (isNaN(h) || h < 0 || h > 23) return null;
+    if (isNaN(m) || m < 0 || m > 59) return null;
+    return h * 60 + m;
+  };
+
+  /** Visit order: CUSTOM with HH:MM first (by time), then MORNING→…→FLEXIBLE, then CUSTOM without time (by created). */
+  const routeSortKeyForJob = (jobRow: Job | any): string => {
+    const slot = String(jobRow?.scheduled_time_slot || jobRow?.scheduledTimeSlot || 'MORNING').toUpperCase();
+    const created = new Date(jobRow?.created_at || jobRow?.createdAt || 0).getTime();
+    if (slot === 'CUSTOM') {
+      const mins = parseCustomTimeMinutesFromJob(jobRow);
+      if (mins != null) return `A-${String(mins).padStart(5, '0')}-${String(created).padStart(13, '0')}`;
+      return `C-${String(created).padStart(13, '0')}`;
+    }
+    const slotRank: Record<string, number> = {
+      MORNING: 1,
+      AFTERNOON: 2,
+      EVENING: 3,
+      FLEXIBLE: 4,
+    };
+    const r = slotRank[slot] ?? 50;
+    return `B-${String(r).padStart(2, '0')}-${String(created).padStart(13, '0')}`;
+  };
+
+  /**
+   * Location for route labels — from DB-shaped job row: `jobs.service_address` (jsonb),
+   * embedded `customer.address`, `customer.visible_address`, and `service_location` when needed.
+   * Normalizes all whitespace so multi-word areas (e.g. "HSR Layout") and odd spacing still show.
+   */
+  const getRouteLocationWord = (jobRow: Job | any): string => {
+    const str = (v: unknown): string => {
+      if (v == null) return '';
+      if (typeof v === 'string') return v;
+      if (typeof v === 'number' && !Number.isNaN(v)) return String(v);
+      return '';
+    };
+    const normalizeWs = (s: string) =>
+      str(s).replace(/[\s\u00a0\u2000-\u200B\uFEFF]+/g, ' ').trim();
+
+    const genericToken = (w: string) => {
+      const t = w.toLowerCase().replace(/[^a-z0-9]/g, '');
+      if (!t || t.length < 2) return true;
+      if (t === 'bengaluru' || t === 'bangalore' || t === 'banglore') return true;
+      if (t === 'karnataka' || t === 'india') return true;
+      return false;
+    };
+
+    /** Entire phrase is only generic tokens (e.g. "Bangalore" or "Bangalore Karnataka"). */
+    const phraseIsOnlyGeneric = (s: string) => {
+      const n = normalizeWs(s);
+      if (!n) return true;
+      const parts = n.split(/\s+/).filter(Boolean);
+      return parts.length > 0 && parts.every((p) => genericToken(p));
+    };
+
+    /** Prefer full short phrase when it contains any non-generic word (multi-word areas). */
+    const pickPhraseOrEmpty = (raw: string, maxLen = 48): string => {
+      const n = normalizeWs(raw);
+      if (!n) return '';
+      if (phraseIsOnlyGeneric(n)) return '';
+      return n.length > maxLen ? `${n.slice(0, Math.max(0, maxLen - 1))}…` : n;
+    };
+
+    const firstNonGenericWord = (s: string): string => {
+      for (const raw of normalizeWs(s).split(/[\s,]+/)) {
+        const w = raw.trim();
+        if (!w) continue;
+        if (!genericToken(w)) return w;
+      }
+      return '';
+    };
+
+    /** DB/Google often store "Frazer, Town, Bangalore" — must not use only the first comma segment. */
+    const localityBeforeCity = (raw: string): string => {
+      const parts = raw.split(',').map((p) => normalizeWs(p)).filter(Boolean);
+      const kept: string[] = [];
+      for (const p of parts) {
+        const lower = p.toLowerCase();
+        const first = lower.split(/\s+/)[0] || '';
+        if (/^\d{6}$/.test(p)) break;
+        if (
+          first === 'bengaluru' ||
+          first === 'bangalore' ||
+          first === 'banglore' ||
+          first === 'karnataka' ||
+          first === 'india'
+        ) {
+          break;
+        }
+        if (lower === 'in') break;
+        kept.push(p);
+      }
+      return normalizeWs(kept.join(' '));
+    };
+
+    const serviceAddress = jobRow?.service_address || jobRow?.serviceAddress || {};
+    const cust = jobRow?.customer as any;
+    const customerAddress = cust?.address || {};
+
+    let visibleLocation =
+      normalizeWs(
+        str(serviceAddress?.visible_address) ||
+          str(serviceAddress?.visibleAddress) ||
+          str(customerAddress?.visible_address) ||
+          str(customerAddress?.visibleAddress) ||
+          str(cust?.visible_address)
+      );
+
+    if (visibleLocation.includes(',')) {
+      visibleLocation = localityBeforeCity(visibleLocation);
+    }
+
+    if (!visibleLocation) {
+      visibleLocation = normalizeWs(
+        str(serviceAddress?.area) || str(customerAddress?.area)
+      );
+      if (visibleLocation.includes(',')) {
+        visibleLocation = localityBeforeCity(visibleLocation);
+      }
+    }
+
+    let phrase = pickPhraseOrEmpty(visibleLocation);
+    if (phrase) return phrase;
+
+    const landmark = normalizeWs(str(serviceAddress?.landmark) || str(customerAddress?.landmark));
+    phrase = pickPhraseOrEmpty(landmark);
+    if (phrase) return phrase;
+
+    const street = normalizeWs(str(serviceAddress?.street) || str(customerAddress?.street));
+    phrase = pickPhraseOrEmpty(street);
+    if (phrase) return phrase;
+
+    const city = normalizeWs(str(serviceAddress?.city) || str(customerAddress?.city));
+    let w = firstNonGenericWord(city);
+    if (w) return w;
+
+    const pin = normalizeWs(str(serviceAddress?.pincode) || str(customerAddress?.pincode));
+    if (pin) return pin;
+
+    const svcLoc = jobRow?.service_location || jobRow?.serviceLocation || {};
+    const formatted = normalizeWs(str(svcLoc?.formattedAddress) || str(svcLoc?.formatted_address));
+    if (formatted) {
+      const joined = localityBeforeCity(formatted);
+      phrase = pickPhraseOrEmpty(joined);
+      if (phrase) return phrase;
+      for (const part of formatted.split(',')) {
+        const chunk = pickPhraseOrEmpty(normalizeWs(part));
+        if (chunk) return chunk;
+        w = firstNonGenericWord(part);
+        if (w) return w;
+      }
+    }
+
+    return '';
+  };
+
+  /** Route row: `Customer name (location)` — distinct stops even when area text repeats. */
+  const formatRouteStopLabel = (jobRow: Job | any): string => {
+    const cust = jobRow?.customer as any;
+    const displayName = (cust?.full_name || cust?.fullName || 'Customer').trim() || 'Customer';
+    const loc = getRouteLocationWord(jobRow);
+    if (loc) return `${displayName} (${loc})`;
+    return `${displayName} (—)`;
+  };
+
   // Handle measure distance for a job - OPTIMIZED: Uses batch API call for all technicians
   const handleShareJobWhatsApp = (job: Job) => {
     const assignedTechnicianId = (job as any).assigned_technician_id || job.assignedTechnicianId;
@@ -5540,6 +5744,183 @@ const AdminDashboard = () => {
     toast.success('Opening WhatsApp to share job details');
   };
 
+  const collectSameDayJobsForMeasure = (workingJob: Job | any): Job[] => {
+    const assignedTechnicianId =
+      (workingJob as any).assigned_technician_id || workingJob.assignedTechnicianId || null;
+    if (!assignedTechnicianId) return [workingJob as Job];
+    const scheduledDateKey = getJobScheduledDateKey(workingJob);
+    if (!scheduledDateKey) return [workingJob as Job];
+    const ROUTE_STATUSES = new Set(['ASSIGNED', 'EN_ROUTE', 'IN_PROGRESS']);
+    let sameDayJobs = jobs.filter((j) => {
+      const tid = (j as any).assigned_technician_id || j.assignedTechnicianId;
+      if (String(tid) !== String(assignedTechnicianId)) return false;
+      if (getJobScheduledDateKey(j) !== scheduledDateKey) return false;
+      const st = (j as any).status || j.status;
+      return ROUTE_STATUSES.has(st);
+    });
+    if (!sameDayJobs.some((j) => j.id === workingJob.id)) {
+      sameDayJobs = [...sameDayJobs, workingJob as Job];
+    }
+    return [...sameDayJobs].sort((a, b) =>
+      routeSortKeyForJob(a).localeCompare(routeSortKeyForJob(b))
+    );
+  };
+
+  const resolveJobCoordsForMeasure = async (job: Job | any): Promise<{ lat: number; lng: number } | null> => {
+    let c = resolveJobDestinationCoords(job);
+    if (c) return c;
+    try {
+      const { data, error } = await db.jobs.getByIdFull(job.id);
+      if (!error && data) c = resolveJobDestinationCoords(data);
+    } catch {
+      /* ignore */
+    }
+    return c;
+  };
+
+  const calculateCustomDistanceBetweenStops = async () => {
+    const workingJob = selectedJobForDistance;
+    if (!workingJob || !customDistanceFromId || !customDistanceToId) {
+      toast.error('Choose both From and To.');
+      return;
+    }
+    if (customDistanceFromId === customDistanceToId) {
+      toast.error('From and To must be different.');
+      return;
+    }
+
+    const assignedTechnicianId =
+      (workingJob as any).assigned_technician_id || workingJob.assignedTechnicianId || null;
+    const assignedTechnician = technicians.find((t) => t.id === assignedTechnicianId);
+    const techLocation =
+      assignedTechnician?.currentLocation || (assignedTechnician as any)?.current_location;
+
+    const dayJobs = collectSameDayJobsForMeasure(workingJob);
+    const jobById = (id: string) =>
+      dayJobs.find((j) => j.id === id) || jobs.find((j) => j.id === id);
+
+    const labelForStop = (stopId: string): string => {
+      if (stopId === '__tech__') {
+        return assignedTechnician
+          ? `${assignedTechnician.fullName} (last location)`
+          : 'Technician';
+      }
+      const j = jobById(stopId);
+      return j ? formatRouteStopLabel(j) : stopId;
+    };
+
+    let origin: { lat: number; lng: number } | null = null;
+    let dest: { lat: number; lng: number } | null = null;
+
+    if (customDistanceFromId === '__tech__') {
+      if (!techLocation?.latitude || !techLocation?.longitude) {
+        toast.error('Technician location not available.');
+        return;
+      }
+      origin = { lat: Number(techLocation.latitude), lng: Number(techLocation.longitude) };
+    } else {
+      const j = jobById(customDistanceFromId);
+      if (!j) {
+        toast.error('Could not find the From job.');
+        return;
+      }
+      origin = await resolveJobCoordsForMeasure(j);
+    }
+
+    if (customDistanceToId === '__tech__') {
+      if (!techLocation?.latitude || !techLocation?.longitude) {
+        toast.error('Technician location not available.');
+        return;
+      }
+      dest = { lat: Number(techLocation.latitude), lng: Number(techLocation.longitude) };
+    } else {
+      const j = jobById(customDistanceToId);
+      if (!j) {
+        toast.error('Could not find the To job.');
+        return;
+      }
+      dest = await resolveJobCoordsForMeasure(j);
+    }
+
+    if (!origin || !dest) {
+      toast.error('Map coordinates missing for one of the stops. Check addresses or map links.');
+      return;
+    }
+
+    setIsLoadingCustomDistance(true);
+    setCustomDistanceResult(null);
+
+    try {
+      await ensureGoogleMapsLoaded();
+      if (!(window as any).google?.maps?.DistanceMatrixService) {
+        throw new Error('DistanceMatrixService not available');
+      }
+
+      const distanceMatrix = new (window as any).google.maps.DistanceMatrixService();
+      const fromL = labelForStop(customDistanceFromId);
+      const toL = labelForStop(customDistanceToId);
+
+      distanceMatrix.getDistanceMatrix(
+        {
+          origins: [origin],
+          destinations: [dest],
+          travelMode: (window as any).google.maps.TravelMode.DRIVING,
+          unitSystem: (window as any).google.maps.UnitSystem.METRIC,
+        },
+        (response: any, status: any) => {
+          setIsLoadingCustomDistance(false);
+          if (status === (window as any).google.maps.DistanceMatrixStatus.OK && response) {
+            const el = response.rows[0]?.elements[0];
+            if (el && el.status === (window as any).google.maps.DistanceMatrixElementStatus.OK) {
+              const distanceValueM = el.distance?.value ?? 0;
+              let distanceText = el.distance?.text || '';
+              if (distanceValueM < 1000) {
+                distanceText = `${(distanceValueM / 1000).toFixed(2)} km`;
+              }
+              const durationText = el.duration?.text || '';
+              setCustomDistanceResult({
+                fromLabel: fromL,
+                toLabel: toL,
+                distance: distanceText,
+                duration: durationText,
+              });
+              return;
+            }
+          }
+          const m = haversineDistanceMeters(origin!, dest!);
+          setCustomDistanceResult({
+            fromLabel: fromL,
+            toLabel: toL,
+            distance: formatDistanceKm(m) || '',
+            duration: '',
+          });
+          toast.warning('Showing approximate distance (route unavailable)');
+        }
+      );
+    } catch (error) {
+      setIsLoadingCustomDistance(false);
+      toast.error(
+        `Failed to calculate: ${error instanceof Error ? error.message : 'Unknown error'}`
+      );
+    }
+  };
+
+  const getMeasureStopSelectOptions = (): { value: string; label: string }[] => {
+    const wj = selectedJobForDistance;
+    if (!wj) return [];
+    const tid = (wj as any).assigned_technician_id || wj.assignedTechnicianId;
+    const tech = tid ? technicians.find((t) => t.id === tid) : null;
+    const tl = tech?.currentLocation || (tech as any)?.current_location;
+    const out: { value: string; label: string }[] = [];
+    if (tech && tl?.latitude && tl?.longitude) {
+      out.push({ value: '__tech__', label: `${tech.fullName} (last location)` });
+    }
+    for (const j of collectSameDayJobsForMeasure(wj)) {
+      out.push({ value: j.id, label: formatRouteStopLabel(j) });
+    }
+    return out;
+  };
+
   const handleMeasureDistance = async (job: Job) => {
     console.log('🔍 [AdminDashboard] handleMeasureDistance called for job:', {
       jobId: job.id,
@@ -5562,6 +5943,7 @@ const AdminDashboard = () => {
     }
 
     setSelectedJobForDistance(workingJob as Job);
+    setCustomDistanceResult(null);
 
     if (!jobCoords) {
       console.error('❌ [AdminDashboard] No coordinates available for distance measurement');
@@ -5569,35 +5951,31 @@ const AdminDashboard = () => {
       return;
     }
 
-    console.log('✅ [AdminDashboard] Proceeding with distance calculation using:', jobCoords);
-
-    // Get assigned technician ID - only process assigned technician
     const assignedTechnicianId =
       (workingJob as any).assigned_technician_id || workingJob.assignedTechnicianId || null;
-    
+
     if (!assignedTechnicianId) {
       toast.error('No technician assigned to this job.');
       return;
     }
 
-    // Find the assigned technician
     const assignedTechnician = technicians.find(t => t.id === assignedTechnicianId);
-    
+
     if (!assignedTechnician) {
       toast.error('Assigned technician not found.');
       return;
     }
 
-    // Check if assigned technician has location data
-    const techLocation = assignedTechnician.currentLocation;
+    const techLocation =
+      assignedTechnician.currentLocation ||
+      (assignedTechnician as any).current_location;
     const hasLocation = !!(techLocation && techLocation.latitude && techLocation.longitude);
-    
+
     if (!hasLocation) {
       toast.error('Assigned technician does not have location data available.');
       return;
     }
 
-    // Format last updated time in 12-hour format
     let lastUpdatedFormatted: string | undefined;
     if (techLocation?.lastUpdated) {
       try {
@@ -5607,7 +5985,6 @@ const AdminDashboard = () => {
       }
     }
 
-    // Initialize distances array with only assigned technician
     const initialDistances = [{
       technician: assignedTechnician,
       distance: '',
@@ -5622,140 +5999,109 @@ const AdminDashboard = () => {
     }];
 
     setTechnicianDistances(initialDistances);
+
+    const dayList = collectSameDayJobsForMeasure(workingJob as Job);
+    let fromId = '__tech__';
+    let toId = workingJob.id;
+    if (fromId === toId) {
+      const alt = dayList.find((j) => j.id !== fromId);
+      if (alt) toId = alt.id;
+    }
+    setCustomDistanceFromId(fromId);
+    setCustomDistanceToId(toId);
+
     setDistanceMeasurementDialogOpen(true);
     setIsCalculatingDistances(true);
 
-    // Calculate distance for assigned technician only
+    const origin = {
+      lat: Number(techLocation!.latitude),
+      lng: Number(techLocation!.longitude)
+    };
+    const destination = { lat: Number(jobCoords.lat), lng: Number(jobCoords.lng) };
+
+    const applySingleLegResult = (
+      distanceText: string,
+      durationText: string,
+      distanceValue: number,
+      durationValue: number
+    ) => {
+      let estimatedArrival: string | undefined;
+      if (techLocation?.lastUpdated && durationValue > 0 && distanceValue > 1000) {
+        try {
+          const lastUpdatedDate = new Date(techLocation.lastUpdated);
+          estimatedArrival = formatTime12Hour(
+            new Date(lastUpdatedDate.getTime() + durationValue * 1000)
+          );
+        } catch {
+          estimatedArrival = undefined;
+        }
+      }
+      setTechnicianDistances([{
+        technician: assignedTechnician,
+        distance: distanceText,
+        duration: durationText,
+        distanceValue,
+        durationValue,
+        estimatedArrival,
+        lastUpdated: lastUpdatedFormatted,
+        hasLocation: true,
+        isCalculating: false,
+        isAssigned: true
+      }]);
+    };
+
     try {
       await ensureGoogleMapsLoaded();
-      
+
       if (!(window as any).google?.maps?.DistanceMatrixService) {
         throw new Error('DistanceMatrixService not available');
       }
 
       const distanceMatrix = new (window as any).google.maps.DistanceMatrixService();
-      
-      // Prepare origin (assigned technician location) and destination (job location)
-      const origin = {
-        lat: Number(techLocation!.latitude),
-        lng: Number(techLocation!.longitude)
-      };
-      
-      const destination = { lat: Number(jobCoords.lat), lng: Number(jobCoords.lng) };
-
-      // Calculate distance for assigned technician only
-      // Using DRIVING mode (works for bikes, scooters, and cars)
-      // Note: Distance Matrix API provides road distance, not straight-line distance
-      // Accuracy: Typically within 5-10% of actual travel distance
       distanceMatrix.getDistanceMatrix(
         {
           origins: [origin],
           destinations: [destination],
           travelMode: (window as any).google.maps.TravelMode.DRIVING,
           unitSystem: (window as any).google.maps.UnitSystem.METRIC,
-          // Optional: Add departureTime for traffic-aware routing (requires billing)
-          // departureTime: new Date(),
         },
         (response: any, status: any) => {
           setIsCalculatingDistances(false);
-          
+
           if (status === (window as any).google.maps.DistanceMatrixStatus.OK && response) {
             const result = response.rows[0]?.elements[0];
-            
+
             if (result && result.status === window.google.maps.DistanceMatrixElementStatus.OK) {
-              const distanceValue = result.distance.value || 0; // Distance in meters
+              const distanceValue = result.distance.value || 0;
               let distanceText = result.distance.text;
               if (distanceValue < 1000) {
                 distanceText = `${(distanceValue / 1000).toFixed(2)} km`;
               }
               const durationText = result.duration?.text || '';
-              const durationValue = result.duration?.value || 0; // Duration in seconds
-              
-              // Calculate estimated arrival for assigned technician (only if distance > 1 km)
-              let estimatedArrival: string | undefined;
-              if (techLocation?.lastUpdated && durationValue > 0 && distanceValue > 1000) {
-                try {
-                  const lastUpdatedDate = new Date(techLocation.lastUpdated);
-                  const arrivalDate = new Date(lastUpdatedDate.getTime() + durationValue * 1000);
-                  estimatedArrival = formatTime12Hour(arrivalDate);
-                } catch (e) {
-                  console.warn('Failed to calculate estimated arrival:', e);
-                }
-              }
-              
-              setTechnicianDistances([{
-                technician: assignedTechnician,
-                distance: distanceText,
-                duration: durationText,
-                distanceValue: distanceValue,
-                durationValue: durationValue,
-                estimatedArrival: estimatedArrival,
-                lastUpdated: lastUpdatedFormatted,
-                hasLocation: true,
-                isCalculating: false,
-                isAssigned: true
-              }]);
-            } else {
-              // Try fallback to BICYCLING mode for failed results
-              if (result?.status === window.google.maps.DistanceMatrixElementStatus.ZERO_RESULTS) {
-                const bicyclingMatrix = new (window as any).google.maps.DistanceMatrixService();
-                bicyclingMatrix.getDistanceMatrix(
-                  {
-                    origins: [origin],
-                    destinations: [destination],
-                    travelMode: (window as any).google.maps.TravelMode.BICYCLING,
-                    unitSystem: (window as any).google.maps.UnitSystem.METRIC,
-                  },
-                  (bikeResponse: any, bikeStatus: any) => {
-                    if (bikeStatus === (window as any).google.maps.DistanceMatrixStatus.OK && bikeResponse) {
-                      const bikeResult = bikeResponse.rows[0]?.elements[0];
-                      if (bikeResult && bikeResult.status === window.google.maps.DistanceMatrixElementStatus.OK) {
-                        const distanceValue = bikeResult.distance.value || 0; // Distance in meters
-                        let distanceText = bikeResult.distance.text;
-                        if (distanceValue < 1000) {
-                          distanceText = `${(distanceValue / 1000).toFixed(2)} km`;
-                        }
-                        const durationText = bikeResult.duration?.text || '';
-                        const durationValue = bikeResult.duration?.value || 0;
-                        
-                        // Calculate estimated arrival for assigned technician (only if distance > 1 km)
-                        let estimatedArrival: string | undefined;
-                        if (techLocation?.lastUpdated && durationValue > 0 && distanceValue > 1000) {
-                          try {
-                            const lastUpdatedDate = new Date(techLocation.lastUpdated);
-                            const arrivalDate = new Date(lastUpdatedDate.getTime() + durationValue * 1000);
-                            estimatedArrival = formatTime12Hour(arrivalDate);
-                          } catch (e) {
-                            console.warn('Failed to calculate estimated arrival:', e);
-                          }
-                        }
-                        
-                        setTechnicianDistances([{
-                          technician: assignedTechnician,
-                          distance: distanceText,
-                          duration: durationText,
-                          distanceValue: distanceValue,
-                          durationValue: durationValue,
-                          estimatedArrival: estimatedArrival,
-                          lastUpdated: lastUpdatedFormatted,
-                          hasLocation: true,
-                          isCalculating: false,
-                          isAssigned: true
-                        }]);
-                      } else {
-                        setTechnicianDistances([{
-                          technician: assignedTechnician,
-                          distance: '',
-                          duration: '',
-                          distanceValue: undefined,
-                          durationValue: undefined,
-                          estimatedArrival: undefined,
-                          lastUpdated: lastUpdatedFormatted,
-                          hasLocation: true,
-                          isCalculating: false,
-                          isAssigned: true
-                        }]);
+              const durationValue = result.duration?.value || 0;
+              applySingleLegResult(distanceText, durationText, distanceValue, durationValue);
+            } else if (result?.status === window.google.maps.DistanceMatrixElementStatus.ZERO_RESULTS) {
+              const bicyclingMatrix = new (window as any).google.maps.DistanceMatrixService();
+              bicyclingMatrix.getDistanceMatrix(
+                {
+                  origins: [origin],
+                  destinations: [destination],
+                  travelMode: (window as any).google.maps.TravelMode.BICYCLING,
+                  unitSystem: (window as any).google.maps.UnitSystem.METRIC,
+                },
+                (bikeResponse: any, bikeStatus: any) => {
+                  setIsCalculatingDistances(false);
+                  if (bikeStatus === (window as any).google.maps.DistanceMatrixStatus.OK && bikeResponse) {
+                    const bikeResult = bikeResponse.rows[0]?.elements[0];
+                    if (bikeResult && bikeResult.status === window.google.maps.DistanceMatrixElementStatus.OK) {
+                      const distanceValue = bikeResult.distance.value || 0;
+                      let distanceText = bikeResult.distance.text;
+                      if (distanceValue < 1000) {
+                        distanceText = `${(distanceValue / 1000).toFixed(2)} km`;
                       }
+                      const durationText = bikeResult.duration?.text || '';
+                      const durationValue = bikeResult.duration?.value || 0;
+                      applySingleLegResult(distanceText, durationText, distanceValue, distanceValue);
                     } else {
                       setTechnicianDistances([{
                         technician: assignedTechnician,
@@ -5770,22 +6116,35 @@ const AdminDashboard = () => {
                         isAssigned: true
                       }]);
                     }
+                  } else {
+                    setTechnicianDistances([{
+                      technician: assignedTechnician,
+                      distance: '',
+                      duration: '',
+                      distanceValue: undefined,
+                      durationValue: undefined,
+                      estimatedArrival: undefined,
+                      lastUpdated: lastUpdatedFormatted,
+                      hasLocation: true,
+                      isCalculating: false,
+                      isAssigned: true
+                    }]);
                   }
-                );
-              } else {
-                setTechnicianDistances([{
-                  technician: assignedTechnician,
-                  distance: '',
-                  duration: '',
-                  distanceValue: undefined,
-                  durationValue: undefined,
-                  estimatedArrival: undefined,
-                  lastUpdated: lastUpdatedFormatted,
-                  hasLocation: true,
-                  isCalculating: false,
-                  isAssigned: true
-                }]);
-              }
+                }
+              );
+            } else {
+              setTechnicianDistances([{
+                technician: assignedTechnician,
+                distance: '',
+                duration: '',
+                distanceValue: undefined,
+                durationValue: undefined,
+                estimatedArrival: undefined,
+                lastUpdated: lastUpdatedFormatted,
+                hasLocation: true,
+                isCalculating: false,
+                isAssigned: true
+              }]);
             }
           } else {
             setIsCalculatingDistances(false);
@@ -5796,16 +6155,8 @@ const AdminDashboard = () => {
     } catch (error) {
       console.error('Error calculating distances:', error);
       setIsCalculatingDistances(false);
-      // Mobile-safe fallback: show approximate distance for assigned technician when Maps fails.
       try {
-        const assignedTechnicianId =
-          (selectedJobForDistance as any)?.assigned_technician_id ||
-          (selectedJobForDistance as any)?.assignedTechnicianId ||
-          (selectedJobForDistance as any)?.assignedTechnician?.id ||
-          '';
-        const tech = assignedTechnicianId ? technicians.find((t) => String(t.id) === String(assignedTechnicianId)) : null;
-        const techLoc: any = (tech as any)?.currentLocation || (tech as any)?.current_location || null;
-        const jobCoords = selectedJobForDistance ? resolveJobDestinationCoords(selectedJobForDistance as any) : null;
+        const techLoc: any = assignedTechnician.currentLocation || (assignedTechnician as any)?.current_location;
         if (techLoc?.latitude && techLoc?.longitude && jobCoords?.lat && jobCoords?.lng) {
           const approxMeters = haversineDistanceMeters(
             { lat: Number(techLoc.latitude), lng: Number(techLoc.longitude) },
@@ -5814,7 +6165,7 @@ const AdminDashboard = () => {
           const approxText = formatDistanceKm(approxMeters);
           if (approxText) {
             setTechnicianDistances([{
-              technician: tech as any,
+              technician: assignedTechnician,
               distance: approxText,
               duration: '',
               distanceValue: approxMeters,
@@ -11436,16 +11787,25 @@ const AdminDashboard = () => {
       </Dialog>
 
       {/* Distance Measurement Dialog */}
-      <Dialog open={distanceMeasurementDialogOpen} onOpenChange={setDistanceMeasurementDialogOpen}>
-        <DialogContent className="sm:max-w-2xl max-h-[90vh] overflow-y-auto">
+      <Dialog
+        open={distanceMeasurementDialogOpen}
+        onOpenChange={(open) => {
+          setDistanceMeasurementDialogOpen(open);
+          if (!open) setIsLoadingCustomDistance(false);
+        }}
+      >
+        <DialogContent className="sm:max-w-2xl max-h-[90vh] overflow-y-auto w-[calc(100vw-2rem)] sm:w-full">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
-              <Navigation className="h-5 w-5" />
-              Measure Distance to Job Location
+              <Navigation className="h-5 w-5 shrink-0" />
+              Measure distance
             </DialogTitle>
+            <p className="text-sm text-muted-foreground pt-1">
+              Driving distance from this technician&apos;s last location to this job.
+            </p>
           </DialogHeader>
 
-          <div className="mt-4">
+          <div className="mt-4 min-w-0">
             {isCalculatingDistances ? (
               <div className="flex items-center justify-center py-8">
                 <RefreshCw className="h-6 w-6 animate-spin text-blue-600 mr-2" />
@@ -11571,7 +11931,91 @@ const AdminDashboard = () => {
             )}
           </div>
 
-          <DialogFooter>
+          <div className="mt-6 pt-4 border-t border-gray-200 space-y-3 min-w-0">
+            <p className="text-sm font-medium text-gray-800">Custom distance</p>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
+              <div className="space-y-1.5 min-w-0">
+                <Label htmlFor="measure-from">From</Label>
+                <Select
+                  value={customDistanceFromId}
+                  onValueChange={setCustomDistanceFromId}
+                  disabled={!selectedJobForDistance || isCalculatingDistances}
+                >
+                  <SelectTrigger id="measure-from" className="w-full max-w-full">
+                    <SelectValue placeholder="Choose start" />
+                  </SelectTrigger>
+                  <SelectContent className="max-h-[min(280px,50vh)] max-w-[min(calc(100vw-2rem),36rem)]">
+                    {getMeasureStopSelectOptions().map((o) => (
+                      <SelectItem key={o.value} value={o.value}>
+                        {o.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-1.5 min-w-0">
+                <Label htmlFor="measure-to">To</Label>
+                <Select
+                  value={customDistanceToId}
+                  onValueChange={setCustomDistanceToId}
+                  disabled={!selectedJobForDistance || isCalculatingDistances}
+                >
+                  <SelectTrigger id="measure-to" className="w-full max-w-full">
+                    <SelectValue placeholder="Choose end" />
+                  </SelectTrigger>
+                  <SelectContent className="max-h-[min(280px,50vh)] max-w-[min(calc(100vw-2rem),36rem)]">
+                    {getMeasureStopSelectOptions().map((o) => (
+                      <SelectItem key={`to-${o.value}`} value={o.value}>
+                        {o.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+            <Button
+              type="button"
+              size="default"
+              className="w-full sm:w-auto sm:min-w-[12rem] justify-center"
+              disabled={
+                isCalculatingDistances ||
+                isLoadingCustomDistance ||
+                !customDistanceFromId ||
+                !customDistanceToId ||
+                customDistanceFromId === customDistanceToId
+              }
+              onClick={() => void calculateCustomDistanceBetweenStops()}
+            >
+              {isLoadingCustomDistance ? (
+                <>
+                  <RefreshCw className="h-4 w-4 mr-2 animate-spin shrink-0" />
+                  Calculating…
+                </>
+              ) : (
+                'Calculate driving distance'
+              )}
+            </Button>
+            {customDistanceResult && (
+              <div className="rounded-md border border-blue-200 bg-blue-50/90 p-3 text-sm">
+                <div className="font-medium text-gray-900 break-words">
+                  {customDistanceResult.fromLabel}
+                  <span className="text-gray-400 mx-1">→</span>
+                  {customDistanceResult.toLabel}
+                </div>
+                <div className="mt-2 flex flex-wrap gap-3 text-gray-800">
+                  <span className="font-medium">{customDistanceResult.distance}</span>
+                  {customDistanceResult.duration ? (
+                    <span className="flex items-center gap-1">
+                      <Clock className="h-4 w-4 shrink-0" />
+                      {customDistanceResult.duration}
+                    </span>
+                  ) : null}
+                </div>
+              </div>
+            )}
+          </div>
+
+          <DialogFooter className="flex-col-reverse gap-2 sm:flex-row sm:justify-end">
             <Button variant="outline" onClick={() => setDistanceMeasurementDialogOpen(false)}>
               Close
             </Button>
