@@ -435,20 +435,25 @@ export const CompleteJobDialog: React.FC<CompleteJobDialogProps> = ({
         
         if (finalSelectedQrCodeId.startsWith('common_')) {
           const qrId = finalSelectedQrCodeId.replace('common_', '');
-          const selectedQr = localCommonQrCodes.find(qr => qr.id === qrId);
+          const selectedQr =
+            localCommonQrCodes.find((qr) => qr.id === qrId) || commonQrCodes.find((qr) => qr.id === qrId);
           if (selectedQr) {
             qrPhotos.selected_qr_code_url = selectedQr.qrCodeUrl;
             qrPhotos.selected_qr_code_name = selectedQr.name;
+          } else {
+            qrPhotos.selected_qr_code_name = `Common QR (${qrId.slice(0, 8)}…)`;
           }
         } else if (finalSelectedQrCodeId.startsWith('technician_')) {
           const techId = finalSelectedQrCodeId.replace('technician_', '');
-          const selectedTech = technicians.find(t => t.id === techId);
-          if (selectedTech && (selectedTech as any).qrCode) {
-            qrPhotos.selected_qr_code_url = (selectedTech as any).qrCode;
-            qrPhotos.selected_qr_code_name = selectedTech.fullName || 'Technician';
+          const selectedTech = technicians.find((t) => t.id === techId);
+          if (selectedTech) {
+            if ((selectedTech as any).qrCode) {
+              qrPhotos.selected_qr_code_url = (selectedTech as any).qrCode;
+            }
+            qrPhotos.selected_qr_code_name = `${selectedTech.fullName || 'Technician'}'s QR`;
           }
         }
-        
+
         requirements.push({ qr_photos: qrPhotos });
       }
 

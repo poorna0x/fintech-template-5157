@@ -125,7 +125,23 @@ export const CompletedJobSection: React.FC<CompletedJobSectionProps> = ({
   const commission10 = billAmount * 0.1;
   const sparePartsCostDisplay = hasPartsCostTotal ? partsTotalParsed : sparePartsCost;
   const profit = billAmount - sparePartsCostDisplay - leadCost - commission10;
-  const showProfit = billAmount > 0;
+  // Show profit when there is bill revenue or spare parts cost (₹0 bill jobs can still have parts / negative net)
+  const showProfit = billAmount > 0 || sparePartsCostDisplay > 0;
+
+  const qrCodeDisplayLabel =
+    qrPhotos?.selected_qr_code_name ||
+    (typeof qrPhotos?.selected_qr_code_id === 'string'
+      ? qrPhotos.selected_qr_code_id.startsWith('technician_')
+        ? (() => {
+            const tid = qrPhotos.selected_qr_code_id.replace('technician_', '');
+            const t = technicians.find((x) => x.id === tid);
+            return t ? `${t.fullName}'s QR` : qrPhotos.selected_qr_code_id;
+          })()
+        : qrPhotos.selected_qr_code_id.startsWith('common_')
+          ? 'Common QR (see job record)'
+          : qrPhotos.selected_qr_code_id
+      : '') ||
+    '';
   
   // Find assigned technician
   const assignedTechnicianId = (job as any).assigned_technician_id || (job as any).assignedTechnicianId;
@@ -267,10 +283,10 @@ export const CompletedJobSection: React.FC<CompletedJobSectionProps> = ({
             </div>
           )}
           
-          {/* QR Code Info (if online) */}
-          {qrPhotos?.selected_qr_code_name && (
+          {/* QR Code Info (online / partial online — show name, id fallback if name missing) */}
+          {qrCodeDisplayLabel && (
             <div className="text-gray-700 break-words">
-              <span className="text-gray-500 font-medium">QR Code:</span> {qrPhotos.selected_qr_code_name}
+              <span className="text-gray-500 font-medium">QR Code:</span> {qrCodeDisplayLabel}
             </div>
           )}
           
