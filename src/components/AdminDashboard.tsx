@@ -2,6 +2,7 @@ import React, { useState, useEffect, useCallback, useMemo, useRef, startTransiti
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import AdminHeader from '@/components/AdminHeader';
+import { WebsiteBookingIntentBanner } from '@/components/admin/WebsiteBookingIntentBanner';
 import AdminLogin from '@/components/AdminLogin';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -102,7 +103,6 @@ import { FollowUpJobSection } from './admin/FollowUpJobSection';
 import { CompleteJobDialog } from './admin/CompleteJobDialog';
 import { StatsCards } from './admin/StatsCards';
 import { AdminNotificationBell } from './admin/AdminNotificationBell';
-import { BookingAbandonBanner } from './admin/BookingAbandonBanner';
 import EditCustomerDialog from './admin/EditCustomerDialog';
 import AddCustomerDialog from './admin/AddCustomerDialog';
 import CustomerReportDialog from './admin/CustomerReportDialog';
@@ -8445,7 +8445,7 @@ const AdminDashboard = () => {
       <AdminHeader />
       
       <main className="container mx-auto px-4 py-4 sm:py-8">
-        {isAdmin && <BookingAbandonBanner />}
+        {isAdmin && <WebsiteBookingIntentBanner playAlert={playNotificationSound} />}
         {/* Page Header */}
         <div className="mb-6 sm:mb-8">
           <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">

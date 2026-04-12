@@ -14,7 +14,7 @@ import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
 import { toast } from 'sonner';
 import { ChevronLeft, ChevronRight, MapPin, Camera, Upload, Check, Phone, Mail, User, Home, Clock, Wrench, Loader2, Search, Navigation, X, ExternalLink } from 'lucide-react';
-import { db, getBookingAbandonBucketDateIST } from '@/lib/supabase';
+import { db } from '@/lib/supabase';
 import { cloudinaryService, compressImage } from '@/lib/cloudinary';
 import { emailService } from '@/lib/email';
 import { isIOS, isPWA, shouldUseFileInputFallback, requestCameraAccess, createVideoElement } from '@/lib/cameraUtils';
@@ -104,6 +104,13 @@ const Booking: React.FC = () => {
   const [mapCenter, setMapCenter] = useState<{ lat: number; lng: number }>({ lat: 12.9716, lng: 77.5946 });
   const [mapZoom, setMapZoom] = useState<number>(15);
 
+  const websiteIntentTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const websiteIntentLastSentRef = useRef<{
+    full_name: string;
+    phone_normalized: string;
+    current_step: number;
+  } | null>(null);
+
   // Get tomorrow's date
   const getTomorrowDate = () => {
     const tomorrow = new Date();
@@ -135,6 +142,7 @@ const Booking: React.FC = () => {
     setShowConfirmation(false);
     setBookingDetails(null);
     bookingSucceededRef.current = false;
+    websiteIntentLastSentRef.current = null;
   };
 
   const [formData, setFormData] = useState<FormData>({
@@ -158,12 +166,6 @@ const Booking: React.FC = () => {
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const bookingSucceededRef = useRef(false);
-  const abandonSnapshotRef = useRef({
-    step: 1,
-    form: {} as FormData,
-    honeypot: false,
-  });
-  const lastAbandonEventAtRef = useRef(0);
 
   // Helper function to format time slot
   const formatTimeSlot = (timeSlot: string, customTime?: string) => {
@@ -495,72 +497,70 @@ const Booking: React.FC = () => {
     return normalized.length === 10 && /^[6-9]\d{9}$/.test(normalized);
   };
 
-  useEffect(() => {
-    abandonSnapshotRef.current = {
-      step: currentStep,
-      form: formData,
-      honeypot: isHoneypotTriggered,
-    };
-  }, [currentStep, formData, isHoneypotTriggered]);
+  /** Egress: 5s debounce + skip identical payloads vs last successful RPC. */
+  const WEBSITE_INTENT_DEBOUNCE_MS = 5000;
 
   useEffect(() => {
-    const shouldReport = () => {
-      if (bookingSucceededRef.current) return false;
-      const { step, form, honeypot } = abandonSnapshotRef.current;
-      if (honeypot) return false;
-      if (step < 1 || step > 5) return false;
-      const name = form.fullName.trim();
-      const phoneNorm = normalizePhoneNumber(form.phone);
-      if (name.length < 2) return false;
-      if (!/^[6-9]\d{9}$/.test(phoneNorm)) return false;
-      return true;
-    };
-
-    const fire = () => {
-      if (!shouldReport()) return;
-      const now = Date.now();
-      if (now - lastAbandonEventAtRef.current < 2000) return;
-      lastAbandonEventAtRef.current = now;
-      const { step, form } = abandonSnapshotRef.current;
-      const phoneNorm = normalizePhoneNumber(form.phone);
-      const bucket = getBookingAbandonBucketDateIST();
-      const dedupeKey = `ba_rep_${phoneNorm}_${bucket}`;
-      try {
-        const prev = sessionStorage.getItem(dedupeKey);
-        if (prev && now - parseInt(prev, 10) < 120_000) return;
-      } catch {
-        /* ignore */
+    if (showConfirmation || showSuccessLoader || isSubmitting) {
+      if (websiteIntentTimerRef.current) {
+        clearTimeout(websiteIntentTimerRef.current);
+        websiteIntentTimerRef.current = null;
       }
+      return;
+    }
+    const name = formData.fullName.trim();
+    const phoneNorm = normalizePhoneNumber(formData.phone);
+    if (name.length < 2 || !/^[6-9]\d{9}$/.test(phoneNorm)) {
+      if (websiteIntentTimerRef.current) {
+        clearTimeout(websiteIntentTimerRef.current);
+        websiteIntentTimerRef.current = null;
+      }
+      return;
+    }
+
+    if (websiteIntentTimerRef.current) clearTimeout(websiteIntentTimerRef.current);
+    websiteIntentTimerRef.current = setTimeout(() => {
+      websiteIntentTimerRef.current = null;
       const payload = {
-        full_name: form.fullName.trim(),
-        phone: form.phone,
+        full_name: name,
+        phone: formData.phone,
         phone_normalized: phoneNorm,
-        step_reached: step,
-        bucket_date: bucket,
+        current_step: currentStep,
       };
-      void db.bookingAbandonments.upsertFromPublicPageKeepalive(payload).then(({ ok }) => {
-        if (ok) {
-          try {
-            sessionStorage.setItem(dedupeKey, String(Date.now()));
-          } catch {
-            /* ignore */
-          }
+      const last = websiteIntentLastSentRef.current;
+      if (
+        last &&
+        last.full_name === payload.full_name &&
+        last.phone_normalized === payload.phone_normalized &&
+        last.current_step === payload.current_step
+      ) {
+        return;
+      }
+      void db.websiteBookingIntent.pushLive(payload).then(({ error }) => {
+        if (!error) {
+          websiteIntentLastSentRef.current = {
+            full_name: payload.full_name,
+            phone_normalized: payload.phone_normalized,
+            current_step: payload.current_step,
+          };
         }
       });
-    };
+    }, WEBSITE_INTENT_DEBOUNCE_MS);
 
-    const onPageHide = () => fire();
-    const onVis = () => {
-      if (document.visibilityState === 'hidden') fire();
-    };
-
-    window.addEventListener('pagehide', onPageHide);
-    document.addEventListener('visibilitychange', onVis);
     return () => {
-      window.removeEventListener('pagehide', onPageHide);
-      document.removeEventListener('visibilitychange', onVis);
+      if (websiteIntentTimerRef.current) {
+        clearTimeout(websiteIntentTimerRef.current);
+        websiteIntentTimerRef.current = null;
+      }
     };
-  }, []);
+  }, [
+    formData.fullName,
+    formData.phone,
+    currentStep,
+    showConfirmation,
+    showSuccessLoader,
+    isSubmitting,
+  ]);
 
   const handleInputChange = (field: keyof FormData, value: any) => {
     let processedValue = value;

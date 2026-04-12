@@ -4535,6 +4535,41 @@ export const db = {
       return { error };
     },
   },
+
+  /** Public /book page pushes name+phone+step (debounced). Admin reads + dismisses. */
+  websiteBookingIntent: {
+    async pushLive(row: {
+      full_name: string;
+      phone: string;
+      phone_normalized: string;
+      current_step: number;
+    }) {
+      const { error } = await supabase.rpc('upsert_website_booking_intent', {
+        p_full_name: row.full_name.trim(),
+        p_phone: row.phone,
+        p_phone_normalized: row.phone_normalized,
+        p_current_step: row.current_step,
+      });
+      return { error };
+    },
+    async listActive(limit = 10) {
+      const lim = Math.min(Math.max(1, limit), 20);
+      const { data, error } = await supabase
+        .from('website_booking_intent')
+        .select('id,full_name,phone,current_step,updated_at')
+        .is('dismissed_at', null)
+        .order('updated_at', { ascending: false })
+        .limit(lim);
+      return { data: data || [], error };
+    },
+    async dismiss(id: string) {
+      const { error } = await supabase
+        .from('website_booking_intent')
+        .update({ dismissed_at: new Date().toISOString() })
+        .eq('id', id);
+      return { error };
+    },
+  },
 };
 
 /** Calendar date in Asia/Kolkata (for dedupe bucket with `phone_normalized`). */
