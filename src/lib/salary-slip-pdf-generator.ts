@@ -54,6 +54,7 @@ interface SalarySlipPDFData {
   unusedLeaves: number;
   unusedLeaveBonus: number;
   holidayDeduction: number;
+  salaryBeforeAdvance: number;
   totalSalary: number;
   totalBillAmount: number;
   payments: Payment[];
@@ -507,11 +508,15 @@ function generateSalarySlipHTML(data: SalarySlipPDFData, includeDayWiseBreakdown
                 <td style="text-align: right;" class="amount-positive">+ ${formatCurrency(data.totalExtraCommission)}</td>
               </tr>
               <tr>
+                <td><strong>Salary before advance</strong></td>
+                <td style="text-align: right;"><strong>₹ ${formatCurrency(data.salaryBeforeAdvance)}</strong></td>
+              </tr>
+              <tr>
                 <td>Advances</td>
                 <td style="text-align: right;" class="amount-negative">- ${formatCurrency(data.totalAdvances)}</td>
               </tr>
               <tr class="total-row">
-                <td><strong>Total Salary</strong></td>
+                <td><strong>Net Salary</strong></td>
                 <td style="text-align: right;" class="amount-total"><strong>₹ ${formatCurrency(data.totalSalary)}</strong></td>
               </tr>
             </tbody>
@@ -806,6 +811,7 @@ export function generateSalarySlipPDF(
       unusedLeaves: breakdown.unusedLeaves,
       unusedLeaveBonus: breakdown.unusedLeaveBonus,
       holidayDeduction: breakdown.holidayDeduction,
+      salaryBeforeAdvance: breakdown.salaryBeforeAdvance,
       totalSalary: breakdown.totalSalary,
       totalBillAmount: breakdown.totalBillAmount,
       payments: breakdown.payments || [],

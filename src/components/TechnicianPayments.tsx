@@ -99,7 +99,9 @@ interface TechnicianSalaryBreakdown {
   unusedLeaves: number; // Number of unused leaves (if less than 4 used)
   unusedLeaveBonus: number; // Bonus amount for unused leaves
   holidayDeduction: number;
-  totalSalary: number; // adjustedBaseSalary + commission + extraCommission - advances
+  /** Adjusted base + commission + extra (before deducting advances). */
+  salaryBeforeAdvance: number;
+  totalSalary: number; // Net after advances (can be negative)
   totalBillAmount: number; // Total billing done by this technician in the period
   payments: TechnicianPayment[];
   expenses: TechnicianExpense[];
@@ -563,7 +565,9 @@ const TechnicianPayments = () => {
           })
           .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
 
-        const totalSalary = adjustedBaseSalary + totalCommission + totalExtraCommission - totalAdvances;
+        const salaryBeforeAdvance =
+          adjustedBaseSalary + totalCommission + totalExtraCommission;
+        const totalSalary = salaryBeforeAdvance - totalAdvances;
 
         return {
           technicianId: techId,
@@ -582,6 +586,7 @@ const TechnicianPayments = () => {
           unusedLeaves,
           unusedLeaveBonus,
           holidayDeduction,
+          salaryBeforeAdvance,
           totalSalary,
           totalBillAmount,
           payments: techPayments,
@@ -1736,7 +1741,7 @@ const TechnicianPayments = () => {
                   <CardTitle className="text-lg">{breakdown.technicianName}</CardTitle>
                   <p className="text-sm text-gray-600 mt-1">Employee ID: {breakdown.employeeId}</p>
                 </div>
-                <div className="flex flex-col sm:flex-row items-start sm:items-center gap-4 sm:gap-6">
+                <div className="flex flex-col sm:flex-row items-start sm:items-center gap-4 sm:gap-6 flex-wrap">
                   <div className="flex-1 sm:flex-initial sm:text-right">
                     <div className="text-2xl font-bold text-blue-600">
                       ₹ {formatCurrency(breakdown.totalBillAmount)}
@@ -1744,17 +1749,24 @@ const TechnicianPayments = () => {
                     <p className="text-xs text-gray-500">Total Billing</p>
                   </div>
                   <div className="flex-1 sm:flex-initial sm:text-right">
-                  <div className="text-2xl font-bold text-green-600">
-                      ₹ {formatCurrency(breakdown.totalSalary)}
+                    <div className="text-2xl font-bold text-cyan-700">
+                      ₹ {formatCurrency(breakdown.salaryBeforeAdvance)}
+                    </div>
+                    <p className="text-xs font-medium text-gray-700">Salary before advance</p>
                   </div>
-                  <p className="text-xs text-gray-500">Total Salary</p>
+                  <div className="flex-1 sm:flex-initial sm:text-right">
+                    <div className={`text-2xl font-bold ${breakdown.totalSalary < 0 ? 'text-red-600' : 'text-green-600'}`}>
+                      ₹ {formatCurrency(breakdown.totalSalary)}
+                    </div>
+                    <p className="text-xs font-medium text-gray-700">Net Salary</p>
+                    <p className="text-xs text-gray-500">After advances</p>
                   </div>
                 </div>
               </div>
             </CardHeader>
             <CardContent className="p-4 sm:p-6">
               {/* Salary Breakdown */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3 sm:gap-4 mb-6">
+              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-3 gap-3 sm:gap-4 mb-6">
                 <div className="bg-blue-50 p-3 sm:p-4 rounded-lg">
                   <p className="text-xs sm:text-sm text-gray-600 mb-1">Base Salary (Monthly)</p>
                   <p className="text-lg sm:text-xl font-semibold text-blue-600">₹ {formatCurrency(breakdown.baseSalary)}</p>
@@ -1779,6 +1791,13 @@ const TechnicianPayments = () => {
                   <p className="text-xs sm:text-sm text-gray-600 mb-1">Extra Commission</p>
                   <p className="text-lg sm:text-xl font-semibold text-purple-600">₹ {formatCurrency(breakdown.totalExtraCommission)}</p>
                 </div>
+                <div className="bg-cyan-50 p-3 sm:p-4 rounded-lg border border-cyan-200">
+                  <p className="text-xs sm:text-sm text-gray-600 mb-1">Salary before advance</p>
+                  <p className="text-lg sm:text-xl font-semibold text-cyan-800">
+                    ₹ {formatCurrency(breakdown.salaryBeforeAdvance)}
+                  </p>
+                  <p className="text-xs text-gray-500 mt-1">Adjusted base + commissions</p>
+                </div>
                 <div className="bg-red-50 p-3 sm:p-4 rounded-lg">
                   <p className="text-xs sm:text-sm text-gray-600 mb-1">Expenses</p>
                   <p className="text-lg sm:text-xl font-semibold text-red-600">₹ {formatCurrency(breakdown.totalExpenses)}</p>
@@ -1786,6 +1805,13 @@ const TechnicianPayments = () => {
                 <div className="bg-orange-50 p-3 sm:p-4 rounded-lg">
                   <p className="text-xs sm:text-sm text-gray-600 mb-1">Advances</p>
                   <p className="text-lg sm:text-xl font-semibold text-orange-600">₹ {formatCurrency(breakdown.totalAdvances)}</p>
+                </div>
+                <div className="bg-emerald-50 p-3 sm:p-4 rounded-lg border border-emerald-200">
+                  <p className="text-xs sm:text-sm text-gray-600 mb-1">Net Salary</p>
+                  <p className={`text-lg sm:text-xl font-semibold ${breakdown.totalSalary < 0 ? 'text-red-600' : 'text-emerald-700'}`}>
+                    ₹ {formatCurrency(breakdown.totalSalary)}
+                  </p>
+                  <p className="text-xs text-gray-500 mt-1">After advances</p>
                 </div>
               </div>
 
@@ -1829,13 +1855,19 @@ const TechnicianPayments = () => {
                     <span className="truncate">+ Extra Commission:</span>
                     <span className="font-medium whitespace-nowrap">+ ₹ {formatCurrency(breakdown.totalExtraCommission)}</span>
                   </div>
+                  <div className="flex justify-between items-center gap-2 pt-2 border-t border-gray-200 font-semibold text-cyan-900">
+                    <span className="truncate">Salary before advance:</span>
+                    <span className="whitespace-nowrap">₹ {formatCurrency(breakdown.salaryBeforeAdvance)}</span>
+                  </div>
                   <div className="flex justify-between items-center gap-2 text-orange-600">
                     <span className="truncate">- Advances:</span>
                     <span className="font-medium whitespace-nowrap">- ₹ {formatCurrency(breakdown.totalAdvances)}</span>
                   </div>
                   <div className="flex justify-between items-center gap-2 pt-2 border-t border-gray-300 font-bold text-base sm:text-lg">
-                    <span className="truncate">Total Salary:</span>
-                    <span className="text-green-600 whitespace-nowrap">₹ {formatCurrency(breakdown.totalSalary)}</span>
+                    <span className="truncate">Net Salary:</span>
+                    <span className={breakdown.totalSalary < 0 ? 'text-red-600 whitespace-nowrap' : 'text-green-600 whitespace-nowrap'}>
+                      ₹ {formatCurrency(breakdown.totalSalary)}
+                    </span>
                   </div>
                   <div className="flex justify-between text-gray-500 text-xs mt-2 pt-2 border-t border-gray-200">
                     <span>Total Expenses (for analytics only):</span>

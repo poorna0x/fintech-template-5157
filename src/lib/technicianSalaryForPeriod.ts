@@ -1,7 +1,6 @@
 /**
  * Shared salary calculation that matches the Technician Payments section.
- * Use this in Analytics when period is "This month" or "Previous month" so the
- * Total Salary figure matches what Payments shows.
+ * Analytics uses salary before advance (adjusted base + commission + extra).
  */
 import { db, supabase } from '@/lib/supabase';
 
@@ -15,13 +14,13 @@ function formatDateString(date: Date): string {
 }
 
 export interface TotalSalaryForMonthResult {
-  totalSalary: number;
-  totalSalaryIncludingAll: number;
+  /** Adjusted base + commission + extra (before deducting advances). Same as Payments “salary before advance”. */
+  totalSalaryBeforeAdvance: number;
+  totalSalaryBeforeAdvanceIncludingAll: number;
 }
 
 /**
- * Computes total salary for a calendar month using the same logic as TechnicianPayments.
- * Returns the same figure that Payments section shows for that month.
+ * Computes totals for a calendar month using the same logic as TechnicianPayments (salary before advance).
  */
 export async function getTotalSalaryForCalendarMonth(
   year: number,
@@ -39,7 +38,6 @@ export async function getTotalSalaryForCalendarMonth(
   const [
     { data: technicians },
     { data: paymentsData },
-    { data: advancesData },
     { data: extraCommissionsData },
     { data: holidaysData },
   ] = await Promise.all([
@@ -49,7 +47,6 @@ export async function getTotalSalaryForCalendarMonth(
       .select('technician_id, job_id, commission_amount')
       .gte('created_at', startDate.toISOString())
       .lte('created_at', endDate.toISOString()),
-    db.technicianAdvances.getAll(undefined, periodStartStr, periodEndStr),
     db.technicianExtraCommissions.getAll(undefined, periodStartStr, periodEndStr),
     db.technicianHolidays.getAll(undefined, periodStartStr, periodEndStr),
   ]);
@@ -64,13 +61,12 @@ export async function getTotalSalaryForCalendarMonth(
 
   const allTechnicians = technicians || [];
   const payments = paymentsData || [];
-  const advances = advancesData || [];
   const extraCommissions = extraCommissionsData || [];
   const holidays = holidaysData || [];
   const completedJobs = completedJobsData || [];
 
-  let totalSalary = 0;
-  let totalSalaryIncludingAll = 0;
+  let totalSalaryBeforeAdvance = 0;
+  let totalSalaryBeforeAdvanceIncludingAll = 0;
 
   const allowedHolidays = 4;
   const dailyDivisor = 30;
@@ -86,11 +82,6 @@ export async function getTotalSalaryForCalendarMonth(
     const dailyBaseSalary = monthlyBaseSalary / dailyDivisor;
 
     const techPayments = payments.filter((p: any) => p.technician_id === techId);
-    const techAdvances = advances.filter((a: any) => {
-      if (a.technician_id !== techId) return false;
-      const advanceDate = (a as any).advance_date?.split?.('T')[0] ?? (a as any).advance_date;
-      return advanceDate >= periodStartStr && advanceDate <= periodEndStr;
-    });
     const techExtraCommissions = extraCommissions.filter((ec: any) => {
       if (ec.technician_id !== techId) return false;
       const d = (ec.commission_date || '').split('T')[0];
@@ -108,7 +99,6 @@ export async function getTotalSalaryForCalendarMonth(
     totalCommission += defaultCommission;
 
     const totalExtraCommission = techExtraCommissions.reduce((sum: number, ec: any) => sum + (ec.amount || 0), 0);
-    const totalAdvances = techAdvances.reduce((sum: number, a: any) => sum + (a.amount || 0), 0);
 
     const techHolidays = holidays.filter((h: any) => h.technician_id === techId);
     const datesWithJobs = new Set<string>();
@@ -152,13 +142,13 @@ export async function getTotalSalaryForCalendarMonth(
     const unusedLeaveBonus = unusedLeaves * dailyBaseSalary;
     const adjustedBaseSalary = periodBaseSalary - holidayDeduction + unusedLeaveBonus;
 
-    const techTotalSalary = adjustedBaseSalary + totalCommission + totalExtraCommission - totalAdvances;
-    const amount = Math.max(0, techTotalSalary);
-    totalSalaryIncludingAll += amount;
+    const salaryBeforeAdvance =
+      adjustedBaseSalary + totalCommission + totalExtraCommission;
+    totalSalaryBeforeAdvanceIncludingAll += salaryBeforeAdvance;
 
     if (employeeId === EXCLUDED_EMPLOYEE_ID) continue;
-    totalSalary += amount;
+    totalSalaryBeforeAdvance += salaryBeforeAdvance;
   }
 
-  return { totalSalary, totalSalaryIncludingAll };
+  return { totalSalaryBeforeAdvance, totalSalaryBeforeAdvanceIncludingAll };
 }

@@ -79,10 +79,21 @@ interface AnalyticsData {
   totalTechnicianAdvances?: number;
   totalBusinessExpenses?: number;
   totalSparePartsCost?: number; // Cost of parts used on jobs (from jobs.parts_cost_total)
-  totalSalaryDeductions?: number; // From technician payments (base salary deductions)
-  totalSalaryIncludingAll?: number; // Same but including excluded technician(s), for display in brackets
+  totalSalaryDeductions?: number; // Salary before advance (adjusted base + commissions + extra), excl. excluded tech
+  totalSalaryIncludingAll?: number; // Same including excluded technician(s), for brackets
   totalExpenses?: number; // Sum of all expenses
-  totalProfit?: number; // Revenue - Lead Costs - Expenses
+  totalProfit?: number; // Revenue - Lead Costs - Expenses (operating; lead costs only on completed jobs)
+  /** Sum of lead_cost on jobs in period that did not complete (paid leads, no conversion). */
+  wastedLeadCosts?: number;
+  wastedLeadJobCount?: number;
+  /** 7% of operating profit when profit is positive */
+  ishaDonationAmount?: number;
+  /** Operating profit minus Isha donation */
+  profitAfterIsha?: number;
+  /** Operating profit minus wasted lead spend (full-period picture) */
+  profitAfterWastedLeads?: number;
+  /** Operating profit minus wasted leads minus Isha */
+  netAfterIshaAndWastedLeads?: number;
   softenerData?: {
     totalJobs: number;
     completedJobs: number;
@@ -116,6 +127,9 @@ interface AnalyticsData {
 }
 
 type PeriodOption = '7d' | '30d' | 'thisWeek' | 'thisMonth' | 'previousMonth' | 'customMonth' | '3m' | '6m' | '1y' | 'all' | 'custom';
+
+/** Isha Foundation: 7% of operating profit (shown when profit is positive). */
+const ISHA_DONATION_RATE = 0.07;
 
 // Helper function to format currency with commas and without .00 when it's zero
 const formatCurrency = (amount: number): string => {
@@ -277,7 +291,6 @@ const Analytics = () => {
       let totalSparePartsCost = 0;
       let totalSalaryDeductions = 0;
       let totalSalaryIncludingAll = 0;
-      let advancesForSalary: any[] | null = null;
       let baseData: any = null;
 
       const startStr = startDate?.toISOString().split('T')[0];
@@ -359,22 +372,20 @@ const Analytics = () => {
         totalTechnicianExpenses = (techExpenses || []).reduce((sum: number, exp: any) => sum + Number(exp.amount || 0), 0);
         totalTechnicianAdvances = (techAdvances || []).reduce((sum: number, adv: any) => sum + Number(adv.amount || 0), 0);
         totalBusinessExpenses = (businessExpenses || []).reduce((sum: number, exp: any) => sum + Number(exp.amount || 0), 0);
-        advancesForSalary = techAdvances || null;
-
-        // Total Salary: for This month / Previous month / Custom month use same figure as Payments section
+        // Total salary (before advance): same basis as Payments “salary before advance”
         const usePaymentsSalary = (period === 'thisMonth' || period === 'previousMonth' || period === 'customMonth') && startDate && endDate;
         if (usePaymentsSalary) {
           try {
             const year = startDate.getFullYear();
             const month = startDate.getMonth() + 1; // 1-12
             const result = await getTotalSalaryForCalendarMonth(year, month);
-            totalSalaryDeductions = result.totalSalary;
-            totalSalaryIncludingAll = result.totalSalaryIncludingAll;
+            totalSalaryDeductions = result.totalSalaryBeforeAdvance;
+            totalSalaryIncludingAll = result.totalSalaryBeforeAdvanceIncludingAll;
           } catch (e) {
             console.error('Error loading salary from Payments logic:', e);
           }
         } else {
-          // Other periods: use already-fetched advances in range; fetch technicians + payments + extra commissions
+          // Other periods: pro-rated base + commissions + extra (before advances)
           try {
             const { data: allTechnicians } = await db.technicians.getAll(100);
             if (allTechnicians && startDate && endDate) {
@@ -388,7 +399,6 @@ const Analytics = () => {
               ]);
               const paymentsData = paymentsRes.data || [];
               const extraCommissionsData = extraCommissionsRes.data || [];
-              const advancesData = advancesForSalary || [];
               let totalSalaryPaid = 0;
               const EXCLUDED_EMPLOYEE_ID = 'TECH851703400';
               allTechnicians.forEach((tech: any) => {
@@ -398,7 +408,6 @@ const Analytics = () => {
                   ? (tech.salary as any).baseSalary
                   : 8000;
                 const techPayments = (paymentsData || []).filter((p: any) => p.technician_id === techId);
-                const techAdvancesForTech = (advancesData || []).filter((a: any) => a.technician_id === techId);
                 const techExtraCommissions = (extraCommissionsData || []).filter((ec: any) => {
                   if (ec.technician_id !== techId) return false;
                   const ecDate = new Date(ec.commission_date);
@@ -407,8 +416,7 @@ const Analytics = () => {
                 const baseSalary = getProRatedBaseSalary(monthlyBaseSalary, startDate, endDate);
                 const commissions = techPayments.reduce((sum: number, p: any) => sum + (p.commission_amount || 0), 0);
                 const extraCommissions = techExtraCommissions.reduce((sum: number, ec: any) => sum + (ec.amount || 0), 0);
-                const advances = techAdvancesForTech.reduce((sum: number, a: any) => sum + (a.amount || 0), 0);
-                const amount = Math.max(0, baseSalary + commissions + extraCommissions - advances);
+                const amount = baseSalary + commissions + extraCommissions;
                 totalSalaryIncludingAll += amount;
                 if (employeeId === EXCLUDED_EMPLOYEE_ID) return;
                 totalSalaryPaid += amount;
@@ -924,8 +932,8 @@ const Analytics = () => {
         totalTechnicianAdvances, // Keep for reference but don't show separately
         totalBusinessExpenses,
         totalSparePartsCost, // Parts used on jobs (job_parts_used × inventory price)
-        totalSalaryDeductions, // This is now "Total Salary" (includes base salary + commissions + extra commissions - advances)
-        totalSalaryIncludingAll, // Full total including excluded technician(s), for display in brackets
+        totalSalaryDeductions, // Salary before advance (adjusted base + commissions + extra)
+        totalSalaryIncludingAll, // Including excluded technician(s), for display in brackets
         // Total expenses (technician expenses + total salary + business expenses + spare parts cost)
         totalExpenses: totalTechnicianExpenses + totalSalaryDeductions + totalBusinessExpenses + totalSparePartsCost,
         // Total profit (Revenue - Lead Costs - Expenses)
@@ -2051,7 +2059,7 @@ const Analytics = () => {
                     </span>
                   </div>
                   <div className="flex justify-between gap-2 items-center min-w-0">
-                    <span className="text-gray-600 truncate">Total Salary (all salary including):</span>
+                    <span className="text-gray-600 truncate">Total Salary (before advance):</span>
                     <span className="font-semibold text-red-600 shrink-0 tabular-nums">
                       ₹ {formatCurrency(Math.max(0, analytics.totalSalaryDeductions ?? 0))}
                       {analytics.totalSalaryIncludingAll != null &&
