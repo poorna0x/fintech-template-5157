@@ -2,6 +2,7 @@ import { createClient } from '@supabase/supabase-js';
 import { Database } from '@/types';
 import { chromeStorage } from './storage';
 import { escapeForLike, normalizePhoneForSearch } from './utils';
+import { PENDING_PAYMENT_REMINDER_TITLE } from './pendingPaymentReminder';
 import { cacheGet, cacheSet, cacheInvalidate } from './supabaseQueryCache';
 
 // Supabase configuration
@@ -4397,7 +4398,158 @@ export const db = {
       return { error };
     },
   },
+
+  /**
+   * Admin header bell: three `head: true` count queries only (minimal egress). All buckets are **today only** (local calendar day).
+   * - General reminders: incomplete, not pending-payment title, `reminder_at` = today.
+   * - Customer pending payments: incomplete, pending-payment title, `reminder_at` = today.
+   * - AMC contracts: `created_at` within today (local).
+   */
+  adminNotifications: {
+    async getCounts(): Promise<{
+      generalReminders: number;
+      pendingCustomerPayments: number;
+      recentAmcContracts: number;
+      error?: string;
+    }> {
+      const now = new Date();
+      const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+      const startOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0, 0);
+      const endOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59, 999);
+      const startISO = startOfDay.toISOString();
+      const endISO = endOfDay.toISOString();
+
+      const [gr, pp, amc] = await Promise.all([
+        supabase
+          .from('reminders')
+          .select('id', { count: 'exact', head: true })
+          .is('completed_at', null)
+          .eq('reminder_at', today)
+          .neq('title', PENDING_PAYMENT_REMINDER_TITLE),
+        supabase
+          .from('reminders')
+          .select('id', { count: 'exact', head: true })
+          .is('completed_at', null)
+          .eq('title', PENDING_PAYMENT_REMINDER_TITLE)
+          .eq('reminder_at', today),
+        supabase
+          .from('amc_contracts')
+          .select('id', { count: 'exact', head: true })
+          .gte('created_at', startISO)
+          .lte('created_at', endISO),
+      ]);
+
+      const firstErr = gr.error || pp.error || amc.error;
+      return {
+        generalReminders: gr.count ?? 0,
+        pendingCustomerPayments: pp.count ?? 0,
+        recentAmcContracts: amc.count ?? 0,
+        error: firstErr ? firstErr.message : undefined,
+      };
+    },
+  },
+
+  /**
+   * Website booking funnel: record name + phone when user leaves mid-flow (anon insert).
+   * Admin: slim `select` + dismiss update. Poll interval should stay ≥ 60s to limit egress.
+   */
+  bookingAbandonments: {
+    async upsertFromPublicPage(row: {
+      full_name: string;
+      phone: string;
+      phone_normalized: string;
+      step_reached: number;
+      bucket_date: string;
+    }) {
+      const { error } = await supabase.from('booking_abandonments').upsert(
+        {
+          full_name: row.full_name.trim(),
+          phone: row.phone,
+          phone_normalized: row.phone_normalized,
+          step_reached: row.step_reached,
+          bucket_date: row.bucket_date,
+          dismissed_at: null,
+        },
+        { onConflict: 'phone_normalized,bucket_date' }
+      );
+      return { error };
+    },
+
+    /** For `pagehide` / tab close: browser may cancel ordinary fetch; keepalive improves delivery. */
+    async upsertFromPublicPageKeepalive(row: {
+      full_name: string;
+      phone: string;
+      phone_normalized: string;
+      step_reached: number;
+      bucket_date: string;
+    }): Promise<{ ok: boolean }> {
+      if (typeof fetch === 'undefined') return { ok: false };
+      const key = buildTimeKey;
+      const base = buildTimeUrl.replace(/\/$/, '');
+      try {
+        const res = await fetch(
+          `${base}/rest/v1/booking_abandonments?on_conflict=phone_normalized,bucket_date`,
+          {
+            method: 'POST',
+            headers: {
+              apikey: key,
+              Authorization: `Bearer ${key}`,
+              'Content-Type': 'application/json',
+              Prefer: 'resolution=merge-duplicates,return=minimal',
+            },
+            body: JSON.stringify([
+              {
+                full_name: row.full_name.trim(),
+                phone: row.phone,
+                phone_normalized: row.phone_normalized,
+                step_reached: row.step_reached,
+                bucket_date: row.bucket_date,
+                dismissed_at: null,
+              },
+            ]),
+            keepalive: true,
+          }
+        );
+        return { ok: res.ok };
+      } catch {
+        return { ok: false };
+      }
+    },
+
+    async listActivePending(limit = 12) {
+      const lim = Math.min(Math.max(1, limit), 50);
+      const { data, error } = await supabase
+        .from('booking_abandonments')
+        .select('id,full_name,phone,step_reached,created_at')
+        .is('dismissed_at', null)
+        .order('created_at', { ascending: false })
+        .limit(lim);
+      return { data: data || [], error };
+    },
+
+    async dismiss(id: string) {
+      const { error } = await supabase
+        .from('booking_abandonments')
+        .update({ dismissed_at: new Date().toISOString() })
+        .eq('id', id);
+      return { error };
+    },
+  },
 };
+
+/** Calendar date in Asia/Kolkata (for dedupe bucket with `phone_normalized`). */
+export function getBookingAbandonBucketDateIST(): string {
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Asia/Kolkata',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).formatToParts(new Date());
+  const y = parts.find((p) => p.type === 'year')?.value;
+  const m = parts.find((p) => p.type === 'month')?.value;
+  const d = parts.find((p) => p.type === 'day')?.value;
+  return `${y}-${m}-${d}`;
+}
 
 // Utility functions
 export const generateJobNumber = (serviceType: string, year: number = new Date().getFullYear()) => {

@@ -14,7 +14,7 @@ import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
 import { toast } from 'sonner';
 import { ChevronLeft, ChevronRight, MapPin, Camera, Upload, Check, Phone, Mail, User, Home, Clock, Wrench, Loader2, Search, Navigation, X, ExternalLink } from 'lucide-react';
-import { db } from '@/lib/supabase';
+import { db, getBookingAbandonBucketDateIST } from '@/lib/supabase';
 import { cloudinaryService, compressImage } from '@/lib/cloudinary';
 import { emailService } from '@/lib/email';
 import { isIOS, isPWA, shouldUseFileInputFallback, requestCameraAccess, createVideoElement } from '@/lib/cameraUtils';
@@ -134,6 +134,7 @@ const Booking: React.FC = () => {
     setCurrentStep(1);
     setShowConfirmation(false);
     setBookingDetails(null);
+    bookingSucceededRef.current = false;
   };
 
   const [formData, setFormData] = useState<FormData>({
@@ -156,6 +157,13 @@ const Booking: React.FC = () => {
   });
 
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const bookingSucceededRef = useRef(false);
+  const abandonSnapshotRef = useRef({
+    step: 1,
+    form: {} as FormData,
+    honeypot: false,
+  });
+  const lastAbandonEventAtRef = useRef(0);
 
   // Helper function to format time slot
   const formatTimeSlot = (timeSlot: string, customTime?: string) => {
@@ -486,6 +494,73 @@ const Booking: React.FC = () => {
     const normalized = normalizePhoneNumber(phone);
     return normalized.length === 10 && /^[6-9]\d{9}$/.test(normalized);
   };
+
+  useEffect(() => {
+    abandonSnapshotRef.current = {
+      step: currentStep,
+      form: formData,
+      honeypot: isHoneypotTriggered,
+    };
+  }, [currentStep, formData, isHoneypotTriggered]);
+
+  useEffect(() => {
+    const shouldReport = () => {
+      if (bookingSucceededRef.current) return false;
+      const { step, form, honeypot } = abandonSnapshotRef.current;
+      if (honeypot) return false;
+      if (step < 1 || step > 5) return false;
+      const name = form.fullName.trim();
+      const phoneNorm = normalizePhoneNumber(form.phone);
+      if (name.length < 2) return false;
+      if (!/^[6-9]\d{9}$/.test(phoneNorm)) return false;
+      return true;
+    };
+
+    const fire = () => {
+      if (!shouldReport()) return;
+      const now = Date.now();
+      if (now - lastAbandonEventAtRef.current < 2000) return;
+      lastAbandonEventAtRef.current = now;
+      const { step, form } = abandonSnapshotRef.current;
+      const phoneNorm = normalizePhoneNumber(form.phone);
+      const bucket = getBookingAbandonBucketDateIST();
+      const dedupeKey = `ba_rep_${phoneNorm}_${bucket}`;
+      try {
+        const prev = sessionStorage.getItem(dedupeKey);
+        if (prev && now - parseInt(prev, 10) < 120_000) return;
+      } catch {
+        /* ignore */
+      }
+      const payload = {
+        full_name: form.fullName.trim(),
+        phone: form.phone,
+        phone_normalized: phoneNorm,
+        step_reached: step,
+        bucket_date: bucket,
+      };
+      void db.bookingAbandonments.upsertFromPublicPageKeepalive(payload).then(({ ok }) => {
+        if (ok) {
+          try {
+            sessionStorage.setItem(dedupeKey, String(Date.now()));
+          } catch {
+            /* ignore */
+          }
+        }
+      });
+    };
+
+    const onPageHide = () => fire();
+    const onVis = () => {
+      if (document.visibilityState === 'hidden') fire();
+    };
+
+    window.addEventListener('pagehide', onPageHide);
+    document.addEventListener('visibilitychange', onVis);
+    return () => {
+      window.removeEventListener('pagehide', onPageHide);
+      document.removeEventListener('visibilitychange', onVis);
+    };
+  }, []);
 
   const handleInputChange = (field: keyof FormData, value: any) => {
     let processedValue = value;
@@ -1589,6 +1664,8 @@ const Booking: React.FC = () => {
       if (jobError) {
         throw new Error(jobError.message);
       }
+
+      bookingSucceededRef.current = true;
 
       const displayAddress = keepPreviousLocation && customer
         ? (jobServiceLocation?.formattedAddress || jobServiceAddress.street || (customer as any).address?.street || formData.address)

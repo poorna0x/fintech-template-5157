@@ -101,6 +101,8 @@ import { DeniedJobSection } from './admin/DeniedJobSection';
 import { FollowUpJobSection } from './admin/FollowUpJobSection';
 import { CompleteJobDialog } from './admin/CompleteJobDialog';
 import { StatsCards } from './admin/StatsCards';
+import { AdminNotificationBell } from './admin/AdminNotificationBell';
+import { BookingAbandonBanner } from './admin/BookingAbandonBanner';
 import EditCustomerDialog from './admin/EditCustomerDialog';
 import AddCustomerDialog from './admin/AddCustomerDialog';
 import CustomerReportDialog from './admin/CustomerReportDialog';
@@ -8443,14 +8445,15 @@ const AdminDashboard = () => {
       <AdminHeader />
       
       <main className="container mx-auto px-4 py-4 sm:py-8">
+        {isAdmin && <BookingAbandonBanner />}
         {/* Page Header */}
         <div className="mb-6 sm:mb-8">
           <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
             
             {/* Search Bar - visible on desktop only, replaces title */}
-            <div className="hidden sm:flex flex-1 max-w-2xl gap-2">
-              <div className="relative flex-1">
-                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
+            <div className="hidden sm:flex flex-1 max-w-2xl items-center gap-1.5 sm:gap-2 flex-wrap">
+              <div className="relative flex-1 min-w-[12rem]">
+                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4 pointer-events-none" />
                 <Input
                   placeholder="Search by customer ID, name, phone, alternate number, or email..."
                   value={searchQuery}
@@ -8466,39 +8469,31 @@ const AdminDashboard = () => {
                     }
                   }}
                   onKeyPress={handleSearchKeyPress}
-                  className="pl-10 bg-white border-gray-400 focus:border-blue-500 focus:ring-blue-500"
+                  className="pl-10 h-9 bg-white border-gray-400 focus:border-blue-500 focus:ring-blue-500 text-sm"
                 />
             </div>
               <Button
                 onClick={handleSearch}
                 disabled={isSearching || !searchQuery.trim()}
-                className="bg-blue-600 hover:bg-blue-700 text-white px-4"
+                size="sm"
+                className="h-9 shrink-0 bg-blue-600 hover:bg-blue-700 text-white px-2.5 sm:px-3"
               >
                 {isSearching ? (
-                  <div className="flex items-center gap-2">
-                    <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
-                    <span>Searching...</span>
+                  <div className="flex items-center gap-1.5">
+                    <div className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                    <span className="hidden md:inline text-xs sm:text-sm">Searching...</span>
                   </div>
                 ) : (
-                  <div className="flex items-center gap-2">
-                    <Search className="w-4 h-4" />
-                    <span>Search</span>
+                  <div className="flex items-center gap-1">
+                    <Search className="w-4 h-4 shrink-0" />
+                    <span className="hidden sm:inline text-sm">Search</span>
                   </div>
                 )}
               </Button>
-              {searchQuery && (
-                <Button
-                  onClick={handleClearSearch}
-                  variant="outline"
-                  className="px-4"
-                  title="Clear"
-                >
-                  <X className="w-4 h-4" />
-                </Button>
-              )}
               <Button
                 variant="outline"
-                className="px-4"
+                size="sm"
+                className="h-9 px-2.5 shrink-0"
                 title="Refresh data (no full page reload)"
                 onClick={async () => {
                   hapticTap();
@@ -8507,6 +8502,18 @@ const AdminDashboard = () => {
               >
                 <RefreshCw className="w-4 h-4" />
               </Button>
+              {searchQuery && (
+                <Button
+                  onClick={handleClearSearch}
+                  variant="outline"
+                  size="sm"
+                  className="h-9 px-2.5 shrink-0"
+                  title="Clear"
+                >
+                  <X className="w-4 h-4" />
+                </Button>
+              )}
+              <AdminNotificationBell onOpenAmcView={() => setShowAMCViewPage(true)} />
             </div>
             <div className="flex flex-col sm:flex-row gap-3 sm:flex-wrap">
               {/* All 6 buttons in a 3x2 grid on mobile, flex on desktop */}
@@ -8591,9 +8598,9 @@ const AdminDashboard = () => {
 
         {/* Search Bar - visible on mobile only (desktop version is in header) */}
         <div className="mb-4 sm:mb-6 sm:hidden">
-          <div className="flex gap-2 w-full max-w-2xl">
-            <div className="relative flex-1">
-            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
+          <div className="flex flex-wrap gap-1.5 w-full max-w-2xl items-center">
+            <div className="relative flex-1 min-w-0 basis-[min(100%,12rem)]">
+            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4 pointer-events-none" />
               <Input
                 placeholder="Search by customer ID, name, phone, alternate number, or email..."
                 value={searchQuery}
@@ -8609,39 +8616,27 @@ const AdminDashboard = () => {
                   }
                 }}
                 onKeyPress={handleSearchKeyPress}
-              className="pl-10 bg-white border-gray-300 focus:border-blue-500 focus:ring-blue-500 text-sm"
+              className="pl-10 h-9 bg-white border-gray-300 focus:border-blue-500 focus:ring-blue-500 text-sm"
             />
           </div>
             <Button
               onClick={handleSearch}
               disabled={isSearching || !searchQuery.trim()}
-              className="bg-blue-600 hover:bg-blue-700 text-white px-4"
+              size="sm"
+              className="h-9 shrink-0 bg-blue-600 hover:bg-blue-700 text-white px-2.5"
             >
               {isSearching ? (
-                <div className="flex items-center gap-2">
-                  <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
-                  <span className="hidden sm:inline">Searching...</span>
+                <div className="flex items-center gap-1.5">
+                  <div className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin" />
                 </div>
               ) : (
-                <div className="flex items-center gap-2">
-                  <Search className="w-4 h-4" />
-                  <span className="hidden sm:inline">Search</span>
-                </div>
+                <Search className="w-4 h-4" />
               )}
             </Button>
-            {searchQuery && (
-              <Button
-                onClick={handleClearSearch}
-                variant="outline"
-                className="px-4"
-                title="Clear"
-              >
-                <X className="w-4 h-4" />
-              </Button>
-            )}
             <Button
               variant="outline"
-              className="px-4"
+              size="sm"
+              className="h-9 px-2.5 shrink-0"
               title="Refresh data (no full page reload)"
               onClick={async () => {
                 hapticTap();
@@ -8650,6 +8645,18 @@ const AdminDashboard = () => {
             >
               <RefreshCw className="w-4 h-4" />
             </Button>
+            {searchQuery && (
+              <Button
+                onClick={handleClearSearch}
+                variant="outline"
+                size="sm"
+                className="h-9 px-2.5 shrink-0"
+                title="Clear"
+              >
+                <X className="w-4 h-4" />
+              </Button>
+            )}
+            <AdminNotificationBell onOpenAmcView={() => setShowAMCViewPage(true)} />
           </div>
           {searchTerm && (
             <div className="mt-2 text-sm text-gray-600">

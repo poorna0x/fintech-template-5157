@@ -496,6 +496,31 @@ export interface Database {
           text: string;
         }>;
       };
+      booking_abandonments: {
+        Row: {
+          id: string;
+          full_name: string;
+          phone: string;
+          phone_normalized: string;
+          step_reached: number;
+          bucket_date: string;
+          created_at: string;
+          dismissed_at: string | null;
+        };
+        Insert: {
+          full_name: string;
+          phone: string;
+          phone_normalized: string;
+          step_reached: number;
+          bucket_date: string;
+          dismissed_at?: string | null;
+        };
+        Update: Partial<{
+          full_name: string;
+          phone: string;
+          dismissed_at: string | null;
+        }>;
+      };
       reminders: {
         Row: {
           id: string;
