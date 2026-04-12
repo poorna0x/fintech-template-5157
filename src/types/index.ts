@@ -563,6 +563,7 @@ export interface Database {
           full_name: string;
           phone: string;
           phone_normalized: string;
+          site_key: 'hydrogenro' | 'elevenro';
           current_step: number;
           created_at: string;
           updated_at: string;
@@ -581,6 +582,7 @@ export interface Database {
           p_phone: string;
           p_phone_normalized: string;
           p_current_step: number;
+          p_site_key: string;
         };
         Returns: undefined;
       };

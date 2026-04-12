@@ -13,6 +13,12 @@ type Row = {
   phone: string;
   current_step: number;
   updated_at: string;
+  site_key: string;
+};
+
+const SITE_LABEL: Record<string, string> = {
+  hydrogenro: 'HydrogenRO',
+  elevenro: 'ElevenRO',
 };
 
 const STEP_LABEL: Record<number, string> = {
@@ -33,9 +39,11 @@ function mergeRow(rows: Row[], raw: Record<string, unknown>): Row[] {
   const phone = raw.phone as string | undefined;
   const current_step = Number(raw.current_step);
   const updated_at = raw.updated_at as string | undefined;
+  const site_key =
+    typeof raw.site_key === 'string' && raw.site_key.length > 0 ? raw.site_key : 'hydrogenro';
   if (!full_name || !phone || !updated_at || Number.isNaN(current_step)) return rows;
 
-  const next: Row = { id, full_name, phone, current_step, updated_at };
+  const next: Row = { id, full_name, phone, current_step, updated_at, site_key };
   const rest = rows.filter((r) => r.id !== id);
   const merged = [next, ...rest];
   merged.sort((a, b) => new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime());
@@ -147,7 +155,7 @@ export function WebsiteBookingIntentBanner({ playAlert }: Props) {
     >
       <div className="flex flex-wrap items-start justify-between gap-2">
         <div className="min-w-0 flex-1">
-          <p className="text-sm font-semibold text-emerald-950">Live on website booking</p>
+          <p className="text-sm font-semibold text-emerald-950">Live booking (website)</p>
           <p className="text-xs text-emerald-900/85 mt-0.5">
             Same alert sound as job completion (click the dashboard once if the browser blocked audio). Mute
             silences pings.
@@ -171,6 +179,12 @@ export function WebsiteBookingIntentBanner({ playAlert }: Props) {
             className="flex flex-wrap items-center justify-between gap-2 rounded-md bg-white/90 border border-emerald-200/90 px-2 py-2 text-sm"
           >
             <div className="min-w-0 flex flex-wrap items-center gap-x-3 gap-y-1">
+              <span
+                className="shrink-0 rounded-full bg-emerald-100 px-2 py-0.5 text-[11px] font-semibold uppercase tracking-wide text-emerald-900"
+                title="Which public site"
+              >
+                {SITE_LABEL[r.site_key] ?? r.site_key}
+              </span>
               <span className="font-medium text-gray-900 truncate">{r.full_name}</span>
               <a
                 href={`tel:${r.phone.replace(/\D/g, '')}`}

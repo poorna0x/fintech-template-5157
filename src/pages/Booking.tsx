@@ -27,6 +27,9 @@ import { useSecurity } from '@/contexts/SecurityContext';
 import DraggableMap from '@/components/DraggableMap';
 import { removePlusCode, haversineKm } from '@/lib/maps';
 
+const WEBSITE_BOOKING_SITE_KEY: 'hydrogenro' | 'elevenro' =
+  (import.meta.env.VITE_WEBSITE_BOOKING_SITE_KEY as 'hydrogenro' | 'elevenro') ?? 'hydrogenro';
+
 declare global {
   interface Window {
     google: typeof google;
@@ -526,6 +529,7 @@ const Booking: React.FC = () => {
         phone: formData.phone,
         phone_normalized: phoneNorm,
         current_step: currentStep,
+        site_key: WEBSITE_BOOKING_SITE_KEY,
       };
       const last = websiteIntentLastSentRef.current;
       if (

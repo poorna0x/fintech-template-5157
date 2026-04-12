@@ -4543,12 +4543,14 @@ export const db = {
       phone: string;
       phone_normalized: string;
       current_step: number;
+      site_key: 'hydrogenro' | 'elevenro';
     }) {
       const { error } = await supabase.rpc('upsert_website_booking_intent', {
         p_full_name: row.full_name.trim(),
         p_phone: row.phone,
         p_phone_normalized: row.phone_normalized,
         p_current_step: row.current_step,
+        p_site_key: row.site_key,
       });
       return { error };
     },
@@ -4556,7 +4558,7 @@ export const db = {
       const lim = Math.min(Math.max(1, limit), 20);
       const { data, error } = await supabase
         .from('website_booking_intent')
-        .select('id,full_name,phone,current_step,updated_at')
+        .select('id,full_name,phone,current_step,updated_at,site_key')
         .is('dismissed_at', null)
         .order('updated_at', { ascending: false })
         .limit(lim);
