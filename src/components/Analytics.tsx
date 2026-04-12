@@ -21,7 +21,8 @@ import {
   Filter,
   Settings,
   Loader2,
-  MapPin
+  MapPin,
+  Heart
 } from 'lucide-react';
 import { normalizeForComparison } from '@/lib/adminUtils';
 import { Search } from 'lucide-react';
@@ -78,22 +79,15 @@ interface AnalyticsData {
   totalTechnicianExpenses?: number;
   totalTechnicianAdvances?: number;
   totalBusinessExpenses?: number;
+  /** Other business expenses (other_expenses table; e.g. misc / from Payments section). */
+  totalOtherBusinessExpenses?: number;
   totalSparePartsCost?: number; // Cost of parts used on jobs (from jobs.parts_cost_total)
   totalSalaryDeductions?: number; // Salary before advance (adjusted base + commissions + extra), excl. excluded tech
   totalSalaryIncludingAll?: number; // Same including excluded technician(s), for brackets
-  totalExpenses?: number; // Sum of all expenses
+  totalExpenses?: number; // Tech + salary + other business + spare parts (business_expenses ledger excluded)
   totalProfit?: number; // Revenue - Lead Costs - Expenses (operating; lead costs only on completed jobs)
-  /** Sum of lead_cost on jobs in period that did not complete (paid leads, no conversion). */
-  wastedLeadCosts?: number;
-  wastedLeadJobCount?: number;
-  /** 7% of operating profit when profit is positive */
+  /** Ishanga: 7% × max(0, revenue − technician − salary − business ledger); same base as Revenue − expense (core) */
   ishaDonationAmount?: number;
-  /** Operating profit minus Isha donation */
-  profitAfterIsha?: number;
-  /** Operating profit minus wasted lead spend (full-period picture) */
-  profitAfterWastedLeads?: number;
-  /** Operating profit minus wasted leads minus Isha */
-  netAfterIshaAndWastedLeads?: number;
   softenerData?: {
     totalJobs: number;
     completedJobs: number;
@@ -128,8 +122,8 @@ interface AnalyticsData {
 
 type PeriodOption = '7d' | '30d' | 'thisWeek' | 'thisMonth' | 'previousMonth' | 'customMonth' | '3m' | '6m' | '1y' | 'all' | 'custom';
 
-/** Isha Foundation: 7% of operating profit (shown when profit is positive). */
-const ISHA_DONATION_RATE = 0.07;
+/** Ishanga 7%: 7% of (Revenue − expense (core)), core = technician + salary + business expenses. */
+const ISHANGA_RATE = 0.07;
 
 // Helper function to format currency with commas and without .00 when it's zero
 const formatCurrency = (amount: number): string => {
@@ -138,6 +132,13 @@ const formatCurrency = (amount: number): string => {
     maximumFractionDigits: 2
   });
   return formatted.endsWith('.00') ? formatted.slice(0, -3) : formatted;
+};
+
+/** Net profit ÷ revenue × 100; `null` when revenue is zero. */
+const formatProfitMarginPercent = (profit: number, revenue: number): string | null => {
+  if (revenue == null || revenue <= 0) return null;
+  const pct = (profit / revenue) * 100;
+  return pct.toLocaleString('en-IN', { minimumFractionDigits: 1, maximumFractionDigits: 1 });
 };
 
 // Map service_sub_type to Installation (install/reinstall/uninstall) or Service
@@ -288,6 +289,7 @@ const Analytics = () => {
       let totalTechnicianExpenses = 0;
       let totalTechnicianAdvances = 0;
       let totalBusinessExpenses = 0;
+      let totalOtherBusinessExpenses = 0;
       let totalSparePartsCost = 0;
       let totalSalaryDeductions = 0;
       let totalSalaryIncludingAll = 0;
@@ -309,6 +311,7 @@ const Analytics = () => {
           { data: techExpenses },
           { data: techAdvances },
           { data: businessExpenses },
+          { data: otherBusinessExpenses },
           paymentsInRangeRes
         ] = await Promise.all([
           db.technicians.getAll(100),
@@ -316,6 +319,7 @@ const Analytics = () => {
           db.technicianExpenses.getAll(undefined, startStr, endStr),
           db.technicianAdvances.getAll(undefined, startStr, endStr),
           db.businessExpenses.getAll(startStr, endStr),
+          db.otherExpenses.getAll(startStr, endStr),
           supabase
             .from('technician_payments')
             .select('technician_id, commission_amount, payment_status')
@@ -372,6 +376,7 @@ const Analytics = () => {
         totalTechnicianExpenses = (techExpenses || []).reduce((sum: number, exp: any) => sum + Number(exp.amount || 0), 0);
         totalTechnicianAdvances = (techAdvances || []).reduce((sum: number, adv: any) => sum + Number(adv.amount || 0), 0);
         totalBusinessExpenses = (businessExpenses || []).reduce((sum: number, exp: any) => sum + Number(exp.amount || 0), 0);
+        totalOtherBusinessExpenses = (otherBusinessExpenses || []).reduce((sum: number, exp: any) => sum + Number(exp.amount || 0), 0);
         // Total salary (before advance): same basis as Payments “salary before advance”
         const usePaymentsSalary = (period === 'thisMonth' || period === 'previousMonth' || period === 'customMonth') && startDate && endDate;
         if (usePaymentsSalary) {
@@ -897,6 +902,20 @@ const Analytics = () => {
         ? periodBilling / completedJobs.length
         : 0;
 
+      const totalLeadCostsSum = Object.values(leadSourceMap).reduce((sum, stats) => sum + stats.leadCost, 0);
+      const expenseTotal =
+        totalTechnicianExpenses +
+        totalSalaryDeductions +
+        totalOtherBusinessExpenses +
+        totalSparePartsCost;
+      const netProfit = periodBilling - totalLeadCostsSum - expenseTotal;
+      const revenueMinusCoreForIshanga =
+        periodBilling -
+        totalTechnicianExpenses -
+        Math.max(0, totalSalaryDeductions) -
+        totalBusinessExpenses;
+      const ishaDonationAmount = Math.max(0, revenueMinusCoreForIshanga) * ISHANGA_RATE;
+
       // Enhance analytics data (Top locations loaded on demand via Load button)
       setAnalytics({
         ...baseData,
@@ -925,19 +944,18 @@ const Analytics = () => {
               .sort((a, b) => b.amount - a.amount)
           }))
           .sort((a, b) => b.amount - a.amount),
-        // Calculate total lead costs
-        totalLeadCosts: Object.values(leadSourceMap).reduce((sum, stats) => sum + stats.leadCost, 0),
+        totalLeadCosts: totalLeadCostsSum,
         // Expense totals
         totalTechnicianExpenses,
         totalTechnicianAdvances, // Keep for reference but don't show separately
         totalBusinessExpenses,
+        totalOtherBusinessExpenses,
         totalSparePartsCost, // Parts used on jobs (job_parts_used × inventory price)
         totalSalaryDeductions, // Salary before advance (adjusted base + commissions + extra)
         totalSalaryIncludingAll, // Including excluded technician(s), for display in brackets
-        // Total expenses (technician expenses + total salary + business expenses + spare parts cost)
-        totalExpenses: totalTechnicianExpenses + totalSalaryDeductions + totalBusinessExpenses + totalSparePartsCost,
-        // Total profit (Revenue - Lead Costs - Expenses)
-        totalProfit: periodBilling - Object.values(leadSourceMap).reduce((sum, stats) => sum + stats.leadCost, 0) - (totalTechnicianExpenses + totalSalaryDeductions + totalBusinessExpenses + totalSparePartsCost),
+        totalExpenses: expenseTotal,
+        totalProfit: netProfit,
+        ishaDonationAmount,
         serviceTypeBreakdown: Object.entries(serviceTypeMap)
           .map(([serviceType, stats]) => ({ serviceType, ...stats }))
           .sort((a, b) => b.amount - a.amount),
@@ -2051,16 +2069,96 @@ const Analytics = () => {
               {/* Expenses Breakdown - Compact rows, no overflow */}
               <div className="bg-red-50 rounded-lg p-3 sm:p-4 border border-red-200 min-w-0">
                 <div className="text-xs sm:text-sm font-medium text-gray-700 mb-2 sm:mb-3">Total Expenses</div>
+                {(() => {
+                  const coreExpensesTotal =
+                    (analytics.totalTechnicianExpenses || 0) +
+                    Math.max(0, analytics.totalSalaryDeductions ?? 0) +
+                    (analytics.totalBusinessExpenses || 0);
+                  const revenue = analytics.totalBilling || 0;
+                  const revenueMinusCoreExpenses = revenue - coreExpensesTotal;
+                  return (
+                    <div className="space-y-1.5 sm:space-y-2 text-xs sm:text-sm">
+                      <div className="flex justify-between gap-2 items-center min-w-0">
+                        <span className="text-gray-600 truncate">Technician Expenses:</span>
+                        <span className="font-semibold text-red-600 shrink-0 tabular-nums">
+                          ₹ {formatCurrency(analytics.totalTechnicianExpenses || 0)}
+                        </span>
+                      </div>
+                      <div className="flex justify-between gap-2 items-center min-w-0">
+                        <span className="text-gray-600 truncate">Total Salary (before advance):</span>
+                        <span className="font-semibold text-red-600 shrink-0 tabular-nums">
+                          ₹ {formatCurrency(Math.max(0, analytics.totalSalaryDeductions ?? 0))}
+                          {analytics.totalSalaryIncludingAll != null &&
+                            analytics.totalSalaryIncludingAll > 0 &&
+                            analytics.totalSalaryIncludingAll !== (analytics.totalSalaryDeductions ?? 0) && (
+                            <> (₹ {formatCurrency(analytics.totalSalaryIncludingAll)})</>
+                          )}
+                        </span>
+                      </div>
+                      <div className="flex justify-between gap-2 items-center min-w-0">
+                        <span className="text-gray-600 truncate">Business Expenses:</span>
+                        <span className="font-semibold text-red-600 shrink-0 tabular-nums">
+                          ₹ {formatCurrency(analytics.totalBusinessExpenses || 0)}
+                        </span>
+                      </div>
+                      <div className="pt-1.5 sm:pt-2 mt-1.5 sm:mt-2 border-t border-red-300">
+                        <div className="flex justify-between items-center gap-2 min-w-0">
+                          <span className="text-sm sm:text-base font-semibold text-gray-700">
+                            Total (technician + salary + business):
+                          </span>
+                          <span className="text-lg sm:text-2xl font-bold text-red-600 shrink-0 tabular-nums">
+                            ₹ {formatCurrency(coreExpensesTotal)}
+                          </span>
+                        </div>
+                      </div>
+                      <div className="flex justify-between gap-2 items-center min-w-0 pt-0.5">
+                        <span className="text-gray-600 truncate">Revenue (same period):</span>
+                        <span className="font-semibold text-green-700 shrink-0 tabular-nums">
+                          ₹ {formatCurrency(revenue)}
+                        </span>
+                      </div>
+                      <div className="flex justify-between gap-2 items-center min-w-0">
+                        <span className="text-gray-600 truncate">Revenue − expense (core):</span>
+                        <span
+                          className={`font-semibold shrink-0 tabular-nums ${
+                            revenueMinusCoreExpenses >= 0 ? 'text-green-700' : 'text-red-600'
+                          }`}
+                        >
+                          ₹ {formatCurrency(revenueMinusCoreExpenses)}
+                        </span>
+                      </div>
+                    </div>
+                  );
+                })()}
+              </div>
+
+              {/* Job / lead / hidden charges view — same numbers, different grouping; includes net profit */}
+              <div className="bg-slate-50 rounded-lg p-3 sm:p-4 border border-slate-300 min-w-0">
+                <div className="text-xs sm:text-sm font-medium text-gray-800 mb-2 sm:mb-3">
+                  Job cost, lead and hidden charges
+                </div>
                 <div className="space-y-1.5 sm:space-y-2 text-xs sm:text-sm">
                   <div className="flex justify-between gap-2 items-center min-w-0">
-                    <span className="text-gray-600 truncate">Technician Expenses:</span>
-                    <span className="font-semibold text-red-600 shrink-0 tabular-nums">
+                    <span className="text-gray-600 truncate">Lead cost (on completed jobs):</span>
+                    <span className="font-semibold text-orange-700 shrink-0 tabular-nums">
+                      ₹ {formatCurrency(analytics.totalLeadCosts || 0)}
+                    </span>
+                  </div>
+                  <div className="flex justify-between gap-2 items-center min-w-0">
+                    <span className="text-gray-600 truncate">Spare parts (used on jobs):</span>
+                    <span className="font-semibold text-slate-800 shrink-0 tabular-nums">
+                      ₹ {formatCurrency(analytics.totalSparePartsCost || 0)}
+                    </span>
+                  </div>
+                  <div className="flex justify-between gap-2 items-center min-w-0">
+                    <span className="text-gray-600 truncate">Technician expenses:</span>
+                    <span className="font-semibold text-slate-800 shrink-0 tabular-nums">
                       ₹ {formatCurrency(analytics.totalTechnicianExpenses || 0)}
                     </span>
                   </div>
                   <div className="flex justify-between gap-2 items-center min-w-0">
-                    <span className="text-gray-600 truncate">Total Salary (before advance):</span>
-                    <span className="font-semibold text-red-600 shrink-0 tabular-nums">
+                    <span className="text-gray-600 truncate">Total salary (before advance):</span>
+                    <span className="font-semibold text-slate-800 shrink-0 tabular-nums">
                       ₹ {formatCurrency(Math.max(0, analytics.totalSalaryDeductions ?? 0))}
                       {analytics.totalSalaryIncludingAll != null &&
                         analytics.totalSalaryIncludingAll > 0 &&
@@ -2070,23 +2168,56 @@ const Analytics = () => {
                     </span>
                   </div>
                   <div className="flex justify-between gap-2 items-center min-w-0">
-                    <span className="text-gray-600 truncate">Business Expenses:</span>
-                    <span className="font-semibold text-red-600 shrink-0 tabular-nums">
-                      ₹ {formatCurrency(analytics.totalBusinessExpenses || 0)}
+                    <span className="text-gray-600 truncate">Other hidden charges (other business):</span>
+                    <span className="font-semibold text-slate-800 shrink-0 tabular-nums">
+                      ₹ {formatCurrency(analytics.totalOtherBusinessExpenses || 0)}
                     </span>
                   </div>
-                  <div className="flex justify-between gap-2 items-center min-w-0">
-                    <span className="text-gray-600 truncate">Spare Parts (used on jobs):</span>
-                    <span className="font-semibold text-red-600 shrink-0 tabular-nums">
-                      ₹ {formatCurrency(analytics.totalSparePartsCost || 0)}
-                    </span>
-                  </div>
-                  <div className="pt-1.5 sm:pt-2 mt-1.5 sm:mt-2 border-t border-red-300">
+                  <div className="pt-1.5 sm:pt-2 mt-1.5 sm:mt-2 border-t border-slate-300">
                     <div className="flex justify-between items-center gap-2 min-w-0">
-                      <span className="text-sm sm:text-base font-semibold text-gray-700">Total Expenses:</span>
-                      <span className="text-lg sm:text-2xl font-bold text-red-600 shrink-0 tabular-nums">
-                        ₹ {formatCurrency(analytics.totalExpenses || 0)}
+                      <span className="text-sm sm:text-base font-semibold text-gray-700">Total costs (all above):</span>
+                      <span className="text-lg sm:text-2xl font-bold text-slate-900 shrink-0 tabular-nums">
+                        ₹{' '}
+                        {formatCurrency(
+                          (analytics.totalLeadCosts || 0) + (analytics.totalExpenses || 0)
+                        )}
                       </span>
+                    </div>
+                  </div>
+                  <div className="pt-2 border-t border-slate-300">
+                    <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+                      <div>
+                        <div className="text-sm font-semibold text-gray-800">Net profit</div>
+                        <div className="text-xs text-gray-500">Revenue − total costs above</div>
+                      </div>
+                      <div className="flex flex-col items-end gap-0.5 shrink-0">
+                        {(() => {
+                          const marginPct = formatProfitMarginPercent(
+                            analytics.totalProfit || 0,
+                            analytics.totalBilling || 0
+                          );
+                          return (
+                            <>
+                              <span
+                                className={`text-xl sm:text-2xl font-bold tabular-nums ${
+                                  (analytics.totalProfit || 0) >= 0 ? 'text-green-700' : 'text-red-600'
+                                }`}
+                              >
+                                ₹ {formatCurrency(analytics.totalProfit || 0)}
+                              </span>
+                              {marginPct != null && (
+                                <span
+                                  className={`text-xs font-semibold tabular-nums ${
+                                    (analytics.totalProfit || 0) >= 0 ? 'text-green-700/90' : 'text-red-600/90'
+                                  }`}
+                                >
+                                  {marginPct}% of revenue
+                                </span>
+                              )}
+                            </>
+                          );
+                        })()}
+                      </div>
                     </div>
                   </div>
                 </div>
@@ -2098,13 +2229,37 @@ const Analytics = () => {
                   <div className="min-w-0">
                     <div className="text-sm font-medium text-gray-700">Net Profit</div>
                     <div className="text-xs text-gray-600">
-                      Revenue − Lead Costs − Expenses
+                      Revenue − lead costs − technician, salary, other business expenses, spare parts (business ledger
+                      expenses excluded)
                     </div>
                   </div>
-                  <div className={`text-2xl sm:text-3xl md:text-4xl font-bold shrink-0 tabular-nums ${
-                    (analytics.totalProfit || 0) >= 0 ? 'text-green-600' : 'text-red-600'
-                  }`}>
-                    ₹ {formatCurrency(analytics.totalProfit || 0)}
+                  <div className="flex flex-col items-end sm:items-end gap-0.5 shrink-0 text-right">
+                    {(() => {
+                      const marginPct = formatProfitMarginPercent(
+                        analytics.totalProfit || 0,
+                        analytics.totalBilling || 0
+                      );
+                      return (
+                        <>
+                          <div
+                            className={`text-2xl sm:text-3xl md:text-4xl font-bold tabular-nums ${
+                              (analytics.totalProfit || 0) >= 0 ? 'text-green-600' : 'text-red-600'
+                            }`}
+                          >
+                            ₹ {formatCurrency(analytics.totalProfit || 0)}
+                          </div>
+                          {marginPct != null && (
+                            <div
+                              className={`text-sm sm:text-base font-semibold tabular-nums ${
+                                (analytics.totalProfit || 0) >= 0 ? 'text-green-700' : 'text-red-600'
+                              }`}
+                            >
+                              {marginPct}% of revenue
+                            </div>
+                          )}
+                        </>
+                      );
+                    })()}
                   </div>
                 </div>
                 <div className="mt-3 sm:mt-4 pt-3 sm:pt-4 border-t border-blue-300">
@@ -2122,12 +2277,25 @@ const Analytics = () => {
                       </span>
                     </div>
                     <div className="flex justify-between sm:block py-1 sm:py-0">
-                      <span className="text-gray-600">− Expenses (incl. spare parts)</span>
+                      <span className="text-gray-600">− All expenses (incl. other business, spare parts; excl. business ledger)</span>
                       <span className="font-semibold text-red-600 sm:block tabular-nums">
                         ₹ {formatCurrency(analytics.totalExpenses || 0)}
                       </span>
                     </div>
                   </div>
+                </div>
+              </div>
+
+              <div className="rounded-lg p-4 sm:p-5 border-2 border-violet-200 bg-violet-50/60 min-w-0">
+                <div className="flex items-center gap-2 mb-3">
+                  <Heart className="w-5 h-5 text-violet-600 shrink-0" />
+                  <div className="text-sm font-semibold text-gray-800">Ishanga 7%</div>
+                </div>
+                <div className="flex justify-between gap-2 items-center text-xs sm:text-sm">
+                  <span className="text-gray-700">7% × (Revenue − expense (core)); core = technician + salary + business</span>
+                  <span className="font-semibold text-violet-700 shrink-0 tabular-nums">
+                    ₹ {formatCurrency(analytics.ishaDonationAmount || 0)}
+                  </span>
                 </div>
               </div>
             </div>

@@ -3094,17 +3094,26 @@ const TechnicianPayments = () => {
         </DialogContent>
       </Dialog>
 
-      {/* Business Expenses Section - load only when user clicks View */}
-      <Card className="mt-8">
+      {/* General business_expenses first, then other_expenses below. Lists load on demand. */}
+      <div className="mt-8 space-y-6">
+        <div>
+          <h2 className="text-lg font-semibold text-gray-900">Business expenses</h2>
+          <p className="text-sm text-gray-500 mt-0.5">
+            General business expenses first; other business expenses below. Each table loads only when you click View (not loaded by default). You can still add expenses from the card header without loading the full list.
+          </p>
+        </div>
+
+      {/* General Business Expenses — stored in public.business_expenses */}
+      <Card className="min-w-0 border-gray-200 shadow-sm">
         <CardHeader>
-          <div className="flex items-center justify-between">
+          <div className="flex items-center justify-between gap-2 flex-wrap">
             <div>
-              <CardTitle className="flex items-center gap-2">
-                <TrendingDown className="w-5 h-5" />
+              <CardTitle className="flex items-center gap-2 text-base">
+                <TrendingDown className="w-5 h-5 shrink-0" />
                 Business Expenses
               </CardTitle>
               <CardDescription>
-                Track general business expenses (not tied to specific technicians)
+                Saved to the <code className="text-xs bg-gray-100 px-1 rounded">business_expenses</code> table.
               </CardDescription>
             </div>
             <Button onClick={handleAddBusinessExpense} size="sm" disabled={loading}>
@@ -3197,6 +3206,110 @@ const TechnicianPayments = () => {
         </CardContent>
       </Card>
 
+      {/* Other Business Expenses — stored in public.other_expenses */}
+      <Card className="min-w-0 border-gray-200 shadow-sm">
+        <CardHeader>
+          <div className="flex items-center justify-between gap-2 flex-wrap">
+            <div>
+              <CardTitle className="flex items-center gap-2 text-base">
+                <TrendingDown className="w-5 h-5 shrink-0" />
+                Other Business Expenses
+              </CardTitle>
+              <CardDescription>
+                Saved to the <code className="text-xs bg-gray-100 px-1 rounded">other_expenses</code> table. Shown separately in Analytics.
+              </CardDescription>
+            </div>
+            <Button onClick={handleAddOtherExpense} size="sm" disabled={loading}>
+              <Plus className="w-4 h-4 mr-2" />
+              Add Expense
+            </Button>
+          </div>
+        </CardHeader>
+        <CardContent>
+          {!otherExpensesViewed ? (
+            <div className="flex flex-col items-center justify-center py-12 text-center">
+              <TrendingDown className="w-12 h-12 text-gray-400 mb-2" />
+              <p className="text-gray-600 font-medium">Other business expenses not loaded</p>
+              <p className="text-sm text-gray-500 mt-1 mb-4">You can add expenses above without loading the list.</p>
+              <Button onClick={handleViewOtherExpenses} disabled={loadingOtherExpenses}>
+                <Eye className="w-4 h-4 mr-2" />
+                {loadingOtherExpenses ? 'Loading...' : 'View other business expenses'}
+              </Button>
+            </div>
+          ) : loadingOtherExpenses ? (
+            <div className="flex items-center justify-center py-12">
+              <RefreshCw className="w-8 h-8 animate-spin text-gray-400" />
+              <span className="ml-2 text-gray-600">Loading other business expenses...</span>
+            </div>
+          ) : otherExpenses.length === 0 ? (
+            <div className="text-center py-8 text-gray-500">
+              <TrendingDown className="w-12 h-12 mx-auto mb-2 text-gray-400" />
+              <p>No other business expenses recorded yet.</p>
+            </div>
+          ) : (
+            <>
+              <div className="overflow-x-auto">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Date</TableHead>
+                      <TableHead>Description</TableHead>
+                      <TableHead>Category</TableHead>
+                      <TableHead className="text-right">Amount</TableHead>
+                      <TableHead className="text-right">Actions</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {otherExpenses.map((expense) => (
+                      <TableRow key={expense.id}>
+                        <TableCell>
+                          {new Date(expense.expense_date).toLocaleDateString('en-IN')}
+                        </TableCell>
+                        <TableCell className="font-medium">{expense.description}</TableCell>
+                        <TableCell>
+                          <Badge variant="outline">{expense.category || 'OTHER'}</Badge>
+                        </TableCell>
+                        <TableCell className="text-right font-semibold text-red-600">
+                          ₹ {formatCurrency(expense.amount)}
+                        </TableCell>
+                        <TableCell className="text-right">
+                          <div className="flex justify-end gap-2">
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => handleEditOtherExpense(expense)}
+                            >
+                              <Edit className="w-4 h-4" />
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => handleDeleteOtherExpense(expense.id)}
+                              className="text-red-600 hover:text-red-700"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </Button>
+                          </div>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
+              <div className="mt-4 pt-4 border-t">
+                <div className="flex justify-between items-center">
+                  <span className="font-semibold text-gray-700">Total Other Business Expenses:</span>
+                  <span className="text-xl font-bold text-red-600">
+                    ₹ {formatCurrency(otherExpenses.reduce((sum, e) => sum + e.amount, 0))}
+                  </span>
+                </div>
+              </div>
+            </>
+          )}
+        </CardContent>
+      </Card>
+      </div>
+
       {/* Business Expense Dialog */}
       <Dialog open={businessExpenseDialogOpen} onOpenChange={setBusinessExpenseDialogOpen}>
         <DialogContent className="sm:max-w-md">
@@ -3283,118 +3396,15 @@ const TechnicianPayments = () => {
         </DialogContent>
       </Dialog>
 
-      {/* Other Expenses Section - same style as Business Expenses, load only when user clicks View */}
-      <Card className="mt-8">
-        <CardHeader>
-          <div className="flex items-center justify-between">
-            <div>
-              <CardTitle className="flex items-center gap-2">
-                <TrendingDown className="w-5 h-5" />
-                Other Expenses
-              </CardTitle>
-              <CardDescription>
-                Track other / miscellaneous expenses (separate from business expenses)
-              </CardDescription>
-            </div>
-            <Button onClick={handleAddOtherExpense} size="sm" disabled={loading}>
-              <Plus className="w-4 h-4 mr-2" />
-              Add Expense
-            </Button>
-          </div>
-        </CardHeader>
-        <CardContent>
-          {!otherExpensesViewed ? (
-            <div className="flex flex-col items-center justify-center py-12 text-center">
-              <TrendingDown className="w-12 h-12 text-gray-400 mb-2" />
-              <p className="text-gray-600 font-medium">Other expenses not loaded</p>
-              <p className="text-sm text-gray-500 mt-1 mb-4">You can add expenses above without loading the list.</p>
-              <Button onClick={handleViewOtherExpenses} disabled={loadingOtherExpenses}>
-                <Eye className="w-4 h-4 mr-2" />
-                {loadingOtherExpenses ? 'Loading...' : 'View other expenses'}
-              </Button>
-            </div>
-          ) : loadingOtherExpenses ? (
-            <div className="flex items-center justify-center py-12">
-              <RefreshCw className="w-8 h-8 animate-spin text-gray-400" />
-              <span className="ml-2 text-gray-600">Loading other expenses...</span>
-            </div>
-          ) : otherExpenses.length === 0 ? (
-            <div className="text-center py-8 text-gray-500">
-              <TrendingDown className="w-12 h-12 mx-auto mb-2 text-gray-400" />
-              <p>No other expenses recorded yet.</p>
-            </div>
-          ) : (
-            <>
-              <div className="overflow-x-auto">
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Date</TableHead>
-                      <TableHead>Description</TableHead>
-                      <TableHead>Category</TableHead>
-                      <TableHead className="text-right">Amount</TableHead>
-                      <TableHead className="text-right">Actions</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {otherExpenses.map((expense) => (
-                      <TableRow key={expense.id}>
-                        <TableCell>
-                          {new Date(expense.expense_date).toLocaleDateString('en-IN')}
-                        </TableCell>
-                        <TableCell className="font-medium">{expense.description}</TableCell>
-                        <TableCell>
-                          <Badge variant="outline">{expense.category || 'OTHER'}</Badge>
-                        </TableCell>
-                        <TableCell className="text-right font-semibold text-red-600">
-                          ₹ {formatCurrency(expense.amount)}
-                        </TableCell>
-                        <TableCell className="text-right">
-                          <div className="flex justify-end gap-2">
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              onClick={() => handleEditOtherExpense(expense)}
-                            >
-                              <Edit className="w-4 h-4" />
-                            </Button>
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              onClick={() => handleDeleteOtherExpense(expense.id)}
-                              className="text-red-600 hover:text-red-700"
-                            >
-                              <Trash2 className="w-4 h-4" />
-                            </Button>
-                          </div>
-                        </TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              </div>
-              <div className="mt-4 pt-4 border-t">
-                <div className="flex justify-between items-center">
-                  <span className="font-semibold text-gray-700">Total Other Expenses:</span>
-                  <span className="text-xl font-bold text-red-600">
-                    ₹ {formatCurrency(otherExpenses.reduce((sum, e) => sum + e.amount, 0))}
-                  </span>
-                </div>
-              </div>
-            </>
-          )}
-        </CardContent>
-      </Card>
-
       {/* Other Expense Dialog */}
       <Dialog open={otherExpenseDialogOpen} onOpenChange={setOtherExpenseDialogOpen}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
             <DialogTitle>
-              {editingOtherExpense ? 'Edit Other Expense' : 'Add Other Expense'}
+              {editingOtherExpense ? 'Edit Other Business Expense' : 'Add Other Business Expense'}
             </DialogTitle>
             <DialogDescription>
-              Record an other / miscellaneous expense
+              Record a miscellaneous business expense (included in Analytics as other business expenses)
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4 py-4">
