@@ -64,6 +64,8 @@ const JobPartsUsedDialog: React.FC<JobPartsUsedDialogProps> = ({
 
   const recalcTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pendingRecalcJobIdRef = useRef<string | null>(null);
+  /** Prevents overlapping quick-adds for the same inventory (double-tap / slow network). */
+  const quickAddInFlightRef = useRef<Set<string>>(new Set());
 
   const RECALC_DEBOUNCE_MS = 180;
 
@@ -350,9 +352,10 @@ const JobPartsUsedDialog: React.FC<JobPartsUsedDialogProps> = ({
           priceMap.set(it.inventory_id, invData?.price ? Number(invData.price) : 0);
         }
       }
+      let workingParts: JobPartUsed[] = [...partsUsed];
       for (const it of items) {
         const techItem = technicianInventory.find(i => i.inventory_id === it.inventory_id)!;
-        const existingPart = partsUsed.find(p => p.inventory_id === it.inventory_id);
+        const existingPart = workingParts.find(p => p.inventory_id === it.inventory_id);
         const price = priceMap.get(it.inventory_id) ?? 0;
         const err = await deductMainInventory(it.inventory_id, it.quantity);
         if (err) {
@@ -365,7 +368,10 @@ const JobPartsUsedDialog: React.FC<JobPartsUsedDialogProps> = ({
           await db.jobPartsUsed.update(existingPart.id, { quantity_used: newQty });
           const newTechQty = techItem.quantity - it.quantity;
           await db.technicianInventory.update(techItem.id, { quantity: newTechQty });
-          setPartsUsed(prev => prev.map(p => p.id === existingPart.id ? { ...p, quantity_used: newQty } : p));
+          workingParts = workingParts.map(p =>
+            p.id === existingPart.id ? { ...p, quantity_used: newQty } : p
+          );
+          setPartsUsed(workingParts);
           setTechnicianInventory(prev => prev.map(i => i.id === techItem.id ? { ...i, quantity: newTechQty } : i));
         } else {
           const { data: newPart, error: createErr } = await db.jobPartsUsed.create({
@@ -378,7 +384,10 @@ const JobPartsUsedDialog: React.FC<JobPartsUsedDialogProps> = ({
           if (createErr) throw createErr;
           const newTechQty = techItem.quantity - it.quantity;
           await db.technicianInventory.update(techItem.id, { quantity: newTechQty });
-          if (newPart) setPartsUsed(prev => [newPart, ...prev]);
+          if (newPart) {
+            workingParts = [newPart, ...workingParts];
+            setPartsUsed(workingParts);
+          }
           setTechnicianInventory(prev => prev.map(i => i.id === techItem.id ? { ...i, quantity: newTechQty } : i));
         }
       }
@@ -395,29 +404,31 @@ const JobPartsUsedDialog: React.FC<JobPartsUsedDialogProps> = ({
   // Quick add part with qty 1 (called from + button) — price from cache when possible, optimistic update
   const handleQuickAddPart = async (inventoryId: string) => {
     if (!job?.id || !technician?.id) return;
+    if (quickAddInFlightRef.current.has(inventoryId)) return;
+    quickAddInFlightRef.current.add(inventoryId);
 
     const techItem = technicianInventory.find(i => i.inventory_id === inventoryId);
     if (!techItem || techItem.quantity < 1) {
       toast.error('Insufficient quantity');
+      quickAddInFlightRef.current.delete(inventoryId);
       return;
     }
 
-    // Single getById when price not cached; reuse result for main-inventory deduct to avoid double fetch
-    let currentPrice = 0;
-    let mainItemForDeduct: { quantity?: number } | null = null;
-    const cachedInv = inventoryMap.get(inventoryId) as InventoryItem | undefined;
-    if (cachedInv?.price != null) {
-      currentPrice = Number(cachedInv.price);
-    } else {
-      const { data: inventoryData, error: invError } = await db.inventory.getById(inventoryId);
-      if (invError) throw invError;
-      currentPrice = inventoryData?.price ? Number(inventoryData.price) : 0;
-      mainItemForDeduct = inventoryData as { quantity?: number };
-    }
-
-    const existingPart = partsUsed.find(p => p.inventory_id === inventoryId);
-
     try {
+      // Single getById when price not cached; reuse result for main-inventory deduct to avoid double fetch
+      let currentPrice = 0;
+      let mainItemForDeduct: { quantity?: number } | null = null;
+      const cachedInv = inventoryMap.get(inventoryId) as InventoryItem | undefined;
+      if (cachedInv?.price != null) {
+        currentPrice = Number(cachedInv.price);
+      } else {
+        const { data: inventoryData, error: invError } = await db.inventory.getById(inventoryId);
+        if (invError) throw invError;
+        currentPrice = inventoryData?.price ? Number(inventoryData.price) : 0;
+        mainItemForDeduct = inventoryData as { quantity?: number };
+      }
+
+      const existingPart = partsUsed.find(p => p.inventory_id === inventoryId);
       // Deduct from main inventory (reuse mainItemForDeduct when we have it)
       const mainErr = await deductMainInventory(inventoryId, 1, mainItemForDeduct);
       if (mainErr) {
@@ -466,6 +477,8 @@ const JobPartsUsedDialog: React.FC<JobPartsUsedDialogProps> = ({
     } catch (error: any) {
       console.error('Error quick adding part:', error);
       toast.error(error?.message || 'Failed to add part');
+    } finally {
+      quickAddInFlightRef.current.delete(inventoryId);
     }
   };
 

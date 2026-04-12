@@ -4114,7 +4114,26 @@ export const db = {
           inventory:inventory(id, product_name, code)
         `)
         .single();
-      
+
+      // UNIQUE(job_id, inventory_id): merge quantity when insert races or bundle lists same part twice
+      const isUniqueViolation =
+        error &&
+        (error.code === '23505' ||
+          (typeof error.message === 'string' &&
+            (error.message.includes('job_parts_used_job_id_inventory_id_key') ||
+              error.message.includes('duplicate key'))));
+      if (isUniqueViolation) {
+        const { data: existing, error: fetchErr } = await supabase
+          .from('job_parts_used')
+          .select('id, quantity_used')
+          .eq('job_id', part.job_id)
+          .eq('inventory_id', part.inventory_id)
+          .maybeSingle();
+        if (fetchErr || !existing) return { data: null, error: error };
+        const mergedQty = Number(existing.quantity_used) + Number(part.quantity_used);
+        return this.update(existing.id, { quantity_used: mergedQty });
+      }
+
       return { data, error };
     },
 
