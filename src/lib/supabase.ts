@@ -1603,6 +1603,7 @@ export const db = {
     },
 
     /** Analytics only: selective columns (no before_photos, after_photos, service_address, etc.). Same aggregates, lower egress. */
+    /** `limit` caps egress; use a higher value for attribution chains (e.g. Direct/Website conversion analysis). */
     async getForAnalytics(limit: number = 5000) {
       const cols = [
         'id', 'customer_id', 'status', 'created_at', 'completed_at', 'end_time', 'requirements',
@@ -1613,7 +1614,7 @@ export const db = {
         .from('jobs')
         .select(cols)
         .order('created_at', { ascending: false })
-        .limit(limit);
+        .limit(Math.min(Math.max(1, limit), 15000));
       return { data: data || [], error };
     },
 
@@ -1658,6 +1659,124 @@ export const db = {
         return bAt.localeCompare(aAt);
       });
       return { data: combined, error: null };
+    },
+
+    /**
+     * Same date logic as `getForAnalyticsInRange`, but only columns needed for Direct/Website conversion attribution (smaller egress).
+     */
+    async getForConversionAnalyticsInRange(startDate: Date, endDate: Date) {
+      const cols = [
+        'id',
+        'customer_id',
+        'status',
+        'created_at',
+        'completed_at',
+        'end_time',
+        'requirements',
+        'assigned_by',
+        'payment_amount',
+        'actual_cost',
+        'service_sub_type'
+      ].join(', ');
+      const startISO = startDate.toISOString();
+      const endISO = endDate.toISOString();
+
+      const [completedRes, otherRes] = await Promise.all([
+        supabase
+          .from('jobs')
+          .select(cols)
+          .eq('status', 'COMPLETED')
+          .or(
+            `and(end_time.gte.${startISO},end_time.lte.${endISO}),and(end_time.is.null,completed_at.gte.${startISO},completed_at.lte.${endISO})`
+          )
+          .order('created_at', { ascending: false }),
+        supabase
+          .from('jobs')
+          .select(cols)
+          .neq('status', 'COMPLETED')
+          .gte('created_at', startISO)
+          .lte('created_at', endISO)
+          .order('created_at', { ascending: false })
+      ]);
+
+      if (completedRes.error) return { data: [], error: completedRes.error };
+      if (otherRes.error) return { data: [], error: otherRes.error };
+
+      const completed = completedRes.data || [];
+      const other = otherRes.data || [];
+      const combined = [...completed, ...other].sort((a: any, b: any) => {
+        const aAt = a.created_at || '';
+        const bAt = b.created_at || '';
+        return bAt.localeCompare(aAt);
+      });
+      return { data: combined, error: null };
+    },
+
+    /**
+     * Jobs strictly before `beforeDate` for attribution (first-touch before period). No payment columns — minimal egress.
+     * Merge client-side with `getForConversionAnalyticsInRange` by job `id`.
+     */
+    async getPriorJobsForConversionSlim(customerIds: string[], beforeDate: Date) {
+      const cols = [
+        'id',
+        'customer_id',
+        'status',
+        'created_at',
+        'completed_at',
+        'end_time',
+        'requirements',
+        'assigned_by',
+        'service_sub_type'
+      ].join(', ');
+      const unique = [...new Set((customerIds || []).filter(Boolean))];
+      if (unique.length === 0) return { data: [], error: null };
+
+      const beforeISO = beforeDate.toISOString();
+      const chunkSize = 100;
+      const chunks: string[][] = [];
+      for (let i = 0; i < unique.length; i += chunkSize) {
+        chunks.push(unique.slice(i, i + chunkSize));
+      }
+      const byId = new Map<string, Record<string, unknown>>();
+      const chunkResults = await Promise.all(
+        chunks.map((chunk) =>
+          supabase.from('jobs').select(cols).in('customer_id', chunk).lt('created_at', beforeISO)
+        )
+      );
+      for (const { data, error } of chunkResults) {
+        if (error) return { data: [], error };
+        for (const row of data || []) {
+          const r = row as Record<string, unknown>;
+          const id = r.id as string | undefined;
+          if (id) byId.set(id, r);
+        }
+      }
+      return { data: [...byId.values()], error: null };
+    },
+
+    /**
+     * Recent jobs with conversion-only columns (all-time conversion report). Much smaller than `getForAnalytics`.
+     */
+    async getForConversionAnalyticsRecent(limit: number = 5000) {
+      const cols = [
+        'id',
+        'customer_id',
+        'status',
+        'created_at',
+        'completed_at',
+        'end_time',
+        'requirements',
+        'assigned_by',
+        'payment_amount',
+        'actual_cost',
+        'service_sub_type'
+      ].join(', ');
+      const { data, error } = await supabase
+        .from('jobs')
+        .select(cols)
+        .order('created_at', { ascending: false })
+        .limit(Math.min(Math.max(1, limit), 15000));
+      return { data: data || [], error };
     },
 
     /**

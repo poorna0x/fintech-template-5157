@@ -22,9 +22,10 @@ import {
   Settings,
   Loader2,
   MapPin,
-  Heart
+  Heart,
+  PhoneForwarded
 } from 'lucide-react';
-import { normalizeForComparison } from '@/lib/adminUtils';
+import { normalizeForComparison, findLeadSource, normalizeLeadType } from '@/lib/adminUtils';
 import { Search } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 
@@ -118,6 +119,12 @@ interface AnalyticsData {
     avgTds: number | null;
     avgCallBilling: number;
   }>;
+  /** Completed Direct call / Website jobs in the period, credited to the first completed lead that is not Direct, Website, or Google-Leads. Return complaint jobs are included. Loaded on demand. */
+  directWebsiteConversions?: {
+    totalJobs: number;
+    totalRevenue: number;
+    byOriginalSource: Array<{ leadType: string; count: number; revenue: number }>;
+  };
 }
 
 type PeriodOption = '7d' | '30d' | 'thisWeek' | 'thisMonth' | 'previousMonth' | 'customMonth' | '3m' | '6m' | '1y' | 'all' | 'custom';
@@ -148,6 +155,50 @@ const toInstallationOrService = (st: string): 'Installation' | 'Service' => {
   return 'Service';
 };
 
+/** Direct call or any Website-style lead (including labelled website variants). */
+const isDirectOrWebsiteLead = (leadRaw: string): boolean => {
+  const t = (leadRaw || '').trim();
+  if (!t) return true;
+  if (t.toLowerCase().includes('website')) return true;
+  const n = normalizeLeadType(t);
+  return n === 'Direct call' || n === 'Website';
+};
+
+/** Google-Leads: not credited as first-touch (same idea as excluding owned/repeat channels). */
+const isGoogleLeadsLead = (leadRaw: string): boolean => {
+  const t = (leadRaw || '').trim();
+  if (!t) return false;
+  return normalizeLeadType(t) === 'Google-Leads';
+};
+
+/** First job whose lead can receive attribution (not Direct, Website, or Google Leads). */
+const isFirstTouchAttributionSource = (leadRaw: string): boolean => {
+  return !isDirectOrWebsiteLead(leadRaw) && !isGoogleLeadsLead(leadRaw);
+};
+
+const extractLeadSourceFromAnalyticsJob = (job: any): string => {
+  try {
+    const requirements = typeof job.requirements === 'string' ? JSON.parse(job.requirements) : (job.requirements || []);
+    if (Array.isArray(requirements)) {
+      const ls = findLeadSource(requirements);
+      if (ls && String(ls).trim()) return String(ls).trim();
+    } else if (requirements && typeof requirements === 'object' && (requirements as any).lead_source) {
+      return String((requirements as any).lead_source).trim();
+    }
+  } catch {
+    /* ignore */
+  }
+  if (job.assigned_by || job.assignedBy) return 'Admin Created';
+  return 'Direct call';
+};
+
+const getJobCompletionTime = (job: any): Date | null => {
+  const raw = job.completed_at || job.end_time;
+  if (!raw) return null;
+  const d = new Date(raw);
+  return isNaN(d.getTime()) ? null : d;
+};
+
 const Analytics = () => {
   const [analytics, setAnalytics] = useState<AnalyticsData | null>(null);
   const [loading, setLoading] = useState(true);
@@ -158,6 +209,7 @@ const Analytics = () => {
   const [customMonthValue, setCustomMonthValue] = useState<string>(''); // YYYY-MM for Custom month
   const [locationSearch, setLocationSearch] = useState('');
   const [loadingLocationStats, setLoadingLocationStats] = useState(false);
+  const [loadingDirectConversion, setLoadingDirectConversion] = useState(false);
 
   useEffect(() => {
     loadAnalytics();
@@ -1193,6 +1245,131 @@ const Analytics = () => {
     }
   };
 
+  const loadDirectWebsiteConversions = async () => {
+    if (loadingDirectConversion) return;
+    setLoadingDirectConversion(true);
+    try {
+      const { startDate, endDate } = getDateRange();
+
+      let jobs: any[] = [];
+
+      if (startDate && endDate) {
+        const { data: rangeJobs, error: rangeErr } = await db.jobs.getForConversionAnalyticsInRange(startDate, endDate);
+        if (rangeErr) throw rangeErr;
+        const inRange = Array.isArray(rangeJobs) ? rangeJobs : [];
+        const customerIds = [...new Set(inRange.map((j: any) => j?.customer_id).filter(Boolean))] as string[];
+        if (customerIds.length === 0) {
+          setAnalytics((prev) =>
+            prev
+              ? {
+                  ...prev,
+                  directWebsiteConversions: { totalJobs: 0, totalRevenue: 0, byOriginalSource: [] }
+                }
+              : prev
+          );
+          toast.info('No jobs in the selected period for this report.');
+          return;
+        }
+        const { data: priorRows, error: priorErr2 } = await db.jobs.getPriorJobsForConversionSlim(customerIds, startDate);
+        if (priorErr2) throw priorErr2;
+        const prior = Array.isArray(priorRows) ? priorRows : [];
+        const byId = new Map<string, any>();
+        for (const j of prior) {
+          if (j?.id) byId.set(j.id, j);
+        }
+        for (const j of inRange) {
+          if (!j?.id) continue;
+          const prevRow = byId.get(j.id);
+          byId.set(j.id, prevRow ? { ...prevRow, ...j } : j);
+        }
+        jobs = [...byId.values()];
+      } else {
+        const { data: rows, error } = await db.jobs.getForConversionAnalyticsRecent(5000);
+        if (error) throw error;
+        jobs = Array.isArray(rows) ? rows : [];
+      }
+
+      const byCustomer = new Map<string, any[]>();
+      for (const j of jobs) {
+        if (!j?.customer_id) continue;
+        const cid = j.customer_id;
+        if (!byCustomer.has(cid)) byCustomer.set(cid, []);
+        byCustomer.get(cid)!.push(j);
+      }
+
+      const sourceAgg: Record<string, { count: number; revenue: number; display: string }> = {};
+
+      const completionCompletedInPeriod = (job: any): boolean => {
+        if (job.status !== 'COMPLETED') return false;
+        const cd = getJobCompletionTime(job);
+        if (!cd) return false;
+        if (!startDate || !endDate) return true;
+        return cd >= startDate && cd <= endDate;
+      };
+
+      for (const [, list] of byCustomer) {
+        const sorted = [...list].sort(
+          (a, b) => new Date(a.created_at || 0).getTime() - new Date(b.created_at || 0).getTime()
+        );
+
+        let firstTouchLead: string | null = null;
+        let firstTouchCreated = 0;
+        for (const job of sorted) {
+          if (job.status !== 'COMPLETED') continue;
+          const lead = extractLeadSourceFromAnalyticsJob(job);
+          if (isFirstTouchAttributionSource(lead)) {
+            firstTouchLead = lead;
+            firstTouchCreated = new Date(job.created_at || 0).getTime();
+            break;
+          }
+        }
+        if (!firstTouchLead) continue;
+
+        const groupKey = (normalizeLeadType(firstTouchLead) || firstTouchLead).trim() || firstTouchLead;
+        const displayLead = groupKey;
+
+        for (const job of sorted) {
+          const created = new Date(job.created_at || 0).getTime();
+          if (created <= firstTouchCreated) continue;
+
+          const lead = extractLeadSourceFromAnalyticsJob(job);
+          if (!isDirectOrWebsiteLead(lead)) continue;
+          if (!completionCompletedInPeriod(job)) continue;
+
+          const amount = Number(job.payment_amount || job.actual_cost || 0);
+          if (!sourceAgg[groupKey]) {
+            sourceAgg[groupKey] = { count: 0, revenue: 0, display: displayLead };
+          }
+          sourceAgg[groupKey].count += 1;
+          sourceAgg[groupKey].revenue += amount;
+        }
+      }
+
+      const byOriginalSource = Object.values(sourceAgg)
+        .map((v) => ({ leadType: v.display, count: v.count, revenue: v.revenue }))
+        .sort((a, b) => b.count - a.count);
+
+      const totalJobs = byOriginalSource.reduce((s, x) => s + x.count, 0);
+      const totalRevenue = byOriginalSource.reduce((s, x) => s + x.revenue, 0);
+
+      setAnalytics((prev) =>
+        prev
+          ? {
+              ...prev,
+              directWebsiteConversions: { totalJobs, totalRevenue, byOriginalSource }
+            }
+          : prev
+      );
+      if (totalJobs === 0) {
+        toast.info('No direct/website conversion jobs found for this period.');
+      }
+    } catch (e: any) {
+      toast.error('Failed to load direct/website conversions: ' + (e?.message || 'Unknown error'));
+    } finally {
+      setLoadingDirectConversion(false);
+    }
+  };
+
   if (loading) {
     return (
       <div className="flex items-center justify-center py-12">
@@ -1798,6 +1975,77 @@ const Analytics = () => {
                 );
               })()}
             </>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* Direct call / Website conversions from original lead sources — load on demand */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <PhoneForwarded className="w-5 h-5" />
+            Direct / website conversions
+          </CardTitle>
+          <CardDescription>
+            Same period as the analytics filters ({getPeriodLabel()}). With a date range, loads all jobs for each customer who had any job in that window so first-touch can include earlier work. All time uses the same 5,000-job cap as the main analytics load. Counts completed Direct call / Website jobs in range (including return complaint jobs), credited to the first completed lead that is not Direct, Website, or Google-Leads.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <Button
+            onClick={loadDirectWebsiteConversions}
+            disabled={loadingDirectConversion}
+            variant="outline"
+          >
+            {loadingDirectConversion ? (
+              <>
+                <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                Loading...
+              </>
+            ) : (
+              'Load direct / website conversions'
+            )}
+          </Button>
+          {analytics.directWebsiteConversions &&
+            analytics.directWebsiteConversions.byOriginalSource.length > 0 && (
+              <div className="space-y-3">
+                <div className="flex flex-wrap gap-6 text-sm">
+                  <span>
+                    <span className="text-gray-500">Conversion jobs in period: </span>
+                    <span className="font-semibold">{analytics.directWebsiteConversions.totalJobs}</span>
+                  </span>
+                  <span>
+                    <span className="text-gray-500">Revenue (those jobs): </span>
+                    <span className="font-semibold text-green-600">
+                      ₹ {formatCurrency(analytics.directWebsiteConversions.totalRevenue)}
+                    </span>
+                  </span>
+                </div>
+                <div className="overflow-x-auto">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>First-touch lead source</TableHead>
+                        <TableHead className="text-right">Conversion jobs</TableHead>
+                        <TableHead className="text-right">Revenue</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {analytics.directWebsiteConversions.byOriginalSource.map((row) => (
+                        <TableRow key={row.leadType}>
+                          <TableCell className="font-medium">{row.leadType}</TableCell>
+                          <TableCell className="text-right">{row.count}</TableCell>
+                          <TableCell className="text-right font-medium text-green-600">
+                            ₹ {formatCurrency(row.revenue)}
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </div>
+              </div>
+            )}
+          {analytics.directWebsiteConversions && analytics.directWebsiteConversions.totalJobs === 0 && (
+            <p className="text-sm text-gray-500">No matching conversion jobs for this period.</p>
           )}
         </CardContent>
       </Card>
