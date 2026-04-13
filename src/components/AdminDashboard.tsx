@@ -1822,7 +1822,7 @@ const AdminDashboard = () => {
     }
   }, []);
 
-  // Play notification sound (job-completion beep pattern), extended to ~20s.
+  // Play alert sound (used by live booking intent banner).
   const playNotificationSound = useCallback(async () => {
     try {
       const Ac = window.AudioContext || (window as any).webkitAudioContext;
@@ -1885,6 +1885,45 @@ const AdminDashboard = () => {
     }
   }, [stopNotificationSound]);
 
+  // Completed job sound: restore the older short multi-beep pattern.
+  const playCompletedJobSound = useCallback(async () => {
+    try {
+      const Ac = window.AudioContext || (window as any).webkitAudioContext;
+      if (!Ac) return;
+      if (!audioContextRef.current) {
+        audioContextRef.current = new Ac();
+      }
+      const ctx = audioContextRef.current;
+      if (ctx.state === 'suspended') {
+        await ctx.resume();
+      }
+      if (ctx.state !== 'running') {
+        toast.info('Click anywhere on this page once to enable sound', { duration: 5000 });
+        return;
+      }
+
+      const t = ctx.currentTime;
+      const beepDuration = 0.25;
+      const gap = 0.25;
+
+      for (let i = 0; i < 5; i++) {
+        const start = t + i * (beepDuration + gap);
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+        osc.frequency.value = 800;
+        osc.type = 'sine';
+        gain.gain.setValueAtTime(0.25, start);
+        gain.gain.exponentialRampToValueAtTime(0.01, start + beepDuration);
+        osc.start(start);
+        osc.stop(start + beepDuration);
+      }
+    } catch (e) {
+      console.warn('Completed job sound failed:', e);
+    }
+  }, []);
+
 
 
   // Single channel: new job INSERT (when polling enabled) + COMPLETED UPDATE (completion sound)
@@ -1942,7 +1981,7 @@ const AdminDashboard = () => {
             if (Date.now() - t > 60000) return;
           }
           jobIdsCompletedByAdminRef.current.add(row.id);
-          playNotificationSound();
+          playCompletedJobSound();
         }
       )
       .subscribe();
@@ -1951,7 +1990,7 @@ const AdminDashboard = () => {
       clearTimeout(seedTimeout);
       supabase.removeChannel(channel);
     };
-  }, [isInitialLoad, isPollingEnabled, statusFilter, loadFilteredJobs, playNotificationSound]);
+  }, [isInitialLoad, isPollingEnabled, statusFilter, loadFilteredJobs, playCompletedJobSound]);
 
   const handleDeleteCustomer = async () => {
     if (!customerToDelete) return;
