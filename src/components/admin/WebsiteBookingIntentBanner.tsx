@@ -124,6 +124,8 @@ export function WebsiteBookingIntentBanner({ playAlert, stopAlert }: Props) {
   useEffect(() => {
     void load();
     const lastFocusFetchAt = { t: 0 };
+    const subscribedRef = { ok: false };
+    let fallbackInterval: ReturnType<typeof setInterval> | null = null;
 
     const channel = supabase
       .channel('admin-website-booking-intent')
@@ -188,11 +190,33 @@ export function WebsiteBookingIntentBanner({ playAlert, stopAlert }: Props) {
         }
       )
       .subscribe((status) => {
+        if (status === 'SUBSCRIBED') {
+          subscribedRef.ok = true;
+          if (fallbackInterval) {
+            clearInterval(fallbackInterval);
+            fallbackInterval = null;
+          }
+          return;
+        }
         if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
           console.warn('[WebsiteBookingIntentBanner] realtime subscribe:', status);
           void load();
         }
       });
+
+    // If realtime doesn't subscribe, poll lightly while tab is visible.
+    // This keeps the banner usable without requiring a manual refresh.
+    const startFallback = () => {
+      if (fallbackInterval) return;
+      fallbackInterval = setInterval(() => {
+        if (document.visibilityState !== 'visible') return;
+        if (subscribedRef.ok) return;
+        void load();
+      }, 10_000);
+    };
+    const fallbackTimer = setTimeout(() => {
+      if (!subscribedRef.ok) startFallback();
+    }, 2500);
 
     const onVis = () => {
       if (document.visibilityState !== 'visible') return;
@@ -207,6 +231,8 @@ export function WebsiteBookingIntentBanner({ playAlert, stopAlert }: Props) {
     window.addEventListener('online', onOnline);
 
     return () => {
+      clearTimeout(fallbackTimer);
+      if (fallbackInterval) clearInterval(fallbackInterval);
       document.removeEventListener('visibilitychange', onVis);
       window.removeEventListener('online', onOnline);
       supabase.removeChannel(channel);

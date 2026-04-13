@@ -501,7 +501,7 @@ const Booking: React.FC = () => {
   };
 
   /** Egress: 5s debounce + skip identical payloads vs last successful RPC. */
-  const WEBSITE_INTENT_DEBOUNCE_MS = 5000;
+  const WEBSITE_INTENT_DEBOUNCE_MS = 1500;
 
   useEffect(() => {
     if (showConfirmation || showSuccessLoader || isSubmitting) {
