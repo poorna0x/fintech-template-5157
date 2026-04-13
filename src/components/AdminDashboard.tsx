@@ -102,7 +102,6 @@ import { DeniedJobSection } from './admin/DeniedJobSection';
 import { FollowUpJobSection } from './admin/FollowUpJobSection';
 import { CompleteJobDialog } from './admin/CompleteJobDialog';
 import { StatsCards } from './admin/StatsCards';
-import { AdminNotificationBell } from './admin/AdminNotificationBell';
 import EditCustomerDialog from './admin/EditCustomerDialog';
 import AddCustomerDialog from './admin/AddCustomerDialog';
 import CustomerReportDialog from './admin/CustomerReportDialog';
@@ -8621,7 +8620,6 @@ const AdminDashboard = () => {
                   <X className="w-4 h-4" />
                 </Button>
               )}
-              <AdminNotificationBell onOpenAmcView={() => setShowAMCViewPage(true)} />
             </div>
             <div className="flex flex-col sm:flex-row gap-3 sm:flex-wrap">
               {/* All 6 buttons in a 3x2 grid on mobile, flex on desktop */}
@@ -8764,7 +8762,6 @@ const AdminDashboard = () => {
                 <X className="w-4 h-4" />
               </Button>
             )}
-            <AdminNotificationBell onOpenAmcView={() => setShowAMCViewPage(true)} />
           </div>
           {searchTerm && (
             <div className="mt-2 text-sm text-gray-600">
