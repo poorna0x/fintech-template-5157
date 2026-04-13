@@ -8563,7 +8563,7 @@ const AdminDashboard = () => {
       <AdminHeader />
       
       <main className="container mx-auto px-4 py-4 sm:py-8">
-        {user && (
+        {isAdmin && (
           <WebsiteBookingIntentBanner
             playAlert={playNotificationSound}
             stopAlert={stopNotificationSound}
