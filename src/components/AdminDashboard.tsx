@@ -1784,7 +1784,7 @@ const AdminDashboard = () => {
     };
   }, []);
 
-  // Play notification sound (beep-beep-beep for ~20s). Schedule at once so it always plays.
+  // Play notification sound (job-completion beep pattern), extended to ~20s.
   const playNotificationSound = useCallback(async () => {
     try {
       const Ac = window.AudioContext || (window as any).webkitAudioContext;
@@ -1804,31 +1804,22 @@ const AdminDashboard = () => {
       const durationSec = 20;
       const beepDuration = 0.5;
       const gap = 0.25;
-      const osc = ctx.createOscillator();
-      const gain = ctx.createGain();
-      osc.connect(gain);
-      gain.connect(ctx.destination);
-      osc.frequency.value = 800;
-      osc.type = 'sine';
+      const cycleSec = beepDuration + gap;
+      const beepCount = Math.max(1, Math.ceil((durationSec + gap) / cycleSec));
 
-      // Gate the gain to create repeated beeps, avoid clicks with tiny ramps.
-      gain.gain.setValueAtTime(0.0001, t);
-      for (let i = 0; ; i++) {
-        const start = t + i * (beepDuration + gap);
-        const end = start + beepDuration;
-        if (start >= t + durationSec) break;
-        const clippedEnd = Math.min(end, t + durationSec);
-        const rampUpEnd = Math.min(start + 0.01, clippedEnd);
-        const rampDownStart = Math.max(start, clippedEnd - 0.03);
-
-        gain.gain.setValueAtTime(0.0001, start);
-        if (rampUpEnd > start) gain.gain.exponentialRampToValueAtTime(0.25, rampUpEnd);
-        if (rampDownStart > rampUpEnd) gain.gain.setValueAtTime(0.25, rampDownStart);
-        gain.gain.exponentialRampToValueAtTime(0.0001, clippedEnd);
+      for (let i = 0; i < beepCount; i++) {
+        const start = t + i * cycleSec;
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+        osc.frequency.value = 800;
+        osc.type = 'sine';
+        gain.gain.setValueAtTime(0.25, start);
+        gain.gain.exponentialRampToValueAtTime(0.01, start + beepDuration);
+        osc.start(start);
+        osc.stop(start + beepDuration);
       }
-
-      osc.start(t);
-      osc.stop(t + durationSec + 0.05);
     } catch (e) {
       console.warn('Notification sound failed:', e);
     }
