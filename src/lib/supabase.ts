@@ -4531,10 +4531,7 @@ export const db = {
     },
 
     async dismiss(id: string) {
-      const { error } = await supabase
-        .from('booking_abandonments')
-        .update({ dismissed_at: new Date().toISOString() })
-        .eq('id', id);
+      const { error } = await supabase.from('booking_abandonments').delete().eq('id', id);
       return { error };
     },
   },
@@ -4571,10 +4568,7 @@ export const db = {
       return { data: data || [], error };
     },
     async dismiss(id: string) {
-      const { error } = await supabase
-        .from('website_booking_intent')
-        .update({ dismissed_at: new Date().toISOString() })
-        .eq('id', id);
+      const { error } = await supabase.from('website_booking_intent').delete().eq('id', id);
       return { error };
     },
   },
