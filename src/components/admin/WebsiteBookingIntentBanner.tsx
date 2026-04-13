@@ -145,6 +145,8 @@ export function WebsiteBookingIntentBanner({ playAlert, stopAlert }: Props) {
             if (!mutedRef.current && playAlert && !(row.dismissed_at != null && row.dismissed_at !== '')) {
               void Promise.resolve(playAlert());
             }
+            // Always refetch once on INSERT so the banner updates immediately even if realtime misses/omits columns.
+            void load();
             // Some realtime configurations may omit columns; fall back to a refresh.
             if (
               typeof row.full_name !== 'string' ||

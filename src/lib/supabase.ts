@@ -4572,7 +4572,9 @@ export const db = {
       const cutoff = new Date(Date.now() - 3 * 24 * 60 * 60 * 1000).toISOString();
       const { data, error } = await supabase
         .from('website_booking_intent')
-        .select('id,full_name,phone,current_step,created_at,updated_at,site_key,booked_at,booked_job_number')
+        // Use '*' so this query stays compatible even if optional columns
+        // (e.g. booked_at/booked_job_number) haven't been migrated yet.
+        .select('*')
         .is('dismissed_at', null)
         .gte('updated_at', cutoff)
         .order('updated_at', { ascending: false })
