@@ -86,7 +86,9 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         clearTimeout(timeoutId);
         
         if (session?.user) {
-          const userRole = session.user.user_metadata?.role || session.user.app_metadata?.role || 'admin';
+          const rawRole =
+            session.user.user_metadata?.role || session.user.app_metadata?.role || 'admin';
+          const userRole = String(rawRole).toLowerCase() === 'technician' ? 'technician' : 'admin';
           setUser({
             id: session.user.id,
             email: session.user.email || '',
@@ -114,7 +116,9 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     // Listen for Supabase auth changes (for admins)
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
       if (session?.user) {
-        const userRole = session.user.user_metadata?.role || session.user.app_metadata?.role || 'admin';
+        const rawRole =
+          session.user.user_metadata?.role || session.user.app_metadata?.role || 'admin';
+        const userRole = String(rawRole).toLowerCase() === 'technician' ? 'technician' : 'admin';
         setUser({
           id: session.user.id,
           email: session.user.email || '',
@@ -354,7 +358,8 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       }
 
       if (data.user) {
-        const userRole = data.user.user_metadata?.role || data.user.app_metadata?.role || 'admin';
+        const rawRole = data.user.user_metadata?.role || data.user.app_metadata?.role || 'admin';
+        const userRole = String(rawRole).toLowerCase() === 'technician' ? 'technician' : 'admin';
         const user = {
           id: data.user.id,
           email: data.user.email || '',
