@@ -58,6 +58,24 @@ const registerPWA = ({ swUrl, scope, label }: RegisterOptions) => {
     .register(swUrl, { scope, updateViaCache: 'none' })
     .then((registration) => {
       console.info(`[${label}] Service worker registered:`, registration.scope);
+
+      // Keep SW up to date on mobile (avoids stale cached /admin HTML missing latest UI).
+      // This is best-effort; safe to ignore failures.
+      try {
+        void registration.update();
+      } catch {
+        /* ignore */
+      }
+
+      // When an updated SW is installed, activate it and reload once.
+      // This prevents "works on desktop but not on phone" due to old cached bundles.
+      let didReload = false;
+      const onControllerChange = () => {
+        if (didReload) return;
+        didReload = true;
+        window.location.reload();
+      };
+      navigator.serviceWorker.addEventListener('controllerchange', onControllerChange);
       
       // Prevent automatic page refresh on service worker update
       registration.addEventListener('updatefound', () => {
@@ -67,7 +85,12 @@ const registerPWA = ({ swUrl, scope, label }: RegisterOptions) => {
             // Don't automatically activate new service worker
             // It will activate when all tabs are closed
             if (newWorker.state === 'installed' && navigator.serviceWorker.controller) {
-              console.log(`[${label}] New service worker available, but not activating to prevent refresh`);
+              console.log(`[${label}] New service worker installed, requesting activation`);
+              try {
+                newWorker.postMessage({ type: 'SKIP_WAITING' });
+              } catch {
+                /* ignore */
+              }
             }
           });
         }
