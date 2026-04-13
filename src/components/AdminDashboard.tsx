@@ -1784,7 +1784,7 @@ const AdminDashboard = () => {
     };
   }, []);
 
-  // Play notification sound (5 beeps). Schedule all at once so they always play.
+  // Play notification sound (continuous beep). Schedule at once so it always plays.
   const playNotificationSound = useCallback(async () => {
     try {
       const Ac = window.AudioContext || (window as any).webkitAudioContext;
@@ -1801,21 +1801,22 @@ const AdminDashboard = () => {
         return;
       }
       const t = ctx.currentTime;
-      const beepDuration = 0.5;
-      const gap = 0.25;
-      for (let i = 0; i < 5; i++) {
-        const start = t + i * (beepDuration + gap);
-        const osc = ctx.createOscillator();
-        const gain = ctx.createGain();
-        osc.connect(gain);
-        gain.connect(ctx.destination);
-        osc.frequency.value = 800;
-        osc.type = 'sine';
-        gain.gain.setValueAtTime(0.25, start);
-        gain.gain.exponentialRampToValueAtTime(0.01, start + beepDuration);
-        osc.start(start);
-        osc.stop(start + beepDuration);
-      }
+      const durationSec = 20;
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.frequency.value = 800;
+      osc.type = 'sine';
+
+      // quick fade-in/out to avoid clicks
+      gain.gain.setValueAtTime(0.0001, t);
+      gain.gain.exponentialRampToValueAtTime(0.25, t + 0.02);
+      gain.gain.setValueAtTime(0.25, t + Math.max(0, durationSec - 0.05));
+      gain.gain.exponentialRampToValueAtTime(0.0001, t + durationSec);
+
+      osc.start(t);
+      osc.stop(t + durationSec);
     } catch (e) {
       console.warn('Notification sound failed:', e);
     }
