@@ -4518,10 +4518,13 @@ export const db = {
 
     async listActivePending(limit = 12) {
       const lim = Math.min(Math.max(1, limit), 50);
+      // Egress guard: only fetch recent rows (abandonments are only useful short-term).
+      const cutoff = new Date(Date.now() - 3 * 24 * 60 * 60 * 1000).toISOString();
       const { data, error } = await supabase
         .from('booking_abandonments')
         .select('id,full_name,phone,step_reached,created_at')
         .is('dismissed_at', null)
+        .gte('created_at', cutoff)
         .order('created_at', { ascending: false })
         .limit(lim);
       return { data: data || [], error };
@@ -4556,10 +4559,13 @@ export const db = {
     },
     async listActive(limit = 10) {
       const lim = Math.min(Math.max(1, limit), 20);
+      // Egress guard: only fetch recent rows (live intent banner is only useful short-term).
+      const cutoff = new Date(Date.now() - 3 * 24 * 60 * 60 * 1000).toISOString();
       const { data, error } = await supabase
         .from('website_booking_intent')
         .select('id,full_name,phone,current_step,created_at,updated_at,site_key')
         .is('dismissed_at', null)
+        .gte('updated_at', cutoff)
         .order('updated_at', { ascending: false })
         .limit(lim);
       return { data: data || [], error };
