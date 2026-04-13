@@ -124,6 +124,15 @@ export function WebsiteBookingIntentBanner({ playAlert }: Props) {
           if (!row || typeof row !== 'object') return;
 
           if (payload.eventType === 'INSERT') {
+            // Some realtime configurations may omit columns; fall back to a refresh.
+            if (
+              typeof row.full_name !== 'string' ||
+              typeof row.phone !== 'string' ||
+              row.updated_at == null ||
+              row.current_step == null
+            ) {
+              void load();
+            }
             setRows((prev) => mergeRow(prev, row));
             if (row.dismissed_at) return;
             if (!mutedRef.current && playAlert) void Promise.resolve(playAlert());
@@ -135,6 +144,14 @@ export function WebsiteBookingIntentBanner({ playAlert }: Props) {
               row.dismissed_at != null &&
               row.dismissed_at !== '' &&
               (payload.old as { dismissed_at?: unknown } | null)?.dismissed_at == null;
+            if (
+              typeof row.full_name !== 'string' ||
+              typeof row.phone !== 'string' ||
+              row.updated_at == null ||
+              row.current_step == null
+            ) {
+              void load();
+            }
             setRows((prev) => mergeRow(prev, row));
             if (wasDismiss || row.dismissed_at) return;
 
