@@ -568,10 +568,14 @@ export interface Database {
           created_at: string;
           updated_at: string;
           dismissed_at: string | null;
+          booked_at: string | null;
+          booked_job_number: string | null;
         };
         Insert: never;
         Update: Partial<{
           dismissed_at: string | null;
+          booked_at: string | null;
+          booked_job_number: string | null;
         }>;
       };
     };
@@ -583,6 +587,14 @@ export interface Database {
           p_phone_normalized: string;
           p_current_step: number;
           p_site_key: string;
+        };
+        Returns: undefined;
+      };
+      mark_website_booking_intent_booked: {
+        Args: {
+          p_phone_normalized: string;
+          p_site_key: string;
+          p_job_number: string;
         };
         Returns: undefined;
       };

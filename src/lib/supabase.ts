@@ -4554,13 +4554,25 @@ export const db = {
       });
       return { error };
     },
+    async markBooked(row: {
+      phone_normalized: string;
+      site_key: 'hydrogenro' | 'elevenro';
+      job_number: string;
+    }) {
+      const { error } = await supabase.rpc('mark_website_booking_intent_booked', {
+        p_phone_normalized: row.phone_normalized,
+        p_site_key: row.site_key,
+        p_job_number: row.job_number,
+      });
+      return { error };
+    },
     async listActive(limit = 10) {
       const lim = Math.min(Math.max(1, limit), 20);
       // Egress guard: only fetch recent rows (live intent banner is only useful short-term).
       const cutoff = new Date(Date.now() - 3 * 24 * 60 * 60 * 1000).toISOString();
       const { data, error } = await supabase
         .from('website_booking_intent')
-        .select('id,full_name,phone,current_step,created_at,updated_at,site_key')
+        .select('id,full_name,phone,current_step,created_at,updated_at,site_key,booked_at,booked_job_number')
         .is('dismissed_at', null)
         .gte('updated_at', cutoff)
         .order('updated_at', { ascending: false })

@@ -15,6 +15,8 @@ type Row = {
   created_at: string;
   updated_at: string;
   site_key: string;
+  booked_at?: string | null;
+  booked_job_number?: string | null;
 };
 
 const SITE_LABEL: Record<string, string> = {
@@ -40,6 +42,8 @@ function mergeRow(rows: Row[], raw: Record<string, unknown>): Row[] {
   const phone = raw.phone as string | undefined;
   const current_step = Number(raw.current_step);
   const updated_at = raw.updated_at as string | undefined;
+  const booked_at = (raw.booked_at as string | undefined) ?? null;
+  const booked_job_number = (raw.booked_job_number as string | undefined) ?? null;
   const site_key =
     typeof raw.site_key === 'string' && raw.site_key.length > 0 ? raw.site_key : 'hydrogenro';
   if (!full_name || !phone || !updated_at || Number.isNaN(current_step)) return rows;
@@ -48,7 +52,17 @@ function mergeRow(rows: Row[], raw: Record<string, unknown>): Row[] {
   const created_at =
     (raw.created_at as string | undefined) || existing?.created_at || updated_at;
 
-  const next: Row = { id, full_name, phone, current_step, created_at, updated_at, site_key };
+  const next: Row = {
+    id,
+    full_name,
+    phone,
+    current_step,
+    created_at,
+    updated_at,
+    site_key,
+    booked_at,
+    booked_job_number,
+  };
   const rest = rows.filter((r) => r.id !== id);
   const merged = [next, ...rest];
   merged.sort((a, b) => new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime());
@@ -157,6 +171,8 @@ export function WebsiteBookingIntentBanner({ playAlert, stopAlert }: Props) {
             }
             setRows((prev) => mergeRow(prev, row));
             if (wasDismiss || row.dismissed_at) return;
+            // If the booking was successfully submitted, show it as "Booked" but don't beep.
+            if (row.booked_at != null && row.booked_at !== '') return;
 
             const now = Date.now();
             if (mutedRef.current || !playAlert) return;
@@ -262,6 +278,14 @@ export function WebsiteBookingIntentBanner({ playAlert, stopAlert }: Props) {
               <span className="text-xs text-gray-600">
                 Step {r.current_step}: {STEP_LABEL[r.current_step] ?? '—'}
               </span>
+              {r.booked_at ? (
+                <span
+                  className="shrink-0 rounded-full bg-emerald-100 px-2 py-0.5 text-[11px] font-semibold uppercase tracking-wide text-emerald-900"
+                  title={r.booked_job_number ? `Job: ${r.booked_job_number}` : 'Booked'}
+                >
+                  Booked
+                </span>
+              ) : null}
               <span className="text-xs text-gray-600">
                 Started: {formatStartedAt(r.created_at)}
               </span>

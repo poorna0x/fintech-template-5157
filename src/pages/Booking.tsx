@@ -1671,6 +1671,21 @@ const Booking: React.FC = () => {
 
       bookingSucceededRef.current = true;
 
+      // Mark "live intent" as successfully booked (best-effort; non-blocking).
+      try {
+        const phoneNorm = normalizePhoneNumber(formData.phone);
+        const jobNumber = (job as any)?.job_number || (job as any)?.jobNumber;
+        if (phoneNorm && jobNumber) {
+          void db.websiteBookingIntent.markBooked({
+            phone_normalized: phoneNorm,
+            site_key: WEBSITE_BOOKING_SITE_KEY,
+            job_number: String(jobNumber),
+          });
+        }
+      } catch {
+        // ignore
+      }
+
       const displayAddress = keepPreviousLocation && customer
         ? (jobServiceLocation?.formattedAddress || jobServiceAddress.street || (customer as any).address?.street || formData.address)
         : formData.address;
