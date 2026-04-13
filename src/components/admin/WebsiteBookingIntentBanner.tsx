@@ -39,11 +39,14 @@ function mergeRow(rows: Row[], raw: Record<string, unknown>): Row[] {
   const full_name = raw.full_name as string | undefined;
   const phone = raw.phone as string | undefined;
   const current_step = Number(raw.current_step);
-  const created_at = raw.created_at as string | undefined;
   const updated_at = raw.updated_at as string | undefined;
   const site_key =
     typeof raw.site_key === 'string' && raw.site_key.length > 0 ? raw.site_key : 'hydrogenro';
-  if (!full_name || !phone || !created_at || !updated_at || Number.isNaN(current_step)) return rows;
+  if (!full_name || !phone || !updated_at || Number.isNaN(current_step)) return rows;
+
+  const existing = rows.find((r) => r.id === id);
+  const created_at =
+    (raw.created_at as string | undefined) || existing?.created_at || updated_at;
 
   const next: Row = { id, full_name, phone, current_step, created_at, updated_at, site_key };
   const rest = rows.filter((r) => r.id !== id);
