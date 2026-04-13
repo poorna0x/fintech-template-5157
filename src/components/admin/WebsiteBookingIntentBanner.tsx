@@ -141,6 +141,10 @@ export function WebsiteBookingIntentBanner({ playAlert, stopAlert }: Props) {
           if (!row || typeof row !== 'object') return;
 
           if (payload.eventType === 'INSERT') {
+            // If realtime payload is "thin", still beep immediately (then refetch for details).
+            if (!mutedRef.current && playAlert && !(row.dismissed_at != null && row.dismissed_at !== '')) {
+              void Promise.resolve(playAlert());
+            }
             // Some realtime configurations may omit columns; fall back to a refresh.
             if (
               typeof row.full_name !== 'string' ||
@@ -152,7 +156,6 @@ export function WebsiteBookingIntentBanner({ playAlert, stopAlert }: Props) {
             }
             setRows((prev) => mergeRow(prev, row));
             if (row.dismissed_at) return;
-            if (!mutedRef.current && playAlert) void Promise.resolve(playAlert());
             return;
           }
 
