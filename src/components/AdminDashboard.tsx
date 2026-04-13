@@ -9208,7 +9208,8 @@ const AdminDashboard = () => {
               const hasWebsiteLead = allJobs.some(job => {
                 const reqs = (job as any).requirements;
                 const arr = Array.isArray(reqs) ? reqs : reqs && typeof reqs === 'object' ? [reqs] : [];
-                return findLeadSource(arr) === 'Website';
+                const lead = (findLeadSource(arr) || '').toLowerCase();
+                return lead.includes('website');
               });
               const borderClass = hasTodayFollowup ? 'border-red-400 border-2' : hasTomorrowFollowup ? 'border-yellow-400 border-2' : hasWebsiteLead ? 'border-red-400 border-2' : 'border-gray-300';
               const hoverBorderClass = hasWebsiteLead ? 'hover:border-green-400' : 'hover:border-gray-400';
