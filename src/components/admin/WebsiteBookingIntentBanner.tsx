@@ -109,6 +109,7 @@ export function WebsiteBookingIntentBanner({ playAlert, stopAlert }: Props) {
 
   useEffect(() => {
     void load();
+    const lastFocusFetchAt = { t: 0 };
 
     const channel = supabase
       .channel('admin-website-booking-intent')
@@ -165,9 +166,28 @@ export function WebsiteBookingIntentBanner({ playAlert, stopAlert }: Props) {
           }
         }
       )
-      .subscribe();
+      .subscribe((status) => {
+        if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
+          console.warn('[WebsiteBookingIntentBanner] realtime subscribe:', status);
+          void load();
+        }
+      });
+
+    const onVis = () => {
+      if (document.visibilityState !== 'visible') return;
+      const now = Date.now();
+      if (now - lastFocusFetchAt.t < 5 * 60_000) return;
+      lastFocusFetchAt.t = now;
+      void load();
+    };
+    document.addEventListener('visibilitychange', onVis);
+
+    const onOnline = () => void load();
+    window.addEventListener('online', onOnline);
 
     return () => {
+      document.removeEventListener('visibilitychange', onVis);
+      window.removeEventListener('online', onOnline);
       supabase.removeChannel(channel);
     };
   }, [load, playAlert]);
