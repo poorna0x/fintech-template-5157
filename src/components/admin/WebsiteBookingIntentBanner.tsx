@@ -242,6 +242,8 @@ export function WebsiteBookingIntentBanner({ playAlert, stopAlert }: Props) {
   const toggleMute = () => {
     const next = !muted;
     setMuted(next);
+    // Make mute effective immediately for any in-flight realtime events.
+    mutedRef.current = next;
     try {
       if (next) sessionStorage.setItem(MUTE_KEY, '1');
       else sessionStorage.removeItem(MUTE_KEY);
