@@ -156,10 +156,6 @@ export function WebsiteBookingIntentBanner({ playAlert }: Props) {
       <div className="flex flex-wrap items-start justify-between gap-2">
         <div className="min-w-0 flex-1">
           <p className="text-sm font-semibold text-emerald-950">Live booking (website)</p>
-          <p className="text-xs text-emerald-900/85 mt-0.5">
-            Same alert sound as job completion (click the dashboard once if the browser blocked audio). Mute
-            silences pings.
-          </p>
         </div>
         <Button
           type="button"

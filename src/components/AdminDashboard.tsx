@@ -1801,7 +1801,7 @@ const AdminDashboard = () => {
         return;
       }
       const t = ctx.currentTime;
-      const beepDuration = 0.25;
+      const beepDuration = 0.5;
       const gap = 0.25;
       for (let i = 0; i < 5; i++) {
         const start = t + i * (beepDuration + gap);
