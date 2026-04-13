@@ -82,9 +82,11 @@ function formatStartedAt(iso: string): string {
 type Props = {
   /** Same as job-completion: uses shared AudioContext primed on first click/keydown in admin. */
   playAlert?: () => void | Promise<void>;
+  /** Stop any ongoing alert sound (e.g., when the row is dismissed). */
+  stopAlert?: () => void;
 };
 
-export function WebsiteBookingIntentBanner({ playAlert }: Props) {
+export function WebsiteBookingIntentBanner({ playAlert, stopAlert }: Props) {
   const [rows, setRows] = useState<Row[]>([]);
   const [loading, setLoading] = useState(true);
   const [muted, setMuted] = useState(() => {
@@ -182,6 +184,8 @@ export function WebsiteBookingIntentBanner({ playAlert }: Props) {
   };
 
   const onDismiss = async (id: string) => {
+    // Stop sound immediately on dismiss click (even before network roundtrip).
+    stopAlert?.();
     setDismissingId(id);
     const { error } = await db.websiteBookingIntent.dismiss(id);
     setDismissingId(null);

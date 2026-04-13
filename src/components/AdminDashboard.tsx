@@ -1784,6 +1784,28 @@ const AdminDashboard = () => {
     };
   }, []);
 
+  const activeAlertOscillatorsRef = React.useRef<OscillatorNode[]>([]);
+
+  const stopNotificationSound = useCallback(() => {
+    const nodes = activeAlertOscillatorsRef.current;
+    if (!nodes.length) return;
+    activeAlertOscillatorsRef.current = [];
+    const now = audioContextRef.current?.currentTime ?? 0;
+    for (const osc of nodes) {
+      try {
+        // Stop immediately; if already stopped, ignore.
+        osc.stop(now);
+      } catch {
+        /* ignore */
+      }
+      try {
+        osc.disconnect();
+      } catch {
+        /* ignore */
+      }
+    }
+  }, []);
+
   // Play notification sound (job-completion beep pattern), extended to ~20s.
   const playNotificationSound = useCallback(async () => {
     try {
@@ -1800,6 +1822,8 @@ const AdminDashboard = () => {
         toast.info('Click anywhere on this page once to enable sound', { duration: 5000 });
         return;
       }
+      // If a previous alert is still playing, stop it first.
+      stopNotificationSound();
       const t = ctx.currentTime;
       const durationSec = 20;
       const beepDuration = 0.5;
@@ -1819,11 +1843,12 @@ const AdminDashboard = () => {
         gain.gain.exponentialRampToValueAtTime(0.01, start + beepDuration);
         osc.start(start);
         osc.stop(start + beepDuration);
+        activeAlertOscillatorsRef.current.push(osc);
       }
     } catch (e) {
       console.warn('Notification sound failed:', e);
     }
-  }, []);
+  }, [stopNotificationSound]);
 
 
 
@@ -8449,7 +8474,12 @@ const AdminDashboard = () => {
       <AdminHeader />
       
       <main className="container mx-auto px-4 py-4 sm:py-8">
-        {isAdmin && <WebsiteBookingIntentBanner playAlert={playNotificationSound} />}
+        {isAdmin && (
+          <WebsiteBookingIntentBanner
+            playAlert={playNotificationSound}
+            stopAlert={stopNotificationSound}
+          />
+        )}
         {/* Page Header */}
         <div className="mb-6 sm:mb-8">
           <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
