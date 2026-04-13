@@ -1784,7 +1784,7 @@ const AdminDashboard = () => {
     };
   }, []);
 
-  // Play notification sound (continuous beep). Schedule at once so it always plays.
+  // Play notification sound (beep-beep-beep for ~20s). Schedule at once so it always plays.
   const playNotificationSound = useCallback(async () => {
     try {
       const Ac = window.AudioContext || (window as any).webkitAudioContext;
@@ -1802,6 +1802,8 @@ const AdminDashboard = () => {
       }
       const t = ctx.currentTime;
       const durationSec = 20;
+      const beepDuration = 0.5;
+      const gap = 0.25;
       const osc = ctx.createOscillator();
       const gain = ctx.createGain();
       osc.connect(gain);
@@ -1809,14 +1811,24 @@ const AdminDashboard = () => {
       osc.frequency.value = 800;
       osc.type = 'sine';
 
-      // quick fade-in/out to avoid clicks
+      // Gate the gain to create repeated beeps, avoid clicks with tiny ramps.
       gain.gain.setValueAtTime(0.0001, t);
-      gain.gain.exponentialRampToValueAtTime(0.25, t + 0.02);
-      gain.gain.setValueAtTime(0.25, t + Math.max(0, durationSec - 0.05));
-      gain.gain.exponentialRampToValueAtTime(0.0001, t + durationSec);
+      for (let i = 0; ; i++) {
+        const start = t + i * (beepDuration + gap);
+        const end = start + beepDuration;
+        if (start >= t + durationSec) break;
+        const clippedEnd = Math.min(end, t + durationSec);
+        const rampUpEnd = Math.min(start + 0.01, clippedEnd);
+        const rampDownStart = Math.max(start, clippedEnd - 0.03);
+
+        gain.gain.setValueAtTime(0.0001, start);
+        if (rampUpEnd > start) gain.gain.exponentialRampToValueAtTime(0.25, rampUpEnd);
+        if (rampDownStart > rampUpEnd) gain.gain.setValueAtTime(0.25, rampDownStart);
+        gain.gain.exponentialRampToValueAtTime(0.0001, clippedEnd);
+      }
 
       osc.start(t);
-      osc.stop(t + durationSec);
+      osc.stop(t + durationSec + 0.05);
     } catch (e) {
       console.warn('Notification sound failed:', e);
     }
