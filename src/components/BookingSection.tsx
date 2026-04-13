@@ -12,6 +12,8 @@ import { db, generateJobNumber } from '@/lib/supabase';
 import { emailService } from '@/lib/email';
 import ImageUpload from './ImageUpload';
 
+const normalizePhone10 = (phone: string): string => phone.replace(/\D/g, '').slice(-10);
+
 const BookingSection = () => {
   const [currentStep, setCurrentStep] = useState(1);
   const [serviceType, setServiceType] = useState('');
@@ -418,6 +420,21 @@ const BookingSection = () => {
       
       if (jobError) {
         throw new Error(jobError.message);
+      }
+
+      // Mark website intent as booked (best-effort; no-op if no intent row exists).
+      try {
+        const phoneNorm = normalizePhone10(formData.phone);
+        const siteKey = hostname.includes('elevenro.com') ? 'elevenro' : 'hydrogenro';
+        if (phoneNorm && job?.job_number) {
+          void db.websiteBookingIntent.markBooked({
+            phone_normalized: phoneNorm,
+            site_key: siteKey,
+            job_number: String(job.job_number),
+          });
+        }
+      } catch {
+        /* ignore */
       }
 
       // Send confirmation email (non-blocking for faster response)
