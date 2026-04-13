@@ -41,7 +41,7 @@ BEGIN
       PERFORM cron.schedule(
         'cleanup_website_booking_intent_daily',
         '10 21 * * *',
-        $$SELECT public.cleanup_website_booking_intent(interval '3 days');$$
+        $cmd$SELECT public.cleanup_website_booking_intent(interval '3 days');$cmd$
       );
     END IF;
   END IF;
