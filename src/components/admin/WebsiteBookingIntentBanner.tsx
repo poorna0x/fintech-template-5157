@@ -12,6 +12,7 @@ type Row = {
   full_name: string;
   phone: string;
   current_step: number;
+  created_at: string;
   updated_at: string;
   site_key: string;
 };
@@ -38,16 +39,41 @@ function mergeRow(rows: Row[], raw: Record<string, unknown>): Row[] {
   const full_name = raw.full_name as string | undefined;
   const phone = raw.phone as string | undefined;
   const current_step = Number(raw.current_step);
+  const created_at = raw.created_at as string | undefined;
   const updated_at = raw.updated_at as string | undefined;
   const site_key =
     typeof raw.site_key === 'string' && raw.site_key.length > 0 ? raw.site_key : 'hydrogenro';
-  if (!full_name || !phone || !updated_at || Number.isNaN(current_step)) return rows;
+  if (!full_name || !phone || !created_at || !updated_at || Number.isNaN(current_step)) return rows;
 
-  const next: Row = { id, full_name, phone, current_step, updated_at, site_key };
+  const next: Row = { id, full_name, phone, current_step, created_at, updated_at, site_key };
   const rest = rows.filter((r) => r.id !== id);
   const merged = [next, ...rest];
   merged.sort((a, b) => new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime());
   return merged.slice(0, 10);
+}
+
+function formatStartedAt(iso: string): string {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return '—';
+  const tz = 'Asia/Kolkata';
+  const date = new Intl.DateTimeFormat('en-IN', {
+    timeZone: tz,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).format(d);
+  const today = new Intl.DateTimeFormat('en-IN', {
+    timeZone: tz,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).format(new Date());
+  const time = new Intl.DateTimeFormat('en-IN', {
+    timeZone: tz,
+    hour: '2-digit',
+    minute: '2-digit',
+  }).format(d);
+  return date === today ? time : `${date} ${time}`;
 }
 
 type Props = {
@@ -191,6 +217,9 @@ export function WebsiteBookingIntentBanner({ playAlert }: Props) {
               </a>
               <span className="text-xs text-gray-600">
                 Step {r.current_step}: {STEP_LABEL[r.current_step] ?? '—'}
+              </span>
+              <span className="text-xs text-gray-600">
+                Started: {formatStartedAt(r.created_at)}
               </span>
             </div>
             <Button

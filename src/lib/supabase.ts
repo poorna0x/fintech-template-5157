@@ -4558,7 +4558,7 @@ export const db = {
       const lim = Math.min(Math.max(1, limit), 20);
       const { data, error } = await supabase
         .from('website_booking_intent')
-        .select('id,full_name,phone,current_step,updated_at,site_key')
+        .select('id,full_name,phone,current_step,created_at,updated_at,site_key')
         .is('dismissed_at', null)
         .order('updated_at', { ascending: false })
         .limit(lim);
