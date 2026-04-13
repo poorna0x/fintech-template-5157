@@ -1762,6 +1762,9 @@ const AdminDashboard = () => {
       try {
         const Ac = window.AudioContext || (window as any).webkitAudioContext;
         if (!Ac) return;
+        if (audioContextRef.current?.state === 'closed') {
+          audioContextRef.current = null;
+        }
         if (!audioContextRef.current) {
           audioContextRef.current = new Ac();
         }
@@ -1774,12 +1777,19 @@ const AdminDashboard = () => {
       }
       document.removeEventListener('click', handleUserInteraction);
       document.removeEventListener('keydown', handleUserInteraction);
+      document.removeEventListener('pointerdown', handleUserInteraction);
+      document.removeEventListener('touchstart', handleUserInteraction);
     };
     document.addEventListener('click', handleUserInteraction, { once: true });
     document.addEventListener('keydown', handleUserInteraction, { once: true });
+    // Mobile/PWA: click may not fire reliably; prime on pointer/touch too.
+    document.addEventListener('pointerdown', handleUserInteraction, { once: true });
+    document.addEventListener('touchstart', handleUserInteraction, { once: true });
     return () => {
       document.removeEventListener('click', handleUserInteraction);
       document.removeEventListener('keydown', handleUserInteraction);
+      document.removeEventListener('pointerdown', handleUserInteraction);
+      document.removeEventListener('touchstart', handleUserInteraction);
     };
   }, []);
 
@@ -1826,6 +1836,9 @@ const AdminDashboard = () => {
     try {
       const Ac = window.AudioContext || (window as any).webkitAudioContext;
       if (!Ac) return;
+      if (audioContextRef.current?.state === 'closed') {
+        audioContextRef.current = null;
+      }
       if (!audioContextRef.current) {
         audioContextRef.current = new Ac();
       }
@@ -1889,6 +1902,9 @@ const AdminDashboard = () => {
     try {
       const Ac = window.AudioContext || (window as any).webkitAudioContext;
       if (!Ac) return;
+      if (audioContextRef.current?.state === 'closed') {
+        audioContextRef.current = null;
+      }
       if (!audioContextRef.current) {
         audioContextRef.current = new Ac();
       }
