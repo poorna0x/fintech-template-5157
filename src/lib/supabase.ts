@@ -297,6 +297,10 @@ export const CUSTOMER_ROW_COLUMNS = [
   'updated_at',
 ].join(',');
 
+/** Assignment / map / calling: exclude INACTIVE; null treated as active (legacy rows). */
+const TECHNICIAN_ROSTER_ACTIVE_OR =
+  'account_status.is.null,account_status.eq.ACTIVE,account_status.eq.SUSPENDED';
+
 /** Technician list/detail without password / push_subscription. */
 const TECHNICIAN_ROW_COLUMNS = [
   'id',
@@ -1978,27 +1982,35 @@ export const db = {
       return { data, error };
     },
     
-    async getAll(limit?: number) {
+    /**
+     * @param activeRosterOnly When true, excludes INACTIVE (map / assignment lists). When false or omitted, returns everyone (Settings, analytics, salary name lookup, duplicate checks).
+     */
+    async getAll(limit?: number, options?: { activeRosterOnly?: boolean }) {
+      const activeOnly = options?.activeRosterOnly === true;
       let query = supabase
         .from('technicians')
         .select(TECHNICIAN_ROW_COLUMNS)
         .order('created_at', { ascending: false });
-      
-      // Add limit if provided to reduce data transfer
+      if (activeOnly) {
+        query = query.or(TECHNICIAN_ROSTER_ACTIVE_OR);
+      }
       if (limit && limit > 0) {
         query = query.limit(limit);
       }
-      
       const { data, error } = await query;
       return { data, error };
     },
 
     /** Admin list without live GPS blob — use `getById` / `reload` / measure-distance refresh for `current_location`. */
-    async getAllForDashboard(limit?: number) {
+    async getAllForDashboard(limit?: number, options?: { activeRosterOnly?: boolean }) {
+      const activeOnly = options?.activeRosterOnly !== false;
       let query = supabase
         .from('technicians')
         .select(TECHNICIAN_DASHBOARD_COLUMNS)
         .order('created_at', { ascending: false });
+      if (activeOnly) {
+        query = query.or(TECHNICIAN_ROSTER_ACTIVE_OR);
+      }
       if (limit && limit > 0) {
         query = query.limit(limit);
       }
@@ -2006,12 +2018,19 @@ export const db = {
       return { data, error };
     },
 
-    /** Slim list for dropdowns: id, full_name, phone, employee_id, status only (no *). */
-    async getList(limit?: number) {
+    /**
+     * Slim list for dropdowns.
+     * @param activeRosterOnly When true (default), excludes INACTIVE. Set false for payments/reports that must list former technicians.
+     */
+    async getList(limit?: number, options?: { activeRosterOnly?: boolean }) {
+      const activeOnly = options?.activeRosterOnly !== false;
       let query = supabase
         .from('technicians')
-        .select('id, full_name, phone, employee_id, status')
+        .select('id, full_name, phone, employee_id, status, account_status')
         .order('created_at', { ascending: false });
+      if (activeOnly) {
+        query = query.or(TECHNICIAN_ROSTER_ACTIVE_OR);
+      }
       if (limit && limit > 0) {
         query = query.limit(limit);
       }
@@ -2024,6 +2043,7 @@ export const db = {
         .from('technicians')
         .select(TECHNICIAN_ROW_COLUMNS)
         .eq('status', 'AVAILABLE')
+        .or(TECHNICIAN_ROSTER_ACTIVE_OR)
         .order('created_at', { ascending: false });
       
       return { data, error };

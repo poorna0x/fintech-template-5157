@@ -109,6 +109,7 @@ const Settings = () => {
     qrCode: '', // QR code image URL
     photo: '', // Technician photo URL
     baseSalary: 0,
+    accountStatus: 'ACTIVE' as 'ACTIVE' | 'INACTIVE' | 'SUSPENDED',
     visibleQrCodes: [] as string[], // Array of QR code IDs visible to this technician
     commonQrCodeIds: [] as string[] // Common QRs to show to this technician (below payment QR), multiple allowed
   });
@@ -228,7 +229,8 @@ const Settings = () => {
       photo: '',
       baseSalary: 0,
       visibleQrCodes: [],
-      commonQrCodeIds: []
+      commonQrCodeIds: [],
+      accountStatus: 'ACTIVE'
     });
     setNewlyCreatedTechnicianId(null);
     setAddTechnicianDialogOpen(true);
@@ -246,7 +248,8 @@ const Settings = () => {
       photo: (technician as any).photo || '',
       baseSalary: technician.salary?.baseSalary || 0,
       visibleQrCodes: technician.visibleQrCodes || [],
-      commonQrCodeIds: (technician as any).commonQrCodeIds || []
+      commonQrCodeIds: (technician as any).commonQrCodeIds || [],
+      accountStatus: (technician.account_status as 'ACTIVE' | 'INACTIVE' | 'SUSPENDED') || 'ACTIVE'
     });
     setNewlyCreatedTechnicianId(null);
     setEditTechnicianDialogOpen(true);
@@ -296,7 +299,6 @@ const Settings = () => {
         photo: technicianFormData.photo || null,
         visible_qr_codes: technicianFormData.visibleQrCodes || [],
         common_qr_code_ids: technicianFormData.commonQrCodeIds || [],
-        account_status: 'ACTIVE',
         skills: {
           serviceTypes: ['RO', 'SOFTENER', 'AC', 'APPLIANCE'],
           certifications: [],
@@ -334,6 +336,11 @@ const Settings = () => {
         updated_at: new Date().toISOString()
       };
 
+      technicianData.account_status =
+        editTechnicianDialogOpen && selectedTechnician
+          ? technicianFormData.accountStatus || 'ACTIVE'
+          : 'ACTIVE';
+
       // Add hashed password if provided
       if (hashedPassword) {
         technicianData.password = hashedPassword;
@@ -357,7 +364,7 @@ const Settings = () => {
         
         // Check for duplicate employee_id or phone before creating
         // OPTIMIZATION: Limit check to recent technicians (duplicates are usually recent)
-        const { data: existingTechnicians } = await db.technicians.getAll(500);
+        const { data: existingTechnicians } = await db.technicians.getAll(500, { activeRosterOnly: false });
         if (existingTechnicians) {
           const duplicateEmployeeId = existingTechnicians.find(
             (t: any) => t.employee_id === technicianData.employee_id
@@ -422,19 +429,6 @@ const Settings = () => {
     } catch (error) {
       console.error('Error saving technician:', error);
       toast.error('Failed to save technician');
-    }
-  };
-
-  const handleDeleteTechnician = async (technicianId: string) => {
-    try {
-      const { error } = await db.technicians.delete(technicianId);
-      if (error) throw error;
-      
-      await loadTechnicians();
-      toast.success('Technician deleted successfully');
-    } catch (error) {
-      console.error('Error deleting technician:', error);
-      toast.error('Failed to delete technician');
     }
   };
 
@@ -1277,6 +1271,73 @@ const Settings = () => {
     );
   }
 
+  const activeTechniciansList = technicians.filter((t) => t.account_status !== 'INACTIVE');
+  const inactiveTechniciansList = technicians.filter((t) => t.account_status === 'INACTIVE');
+
+  const renderTechnicianCard = (technician: Technician) => (
+    <Card key={technician.id} className="hover:shadow-md transition-shadow">
+      <CardContent className="p-4">
+        <div className="flex items-start justify-between mb-3 gap-2">
+          <div className="flex-1 min-w-0">
+            <h3 className="font-semibold text-gray-900 text-sm sm:text-base truncate">{technician.fullName}</h3>
+            <p className="text-xs sm:text-sm text-gray-600 truncate">{technician.employeeId}</p>
+          </div>
+          <Badge
+            variant={technician.account_status === 'ACTIVE' ? 'default' : 'secondary'}
+            className="text-xs shrink-0"
+          >
+            {technician.account_status}
+          </Badge>
+        </div>
+
+        <div className="space-y-1.5 sm:space-y-2 text-xs sm:text-sm text-gray-600 mb-4">
+          <div className="flex items-start gap-2">
+            <span className="font-medium shrink-0">Email:</span>
+            <span className="truncate">{technician.email}</span>
+          </div>
+          <div className="flex items-center gap-2">
+            <span className="font-medium shrink-0">Phone:</span>
+            <span className="truncate">{technician.phone}</span>
+          </div>
+        </div>
+
+        <div className="mb-3 p-2 bg-blue-50 dark:bg-blue-900/20 rounded border border-blue-200 dark:border-blue-800">
+          <div className="flex items-center justify-between gap-2">
+            <div className="flex-1 min-w-0">
+              <p className="text-xs font-medium text-blue-900 dark:text-blue-200 mb-1">ID Card Link:</p>
+              <p className="text-xs text-blue-700 dark:text-blue-300 truncate font-mono">
+                {generateIdCardLink(technician.id)}
+              </p>
+            </div>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => {
+                navigator.clipboard.writeText(generateIdCardLink(technician.id));
+                toast.success('ID Card link copied!');
+              }}
+              className="shrink-0 h-8 w-8 p-0"
+            >
+              <Copy className="w-3 h-3" />
+            </Button>
+          </div>
+        </div>
+
+        <div className="flex flex-wrap items-center gap-2">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => handleEditTechnician(technician)}
+            className="flex-1 min-w-[5rem] text-xs sm:text-sm"
+          >
+            <Edit className="w-3 h-3 sm:w-4 sm:h-4 mr-1" />
+            Edit
+          </Button>
+        </div>
+      </CardContent>
+    </Card>
+  );
+
   return (
     <div className="min-h-screen bg-gray-50">
       {/* Header - sticky so Back stays visible when scrolling */}
@@ -1928,7 +1989,7 @@ const Settings = () => {
                       Technician Management
                     </CardTitle>
                   <CardDescription className="text-sm mt-1">
-                      Manage technician accounts and permissions
+                      Use Edit → account status to deactivate. Inactive staff stay in the database but are hidden from assignments, maps, Technician Payments, and salary totals.
                     </CardDescription>
                   </div>
                 <Button 
@@ -1941,102 +2002,28 @@ const Settings = () => {
                   </Button>
                 </div>
               </CardHeader>
-            <CardContent className="p-4 sm:p-6">
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-                  {technicians.map((technician) => (
-                    <Card key={technician.id} className="hover:shadow-md transition-shadow">
-                      <CardContent className="p-4">
-                      <div className="flex items-start justify-between mb-3 gap-2">
-                        <div className="flex-1 min-w-0">
-                          <h3 className="font-semibold text-gray-900 text-sm sm:text-base truncate">{technician.fullName}</h3>
-                          <p className="text-xs sm:text-sm text-gray-600 truncate">{technician.employeeId}</p>
-                          </div>
-                          <Badge 
-                            variant={technician.account_status === 'ACTIVE' ? 'default' : 'secondary'}
-                          className="text-xs shrink-0"
-                          >
-                            {technician.account_status}
-                          </Badge>
-                        </div>
-                        
-                      <div className="space-y-1.5 sm:space-y-2 text-xs sm:text-sm text-gray-600 mb-4">
-                        <div className="flex items-start gap-2">
-                          <span className="font-medium shrink-0">Email:</span>
-                          <span className="truncate">{technician.email}</span>
-                          </div>
-                          <div className="flex items-center gap-2">
-                          <span className="font-medium shrink-0">Phone:</span>
-                          <span className="truncate">{technician.phone}</span>
-                          </div>
-                        </div>
-
-                        {/* ID Card Link */}
-                        <div className="mb-3 p-2 bg-blue-50 dark:bg-blue-900/20 rounded border border-blue-200 dark:border-blue-800">
-                          <div className="flex items-center justify-between gap-2">
-                            <div className="flex-1 min-w-0">
-                              <p className="text-xs font-medium text-blue-900 dark:text-blue-200 mb-1">ID Card Link:</p>
-                              <p className="text-xs text-blue-700 dark:text-blue-300 truncate font-mono">
-                                {generateIdCardLink(technician.id)}
-                              </p>
-                            </div>
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              onClick={() => {
-                                navigator.clipboard.writeText(generateIdCardLink(technician.id));
-                                toast.success('ID Card link copied!');
-                              }}
-                              className="shrink-0 h-8 w-8 p-0"
-                            >
-                              <Copy className="w-3 h-3" />
-                            </Button>
-                          </div>
-                        </div>
-
-                        <div className="flex items-center gap-2">
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={() => handleEditTechnician(technician)}
-                          className="flex-1 text-xs sm:text-sm"
-                          >
-                          <Edit className="w-3 h-3 sm:w-4 sm:h-4 mr-1" />
-                            Edit
-                          </Button>
-                          <AlertDialog>
-                            <AlertDialogTrigger asChild>
-                            <Button 
-                              variant="outline" 
-                              size="sm" 
-                              className="text-red-600 hover:text-red-700 px-2 sm:px-3"
-                            >
-                              <Trash2 className="w-3 h-3 sm:w-4 sm:h-4" />
-                              </Button>
-                            </AlertDialogTrigger>
-                          <AlertDialogContent className="mx-4 sm:mx-0">
-                              <AlertDialogHeader>
-                                <AlertDialogTitle>Delete Technician</AlertDialogTitle>
-                                <AlertDialogDescription>
-                                  Are you sure you want to delete {technician.fullName}? This action cannot be undone.
-                                </AlertDialogDescription>
-                              </AlertDialogHeader>
-                            <AlertDialogFooter className="flex-col sm:flex-row gap-2">
-                              <AlertDialogCancel className="w-full sm:w-auto">Cancel</AlertDialogCancel>
-                                <AlertDialogAction
-                                  onClick={() => handleDeleteTechnician(technician.id)}
-                                className="bg-red-600 hover:bg-red-700 w-full sm:w-auto"
-                                >
-                                  Delete
-                                </AlertDialogAction>
-                              </AlertDialogFooter>
-                            </AlertDialogContent>
-                          </AlertDialog>
-                        </div>
-                      </CardContent>
-                    </Card>
-                  ))}
+            <CardContent className="p-4 sm:p-6 space-y-8">
+              <div>
+                <h3 className="text-sm font-semibold text-gray-800 mb-3">Active team</h3>
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                  {activeTechniciansList.map((technician) => renderTechnicianCard(technician))}
                 </div>
-              </CardContent>
+                {activeTechniciansList.length === 0 && (
+                  <p className="text-sm text-gray-500 py-4">No active technicians yet. Add one above.</p>
+                )}
+              </div>
+              {inactiveTechniciansList.length > 0 && (
+                <div>
+                  <h3 className="text-sm font-semibold text-gray-800 mb-1">Inactive</h3>
+                  <p className="text-xs text-gray-500 mb-3">
+                    Hidden from assignments and maps. Historical jobs and payments are unchanged.
+                  </p>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                    {inactiveTechniciansList.map((technician) => renderTechnicianCard(technician))}
+                  </div>
+                </div>
+              )}
+            </CardContent>
             </Card>
 
           {/* Location Tracking Setting */}
@@ -2239,6 +2226,32 @@ const Settings = () => {
                   <p className="text-xs text-gray-500 mt-1">Monthly basic salary for this technician</p>
                 </div>
               </div>
+              {editTechnicianDialogOpen && (
+                <div className="rounded-lg border border-gray-200 bg-gray-50/80 p-3 sm:p-4 space-y-2">
+                  <Label htmlFor="accountStatus">Account status</Label>
+                  <Select
+                    value={technicianFormData.accountStatus}
+                    onValueChange={(v) =>
+                      setTechnicianFormData((prev) => ({
+                        ...prev,
+                        accountStatus: v as 'ACTIVE' | 'INACTIVE' | 'SUSPENDED'
+                      }))
+                    }
+                  >
+                    <SelectTrigger id="accountStatus" className="bg-white">
+                      <SelectValue placeholder="Select status" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="ACTIVE">Active — roster, payments & salary lists, can log in</SelectItem>
+                      <SelectItem value="INACTIVE">Inactive — hidden from roster, maps, and salary/payment screens</SelectItem>
+                      <SelectItem value="SUSPENDED">Suspended — cannot log in; adjust in roster filters as needed</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <p className="text-xs text-gray-600">
+                    Inactive keeps all job and payment history; change back to Active to show them in Technician Payments again.
+                  </p>
+                </div>
+              )}
             </div>
             
             <div className="space-y-3 sm:space-y-4">

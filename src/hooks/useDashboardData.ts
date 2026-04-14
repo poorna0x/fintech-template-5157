@@ -107,7 +107,7 @@ export const useDashboardData = () => {
       // OPTIMIZATION: Use reasonable limits to reduce data transfer (Supabase free tier)
       const [customersResult, techniciansResult, amcContractsResult, jobCountsResult] = await Promise.all([
         db.customers.getAllSlim(1000), // Limit to 1000 most recent customers (slim)
-        db.technicians.getAll(100), // Limit to 100 technicians
+        db.technicians.getAll(100, { activeRosterOnly: true }),
         supabase
           .from('amc_contracts')
           .select('customer_id, status')
@@ -161,7 +161,7 @@ export const useDashboardData = () => {
   const reloadTechnicians = useCallback(async () => {
     try {
       // OPTIMIZATION: Use limit to reduce data transfer
-      const { data, error } = await db.technicians.getAll(100);
+      const { data, error } = await db.technicians.getAll(100, { activeRosterOnly: true });
       if (error) {
         console.error('Error reloading technicians:', error);
         return;

@@ -883,7 +883,7 @@ const AdminDashboard = () => {
   const reloadTechnicians = useCallback(async (options?: { transition?: boolean }) => {
     try {
       // OPTIMIZATION: Use limit to reduce data transfer
-      const { data, error } = await db.technicians.getAll(100);
+      const { data, error } = await db.technicians.getAll(100, { activeRosterOnly: true });
       if (error) {
         console.error('Error reloading technicians:', error);
         return;

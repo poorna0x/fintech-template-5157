@@ -415,7 +415,7 @@ const Analytics = () => {
             const pendingEarnings = techPayments.filter((p: any) => p.payment_status === 'PENDING').reduce((s: number, p: any) => s + (Number(p.commission_amount) || 0), 0);
             return {
               id: tech.id,
-              name: tech.full_name,
+              name: `${tech.full_name}${tech.account_status === 'INACTIVE' ? ' (Inactive)' : ''}`,
               totalJobs: techJobs.length,
               completedJobs: techJobs.filter((j: any) => j.status === 'COMPLETED').length,
               totalEarnings,
@@ -707,11 +707,11 @@ const Analytics = () => {
         
         const tech: any = technicians.find((t: any) => t.id === techId);
         if (!tech) return;
-        
+
         if (!technicianStatsMap[techId]) {
           technicianStatsMap[techId] = {
             id: techId,
-            name: (tech as any).full_name || (tech as any).fullName || 'Unknown',
+            name: `${(tech as any).full_name || (tech as any).fullName || 'Unknown'}${tech.account_status === 'INACTIVE' ? ' (Inactive)' : ''}`,
             totalJobs: 0,
             completedJobs: 0,
             periodEarnings: 0,
@@ -856,11 +856,11 @@ const Analytics = () => {
         
         const tech: any = technicians.find((t: any) => t.id === techId);
         if (!tech) return;
-        
+
         if (!softenerTechnicianStatsMap[techId]) {
           softenerTechnicianStatsMap[techId] = {
             id: techId,
-            name: (tech as any).full_name || (tech as any).fullName || 'Unknown',
+            name: `${(tech as any).full_name || (tech as any).fullName || 'Unknown'}${tech.account_status === 'INACTIVE' ? ' (Inactive)' : ''}`,
             totalJobs: 0,
             completedJobs: 0,
             periodEarnings: 0

@@ -969,7 +969,7 @@ const TechnicianDashboard = () => {
         // were missing from the roster and got no common_qr_code_ids / visible_qr_codes (looked "unassigned").
         const [commonResult, allTechniciansResult, technicianCommonQrResult, meResult] = await Promise.all([
           db.commonQrCodes.getAll(),
-          db.technicians.getAll(100),
+          db.technicians.getAll(100, { activeRosterOnly: true }),
           db.technicianCommonQr.getAll(),
           db.technicians.getById(technicianId),
         ]);

@@ -191,6 +191,9 @@ export interface Technician {
     maxDistance: number; // in km
   };
   
+  // Account: INACTIVE = removed from roster; row kept for history (jobs, payments, analytics).
+  account_status?: 'ACTIVE' | 'INACTIVE' | 'SUSPENDED';
+
   // Current Status
   status: 'AVAILABLE' | 'BUSY' | 'OFFLINE' | 'ON_BREAK';
   currentLocation?: {
