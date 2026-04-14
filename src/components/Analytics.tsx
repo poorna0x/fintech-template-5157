@@ -119,11 +119,12 @@ interface AnalyticsData {
     avgTds: number | null;
     avgCallBilling: number;
   }>;
-  /** Completed Direct call / Website jobs in the period, credited to the first completed lead that is not Direct, Website, or Google-Leads. Return complaint jobs are included. Loaded on demand. */
+  /** Loaded on demand: Direct/Website completed jobs in period vs first attributed lead source; technician column = last completed job before each conversion. */
   directWebsiteConversions?: {
     totalJobs: number;
     totalRevenue: number;
     byOriginalSource: Array<{ leadType: string; count: number; revenue: number }>;
+    byTechnician: Array<{ technicianId: string; technicianName: string; count: number; revenue: number }>;
   };
 }
 
@@ -1263,7 +1264,7 @@ const Analytics = () => {
             prev
               ? {
                   ...prev,
-                  directWebsiteConversions: { totalJobs: 0, totalRevenue: 0, byOriginalSource: [] }
+                  directWebsiteConversions: { totalJobs: 0, totalRevenue: 0, byOriginalSource: [], byTechnician: [] }
                 }
               : prev
           );
@@ -1298,6 +1299,7 @@ const Analytics = () => {
       }
 
       const sourceAgg: Record<string, { count: number; revenue: number; display: string }> = {};
+      const techAgg: Record<string, { count: number; revenue: number }> = {};
 
       const completionCompletedInPeriod = (job: any): boolean => {
         if (job.status !== 'COMPLETED') return false;
@@ -1342,6 +1344,26 @@ const Analytics = () => {
           }
           sourceAgg[groupKey].count += 1;
           sourceAgg[groupKey].revenue += amount;
+
+          const convCreated = new Date(job.created_at || 0).getTime();
+          const previousCompleted = sorted.filter((prevJob: any) => {
+            if (!prevJob?.id || prevJob.id === job.id) return false;
+            if (prevJob.status !== 'COMPLETED') return false;
+            const prevDone = getJobCompletionTime(prevJob);
+            if (!prevDone) return false;
+            return prevDone.getTime() < convCreated;
+          });
+          if (previousCompleted.length > 0) {
+            const lastCompleted = previousCompleted.sort(
+              (a: any, b: any) =>
+                getJobCompletionTime(b)!.getTime() - getJobCompletionTime(a)!.getTime()
+            )[0];
+            const tid = String(lastCompleted.assigned_technician_id || lastCompleted.assignedTechnicianId || '').trim();
+            const tKey = tid || '__unassigned__';
+            if (!techAgg[tKey]) techAgg[tKey] = { count: 0, revenue: 0 };
+            techAgg[tKey].count += 1;
+            techAgg[tKey].revenue += amount;
+          }
         }
       }
 
@@ -1352,11 +1374,26 @@ const Analytics = () => {
       const totalJobs = byOriginalSource.reduce((s, x) => s + x.count, 0);
       const totalRevenue = byOriginalSource.reduce((s, x) => s + x.revenue, 0);
 
+      let byTechnician: Array<{ technicianId: string; technicianName: string; count: number; revenue: number }> = [];
+      if (Object.keys(techAgg).length > 0) {
+        const { data: techniciansRows } = await db.technicians.getAll(100);
+        const technicians = techniciansRows || [];
+        byTechnician = Object.entries(techAgg)
+          .map(([technicianId, v]) => {
+            const name =
+              technicianId === '__unassigned__'
+                ? 'Unassigned'
+                : (technicians.find((t: any) => t.id === technicianId)?.full_name as string) || 'Unknown';
+            return { technicianId, technicianName: name, count: v.count, revenue: v.revenue };
+          })
+          .sort((a, b) => b.revenue - a.revenue || b.count - a.count);
+      }
+
       setAnalytics((prev) =>
         prev
           ? {
               ...prev,
-              directWebsiteConversions: { totalJobs, totalRevenue, byOriginalSource }
+              directWebsiteConversions: { totalJobs, totalRevenue, byOriginalSource, byTechnician }
             }
           : prev
       );
@@ -1979,16 +2016,12 @@ const Analytics = () => {
         </CardContent>
       </Card>
 
-      {/* Direct call / Website conversions from original lead sources — load on demand */}
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <PhoneForwarded className="w-5 h-5" />
             Direct / website conversions
           </CardTitle>
-          <CardDescription>
-            Same period as the analytics filters ({getPeriodLabel()}). With a date range, loads all jobs for each customer who had any job in that window so first-touch can include earlier work. All time uses the same 5,000-job cap as the main analytics load. Counts completed Direct call / Website jobs in range (including return complaint jobs), credited to the first completed lead that is not Direct, Website, or Google-Leads.
-          </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
           <Button
@@ -2002,22 +2035,16 @@ const Analytics = () => {
                 Loading...
               </>
             ) : (
-              'Load direct / website conversions'
+              'Load'
             )}
           </Button>
           {analytics.directWebsiteConversions &&
             analytics.directWebsiteConversions.byOriginalSource.length > 0 && (
-              <div className="space-y-3">
+              <div className="space-y-4">
                 <div className="flex flex-wrap gap-6 text-sm">
-                  <span>
-                    <span className="text-gray-500">Conversion jobs in period: </span>
-                    <span className="font-semibold">{analytics.directWebsiteConversions.totalJobs}</span>
-                  </span>
-                  <span>
-                    <span className="text-gray-500">Revenue (those jobs): </span>
-                    <span className="font-semibold text-green-600">
-                      ₹ {formatCurrency(analytics.directWebsiteConversions.totalRevenue)}
-                    </span>
+                  <span className="font-semibold">{analytics.directWebsiteConversions.totalJobs} jobs</span>
+                  <span className="font-semibold text-green-600">
+                    ₹ {formatCurrency(analytics.directWebsiteConversions.totalRevenue)}
                   </span>
                 </div>
                 <div className="overflow-x-auto">
@@ -2025,7 +2052,7 @@ const Analytics = () => {
                     <TableHeader>
                       <TableRow>
                         <TableHead>First-touch lead source</TableHead>
-                        <TableHead className="text-right">Conversion jobs</TableHead>
+                        <TableHead className="text-right">Jobs</TableHead>
                         <TableHead className="text-right">Revenue</TableHead>
                       </TableRow>
                     </TableHeader>
@@ -2042,10 +2069,34 @@ const Analytics = () => {
                     </TableBody>
                   </Table>
                 </div>
+                {(analytics.directWebsiteConversions.byTechnician ?? []).length > 0 && (
+                  <div className="overflow-x-auto">
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead>Technician</TableHead>
+                          <TableHead className="text-right">Returns</TableHead>
+                          <TableHead className="text-right">Revenue</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {(analytics.directWebsiteConversions.byTechnician ?? []).map((row) => (
+                          <TableRow key={row.technicianId}>
+                            <TableCell className="font-medium">{row.technicianName}</TableCell>
+                            <TableCell className="text-right">{row.count}</TableCell>
+                            <TableCell className="text-right font-medium text-green-600">
+                              ₹ {formatCurrency(row.revenue)}
+                            </TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </div>
+                )}
               </div>
             )}
           {analytics.directWebsiteConversions && analytics.directWebsiteConversions.totalJobs === 0 && (
-            <p className="text-sm text-gray-500">No matching conversion jobs for this period.</p>
+            <p className="text-sm text-gray-500">None for this period.</p>
           )}
         </CardContent>
       </Card>

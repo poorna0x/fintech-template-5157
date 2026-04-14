@@ -1675,6 +1675,7 @@ export const db = {
         'end_time',
         'requirements',
         'assigned_by',
+        'assigned_technician_id',
         'payment_amount',
         'actual_cost',
         'service_sub_type'
@@ -1727,6 +1728,7 @@ export const db = {
         'end_time',
         'requirements',
         'assigned_by',
+        'assigned_technician_id',
         'service_sub_type'
       ].join(', ');
       const unique = [...new Set((customerIds || []).filter(Boolean))];
@@ -1768,6 +1770,7 @@ export const db = {
         'end_time',
         'requirements',
         'assigned_by',
+        'assigned_technician_id',
         'payment_amount',
         'actual_cost',
         'service_sub_type'
