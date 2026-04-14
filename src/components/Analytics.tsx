@@ -1013,6 +1013,7 @@ const Analytics = () => {
           .map(([serviceType, stats]) => ({ serviceType, ...stats }))
           .sort((a, b) => b.amount - a.amount),
         paymentMethodBreakdown: Object.entries(paymentMethodMap)
+          .filter(([method, stats]) => !(method === 'Unknown' && stats.amount === 0))
           .map(([method, stats]) => ({ method, ...stats }))
           .sort((a, b) => b.amount - a.amount),
         dailyStats,
@@ -1030,6 +1031,7 @@ const Analytics = () => {
             .map(([serviceType, stats]) => ({ serviceType, ...stats }))
             .sort((a, b) => b.amount - a.amount),
           paymentMethodBreakdown: Object.entries(softenerPaymentMethodMap)
+            .filter(([method, stats]) => !(method === 'Unknown' && stats.amount === 0))
             .map(([method, stats]) => ({ method, ...stats }))
             .sort((a, b) => b.amount - a.amount),
           technicianStats: Object.values(softenerTechnicianStatsMap)
