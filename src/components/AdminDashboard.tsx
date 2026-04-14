@@ -146,6 +146,8 @@ const AdminDashboard = () => {
   const [jobs, setJobs] = useState<Job[]>([]);
   const [allFollowUpJobs, setAllFollowUpJobs] = useState<Job[]>([]); // All follow-up jobs for glow effect
   const [technicians, setTechnicians] = useState<Technician[]>([]);
+  // Full technician list for historical displays (Completed By, reports, etc.). Includes INACTIVE.
+  const [techniciansForReports, setTechniciansForReports] = useState<Technician[]>([]);
   const [loading, setLoading] = useState(true);
   const [customerAMCStatus, setCustomerAMCStatus] = useState<Record<string, boolean>>({}); // Map customer ID to hasActiveAMC
   const [customerPriorServiceStatus, setCustomerPriorServiceStatus] = useState<Record<string, boolean>>({}); // ≥1 completed job
@@ -1419,8 +1421,9 @@ const AdminDashboard = () => {
       });
       
       // Don't load all customers – list comes from jobs (useEffect below). Duplicate check uses a single query when user adds customer.
-      const [techniciansResult, amcContractsResult, jobCountsResult, priorCompletedMap] = await Promise.all([
-        db.technicians.getAllForDashboard(100),
+      const [techniciansResult, techniciansAllResult, amcContractsResult, jobCountsResult, priorCompletedMap] = await Promise.all([
+        db.technicians.getAllForDashboard(100), // roster list (excludes INACTIVE by default)
+        db.technicians.getAll(500, { activeRosterOnly: false }), // reports/history list (includes INACTIVE)
         supabase
           .from('amc_contracts')
           .select('customer_id, status')
@@ -1454,6 +1457,14 @@ const AdminDashboard = () => {
         setTechnicians(transformedTechnicians);
       } else {
         setTechnicians([]);
+      }
+
+      if (techniciansAllResult?.data) {
+        const transformedAll = techniciansAllResult.data.map(transformTechnicianData);
+        setTechniciansForReports(transformedAll);
+      } else {
+        // Fallback: at least keep roster list for lookups.
+        setTechniciansForReports(techniciansResult.data ? techniciansResult.data.map(transformTechnicianData) : []);
       }
 
       // Load brands/models and jobs in parallel; await so loading stays true until done (avoids double refresh blink)
@@ -9585,7 +9596,9 @@ const AdminDashboard = () => {
                           if (completedBy === 'admin' || completedBy === 'Admin') {
                             completedByName = 'Admin';
                           } else {
-                            const completedByTechnician = technicians.find(tech => tech.id === completedBy);
+                            const completedByTechnician = (techniciansForReports.length > 0 ? techniciansForReports : technicians).find(
+                              (tech) => tech.id === completedBy
+                            );
                             completedByName = completedByTechnician?.fullName || 'Technician';
                           }
                         }
@@ -11385,7 +11398,7 @@ const AdminDashboard = () => {
         open={customerReportDialogOpen}
         onOpenChange={setCustomerReportDialogOpen}
         customer={selectedCustomerForReport}
-        technicians={technicians}
+        technicians={techniciansForReports.length > 0 ? techniciansForReports : technicians}
         onPhotoClick={(url, index, total) => {
           setSelectedPhoto({ url, index, total });
           setPhotoViewerOpen(true);
@@ -11404,7 +11417,7 @@ const AdminDashboard = () => {
         job={selectedCompletedJob}
         editData={completedJobEditData}
         onEditDataChange={setCompletedJobEditData}
-        technicians={technicians}
+        technicians={techniciansForReports.length > 0 ? techniciansForReports : technicians}
         onSave={async () => {
                 try {
                   if (!selectedCompletedJob) return;
