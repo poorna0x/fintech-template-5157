@@ -5,6 +5,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
 import { DatePicker } from '@/components/ui/date-picker';
+import { Checkbox } from '@/components/ui/checkbox';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import {
   AlertDialog,
@@ -455,6 +456,12 @@ export function SettingsPendingPaymentsDialogV2({
   const [completeConfirmOpen, setCompleteConfirmOpen] = useState(false);
   const [completeConfirmBusy, setCompleteConfirmBusy] = useState(false);
   const [completeTarget, setCompleteTarget] = useState<PendingPaymentReminder | null>(null);
+  const [offerWhatsAppAfterComplete, setOfferWhatsAppAfterComplete] = useState(true);
+
+  const [postCompleteWhatsappOpen, setPostCompleteWhatsappOpen] = useState(false);
+  const [postCompleteWhatsappTarget, setPostCompleteWhatsappTarget] = useState<PendingPaymentReminder | null>(null);
+  /** Captured before reload — `load()` drops completed customers from `customerLabels`. */
+  const [postCompleteCustomerLabel, setPostCompleteCustomerLabel] = useState<CustomerLabel | null>(null);
 
   const openWhatsApp = (phone: string, message: string) => {
     if (!phone) return;
@@ -492,6 +499,23 @@ For any help/support:
 🌐 Website: https://hydrogenro.com
 
 Thanks & regards 🙏`;
+  };
+
+  const buildPaymentReceivedMessage = (payment: PendingPaymentReminder, customer: CustomerLabel) => {
+    const amount = Number(payment.amount_pending) || 0;
+    const formattedAmount = amount.toLocaleString('en-IN', { maximumFractionDigits: 2 });
+
+    return `Hi ${customer.name} 😊
+
+Thank you! We have received your payment of ₹${formattedAmount}.
+
+We appreciate your trust. For any help or support:
+📞 Phone: 8884944288
+📧 Email: info@hydrogenro.com
+🌐 Website: https://hydrogenro.com
+
+Thanks & regards 🙏
+Hydrogen RO Team`;
   };
 
   useEffect(() => {
@@ -617,12 +641,18 @@ Thanks & regards 🙏`;
   };
 
   const handleMarkCompleted = (r: Reminder) => {
+    setOfferWhatsAppAfterComplete(true);
     setCompleteTarget(r as PendingPaymentReminder);
     setCompleteConfirmOpen(true);
   };
 
   const confirmMarkCompleted = async () => {
     if (!completeTarget) return;
+    const marked = completeTarget;
+    const entityId = marked.entity_id as string | undefined;
+    // Snapshot before load(): reload rebuilds `customerLabels` from pending rows only, so the
+    // completed customer disappears from the map and the WhatsApp dialog would render empty.
+    let customerForReceipt = entityId ? customerLabels[entityId] : undefined;
     setCompleteConfirmBusy(true);
     try {
       const { error } = await db.reminders.update(completeTarget.id, { completed_at: new Date().toISOString() });
@@ -631,6 +661,24 @@ Thanks & regards 🙏`;
       await load(); // reload current page
       setCompleteConfirmOpen(false);
       setCompleteTarget(null);
+
+      if (offerWhatsAppAfterComplete) {
+        if (!customerForReceipt && entityId) {
+          const { data, error: custErr } = await db.customers.getById(entityId);
+          if (!custErr && data) customerForReceipt = getCustomerLabelFromRow(data);
+        }
+        const primary = customerForReceipt?.phone?.trim();
+        const alternate = customerForReceipt?.alternatePhone?.trim();
+        if (!customerForReceipt) {
+          toast.error('Customer info not loaded — open WhatsApp from the customer profile if needed');
+        } else if (!primary && !alternate) {
+          toast.error('Customer phone number is missing — add a phone to send WhatsApp');
+        } else {
+          setPostCompleteCustomerLabel(customerForReceipt);
+          setPostCompleteWhatsappTarget(marked);
+          setPostCompleteWhatsappOpen(true);
+        }
+      }
     } catch (err: any) {
       toast.error(err?.message || 'Failed to mark collected');
     } finally {
@@ -860,6 +908,17 @@ Thanks & regards 🙏`;
                 This will mark this pending payment as completed and remove it from the pending list.
               </AlertDialogDescription>
             </AlertDialogHeader>
+            <div className="flex items-start gap-3 py-2 px-1">
+              <Checkbox
+                id="offer-wa-after-complete"
+                checked={offerWhatsAppAfterComplete}
+                onCheckedChange={(v) => setOfferWhatsAppAfterComplete(v === true)}
+                className="mt-0.5"
+              />
+              <label htmlFor="offer-wa-after-complete" className="text-sm text-muted-foreground leading-snug cursor-pointer">
+                After marking, offer to send a WhatsApp message confirming the amount received (thanks)
+              </label>
+            </div>
             <AlertDialogFooter className="flex-col sm:flex-row gap-2">
               <AlertDialogCancel>Cancel</AlertDialogCancel>
               <AlertDialogAction
@@ -872,6 +931,126 @@ Thanks & regards 🙏`;
             </AlertDialogFooter>
           </AlertDialogContent>
         </AlertDialog>
+
+        <Dialog
+          open={postCompleteWhatsappOpen}
+          onOpenChange={(o) => {
+            setPostCompleteWhatsappOpen(o);
+            if (!o) {
+              setPostCompleteWhatsappTarget(null);
+              setPostCompleteCustomerLabel(null);
+            }
+          }}
+        >
+          <DialogContent className="sm:max-w-2xl max-h-[90vh] overflow-y-auto p-4 sm:p-6">
+            {postCompleteWhatsappTarget && postCompleteCustomerLabel && (
+              <>
+                {(() => {
+                  const customer = postCompleteCustomerLabel;
+                  const primaryPhone = customer?.phone;
+                  const alternatePhone = customer?.alternatePhone;
+                  const message = buildPaymentReceivedMessage(postCompleteWhatsappTarget, customer);
+                  const hasAlternate = !!alternatePhone && alternatePhone.trim() !== (primaryPhone || '').trim();
+
+                  return (
+                    <>
+                      <DialogHeader>
+                        <DialogTitle className="flex items-center gap-2">
+                          <WhatsAppIcon className="w-5 h-5 text-green-600" />
+                          Payment received — WhatsApp
+                        </DialogTitle>
+                        <DialogDescription>
+                          Send a short thank-you message confirming the received amount.
+                        </DialogDescription>
+                      </DialogHeader>
+
+                      <div className="py-4 space-y-3">
+                        <div className="bg-gray-50 rounded-lg p-4 space-y-2">
+                          <div className="text-sm text-gray-700">
+                            <strong>Customer:</strong> {customer?.name ?? 'Customer'}
+                          </div>
+                          <div className="text-sm text-gray-700">
+                            <strong>Primary:</strong> {primaryPhone ?? '—'}
+                          </div>
+                          {hasAlternate && (
+                            <div className="text-sm text-gray-700">
+                              <strong>Alternate:</strong> {alternatePhone}
+                            </div>
+                          )}
+                        </div>
+
+                        <div className="space-y-2">
+                          <Label>Message preview</Label>
+                          <div className="mt-1 p-3 bg-white border border-gray-200 rounded text-sm text-gray-700 whitespace-pre-wrap max-h-40 overflow-y-auto">
+                            {message}
+                          </div>
+                        </div>
+
+                        <div className="space-y-2">
+                          {hasAlternate ? (
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                              <Button
+                                variant="default"
+                                className="bg-green-600 hover:bg-green-700 text-white"
+                                onClick={() => {
+                                  if (!primaryPhone) return;
+                                  openWhatsApp(primaryPhone, message);
+                                  setPostCompleteWhatsappOpen(false);
+                                }}
+                              >
+                                <WhatsAppIcon className="w-4 h-4 mr-2" />
+                                Primary: {primaryPhone}
+                              </Button>
+                              <Button
+                                variant="default"
+                                className="bg-green-600 hover:bg-green-700 text-white"
+                                onClick={() => {
+                                  if (!alternatePhone) return;
+                                  openWhatsApp(alternatePhone, message);
+                                  setPostCompleteWhatsappOpen(false);
+                                }}
+                              >
+                                <WhatsAppIcon className="w-4 h-4 mr-2" />
+                                Alternate: {alternatePhone}
+                              </Button>
+                            </div>
+                          ) : (
+                            <Button
+                              variant="default"
+                              className="w-full bg-green-600 hover:bg-green-700 text-white"
+                              onClick={() => {
+                                const phone = primaryPhone || alternatePhone;
+                                if (!phone) return;
+                                openWhatsApp(phone, message);
+                                setPostCompleteWhatsappOpen(false);
+                              }}
+                            >
+                              <WhatsAppIcon className="w-4 h-4 mr-2" />
+                              Send WhatsApp message
+                            </Button>
+                          )}
+                        </div>
+                      </div>
+
+                      <DialogFooter>
+                        <Button
+                          variant="outline"
+                          onClick={() => {
+                            setPostCompleteWhatsappOpen(false);
+                            setPostCompleteWhatsappTarget(null);
+                            setPostCompleteCustomerLabel(null);
+                          }}
+                        >
+                          Skip
+                        </Button>
+                      </DialogFooter>
+                    </>
+                  );
+                })()}
+              </>
+            )}
+          </DialogContent>
+        </Dialog>
 
         <Dialog
           open={whatsappDialogOpen}
