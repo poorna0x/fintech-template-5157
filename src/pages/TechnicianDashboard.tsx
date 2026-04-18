@@ -714,7 +714,7 @@ const TechnicianDashboard = () => {
       // Use proper timeout handling - only timeout if request actually takes too long
       // The Supabase client already has a 30s timeout, so we don't need an additional timeout here
       // Just let the request complete naturally - if it's fast, it will be fast; if it's slow, Supabase will timeout
-      // Low-egress list fetch: no photos, no full customer location/address.
+      // Low-egress list fetch: no photo arrays; customer embed includes address/location for correct maps/dialog.
       const { data, error } = await db.jobs.getByTechnicianIdSlim(user.technicianId);
       console.timeEnd('loadAssignedJobs'); // Performance timing
       
@@ -8039,7 +8039,32 @@ const TechnicianDashboard = () => {
                   {(() => {
                     const customer = selectedJobForAddress.customer as any;
                     const address = customer?.address || (selectedJobForAddress as any)?.service_address;
-                    return formatAddressForDisplay(address) || 'No address available';
+                    const fullAddr = formatAddressForDisplay(address)?.trim();
+                    const vis = String(
+                      (customer?.address as any)?.visible_address ||
+                        customer?.visible_address ||
+                        ''
+                    ).trim();
+                    const loc = customer?.location as any;
+                    const locFa = String(loc?.formattedAddress || loc?.formatted_address || '').trim();
+                    const gLoc = typeof loc?.googleLocation === 'string' ? loc.googleLocation.trim() : '';
+
+                    if (fullAddr) return fullAddr;
+                    if (vis) return vis;
+                    if (locFa) return locFa;
+                    if (gLoc) {
+                      return (
+                        <a
+                          href={gLoc}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-blue-600 hover:text-blue-800 break-all underline-offset-2 hover:underline"
+                        >
+                          {gLoc}
+                        </a>
+                      );
+                    }
+                    return 'No address available';
                   })()}
                 </div>
               </div>

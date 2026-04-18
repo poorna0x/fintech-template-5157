@@ -195,7 +195,7 @@ const CUSTOMER_EMBED_FOR_TECH_JOBS = [
   'raw_water_tds',
 ].join(',');
 
-/** Customer embed for technician job list (low-egress). Address/location are loaded on-demand when opening dialogs. */
+/** Customer embed for technician job list (low-egress). Must include address + location so maps / full-address dialog match DB (slim omit caused fallback to stale job.service_address). */
 const CUSTOMER_EMBED_FOR_TECH_JOBS_SLIM = [
   'id',
   'customer_id',
@@ -203,6 +203,8 @@ const CUSTOMER_EMBED_FOR_TECH_JOBS_SLIM = [
   'phone',
   'alternate_phone',
   'visible_address',
+  'address',
+  'location',
   'service_type',
   'brand',
   'model',
