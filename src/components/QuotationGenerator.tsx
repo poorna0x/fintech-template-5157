@@ -81,10 +81,8 @@ export default function QuotationGenerator({ customer, onPrint }: QuotationGener
   const [newNote, setNewNote] = useState('');
   const [editingNoteIndex, setEditingNoteIndex] = useState<number | null>(null);
   const [validityNote, setValidityNote] = useState('This quotation is valid for 30 days from the date of issue. Prices are subject to change without prior notice.');
-  const [showValidityNote, setShowValidityNote] = useState(true);
-  const [termsConditions, setTermsConditions] = useState<string>(
-    '1. Goods once sold will not be taken back and refund or exchange will be as per company policy.\n2. Prices are subject to change without prior notice.\n3. Service warranty, if any, will be as per service agreement.'
-  );
+  const [showValidityNote, setShowValidityNote] = useState(false);
+  const [termsConditions, setTermsConditions] = useState<string>('');
   const [isEditingTerms, setIsEditingTerms] = useState(false);
   const [newTerm, setNewTerm] = useState('');
   const [gstOption, setGstOption] = useState<'normal' | 'exclude' | 'include'>('include'); // Default to including GST
