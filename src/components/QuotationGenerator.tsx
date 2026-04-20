@@ -670,8 +670,9 @@ export default function QuotationGenerator({ customer, onPrint }: QuotationGener
                     <Input
                       type="number"
                       value={item.quantity}
-                      onChange={(e) => updateItem(item.id, 'quantity', parseInt(e.target.value) || 0)}
-                      min="1"
+                      onChange={(e) => updateItem(item.id, 'quantity', parseFloat(e.target.value) || 0)}
+                      min="0"
+                      step="0.01"
                     />
                   </div>
                   <div className="flex items-end gap-2">
@@ -706,9 +707,9 @@ export default function QuotationGenerator({ customer, onPrint }: QuotationGener
                 {/* Total and Actions */}
                 <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2">
                   <div className="text-sm text-gray-600">
-                    <strong>Total: ₹{item.total.toLocaleString()}</strong>
+                    <strong>Total: ₹{item.total.toLocaleString(undefined, { maximumFractionDigits: 2 })}</strong>
                     {gstOption === 'include' && item.taxAmount > 0 && (
-                      <span className="ml-2">(Tax: ₹{item.taxAmount.toLocaleString()})</span>
+                      <span className="ml-2">(Tax: ₹{item.taxAmount.toLocaleString(undefined, { maximumFractionDigits: 2 })})</span>
                     )}
                   </div>
                   <Button
@@ -736,12 +737,12 @@ export default function QuotationGenerator({ customer, onPrint }: QuotationGener
           <div className="space-y-3 sm:space-y-4">
             <div className="flex justify-between text-lg">
               <span>Subtotal:</span>
-              <span>₹{subtotal.toLocaleString()}</span>
+              <span>₹{subtotal.toLocaleString(undefined, { maximumFractionDigits: 2 })}</span>
             </div>
             {serviceCharge > 0 && (
               <div className="flex justify-between">
                 <span>Service Charge:</span>
-                <span>₹{serviceCharge.toLocaleString()}</span>
+                <span>₹{serviceCharge.toLocaleString(undefined, { maximumFractionDigits: 2 })}</span>
               </div>
             )}
             {gstOption !== 'normal' && totalTax > 0 && gstOption === 'include' && (
@@ -771,7 +772,7 @@ export default function QuotationGenerator({ customer, onPrint }: QuotationGener
             )}
             <div className="flex justify-between font-bold text-lg border-t pt-2">
               <span>Total Amount {gstOption === 'normal' ? '' : gstOption === 'exclude' ? '(Excl. GST)' : '(Incl. GST)'}:</span>
-              <span>₹{totalAmount.toLocaleString()}</span>
+              <span>₹{totalAmount.toLocaleString(undefined, { maximumFractionDigits: 2 })}</span>
             </div>
             {gstOption === 'exclude' && (
               <div className="text-xs text-gray-500 italic mt-2">
