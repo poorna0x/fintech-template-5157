@@ -96,8 +96,8 @@ export default function QuotationGenerator({ customer, onPrint }: QuotationGener
   const showGST = gstOption !== 'normal';
   
   // GST-specific state
-  const [placeOfSupply, setPlaceOfSupply] = useState(customerAddress.state || 'Karnataka');
-  const [placeOfSupplyCode, setPlaceOfSupplyCode] = useState('29'); // Karnataka state code
+  const [placeOfSupply, setPlaceOfSupply] = useState(customerAddress.state || '');
+  const [placeOfSupplyCode, setPlaceOfSupplyCode] = useState('');
   
   // Customer editing state
   const [isEditingCustomer, setIsEditingCustomer] = useState(false);
@@ -109,8 +109,8 @@ export default function QuotationGenerator({ customer, onPrint }: QuotationGener
     address: {
       street: customerAddress.street || '',
       area: customerAddress.area || '',
-      city: customerAddress.city || '',
-      state: customerAddress.state || '',
+      city: '',
+      state: '',
       pincode: customerAddress.pincode || ''
     }
   });
@@ -125,8 +125,8 @@ export default function QuotationGenerator({ customer, onPrint }: QuotationGener
       address: {
         street: customerAddress.street || '',
         area: customerAddress.area || '',
-        city: customerAddress.city || '',
-        state: customerAddress.state || '',
+        city: '',
+        state: '',
         pincode: customerAddress.pincode || ''
       }
     });
