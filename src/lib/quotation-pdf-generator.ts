@@ -1082,8 +1082,20 @@ function createQuotationContent(data: PDFQuotationData): string {
 
       <!-- Terms (Above Signatures / Seal) -->
       ${data.terms ? `
-        <div class="validity-note">
-          ${sanitizeForTemplate(data.terms).replace(/\n/g, '<br />')}
+        <div class="notes-section">
+          <div class="notes-title">Terms & Conditions:</div>
+          <div class="notes-content">
+            <ul style="margin: 0; padding-left: 18px;">
+              ${data.terms
+                .split('\n')
+                .filter(line => line.trim())
+                .map(term => {
+                  const cleanTerm = term.replace(/^\d+\.\s*/, '');
+                  return `<li style="margin: 4px 0;">${sanitizeForTemplate(cleanTerm)}</li>`;
+                })
+                .join('')}
+            </ul>
+          </div>
         </div>
       ` : ''}
       
@@ -1541,8 +1553,20 @@ function generateQuotationHTML(data: PDFQuotationData): string {
 
         <!-- Terms (Above Signatures / Seal) -->
         ${data.terms ? `
-          <div class="validity-note">
-            ${sanitizeForTemplate(data.terms).replace(/\n/g, '<br />')}
+          <div class="notes-section">
+            <div class="notes-title">Terms & Conditions:</div>
+            <div class="notes-content">
+              <ul style="margin: 0; padding-left: 18px;">
+                ${data.terms
+                  .split('\n')
+                  .filter(line => line.trim())
+                  .map(term => {
+                    const cleanTerm = term.replace(/^\d+\.\s*/, '');
+                    return `<li style="margin: 4px 0;">${sanitizeForTemplate(cleanTerm)}</li>`;
+                  })
+                  .join('')}
+              </ul>
+            </div>
           </div>
         ` : ''}
         
