@@ -7,6 +7,7 @@ import { sanitizeForTemplate } from './sanitize';
 export interface PDFQuotationData {
   billNumber: string;
   billDate: string;
+  validUntil?: string;
   company: {
     name: string;
     address: string;
@@ -903,7 +904,9 @@ function handleMobilePrint(quotationData: PDFQuotationData, action: 'print' | 'p
 }
 
 function createQuotationContent(data: PDFQuotationData): string {
-  const validityDate = new Date(new Date(data.billDate).getTime() + 30 * 24 * 60 * 60 * 1000);
+  const validityDate = data.validUntil
+    ? new Date(data.validUntil)
+    : new Date(new Date(data.billDate).getTime() + 30 * 24 * 60 * 60 * 1000);
   
   return `
     <div class="quotation-container">

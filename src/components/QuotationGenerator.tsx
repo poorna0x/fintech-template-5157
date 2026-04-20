@@ -69,6 +69,12 @@ export default function QuotationGenerator({ customer, onPrint }: QuotationGener
   // State management
   const [quotationNumber, setQuotationNumber] = useState('');
   const [quotationDate, setQuotationDate] = useState(new Date().toISOString().split('T')[0]);
+  const [validUntilDate, setValidUntilDate] = useState(() => {
+    const today = new Date();
+    const d = new Date(today.getTime() + 30 * 24 * 60 * 60 * 1000);
+    return d.toISOString().split('T')[0];
+  });
+  const [isValidUntilManuallySet, setIsValidUntilManuallySet] = useState(false);
   const [items, setItems] = useState<BillItem[]>(defaultQuotationItems);
   const [serviceCharge, setServiceCharge] = useState(0);
   const [notes, setNotes] = useState<string[]>([]);
@@ -137,6 +143,16 @@ export default function QuotationGenerator({ customer, onPrint }: QuotationGener
       setQuotationNumber(`QUO-${year}-${month}-${day}-${randomNum}`);
     }
   }, [quotationNumber]);
+
+  // Keep "Valid Until" in sync with quotation date, until user overrides it.
+  useEffect(() => {
+    if (isValidUntilManuallySet) return;
+    if (!quotationDate) return;
+    const d = new Date(quotationDate);
+    if (Number.isNaN(d.getTime())) return;
+    const next = new Date(d.getTime() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+    setValidUntilDate(next);
+  }, [quotationDate, isValidUntilManuallySet]);
 
   const addItem = () => {
     const newItem: BillItem = {
@@ -306,6 +322,8 @@ export default function QuotationGenerator({ customer, onPrint }: QuotationGener
       updatedAt: new Date().toISOString()
     } as any;
 
+    (quotation as any).validUntil = validUntilDate;
+
     // Add GST option and GST data
     (quotation as any).gstOption = gstOption;
     (quotation as any).includeGST = gstOption === 'include'; // For backward compatibility
@@ -361,6 +379,18 @@ export default function QuotationGenerator({ customer, onPrint }: QuotationGener
                     onChange={(v) => v && setQuotationDate(v)}
                     placeholder="Pick date"
                   />
+              </div>
+              <div>
+                <Label htmlFor="validUntilDate">Valid Until</Label>
+                <DatePicker
+                  value={validUntilDate}
+                  onChange={(v) => {
+                    if (!v) return;
+                    setIsValidUntilManuallySet(true);
+                    setValidUntilDate(v);
+                  }}
+                  placeholder="Pick date"
+                />
               </div>
               <div className="sm:col-span-2">
                 <Label htmlFor="gstOption">GST Option</Label>

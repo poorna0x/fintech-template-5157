@@ -26,6 +26,7 @@ export default function QuotationModal({ isOpen, onClose, customer }: QuotationM
     const pdfData = {
       billNumber: quotation.billNumber,
       billDate: quotation.billDate,
+      validUntil: (quotation as any).validUntil,
       company: quotation.company,
       customer: {
         name: customer.fullName || customer.name || 'Customer Name',
