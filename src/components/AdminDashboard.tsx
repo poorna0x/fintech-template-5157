@@ -6495,7 +6495,7 @@ const AdminDashboard = () => {
       }
 
       // Create follow-up record in follow_ups table
-      // Use the actual user ID for scheduled_by
+      // Store null for admin scheduling so UI consistently renders "Admin" even if a technician session exists in another tab.
       const { data: followUpRecord, error: followUpError } = await supabase
         .from('follow_ups')
         .insert({
@@ -6504,7 +6504,7 @@ const AdminDashboard = () => {
           follow_up_date: followUpData.followUpDate,
           reason: followUpData.followUpReason,
           notes: null,
-          scheduled_by: user?.id || null, // Use actual user ID
+          scheduled_by: null,
           completed: false
         } as any)
         .select()
@@ -6522,13 +6522,13 @@ const AdminDashboard = () => {
       }
 
       // If this is a root follow-up (no parent) OR if we're rescheduling a root follow-up, update job status
-      // Use the actual user ID for follow_up_scheduled_by
+      // Store null for admin scheduling so UI consistently renders "Admin" even if a technician session exists in another tab.
       if (!followUpData.parentFollowUpId || wasRootFollowUp) {
         const { error: jobError } = await db.jobs.update(jobId, {
           status: 'FOLLOW_UP',
           follow_up_date: followUpData.followUpDate,
           follow_up_notes: followUpData.followUpReason,
-          follow_up_scheduled_by: user?.id || null, // Use actual user ID
+          follow_up_scheduled_by: null,
           follow_up_scheduled_at: new Date().toISOString()
         } as any);
 
@@ -6543,7 +6543,7 @@ const AdminDashboard = () => {
             status: 'FOLLOW_UP',
             followUpDate: followUpData.followUpDate,
             followUpNotes: followUpData.followUpReason,
-            followUpScheduledBy: user?.id || 'admin',
+            followUpScheduledBy: 'admin',
             followUpScheduledAt: new Date().toISOString()
           } : job
         ));
@@ -6557,7 +6557,7 @@ const AdminDashboard = () => {
                 status: 'FOLLOW_UP',
                 followUpDate: followUpData.followUpDate,
                 followUpNotes: followUpData.followUpReason + ((followUpData as any).followUpNotes ? ` - ${(followUpData as any).followUpNotes}` : ''),
-                followUpScheduledBy: user?.id || 'admin',
+                followUpScheduledBy: 'admin',
                 followUpScheduledAt: new Date().toISOString()
               } : job
             );
