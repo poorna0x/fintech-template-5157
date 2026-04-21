@@ -661,6 +661,9 @@ const AdminDashboard = () => {
   const [moveToOngoingDate, setMoveToOngoingDate] = useState<string>('');
   const [moveToOngoingTimeSlot, setMoveToOngoingTimeSlot] = useState<'MORNING' | 'AFTERNOON' | 'EVENING' | 'CUSTOM'>('MORNING');
   const [moveToOngoingCustomTime, setMoveToOngoingCustomTime] = useState<string>('');
+  const [assignAfterMoveToOngoing, setAssignAfterMoveToOngoing] = useState(false);
+  const [followUpAssignFlow, setFollowUpAssignFlow] = useState(false);
+  const [followUpAssignTechnicianId, setFollowUpAssignTechnicianId] = useState<string>('');
   const [showDenySuggestions, setShowDenySuggestions] = useState(false);
   const denyReasonInputRef = useRef<HTMLTextAreaElement>(null);
   
@@ -5254,6 +5257,16 @@ const AdminDashboard = () => {
     const scrollY = window.scrollY;
 
     try {
+      // Follow-up flow: pick technician first, then ask date/time (move to ongoing), then auto-assign.
+      if (followUpAssignFlow) {
+        setFollowUpAssignFlow(false);
+        setFollowUpAssignTechnicianId(selectedTechnicianId);
+        setAssignJobDialogOpen(false);
+        setAssignAfterMoveToOngoing(true);
+        handleMoveToOngoing(jobToAssign);
+        return;
+      }
+
       const { error } = await db.jobs.update(jobToAssign.id, {
         assigned_technician_id: selectedTechnicianId,
         status: 'ASSIGNED',
@@ -5309,6 +5322,8 @@ const AdminDashboard = () => {
       });
     } catch (error) {
       toast.error('Failed to assign job');
+      setFollowUpAssignFlow(false);
+      setFollowUpAssignTechnicianId('');
     }
   };
 
@@ -6609,6 +6624,12 @@ const AdminDashboard = () => {
     setMoveToOngoingDialogOpen(true);
   };
 
+  const handleAssignFromFollowUp = (job: Job) => {
+    // Step 1: pick technician
+    setFollowUpAssignFlow(true);
+    handleAssignJob(job);
+  };
+
   // Actually perform the move to ongoing action with date and time
   const performMoveToOngoing = async () => {
     if (!selectedJobForMoveToOngoing) return;
@@ -6711,9 +6732,9 @@ const AdminDashboard = () => {
         }
       }
       
-      // Set status to PENDING so admin can reassign it to a technician
+      const shouldAssign = assignAfterMoveToOngoing && !!followUpAssignTechnicianId;
       const updateData: any = {
-        status: 'PENDING',
+        status: shouldAssign ? 'ASSIGNED' : 'PENDING',
         scheduled_date: moveToOngoingDate, // Already in YYYY-MM-DD format from date input
         scheduled_time_slot: timeSlotToUse,
         // Clear follow-up related fields when moving to ongoing
@@ -6722,10 +6743,10 @@ const AdminDashboard = () => {
         follow_up_notes: null,
         follow_up_scheduled_by: null,
         follow_up_scheduled_at: null,
-        // Clear assigned fields so it can be reassigned
-        assigned_technician_id: null,
-        assigned_date: null,
-        assigned_by: null,
+        // Assign immediately if coming from follow-up "Assign" flow, else clear for normal move-to-ongoing
+        assigned_technician_id: shouldAssign ? followUpAssignTechnicianId : null,
+        assigned_date: shouldAssign ? new Date().toISOString() : null,
+        assigned_by: shouldAssign ? (user?.id || null) : null,
         // Drop team so the next primary assignee is the only link (avoids stale team_members vs new assignee).
         team_members: [],
       };
@@ -6821,6 +6842,23 @@ const AdminDashboard = () => {
 
       toast.success('Job moved to ongoing with updated schedule');
 
+      // If this was a follow-up "Assign" flow, assignment was applied as part of the move-to-ongoing update.
+      if (assignAfterMoveToOngoing) {
+        const assignedTechnician = technicians.find((t) => t.id === followUpAssignTechnicianId);
+        if (assignedTechnician) {
+          const notification = createJobAssignedNotification(
+            (selectedJobForMoveToOngoing as any).job_number || (selectedJobForMoveToOngoing as any).jobNumber || 'Job',
+            ((selectedJobForMoveToOngoing as any).customer as any)?.full_name || ((selectedJobForMoveToOngoing as any).customer as any)?.fullName || 'Customer',
+            assignedTechnician.fullName,
+            (selectedJobForMoveToOngoing as any).id,
+            assignedTechnician.id
+          );
+          await sendNotification(notification);
+        }
+        setAssignAfterMoveToOngoing(false);
+        setFollowUpAssignTechnicianId('');
+      }
+
       // Close dialog and reset state
       setMoveToOngoingDialogOpen(false);
       setSelectedJobForMoveToOngoing(null);
@@ -6830,6 +6868,8 @@ const AdminDashboard = () => {
     } catch (error) {
       console.error('Error moving job to ongoing:', error);
       toast.error('Failed to move job to ongoing');
+      setAssignAfterMoveToOngoing(false);
+      setFollowUpAssignTechnicianId('');
     } finally {
       setIsUpdating(false);
     }
@@ -10261,6 +10301,10 @@ const AdminDashboard = () => {
                                       )}
                                       {(job.status === 'FOLLOW_UP' || job.status === 'RESCHEDULED') && (
                                         <>
+                                          <DropdownMenuItem onClick={() => handleAssignFromFollowUp(job)}>
+                                            <Wrench className="mr-2 h-4 w-4" />
+                                            Assign to Technician
+                                          </DropdownMenuItem>
                                           <DropdownMenuItem onClick={() => handleMoveToOngoing(job)}>
                                             <ArrowRight className="mr-2 h-4 w-4" />
                                             Move to Ongoing
