@@ -1667,14 +1667,21 @@ const TechnicianDashboard = () => {
           const updatedJob = payload.new as any;
           if (processingJobsRef.current.has(updatedJob.id)) return;
 
-          const shouldBeInList = isJobRelevantToMe(updatedJob);
           const currentJobsState = jobsRef.current;
           const jobInList = currentJobsState.find((j) => j.id === updatedJob.id);
           const isInList = !!jobInList;
+          // Realtime `payload.new` can be sparse (not all columns). Merge with the row we already have
+          // so we do not drop assigned_technician_id / team_members and wrongly remove the job or skip the "fetch slim" path.
+          const mergedForRelevance = jobInList ? { ...(jobInList as any), ...updatedJob } : updatedJob;
+          const shouldBeInList = isJobRelevantToMe(mergedForRelevance);
 
           // Case 1: Job should NOT be in list (unassigned or removed from team). Do not remove completed jobs — they stay in list for Completed tab.
           if (!shouldBeInList) {
             if (isInList) {
+              const listStatus = normalizeJobStatus((jobInList as any).status ?? jobInList.status);
+              if (listStatus === 'COMPLETED') {
+                return;
+              }
               setJobs((prev) => {
                 const filtered = prev.filter((j) => j.id !== updatedJob.id);
                 jobsRef.current = filtered;
@@ -2045,13 +2052,12 @@ const TechnicianDashboard = () => {
     };
   }, [user?.technicianId]);
 
-  // Polling: 5s when realtime is down; 30s when realtime is up (sync team_members; realtime handles assign/unassign with no filter)
+  // Polling: 5s when realtime is down; light 60s sync when realtime is up (missed/sparse postgres_changes — e.g. assign auto AMC job).
   useEffect(() => {
     if (!user?.technicianId) return;
 
-    // Reduce Postgres egress: poll ONLY when realtime is down.
-    if (realtimeConnected) return;
-    const pollInterval = setInterval(() => loadAssignedJobs(), 5000);
+    const intervalMs = realtimeConnected ? 60_000 : 5_000;
+    const pollInterval = setInterval(() => loadAssignedJobs(), intervalMs);
     return () => clearInterval(pollInterval);
   }, [user?.technicianId, realtimeConnected, loadAssignedJobs]);
 

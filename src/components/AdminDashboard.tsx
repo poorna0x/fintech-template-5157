@@ -6718,13 +6718,16 @@ const AdminDashboard = () => {
         scheduled_time_slot: timeSlotToUse,
         // Clear follow-up related fields when moving to ongoing
         follow_up_date: null,
+        follow_up_time: null,
         follow_up_notes: null,
         follow_up_scheduled_by: null,
         follow_up_scheduled_at: null,
         // Clear assigned fields so it can be reassigned
         assigned_technician_id: null,
         assigned_date: null,
-        assigned_by: null
+        assigned_by: null,
+        // Drop team so the next primary assignee is the only link (avoids stale team_members vs new assignee).
+        team_members: [],
       };
 
       // Only update requirements if we have custom time or if requirements exist
@@ -6757,6 +6760,7 @@ const AdminDashboard = () => {
             assignedDate: null,
             assignedTechnicianId: null,
             assigned_technician_id: null,
+            team_members: [] as string[],
             scheduledDate: moveToOngoingDate,
             scheduledTimeSlot: timeSlotToUse,
             requirements: requirements,
@@ -6789,6 +6793,7 @@ const AdminDashboard = () => {
                 assignedDate: null,
                 assignedTechnicianId: null,
                 assigned_technician_id: null,
+                team_members: [] as string[],
                 scheduledDate: moveToOngoingDate,
                 scheduledTimeSlot: timeSlotToUse,
                 requirements: requirements,

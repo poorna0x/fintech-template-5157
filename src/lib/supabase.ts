@@ -1048,6 +1048,8 @@ export const db = {
         .from('jobs')
         .select(`${JOB_SELECT_ONGOING_AND_TECH},customer:customers(${CUSTOMER_EMBED_FOR_TECH_JOBS})`)
         .or(orFilter)
+        // Prefer recently touched rows so auto AMC / follow-up → ongoing → reassign is not dropped behind .limit(100) by old created_at.
+        .order('updated_at', { ascending: false })
         .order('created_at', { ascending: false })
         .limit(100);
 
@@ -1062,6 +1064,7 @@ export const db = {
           .from('jobs')
           .select(`${JOB_SELECT_ONGOING_AND_TECH},customer:customers(${CUSTOMER_EMBED_FOR_ONGOING_ADMIN})`)
           .or(orFilter)
+          .order('updated_at', { ascending: false })
           .order('created_at', { ascending: false })
           .limit(100);
         rows = legacy.data || [];
@@ -1086,6 +1089,7 @@ export const db = {
         .from('jobs')
         .select(`${JOB_SELECT_ONGOING_AND_TECH},customer:customers(${CUSTOMER_EMBED_FOR_TECH_JOBS_SLIM})`)
         .or(orFilter)
+        .order('updated_at', { ascending: false })
         .order('created_at', { ascending: false })
         .limit(100);
 
@@ -1101,6 +1105,7 @@ export const db = {
         .from('jobs')
         .select(`${JOB_SELECT_ONGOING_AND_TECH},customer:customers(${CUSTOMER_EMBED_FOR_ONGOING_ADMIN})`)
         .or(orFilter)
+        .order('updated_at', { ascending: false })
         .order('created_at', { ascending: false })
         .limit(100);
 
