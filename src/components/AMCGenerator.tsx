@@ -46,8 +46,47 @@ export default function AMCGenerator({ customer, onPrint, onAMCSaved }: AMCGener
   const [includesPreSedimentFiltration, setIncludesPreSedimentFiltration] = useState(false);
   const [showComputerGeneratedText, setShowComputerGeneratedText] = useState(true);
 
-  // Generate terms dynamically based on pre-sediment filtration checkbox
-  const generateTerms = (includesPreFilter: boolean) => {
+  // AMC service period default from settings (same source as "AMC service period (auto job creation)" control)
+  const getDefaultServicePeriodFromStorage = (): { kind: '4' | '6' | 'custom' | 'no_auto'; customMonths: number } => {
+    if (typeof window === 'undefined') return { kind: '4', customMonths: 4 };
+    const stored = localStorage.getItem('amc_default_service_period_months');
+    if (stored === null || stored === '') return { kind: '4', customMonths: 4 };
+    const n = parseInt(stored, 10);
+    if (Number.isNaN(n) || n <= 0) return { kind: 'no_auto', customMonths: 4 };
+    if (n === 4) return { kind: '4', customMonths: 4 };
+    if (n === 6) return { kind: '6', customMonths: 6 };
+    return { kind: 'custom', customMonths: n };
+  };
+
+  const defaultServicePeriod = getDefaultServicePeriodFromStorage();
+  const [servicePeriodKind, setServicePeriodKind] = useState<'4' | '6' | 'custom' | 'no_auto'>(defaultServicePeriod.kind);
+  const [servicePeriodCustomMonths, setServicePeriodCustomMonths] = useState<number>(defaultServicePeriod.customMonths);
+
+  // Generate terms dynamically from pre-sediment filtration + AMC service period (auto job creation)
+  const generateTerms = (
+    includesPreFilter: boolean,
+    periodKind: '4' | '6' | 'custom' | 'no_auto',
+    periodCustomMonths: number
+  ) => {
+    const servicePeriodMonths =
+      periodKind === 'no_auto' ? 0
+        : periodKind === '4' ? 4
+        : periodKind === '6' ? 6
+        : Math.max(1, periodCustomMonths);
+
+    let scheduledMaintenanceLine = '';
+    if (servicePeriodMonths === 0) {
+      scheduledMaintenanceLine =
+        'Scheduled maintenance: Routine visits are planned together with you when it suits—there is no fixed automatic visit calendar tied to this agreement.';
+    } else if (servicePeriodMonths === 1) {
+      scheduledMaintenanceLine =
+        'Scheduled maintenance: We usually aim for a routine service visit about once a month or so (we may nudge the date a little to line up with you and keep your purifier happy).';
+    } else if (servicePeriodMonths === 12) {
+      scheduledMaintenanceLine =
+        'Scheduled maintenance: We usually aim for a routine service visit about once a year—roughly every twelve months or so—with a bit of flexibility so we can coordinate with you.';
+    } else {
+      scheduledMaintenanceLine = `Scheduled maintenance: We usually aim for a routine service visit about every ${servicePeriodMonths} months or so (timings may shift slightly so we can work with your schedule and keep things running smoothly).`;
+    }
     const servicesCovered = `SERVICES COVERED BY THE AGREEMENT
 
 Breakdown Support: If any breakdown or problem happens with the RO during the AMC period, the company will provide service without extra charges.
@@ -74,6 +113,8 @@ Extra Charges: If service is outside municipal limits, extra charges for travel/
 
 Disputes: Any legal disputes will be handled only in Bangalore courts.
 
+${scheduledMaintenanceLine}
+
 Renewal: After expiry, renewal requires a new agreement.
 
 Customer's Duty: The customer must make the RO available for servicing when the company's authorized representative visits.
@@ -82,11 +123,12 @@ If the customer fails to give the machine for servicing, it will still be treate
 
 Agreement Modification: Cannot be changed unless written and signed by both parties.`;
 
-    const notCoveredBase = `Not Covered: Display and lights of the RO, RO tap, body, and tank are not covered under this AMC.`;
-    
-    const notCoveredWithPreFilter = includesPreFilter 
-      ? notCoveredBase
-      : notCoveredBase.replace('are not covered under this AMC.', 'are not covered under this AMC. Pre-sediment filtration is not included in this agreement.');
+    const notCoveredStructural =
+      'Exclusions: This agreement does not cover the purifier display or indicator lights, the dispenser tap, the outer housing or cabinet, or the storage tank.';
+
+    const notCoveredWithPreFilter = includesPreFilter
+      ? notCoveredStructural
+      : `${notCoveredStructural} Pre-sediment filtration is excluded unless it is expressly listed under Services covered above.`;
 
     const finalServicesCovered = includesPreFilter ? servicesCoveredWithPreFilter : servicesCovered;
 
@@ -97,7 +139,9 @@ ${termsAndConditions}
 ${notCoveredWithPreFilter}`;
   };
 
-  const [terms, setTerms] = useState(generateTerms(false));
+  const [terms, setTerms] = useState(() =>
+    generateTerms(false, defaultServicePeriod.kind, defaultServicePeriod.customMonths)
+  );
   const [amcCost, setAmcCost] = useState(7000);
   const [serviceCharge, setServiceCharge] = useState(0);
   const [isEditingTerms, setIsEditingTerms] = useState(false);
@@ -110,26 +154,10 @@ ${notCoveredWithPreFilter}`;
   const [description, setDescription] = useState('');
   const [isSaving, setIsSaving] = useState(false);
 
-  // AMC service period for auto job creation: 4 months, 6 months, custom, or no auto
-  const getDefaultServicePeriodFromStorage = (): { kind: '4' | '6' | 'custom' | 'no_auto'; customMonths: number } => {
-    if (typeof window === 'undefined') return { kind: '4', customMonths: 4 };
-    const stored = localStorage.getItem('amc_default_service_period_months');
-    if (stored === null || stored === '') return { kind: '4', customMonths: 4 };
-    const n = parseInt(stored, 10);
-    if (Number.isNaN(n) || n <= 0) return { kind: 'no_auto', customMonths: 4 };
-    if (n === 4) return { kind: '4', customMonths: 4 };
-    if (n === 6) return { kind: '6', customMonths: 6 };
-    return { kind: 'custom', customMonths: n };
-  };
-  const defaultServicePeriod = getDefaultServicePeriodFromStorage();
-  const [servicePeriodKind, setServicePeriodKind] = useState<'4' | '6' | 'custom' | 'no_auto'>(defaultServicePeriod.kind);
-  const [servicePeriodCustomMonths, setServicePeriodCustomMonths] = useState<number>(defaultServicePeriod.customMonths);
-
-  // Update terms when pre-sediment filtration checkbox changes
+  // Update terms when pre-sediment filtration or AMC service period (auto job creation) changes
   React.useEffect(() => {
-    setTerms(generateTerms(includesPreSedimentFiltration));
-     
-  }, [includesPreSedimentFiltration]);
+    setTerms(generateTerms(includesPreSedimentFiltration, servicePeriodKind, servicePeriodCustomMonths));
+  }, [includesPreSedimentFiltration, servicePeriodKind, servicePeriodCustomMonths]);
 
   // Auto-populate RO model from customer data (brand and/or model)
   React.useEffect(() => {
