@@ -6130,7 +6130,7 @@ const AdminDashboard = () => {
     setTechnicianDistances(initialDistances);
 
     const ongoingStops = collectOngoingJobsForMeasure(workingJob as Job);
-    let fromId = '__tech__';
+    const fromId = '__tech__';
     let toId = workingJob.id;
     if (fromId === toId) {
       const alt = ongoingStops.find((j) => j.id !== fromId);

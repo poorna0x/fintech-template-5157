@@ -505,7 +505,7 @@ function generateAMCHTML(data: AMCPDFData, options?: AMCPDFOptions): string {
         </div>
       ` : `
         <div class="agreement-intro">
-          <p>We <strong>Hydrogen RO</strong>, Authorized Service Provider, undertake to maintain your <strong>RO Water Purifier</strong> Unit as detailed below:</p>
+          <p>We <strong>Hydrogen RO</strong> will maintain your <strong>RO Water Purifier</strong> on the terms set out below:</p>
         </div>
       `}
 

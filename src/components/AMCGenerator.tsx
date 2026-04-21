@@ -150,7 +150,9 @@ ${notCoveredWithPreFilter}`;
   const [isEditingNotes, setIsEditingNotes] = useState(false);
   const [newNote, setNewNote] = useState('');
   const [isEditingIntro, setIsEditingIntro] = useState(false);
-  const [agreementIntro, setAgreementIntro] = useState('We <strong>Hydrogen RO</strong>, Authorized Service Provider, undertake to maintain your <strong>RO Water Purifier</strong> Unit as detailed below:');
+  const [agreementIntro, setAgreementIntro] = useState(
+    'We <strong>Hydrogen RO</strong> will maintain your <strong>RO Water Purifier</strong> on the terms set out below:'
+  );
   const [description, setDescription] = useState('');
   const [isSaving, setIsSaving] = useState(false);
 
