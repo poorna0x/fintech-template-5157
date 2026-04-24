@@ -6,7 +6,7 @@ import { Input } from '@/components/ui/input';
 import { DatePicker } from '@/components/ui/date-picker';
 import { Label } from '@/components/ui/label';
 import { db, supabase } from '@/lib/supabase';
-import { getTotalSalaryForCalendarMonth } from '@/lib/technicianSalaryForPeriod';
+import { getTotalSalaryForCalendarMonth, getTechnicianMonthlyBaseSalary } from '@/lib/technicianSalaryForPeriod';
 import { toast } from 'sonner';
 import {
   BarChart3,
@@ -462,9 +462,7 @@ const Analytics = () => {
               allTechnicians.forEach((tech: any) => {
                 const techId = tech.id;
                 const employeeId = tech.employee_id ?? tech.employeeId ?? '';
-                const monthlyBaseSalary = (tech.salary && typeof tech.salary === 'object' && (tech.salary as any).baseSalary)
-                  ? (tech.salary as any).baseSalary
-                  : 8000;
+                const monthlyBaseSalary = getTechnicianMonthlyBaseSalary(tech);
                 const techPayments = (paymentsData || []).filter((p: any) => p.technician_id === techId);
                 const techExtraCommissions = (extraCommissionsData || []).filter((ec: any) => {
                   if (ec.technician_id !== techId) return false;

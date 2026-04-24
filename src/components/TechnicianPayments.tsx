@@ -14,6 +14,7 @@ import { toast } from 'sonner';
 import { DollarSign, User, Plus, Trash2, Edit, TrendingDown, TrendingUp, RefreshCw, ChevronDown, ChevronUp, Pencil, Check, X, ChevronLeft, ChevronRight, Eye, TrendingUp as TrendingUpIcon, Download } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { generateSalarySlipPDF } from '@/lib/salary-slip-pdf-generator';
+import { getTechnicianMonthlyBaseSalary } from '@/lib/technicianSalaryForPeriod';
 
 interface TechnicianPayment {
   id: string;
@@ -293,7 +294,7 @@ const TechnicianPayments = () => {
       setLoading(true);
       const { startDate, endDate } = getMonthlyDateRange();
       setCommissionPeriod({ start: startDate, end: endDate });
-      const techsResult = await db.technicians.getList(100);
+      const techsResult = await db.technicians.getAll(100, { activeRosterOnly: true });
       if (techsResult.error) throw techsResult.error;
       setTechnicians(techsResult.data || []);
     } catch (error: any) {
@@ -433,7 +434,7 @@ const TechnicianPayments = () => {
 
       const breakdowns: TechnicianSalaryBreakdown[] = techs.map((tech: any) => {
         const techId = tech.id;
-        const monthlyBaseSalary = (tech.salary && typeof tech.salary === 'object' && (tech.salary as any).baseSalary) ? (tech.salary as any).baseSalary : 8000;
+        const monthlyBaseSalary = getTechnicianMonthlyBaseSalary(tech);
         const periodBaseSalary = monthlyBaseSalary * inclusiveMonthCount;
         const dailyBaseSalary = monthlyBaseSalary / 30;
         const allowedHolidays = 4 * inclusiveMonthCount;

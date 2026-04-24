@@ -13,6 +13,17 @@ function formatDateString(date: Date): string {
   return `${year}-${month}-${day}`;
 }
 
+/** Reads `salary.baseSalary` from a technicians row (camelCase JSON). Legacy default when missing or invalid. */
+export function getTechnicianMonthlyBaseSalary(tech: any, legacyDefault = 8000): number {
+  const salary = tech?.salary;
+  if (!salary || typeof salary !== 'object') return legacyDefault;
+  const raw = (salary as Record<string, unknown>).baseSalary;
+  const n =
+    typeof raw === 'number' ? raw : typeof raw === 'string' ? parseFloat(raw) : NaN;
+  if (!Number.isFinite(n) || n < 0) return legacyDefault;
+  return n;
+}
+
 export interface TotalSalaryForMonthResult {
   /** Adjusted base + commission + extra (before deducting advances). Same as Payments “salary before advance”. */
   totalSalaryBeforeAdvance: number;
@@ -74,10 +85,7 @@ export async function getTotalSalaryForCalendarMonth(
   for (const tech of allTechnicians) {
     const techId = tech.id;
     const employeeId = tech.employee_id ?? (tech as any).employeeId ?? '';
-    const monthlyBaseSalary =
-      (tech.salary && typeof tech.salary === 'object' && (tech.salary as any).baseSalary)
-        ? (tech.salary as any).baseSalary
-        : 8000;
+    const monthlyBaseSalary = getTechnicianMonthlyBaseSalary(tech);
     const periodBaseSalary = monthlyBaseSalary;
     const dailyBaseSalary = monthlyBaseSalary / dailyDivisor;
 
