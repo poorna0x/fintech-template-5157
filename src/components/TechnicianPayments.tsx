@@ -14,7 +14,12 @@ import { toast } from 'sonner';
 import { DollarSign, User, Plus, Trash2, Edit, TrendingDown, TrendingUp, RefreshCw, ChevronDown, ChevronUp, Pencil, Check, X, ChevronLeft, ChevronRight, Eye, TrendingUp as TrendingUpIcon, Download } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { generateSalarySlipPDF } from '@/lib/salary-slip-pdf-generator';
-import { getTechnicianMonthlyBaseSalary } from '@/lib/technicianSalaryForPeriod';
+import {
+  calculateTechnicianBillingSlabCommission,
+  getTechnicianBaseSalaryForPeriod,
+  getTechnicianDailyBaseSalary,
+  getTechnicianMonthlyBaseSalary,
+} from '@/lib/technicianSalaryForPeriod';
 
 interface TechnicianPayment {
   id: string;
@@ -92,6 +97,7 @@ interface TechnicianSalaryBreakdown {
   adjustedBaseSalary: number; // After holiday deductions and unused leave bonus
   totalCommission: number;
   totalExtraCommission: number;
+  billingSlabCommission: number;
   totalExpenses: number;
   totalAdvances: number;
   totalHolidays: number;
@@ -434,9 +440,8 @@ const TechnicianPayments = () => {
 
       const breakdowns: TechnicianSalaryBreakdown[] = techs.map((tech: any) => {
         const techId = tech.id;
-        const monthlyBaseSalary = getTechnicianMonthlyBaseSalary(tech);
-        const periodBaseSalary = monthlyBaseSalary * inclusiveMonthCount;
-        const dailyBaseSalary = monthlyBaseSalary / 30;
+        const monthlyBaseSalary = getTechnicianMonthlyBaseSalary(tech, 8000, startDate);
+        const periodBaseSalary = getTechnicianBaseSalaryForPeriod(tech, startDate, endDate);
         const allowedHolidays = 4 * inclusiveMonthCount;
 
         const techPayments = paymentsData.filter((p: TechnicianPayment) => p.technician_id === techId);
@@ -474,7 +479,10 @@ const TechnicianPayments = () => {
           const d = ec.commission_date.split('T')[0];
           return d >= periodStartStr && d <= periodEndStr;
         });
-        const totalExtraCommission = techExtraCommissions.reduce((sum, ec) => sum + (ec.amount || 0), 0);
+        const billingSlabCommission = calculateTechnicianBillingSlabCommission(techCompletedJobsForCommission);
+        const totalExtraCommission =
+          techExtraCommissions.reduce((sum, ec) => sum + (ec.amount || 0), 0) +
+          billingSlabCommission;
 
         const techHolidays = holidaysData.filter((h: TechnicianHoliday) => h.technician_id === techId);
         const techCompletedJobs = completedJobsData.filter((j: any) => j.assigned_technician_id === techId);
@@ -524,22 +532,24 @@ const TechnicianPayments = () => {
           if (date >= periodStartStr && date <= todayStrForHolidays) allHolidayDates.add(date);
         });
 
-        const totalHolidays = allHolidayDates.size;
-        const extraHolidays = Math.max(0, totalHolidays - allowedHolidays);
-        const holidayDeduction = extraHolidays * dailyBaseSalary;
-        const unusedLeaves = Math.max(0, allowedHolidays - totalHolidays);
-        const unusedLeaveBonus = unusedLeaves * dailyBaseSalary;
-        const adjustedBaseSalary = periodBaseSalary - holidayDeduction + unusedLeaveBonus;
-
         const displayHolidays: TechnicianHoliday[] = techHolidays.filter(h => h.reason !== 'MARKED_AS_PRESENT');
         autoDetectedHolidays.forEach(date => {
           displayHolidays.push({ id: `auto-${date}`, technician_id: techId, holiday_date: date, is_manual: false, reason: 'No completed jobs - auto-detected as absent' });
         });
         displayHolidays.sort((a, b) => new Date(b.holiday_date).getTime() - new Date(a.holiday_date).getTime());
+        const totalHolidays = allHolidayDates.size;
+        const extraHolidays = Math.max(0, totalHolidays - allowedHolidays);
         const absentDays: TechnicianHoliday[] = extraHolidays > 0
           ? displayHolidays.filter(h => allHolidayDates.has(h.holiday_date.split('T')[0])).sort((a, b) => new Date(b.holiday_date).getTime() - new Date(a.holiday_date).getTime()).slice(0, extraHolidays)
           : [];
         absentDays.sort((a, b) => new Date(b.holiday_date).getTime() - new Date(a.holiday_date).getTime());
+        const holidayDeduction = absentDays.reduce((sum, holiday) => {
+          return sum + getTechnicianDailyBaseSalary(tech, new Date(holiday.holiday_date));
+        }, 0);
+        const unusedLeaves = Math.max(0, allowedHolidays - totalHolidays);
+        const averageDailyBaseSalary = periodBaseSalary / (30 * inclusiveMonthCount);
+        const unusedLeaveBonus = unusedLeaves * averageDailyBaseSalary;
+        const adjustedBaseSalary = periodBaseSalary - holidayDeduction + unusedLeaveBonus;
 
         const dailyBilling = new Map<string, number>();
         techCompletedJobs.forEach((job: any) => {
@@ -579,6 +589,7 @@ const TechnicianPayments = () => {
           adjustedBaseSalary,
           totalCommission,
           totalExtraCommission,
+          billingSlabCommission,
           totalExpenses,
           totalAdvances,
           totalHolidays,
@@ -1791,6 +1802,11 @@ const TechnicianPayments = () => {
                 <div className="bg-purple-50 p-3 sm:p-4 rounded-lg">
                   <p className="text-xs sm:text-sm text-gray-600 mb-1">Extra Commission</p>
                   <p className="text-lg sm:text-xl font-semibold text-purple-600">₹ {formatCurrency(breakdown.totalExtraCommission)}</p>
+                  {breakdown.billingSlabCommission > 0 && (
+                    <p className="text-xs text-gray-500 mt-1">
+                      Includes ₹ {formatCurrency(breakdown.billingSlabCommission)} billing slab bonus
+                    </p>
+                  )}
                 </div>
                 <div className="bg-cyan-50 p-3 sm:p-4 rounded-lg border border-cyan-200">
                   <p className="text-xs sm:text-sm text-gray-600 mb-1">Salary before advance</p>
@@ -1856,6 +1872,12 @@ const TechnicianPayments = () => {
                     <span className="truncate">+ Extra Commission:</span>
                     <span className="font-medium whitespace-nowrap">+ ₹ {formatCurrency(breakdown.totalExtraCommission)}</span>
                   </div>
+                  {breakdown.billingSlabCommission > 0 && (
+                    <div className="flex justify-between items-center gap-2 text-purple-500 text-xs">
+                      <span className="truncate">Billing slab bonus included:</span>
+                      <span className="font-medium whitespace-nowrap">₹ {formatCurrency(breakdown.billingSlabCommission)}</span>
+                    </div>
+                  )}
                   <div className="flex justify-between items-center gap-2 pt-2 border-t border-gray-200 font-semibold text-cyan-900">
                     <span className="truncate">Salary before advance:</span>
                     <span className="whitespace-nowrap">₹ {formatCurrency(breakdown.salaryBeforeAdvance)}</span>

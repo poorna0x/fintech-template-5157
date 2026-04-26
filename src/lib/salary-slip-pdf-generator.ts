@@ -46,6 +46,7 @@ interface SalarySlipPDFData {
   adjustedBaseSalary: number;
   totalCommission: number;
   totalExtraCommission: number;
+  billingSlabCommission?: number;
   totalExpenses: number;
   totalAdvances: number;
   totalHolidays: number;
@@ -696,7 +697,7 @@ function generateSalarySlipHTML(data: SalarySlipPDFData, includeDayWiseBreakdown
           
           ${(() => {
             // Add Extra Commissions section at the end
-            if (data.extraCommissions && data.extraCommissions.length > 0) {
+            if ((data.extraCommissions && data.extraCommissions.length > 0) || (data.billingSlabCommission || 0) > 0) {
               const extraCommissionsHtml = `
                 <div style="margin-top: 30px; margin-bottom: 20px;">
                   <div style="font-weight: 600; font-size: 16px; color: #374151; margin-bottom: 12px; padding: 8px; background: #f3e8ff; border-left: 4px solid #9333ea;">
@@ -711,6 +712,13 @@ function generateSalarySlipHTML(data: SalarySlipPDFData, includeDayWiseBreakdown
                       </tr>
                     </thead>
                     <tbody>
+                      ${(data.billingSlabCommission || 0) > 0 ? `
+                        <tr>
+                          <td>Auto</td>
+                          <td>Billing slab bonus</td>
+                          <td style="text-align: right;" class="amount-positive">+ ₹ ${formatCurrency(data.billingSlabCommission || 0)}</td>
+                        </tr>
+                      ` : ''}
                       ${data.extraCommissions.map((ec: ExtraCommission) => {
                         const ecDate = ec.commission_date 
                           ? ec.commission_date.split('T')[0] 
@@ -803,6 +811,7 @@ export function generateSalarySlipPDF(
       adjustedBaseSalary: breakdown.adjustedBaseSalary,
       totalCommission: breakdown.totalCommission,
       totalExtraCommission: breakdown.totalExtraCommission,
+      billingSlabCommission: breakdown.billingSlabCommission,
       totalExpenses: breakdown.totalExpenses,
       totalAdvances: breakdown.totalAdvances,
       totalHolidays: breakdown.totalHolidays,

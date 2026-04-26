@@ -234,6 +234,10 @@ export interface Technician {
     baseSalary: number;
     commissionPerJob: number;
     commissionPercentage: number;
+    history?: Array<{
+      amount: number;
+      effectiveFrom: string;
+    }>;
   };
   
   // QR Code Visibility

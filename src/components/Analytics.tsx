@@ -308,7 +308,7 @@ const Analytics = () => {
   };
 
   /** Pro-rated base salary for a period: only count salary up to today (current month "up to this date"). */
-  const getProRatedBaseSalary = (monthlyBaseSalary: number, periodStart: Date, periodEnd: Date): number => {
+  const getProRatedBaseSalary = (tech: any, periodStart: Date, periodEnd: Date): number => {
     const today = new Date();
     today.setHours(23, 59, 59, 999);
     const effectiveEnd = periodEnd > today ? today : periodEnd;
@@ -327,6 +327,7 @@ const Analytics = () => {
       const rangeStart = monthStart < start ? start : monthStart;
       const rangeEnd = monthEnd > end ? end : monthEnd;
       const daysInRange = Math.round((rangeEnd.getTime() - rangeStart.getTime()) / 86400000) + 1;
+      const monthlyBaseSalary = getTechnicianMonthlyBaseSalary(tech, 8000, cur);
       total += (monthlyBaseSalary * daysInRange) / monthDays;
       cur.setMonth(cur.getMonth() + 1);
       cur.setDate(1);
@@ -462,14 +463,13 @@ const Analytics = () => {
               allTechnicians.forEach((tech: any) => {
                 const techId = tech.id;
                 const employeeId = tech.employee_id ?? tech.employeeId ?? '';
-                const monthlyBaseSalary = getTechnicianMonthlyBaseSalary(tech);
                 const techPayments = (paymentsData || []).filter((p: any) => p.technician_id === techId);
                 const techExtraCommissions = (extraCommissionsData || []).filter((ec: any) => {
                   if (ec.technician_id !== techId) return false;
                   const ecDate = new Date(ec.commission_date);
                   return ecDate >= startDate && ecDate <= endDate;
                 });
-                const baseSalary = getProRatedBaseSalary(monthlyBaseSalary, startDate, endDate);
+                const baseSalary = getProRatedBaseSalary(tech, startDate, endDate);
                 const commissions = techPayments.reduce((sum: number, p: any) => sum + (p.commission_amount || 0), 0);
                 const extraCommissions = techExtraCommissions.reduce((sum: number, ec: any) => sum + (ec.amount || 0), 0);
                 const amount = baseSalary + commissions + extraCommissions;

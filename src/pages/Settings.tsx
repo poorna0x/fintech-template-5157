@@ -38,6 +38,7 @@ import {
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { db, supabase } from '@/lib/supabase';
+import { buildTechnicianSalaryPayload, getCurrentMonthKey } from '@/lib/technicianSalaryForPeriod';
 import { Technician } from '@/types';
 import ImageUpload from '@/components/ImageUpload';
 import { CommonQrCode, invalidateQrCodesCache, normalizeTechnicianAssignedCommonQrIds } from '@/lib/qrCodeManager';
@@ -109,6 +110,7 @@ const Settings = () => {
     qrCode: '', // QR code image URL
     photo: '', // Technician photo URL
     baseSalary: 0,
+    salaryEffectiveFromMonth: getCurrentMonthKey(),
     accountStatus: 'ACTIVE' as 'ACTIVE' | 'INACTIVE' | 'SUSPENDED',
     visibleQrCodes: [] as string[], // Array of QR code IDs visible to this technician
     commonQrCodeIds: [] as string[] // Common QRs to show to this technician (below payment QR), multiple allowed
@@ -228,6 +230,7 @@ const Settings = () => {
       qrCode: '',
       photo: '',
       baseSalary: 0,
+      salaryEffectiveFromMonth: getCurrentMonthKey(),
       visibleQrCodes: [],
       commonQrCodeIds: [],
       accountStatus: 'ACTIVE'
@@ -247,6 +250,7 @@ const Settings = () => {
       qrCode: (technician as any).qrCode || '',
       photo: (technician as any).photo || '',
       baseSalary: technician.salary?.baseSalary || 0,
+      salaryEffectiveFromMonth: getCurrentMonthKey(),
       visibleQrCodes: technician.visibleQrCodes || [],
       commonQrCodeIds: (technician as any).commonQrCodeIds || [],
       accountStatus: (technician.account_status as 'ACTIVE' | 'INACTIVE' | 'SUSPENDED') || 'ACTIVE'
@@ -290,6 +294,32 @@ const Settings = () => {
         hashedPassword = await hashPassword(technicianFormData.password);
       }
 
+      const previousBaseSalary =
+        selectedTechnician?.salary?.baseSalary !== undefined
+          ? Number(selectedTechnician.salary.baseSalary)
+          : 0;
+      const nextBaseSalary = technicianFormData.baseSalary || 0;
+      const hasSalaryHistory =
+        Array.isArray((selectedTechnician?.salary as any)?.history) &&
+        (selectedTechnician?.salary as any).history.length > 0;
+      const salaryChanged =
+        !editTechnicianDialogOpen ||
+        !selectedTechnician ||
+        previousBaseSalary !== nextBaseSalary ||
+        !hasSalaryHistory;
+      const salaryPayload = salaryChanged
+        ? buildTechnicianSalaryPayload(
+            editTechnicianDialogOpen ? selectedTechnician?.salary : null,
+            nextBaseSalary,
+            technicianFormData.salaryEffectiveFromMonth
+          )
+        : {
+            ...(selectedTechnician?.salary || {}),
+            baseSalary: nextBaseSalary,
+            commissionPerJob: selectedTechnician?.salary?.commissionPerJob ?? 0,
+            commissionPercentage: selectedTechnician?.salary?.commissionPercentage ?? 10,
+          };
+
       const technicianData: any = {
         full_name: technicianFormData.fullName,
         phone: technicianFormData.phone,
@@ -327,11 +357,7 @@ const Settings = () => {
           onTimePercentage: 0,
           customerSatisfaction: 0
         },
-        salary: {
-          baseSalary: technicianFormData.baseSalary || 0,
-          commissionPerJob: 0,
-          commissionPercentage: 10 // 10% commission per job
-        },
+        salary: salaryPayload,
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString()
       };
@@ -2224,6 +2250,23 @@ const Settings = () => {
                     placeholder="Enter basic salary"
                   />
                   <p className="text-xs text-gray-500 mt-1">Monthly basic salary for this technician</p>
+                </div>
+                <div>
+                  <Label htmlFor="salaryEffectiveFromMonth">Salary Effective From</Label>
+                  <Input
+                    id="salaryEffectiveFromMonth"
+                    type="month"
+                    value={technicianFormData.salaryEffectiveFromMonth}
+                    onChange={(e) =>
+                      setTechnicianFormData(prev => ({
+                        ...prev,
+                        salaryEffectiveFromMonth: e.target.value || getCurrentMonthKey()
+                      }))
+                    }
+                  />
+                  <p className="text-xs text-gray-500 mt-1">
+                    If basic salary changes, old months keep the old amount.
+                  </p>
                 </div>
               </div>
               {editTechnicianDialogOpen && (
