@@ -9,7 +9,7 @@ import { toast } from 'sonner';
 import { calculateHaversineDistance } from '@/lib/distance';
 import { customerNameClassName } from '@/lib/customerDisplay';
 import { db } from '@/lib/supabase';
-import { getGoogleMapsLinkForJobRow, getJobLatLngFromJobRow } from '@/lib/jobLocationHelpers';
+import { getFreshGoogleMapsLinkForJobRow, getJobLatLngFromJobRow } from '@/lib/jobLocationHelpers';
 
 interface AssignJobDialogProps {
   open: boolean;
@@ -414,19 +414,14 @@ const AssignJobDialog: React.FC<AssignJobDialogProps> = ({
   // Calculate variables after all hooks
   const customer = (job.customer as any) || job.customer;
 
-  const jobLocation = getJobLatLngFromJobRow(job);
-  const googleMapsLink = getGoogleMapsLinkForJobRow(job);
-
   const handleLazyOpenGoogleMaps = async () => {
     const t = toast.loading('Loading location…');
     try {
-      const { data, error } = await db.jobs.getByIdFull(job.id);
+      const link = await getFreshGoogleMapsLinkForJobRow(job, {
+        getCustomerById: db.customers.getById,
+        getJobByIdFull: db.jobs.getByIdFull,
+      });
       toast.dismiss(t);
-      if (error || !data) {
-        toast.error('Could not load location');
-        return;
-      }
-      const link = getGoogleMapsLinkForJobRow(data);
       if (link) window.open(link, '_blank', 'noopener,noreferrer');
       else toast.error('No map link for this job');
     } catch {
@@ -510,26 +505,14 @@ const AssignJobDialog: React.FC<AssignJobDialogProps> = ({
                 </div>
               ) : null;
             })()}
-            {googleMapsLink ? (
-              <a
-                href={googleMapsLink}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="inline-flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-xs font-medium rounded-lg transition-colors mt-2 w-full sm:w-auto justify-center sm:justify-start"
-              >
-                <MapPin className="w-4 h-4" />
-                Open in Google Maps
-              </a>
-            ) : (
-              <Button
-                type="button"
-                onClick={() => void handleLazyOpenGoogleMaps()}
-                className="inline-flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-xs font-medium rounded-lg transition-colors mt-2 w-full sm:w-auto justify-center sm:justify-start"
-              >
-                <MapPin className="w-4 h-4" />
-                Open in Google Maps
-              </Button>
-            )}
+            <Button
+              type="button"
+              onClick={() => void handleLazyOpenGoogleMaps()}
+              className="inline-flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-xs font-medium rounded-lg transition-colors mt-2 w-full sm:w-auto justify-center sm:justify-start"
+            >
+              <MapPin className="w-4 h-4" />
+              Open in Google Maps
+            </Button>
           </div>
 
           {/* Technician Selection */}

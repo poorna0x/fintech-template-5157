@@ -5324,11 +5324,6 @@ const TechnicianDashboard = () => {
                             NEW
                           </Badge>
                         )}
-                          {distances[job.id] && (
-                            <div className="text-sm text-blue-600 font-medium">
-                              📍 {distances[job.id]} km
-                            </div>
-                          )}
                         </div>
                       {(() => {
                         const jc = job.customer as any;

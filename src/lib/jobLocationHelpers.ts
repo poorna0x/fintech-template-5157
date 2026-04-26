@@ -40,6 +40,36 @@ export function getGoogleMapsLinkForJobRow(jobRow: any): string {
   return getLocationLinkFromObject(customerLocation) || getLocationLinkFromObject(serviceLocation);
 }
 
+export async function getFreshGoogleMapsLinkForJobRow(
+  jobRow: any,
+  loaders: {
+    getCustomerById?: (customerId: string) => Promise<{ data?: any; error?: any }>;
+    getJobByIdFull?: (jobId: string) => Promise<{ data?: any; error?: any }>;
+  } = {}
+): Promise<string> {
+  const customer = jobRow?.customer || {};
+  const embeddedCustomerLink = getLocationLinkFromObject(customer?.location);
+  if (embeddedCustomerLink) return embeddedCustomerLink;
+
+  const customerId = customer?.id || jobRow?.customer_id || jobRow?.customerId;
+  if (customerId && loaders.getCustomerById) {
+    const { data, error } = await loaders.getCustomerById(String(customerId));
+    if (!error) {
+      const freshCustomerLink = getLocationLinkFromObject(data?.location);
+      if (freshCustomerLink) return freshCustomerLink;
+    }
+  }
+
+  if (jobRow?.id && loaders.getJobByIdFull) {
+    const { data, error } = await loaders.getJobByIdFull(String(jobRow.id));
+    if (!error && data) {
+      return getGoogleMapsLinkForJobRow(data);
+    }
+  }
+
+  return getGoogleMapsLinkForJobRow(jobRow);
+}
+
 export function getJobLatLngFromJobRow(jobRow: any): { lat: number; lng: number } | null {
   const customer = jobRow?.customer || {};
   const customerLocation = customer?.location || {};

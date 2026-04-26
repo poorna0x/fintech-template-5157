@@ -3,6 +3,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Button } from '@/components/ui/button';
 import { MapPin } from 'lucide-react';
 import { Job } from '@/types';
+import { getLocationLinkFromObject } from '@/lib/jobLocationHelpers';
 
 interface JobAddressDialogProps {
   open: { [jobId: string]: boolean };
@@ -19,6 +20,13 @@ const JobAddressDialog: React.FC<JobAddressDialogProps> = ({ open, onOpenChange,
         const jobAddress = (job as any)?.service_address || {};
         const serviceAddress = Object.values(customerAddress).some(Boolean) ? customerAddress : jobAddress;
         const serviceLocation = jobCustomer?.location || (job as any)?.service_location || {};
+        const googleMapsLink = getLocationLinkFromObject(serviceLocation);
+        const locationDisplay =
+          serviceLocation?.googleLocation ||
+          serviceLocation?.google_location ||
+          serviceLocation?.formattedAddress ||
+          serviceLocation?.formatted_address ||
+          googleMapsLink;
         
         return (
           <Dialog
@@ -57,15 +65,15 @@ const JobAddressDialog: React.FC<JobAddressDialogProps> = ({ open, onOpenChange,
                     return parts.length > 0 ? parts.join(', ') : 'No address available';
                   })()}
                 </div>
-                {serviceLocation?.formattedAddress && (
+                {locationDisplay && (
                   <div className="mt-4 pt-4 border-t border-gray-200">
                     <div className="text-xs text-gray-500 mb-2">Google Maps Location:</div>
                     <div className="text-xs text-gray-700 break-all">
-                      {serviceLocation.formattedAddress}
+                      {locationDisplay}
                     </div>
-                    {serviceLocation?.formattedAddress && (
+                    {googleMapsLink && (
                       <a
-                        href={serviceLocation.formattedAddress}
+                        href={googleMapsLink}
                         target="_blank"
                         rel="noopener noreferrer"
                         className="inline-flex items-center gap-1 text-blue-600 hover:text-blue-800 text-sm font-medium mt-2"
@@ -74,19 +82,6 @@ const JobAddressDialog: React.FC<JobAddressDialogProps> = ({ open, onOpenChange,
                         Open in Google Maps
                       </a>
                     )}
-                  </div>
-                )}
-                {(serviceLocation?.latitude && serviceLocation?.longitude) && (
-                  <div className="mt-2">
-                    <a
-                      href={`https://www.google.com/maps/place/${serviceLocation.latitude},${serviceLocation.longitude}`}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="inline-flex items-center gap-1 text-blue-600 hover:text-blue-800 text-sm font-medium"
-                    >
-                      <MapPin className="w-4 h-4" />
-                      Open in Google Maps
-                    </a>
                   </div>
                 )}
               </div>
