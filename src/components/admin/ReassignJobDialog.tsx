@@ -464,17 +464,17 @@ const ReassignJobDialog: React.FC<ReassignJobDialogProps> = ({
                 </p>
                 <p><strong>Scheduled:</strong> {(job as any)?.scheduled_date} - {(job as any)?.scheduled_time_slot}</p>
                 {(() => {
-                  const serviceAddress = (job as any)?.service_address || {};
                   const customer = (job as any)?.customer || {};
                   const customerAddress = customer?.address || (customer as any)?.address || {};
+                  const serviceAddress = (job as any)?.service_address || {};
                   
                   // Try multiple possible locations for visible_address (prioritize this)
                   let visibleLocation = 
-                    serviceAddress?.visible_address || 
-                    (serviceAddress as any)?.visibleAddress ||
                     customerAddress?.visible_address || 
                     (customerAddress as any)?.visibleAddress ||
                     (customer as any)?.visible_address ||
+                    serviceAddress?.visible_address ||
+                    (serviceAddress as any)?.visibleAddress ||
                     '';
                   
                   // If visible_location contains a full address (has commas), extract just the first part (area name)
@@ -484,7 +484,7 @@ const ReassignJobDialog: React.FC<ReassignJobDialogProps> = ({
                   
                   // If no visible_address or it's invalid, try using the area field as fallback
                   if (!visibleLocation || visibleLocation.trim().length === 0) {
-                    visibleLocation = serviceAddress?.area || customerAddress?.area || '';
+                    visibleLocation = customerAddress?.area || serviceAddress?.area || '';
                     // If area also contains commas, extract first part
                     if (visibleLocation && visibleLocation.includes(',')) {
                       visibleLocation = visibleLocation.split(',')[0].trim();

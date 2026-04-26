@@ -5298,7 +5298,7 @@ const AdminDashboard = () => {
         scrollPositionBeforeWhatsAppRef.current = scrollY;
         const serviceSubType = (jobToAssign as any).service_sub_type || jobToAssign.serviceSubType || 'Service';
         const customerName = (jobToAssign.customer as any)?.full_name || (jobToAssign.customer as any)?.fullName || 'Customer';
-        const addr = (jobToAssign as any).service_address || (jobToAssign.customer as any)?.address;
+        const addr = (jobToAssign.customer as any)?.address || (jobToAssign as any).service_address;
         const vis = (jobToAssign.customer as any)?.visible_address;
         const locationText = (vis && String(vis).trim()) ? String(vis).trim() : (addr?.area || addr?.city || '');
         setWhatsappTechnician({
@@ -5511,7 +5511,7 @@ const AdminDashboard = () => {
         scrollPositionBeforeWhatsAppRef.current = scrollY;
         const serviceSubType = (jobToReassign as any).service_sub_type || jobToReassign.serviceSubType || 'Service';
         const customerName = (jobToReassign.customer as any)?.full_name || (jobToReassign.customer as any)?.fullName || 'Customer';
-        const addr = (jobToReassign as any).service_address || (jobToReassign.customer as any)?.address;
+        const addr = (jobToReassign.customer as any)?.address || (jobToReassign as any).service_address;
         const vis = (jobToReassign.customer as any)?.visible_address;
         const locationText = (vis && String(vis).trim()) ? String(vis).trim() : (addr?.area || addr?.city || '');
         setWhatsappTechnician({
@@ -5736,17 +5736,17 @@ const AdminDashboard = () => {
       return normalizeWs(kept.join(' '));
     };
 
-    const serviceAddress = jobRow?.service_address || jobRow?.serviceAddress || {};
     const cust = jobRow?.customer as any;
     const customerAddress = cust?.address || {};
+    const serviceAddress = jobRow?.service_address || jobRow?.serviceAddress || {};
 
     let visibleLocation =
       normalizeWs(
-        str(serviceAddress?.visible_address) ||
-          str(serviceAddress?.visibleAddress) ||
-          str(customerAddress?.visible_address) ||
+        str(customerAddress?.visible_address) ||
           str(customerAddress?.visibleAddress) ||
-          str(cust?.visible_address)
+          str(cust?.visible_address) ||
+          str(serviceAddress?.visible_address) ||
+          str(serviceAddress?.visibleAddress)
       );
 
     if (visibleLocation.includes(',')) {
@@ -5755,7 +5755,7 @@ const AdminDashboard = () => {
 
     if (!visibleLocation) {
       visibleLocation = normalizeWs(
-        str(serviceAddress?.area) || str(customerAddress?.area)
+        str(customerAddress?.area) || str(serviceAddress?.area)
       );
       if (visibleLocation.includes(',')) {
         visibleLocation = localityBeforeCity(visibleLocation);
@@ -5765,22 +5765,22 @@ const AdminDashboard = () => {
     let phrase = pickPhraseOrEmpty(visibleLocation);
     if (phrase) return phrase;
 
-    const landmark = normalizeWs(str(serviceAddress?.landmark) || str(customerAddress?.landmark));
+    const landmark = normalizeWs(str(customerAddress?.landmark) || str(serviceAddress?.landmark));
     phrase = pickPhraseOrEmpty(landmark);
     if (phrase) return phrase;
 
-    const street = normalizeWs(str(serviceAddress?.street) || str(customerAddress?.street));
+    const street = normalizeWs(str(customerAddress?.street) || str(serviceAddress?.street));
     phrase = pickPhraseOrEmpty(street);
     if (phrase) return phrase;
 
-    const city = normalizeWs(str(serviceAddress?.city) || str(customerAddress?.city));
+    const city = normalizeWs(str(customerAddress?.city) || str(serviceAddress?.city));
     let w = firstNonGenericWord(city);
     if (w) return w;
 
-    const pin = normalizeWs(str(serviceAddress?.pincode) || str(customerAddress?.pincode));
+    const pin = normalizeWs(str(customerAddress?.pincode) || str(serviceAddress?.pincode));
     if (pin) return pin;
 
-    const svcLoc = jobRow?.service_location || jobRow?.serviceLocation || {};
+    const svcLoc = cust?.location || jobRow?.service_location || jobRow?.serviceLocation || {};
     const formatted = normalizeWs(str(svcLoc?.formattedAddress) || str(svcLoc?.formatted_address));
     if (formatted) {
       const joined = localityBeforeCity(formatted);
