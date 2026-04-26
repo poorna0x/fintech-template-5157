@@ -121,6 +121,31 @@ const calculateSimilarity = (str1: string, str2: string): number => {
   return 1 - distance / maxLen;
 };
 
+const isValidGoogleMapsLink = (value: unknown): value is string => {
+  return (
+    typeof value === 'string' &&
+    (value.includes('google.com/maps') || value.includes('maps.app.goo.gl') || value.includes('goo.gl/maps')) &&
+    !value.includes('localhost') &&
+    !value.includes('127.0.0.1')
+  );
+};
+
+const openLocationInGoogleMaps = (location: any): boolean => {
+  const googleLoc = location?.googleLocation || location?.google_location;
+  if (isValidGoogleMapsLink(googleLoc)) {
+    window.open(googleLoc, '_blank', 'noopener,noreferrer');
+    return true;
+  }
+
+  const coords = extractCoordinates(location);
+  if (coords && coords.latitude !== 0 && coords.longitude !== 0) {
+    window.open(`https://www.google.com/maps/place/${coords.latitude},${coords.longitude}`, '_blank', 'noopener,noreferrer');
+    return true;
+  }
+
+  return false;
+};
+
 // Extract location from address string (same as admin dashboard)
 const extractLocationFromAddressString = (completeAddress: string): string | null => {
   if (!completeAddress || completeAddress.trim().length === 0) {
@@ -598,52 +623,23 @@ const TechnicianDashboard = () => {
 
       setMapOpeningByJobId((prev) => ({ ...prev, [jobId]: true }));
       try {
-        // Prefer job service_location/serviceLocation (included in slim job list); fall back to customer.location if present.
-        const jobServiceLoc = (job as any)?.serviceLocation || (job as any)?.service_location;
-        const customerLoc = (job?.customer as any)?.location;
-        const loc = jobServiceLoc || customerLoc;
-
-        const googleLoc = (loc as any)?.googleLocation || (loc as any)?.google_location;
-        if (
-          googleLoc &&
-          typeof googleLoc === 'string' &&
-          (googleLoc.includes('google.com/maps') || googleLoc.includes('maps.app.goo.gl') || googleLoc.includes('goo.gl/maps')) &&
-          !googleLoc.includes('localhost') &&
-          !googleLoc.includes('127.0.0.1')
-        ) {
-          window.open(googleLoc, '_blank', 'noopener,noreferrer');
-          return;
-        }
-
-        const coords = extractCoordinates(loc);
-        if (coords && coords.latitude !== 0 && coords.longitude !== 0) {
-          window.open(`https://www.google.com/maps/place/${coords.latitude},${coords.longitude}`, '_blank', 'noopener,noreferrer');
-          return;
-        }
-
-        // On-demand fetch: if slim customer embed omitted `location`, load full customer row now and retry.
         const customerId = (job?.customer as any)?.id || (job as any)?.customer_id;
         if (customerId) {
+          // Customer location is the source of truth; job.service_location is only the original job snapshot.
           const { data: customerRow, error } = await db.customers.getById(String(customerId));
-          if (!error && customerRow) {
-            const loc2 = (customerRow as any)?.location;
-            const googleLoc2 = (loc2 as any)?.googleLocation || (loc2 as any)?.google_location;
-            if (
-              googleLoc2 &&
-              typeof googleLoc2 === 'string' &&
-              (googleLoc2.includes('google.com/maps') || googleLoc2.includes('maps.app.goo.gl') || googleLoc2.includes('goo.gl/maps')) &&
-              !googleLoc2.includes('localhost') &&
-              !googleLoc2.includes('127.0.0.1')
-            ) {
-              window.open(googleLoc2, '_blank', 'noopener,noreferrer');
-              return;
-            }
-            const coords2 = extractCoordinates(loc2);
-            if (coords2 && coords2.latitude !== 0 && coords2.longitude !== 0) {
-              window.open(`https://www.google.com/maps/place/${coords2.latitude},${coords2.longitude}`, '_blank', 'noopener,noreferrer');
-              return;
-            }
+          if (!error && openLocationInGoogleMaps((customerRow as any)?.location)) {
+            return;
           }
+        }
+
+        const customerLoc = (job?.customer as any)?.location;
+        if (openLocationInGoogleMaps(customerLoc)) {
+          return;
+        }
+
+        const jobServiceLoc = (job as any)?.serviceLocation || (job as any)?.service_location;
+        if (openLocationInGoogleMaps(jobServiceLoc)) {
+          return;
         }
 
         toast.error('Location data not available');
@@ -1989,7 +1985,7 @@ const TechnicianDashboard = () => {
 
     // Calculate distances for assigned jobs
     jobs.forEach(job => {
-      const customerLocation = job.serviceLocation as any;
+      const customerLocation = ((job.customer as any)?.location || job.serviceLocation || (job as any).service_location) as any;
       if (customerLocation?.latitude && customerLocation?.longitude) {
         const distance = calculateDistance(
           currentLocation.lat,

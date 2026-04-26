@@ -93,6 +93,7 @@ import Analytics from './Analytics';
 import InventoryManagement from './InventoryManagement';
 import { generateJobNumber, formatPreferredTimeSlot, mapServiceTypesToDbValue, extractLocationFromAddressString, bangaloreAreas, levenshteinDistance, calculateSimilarity, extractPhotoUrls, normalizePhotoUrl, parseJobRequirements, getFormattedTimeSlot, findLeadSource, normalizeLeadType, normalizeServiceSubType } from '@/lib/adminUtils';
 import { formatPhoneForWhatsApp } from '@/lib/utils';
+import { getLocationLinkFromObject } from '@/lib/jobLocationHelpers';
 import { StatusBadge } from './admin/StatusBadge';
 import { CustomerCardHeader } from './admin/CustomerCardHeader';
 import { WhatsAppIcon } from './WhatsAppIcon';
@@ -5805,8 +5806,7 @@ const AdminDashboard = () => {
     return `${displayName} (—)`;
   };
 
-  // Handle measure distance for a job - OPTIMIZED: Uses batch API call for all technicians
-  const handleShareJobWhatsApp = (job: Job) => {
+  const handleShareJobWhatsApp = async (job: Job) => {
     const assignedTechnicianId = (job as any).assigned_technician_id || job.assignedTechnicianId;
     if (!assignedTechnicianId) {
       toast.error('No technician assigned to this job');
@@ -5817,7 +5817,18 @@ const AdminDashboard = () => {
       toast.error('Technician phone number not found');
       return;
     }
-    const customer = (job as any).customer || job.customer;
+
+    const embeddedCustomer = ((job as any).customer || job.customer) as any;
+    const customerId = embeddedCustomer?.id || (job as any).customer_id;
+    let freshCustomer: any = null;
+    if (customerId) {
+      const { data, error } = await db.customers.getById(String(customerId));
+      if (!error && data) {
+        freshCustomer = data;
+      }
+    }
+
+    const customer = freshCustomer || embeddedCustomer;
     const name = customer?.full_name || customer?.fullName || 'N/A';
     const phone = customer?.phone || 'N/A';
     const altPhone = customer?.alternate_phone || customer?.alternatePhone;
@@ -5835,16 +5846,11 @@ const AdminDashboard = () => {
       requirements = requirements && typeof requirements === 'object' ? [requirements] : [];
     }
     const leadSource = findLeadSource(requirements || []) || 'N/A';
-    const serviceLocation = (job as any).service_location || job.serviceLocation || {};
-    const lat = serviceLocation?.latitude;
-    const lng = serviceLocation?.longitude;
+    const serviceLocation = customer?.location || (job as any).service_location || job.serviceLocation || {};
     const formattedAddress = serviceLocation?.formattedAddress || serviceLocation?.formatted_address || '';
-    const googleMapLink = (lat != null && lng != null)
-      ? `https://www.google.com/maps?q=${lat},${lng}`
-      : formattedAddress
-        ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(formattedAddress)}`
-        : '';
-    const serviceAddress = (job as any).service_address || job.serviceAddress || customer?.address || {};
+    const googleMapLink = getLocationLinkFromObject(serviceLocation) ||
+      (formattedAddress ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(formattedAddress)}` : '');
+    const serviceAddress = customer?.address || (job as any).service_address || job.serviceAddress || {};
     const addressParts = [
       serviceAddress?.visible_address || serviceAddress?.visibleAddress,
       serviceAddress?.street,

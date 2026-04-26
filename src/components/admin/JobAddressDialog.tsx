@@ -16,7 +16,7 @@ const JobAddressDialog: React.FC<JobAddressDialogProps> = ({ open, onOpenChange,
       {jobs.map((job) => {
         const jobCustomer = job.customer as any;
         const serviceAddress = (job as any)?.service_address || jobCustomer?.address || {};
-        const serviceLocation = (job as any)?.service_location || jobCustomer?.location || {};
+        const serviceLocation = jobCustomer?.location || (job as any)?.service_location || {};
         
         return (
           <Dialog
