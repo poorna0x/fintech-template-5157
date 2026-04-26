@@ -5297,9 +5297,15 @@ const AdminDashboard = () => {
       if (assignedTechnician && assignedTechnician.phone) {
         scrollPositionBeforeWhatsAppRef.current = scrollY;
         const serviceSubType = (jobToAssign as any).service_sub_type || jobToAssign.serviceSubType || 'Service';
-        const customerName = (jobToAssign.customer as any)?.full_name || (jobToAssign.customer as any)?.fullName || 'Customer';
-        const addr = (jobToAssign.customer as any)?.address || (jobToAssign as any).service_address;
-        const vis = (jobToAssign.customer as any)?.visible_address;
+        let customerForWhatsApp = (jobToAssign.customer as any) || {};
+        const customerId = customerForWhatsApp?.id || (jobToAssign as any).customer_id;
+        if (customerId) {
+          const { data: freshCustomer } = await db.customers.getById(String(customerId));
+          if (freshCustomer) customerForWhatsApp = freshCustomer;
+        }
+        const customerName = customerForWhatsApp?.full_name || customerForWhatsApp?.fullName || 'Customer';
+        const addr = customerForWhatsApp?.address || (jobToAssign as any).service_address;
+        const vis = customerForWhatsApp?.visible_address;
         const locationText = (vis && String(vis).trim()) ? String(vis).trim() : (addr?.area || addr?.city || '');
         setWhatsappTechnician({
           name: assignedTechnician.fullName,
@@ -5510,9 +5516,15 @@ const AdminDashboard = () => {
       if (reassignedTechnician && reassignedTechnician.phone) {
         scrollPositionBeforeWhatsAppRef.current = scrollY;
         const serviceSubType = (jobToReassign as any).service_sub_type || jobToReassign.serviceSubType || 'Service';
-        const customerName = (jobToReassign.customer as any)?.full_name || (jobToReassign.customer as any)?.fullName || 'Customer';
-        const addr = (jobToReassign.customer as any)?.address || (jobToReassign as any).service_address;
-        const vis = (jobToReassign.customer as any)?.visible_address;
+        let customerForWhatsApp = (jobToReassign.customer as any) || {};
+        const customerId = customerForWhatsApp?.id || (jobToReassign as any).customer_id;
+        if (customerId) {
+          const { data: freshCustomer } = await db.customers.getById(String(customerId));
+          if (freshCustomer) customerForWhatsApp = freshCustomer;
+        }
+        const customerName = customerForWhatsApp?.full_name || customerForWhatsApp?.fullName || 'Customer';
+        const addr = customerForWhatsApp?.address || (jobToReassign as any).service_address;
+        const vis = customerForWhatsApp?.visible_address;
         const locationText = (vis && String(vis).trim()) ? String(vis).trim() : (addr?.area || addr?.city || '');
         setWhatsappTechnician({
           name: reassignedTechnician.fullName,

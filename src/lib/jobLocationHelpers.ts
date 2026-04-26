@@ -1,5 +1,41 @@
 /** Shared job/customer location helpers for admin assign/reassign/measure flows (slim + full rows). */
 
+function getCompactGoogleMapsLink(url: string): string {
+  const value = url.trim();
+  if (!value) return '';
+
+  if (value.includes('maps.app.goo.gl') || value.includes('goo.gl/maps')) {
+    return value;
+  }
+
+  const coordinatePatterns = [
+    /!3d(-?\d+(?:\.\d+)?)!4d(-?\d+(?:\.\d+)?)/,
+    /@(-?\d+(?:\.\d+)?),(-?\d+(?:\.\d+)?)/,
+    /\/place\/(-?\d+(?:\.\d+)?),(-?\d+(?:\.\d+)?)/,
+    /[?&](?:q|query)=(-?\d+(?:\.\d+)?),(-?\d+(?:\.\d+)?)/,
+  ];
+
+  for (const pattern of coordinatePatterns) {
+    const match = value.match(pattern);
+    if (!match) continue;
+
+    const latitude = Number(match[1]);
+    const longitude = Number(match[2]);
+    if (
+      Number.isFinite(latitude) &&
+      Number.isFinite(longitude) &&
+      latitude >= -90 &&
+      latitude <= 90 &&
+      longitude >= -180 &&
+      longitude <= 180
+    ) {
+      return `https://www.google.com/maps?q=${latitude},${longitude}`;
+    }
+  }
+
+  return value;
+}
+
 export function getLocationLinkFromObject(location: any): string {
   if (!location) return '';
 
@@ -14,11 +50,11 @@ export function getLocationLinkFromObject(location: any): string {
       !googleLoc.includes('localhost') &&
       !googleLoc.includes('127.0.0.1')
     ) {
-      return googleLoc;
+      return getCompactGoogleMapsLink(googleLoc);
     }
   }
   if (location.latitude && location.longitude && location.latitude !== 0 && location.longitude !== 0) {
-    return `https://www.google.com/maps/place/${location.latitude},${location.longitude}`;
+    return `https://www.google.com/maps?q=${location.latitude},${location.longitude}`;
   }
   if (
     location.formattedAddress &&
@@ -28,7 +64,7 @@ export function getLocationLinkFromObject(location: any): string {
     !location.formattedAddress.includes('localhost') &&
     !location.formattedAddress.includes('127.0.0.1')
   ) {
-    return location.formattedAddress;
+    return getCompactGoogleMapsLink(location.formattedAddress);
   }
   return '';
 }
