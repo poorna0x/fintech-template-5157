@@ -86,7 +86,10 @@ interface AnalyticsData {
   totalSalaryDeductions?: number; // Salary before advance (adjusted base + commissions + extra), excl. excluded tech
   totalSalaryIncludingAll?: number; // Same including excluded technician(s), for brackets
   totalExpenses?: number; // Tech + salary + other business + spare parts (business_expenses ledger excluded)
+  /** Net profit for the big green card (includes BUSINESS + JOB_COST from business_expenses). */
   totalProfit?: number; // Revenue - Lead Costs - Expenses (operating; lead costs only on completed jobs)
+  /** Net profit for the small "Revenue − total costs above" (includes only JOB_COST from business_expenses). */
+  totalProfitJobsOnly?: number;
   /** Ishanga: 7% × max(0, revenue − technician − salary − business ledger); same base as Revenue − expense (core) */
   ishaDonationAmount?: number;
   softenerData?: {
@@ -130,7 +133,7 @@ interface AnalyticsData {
 
 type PeriodOption = '7d' | '30d' | 'thisWeek' | 'thisMonth' | 'previousMonth' | 'customMonth' | '3m' | '6m' | '1y' | 'all' | 'custom';
 
-/** Ishanga 7%: 7% of (Revenue − business expenses − other business expenses − salary − technician expenses). */
+/** Ishanga 7%: 7% of (Revenue − business expenses − salary − technician expenses). */
 const ISHANGA_RATE = 0.07;
 
 // Helper function to format currency with commas and without .00 when it's zero
@@ -343,6 +346,8 @@ const Analytics = () => {
       let totalTechnicianExpenses = 0;
       let totalTechnicianAdvances = 0;
       let totalBusinessExpenses = 0;
+      let totalBusinessExpensesForProfit = 0;
+      let totalBusinessExpensesForProfitJobsOnly = 0;
       let totalOtherBusinessExpenses = 0;
       let totalSparePartsCost = 0;
       let totalSalaryDeductions = 0;
@@ -430,6 +435,20 @@ const Analytics = () => {
         totalTechnicianExpenses = (techExpenses || []).reduce((sum: number, exp: any) => sum + Number(exp.amount || 0), 0);
         totalTechnicianAdvances = (techAdvances || []).reduce((sum: number, adv: any) => sum + Number(adv.amount || 0), 0);
         totalBusinessExpenses = (businessExpenses || []).reduce((sum: number, exp: any) => sum + Number(exp.amount || 0), 0);
+        // Big green Net Profit includes JOB_COST + BUSINESS from business ledger.
+        const profitCats = new Set(['JOB_COST', 'BUSINESS']);
+        totalBusinessExpensesForProfit = (businessExpenses || []).reduce((sum: number, exp: any) => {
+          const cat = (exp?.category || '').toString().toUpperCase();
+          if (!profitCats.has(cat)) return sum;
+          return sum + Number(exp.amount || 0);
+        }, 0);
+        // Small "Revenue − total costs above" should include only JOB_COST from business ledger.
+        const profitCatsJobsOnly = new Set(['JOB_COST']);
+        totalBusinessExpensesForProfitJobsOnly = (businessExpenses || []).reduce((sum: number, exp: any) => {
+          const cat = (exp?.category || '').toString().toUpperCase();
+          if (!profitCatsJobsOnly.has(cat)) return sum;
+          return sum + Number(exp.amount || 0);
+        }, 0);
         totalOtherBusinessExpenses = (otherBusinessExpenses || []).reduce((sum: number, exp: any) => sum + Number(exp.amount || 0), 0);
         // Total salary (before advance): same basis as Payments “salary before advance”
         const usePaymentsSalary = (period === 'thisMonth' || period === 'previousMonth' || period === 'customMonth') && startDate && endDate;
@@ -954,17 +973,25 @@ const Analytics = () => {
         : 0;
 
       const totalLeadCostsSum = Object.values(leadSourceMap).reduce((sum, stats) => sum + stats.leadCost, 0);
+      const expenseTotalJobsOnly =
+        totalTechnicianExpenses +
+        totalSalaryDeductions +
+        totalOtherBusinessExpenses +
+        totalSparePartsCost +
+        totalBusinessExpensesForProfitJobsOnly;
+
       const expenseTotal =
         totalTechnicianExpenses +
         totalSalaryDeductions +
         totalOtherBusinessExpenses +
-        totalSparePartsCost;
+        totalSparePartsCost +
+        totalBusinessExpensesForProfit;
+      const netProfitJobsOnly = periodBilling - totalLeadCostsSum - expenseTotalJobsOnly;
       const netProfit = periodBilling - totalLeadCostsSum - expenseTotal;
-      // Ishanga 7% base = Revenue − business expense − other business expenses − salary − technician expense
+      // Ishanga 7% base = Revenue − business expense − salary − technician expense
       const revenueMinusCoreForIshanga =
         periodBilling -
         totalBusinessExpenses -
-        totalOtherBusinessExpenses -
         Math.max(0, totalSalaryDeductions) -
         totalTechnicianExpenses;
       const ishaDonationAmount = Math.max(0, revenueMinusCoreForIshanga) * ISHANGA_RATE;
@@ -1008,6 +1035,7 @@ const Analytics = () => {
         totalSalaryIncludingAll, // Including excluded technician(s), for display in brackets
         totalExpenses: expenseTotal,
         totalProfit: netProfit,
+        totalProfitJobsOnly: netProfitJobsOnly,
         ishaDonationAmount,
         serviceTypeBreakdown: Object.entries(serviceTypeMap)
           .map(([serviceType, stats]) => ({ serviceType, ...stats }))
@@ -2494,22 +2522,22 @@ const Analytics = () => {
                       <div className="flex flex-col items-end gap-0.5 shrink-0">
                         {(() => {
                           const marginPct = formatProfitMarginPercent(
-                            analytics.totalProfit || 0,
+                            analytics.totalProfitJobsOnly ?? analytics.totalProfit ?? 0,
                             analytics.totalBilling || 0
                           );
                           return (
                             <>
                               <span
                                 className={`text-xl sm:text-2xl font-bold tabular-nums ${
-                                  (analytics.totalProfit || 0) >= 0 ? 'text-green-700' : 'text-red-600'
+                                  ((analytics.totalProfitJobsOnly ?? analytics.totalProfit ?? 0) >= 0) ? 'text-green-700' : 'text-red-600'
                                 }`}
                               >
-                                ₹ {formatCurrency(analytics.totalProfit || 0)}
+                                ₹ {formatCurrency(analytics.totalProfitJobsOnly ?? analytics.totalProfit ?? 0)}
                               </span>
                               {marginPct != null && (
                                 <span
                                   className={`text-xs font-semibold tabular-nums ${
-                                    (analytics.totalProfit || 0) >= 0 ? 'text-green-700/90' : 'text-red-600/90'
+                                    ((analytics.totalProfitJobsOnly ?? analytics.totalProfit ?? 0) >= 0) ? 'text-green-700/90' : 'text-red-600/90'
                                   }`}
                                 >
                                   {marginPct}% of revenue
@@ -2528,10 +2556,10 @@ const Analytics = () => {
               <div className="bg-blue-100 rounded-lg p-4 sm:p-5 md:p-6 border-2 border-blue-300 min-w-0">
                 <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                   <div className="min-w-0">
-                    <div className="text-sm font-medium text-gray-700">Net Profit</div>
+                    <div className="text-sm font-medium text-gray-700">Net Cash</div>
                     <div className="text-xs text-gray-600">
                       Revenue − lead costs − technician, salary, other business expenses, spare parts (business ledger
-                      expenses excluded)
+                      expenses included: JOB_COST + BUSINESS)
                     </div>
                   </div>
                   <div className="flex flex-col items-end sm:items-end gap-0.5 shrink-0 text-right">
@@ -2593,7 +2621,7 @@ const Analytics = () => {
                   <div className="text-sm font-semibold text-gray-800">Ishanga 7%</div>
                 </div>
                 <div className="flex justify-between gap-2 items-center text-xs sm:text-sm">
-                  <span className="text-gray-700">7% × (Revenue − business − other business − salary − technician)</span>
+                  <span className="text-gray-700">7% × (Revenue − business − salary − technician)</span>
                   <span className="font-semibold text-violet-700 shrink-0 tabular-nums">
                     ₹ {formatCurrency(analytics.ishaDonationAmount || 0)}
                   </span>

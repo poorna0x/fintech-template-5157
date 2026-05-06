@@ -759,7 +759,7 @@ const TechnicianPayments = () => {
       amount: '',
       description: '',
       expense_date: new Date().toISOString().split('T')[0],
-      category: 'OTHER',
+      category: '',
       notes: ''
     });
     setBusinessExpenseDialogOpen(true);
@@ -767,7 +767,7 @@ const TechnicianPayments = () => {
 
   const handleEditBusinessExpense = (expense: any) => {
     setEditingBusinessExpense(expense);
-    const allowed = new Set(['BUSINESS', 'OTHER']);
+    const allowed = new Set(['BUSINESS', 'JOB_COST', 'OTHER']);
     const rawCategory = (expense.category || 'OTHER').toString().toUpperCase();
     setBusinessExpenseFormData({
       amount: expense.amount.toString(),
@@ -783,6 +783,10 @@ const TechnicianPayments = () => {
     try {
       if (!businessExpenseFormData.amount || !businessExpenseFormData.description) {
         toast.error('Please fill in all required fields');
+        return;
+      }
+      if (!businessExpenseFormData.category) {
+        toast.error('Please select a category');
         return;
       }
 
@@ -3383,10 +3387,11 @@ const TechnicianPayments = () => {
                 onValueChange={(value) => setBusinessExpenseFormData({ ...businessExpenseFormData, category: value })}
               >
                 <SelectTrigger>
-                  <SelectValue />
+                  <SelectValue placeholder="Select category" />
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="BUSINESS">Business</SelectItem>
+                  <SelectItem value="JOB_COST">Job Cost</SelectItem>
                   <SelectItem value="OTHER">Other</SelectItem>
                 </SelectContent>
               </Select>
