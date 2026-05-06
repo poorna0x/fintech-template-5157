@@ -150,6 +150,31 @@ const NewJobDialog: React.FC<NewJobDialogProps> = ({
   };
 
   const handleFormChange = (field: keyof NewJobFormData, value: string | number) => {
+    // If service_type changes, update brand/model defaults to match that service
+    if (field === 'service_type' && customer) {
+      const nextServiceType = String(value) as 'RO' | 'SOFTENER';
+      const svcType = (customer as any).service_type || customer.serviceType;
+      const types = parseDbServiceType
+        ? parseDbServiceType((customer as any).service_type || customer.serviceType || '')
+        : (svcType === 'SOFTENER' ? ['SOFTENER'] : ['RO']);
+
+      const brands = (customer.brand || '').split(',').map((s: string) => s.trim());
+      const models = (customer.model || '').split(',').map((s: string) => s.trim());
+      const idx = types.indexOf(nextServiceType);
+
+      const nextBrandRaw = (idx >= 0 ? (brands[idx] || '') : '');
+      const nextModelRaw = (idx >= 0 ? (models[idx] || '') : '');
+
+      setNewJobFormData(prev => ({
+        ...prev,
+        service_type: nextServiceType,
+        // If we don't have a matching slot value, keep existing selection (don't overwrite user edits)
+        brand: nextBrandRaw ? nextBrandRaw : prev.brand,
+        model: nextModelRaw ? nextModelRaw : prev.model
+      }));
+      return;
+    }
+
     setNewJobFormData(prev => ({
       ...prev,
       [field]: value

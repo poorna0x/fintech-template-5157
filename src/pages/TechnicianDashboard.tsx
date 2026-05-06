@@ -5356,14 +5356,26 @@ const TechnicianDashboard = () => {
                               val.toLowerCase() !== 'not specified' && 
                               val.trim() !== '';
                           };
+
+                          const normalizeServiceType = (raw: string) => {
+                            const v = (raw || '').toString().trim().toUpperCase();
+                            if (!v) return '';
+                            if (v === 'SOFTENER' || v.includes('SOFTENER') || v.includes('SOFTNER') || v.includes('WATER SOFT')) return 'SOFTENER';
+                            if (v === 'RO' || v.includes('REVERSE OSMOSIS') || v.includes('REVERSE-OSMOSIS') || v.includes('RO')) return 'RO';
+                            return v;
+                          };
                           
+                          const jobServiceType = normalizeServiceType(jobData.service_type || job.serviceType || jobData.serviceType || '');
+                          const customerServiceType = normalizeServiceType(customer?.service_type || customer?.serviceType || '');
+
                           // Get job brand/model
                           const jobBrand = jobData.brand || job.brand || '';
                           const jobModel = jobData.model || job.model || '';
                           
                           // Check if job has valid brand/model (treat "Not specified" as empty)
-                          const hasValidJobBrand = isValidValue(jobBrand);
-                          const hasValidJobModel = isValidValue(jobModel);
+                          // For SOFTENER jobs, ignore job.brand/model to avoid showing RO equipment by mistake.
+                          const hasValidJobBrand = jobServiceType === 'SOFTENER' ? false : isValidValue(jobBrand);
+                          const hasValidJobModel = jobServiceType === 'SOFTENER' ? false : isValidValue(jobModel);
                           
                           let brand = hasValidJobBrand ? jobBrand : '';
                           let model = hasValidJobModel ? jobModel : '';
@@ -5372,7 +5384,6 @@ const TechnicianDashboard = () => {
                           if (!brand || !model) {
                             const customerBrand = customer?.brand || '';
                             const customerModel = customer?.model || '';
-                            const jobServiceType = (jobData.service_type || job.serviceType || '').toUpperCase();
                             
                             // If customer has comma-separated values, parse them based on service type
                             if (customerBrand && customerBrand.includes(',')) {
@@ -5384,9 +5395,10 @@ const TechnicianDashboard = () => {
                               if (jobServiceType === 'RO' || jobServiceType === '') {
                                 if (!brand) brand = brands[0] || '';
                                 if (!model) model = models[0] || '';
-                              } else if (jobServiceType === 'SOFTENER' && brands.length > 1) {
-                                if (!brand) brand = brands[1] || brands[0] || '';
-                                if (!model) model = models[1] || models[0] || '';
+                              } else if (jobServiceType === 'SOFTENER') {
+                                // Never fall back to RO equipment for softener jobs
+                                if (!brand) brand = (brands.length > 1 ? (brands[1] || '') : '');
+                                if (!model) model = (models.length > 1 ? (models[1] || '') : '');
                               } else {
                                 // Fallback: use first available
                                 if (!brand) brand = brands[0] || '';
@@ -5394,8 +5406,16 @@ const TechnicianDashboard = () => {
                               }
                             } else {
                               // Customer has single brand/model values - only use if valid
-                              if (!brand && isValidValue(customerBrand)) brand = customerBrand;
-                              if (!model && isValidValue(customerModel)) model = customerModel;
+                              if (jobServiceType === 'SOFTENER') {
+                                // Only trust single value if customer is softener-only.
+                                if (customerServiceType === 'SOFTENER') {
+                                  if (!brand && isValidValue(customerBrand)) brand = customerBrand;
+                                  if (!model && isValidValue(customerModel)) model = customerModel;
+                                }
+                              } else {
+                                if (!brand && isValidValue(customerBrand)) brand = customerBrand;
+                                if (!model && isValidValue(customerModel)) model = customerModel;
+                              }
                             }
                           }
                           
@@ -6073,6 +6093,14 @@ const TechnicianDashboard = () => {
                                   val.toLowerCase() !== 'not specified' && 
                                   val.trim() !== '';
                               };
+
+                              const normalizeServiceType = (raw: string) => {
+                                const v = (raw || '').toString().trim().toUpperCase();
+                                if (!v) return '';
+                                if (v === 'SOFTENER' || v.includes('SOFTENER') || v.includes('SOFTNER') || v.includes('WATER SOFT')) return 'SOFTENER';
+                                if (v === 'RO' || v.includes('REVERSE OSMOSIS') || v.includes('REVERSE-OSMOSIS') || v.includes('RO')) return 'RO';
+                                return v;
+                              };
                               
                               // Get job brand/model
                               const jobBrand = jobData.brand || job?.brand || '';
@@ -6085,7 +6113,8 @@ const TechnicianDashboard = () => {
                               
                               // If job doesn't have valid brand, try to get from customer
                               if (!brand && customerBrand) {
-                                const jobServiceType = (jobData.service_type || job?.service_type || '').toUpperCase();
+                                const jobServiceType = normalizeServiceType(jobData.service_type || job?.service_type || jobData.serviceType || job?.serviceType || '');
+                                const customerServiceType = normalizeServiceType(customer?.service_type || customer?.serviceType || '');
                                 
                                 // If customer has comma-separated values, parse them based on service type
                                 if (customerBrand.includes(',')) {
@@ -6094,14 +6123,20 @@ const TechnicianDashboard = () => {
                                   // For RO jobs, use first brand; for SOFTENER, use second if available
                                   if (jobServiceType === 'RO' || jobServiceType === '') {
                                     brand = brands[0] || '';
-                                  } else if (jobServiceType === 'SOFTENER' && brands.length > 1) {
-                                    brand = brands[1] || brands[0] || '';
+                                  } else if (jobServiceType === 'SOFTENER') {
+                                    // Never fall back to RO equipment for softener jobs
+                                    brand = (brands.length > 1 ? (brands[1] || '') : '');
                                   } else {
                                     brand = brands[0] || '';
                                   }
                                 } else {
-                                  // Customer has single brand value - only use if valid
-                                  if (isValidValue(customerBrand)) brand = customerBrand;
+                                  // Customer has single brand value - only use if valid.
+                                  // For softener jobs, only trust the single value if customer is softener-only.
+                                  if (jobServiceType === 'SOFTENER') {
+                                    if (customerServiceType === 'SOFTENER' && isValidValue(customerBrand)) brand = customerBrand;
+                                  } else {
+                                    if (isValidValue(customerBrand)) brand = customerBrand;
+                                  }
                                 }
                               }
                               
@@ -6114,7 +6149,8 @@ const TechnicianDashboard = () => {
                               
                               // If job doesn't have valid model, try to get from customer
                               if (!model && customerModel) {
-                                const jobServiceType = (jobData.service_type || job?.service_type || '').toUpperCase();
+                                const jobServiceType = normalizeServiceType(jobData.service_type || job?.service_type || jobData.serviceType || job?.serviceType || '');
+                                const customerServiceType = normalizeServiceType(customer?.service_type || customer?.serviceType || '');
                                 
                                 // If customer has comma-separated values, parse them based on service type
                                 if (customerModel.includes(',')) {
@@ -6123,14 +6159,20 @@ const TechnicianDashboard = () => {
                                   // For RO jobs, use first model; for SOFTENER, use second if available
                                   if (jobServiceType === 'RO' || jobServiceType === '') {
                                     model = models[0] || '';
-                                  } else if (jobServiceType === 'SOFTENER' && models.length > 1) {
-                                    model = models[1] || models[0] || '';
+                                  } else if (jobServiceType === 'SOFTENER') {
+                                    // Never fall back to RO equipment for softener jobs
+                                    model = (models.length > 1 ? (models[1] || '') : '');
                                   } else {
                                     model = models[0] || '';
                                   }
                                 } else {
-                                  // Customer has single model value - only use if valid
-                                  if (isValidValue(customerModel)) model = customerModel;
+                                  // Customer has single model value - only use if valid.
+                                  // For softener jobs, only trust the single value if customer is softener-only.
+                                  if (jobServiceType === 'SOFTENER') {
+                                    if (customerServiceType === 'SOFTENER' && isValidValue(customerModel)) model = customerModel;
+                                  } else {
+                                    if (isValidValue(customerModel)) model = customerModel;
+                                  }
                                 }
                               }
                               

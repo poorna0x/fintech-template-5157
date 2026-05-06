@@ -767,11 +767,13 @@ const TechnicianPayments = () => {
 
   const handleEditBusinessExpense = (expense: any) => {
     setEditingBusinessExpense(expense);
+    const allowed = new Set(['BUSINESS', 'OTHER']);
+    const rawCategory = (expense.category || 'OTHER').toString().toUpperCase();
     setBusinessExpenseFormData({
       amount: expense.amount.toString(),
       description: expense.description,
       expense_date: expense.expense_date.split('T')[0],
-      category: expense.category || 'OTHER',
+      category: allowed.has(rawCategory) ? rawCategory : 'OTHER',
       notes: expense.notes || ''
     });
     setBusinessExpenseDialogOpen(true);
@@ -837,11 +839,13 @@ const TechnicianPayments = () => {
 
   const handleEditOtherExpense = (expense: any) => {
     setEditingOtherExpense(expense);
+    const allowed = new Set(['BUSINESS', 'OTHER']);
+    const rawCategory = (expense.category || 'OTHER').toString().toUpperCase();
     setOtherExpenseFormData({
       amount: expense.amount.toString(),
       description: expense.description,
       expense_date: expense.expense_date.split('T')[0],
-      category: expense.category || 'OTHER',
+      category: allowed.has(rawCategory) ? rawCategory : 'OTHER',
       notes: expense.notes || ''
     });
     setOtherExpenseDialogOpen(true);
@@ -3384,11 +3388,7 @@ const TechnicianPayments = () => {
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="OFFICE">Office</SelectItem>
-                  <SelectItem value="MARKETING">Marketing</SelectItem>
-                  <SelectItem value="UTILITIES">Utilities</SelectItem>
-                  <SelectItem value="RENT">Rent</SelectItem>
-                  <SelectItem value="SPARE_PARTS">Spare Parts</SelectItem>
+                  <SelectItem value="BUSINESS">Business</SelectItem>
                   <SelectItem value="OTHER">Other</SelectItem>
                 </SelectContent>
               </Select>
@@ -3470,10 +3470,7 @@ const TechnicianPayments = () => {
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="PERSONAL">Personal</SelectItem>
-                  <SelectItem value="TRAVEL">Travel</SelectItem>
-                  <SelectItem value="SUPPLIES">Supplies</SelectItem>
-                  <SelectItem value="MISC">Miscellaneous</SelectItem>
+                  <SelectItem value="BUSINESS">Business</SelectItem>
                   <SelectItem value="OTHER">Other</SelectItem>
                 </SelectContent>
               </Select>

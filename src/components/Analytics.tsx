@@ -130,7 +130,7 @@ interface AnalyticsData {
 
 type PeriodOption = '7d' | '30d' | 'thisWeek' | 'thisMonth' | 'previousMonth' | 'customMonth' | '3m' | '6m' | '1y' | 'all' | 'custom';
 
-/** Ishanga 7%: 7% of (Revenue − expense (core)), core = technician + salary + business expenses. */
+/** Ishanga 7%: 7% of (Revenue − business expenses − other business expenses − salary − technician expenses). */
 const ISHANGA_RATE = 0.07;
 
 // Helper function to format currency with commas and without .00 when it's zero
@@ -960,11 +960,13 @@ const Analytics = () => {
         totalOtherBusinessExpenses +
         totalSparePartsCost;
       const netProfit = periodBilling - totalLeadCostsSum - expenseTotal;
+      // Ishanga 7% base = Revenue − business expense − other business expenses − salary − technician expense
       const revenueMinusCoreForIshanga =
         periodBilling -
-        totalTechnicianExpenses -
+        totalBusinessExpenses -
+        totalOtherBusinessExpenses -
         Math.max(0, totalSalaryDeductions) -
-        totalBusinessExpenses;
+        totalTechnicianExpenses;
       const ishaDonationAmount = Math.max(0, revenueMinusCoreForIshanga) * ISHANGA_RATE;
 
       // Enhance analytics data (Top locations loaded on demand via Load button)
@@ -2591,7 +2593,7 @@ const Analytics = () => {
                   <div className="text-sm font-semibold text-gray-800">Ishanga 7%</div>
                 </div>
                 <div className="flex justify-between gap-2 items-center text-xs sm:text-sm">
-                  <span className="text-gray-700">7% × (Revenue − expense (core)); core = technician + salary + business</span>
+                  <span className="text-gray-700">7% × (Revenue − business − other business − salary − technician)</span>
                   <span className="font-semibold text-violet-700 shrink-0 tabular-nums">
                     ₹ {formatCurrency(analytics.ishaDonationAmount || 0)}
                   </span>
