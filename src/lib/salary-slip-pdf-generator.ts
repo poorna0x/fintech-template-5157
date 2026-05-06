@@ -90,6 +90,10 @@ function generateSalarySlipHTML(data: SalarySlipPDFData, includeDayWiseBreakdown
     });
   };
 
+  const formatMonthYear = (date: Date): string => {
+    return date.toLocaleDateString('en-IN', { month: 'short', year: 'numeric' });
+  };
+
   // Calculate payment date: 10th of next month
   // Use start date (1st of month) to avoid date rollover issues when adding months
   const paymentDate = new Date(data.period.start);
@@ -102,7 +106,7 @@ function generateSalarySlipHTML(data: SalarySlipPDFData, includeDayWiseBreakdown
     <head>
       <meta charset="UTF-8">
       <meta name="viewport" content="width=device-width, initial-scale=1.0">
-      <title>Salary Slip - ${data.employeeId}</title>
+      <title>Salary Slip - ${data.employeeId} - ${formatMonthYear(data.period.start)}</title>
       <style>
         @import url('https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&display=swap');
         

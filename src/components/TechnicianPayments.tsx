@@ -2128,29 +2128,28 @@ const TechnicianPayments = () => {
                 </div>
               )}
 
-              {/* Daily Breakdown - Only show for Current Cycle */}
-              {selectedPeriod === 'current' && (
-                <div className="mb-6">
-                  <Button
-                    type="button"
-                    variant="outline"
-                    onClick={() => {
-                      setShowDailyDetails(prev => ({
-                        ...prev,
-                        [breakdown.technicianId]: !prev[breakdown.technicianId]
-                      }));
-                    }}
-                    className="w-full flex items-center justify-between"
-                  >
-                    <span className="font-semibold">Daily Breakdown</span>
-                    {showDailyDetails[breakdown.technicianId] ? (
-                      <ChevronUp className="w-4 h-4" />
-                    ) : (
-                      <ChevronDown className="w-4 h-4" />
-                    )}
-                  </Button>
-                  
-                  {showDailyDetails[breakdown.technicianId] && (() => {
+              {/* Daily Breakdown */}
+              <div className="mb-6">
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => {
+                    setShowDailyDetails(prev => ({
+                      ...prev,
+                      [breakdown.technicianId]: !prev[breakdown.technicianId]
+                    }));
+                  }}
+                  className="w-full flex items-center justify-between"
+                >
+                  <span className="font-semibold">Daily Breakdown</span>
+                  {showDailyDetails[breakdown.technicianId] ? (
+                    <ChevronUp className="w-4 h-4" />
+                  ) : (
+                    <ChevronDown className="w-4 h-4" />
+                  )}
+                </Button>
+                
+                {showDailyDetails[breakdown.technicianId] && (() => {
                   const currentPage = dailyBreakdownPage[breakdown.technicianId] || 1;
                   const totalDays = breakdown.dailyBreakdown.length;
                   const totalPages = Math.ceil(totalDays / itemsPerPage);
@@ -2323,8 +2322,7 @@ const TechnicianPayments = () => {
                     </div>
                   );
                 })()}
-                </div>
-              )}
+              </div>
 
               {/* Summary - Show final salary paid on 10th */}
               {(selectedPeriod === 'pastMonth' || selectedPeriod === 'rangeToCurrent') && (
