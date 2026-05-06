@@ -767,7 +767,7 @@ const TechnicianPayments = () => {
 
   const handleEditBusinessExpense = (expense: any) => {
     setEditingBusinessExpense(expense);
-    const allowed = new Set(['BUSINESS', 'JOB_COST', 'OTHER']);
+    const allowed = new Set(['BUSINESS', 'JOB_COST', 'OTHER_BUSINESS_EXPENSE', 'OTHER']);
     const rawCategory = (expense.category || 'OTHER').toString().toUpperCase();
     setBusinessExpenseFormData({
       amount: expense.amount.toString(),
@@ -3392,6 +3392,7 @@ const TechnicianPayments = () => {
                 <SelectContent>
                   <SelectItem value="BUSINESS">Business</SelectItem>
                   <SelectItem value="JOB_COST">Job Cost</SelectItem>
+                  <SelectItem value="OTHER_BUSINESS_EXPENSE">Other Business Expense</SelectItem>
                   <SelectItem value="OTHER">Other</SelectItem>
                 </SelectContent>
               </Select>
