@@ -90,6 +90,8 @@ interface AnalyticsData {
   totalProfit?: number; // Revenue - Lead Costs - Expenses (operating; lead costs only on completed jobs)
   /** Net profit for the small "Revenue − total costs above" (includes only JOB_COST from business_expenses). */
   totalProfitJobsOnly?: number;
+  /** Net cash-in-hand style metric: Revenue − business expenses − salary − technician expenses. */
+  netCashInHand?: number;
   /** Ishanga: 7% × max(0, revenue − technician − salary − business ledger); same base as Revenue − expense (core) */
   ishaDonationAmount?: number;
   softenerData?: {
@@ -388,7 +390,7 @@ const Analytics = () => {
 
         if (jobsInRangeResult.error || !jobsInRangeResult.data) {
           console.error('Error loading jobs for detailed analytics:', jobsInRangeResult.error);
-          setAnalytics({});
+          setAnalytics(null);
           return;
         }
 
@@ -988,6 +990,11 @@ const Analytics = () => {
         totalBusinessExpensesForProfit;
       const netProfitJobsOnly = periodBilling - totalLeadCostsSum - expenseTotalJobsOnly;
       const netProfit = periodBilling - totalLeadCostsSum - expenseTotal;
+      const netCashInHand =
+        periodBilling -
+        totalBusinessExpenses -
+        Math.max(0, totalSalaryDeductions) -
+        totalTechnicianExpenses;
       // Ishanga 7% base = Revenue − business expense − salary − technician expense
       const revenueMinusCoreForIshanga =
         periodBilling -
@@ -1036,6 +1043,7 @@ const Analytics = () => {
         totalExpenses: expenseTotal,
         totalProfit: netProfit,
         totalProfitJobsOnly: netProfitJobsOnly,
+        netCashInHand,
         ishaDonationAmount,
         serviceTypeBreakdown: Object.entries(serviceTypeMap)
           .map(([serviceType, stats]) => ({ serviceType, ...stats }))
@@ -2556,31 +2564,30 @@ const Analytics = () => {
               <div className="bg-blue-100 rounded-lg p-4 sm:p-5 md:p-6 border-2 border-blue-300 min-w-0">
                 <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                   <div className="min-w-0">
-                    <div className="text-sm font-medium text-gray-700">Net Cash</div>
+                    <div className="text-sm font-medium text-gray-700">Net Cash in Hand</div>
                     <div className="text-xs text-gray-600">
-                      Revenue − lead costs − technician, salary, other business expenses, spare parts (business ledger
-                      expenses included: JOB_COST + BUSINESS)
+                      Revenue − business expenses − salary − technician expenses
                     </div>
                   </div>
                   <div className="flex flex-col items-end sm:items-end gap-0.5 shrink-0 text-right">
                     {(() => {
                       const marginPct = formatProfitMarginPercent(
-                        analytics.totalProfit || 0,
+                        analytics.netCashInHand || 0,
                         analytics.totalBilling || 0
                       );
                       return (
                         <>
                           <div
                             className={`text-2xl sm:text-3xl md:text-4xl font-bold tabular-nums ${
-                              (analytics.totalProfit || 0) >= 0 ? 'text-green-600' : 'text-red-600'
+                              (analytics.netCashInHand || 0) >= 0 ? 'text-green-600' : 'text-red-600'
                             }`}
                           >
-                            ₹ {formatCurrency(analytics.totalProfit || 0)}
+                            ₹ {formatCurrency(analytics.netCashInHand || 0)}
                           </div>
                           {marginPct != null && (
                             <div
                               className={`text-sm sm:text-base font-semibold tabular-nums ${
-                                (analytics.totalProfit || 0) >= 0 ? 'text-green-700' : 'text-red-600'
+                                (analytics.netCashInHand || 0) >= 0 ? 'text-green-700' : 'text-red-600'
                               }`}
                             >
                               {marginPct}% of revenue
