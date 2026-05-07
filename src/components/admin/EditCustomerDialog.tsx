@@ -1090,7 +1090,12 @@ const EditCustomerDialog: React.FC<EditCustomerDialogProps> = ({
 
   return (
     <Dialog open={open} onOpenChange={handleDialogOpenChange}>
-      <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
+      <DialogContent
+        className="max-w-4xl max-h-[90vh] overflow-y-auto"
+        // Prevent Radix from auto-focusing arbitrary elements on open.
+        // We explicitly focus the Full Name field only when the dialog is opened via Edit.
+        onOpenAutoFocus={(e) => e.preventDefault()}
+      >
         <DialogHeader>
           <DialogTitle>Edit Customer</DialogTitle>
           <DialogDescription asChild>
