@@ -169,15 +169,6 @@ const AMCViewPage: React.FC<AMCViewPageProps> = ({ onBack, onAMCDeleted }) => {
       };
     }
 
-    if (hasOpenAMCJob) {
-      return {
-        nextAutoGenerationDate: null,
-        nextAMCDueDate: null,
-        autoGenerationLabel: 'Already generated',
-        autoGenerationStatus: 'GENERATED',
-      };
-    }
-
     const referenceDate = toDateOnly(lastCompletedDate || customer?.last_service_date || amc.start_date);
     if (!referenceDate) {
       return {
@@ -190,6 +181,15 @@ const AMCViewPage: React.FC<AMCViewPageProps> = ({ onBack, onAMCDeleted }) => {
 
     const nextDueDate = addMonthsToDate(referenceDate, periodMonths);
     const generationDate = subtractDaysFromDate(nextDueDate, 10);
+
+    if (hasOpenAMCJob) {
+      return {
+        nextAutoGenerationDate: generationDate,
+        nextAMCDueDate: nextDueDate,
+        autoGenerationLabel: 'Already generated',
+        autoGenerationStatus: 'GENERATED',
+      };
+    }
 
     return {
       nextAutoGenerationDate: generationDate,
