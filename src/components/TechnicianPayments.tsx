@@ -30,6 +30,7 @@ interface TechnicianPayment {
   commission_amount: number;
   payment_status: 'PENDING' | 'PAID' | 'CANCELLED';
   payment_date?: string;
+  created_at?: string;
   technician?: {
     id: string;
     full_name: string;
@@ -88,6 +89,23 @@ interface DailyBreakdown {
   isAbsent: boolean;
 }
 
+interface TechnicianMonthlySalaryBreakdown {
+  monthKey: string;
+  monthLabel: string;
+  totalBillAmount: number;
+  adjustedBaseSalary: number;
+  totalCommission: number;
+  totalExtraCommission: number;
+  billingSlabCommission: number;
+  salaryBeforeAdvance: number;
+  totalAdvances: number;
+  totalSalary: number;
+  totalExpenses: number;
+  totalHolidays: number;
+  extraHolidays: number;
+  unusedLeaves: number;
+}
+
 interface TechnicianSalaryBreakdown {
   technicianId: string;
   technicianName: string;
@@ -116,6 +134,7 @@ interface TechnicianSalaryBreakdown {
   extraCommissions: TechnicianExtraCommission[];
   holidays: TechnicianHoliday[];
   dailyBreakdown: DailyBreakdown[]; // Daily billing breakdown
+  monthlyBreakdowns?: TechnicianMonthlySalaryBreakdown[];
 }
 
 // Helper function to format currency with commas and without .00 when it's zero
@@ -147,6 +166,7 @@ const TechnicianPayments = () => {
     const now = new Date();
     return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
   });
+  const [selectedRangeTechnician, setSelectedRangeTechnician] = useState<string>('ALL');
   const [showDailyDetails, setShowDailyDetails] = useState<Record<string, boolean>>({});
   const [dailyBreakdownPage, setDailyBreakdownPage] = useState<Record<string, number>>({}); // technicianId -> page number
   const itemsPerPage = 10; // Show 10 days per page
@@ -438,6 +458,155 @@ const TechnicianPayments = () => {
         (endDate.getMonth() - startDate.getMonth()) +
         1;
 
+      const monthRanges: Array<{ monthKey: string; monthLabel: string; start: Date; end: Date }> = [];
+      const monthCursor = new Date(startDate.getFullYear(), startDate.getMonth(), 1);
+      const finalMonth = new Date(endDate.getFullYear(), endDate.getMonth(), 1);
+      while (monthCursor <= finalMonth) {
+        const monthStart = new Date(monthCursor.getFullYear(), monthCursor.getMonth(), 1, 0, 0, 0, 0);
+        const monthEnd = new Date(monthCursor.getFullYear(), monthCursor.getMonth() + 1, 0, 23, 59, 59, 999);
+        monthRanges.push({
+          monthKey: `${monthCursor.getFullYear()}-${String(monthCursor.getMonth() + 1).padStart(2, '0')}`,
+          monthLabel: monthCursor.toLocaleDateString('en-IN', { month: 'long', year: 'numeric' }),
+          start: monthStart,
+          end: monthEnd,
+        });
+        monthCursor.setMonth(monthCursor.getMonth() + 1);
+      }
+
+      const calculateMonthlyBreakdown = (
+        tech: any,
+        monthRange: { monthKey: string; monthLabel: string; start: Date; end: Date }
+      ): TechnicianMonthlySalaryBreakdown => {
+        const techId = tech.id;
+        const monthStartStr = formatDateString(monthRange.start);
+        const monthEndStr = formatDateString(monthRange.end);
+        const monthlyBaseSalary = getTechnicianMonthlyBaseSalary(tech, 8000, monthRange.start);
+        const allowedHolidays = 4;
+
+        const techPaymentsForCommission = paymentsData.filter((p: TechnicianPayment) => {
+          if (p.technician_id !== techId) return false;
+          const d = (p.created_at || '').split('T')[0];
+          return d >= monthStartStr && d <= monthEndStr;
+        });
+        const techCompletedJobsForCommission = completedJobsData.filter((j: any) => {
+          if (j.assigned_technician_id !== techId) return false;
+          const completionDate = j.end_time || j.completed_at;
+          if (!completionDate) return false;
+          const d = formatDateString(new Date(completionDate));
+          return d >= monthStartStr && d <= monthEndStr;
+        });
+
+        let totalCommission = techPaymentsForCommission.reduce((sum: number, payment: TechnicianPayment) => sum + (payment.commission_amount || 0), 0);
+        const jobsWithPayments = new Set(techPaymentsForCommission.map((p: TechnicianPayment) => p.job_id));
+        const jobsWithoutPayments = techCompletedJobsForCommission.filter((j: any) => !jobsWithPayments.has(j.id));
+        totalCommission += jobsWithoutPayments.reduce((sum: number, job: any) => {
+          const billAmount = parseFloat(job.actual_cost || job.payment_amount || 0);
+          return sum + (billAmount * 0.10);
+        }, 0);
+
+        const totalBillAmount = techCompletedJobsForCommission.reduce((sum: number, job: any) => {
+          return sum + parseFloat(job.actual_cost || job.payment_amount || 0);
+        }, 0);
+
+        const techExpenses = expensesData.filter((e: TechnicianExpense) => {
+          if (e.technician_id !== techId) return false;
+          const d = e.expense_date.split('T')[0];
+          return d >= monthStartStr && d <= monthEndStr;
+        });
+        const totalExpenses = techExpenses.reduce((sum, e) => sum + (e.amount || 0), 0);
+
+        const techAdvances = advancesData.filter((a: TechnicianAdvance) => {
+          if (a.technician_id !== techId) return false;
+          const d = (a as any).advance_date?.split?.('T')[0] ?? (a as any).advance_date;
+          return d >= monthStartStr && d <= monthEndStr;
+        });
+        const totalAdvances = techAdvances.reduce((sum, a) => sum + (a.amount || 0), 0);
+
+        const techExtraCommissions = extraCommissionsData.filter((ec: TechnicianExtraCommission) => {
+          if (ec.technician_id !== techId) return false;
+          const d = ec.commission_date.split('T')[0];
+          return d >= monthStartStr && d <= monthEndStr;
+        });
+        const billingSlabCommission = calculateTechnicianBillingSlabCommission(techCompletedJobsForCommission);
+        const totalExtraCommission =
+          techExtraCommissions.reduce((sum, ec) => sum + (ec.amount || 0), 0) +
+          billingSlabCommission;
+
+        const techHolidays = holidaysData.filter((h: TechnicianHoliday) => h.technician_id === techId);
+        const datesWithJobs = new Set<string>();
+        techCompletedJobsForCommission.forEach((job: any) => {
+          const completionDate = job.end_time || job.completed_at;
+          if (completionDate) datesWithJobs.add(formatDateString(new Date(completionDate)));
+        });
+
+        const allDates: string[] = [];
+        const currentDate = new Date(monthRange.start);
+        currentDate.setHours(0, 0, 0, 0);
+        const cutoffDate = new Date(monthRange.end > todayForHolidays ? todayForHolidays : monthRange.end);
+        cutoffDate.setHours(0, 0, 0, 0);
+        while (currentDate <= cutoffDate) {
+          const dateStr = formatDateString(new Date(currentDate));
+          if (dateStr >= monthStartStr && dateStr <= todayStrForHolidays) allDates.push(dateStr);
+          currentDate.setDate(currentDate.getDate() + 1);
+        }
+
+        const allHolidayDates = new Set<string>();
+        techHolidays.forEach(h => {
+          const holidayDate = h.holiday_date.split('T')[0];
+          if (holidayDate <= todayStrForHolidays && holidayDate >= monthStartStr && holidayDate <= monthEndStr && h.reason !== 'MARKED_AS_PRESENT') {
+            allHolidayDates.add(holidayDate);
+          }
+        });
+        allDates.forEach(date => {
+          if (date <= todayStrForHolidays && !datesWithJobs.has(date)) {
+            const existingHoliday = techHolidays.find(h => h.holiday_date.split('T')[0] === date);
+            if (!existingHoliday || existingHoliday.reason !== 'MARKED_AS_PRESENT') allHolidayDates.add(date);
+          }
+        });
+
+        const displayHolidays: TechnicianHoliday[] = [];
+        techHolidays.forEach(h => {
+          const holidayDate = h.holiday_date.split('T')[0];
+          if (allHolidayDates.has(holidayDate) && h.reason !== 'MARKED_AS_PRESENT') displayHolidays.push(h);
+        });
+        allHolidayDates.forEach(date => {
+          if (!displayHolidays.some(h => h.holiday_date.split('T')[0] === date)) {
+            displayHolidays.push({ id: `auto-${date}`, technician_id: techId, holiday_date: date, is_manual: false, reason: 'No completed jobs - auto-detected as absent' });
+          }
+        });
+
+        const totalHolidays = allHolidayDates.size;
+        const extraHolidays = Math.max(0, totalHolidays - allowedHolidays);
+        const absentDays = extraHolidays > 0
+          ? displayHolidays.filter(h => allHolidayDates.has(h.holiday_date.split('T')[0])).sort((a, b) => new Date(b.holiday_date).getTime() - new Date(a.holiday_date).getTime()).slice(0, extraHolidays)
+          : [];
+        const holidayDeduction = absentDays.reduce((sum, holiday) => {
+          return sum + getTechnicianDailyBaseSalary(tech, new Date(holiday.holiday_date));
+        }, 0);
+        const unusedLeaves = Math.max(0, allowedHolidays - totalHolidays);
+        const unusedLeaveBonus = unusedLeaves * (monthlyBaseSalary / 30);
+        const adjustedBaseSalary = monthlyBaseSalary - holidayDeduction + unusedLeaveBonus;
+        const salaryBeforeAdvance = adjustedBaseSalary + totalCommission + totalExtraCommission;
+        const totalSalary = salaryBeforeAdvance - totalAdvances;
+
+        return {
+          monthKey: monthRange.monthKey,
+          monthLabel: monthRange.monthLabel,
+          totalBillAmount,
+          adjustedBaseSalary,
+          totalCommission,
+          totalExtraCommission,
+          billingSlabCommission,
+          salaryBeforeAdvance,
+          totalAdvances,
+          totalSalary,
+          totalExpenses,
+          totalHolidays,
+          extraHolidays,
+          unusedLeaves,
+        };
+      };
+
       const breakdowns: TechnicianSalaryBreakdown[] = techs.map((tech: any) => {
         const techId = tech.id;
         const monthlyBaseSalary = getTechnicianMonthlyBaseSalary(tech, 8000, startDate);
@@ -579,6 +748,9 @@ const TechnicianPayments = () => {
         const salaryBeforeAdvance =
           adjustedBaseSalary + totalCommission + totalExtraCommission;
         const totalSalary = salaryBeforeAdvance - totalAdvances;
+        const monthlyBreakdowns = selectedPeriod === 'rangeToCurrent'
+          ? monthRanges.map(monthRange => calculateMonthlyBreakdown(tech, monthRange))
+          : undefined;
 
         return {
           technicianId: techId,
@@ -606,7 +778,8 @@ const TechnicianPayments = () => {
           advances: techAdvances,
           extraCommissions: techExtraCommissions,
           holidays: absentDays,
-          dailyBreakdown
+          dailyBreakdown,
+          monthlyBreakdowns
         };
       });
 
@@ -618,7 +791,7 @@ const TechnicianPayments = () => {
     } finally {
       if (showLoading) setLoadingSalaryBreakdowns(false);
     }
-  }, [technicians, getMonthlyDateRange]);
+  }, [technicians, getMonthlyDateRange, selectedPeriod]);
 
   useEffect(() => {
     loadTechniciansOnly();
@@ -1600,6 +1773,11 @@ const TechnicianPayments = () => {
     );
   }
 
+  const displayedSalaryBreakdowns =
+    selectedPeriod === 'rangeToCurrent' && selectedRangeTechnician !== 'ALL'
+      ? salaryBreakdowns.filter((breakdown) => breakdown.technicianId === selectedRangeTechnician)
+      : salaryBreakdowns;
+
   return (
     <div className="space-y-6">
       <div>
@@ -1658,6 +1836,22 @@ const TechnicianPayments = () => {
                   onChange={(e) => setSelectedRangeEndMonth(e.target.value)}
                   className="w-full"
                 />
+              </div>
+              <div className="min-w-0 sm:col-span-2">
+                <Label htmlFor="range-technician-select">Technician</Label>
+                <Select value={selectedRangeTechnician} onValueChange={setSelectedRangeTechnician}>
+                  <SelectTrigger id="range-technician-select" className="w-full">
+                    <SelectValue placeholder="Select technician" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="ALL">All technicians</SelectItem>
+                    {technicians.map((tech: any) => (
+                      <SelectItem key={tech.id} value={tech.id}>
+                        {tech.full_name || 'Unknown'}{tech.employee_id ? ` (${tech.employee_id})` : ''}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
               </div>
             </div>
           )}
@@ -1753,7 +1947,16 @@ const TechnicianPayments = () => {
             </div>
           </Card>
         )}
-        {!loadingSalaryBreakdowns && salaryDataLoaded && salaryBreakdowns.map((breakdown) => (
+        {!loadingSalaryBreakdowns && salaryDataLoaded && displayedSalaryBreakdowns.length === 0 && (
+          <Card>
+            <CardContent className="p-8 text-center">
+              <User className="w-10 h-10 text-gray-400 mx-auto mb-3" />
+              <p className="text-gray-700 font-medium">No technician salary data found</p>
+              <p className="text-sm text-gray-500 mt-1">Choose another technician or period.</p>
+            </CardContent>
+          </Card>
+        )}
+        {!loadingSalaryBreakdowns && salaryDataLoaded && displayedSalaryBreakdowns.map((breakdown) => (
           <Card key={breakdown.technicianId} className="overflow-hidden">
             <CardHeader className="bg-gray-50 border-b">
               <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
@@ -1769,23 +1972,113 @@ const TechnicianPayments = () => {
                     <p className="text-xs text-gray-500">Total Billing</p>
                   </div>
                   <div className="flex-1 sm:flex-initial sm:text-right">
-                    <div className="text-2xl font-bold text-cyan-700">
-                      ₹ {formatCurrency(breakdown.salaryBeforeAdvance)}
+                    <div className={`text-2xl font-bold ${selectedPeriod === 'rangeToCurrent' ? 'text-orange-600' : 'text-cyan-700'}`}>
+                      ₹ {formatCurrency(selectedPeriod === 'rangeToCurrent' ? breakdown.totalAdvances : breakdown.salaryBeforeAdvance)}
                     </div>
-                    <p className="text-xs font-medium text-gray-700">Salary before advance</p>
+                    <p className="text-xs font-medium text-gray-700">
+                      {selectedPeriod === 'rangeToCurrent' ? 'Total Advance' : 'Salary before advance'}
+                    </p>
                   </div>
                   <div className="flex-1 sm:flex-initial sm:text-right">
                     <div className={`text-2xl font-bold ${breakdown.totalSalary < 0 ? 'text-red-600' : 'text-green-600'}`}>
                       ₹ {formatCurrency(breakdown.totalSalary)}
                     </div>
-                    <p className="text-xs font-medium text-gray-700">Net Salary</p>
-                    <p className="text-xs text-gray-500">After advances</p>
+                    <p className="text-xs font-medium text-gray-700">
+                      {selectedPeriod === 'rangeToCurrent' ? 'Final Net Salary' : 'Net Salary'}
+                    </p>
+                    <p className="text-xs text-gray-500">
+                      {selectedPeriod === 'rangeToCurrent' ? 'Month-wise below' : 'After advances'}
+                    </p>
                   </div>
                 </div>
               </div>
             </CardHeader>
             <CardContent className="p-4 sm:p-6">
+              {selectedPeriod === 'rangeToCurrent' && breakdown.monthlyBreakdowns && breakdown.monthlyBreakdowns.length > 0 && (
+                <div className="mb-6 p-3 sm:p-4 bg-slate-50 rounded-lg border border-slate-200">
+                  <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 mb-3">
+                    <div>
+                      <h3 className="text-sm font-semibold text-gray-800">Monthly Salary Breakdown</h3>
+                      <p className="text-xs text-gray-500">Each month is shown separately. Final totals are at the end.</p>
+                    </div>
+                    <div className="text-xs text-gray-500">
+                      {breakdown.monthlyBreakdowns.length} month{breakdown.monthlyBreakdowns.length !== 1 ? 's' : ''}
+                    </div>
+                  </div>
+                  <div className="overflow-x-auto">
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead>Month</TableHead>
+                          <TableHead className="text-right">Billing</TableHead>
+                          <TableHead className="text-right">Base + Leaves</TableHead>
+                          <TableHead className="text-right">Commission</TableHead>
+                          <TableHead className="text-right">Extra</TableHead>
+                          <TableHead className="text-right">Before Advance</TableHead>
+                          <TableHead className="text-right">Advance</TableHead>
+                          <TableHead className="text-right">Net Salary</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {breakdown.monthlyBreakdowns.map((month) => (
+                          <TableRow key={month.monthKey}>
+                            <TableCell>
+                              <div className="font-medium">{month.monthLabel}</div>
+                              <div className="text-xs text-gray-500">
+                                Leaves: {month.totalHolidays} total, {month.extraHolidays} extra
+                                {month.unusedLeaves > 0 ? `, ${month.unusedLeaves} unused` : ''}
+                              </div>
+                            </TableCell>
+                            <TableCell className="text-right">₹ {formatCurrency(month.totalBillAmount)}</TableCell>
+                            <TableCell className="text-right">₹ {formatCurrency(month.adjustedBaseSalary)}</TableCell>
+                            <TableCell className="text-right text-green-700">₹ {formatCurrency(month.totalCommission)}</TableCell>
+                            <TableCell className="text-right text-purple-700">
+                              ₹ {formatCurrency(month.totalExtraCommission)}
+                              {month.billingSlabCommission > 0 && (
+                                <div className="text-xs text-gray-500">Slab: ₹ {formatCurrency(month.billingSlabCommission)}</div>
+                              )}
+                            </TableCell>
+                            <TableCell className="text-right font-medium text-cyan-800">₹ {formatCurrency(month.salaryBeforeAdvance)}</TableCell>
+                            <TableCell className="text-right text-orange-600">₹ {formatCurrency(month.totalAdvances)}</TableCell>
+                            <TableCell className={`text-right font-semibold ${month.totalSalary < 0 ? 'text-red-600' : 'text-emerald-700'}`}>
+                              ₹ {formatCurrency(month.totalSalary)}
+                            </TableCell>
+                          </TableRow>
+                        ))}
+                        <TableRow className="bg-white font-semibold">
+                          <TableCell>Range Total</TableCell>
+                          <TableCell className="text-right">₹ {formatCurrency(breakdown.monthlyBreakdowns.reduce((sum, month) => sum + month.totalBillAmount, 0))}</TableCell>
+                          <TableCell className="text-right">₹ {formatCurrency(breakdown.monthlyBreakdowns.reduce((sum, month) => sum + month.adjustedBaseSalary, 0))}</TableCell>
+                          <TableCell className="text-right text-green-700">₹ {formatCurrency(breakdown.monthlyBreakdowns.reduce((sum, month) => sum + month.totalCommission, 0))}</TableCell>
+                          <TableCell className="text-right text-purple-700">₹ {formatCurrency(breakdown.monthlyBreakdowns.reduce((sum, month) => sum + month.totalExtraCommission, 0))}</TableCell>
+                          <TableCell className="text-right text-cyan-800">₹ {formatCurrency(breakdown.monthlyBreakdowns.reduce((sum, month) => sum + month.salaryBeforeAdvance, 0))}</TableCell>
+                          <TableCell className="text-right text-orange-600">₹ {formatCurrency(breakdown.monthlyBreakdowns.reduce((sum, month) => sum + month.totalAdvances, 0))}</TableCell>
+                          <TableCell className={`text-right ${breakdown.monthlyBreakdowns.reduce((sum, month) => sum + month.totalSalary, 0) < 0 ? 'text-red-600' : 'text-emerald-700'}`}>
+                            ₹ {formatCurrency(breakdown.monthlyBreakdowns.reduce((sum, month) => sum + month.totalSalary, 0))}
+                          </TableCell>
+                        </TableRow>
+                      </TableBody>
+                    </Table>
+                  </div>
+                  <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div className="bg-orange-50 p-3 rounded-lg border border-orange-100">
+                      <p className="text-xs text-gray-600">Total advance taken in range</p>
+                      <p className="text-lg font-semibold text-orange-700">
+                        ₹ {formatCurrency(breakdown.monthlyBreakdowns.reduce((sum, month) => sum + month.totalAdvances, 0))}
+                      </p>
+                    </div>
+                    <div className="bg-emerald-50 p-3 rounded-lg border border-emerald-100">
+                      <p className="text-xs text-gray-600">Final net salary for range</p>
+                      <p className={`text-lg font-semibold ${breakdown.monthlyBreakdowns.reduce((sum, month) => sum + month.totalSalary, 0) < 0 ? 'text-red-600' : 'text-emerald-700'}`}>
+                        ₹ {formatCurrency(breakdown.monthlyBreakdowns.reduce((sum, month) => sum + month.totalSalary, 0))}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              )}
+
               {/* Salary Breakdown */}
+              {selectedPeriod !== 'rangeToCurrent' && (
               <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-3 gap-3 sm:gap-4 mb-6">
                 <div className="bg-blue-50 p-3 sm:p-4 rounded-lg">
                   <p className="text-xs sm:text-sm text-gray-600 mb-1">Base Salary (Monthly)</p>
@@ -1839,8 +2132,10 @@ const TechnicianPayments = () => {
                   <p className="text-xs text-gray-500 mt-1">After advances</p>
                 </div>
               </div>
+              )}
 
               {/* Calculation */}
+              {selectedPeriod !== 'rangeToCurrent' && (
               <div className="mb-6 p-3 sm:p-4 bg-gray-50 rounded-lg">
                 <p className="text-sm font-medium text-gray-700 mb-2">Salary Calculation:</p>
                 <div className="space-y-1 text-xs sm:text-sm">
@@ -1910,6 +2205,7 @@ const TechnicianPayments = () => {
                   </div>
                 </div>
               </div>
+              )}
 
               {/* Actions */}
               <div className="flex gap-2 mb-6 flex-wrap">
@@ -1918,7 +2214,7 @@ const TechnicianPayments = () => {
                   onClick={() => {
                     if (commissionPeriod) {
                       setSelectedBreakdownForSlip(breakdown);
-                      setIncludeDayWiseBreakdown(true); // Default to with breakdown
+                      setIncludeDayWiseBreakdown(true);
                       setSalarySlipDialogOpen(true);
                     } else {
                       toast.error('Period information not available');
@@ -1956,7 +2252,7 @@ const TechnicianPayments = () => {
               </div>
 
               {/* Expenses Table */}
-              {breakdown.expenses.length > 0 && (
+              {selectedPeriod !== 'rangeToCurrent' && breakdown.expenses.length > 0 && (
                 <div className="mb-6">
                   <h3 className="text-sm font-semibold text-gray-700 mb-3">Expenses</h3>
                   <div className="overflow-x-auto">
@@ -2015,7 +2311,7 @@ const TechnicianPayments = () => {
               )}
 
               {/* Advances Table */}
-              {breakdown.advances.length > 0 && (
+              {selectedPeriod !== 'rangeToCurrent' && breakdown.advances.length > 0 && (
                 <div className="mb-6">
                   <h3 className="text-sm font-semibold text-gray-700 mb-3">Advances</h3>
                   <div className="overflow-x-auto">
@@ -2074,7 +2370,7 @@ const TechnicianPayments = () => {
               )}
 
               {/* Extra Commissions Table */}
-              {breakdown.extraCommissions.length > 0 && (
+              {selectedPeriod !== 'rangeToCurrent' && breakdown.extraCommissions.length > 0 && (
                 <div className="mb-6">
                   <h3 className="text-sm font-semibold text-gray-700 mb-3">Extra Commissions</h3>
                   <div className="overflow-x-auto">
@@ -2133,6 +2429,7 @@ const TechnicianPayments = () => {
               )}
 
               {/* Daily Breakdown */}
+              {selectedPeriod !== 'rangeToCurrent' && (
               <div className="mb-6">
                 <Button
                   type="button"
@@ -2327,40 +2624,7 @@ const TechnicianPayments = () => {
                   );
                 })()}
               </div>
-
-              {/* Summary - Show final salary paid on 10th */}
-              {(selectedPeriod === 'pastMonth' || selectedPeriod === 'rangeToCurrent') && (
-                <div className="mb-6 p-4 bg-green-50 rounded-lg border-2 border-green-200">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <p className="text-sm font-medium text-gray-700">Final Salary Paid on 10th</p>
-                      <p className="text-xs text-gray-500 mt-1">
-                        After all deductions (leaves, advances, expenses)
-                      </p>
-                    </div>
-                    <div className="text-right">
-                      <p className="text-2xl font-bold text-green-700">
-                        ₹ {formatCurrency(breakdown.totalSalary)}
-                      </p>
-                      <p className="text-xs text-gray-500 mt-1">
-                        Paid on {(() => {
-                          const endDate = commissionPeriod?.end || new Date();
-                          const paymentDate = new Date(endDate);
-                          paymentDate.setMonth(paymentDate.getMonth() + 1);
-                          paymentDate.setDate(10);
-                          return paymentDate.toLocaleDateString('en-IN', {
-                            day: 'numeric',
-                            month: 'long',
-                            year: 'numeric'
-                          });
-                        })()}
-                      </p>
-                    </div>
-                  </div>
-                </div>
               )}
-
-
             </CardContent>
           </Card>
         ))}

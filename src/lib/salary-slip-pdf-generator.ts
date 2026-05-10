@@ -34,6 +34,23 @@ interface ExtraCommission {
   created_at?: string;
 }
 
+interface MonthlySalaryBreakdown {
+  monthKey: string;
+  monthLabel: string;
+  totalBillAmount: number;
+  adjustedBaseSalary: number;
+  totalCommission: number;
+  totalExtraCommission: number;
+  billingSlabCommission: number;
+  salaryBeforeAdvance: number;
+  totalAdvances: number;
+  totalSalary: number;
+  totalExpenses: number;
+  totalHolidays: number;
+  extraHolidays: number;
+  unusedLeaves: number;
+}
+
 interface SalarySlipPDFData {
   technicianName: string;
   employeeId: string;
@@ -61,6 +78,7 @@ interface SalarySlipPDFData {
   payments: Payment[];
   advances: Advance[];
   extraCommissions: ExtraCommission[];
+  monthlyBreakdowns?: MonthlySalaryBreakdown[];
   company: {
     name: string;
     address: string;
@@ -99,6 +117,7 @@ function generateSalarySlipHTML(data: SalarySlipPDFData, includeDayWiseBreakdown
   const paymentDate = new Date(data.period.start);
   paymentDate.setMonth(paymentDate.getMonth() + 1);
   paymentDate.setDate(10);
+  const isRangeSlip = !!(data.monthlyBreakdowns && data.monthlyBreakdowns.length > 0);
 
   return `
     <!DOCTYPE html>
@@ -455,7 +474,7 @@ function generateSalarySlipHTML(data: SalarySlipPDFData, includeDayWiseBreakdown
               <span class="info-value">${data.employeeId}</span>
             </div>
           </div>
-          
+          ${!isRangeSlip ? `
           <div class="info-card">
             <div class="info-card-title">Salary Period</div>
             <div class="info-item">
@@ -467,11 +486,75 @@ function generateSalarySlipHTML(data: SalarySlipPDFData, includeDayWiseBreakdown
               <span class="info-value">${formatDate(paymentDate)}</span>
             </div>
           </div>
+          ` : ''}
         </div>
+
+        ${data.monthlyBreakdowns && data.monthlyBreakdowns.length > 0 ? `
+        <!-- Monthly Range Breakdown -->
+        <div class="salary-breakdown">
+          <h3 class="breakdown-title">Month-wise Salary Breakdown</h3>
+          <table class="breakdown-table">
+            <thead>
+              <tr>
+                <th>Month</th>
+                <th style="text-align: right;">Billing</th>
+                <th style="text-align: right;">Base + Leaves</th>
+                <th style="text-align: right;">Commission</th>
+                <th style="text-align: right;">Extra</th>
+                <th style="text-align: right;">Before Advance</th>
+                <th style="text-align: right;">Advance</th>
+                <th style="text-align: right;">Net</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${data.monthlyBreakdowns.map((month) => `
+                <tr>
+                  <td>
+                    <strong>${month.monthLabel}</strong>
+                    <div style="font-size: 10px; color: #6b7280;">
+                      Leaves: ${month.totalHolidays} total, ${month.extraHolidays} extra${month.unusedLeaves > 0 ? `, ${month.unusedLeaves} unused` : ''}
+                    </div>
+                  </td>
+                  <td style="text-align: right;">${formatCurrency(month.totalBillAmount)}</td>
+                  <td style="text-align: right;">${formatCurrency(month.adjustedBaseSalary)}</td>
+                  <td style="text-align: right;" class="amount-positive">${formatCurrency(month.totalCommission)}</td>
+                  <td style="text-align: right;" class="amount-positive">
+                    ${formatCurrency(month.totalExtraCommission)}
+                    ${month.billingSlabCommission > 0 ? `<div style="font-size: 10px; color: #6b7280;">Slab: ${formatCurrency(month.billingSlabCommission)}</div>` : ''}
+                  </td>
+                  <td style="text-align: right;"><strong>${formatCurrency(month.salaryBeforeAdvance)}</strong></td>
+                  <td style="text-align: right;" class="amount-negative">${formatCurrency(month.totalAdvances)}</td>
+                  <td style="text-align: right;" class="${month.totalSalary < 0 ? 'amount-negative' : 'amount-positive'}"><strong>${formatCurrency(month.totalSalary)}</strong></td>
+                </tr>
+              `).join('')}
+              <tr class="total-row">
+                <td><strong>Range Total</strong></td>
+                <td style="text-align: right;"><strong>${formatCurrency(data.monthlyBreakdowns.reduce((sum, month) => sum + month.totalBillAmount, 0))}</strong></td>
+                <td style="text-align: right;"><strong>${formatCurrency(data.monthlyBreakdowns.reduce((sum, month) => sum + month.adjustedBaseSalary, 0))}</strong></td>
+                <td style="text-align: right;"><strong>${formatCurrency(data.monthlyBreakdowns.reduce((sum, month) => sum + month.totalCommission, 0))}</strong></td>
+                <td style="text-align: right;"><strong>${formatCurrency(data.monthlyBreakdowns.reduce((sum, month) => sum + month.totalExtraCommission, 0))}</strong></td>
+                <td style="text-align: right;"><strong>${formatCurrency(data.monthlyBreakdowns.reduce((sum, month) => sum + month.salaryBeforeAdvance, 0))}</strong></td>
+                <td style="text-align: right;"><strong>${formatCurrency(data.monthlyBreakdowns.reduce((sum, month) => sum + month.totalAdvances, 0))}</strong></td>
+                <td style="text-align: right;"><strong>${formatCurrency(data.monthlyBreakdowns.reduce((sum, month) => sum + month.totalSalary, 0))}</strong></td>
+              </tr>
+            </tbody>
+          </table>
+          <div style="margin-top: 12px; display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+            <div style="padding: 10px; background: #fff7ed; border: 1px solid #fed7aa; border-radius: 8px;">
+              <div style="font-size: 11px; color: #6b7280;">Total advance taken in range</div>
+              <div style="font-size: 16px; font-weight: 700; color: #c2410c;">₹ ${formatCurrency(data.monthlyBreakdowns.reduce((sum, month) => sum + month.totalAdvances, 0))}</div>
+            </div>
+            <div style="padding: 10px; background: #ecfdf5; border: 1px solid #a7f3d0; border-radius: 8px;">
+              <div style="font-size: 11px; color: #6b7280;">Final net salary for range</div>
+              <div style="font-size: 16px; font-weight: 700; color: #047857;">₹ ${formatCurrency(data.monthlyBreakdowns.reduce((sum, month) => sum + month.totalSalary, 0))}</div>
+            </div>
+          </div>
+        </div>
+        ` : ''}
 
         <!-- Salary Breakdown -->
         <div class="salary-breakdown">
-          <h3 class="breakdown-title">Salary Breakdown</h3>
+          <h3 class="breakdown-title">${data.monthlyBreakdowns && data.monthlyBreakdowns.length > 0 ? 'Range Total Salary Breakdown' : 'Salary Breakdown'}</h3>
           <table class="breakdown-table">
             <thead>
               <tr>
@@ -830,6 +913,7 @@ export function generateSalarySlipPDF(
       payments: breakdown.payments || [],
       advances: breakdown.advances || [],
       extraCommissions: breakdown.extraCommissions || [],
+      monthlyBreakdowns: (breakdown as any).monthlyBreakdowns || [],
       company: companyData,
       includeDayWiseBreakdown
     };
