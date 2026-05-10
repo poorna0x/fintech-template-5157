@@ -151,7 +151,7 @@ export function getTechnicianDailyBaseSalary(tech: any, date: Date): number {
 }
 
 export function calculateBillingSlabCommission(monthlyBilling: number): number {
-  if (monthlyBilling > 170000 && monthlyBilling < 200000) return 3000;
+  if (monthlyBilling > 170000 && monthlyBilling < 200000) return 2000;
   if (monthlyBilling >= 200000) {
     return (Math.floor((monthlyBilling - 200000) / 100000) + 1) * 5000;
   }

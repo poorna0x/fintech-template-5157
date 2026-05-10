@@ -40,6 +40,7 @@ interface AMCRecord {
   customerName: string;
   customerPhone: string;
   customerEmail: string;
+  customerLocation: string;
   customerAddress: any;
   serviceType: string;
   brand: string;
@@ -85,6 +86,26 @@ const AMCViewPage: React.FC<AMCViewPageProps> = ({ onBack, onAMCDeleted }) => {
   useEffect(() => {
     loadAMCRecords();
   }, []);
+
+  const getCustomerOneWordLocation = (customer: any, metadata: any): string => {
+    const address = customer?.address || metadata.customer_address || {};
+    const candidates = [
+      customer?.visible_address,
+      address?.visible_address,
+      metadata.customer_visible_address,
+      metadata.visible_address,
+      metadata.customer_location,
+      address?.area,
+    ];
+
+    for (const candidate of candidates) {
+      if (typeof candidate === 'string' && candidate.trim()) {
+        return candidate.trim();
+      }
+    }
+
+    return '';
+  };
 
   const loadAMCRecords = async () => {
     try {
@@ -150,6 +171,7 @@ const AMCViewPage: React.FC<AMCViewPageProps> = ({ onBack, onAMCDeleted }) => {
             customerName: customer?.full_name || metadata.customer_name || 'Unknown',
             customerPhone: customer?.phone || metadata.customer_phone || '',
             customerEmail: customer?.email || metadata.customer_email || '',
+            customerLocation: getCustomerOneWordLocation(customer, metadata),
             customerAddress: customer?.address || metadata.customer_address || {},
             serviceType: customer?.service_type || 'RO',
             brand: customer?.brand || metadata.brand || '',
@@ -193,6 +215,7 @@ const AMCViewPage: React.FC<AMCViewPageProps> = ({ onBack, onAMCDeleted }) => {
       filtered = filtered.filter(amc =>
         amc.customerName.toLowerCase().includes(searchLower) ||
         amc.customerPhone.includes(searchTerm) ||
+        amc.customerLocation.toLowerCase().includes(searchLower) ||
         amc.jobNumber.toLowerCase().includes(searchLower) ||
         amc.brand.toLowerCase().includes(searchLower) ||
         amc.model.toLowerCase().includes(searchLower)
@@ -499,6 +522,9 @@ const AMCViewPage: React.FC<AMCViewPageProps> = ({ onBack, onAMCDeleted }) => {
                             <div>
                               <div className="font-medium text-gray-900">{amc.customerName}</div>
                               <div className="text-sm text-gray-500">{amc.customerPhone}</div>
+                              {amc.customerLocation && (
+                                <div className="text-xs text-gray-500">{amc.customerLocation}</div>
+                              )}
                             </div>
                           </TableCell>
                           <TableCell>
@@ -518,9 +544,6 @@ const AMCViewPage: React.FC<AMCViewPageProps> = ({ onBack, onAMCDeleted }) => {
                           </TableCell>
                           <TableCell>
                             {amc.years} {amc.years === 1 ? 'year' : 'years'}
-                            {amc.includesPrefilter && (
-                              <Badge variant="outline" className="ml-2 text-xs">Prefilter</Badge>
-                            )}
                           </TableCell>
                           <TableCell>
                             <Badge
@@ -596,6 +619,12 @@ const AMCViewPage: React.FC<AMCViewPageProps> = ({ onBack, onAMCDeleted }) => {
                     <Label className="text-xs text-gray-500">Phone</Label>
                     <p className="font-medium">{selectedAMC.customerPhone}</p>
                   </div>
+                  {selectedAMC.customerLocation && (
+                    <div>
+                      <Label className="text-xs text-gray-500">Location</Label>
+                      <p className="font-medium">{selectedAMC.customerLocation}</p>
+                    </div>
+                  )}
                   <div>
                     <Label className="text-xs text-gray-500">Email</Label>
                     <p className="font-medium">{selectedAMC.customerEmail || 'N/A'}</p>
