@@ -2835,7 +2835,7 @@ export const db = {
     async getAll(limit: number = 100, offset: number = 0) {
       let query = supabase
         .from('amc_contracts')
-        .select(`${AMC_CONTRACT_ROW_COLUMNS},customers(id, full_name, phone, email, customer_id, brand, model, visible_address, address)`, { count: 'exact' })
+        .select(`${AMC_CONTRACT_ROW_COLUMNS},customers(id, full_name, phone, email, customer_id, service_type, brand, model, last_service_date, visible_address, address)`, { count: 'exact' })
         .order('created_at', { ascending: false });
 
       if (limit > 0 && limit < 100000) {
@@ -2851,7 +2851,7 @@ export const db = {
     async getById(id: string) {
       const { data, error } = await supabase
         .from('amc_contracts')
-        .select(`${AMC_CONTRACT_ROW_COLUMNS},customers(id, full_name, phone, email, customer_id, brand, model, visible_address, address)`)
+        .select(`${AMC_CONTRACT_ROW_COLUMNS},customers(id, full_name, phone, email, customer_id, service_type, brand, model, last_service_date, visible_address, address)`)
         .eq('id', id)
         .single();
       

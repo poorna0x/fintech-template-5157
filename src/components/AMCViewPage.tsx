@@ -27,7 +27,7 @@ import {
 } from 'lucide-react';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { db } from '@/lib/supabase';
+import { db, supabase } from '@/lib/supabase';
 import { toast } from 'sonner';
 import AdminHeader from './AdminHeader';
 import { useAuth } from '@/contexts/AuthContext';
@@ -52,6 +52,10 @@ interface AMCRecord {
   additionalNotes?: string;
   amount?: number | string;
   servicePeriodMonths?: number | null;
+  nextAutoGenerationDate?: string | null;
+  nextAMCDueDate?: string | null;
+  autoGenerationLabel: string;
+  autoGenerationStatus: 'SCHEDULED' | 'DUE' | 'NO_AUTO' | 'GENERATED' | 'EXPIRED' | 'UNKNOWN';
   createdAt: string;
   completedAt?: string;
   completedBy?: string;
@@ -107,6 +111,94 @@ const AMCViewPage: React.FC<AMCViewPageProps> = ({ onBack, onAMCDeleted }) => {
     return '';
   };
 
+  const toDateOnly = (value: unknown): string | null => {
+    if (!value) return null;
+    if (typeof value === 'string') return value.split('T')[0].split(' ')[0] || null;
+    return new Date(value as any).toISOString().split('T')[0];
+  };
+
+  const addMonthsToDate = (dateStr: string, months: number): string => {
+    const date = new Date(dateStr + 'T12:00:00');
+    date.setMonth(date.getMonth() + months);
+    return date.toISOString().split('T')[0];
+  };
+
+  const subtractDaysFromDate = (dateStr: string, days: number): string => {
+    const date = new Date(dateStr + 'T12:00:00');
+    date.setDate(date.getDate() - days);
+    return date.toISOString().split('T')[0];
+  };
+
+  const formatDate = (dateStr?: string | null): string => {
+    if (!dateStr) return 'N/A';
+    return new Date(dateStr + 'T00:00:00').toLocaleDateString('en-IN');
+  };
+
+  const getDefaultServicePeriodMonths = (): number => {
+    if (typeof window === 'undefined') return 4;
+    const stored = localStorage.getItem('amc_default_service_period_months');
+    if (stored === null || stored === '') return 4;
+    const parsed = parseInt(stored, 10);
+    return Number.isNaN(parsed) ? 4 : parsed;
+  };
+
+  const getAutoGenerationInfo = (
+    amc: any,
+    customer: any,
+    lastCompletedDate: string | undefined,
+    hasOpenAMCJob: boolean
+  ): Pick<AMCRecord, 'nextAutoGenerationDate' | 'nextAMCDueDate' | 'autoGenerationLabel' | 'autoGenerationStatus'> => {
+    const todayStr = new Date().toISOString().split('T')[0];
+    const periodMonths = amc.service_period_months != null ? amc.service_period_months : getDefaultServicePeriodMonths();
+
+    if (periodMonths <= 0) {
+      return {
+        nextAutoGenerationDate: null,
+        nextAMCDueDate: null,
+        autoGenerationLabel: 'No auto',
+        autoGenerationStatus: 'NO_AUTO',
+      };
+    }
+
+    if (amc.end_date && amc.end_date < todayStr) {
+      return {
+        nextAutoGenerationDate: null,
+        nextAMCDueDate: null,
+        autoGenerationLabel: 'Expired',
+        autoGenerationStatus: 'EXPIRED',
+      };
+    }
+
+    if (hasOpenAMCJob) {
+      return {
+        nextAutoGenerationDate: null,
+        nextAMCDueDate: null,
+        autoGenerationLabel: 'Already generated',
+        autoGenerationStatus: 'GENERATED',
+      };
+    }
+
+    const referenceDate = toDateOnly(lastCompletedDate || customer?.last_service_date || amc.start_date);
+    if (!referenceDate) {
+      return {
+        nextAutoGenerationDate: null,
+        nextAMCDueDate: null,
+        autoGenerationLabel: 'N/A',
+        autoGenerationStatus: 'UNKNOWN',
+      };
+    }
+
+    const nextDueDate = addMonthsToDate(referenceDate, periodMonths);
+    const generationDate = subtractDaysFromDate(nextDueDate, 10);
+
+    return {
+      nextAutoGenerationDate: generationDate,
+      nextAMCDueDate: nextDueDate,
+      autoGenerationLabel: formatDate(generationDate),
+      autoGenerationStatus: todayStr >= generationDate ? 'DUE' : 'SCHEDULED',
+    };
+  };
+
   const loadAMCRecords = async () => {
     try {
       setLoading(true);
@@ -118,6 +210,34 @@ const AMCViewPage: React.FC<AMCViewPageProps> = ({ onBack, onAMCDeleted }) => {
 
       // Transform AMC contracts to AMCRecord format
       const amcList: AMCRecord[] = [];
+      const customerIds = [...new Set((amcContracts || []).map((amc: any) => amc.customer_id).filter(Boolean))] as string[];
+      const lastCompletedByCustomer = new Map<string, string>();
+      const openAMCCustomerIds = new Set<string>();
+
+      if (customerIds.length > 0) {
+        const { data: completedJobs } = await supabase
+          .from('jobs')
+          .select('customer_id, completed_at')
+          .in('customer_id', customerIds)
+          .eq('status', 'COMPLETED')
+          .not('completed_at', 'is', null)
+          .order('completed_at', { ascending: false });
+
+        (completedJobs || []).forEach((job: any) => {
+          if (!lastCompletedByCustomer.has(job.customer_id)) {
+            lastCompletedByCustomer.set(job.customer_id, job.completed_at);
+          }
+        });
+
+        const { data: openAMCJobs } = await supabase
+          .from('jobs')
+          .select('customer_id')
+          .in('customer_id', customerIds)
+          .eq('service_sub_type', 'AMC Service')
+          .in('status', ['PENDING', 'ASSIGNED', 'EN_ROUTE', 'IN_PROGRESS', 'FOLLOW_UP', 'RESCHEDULED']);
+
+        (openAMCJobs || []).forEach((job: any) => openAMCCustomerIds.add(job.customer_id));
+      }
       
       if (amcContracts) {
         for (const amc of amcContracts) {
@@ -162,6 +282,12 @@ const AMCViewPage: React.FC<AMCViewPageProps> = ({ onBack, onAMCDeleted }) => {
 
           // Get job number from metadata (agreement_number) or use AMC ID
           const jobNumber = metadata.agreement_number || `AMC-${amc.id.slice(0, 8)}`;
+          const autoGenerationInfo = getAutoGenerationInfo(
+            amc,
+            customer,
+            lastCompletedByCustomer.get(amc.customer_id),
+            openAMCCustomerIds.has(amc.customer_id)
+          );
 
             amcList.push({
             id: amc.id,
@@ -183,6 +309,7 @@ const AMCViewPage: React.FC<AMCViewPageProps> = ({ onBack, onAMCDeleted }) => {
             additionalNotes: additionalNotes,
             amount: amcAmount,
             servicePeriodMonths: (amc as any).service_period_months ?? undefined,
+            ...autoGenerationInfo,
             createdAt: amc.created_at,
             completedAt: null,
             completedBy: null,
@@ -216,6 +343,8 @@ const AMCViewPage: React.FC<AMCViewPageProps> = ({ onBack, onAMCDeleted }) => {
         amc.customerName.toLowerCase().includes(searchLower) ||
         amc.customerPhone.includes(searchTerm) ||
         amc.customerLocation.toLowerCase().includes(searchLower) ||
+        amc.autoGenerationLabel.toLowerCase().includes(searchLower) ||
+        (amc.nextAutoGenerationDate || '').includes(searchTerm) ||
         amc.jobNumber.toLowerCase().includes(searchLower) ||
         amc.brand.toLowerCase().includes(searchLower) ||
         amc.model.toLowerCase().includes(searchLower)
@@ -509,6 +638,7 @@ const AMCViewPage: React.FC<AMCViewPageProps> = ({ onBack, onAMCDeleted }) => {
                       <TableHead>Start Date</TableHead>
                       <TableHead>End Date</TableHead>
                       <TableHead>Duration</TableHead>
+                      <TableHead>Next Auto Gen</TableHead>
                       <TableHead>Status</TableHead>
                       <TableHead className="text-right">Actions</TableHead>
                     </TableRow>
@@ -544,6 +674,29 @@ const AMCViewPage: React.FC<AMCViewPageProps> = ({ onBack, onAMCDeleted }) => {
                           </TableCell>
                           <TableCell>
                             {amc.years} {amc.years === 1 ? 'year' : 'years'}
+                          </TableCell>
+                          <TableCell>
+                            <div className="text-sm">
+                              <div
+                                className={
+                                  amc.autoGenerationStatus === 'DUE'
+                                    ? 'font-medium text-amber-700'
+                                    : amc.autoGenerationStatus === 'SCHEDULED'
+                                      ? 'font-medium text-gray-900'
+                                      : 'text-gray-500'
+                                }
+                              >
+                                {amc.autoGenerationLabel}
+                              </div>
+                              {amc.nextAMCDueDate && (
+                                <div className="text-xs text-gray-500">
+                                  Due: {formatDate(amc.nextAMCDueDate)}
+                                </div>
+                              )}
+                              {amc.autoGenerationStatus === 'DUE' && (
+                                <div className="text-xs text-amber-700">Due now</div>
+                              )}
+                            </div>
                           </TableCell>
                           <TableCell>
                             <Badge
@@ -658,6 +811,18 @@ const AMCViewPage: React.FC<AMCViewPageProps> = ({ onBack, onAMCDeleted }) => {
                     <p className="font-medium">
                       {selectedAMC.years} {selectedAMC.years === 1 ? 'year' : 'years'}
                     </p>
+                  </div>
+                  <div>
+                    <Label className="text-xs text-gray-500">Next Auto Generation</Label>
+                    <p className="font-medium">{selectedAMC.autoGenerationLabel}</p>
+                    {selectedAMC.nextAMCDueDate && (
+                      <p className="text-xs text-gray-500">
+                        Service due: {formatDate(selectedAMC.nextAMCDueDate)}
+                      </p>
+                    )}
+                    {selectedAMC.autoGenerationStatus === 'DUE' && (
+                      <p className="text-xs text-amber-700">Due now</p>
+                    )}
                   </div>
                   <div>
                     <Label className="text-xs text-gray-500">Includes Prefilter</Label>
