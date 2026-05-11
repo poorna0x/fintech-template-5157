@@ -25,6 +25,7 @@ import {
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
 import { AddReminderDialog } from './AddReminderDialog';
+import { isPendingPaymentReminderTitle } from '@/lib/pendingPaymentReminder';
 
 const RECENT_COMPLETED_DAYS = 7;
 const UPCOMING_DAYS = 7;
@@ -150,6 +151,11 @@ export function SettingsRemindersDialog({ open, onOpenChange }: SettingsReminder
   };
 
   const handleMarkDone = async (r: Reminder) => {
+    if (isPendingPaymentReminderTitle(r.title)) {
+      toast.info('Mark pending payments as collected inside Pending payments.');
+      return;
+    }
+
     const { error } = await db.reminders.update(r.id, {
       completed_at: new Date().toISOString(),
     });

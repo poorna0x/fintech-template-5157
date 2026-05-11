@@ -18,6 +18,29 @@ type CustomerLabel = { name: string; customerId: string };
 
 /** Session cache: reuse today's reminder list for up to 6h to reduce refetches. */
 const REMINDERS_POPUP_SESSION_CACHE_ENABLED = true;
+const DISMISSED_PENDING_PAYMENT_REMINDERS_KEY = 'dismissed_pending_payment_reminders_today';
+
+function getDismissedPendingPaymentReminderIds(today: string): Set<string> {
+  if (typeof sessionStorage === 'undefined') return new Set();
+  try {
+    const parsed = JSON.parse(sessionStorage.getItem(DISMISSED_PENDING_PAYMENT_REMINDERS_KEY) || '{}') as {
+      date?: string;
+      ids?: string[];
+    };
+    if (parsed.date !== today || !Array.isArray(parsed.ids)) return new Set();
+    return new Set(parsed.ids);
+  } catch {
+    return new Set();
+  }
+}
+
+function saveDismissedPendingPaymentReminderIds(today: string, ids: Set<string>): void {
+  if (typeof sessionStorage === 'undefined') return;
+  sessionStorage.setItem(
+    DISMISSED_PENDING_PAYMENT_REMINDERS_KEY,
+    JSON.stringify({ date: today, ids: Array.from(ids) })
+  );
+}
 
 export function TodayRemindersPopup() {
   const { user } = useAuth();
@@ -56,9 +79,10 @@ export function TodayRemindersPopup() {
     let retryTimeoutId: ReturnType<typeof setTimeout> | null = null;
 
     const applyReminders = (forToday: Reminder[], list: Reminder[]) => {
-      // If there are only pending-payment reminders due today, they are already visible
-      // in the pending payments UI; don't show them again as a popup.
-      const visibleReminders = forToday.filter((r) => !isPendingPaymentReminderTitle(r.title));
+      const dismissedPendingPaymentIds = getDismissedPendingPaymentReminderIds(today);
+      const visibleReminders = forToday.filter(
+        (r) => !isPendingPaymentReminderTitle(r.title) || !dismissedPendingPaymentIds.has(r.id)
+      );
 
       if (visibleReminders.length > 0) {
         const sorted = [...visibleReminders].sort((a, b) => {
@@ -131,6 +155,10 @@ export function TodayRemindersPopup() {
   }, []);
 
   const markOneCompleted = async (r: Reminder) => {
+    if (isPendingPaymentReminderTitle(r.title)) {
+      return;
+    }
+
     const now = new Date().toISOString();
     if (r.entity_type === 'job' && r.entity_id) {
       const { error: jobError } = await db.jobs.update(r.entity_id, {
@@ -175,7 +203,18 @@ export function TodayRemindersPopup() {
       for (const r of todayReminders) {
         await markOneCompleted(r);
       }
-      toast.success('Reminders marked done. Popup will not show again until there are more reminders for today.');
+      const pendingPaymentReminders = todayReminders.filter((r) => isPendingPaymentReminderTitle(r.title));
+      if (pendingPaymentReminders.length > 0) {
+        const today = format(new Date(), 'yyyy-MM-dd');
+        const dismissedIds = getDismissedPendingPaymentReminderIds(today);
+        pendingPaymentReminders.forEach((r) => dismissedIds.add(r.id));
+        saveDismissedPendingPaymentReminderIds(today, dismissedIds);
+      }
+      toast.success(
+        pendingPaymentReminders.length === todayReminders.length
+          ? 'Pending payment reminder hidden. Mark it collected inside Pending payments.'
+          : 'Reminders marked done. Pending payments remain active until collected.'
+      );
       setOpen(false);
     } catch {
       toast.error('Failed to mark some reminders');
@@ -265,7 +304,7 @@ export function TodayRemindersPopup() {
             </Button>
           </div>
           <p className="text-xs text-muted-foreground pt-1">
-            &quot;Got it&quot; marks the job as completed when a reminder is linked to a job, marks all listed reminders as done, and creates the next recurring reminder when applicable. This popup opens when there is anything due today that is not completed.
+            &quot;Got it&quot; marks normal reminders as done and creates the next recurring reminder when applicable. Pending payment reminders are only hidden here; mark them collected inside Pending payments.
           </p>
         </DialogContent>
       </Dialog>

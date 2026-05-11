@@ -10,6 +10,7 @@ import { toast } from 'sonner';
 import { AddReminderDialog } from '@/components/reminders/AddReminderDialog';
 import { ReminderRow } from '@/components/reminders/RemindersList';
 import type { Reminder } from '@/types';
+import { isPendingPaymentReminderTitle } from '@/lib/pendingPaymentReminder';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -114,6 +115,11 @@ export default function SettingsRemindersPage() {
   };
 
   const handleMarkDone = async (r: Reminder) => {
+    if (isPendingPaymentReminderTitle(r.title)) {
+      toast.info('Mark pending payments as collected inside Pending payments.');
+      return;
+    }
+
     const { error } = await db.reminders.update(r.id, {
       completed_at: new Date().toISOString(),
     });

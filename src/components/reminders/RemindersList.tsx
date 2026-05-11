@@ -123,7 +123,7 @@ export function ReminderRow({
         <Button variant="ghost" size="icon" className="h-8 w-8 sm:h-9 sm:w-9 touch-manipulation" onClick={onEdit} title="Edit">
           <Pencil className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
         </Button>
-        {!r.completed_at && (
+        {!r.completed_at && !isPendingPayment && (
           <Button variant="ghost" size="icon" className="h-8 w-8 sm:h-9 sm:w-9 text-green-600 touch-manipulation" onClick={onMarkDone} title="Mark done">
             <Check className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
           </Button>
@@ -191,6 +191,11 @@ export function RemindersList() {
   };
 
   const handleMarkDone = async (r: Reminder) => {
+    if (isPendingPaymentReminderTitle(r.title)) {
+      toast.info('Mark pending payments as collected inside Pending payments.');
+      return;
+    }
+
     const { error } = await db.reminders.update(r.id, {
       completed_at: new Date().toISOString(),
     });
