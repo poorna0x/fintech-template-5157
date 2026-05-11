@@ -1263,6 +1263,20 @@ const Settings = () => {
         tables.push({ name: 'reminders', data: reminders });
       }
 
+      const { data: bookingAbandonments, error: bookingAbandonmentsError } = await fetchAllFromTable('booking_abandonments', 'created_at');
+      if (bookingAbandonmentsError) {
+        toast.error(`Failed to fetch booking abandonments: ${bookingAbandonmentsError.message}`);
+      } else {
+        tables.push({ name: 'booking_abandonments', data: bookingAbandonments });
+      }
+
+      const { data: websiteBookingIntent, error: websiteBookingIntentError } = await fetchAllFromTable('website_booking_intent', 'updated_at');
+      if (websiteBookingIntentError) {
+        toast.error(`Failed to fetch website booking intent: ${websiteBookingIntentError.message}`);
+      } else {
+        tables.push({ name: 'website_booking_intent', data: websiteBookingIntent });
+      }
+
       const { data: technicianCommonQr, error: technicianCommonQrError } = await fetchAllFromTable('technician_common_qr', 'created_at');
       if (technicianCommonQrError) {
         toast.error(`Failed to fetch technician common QR: ${technicianCommonQrError.message}`);
