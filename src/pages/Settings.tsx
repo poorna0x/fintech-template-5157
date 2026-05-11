@@ -48,6 +48,7 @@ import { registerAdminPWA } from '@/lib/pwa';
 import { SettingsRemindersDialog } from '@/components/reminders/SettingsRemindersDialog';
 import { AddReminderDialog } from '@/components/reminders/AddReminderDialog';
 import { SettingsPendingPaymentsDialogV2 } from '@/components/reminders/PendingPaymentsDialogV2';
+import QRCodeStyling from 'qr-code-styling';
 
 const Settings = () => {
   const { user, isAdmin, logout, loading: authLoading } = useAuth();
@@ -80,6 +81,11 @@ const Settings = () => {
     name: '',
     qrCodeUrl: ''
   });
+  const [qrImageGeneratorData, setQrImageGeneratorData] = useState({
+    content: '',
+    fileName: 'hydrogen-ro-qr'
+  });
+  const [isGeneratingQrImage, setIsGeneratingQrImage] = useState(false);
 
   // Common QR (non-payment) management states - shown below payment QR on technician app
   const [technicianCommonQrCodes, setTechnicianCommonQrCodes] = useState<CommonQrCode[]>([]);
@@ -597,6 +603,66 @@ const Settings = () => {
     } catch (error) {
       console.error('Error deleting QR code:', error);
       toast.error('Failed to delete QR code');
+    }
+  };
+
+  const handleGenerateStyledQrImage = async () => {
+    const content = qrImageGeneratorData.content.trim();
+    if (!content) {
+      toast.error('Enter the link or text for the QR code');
+      return;
+    }
+
+    setIsGeneratingQrImage(true);
+    try {
+      const qrSize = 760;
+
+      const qrCode = new QRCodeStyling({
+        width: qrSize,
+        height: qrSize,
+        type: 'canvas',
+        data: content,
+        margin: 18,
+        qrOptions: {
+          errorCorrectionLevel: 'H'
+        },
+        dotsOptions: {
+          color: '#000000',
+          type: 'dots'
+        },
+        cornersSquareOptions: {
+          color: '#000000',
+          type: 'square'
+        },
+        cornersDotOptions: {
+          color: '#000000',
+          type: 'square'
+        },
+        backgroundOptions: {
+          color: '#ffffff'
+        }
+      });
+
+      const rawData = await qrCode.getRawData('png');
+      const blob = rawData instanceof Blob ? rawData : new Blob([rawData as BlobPart], { type: 'image/png' });
+      const objectUrl = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      const safeFileName = (qrImageGeneratorData.fileName.trim() || 'hydrogen-ro-qr')
+        .replace(/[^a-z0-9-_]+/gi, '-')
+        .replace(/^-+|-+$/g, '')
+        .toLowerCase();
+      link.href = objectUrl;
+      link.download = `${safeFileName || 'hydrogen-ro-qr'}.png`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(objectUrl);
+      toast.success('QR image downloaded');
+    } catch (error) {
+      console.error('Error generating styled QR image:', error);
+      toast.error(error instanceof Error ? error.message : 'Failed to generate QR image');
+    } finally {
+      setIsGeneratingQrImage(false);
     }
   };
 
@@ -1716,6 +1782,55 @@ const Settings = () => {
                 <PhoneCall className="w-4 h-4 mr-2" />
                 Open Calling Page
               </Button>
+            </CardContent>
+          </Card>
+
+          {/* Styled QR Image Generator */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2 text-lg sm:text-xl">
+                <QrCode className="w-5 h-5" />
+                QR Image Generator
+              </CardTitle>
+              <CardDescription className="text-sm mt-1">
+                Create downloadable QR code images with rounded dots and square corner markers.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="p-4 sm:p-6">
+              <div className="space-y-4">
+                <div>
+                  <Label htmlFor="qr-generator-content">QR link or text</Label>
+                  <Input
+                    id="qr-generator-content"
+                    value={qrImageGeneratorData.content}
+                    onChange={(e) => setQrImageGeneratorData((prev) => ({ ...prev, content: e.target.value }))}
+                    placeholder="https://example.com or UPI/payment text"
+                    className="mt-1"
+                  />
+                </div>
+                <div>
+                  <Label htmlFor="qr-generator-filename">File name</Label>
+                  <Input
+                    id="qr-generator-filename"
+                    value={qrImageGeneratorData.fileName}
+                    onChange={(e) => setQrImageGeneratorData((prev) => ({ ...prev, fileName: e.target.value }))}
+                    placeholder="hydrogen-ro-qr"
+                    className="mt-1"
+                  />
+                </div>
+                <Button
+                  onClick={handleGenerateStyledQrImage}
+                  disabled={isGeneratingQrImage}
+                  className="bg-blue-600 hover:bg-blue-700 w-full sm:w-auto"
+                >
+                  {isGeneratingQrImage ? (
+                    <RefreshCw className="w-4 h-4 mr-2 animate-spin" />
+                  ) : (
+                    <Download className="w-4 h-4 mr-2" />
+                  )}
+                  Download QR Image
+                </Button>
+              </div>
             </CardContent>
           </Card>
 
