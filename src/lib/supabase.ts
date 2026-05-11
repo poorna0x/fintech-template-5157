@@ -392,6 +392,7 @@ export const AMC_CONTRACT_ROW_COLUMNS = [
   'status',
   'renewed_from_amc_id',
   'service_period_months',
+  'given_by_technician_id',
   'created_at',
   'updated_at',
 ].join(',');
@@ -2765,6 +2766,7 @@ export const db = {
       includes_prefilter: boolean;
       additional_info?: string | null;
       service_period_months?: number | null;
+      given_by_technician_id?: string | null;
     }) {
       // First, mark any existing active AMC for this customer as RENEWED or EXPIRED
       const { data: existingAMCs } = await supabase
@@ -2803,6 +2805,7 @@ export const db = {
           includes_prefilter: amc.includes_prefilter,
           additional_info: amc.additional_info || null,
           service_period_months: amc.service_period_months ?? null,
+          given_by_technician_id: amc.given_by_technician_id || null,
           status: 'ACTIVE'
         })
         .select()
@@ -2865,6 +2868,7 @@ export const db = {
       includes_prefilter?: boolean;
       additional_info?: string | null;
       service_period_months?: number | null;
+      given_by_technician_id?: string | null;
       status?: 'ACTIVE' | 'EXPIRED' | 'CANCELLED' | 'RENEWED';
     }) {
       const { data, error } = await supabase

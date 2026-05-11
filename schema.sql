@@ -641,6 +641,7 @@ CREATE TABLE public.amc_contracts (
     created_at timestamp with time zone DEFAULT now(),
     updated_at timestamp with time zone DEFAULT now(),
     service_period_months integer,
+    given_by_technician_id uuid,
     CONSTRAINT amc_contracts_status_check CHECK (((status)::text = ANY ((ARRAY['ACTIVE'::character varying, 'EXPIRED'::character varying, 'CANCELLED'::character varying, 'RENEWED'::character varying])::text[])))
 );
 
@@ -1845,6 +1846,13 @@ CREATE INDEX idx_amc_contracts_end_date ON public.amc_contracts USING btree (end
 
 
 --
+-- Name: idx_amc_contracts_given_by_technician_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_amc_contracts_given_by_technician_id ON public.amc_contracts USING btree (given_by_technician_id);
+
+
+--
 -- Name: idx_amc_contracts_job_id; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -2599,6 +2607,14 @@ CREATE TRIGGER update_technicians_updated_at BEFORE UPDATE ON public.technicians
 
 ALTER TABLE ONLY public.amc_contracts
     ADD CONSTRAINT amc_contracts_customer_id_fkey FOREIGN KEY (customer_id) REFERENCES public.customers(id) ON DELETE CASCADE;
+
+
+--
+-- Name: amc_contracts amc_contracts_given_by_technician_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.amc_contracts
+    ADD CONSTRAINT amc_contracts_given_by_technician_id_fkey FOREIGN KEY (given_by_technician_id) REFERENCES public.technicians(id) ON DELETE SET NULL;
 
 
 --

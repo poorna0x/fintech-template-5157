@@ -35,13 +35,14 @@ import { useAuth } from '@/contexts/AuthContext';
 interface AMCRecord {
   id: string;
   jobId: string;
-  jobNumber: string;
   customerId: string;
   customerName: string;
   customerPhone: string;
   customerEmail: string;
   customerLocation: string;
   customerAddress: any;
+  givenByTechnicianId?: string | null;
+  givenByTechnicianName: string;
   serviceType: string;
   brand: string;
   model: string;
@@ -69,6 +70,7 @@ interface AMCViewPageProps {
 const AMCViewPage: React.FC<AMCViewPageProps> = ({ onBack, onAMCDeleted }) => {
   const { user } = useAuth();
   const [amcRecords, setAmcRecords] = useState<AMCRecord[]>([]);
+  const [technicians, setTechnicians] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState<'ALL' | 'ACTIVE' | 'EXPIRED'>('ALL');
@@ -85,6 +87,7 @@ const AMCViewPage: React.FC<AMCViewPageProps> = ({ onBack, onAMCDeleted }) => {
     additionalNotes: '',
     servicePeriodKind: '4' as '4' | '6' | 'custom' | 'no_auto',
     servicePeriodCustomMonths: 4,
+    givenByTechnicianId: 'NONE',
   });
 
   useEffect(() => {
@@ -109,6 +112,29 @@ const AMCViewPage: React.FC<AMCViewPageProps> = ({ onBack, onAMCDeleted }) => {
     }
 
     return '';
+  };
+
+  const getTechnicianDisplayName = (technician: any): string => {
+    if (!technician) return '';
+    return technician.full_name || technician.fullName || 'Unknown';
+  };
+
+  const parseJobRequirements = (requirements: any): any[] => {
+    if (!requirements) return [];
+    if (Array.isArray(requirements)) return requirements;
+    if (typeof requirements === 'string') {
+      try {
+        const parsed = JSON.parse(requirements);
+        return Array.isArray(parsed) ? parsed : [];
+      } catch {
+        return [];
+      }
+    }
+    return [];
+  };
+
+  const getJobAMCInfo = (job: any): any | null => {
+    return parseJobRequirements(job?.requirements).find((req: any) => req?.amc_info)?.amc_info || null;
   };
 
   const toDateOnly = (value: unknown): string | null => {
@@ -208,16 +234,24 @@ const AMCViewPage: React.FC<AMCViewPageProps> = ({ onBack, onAMCDeleted }) => {
         throw error;
       }
 
+      const { data: techniciansData } = await db.technicians.getAll(500, { activeRosterOnly: false });
+      const technicianList = techniciansData || [];
+      setTechnicians(technicianList);
+      const technicianById = new Map<string, any>(technicianList.map((tech: any) => [tech.id, tech]));
+
       // Transform AMC contracts to AMCRecord format
       const amcList: AMCRecord[] = [];
       const customerIds = [...new Set((amcContracts || []).map((amc: any) => amc.customer_id).filter(Boolean))] as string[];
+      const jobIds = [...new Set((amcContracts || []).map((amc: any) => amc.job_id).filter(Boolean))] as string[];
       const lastCompletedByCustomer = new Map<string, string>();
       const openAMCCustomerIds = new Set<string>();
+      const jobTechnicianByJobId = new Map<string, string>();
+      const completedJobsByCustomer = new Map<string, any[]>();
 
       if (customerIds.length > 0) {
         const { data: completedJobs } = await supabase
           .from('jobs')
-          .select('customer_id, completed_at')
+          .select('id, customer_id, assigned_technician_id, completed_at, end_time, requirements')
           .in('customer_id', customerIds)
           .eq('status', 'COMPLETED')
           .not('completed_at', 'is', null)
@@ -227,6 +261,9 @@ const AMCViewPage: React.FC<AMCViewPageProps> = ({ onBack, onAMCDeleted }) => {
           if (!lastCompletedByCustomer.has(job.customer_id)) {
             lastCompletedByCustomer.set(job.customer_id, job.completed_at);
           }
+          const jobsForCustomer = completedJobsByCustomer.get(job.customer_id) || [];
+          jobsForCustomer.push(job);
+          completedJobsByCustomer.set(job.customer_id, jobsForCustomer);
         });
 
         const { data: openAMCJobs } = await supabase
@@ -237,6 +274,19 @@ const AMCViewPage: React.FC<AMCViewPageProps> = ({ onBack, onAMCDeleted }) => {
           .in('status', ['PENDING', 'ASSIGNED', 'EN_ROUTE', 'IN_PROGRESS', 'FOLLOW_UP', 'RESCHEDULED']);
 
         (openAMCJobs || []).forEach((job: any) => openAMCCustomerIds.add(job.customer_id));
+      }
+
+      if (jobIds.length > 0) {
+        const { data: linkedJobs } = await supabase
+          .from('jobs')
+          .select('id, assigned_technician_id')
+          .in('id', jobIds);
+
+        (linkedJobs || []).forEach((job: any) => {
+          if (job.assigned_technician_id) {
+            jobTechnicianByJobId.set(job.id, job.assigned_technician_id);
+          }
+        });
       }
       
       if (amcContracts) {
@@ -280,8 +330,39 @@ const AMCViewPage: React.FC<AMCViewPageProps> = ({ onBack, onAMCDeleted }) => {
             amcAmount = (amc as any).amount || undefined;
           }
 
-          // Get job number from metadata (agreement_number) or use AMC ID
-          const jobNumber = metadata.agreement_number || `AMC-${amc.id.slice(0, 8)}`;
+          const fallbackJobForTechnician = (() => {
+            const customerJobs = completedJobsByCustomer.get(amc.customer_id) || [];
+            const matchingAMCJob = customerJobs.find((job: any) => {
+              const amcInfo = getJobAMCInfo(job);
+              if (!amcInfo) return false;
+              const dateGiven = amcInfo.date_given || amcInfo.start_date;
+              const endDate = amcInfo.end_date;
+              return (
+                (dateGiven && dateGiven === amc.start_date) ||
+                (endDate && endDate === amc.end_date)
+              );
+            });
+            if (matchingAMCJob) return matchingAMCJob;
+
+            const amcStartTime = new Date(`${amc.start_date}T23:59:59`).getTime();
+            return customerJobs
+              .filter((job: any) => job.assigned_technician_id)
+              .filter((job: any) => {
+                const completedTime = new Date(job.completed_at || job.end_time || 0).getTime();
+                return Number.isFinite(completedTime) && completedTime <= amcStartTime;
+              })
+              .sort((a: any, b: any) => {
+                return new Date(b.completed_at || b.end_time || 0).getTime() - new Date(a.completed_at || a.end_time || 0).getTime();
+              })[0];
+          })();
+          const givenByTechnicianId =
+            (amc as any).given_by_technician_id ||
+            (amc.job_id ? jobTechnicianByJobId.get(amc.job_id) : null) ||
+            fallbackJobForTechnician?.assigned_technician_id ||
+            null;
+          const givenByTechnicianName = givenByTechnicianId
+            ? getTechnicianDisplayName(technicianById.get(givenByTechnicianId)) || 'Unknown'
+            : 'Unknown';
           const autoGenerationInfo = getAutoGenerationInfo(
             amc,
             customer,
@@ -292,13 +373,14 @@ const AMCViewPage: React.FC<AMCViewPageProps> = ({ onBack, onAMCDeleted }) => {
             amcList.push({
             id: amc.id,
             jobId: amc.job_id || '',
-            jobNumber: jobNumber,
             customerId: amc.customer_id,
             customerName: customer?.full_name || metadata.customer_name || 'Unknown',
             customerPhone: customer?.phone || metadata.customer_phone || '',
             customerEmail: customer?.email || metadata.customer_email || '',
             customerLocation: getCustomerOneWordLocation(customer, metadata),
             customerAddress: customer?.address || metadata.customer_address || {},
+            givenByTechnicianId,
+            givenByTechnicianName,
             serviceType: customer?.service_type || 'RO',
             brand: customer?.brand || metadata.brand || '',
             model: customer?.model || metadata.ro_model || '',
@@ -343,9 +425,9 @@ const AMCViewPage: React.FC<AMCViewPageProps> = ({ onBack, onAMCDeleted }) => {
         amc.customerName.toLowerCase().includes(searchLower) ||
         amc.customerPhone.includes(searchTerm) ||
         amc.customerLocation.toLowerCase().includes(searchLower) ||
+        amc.givenByTechnicianName.toLowerCase().includes(searchLower) ||
         amc.autoGenerationLabel.toLowerCase().includes(searchLower) ||
         (amc.nextAutoGenerationDate || '').includes(searchTerm) ||
-        amc.jobNumber.toLowerCase().includes(searchLower) ||
         amc.brand.toLowerCase().includes(searchLower) ||
         amc.model.toLowerCase().includes(searchLower)
       );
@@ -398,6 +480,7 @@ const AMCViewPage: React.FC<AMCViewPageProps> = ({ onBack, onAMCDeleted }) => {
       additionalNotes: amc.additionalNotes || '',
       servicePeriodKind: kind,
       servicePeriodCustomMonths: customMonths,
+      givenByTechnicianId: amc.givenByTechnicianId || 'NONE',
     });
     setEditDialogOpen(true);
   };
@@ -461,6 +544,7 @@ const AMCViewPage: React.FC<AMCViewPageProps> = ({ onBack, onAMCDeleted }) => {
         includes_prefilter: editFormData.includesPrefilter,
         additional_info: JSON.stringify(metadata),
         service_period_months: editFormData.servicePeriodKind === 'no_auto' ? 0 : servicePeriodMonths,
+        given_by_technician_id: editFormData.givenByTechnicianId === 'NONE' ? null : editFormData.givenByTechnicianId,
       });
 
       if (updateError) {
@@ -580,7 +664,7 @@ const AMCViewPage: React.FC<AMCViewPageProps> = ({ onBack, onAMCDeleted }) => {
                 <div className="relative">
                   <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
                   <Input
-                    placeholder="Search by customer name, phone, job number, brand, model..."
+                    placeholder="Search by customer name, phone, technician, brand, model..."
                     value={searchTerm}
                     onChange={(e) => setSearchTerm(e.target.value)}
                     className="pl-10"
@@ -633,7 +717,7 @@ const AMCViewPage: React.FC<AMCViewPageProps> = ({ onBack, onAMCDeleted }) => {
                   <TableHeader>
                     <TableRow>
                       <TableHead>Customer</TableHead>
-                      <TableHead>Job Number</TableHead>
+                      <TableHead>AMC Given By</TableHead>
                       <TableHead>Service</TableHead>
                       <TableHead>Start Date</TableHead>
                       <TableHead>End Date</TableHead>
@@ -658,7 +742,9 @@ const AMCViewPage: React.FC<AMCViewPageProps> = ({ onBack, onAMCDeleted }) => {
                             </div>
                           </TableCell>
                           <TableCell>
-                            <span className="font-mono text-sm">{amc.jobNumber}</span>
+                            <span className={amc.givenByTechnicianName === 'Unknown' ? 'text-sm text-gray-500' : 'text-sm font-medium text-gray-900'}>
+                              {amc.givenByTechnicianName}
+                            </span>
                           </TableCell>
                           <TableCell>
                             <div>
@@ -783,8 +869,8 @@ const AMCViewPage: React.FC<AMCViewPageProps> = ({ onBack, onAMCDeleted }) => {
                     <p className="font-medium">{selectedAMC.customerEmail || 'N/A'}</p>
                   </div>
                   <div>
-                    <Label className="text-xs text-gray-500">Job Number</Label>
-                    <p className="font-medium font-mono">{selectedAMC.jobNumber}</p>
+                    <Label className="text-xs text-gray-500">AMC Given By</Label>
+                    <p className="font-medium">{selectedAMC.givenByTechnicianName}</p>
                   </div>
                   <div>
                     <Label className="text-xs text-gray-500">Service Type</Label>
@@ -950,6 +1036,28 @@ const AMCViewPage: React.FC<AMCViewPageProps> = ({ onBack, onAMCDeleted }) => {
                     </div>
                   </div>
                   <div className="col-span-2">
+                    <Label className="text-sm font-medium">AMC Given By</Label>
+                    <Select
+                      value={editFormData.givenByTechnicianId}
+                      onValueChange={(value) => setEditFormData({ ...editFormData, givenByTechnicianId: value })}
+                    >
+                      <SelectTrigger className="mt-1">
+                        <SelectValue placeholder="Select technician" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="NONE">Unknown / Not assigned</SelectItem>
+                        {technicians.map((tech: any) => (
+                          <SelectItem key={tech.id} value={tech.id}>
+                            {getTechnicianDisplayName(tech)}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    <p className="text-xs text-gray-500 mt-1">
+                      Use this for manually created AMCs. Job-linked AMCs can still be corrected here.
+                    </p>
+                  </div>
+                  <div className="col-span-2">
                     <Label htmlFor="edit-additional-notes">Description / Summary</Label>
                     <Textarea
                       id="edit-additional-notes"
@@ -1019,7 +1127,7 @@ const AMCViewPage: React.FC<AMCViewPageProps> = ({ onBack, onAMCDeleted }) => {
               <AlertDialogTitle>Delete AMC Record</AlertDialogTitle>
               <AlertDialogDescription>
                 Are you sure you want to delete the AMC record for{' '}
-                <strong>{amcToDelete?.customerName}</strong> (Job: {amcToDelete?.jobNumber})?
+                <strong>{amcToDelete?.customerName}</strong>?
                 <br />
                 <br />
                 This action cannot be undone. The AMC information will be removed from the job record.
