@@ -83,10 +83,13 @@ interface TechnicianHoliday {
   notes?: string;
 }
 
+type AttendanceStatus = 'present' | 'halfDay' | 'absent';
+
 interface DailyBreakdown {
   date: string;
   billAmount: number;
   isAbsent: boolean;
+  status: AttendanceStatus;
 }
 
 interface TechnicianMonthlySalaryBreakdown {
@@ -145,6 +148,21 @@ const formatCurrency = (amount: number): string => {
   });
   return formatted.endsWith('.00') ? formatted.slice(0, -3) : formatted;
 };
+
+const formatLeaveDays = (days: number): string => {
+  if (Number.isInteger(days)) return String(days);
+  return days.toLocaleString('en-IN', {
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 1
+  });
+};
+
+const PRESENT_OVERRIDE_REASON = 'MARKED_AS_PRESENT';
+const HALF_DAY_REASON = 'MARKED_AS_HALF_DAY';
+
+const isPresentOverride = (holiday: TechnicianHoliday): boolean => holiday.reason === PRESENT_OVERRIDE_REASON;
+const isHalfDayHoliday = (holiday: TechnicianHoliday): boolean => holiday.reason === HALF_DAY_REASON;
+const getHolidayAttendanceWeight = (holiday: TechnicianHoliday): number => (isHalfDayHoliday(holiday) ? 0.5 : 1);
 
 const TechnicianPayments = () => {
   const [technicians, setTechnicians] = useState<any[]>([]);
@@ -225,9 +243,10 @@ const TechnicianPayments = () => {
     technicianId: string;
     date: string;
     isAbsent: boolean;
+    status: AttendanceStatus;
   } | null>(null);
   const [dailyBreakdownFormData, setDailyBreakdownFormData] = useState({
-    isAbsent: false
+    status: 'present' as AttendanceStatus
   });
 
   // Salary slip download dialog
@@ -550,38 +569,56 @@ const TechnicianPayments = () => {
           currentDate.setDate(currentDate.getDate() + 1);
         }
 
-        const allHolidayDates = new Set<string>();
+        const holidayWeights = new Map<string, number>();
         techHolidays.forEach(h => {
           const holidayDate = h.holiday_date.split('T')[0];
-          if (holidayDate <= todayStrForHolidays && holidayDate >= monthStartStr && holidayDate <= monthEndStr && h.reason !== 'MARKED_AS_PRESENT') {
-            allHolidayDates.add(holidayDate);
+          if (holidayDate <= todayStrForHolidays && holidayDate >= monthStartStr && holidayDate <= monthEndStr && !isPresentOverride(h)) {
+            holidayWeights.set(holidayDate, Math.max(holidayWeights.get(holidayDate) || 0, getHolidayAttendanceWeight(h)));
           }
         });
         allDates.forEach(date => {
           if (date <= todayStrForHolidays && !datesWithJobs.has(date)) {
             const existingHoliday = techHolidays.find(h => h.holiday_date.split('T')[0] === date);
-            if (!existingHoliday || existingHoliday.reason !== 'MARKED_AS_PRESENT') allHolidayDates.add(date);
+            if (!existingHoliday) {
+              holidayWeights.set(date, 1);
+            } else if (!isPresentOverride(existingHoliday)) {
+              holidayWeights.set(date, Math.max(holidayWeights.get(date) || 0, getHolidayAttendanceWeight(existingHoliday)));
+            }
           }
         });
 
         const displayHolidays: TechnicianHoliday[] = [];
         techHolidays.forEach(h => {
           const holidayDate = h.holiday_date.split('T')[0];
-          if (allHolidayDates.has(holidayDate) && h.reason !== 'MARKED_AS_PRESENT') displayHolidays.push(h);
+          if (holidayWeights.has(holidayDate) && !isPresentOverride(h)) displayHolidays.push(h);
         });
-        allHolidayDates.forEach(date => {
+        holidayWeights.forEach((_weight, date) => {
           if (!displayHolidays.some(h => h.holiday_date.split('T')[0] === date)) {
             displayHolidays.push({ id: `auto-${date}`, technician_id: techId, holiday_date: date, is_manual: false, reason: 'No completed jobs - auto-detected as absent' });
           }
         });
 
-        const totalHolidays = allHolidayDates.size;
+        const totalHolidays = Array.from(holidayWeights.values()).reduce((sum, weight) => sum + weight, 0);
         const extraHolidays = Math.max(0, totalHolidays - allowedHolidays);
-        const absentDays = extraHolidays > 0
-          ? displayHolidays.filter(h => allHolidayDates.has(h.holiday_date.split('T')[0])).sort((a, b) => new Date(b.holiday_date).getTime() - new Date(a.holiday_date).getTime()).slice(0, extraHolidays)
-          : [];
+        const sortedHolidayDays = displayHolidays
+          .filter(h => holidayWeights.has(h.holiday_date.split('T')[0]))
+          .sort((a, b) => new Date(b.holiday_date).getTime() - new Date(a.holiday_date).getTime());
+        const absentDays: TechnicianHoliday[] = [];
+        let remainingExtraHolidayUnits = extraHolidays;
+        for (const holiday of sortedHolidayDays) {
+          if (remainingExtraHolidayUnits <= 0) break;
+          absentDays.push(holiday);
+          remainingExtraHolidayUnits -= Math.min(
+            holidayWeights.get(holiday.holiday_date.split('T')[0]) || getHolidayAttendanceWeight(holiday),
+            remainingExtraHolidayUnits
+          );
+        }
+        remainingExtraHolidayUnits = extraHolidays;
         const holidayDeduction = absentDays.reduce((sum, holiday) => {
-          return sum + getTechnicianDailyBaseSalary(tech, new Date(holiday.holiday_date));
+          const holidayDate = holiday.holiday_date.split('T')[0];
+          const chargeableUnits = Math.min(holidayWeights.get(holidayDate) || getHolidayAttendanceWeight(holiday), remainingExtraHolidayUnits);
+          remainingExtraHolidayUnits -= chargeableUnits;
+          return sum + (getTechnicianDailyBaseSalary(tech, new Date(holiday.holiday_date)) * chargeableUnits);
         }, 0);
         const unusedLeaves = Math.max(0, allowedHolidays - totalHolidays);
         const unusedLeaveBonus = unusedLeaves * (monthlyBaseSalary / 30);
@@ -685,35 +722,58 @@ const TechnicianPayments = () => {
           const hasJobsOnDate = datesWithJobs.has(date);
           if (date <= todayStrForHolidays && !hasJobsOnDate) {
             const existingHoliday = techHolidays.find(h => h.holiday_date.split('T')[0] === date);
-            if (!existingHoliday || existingHoliday.reason !== 'MARKED_AS_PRESENT') autoDetectedHolidays.push(date);
+            if (!existingHoliday || !isPresentOverride(existingHoliday)) autoDetectedHolidays.push(date);
           }
         });
 
-        const allHolidayDates = new Set<string>();
+        const holidayWeights = new Map<string, number>();
         techHolidays.forEach(h => {
           const holidayDate = h.holiday_date.split('T')[0];
           const endDateStr = formatDateString(endDate);
-          if (holidayDate <= todayStrForHolidays && holidayDate >= periodStartStr && holidayDate <= endDateStr && h.reason !== 'MARKED_AS_PRESENT') {
-            allHolidayDates.add(holidayDate);
+          if (holidayDate <= todayStrForHolidays && holidayDate >= periodStartStr && holidayDate <= endDateStr && !isPresentOverride(h)) {
+            holidayWeights.set(holidayDate, Math.max(holidayWeights.get(holidayDate) || 0, getHolidayAttendanceWeight(h)));
           }
         });
         autoDetectedHolidays.forEach(date => {
-          if (date >= periodStartStr && date <= todayStrForHolidays) allHolidayDates.add(date);
+          if (date >= periodStartStr && date <= todayStrForHolidays) {
+            const existingHoliday = techHolidays.find(h => h.holiday_date.split('T')[0] === date);
+            if (!existingHoliday) {
+              holidayWeights.set(date, 1);
+            } else if (!isPresentOverride(existingHoliday)) {
+              holidayWeights.set(date, Math.max(holidayWeights.get(date) || 0, getHolidayAttendanceWeight(existingHoliday)));
+            }
+          }
         });
 
-        const displayHolidays: TechnicianHoliday[] = techHolidays.filter(h => h.reason !== 'MARKED_AS_PRESENT');
+        const displayHolidays: TechnicianHoliday[] = techHolidays.filter(h => !isPresentOverride(h));
         autoDetectedHolidays.forEach(date => {
-          displayHolidays.push({ id: `auto-${date}`, technician_id: techId, holiday_date: date, is_manual: false, reason: 'No completed jobs - auto-detected as absent' });
+          if (!displayHolidays.some(h => h.holiday_date.split('T')[0] === date)) {
+            displayHolidays.push({ id: `auto-${date}`, technician_id: techId, holiday_date: date, is_manual: false, reason: 'No completed jobs - auto-detected as absent' });
+          }
         });
         displayHolidays.sort((a, b) => new Date(b.holiday_date).getTime() - new Date(a.holiday_date).getTime());
-        const totalHolidays = allHolidayDates.size;
+        const totalHolidays = Array.from(holidayWeights.values()).reduce((sum, weight) => sum + weight, 0);
         const extraHolidays = Math.max(0, totalHolidays - allowedHolidays);
-        const absentDays: TechnicianHoliday[] = extraHolidays > 0
-          ? displayHolidays.filter(h => allHolidayDates.has(h.holiday_date.split('T')[0])).sort((a, b) => new Date(b.holiday_date).getTime() - new Date(a.holiday_date).getTime()).slice(0, extraHolidays)
-          : [];
+        const sortedHolidayDays = displayHolidays
+          .filter(h => holidayWeights.has(h.holiday_date.split('T')[0]))
+          .sort((a, b) => new Date(b.holiday_date).getTime() - new Date(a.holiday_date).getTime());
+        const absentDays: TechnicianHoliday[] = [];
+        let remainingExtraHolidayUnits = extraHolidays;
+        for (const holiday of sortedHolidayDays) {
+          if (remainingExtraHolidayUnits <= 0) break;
+          absentDays.push(holiday);
+          remainingExtraHolidayUnits -= Math.min(
+            holidayWeights.get(holiday.holiday_date.split('T')[0]) || getHolidayAttendanceWeight(holiday),
+            remainingExtraHolidayUnits
+          );
+        }
         absentDays.sort((a, b) => new Date(b.holiday_date).getTime() - new Date(a.holiday_date).getTime());
+        remainingExtraHolidayUnits = extraHolidays;
         const holidayDeduction = absentDays.reduce((sum, holiday) => {
-          return sum + getTechnicianDailyBaseSalary(tech, new Date(holiday.holiday_date));
+          const holidayDate = holiday.holiday_date.split('T')[0];
+          const chargeableUnits = Math.min(holidayWeights.get(holidayDate) || getHolidayAttendanceWeight(holiday), remainingExtraHolidayUnits);
+          remainingExtraHolidayUnits -= chargeableUnits;
+          return sum + (getTechnicianDailyBaseSalary(tech, new Date(holiday.holiday_date)) * chargeableUnits);
         }, 0);
         const unusedLeaves = Math.max(0, allowedHolidays - totalHolidays);
         const averageDailyBaseSalary = periodBaseSalary / (30 * inclusiveMonthCount);
@@ -735,13 +795,25 @@ const TechnicianPayments = () => {
           .map(date => {
             const billAmount = dailyBilling.get(date) || 0;
             const hasJobsOnDate = datesWithJobs.has(date);
-            const presentOverride = techHolidays.find(h => h.holiday_date.split('T')[0] === date && h.reason === 'MARKED_AS_PRESENT');
-            const manualAbsentHoliday = techHolidays.find(h => h.holiday_date.split('T')[0] === date && h.reason !== 'MARKED_AS_PRESENT' && h.is_manual === true);
+            const presentOverride = techHolidays.find(h => h.holiday_date.split('T')[0] === date && isPresentOverride(h));
+            const halfDayHoliday = techHolidays.find(h => h.holiday_date.split('T')[0] === date && isHalfDayHoliday(h));
+            const manualAbsentHoliday = techHolidays.find(h => h.holiday_date.split('T')[0] === date && !isPresentOverride(h) && !isHalfDayHoliday(h) && h.is_manual === true);
             let isAbsent: boolean;
-            if (presentOverride) isAbsent = false;
-            else if (manualAbsentHoliday) isAbsent = true;
-            else isAbsent = !hasJobsOnDate && allHolidayDates.has(date);
-            return { date, billAmount, isAbsent };
+            let status: AttendanceStatus;
+            if (presentOverride) {
+              isAbsent = false;
+              status = 'present';
+            } else if (halfDayHoliday) {
+              isAbsent = false;
+              status = 'halfDay';
+            } else if (manualAbsentHoliday) {
+              isAbsent = true;
+              status = 'absent';
+            } else {
+              isAbsent = !hasJobsOnDate && holidayWeights.has(date);
+              status = isAbsent ? 'absent' : 'present';
+            }
+            return { date, billAmount, isAbsent, status };
           })
           .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
 
@@ -1599,12 +1671,12 @@ const TechnicianPayments = () => {
     try {
       const technicianId = editingDailyBreakdown.technicianId;
       const date = editingDailyBreakdown.date;
-      const newIsAbsent = dailyBreakdownFormData.isAbsent;
-      const oldIsAbsent = editingDailyBreakdown.isAbsent;
+      const newStatus = dailyBreakdownFormData.status;
+      const oldStatus = editingDailyBreakdown.status;
       let hasChanges = false;
 
-      // Update present/absent status
-      if (newIsAbsent !== oldIsAbsent) {
+      // Update attendance status
+      if (newStatus !== oldStatus) {
         // Check if holiday already exists - holiday_date is DATE field, so query by date string
         const { data: existingHolidays, error: holidayCheckError } = await supabase
           .from('technician_holidays')
@@ -1619,117 +1691,58 @@ const TechnicianPayments = () => {
 
         console.log('Holiday status change:', {
           date,
-          oldIsAbsent,
-          newIsAbsent,
+          oldStatus,
+          newStatus,
           existingHolidays: existingHolidays?.length || 0
         });
 
-        if (newIsAbsent) {
-          // Mark as absent - first remove any present override markers, then add absent holiday
-          let deletedPresentOverrides = 0;
-          let hasAbsentHoliday = false;
-          
-          if (existingHolidays && existingHolidays.length > 0) {
-            // Check if there's a present override marker - delete it first
-            const presentOverride = existingHolidays.find(h => h.reason === 'MARKED_AS_PRESENT');
-            if (presentOverride) {
-              const { error: deleteError } = await db.technicianHolidays.delete(presentOverride.id);
-              if (deleteError) {
-                console.error('Error deleting present override:', deleteError);
-                throw deleteError;
-              }
-              deletedPresentOverrides++;
+        if (existingHolidays && existingHolidays.length > 0) {
+          for (const holiday of existingHolidays) {
+            const { error: deleteError } = await db.technicianHolidays.delete(holiday.id);
+            if (deleteError) {
+              console.error('Error deleting existing attendance marker:', deleteError);
+              throw deleteError;
             }
-            
-            // Check if there's already an absent holiday (manual or auto-detected)
-            hasAbsentHoliday = existingHolidays.some(h => h.reason !== 'MARKED_AS_PRESENT');
-          }
-          
-          // Create absent holiday if it doesn't exist
-          if (!hasAbsentHoliday) {
-            const { error: addHolidayError } = await db.technicianHolidays.create({
-              technician_id: technicianId,
-              holiday_date: date,
-              is_manual: true,
-              reason: 'Manual adjustment',
-              notes: 'Updated from daily breakdown'
-            });
-            if (addHolidayError) {
-              console.error('Error adding holiday:', addHolidayError);
-              throw addHolidayError;
-            }
-            if (deletedPresentOverrides > 0) {
-              toast.success('Day marked as absent (removed present override)');
-            } else {
-              toast.success('Day marked as absent');
-            }
-            hasChanges = true;
-          } else {
-            // Absent holiday already exists
-            if (deletedPresentOverrides > 0) {
-              toast.success('Day marked as absent (removed present override)');
-              hasChanges = true;
-            } else {
-              toast.info('Day is already marked as absent');
-              hasChanges = true; // Still reload to refresh
-            }
-          }
-        } else {
-          // Mark as present - remove ALL holidays (both manual and auto-detected)
-          // Then create a "present override" marker to prevent auto-detection
-          let deletedCount = 0;
-          if (existingHolidays && existingHolidays.length > 0) {
-            for (const holiday of existingHolidays) {
-              // Skip if it's already a present override marker
-              if (holiday.reason === 'MARKED_AS_PRESENT') {
-                continue;
-              }
-              // Delete all holidays (both manual and auto-detected) to mark as present
-              const { error: deleteError } = await db.technicianHolidays.delete(holiday.id);
-              if (deleteError) {
-                console.error('Error deleting holiday:', deleteError);
-                // Continue with other holidays even if one fails
-                console.warn(`Failed to delete holiday ${holiday.id}, continuing...`);
-              } else {
-                deletedCount++;
-              }
-            }
-          }
-          
-          // Check if present override marker already exists
-          const hasPresentOverride = existingHolidays?.some(h => h.reason === 'MARKED_AS_PRESENT');
-          
-          // Create or ensure present override marker exists
-          if (!hasPresentOverride) {
-            const { error: overrideError } = await db.technicianHolidays.create({
-              technician_id: technicianId,
-              holiday_date: date,
-              is_manual: true,
-              reason: 'MARKED_AS_PRESENT',
-              notes: 'Manually marked as present - prevents auto-detection as absent'
-            });
-            
-            if (overrideError) {
-              console.error('Error creating present override:', overrideError);
-              toast.error('Failed to create present override marker');
-            } else {
-              if (deletedCount > 0) {
-                toast.success(`Day marked as present (removed ${deletedCount} leave record(s))`);
-              } else {
-                toast.success('Day marked as present');
-              }
-              hasChanges = true;
-            }
-          } else {
-            // Present override already exists, just confirm
-            if (deletedCount > 0) {
-              toast.success(`Day marked as present (removed ${deletedCount} leave record(s))`);
-            } else {
-              toast.info('Day is already marked as present');
-            }
-            hasChanges = true;
           }
         }
+
+        const markerPayload =
+          newStatus === 'present'
+            ? {
+                reason: PRESENT_OVERRIDE_REASON,
+                notes: 'Manually marked as present - prevents auto-detection as absent',
+              }
+            : newStatus === 'halfDay'
+            ? {
+                reason: HALF_DAY_REASON,
+                notes: 'Marked as half day from daily breakdown',
+              }
+            : {
+                reason: 'Manual adjustment',
+                notes: 'Updated from daily breakdown',
+              };
+
+        const { error: createMarkerError } = await db.technicianHolidays.create({
+          technician_id: technicianId,
+          holiday_date: date,
+          is_manual: true,
+          reason: markerPayload.reason,
+          notes: markerPayload.notes
+        });
+
+        if (createMarkerError) {
+          console.error('Error creating attendance marker:', createMarkerError);
+          throw createMarkerError;
+        }
+
+        toast.success(
+          newStatus === 'present'
+            ? 'Day marked as present'
+            : newStatus === 'halfDay'
+            ? 'Day marked as half day'
+            : 'Day marked as absent'
+        );
+        hasChanges = true;
       }
 
       // Close dialog first (before reload to prevent flicker)
@@ -2025,8 +2038,8 @@ const TechnicianPayments = () => {
                             <TableCell>
                               <div className="font-medium">{month.monthLabel}</div>
                               <div className="text-xs text-gray-500">
-                                Leaves: {month.totalHolidays} total, {month.extraHolidays} extra
-                                {month.unusedLeaves > 0 ? `, ${month.unusedLeaves} unused` : ''}
+                                Leaves: {formatLeaveDays(month.totalHolidays)} used, {formatLeaveDays(month.extraHolidays)} unpaid
+                                {month.unusedLeaves > 0 ? `, ${formatLeaveDays(month.unusedLeaves)} unused` : ''}
                               </div>
                             </TableCell>
                             <TableCell className="text-right">₹ {formatCurrency(month.totalBillAmount)}</TableCell>
@@ -2151,7 +2164,7 @@ const TechnicianPayments = () => {
                     <>
                       {breakdown.holidayDeduction > 0 && (
                         <div className="flex justify-between items-center gap-2 text-red-600">
-                          <span className="truncate">Leave Deduction ({breakdown.extraHolidays} absent days):</span>
+                          <span className="truncate">Leave Deduction ({formatLeaveDays(breakdown.extraHolidays)} unpaid leave days):</span>
                           <span className="font-medium whitespace-nowrap">- ₹ {formatCurrency(breakdown.holidayDeduction)}</span>
                         </div>
                       )}
@@ -2200,7 +2213,7 @@ const TechnicianPayments = () => {
                     <span>₹ {formatCurrency(breakdown.totalExpenses)}</span>
                   </div>
                   <div className="flex justify-between text-gray-500 text-xs pt-1">
-                    <span>Leaves: {breakdown.totalHolidays} total ({breakdown.allowedHolidays} allowed, {breakdown.extraHolidays} absent)</span>
+                    <span>Leaves: {formatLeaveDays(breakdown.totalHolidays)} used ({formatLeaveDays(breakdown.allowedHolidays)} allowed, {formatLeaveDays(breakdown.extraHolidays)} unpaid)</span>
                     <span></span>
                   </div>
                 </div>
@@ -2494,8 +2507,10 @@ const TechnicianPayments = () => {
                                   {day.billAmount > 0 ? `₹ ${formatCurrency(day.billAmount)}` : '-'}
                                 </TableCell>
                                 <TableCell className="text-center">
-                                  {day.isAbsent ? (
+                                  {day.status === 'absent' ? (
                                     <Badge variant="destructive">Absent</Badge>
+                                  ) : day.status === 'halfDay' ? (
+                                    <Badge className="bg-amber-500 text-white">Half Day</Badge>
                                   ) : day.billAmount > 0 ? (
                                     <Badge variant="default" className="bg-green-600">Worked</Badge>
                                   ) : (
@@ -2530,10 +2545,11 @@ const TechnicianPayments = () => {
                                         setEditingDailyBreakdown({
                                           technicianId: breakdown.technicianId,
                                           date: day.date,
-                                          isAbsent: day.isAbsent
+                                          isAbsent: day.isAbsent,
+                                          status: day.status
                                         });
                                         setDailyBreakdownFormData({
-                                          isAbsent: day.isAbsent
+                                          status: day.status
                                         });
                                         setDailyBreakdownEditDialogOpen(true);
                                       }}
@@ -2724,21 +2740,24 @@ const TechnicianPayments = () => {
             <div>
               <Label htmlFor="daily-is-absent">Attendance Status</Label>
               <Select
-                value={dailyBreakdownFormData.isAbsent ? 'absent' : 'present'}
-                onValueChange={(value) => setDailyBreakdownFormData({ ...dailyBreakdownFormData, isAbsent: value === 'absent' })}
+                value={dailyBreakdownFormData.status}
+                onValueChange={(value) => setDailyBreakdownFormData({ ...dailyBreakdownFormData, status: value as AttendanceStatus })}
               >
                 <SelectTrigger>
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="present">Present / Worked</SelectItem>
+                  <SelectItem value="halfDay">Half Day</SelectItem>
                   <SelectItem value="absent">Absent</SelectItem>
                 </SelectContent>
               </Select>
               <p className="text-xs text-gray-500 mt-1">
-                {dailyBreakdownFormData.isAbsent 
-                  ? 'Marking as absent will add a leave record' 
-                  : 'Marking as present will remove leave records for this day'}
+                {dailyBreakdownFormData.status === 'absent'
+                  ? 'Absent will count as one leave day'
+                  : dailyBreakdownFormData.status === 'halfDay'
+                  ? 'Half day will count as 0.5 leave day, so half day salary is given'
+                  : 'Present will remove leave records for this day'}
               </p>
             </div>
           </div>
