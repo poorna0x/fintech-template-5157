@@ -128,6 +128,14 @@ interface AnalyticsData {
     avgTds: number | null;
     avgCallBilling: number;
   }>;
+  brandStats?: Array<{
+    brandKey: string;
+    displayName: string;
+    jobCount: number;
+    totalRevenue: number;
+    serviceTypeBreakdown: Record<string, number>;
+    avgCallBilling: number;
+  }>;
   /** Loaded on demand: Direct/Website completed jobs in period vs first attributed lead source; technician column = last completed job before each conversion. */
   directWebsiteConversions?: {
     totalJobs: number;
@@ -218,7 +226,9 @@ const Analytics = () => {
   const [customEndDate, setCustomEndDate] = useState<string>('');
   const [customMonthValue, setCustomMonthValue] = useState<string>(''); // YYYY-MM for Custom month
   const [locationSearch, setLocationSearch] = useState('');
+  const [brandSearch, setBrandSearch] = useState('');
   const [loadingLocationStats, setLoadingLocationStats] = useState(false);
+  const [loadingBrandStats, setLoadingBrandStats] = useState(false);
   const [loadingDirectConversion, setLoadingDirectConversion] = useState(false);
 
   useEffect(() => {
@@ -1298,6 +1308,79 @@ const Analytics = () => {
     }
   };
 
+  const loadTopBrands = async () => {
+    setLoadingBrandStats(true);
+    try {
+      const { startDate, endDate } = getDateRange();
+      const { data: brandJobs, error } = await db.jobs.getJobsWithCustomerBrandInRange(startDate ?? undefined, endDate ?? undefined);
+      if (error) throw error;
+
+      type BrandAnalyticsJob = {
+        brand?: string | null;
+        customer?: { brand?: string | null } | null;
+        payment_amount?: number | string | null;
+        actual_cost?: number | string | null;
+        service_sub_type?: string | null;
+        serviceSubType?: string | null;
+      };
+
+      const brandMap: Record<string, {
+        displayNameCounts: Record<string, number>;
+        jobCount: number;
+        totalRevenue: number;
+        installation: number;
+        service: number;
+      }> = {};
+
+      (brandJobs || []).forEach((row: BrandAnalyticsJob) => {
+        const brand = String(row.brand || row.customer?.brand || '').trim();
+        const key = brand ? normalizeForComparison(brand) : '__unknown__';
+        const displayName = brand || 'Unknown';
+
+        if (!brandMap[key]) {
+          brandMap[key] = {
+            displayNameCounts: {},
+            jobCount: 0,
+            totalRevenue: 0,
+            installation: 0,
+            service: 0
+          };
+        }
+
+        const rec = brandMap[key];
+        rec.displayNameCounts[displayName] = (rec.displayNameCounts[displayName] || 0) + 1;
+        rec.jobCount += 1;
+        rec.totalRevenue += Number(row.payment_amount || row.actual_cost || 0);
+
+        const bucket = toInstallationOrService(row.service_sub_type || row.serviceSubType || '');
+        if (bucket === 'Installation') rec.installation += 1;
+        else rec.service += 1;
+      });
+
+      const brandStats = Object.entries(brandMap)
+        .map(([brandKey, rec]) => {
+          const displayName = Object.entries(rec.displayNameCounts).sort((a, b) => b[1] - a[1])[0]?.[0] ?? (brandKey === '__unknown__' ? 'Unknown' : brandKey);
+          return {
+            brandKey,
+            displayName,
+            jobCount: rec.jobCount,
+            totalRevenue: rec.totalRevenue,
+            serviceTypeBreakdown: { Installation: rec.installation, Service: rec.service },
+            avgCallBilling: rec.jobCount > 0 ? rec.totalRevenue / rec.jobCount : 0
+          };
+        })
+        .sort((a, b) => b.jobCount - a.jobCount);
+
+      setAnalytics((prev) => (prev ? { ...prev, brandStats } : prev));
+      if (brandStats.length === 0) toast.info('No brand data found for this period.');
+    } catch (e: unknown) {
+      const message = e instanceof Error ? e.message : 'Unknown error';
+      toast.error('Failed to load top brands: ' + message);
+    } finally {
+      setLoadingBrandStats(false);
+    }
+  };
+
   const loadDirectWebsiteConversions = async () => {
     if (loadingDirectConversion) return;
     setLoadingDirectConversion(true);
@@ -2054,6 +2137,102 @@ const Analytics = () => {
                               </TableCell>
                               <TableCell className="text-right font-medium text-green-600">
                                 ₹ {formatCurrency(loc.totalRevenue)}
+                              </TableCell>
+                            </TableRow>
+                          ))
+                        )}
+                      </TableBody>
+                    </Table>
+                  </div>
+                );
+              })()}
+            </>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* Top brands - load on demand */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Award className="w-5 h-5" />
+            Top brands
+          </CardTitle>
+          <CardDescription>
+            Jobs grouped by RO brand name for the selected period. Model names are not shown.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <Button
+            onClick={loadTopBrands}
+            disabled={loadingBrandStats}
+            variant="outline"
+          >
+            {loadingBrandStats ? (
+              <>
+                <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                Loading...
+              </>
+            ) : (
+              'Load top brands'
+            )}
+          </Button>
+          {analytics.brandStats && analytics.brandStats.length > 0 && (
+            <>
+              <div className="relative max-w-sm">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                <Input
+                  placeholder="Search brand..."
+                  value={brandSearch}
+                  onChange={(e) => setBrandSearch(e.target.value)}
+                  className="pl-9"
+                />
+              </div>
+              {(() => {
+                const searchNorm = brandSearch.trim() ? normalizeForComparison(brandSearch.trim()) : '';
+                const filtered = searchNorm
+                  ? analytics.brandStats.filter(
+                      (brand) =>
+                        brand.brandKey.includes(searchNorm) ||
+                        brand.displayName.toLowerCase().includes(brandSearch.trim().toLowerCase())
+                    )
+                  : analytics.brandStats;
+                return (
+                  <div className="overflow-x-auto">
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead>Brand</TableHead>
+                          <TableHead className="text-right">Jobs</TableHead>
+                          <TableHead className="text-right">Installation</TableHead>
+                          <TableHead className="text-right">Service</TableHead>
+                          <TableHead className="text-right">Avg call billing</TableHead>
+                          <TableHead className="text-right">Revenue</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {filtered.length === 0 ? (
+                          <TableRow>
+                            <TableCell colSpan={6} className="text-center text-gray-500 py-6">
+                              {brandSearch.trim() ? 'No brands match your search.' : 'No brand data.'}
+                            </TableCell>
+                          </TableRow>
+                        ) : (
+                          filtered.map((brand) => (
+                            <TableRow key={brand.brandKey}>
+                              <TableCell className="font-medium">{brand.displayName}</TableCell>
+                              <TableCell className="text-right">{brand.jobCount}</TableCell>
+                              <TableCell className="text-right">
+                                {brand.serviceTypeBreakdown?.Installation ?? '—'}
+                              </TableCell>
+                              <TableCell className="text-right">
+                                {brand.serviceTypeBreakdown?.Service ?? '—'}
+                              </TableCell>
+                              <TableCell className="text-right">
+                                ₹ {formatCurrency(brand.avgCallBilling ?? 0)}
+                              </TableCell>
+                              <TableCell className="text-right font-medium text-green-600">
+                                ₹ {formatCurrency(brand.totalRevenue)}
                               </TableCell>
                             </TableRow>
                           ))

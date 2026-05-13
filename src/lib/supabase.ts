@@ -1865,7 +1865,56 @@ export const db = {
         if (otherRes.error) return { data: [], error: otherRes.error };
         const completed = completedRes.data || [];
         const other = otherRes.data || [];
-        const combined = [...completed, ...other].sort((a: any, b: any) => {
+        const combined = [...completed, ...other].sort((a: { created_at?: string | null }, b: { created_at?: string | null }) => {
+          const aAt = a.created_at || '';
+          const bAt = b.created_at || '';
+          return bAt.localeCompare(aAt);
+        });
+        return { data: combined, error: null };
+      }
+
+      const { data, error } = await supabase
+        .from('jobs')
+        .select(select)
+        .order('created_at', { ascending: false })
+        .limit(limit);
+      return { data: data || [], error };
+    },
+
+    /**
+     * Jobs in range (or all) with customer/job brand for Analytics "Top brands".
+     * Same date logic as getForAnalyticsInRange when startDate/endDate provided; when omitted, returns up to 5000 jobs.
+     */
+    async getJobsWithCustomerBrandInRange(startDate?: Date, endDate?: Date) {
+      const cols = 'id,customer_id,status,created_at,completed_at,end_time,service_sub_type,payment_amount,actual_cost,brand,job_number';
+      const select = `${cols},customer:customers(brand)`;
+      const limit = 5000;
+
+      if (startDate && endDate) {
+        const startISO = startDate.toISOString();
+        const endISO = endDate.toISOString();
+        const [completedRes, otherRes] = await Promise.all([
+          supabase
+            .from('jobs')
+            .select(select)
+            .eq('status', 'COMPLETED')
+            .or(`and(end_time.gte.${startISO},end_time.lte.${endISO}),and(end_time.is.null,completed_at.gte.${startISO},completed_at.lte.${endISO})`)
+            .order('created_at', { ascending: false })
+            .limit(limit),
+          supabase
+            .from('jobs')
+            .select(select)
+            .neq('status', 'COMPLETED')
+            .gte('created_at', startISO)
+            .lte('created_at', endISO)
+            .order('created_at', { ascending: false })
+            .limit(limit)
+        ]);
+        if (completedRes.error) return { data: [], error: completedRes.error };
+        if (otherRes.error) return { data: [], error: otherRes.error };
+        const completed = completedRes.data || [];
+        const other = otherRes.data || [];
+        const combined = [...completed, ...other].sort((a: { created_at?: string | null }, b: { created_at?: string | null }) => {
           const aAt = a.created_at || '';
           const bAt = b.created_at || '';
           return bAt.localeCompare(aAt);

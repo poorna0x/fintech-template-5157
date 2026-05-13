@@ -131,6 +131,8 @@ import ReassignJobDialog from './admin/ReassignJobDialog';
 import EditCompletedJobDialog from './admin/EditCompletedJobDialog';
 import WhatsAppDialog from './admin/WhatsAppDialog';
 
+const ZERO_COMMISSION_EMPLOYEE_ID = 'TECH851703400';
+
 declare global {
   interface Window {
     google: any;
@@ -8229,6 +8231,55 @@ const AdminDashboard = () => {
     return dateStr >= start && dateStr <= end;
   };
 
+  const isZeroCommissionCompletedJob = useCallback((job: any): boolean => {
+    const completedBy = String(job?.completed_by || job?.completedBy || '').trim();
+    if (completedBy === ZERO_COMMISSION_EMPLOYEE_ID) return true;
+
+    const technicianPool = techniciansForReports.length > 0 ? techniciansForReports : technicians;
+    return technicianPool.some((tech: any) => {
+      const technicianId = String(tech.id || '').trim();
+      const employeeId = String(tech.employee_id || tech.employeeId || '').trim();
+      return (
+        employeeId === ZERO_COMMISSION_EMPLOYEE_ID &&
+        (completedBy === technicianId || completedBy === employeeId)
+      );
+    });
+  }, [technicians, techniciansForReports]);
+
+  const getCompletedJobBillAmount = useCallback((job: any): number => {
+    const paymentAmount = Number(job?.payment_amount ?? job?.paymentAmount ?? 0) || 0;
+    const actualCost = Number(job?.actual_cost ?? job?.actualCost ?? 0) || 0;
+    let billAmount = paymentAmount > 0 ? paymentAmount : actualCost;
+
+    if (billAmount <= 0 && (job?.payment_method || job?.paymentMethod) === 'PARTIAL') {
+      const requirements = parseJobRequirements(job?.requirements || []);
+      const partialReq = requirements.find(
+        (r: any) => r?.partial_cash_amount != null || r?.partial_online_amount != null
+      );
+      if (partialReq) {
+        const cash = Number(partialReq.partial_cash_amount) || 0;
+        const online = Number(partialReq.partial_online_amount) || 0;
+        if (cash + online > 0) billAmount = cash + online;
+      }
+    }
+
+    return billAmount;
+  }, []);
+
+  const calculateCompletedJobProfit = useCallback((job: any) => {
+    const revenue = getCompletedJobBillAmount(job);
+    const sparePartsCost = Number(job?.parts_cost_total ?? job?.partsCostTotal ?? 0) || 0;
+    const leadCost = Number(job?.lead_cost ?? job?.leadCost ?? 0) || 0;
+    const commission = isZeroCommissionCompletedJob(job) ? 0 : revenue * 0.1;
+    return {
+      revenue,
+      sparePartsCost,
+      leadCost,
+      commission,
+      profit: revenue - sparePartsCost - leadCost - commission,
+    };
+  }, [getCompletedJobBillAmount, isZeroCommissionCompletedJob]);
+
   const displayedCustomers = !searchTerm.trim()
     ? (() => {
         const filtered = getFilteredCustomers();
@@ -8333,6 +8384,40 @@ const AdminDashboard = () => {
         const bDate = new Date(b.customer.createdAt).getTime();
         return bDate - aDate;
       });
+
+  const shouldShowCompletedProfitSummary =
+    statusFilter === 'COMPLETED' &&
+    completedDatePreset === 'day' &&
+    completedDateFilter === getTodayLocalDate() &&
+    completedLeadTypeFilter === 'all' &&
+    completedServiceSubTypeFilter === 'all' &&
+    completedByFilter === 'all' &&
+    !searchTerm.trim();
+
+  const completedProfitSummary = shouldShowCompletedProfitSummary
+    ? displayedCustomers
+        .flatMap(({ completedJobs }) => completedJobs)
+        .reduce(
+          (totals, job) => {
+            const financials = calculateCompletedJobProfit(job);
+            totals.jobCount += 1;
+            totals.revenue += financials.revenue;
+            totals.sparePartsCost += financials.sparePartsCost;
+            totals.leadCost += financials.leadCost;
+            totals.commission += financials.commission;
+            totals.profit += financials.profit;
+            return totals;
+          },
+          {
+            jobCount: 0,
+            revenue: 0,
+            sparePartsCost: 0,
+            leadCost: 0,
+            commission: 0,
+            profit: 0,
+          }
+        )
+    : null;
 
 
   const filteredJobs = jobs.filter(job => {
@@ -9773,7 +9858,7 @@ const AdminDashboard = () => {
                           <div key={job.id}>
                             <CompletedJobSection
                               job={fullJob}
-                              technicians={technicians}
+                              technicians={techniciansForReports.length > 0 ? techniciansForReports : technicians}
                               requirements={requirements}
                               actualCost={actualCost}
                               paymentAmount={paymentAmount}
@@ -10432,6 +10517,30 @@ const AdminDashboard = () => {
             );
             })}
           </div>
+
+          {completedProfitSummary && completedProfitSummary.jobCount > 0 && (
+            <div className="mt-6 rounded-lg border border-green-200 bg-green-50 px-4 py-3 text-sm text-gray-800">
+              <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                <div>
+                  <div className="font-semibold text-green-900">
+                    Profit of Day
+                  </div>
+                  <div className="text-xs text-gray-600">
+                    Amount - spare parts - lead cost - technician commission
+                  </div>
+                </div>
+                <div className={completedProfitSummary.profit >= 0 ? 'text-lg font-bold text-green-700' : 'text-lg font-bold text-red-600'}>
+                  ₹{completedProfitSummary.profit.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                </div>
+              </div>
+              <div className="mt-2 text-xs text-gray-600">
+                Amount ₹{completedProfitSummary.revenue.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                {' '}− spare parts ₹{completedProfitSummary.sparePartsCost.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                {' '}− lead ₹{completedProfitSummary.leadCost.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                {' '}− commission ₹{completedProfitSummary.commission.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+              </div>
+            </div>
+          )}
           
           {/* Pagination — compact, wraps on small screens (no horizontal scroll) */}
           {(statusFilter === 'CANCELLED' || statusFilter === 'RESCHEDULED' || statusFilter === 'COMPLETED') && totalPages > 1 && (

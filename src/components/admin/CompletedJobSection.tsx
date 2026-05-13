@@ -19,6 +19,8 @@ import JobPartsUsedDialog from './JobPartsUsedDialog';
 import { db } from '@/lib/supabase';
 import { customerNameClassName } from '@/lib/customerDisplay';
 
+const ZERO_COMMISSION_EMPLOYEE_ID = 'TECH851703400';
+
 interface CompletedJobSectionProps {
   job: Job;
   technicians: Technician[];
@@ -122,7 +124,19 @@ export const CompletedJobSection: React.FC<CompletedJobSectionProps> = ({
       if (sum > 0) billAmount = sum;
     }
   }
-  const commission10 = billAmount * 0.1;
+  const completedBy = String((job as any).completed_by || (job as any).completedBy || '').trim();
+  const zeroCommissionTechnician = technicians.find((tech: any) => {
+    const technicianId = String(tech.id || '').trim();
+    const employeeId = String(tech.employee_id || tech.employeeId || '').trim();
+    return (
+      employeeId === ZERO_COMMISSION_EMPLOYEE_ID &&
+      (completedBy === technicianId || completedBy === employeeId)
+    );
+  });
+  const hasZeroCommission =
+    completedBy === ZERO_COMMISSION_EMPLOYEE_ID ||
+    Boolean(zeroCommissionTechnician);
+  const commission10 = hasZeroCommission ? 0 : billAmount * 0.1;
   const sparePartsCostDisplay = hasPartsCostTotal ? partsTotalParsed : sparePartsCost;
   const profit = billAmount - sparePartsCostDisplay - leadCost - commission10;
   // Show profit when there is bill revenue or spare parts cost (₹0 bill jobs can still have parts / negative net)
@@ -270,7 +284,7 @@ export const CompletedJobSection: React.FC<CompletedJobSectionProps> = ({
             </div>
           )}
 
-          {/* Profit: Amount - spare parts - lead cost - 10% commission */}
+          {/* Profit: Amount - spare parts - lead cost - technician commission */}
           {showProfit && (
             <div className="text-gray-700 break-words pt-2 border-t border-green-200">
               <span className="text-gray-500 font-medium">Profit:</span>{' '}

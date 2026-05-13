@@ -306,10 +306,25 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
     setCurrentStep(prev => Math.max(prev - 1, 1));
   };
 
+  const capitalizeFirstLetter = (value: string): string => {
+    return value.replace(/^(\s*)([a-z])/, (_, leadingSpaces: string, letter: string) => {
+      return `${leadingSpaces}${letter.toUpperCase()}`;
+    });
+  };
+
+  const shouldCapitalizeAddFormField = (field: string): boolean => {
+    return ['full_name', 'address', 'visible_address', 'behavior', 'notes'].includes(field);
+  };
+
   const handleAddFormChange = (field: string, value: string | string[]) => {
+    const nextValue =
+      typeof value === 'string' && shouldCapitalizeAddFormField(field)
+        ? capitalizeFirstLetter(value)
+        : value;
+
     setAddFormData(prev => ({
       ...prev,
-      [field]: value
+      [field]: nextValue
     }));
 
     if (formErrors[field]) {
@@ -517,9 +532,9 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
       
       setAddFormData(prev => ({
         ...prev,
-        address: address || prev.address,
+        address: address ? capitalizeFirstLetter(address) : prev.address,
         visible_address: extractedLocation 
-          ? extractedLocation.substring(0, 20) 
+          ? capitalizeFirstLetter(extractedLocation).substring(0, 20) 
           : prev.visible_address
       }));
       
@@ -650,21 +665,22 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
   };
 
   const handleEquipmentChange = (serviceType: string, field: 'brand' | 'model', value: string) => {
+    const nextValue = capitalizeFirstLetter(value);
     setAddFormData(prev => ({
       ...prev,
       equipment: {
         ...prev.equipment,
         [serviceType]: {
           ...(prev.equipment[serviceType] || { brand: '', model: '' }),
-          [field]: value
+          [field]: nextValue
         }
       }
     }));
     
     if (field === 'brand') {
-      handleBrandInput(serviceType, value);
+      handleBrandInput(serviceType, nextValue);
     } else if (field === 'model') {
-      handleModelInput(serviceType, value);
+      handleModelInput(serviceType, nextValue);
     }
     
     const errorKey = `equipment.${serviceType}.${field}`;
@@ -674,6 +690,16 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
         [errorKey]: ''
       }));
     }
+  };
+
+  const handleStep5TextChange = (
+    field: 'service_sub_type_custom' | 'lead_source_custom' | 'description',
+    value: string
+  ) => {
+    setStep5JobData(prev => ({
+      ...prev,
+      [field]: capitalizeFirstLetter(value)
+    }));
   };
 
   const handleCreateCustomer = async () => {
@@ -1087,6 +1113,7 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
                   id="add_full_name"
                   value={addFormData.full_name}
                   onChange={(e) => handleAddFormChange('full_name', e.target.value)}
+                  autoCapitalize="sentences"
                   placeholder="Enter full name"
                   className={`text-sm ${formErrors.full_name ? 'border-red-500' : ''}`}
                 />
@@ -1160,6 +1187,7 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
                       handleAddFormChange('visible_address', e.target.value);
                       setVisibleAddressSuggestions(e.target.value.length > 0);
                     }}
+                    autoCapitalize="sentences"
                     onFocus={() => setVisibleAddressSuggestions((addFormData.visible_address || '').length > 0)}
                     onBlur={() => {
                       setTimeout(() => setVisibleAddressSuggestions(false), 200);
@@ -1213,6 +1241,7 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
                   id="add_address"
                   value={addFormData.address}
                   onChange={(e) => handleAddFormChange('address', e.target.value)}
+                  autoCapitalize="sentences"
                   placeholder="Enter complete address (e.g., 123 MG Road, Koramangala, Bangalore, Karnataka, 560034)"
                   rows={3}
                   className={`resize-none ${formErrors.address ? 'border-red-500' : ''}`}
@@ -1322,6 +1351,7 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
                               id={`brand_${serviceType}`}
                               value={equipment.brand}
                               onChange={(e) => handleEquipmentChange(serviceType, 'brand', e.target.value)}
+                              autoCapitalize="sentences"
                               placeholder={`Enter ${serviceType} brand`}
                               className={formErrors[`equipment.${serviceType}.brand`] ? 'border-red-500' : ''}
                               onBlur={() => {
@@ -1352,6 +1382,7 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
                               id={`model_${serviceType}`}
                               value={equipment.model}
                               onChange={(e) => handleEquipmentChange(serviceType, 'model', e.target.value)}
+                              autoCapitalize="sentences"
                               placeholder={`Enter ${serviceType} model`}
                               className={formErrors[`equipment.${serviceType}.model`] ? 'border-red-500' : ''}
                               onBlur={() => {
@@ -1574,7 +1605,8 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
                         <Input
                           id="step5_service_sub_type_custom"
                           value={step5JobData.service_sub_type_custom}
-                          onChange={(e) => setStep5JobData(prev => ({ ...prev, service_sub_type_custom: e.target.value }))}
+                          onChange={(e) => handleStep5TextChange('service_sub_type_custom', e.target.value)}
+                          autoCapitalize="sentences"
                           placeholder="Enter custom service sub type"
                         />
                       </div>
@@ -1679,7 +1711,8 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
                         <Input
                           id="step5_lead_source_custom"
                           value={step5JobData.lead_source_custom}
-                          onChange={(e) => setStep5JobData(prev => ({ ...prev, lead_source_custom: e.target.value }))}
+                          onChange={(e) => handleStep5TextChange('lead_source_custom', e.target.value)}
+                          autoCapitalize="sentences"
                           placeholder="Enter custom lead source"
                         />
                       </div>
@@ -1753,7 +1786,8 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
                       <Textarea
                         id="step5_description"
                         value={step5JobData.description}
-                        onChange={(e) => setStep5JobData(prev => ({ ...prev, description: e.target.value }))}
+                        onChange={(e) => handleStep5TextChange('description', e.target.value)}
+                        autoCapitalize="sentences"
                         placeholder="Enter job description"
                         rows={3}
                       />
