@@ -509,6 +509,74 @@ export function normalizeLeadType(value: string): string {
   return LEAD_TYPE_NORMALIZE_MAP[key] || raw;
 }
 
+/** Technician row shape from admin dashboard / API (camelCase or snake_case). */
+export type CompletedJobTechnicianLike = {
+  id?: string;
+  fullName?: string;
+  full_name?: string;
+  employee_id?: string;
+  employeeId?: string;
+};
+
+/** Resolve “completed by” to a display name using the technician list (same rules as admin list filters). */
+export function getCompletedJobTechnicianDisplayName(
+  job: Record<string, unknown> | null | undefined,
+  technicians: CompletedJobTechnicianLike[]
+): string {
+  const technicianNameByIdLower = new Map<string, string>();
+  const technicianNameByNameLower = new Map<string, string>();
+  technicians.forEach((t) => {
+    if (t.id) technicianNameByIdLower.set(String(t.id).toLowerCase(), (t.fullName || t.full_name || '').trim());
+    const name = (t.fullName || t.full_name || '').trim();
+    if (name) technicianNameByNameLower.set(name.toLowerCase(), name);
+  });
+  const completedByIdOrName = (job?.completed_by ?? job?.completedBy ?? '').toString().trim();
+  const completedByName = (job?.completed_by_name ?? '').toString().trim();
+  if (completedByIdOrName) {
+    const key = completedByIdOrName.toLowerCase();
+    if (technicianNameByIdLower.has(key)) return technicianNameByIdLower.get(key)!;
+    if (technicianNameByNameLower.has(key)) return technicianNameByNameLower.get(key)!;
+  }
+  if (completedByName) {
+    const key = completedByName.toLowerCase();
+    if (technicianNameByNameLower.has(key)) return technicianNameByNameLower.get(key)!;
+  }
+  return '';
+}
+
+export type CompletedDashboardClientFilters = {
+  leadType: string;
+  serviceSubType: string;
+  completedBy: string;
+};
+
+/**
+ * Client-side filters for the admin “Completed” tab (lead / service sub-type / completed-by).
+ * Must stay in sync with the dashboard list; used for batch pagination when filters are active.
+ */
+export function completedJobMatchesDashboardClientFilters(
+  job: Record<string, unknown> | null | undefined,
+  filters: CompletedDashboardClientFilters,
+  technicians: CompletedJobTechnicianLike[]
+): boolean {
+  if (!job) return false;
+  if (filters.leadType !== 'all') {
+    const lead = (findLeadSource(parseJobRequirements(job.requirements)) || 'Direct call').trim();
+    if (normalizeLeadType(lead) !== normalizeLeadType(filters.leadType)) return false;
+  }
+  if (filters.serviceSubType !== 'all') {
+    const st = normalizeServiceSubType(
+      String(job.service_sub_type ?? job.serviceSubType ?? '').trim()
+    );
+    if (st !== normalizeServiceSubType(filters.serviceSubType)) return false;
+  }
+  if (filters.completedBy !== 'all') {
+    const name = getCompletedJobTechnicianDisplayName(job, technicians);
+    if (name.toLowerCase() !== filters.completedBy.trim().toLowerCase()) return false;
+  }
+  return true;
+}
+
 /**
  * Values for PostgREST `in('service_sub_type', …)` so DB casing / legacy labels still match
  * the same normalization used client-side in `doesCompletedJobMatchFilters`.

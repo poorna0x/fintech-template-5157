@@ -91,7 +91,7 @@ import TechnicianPayments from './TechnicianPayments';
 import BillingStats from './BillingStats';
 import Analytics from './Analytics';
 import InventoryManagement from './InventoryManagement';
-import { generateJobNumber, formatPreferredTimeSlot, mapServiceTypesToDbValue, extractLocationFromAddressString, bangaloreAreas, levenshteinDistance, calculateSimilarity, extractPhotoUrls, normalizePhotoUrl, parseJobRequirements, getFormattedTimeSlot, findLeadSource, normalizeLeadType, normalizeServiceSubType } from '@/lib/adminUtils';
+import { generateJobNumber, formatPreferredTimeSlot, mapServiceTypesToDbValue, extractLocationFromAddressString, bangaloreAreas, levenshteinDistance, calculateSimilarity, extractPhotoUrls, normalizePhotoUrl, parseJobRequirements, getFormattedTimeSlot, findLeadSource, normalizeLeadType, normalizeServiceSubType, completedJobMatchesDashboardClientFilters } from '@/lib/adminUtils';
 import { formatPhoneForWhatsApp } from '@/lib/utils';
 import { getLocationLinkFromObject } from '@/lib/jobLocationHelpers';
 import { StatusBadge } from './admin/StatusBadge';
@@ -1282,23 +1282,37 @@ const AdminDashboard = () => {
         let count = 0;
         let pages = 0;
 
-        // Completed lead / service / completed-by: filter client-side in doesCompletedJobMatchFilters (same as pre-6dc11df).
-        // Server only narrows by date — avoids jsonb `contains` exact-string misses and omitted `requirements`.
+        const completedClientFiltersActive =
+          filter === 'COMPLETED' &&
+          (completedLeadTypeFilter !== 'all' ||
+            completedServiceSubTypeFilter !== 'all' ||
+            completedByFilter !== 'all');
 
-        // Prefer slim query for low egress; fallback to legacy query if slim fails.
-        const slimResult = await db.jobs.getByStatusPaginatedSlim(statuses, page, pageSize, dateFilter);
+        // When lead / service / completed-by filters are on, server pagination is by raw job count but the UI
+        // hides non-matching rows — so page 1 can look empty while "1/4" still shows. Load a bounded batch,
+        // apply the same client filters as the list, then paginate the filtered rows.
+        const COMPLETED_CLIENT_FILTER_BATCH = 5000;
+
+        let slimResult: Awaited<ReturnType<typeof db.jobs.getByStatusPaginatedSlim>>;
+        if (completedClientFiltersActive) {
+          slimResult = await db.jobs.getByStatusPaginatedSlim(
+            statuses,
+            1,
+            COMPLETED_CLIENT_FILTER_BATCH,
+            dateFilter
+          );
+        } else {
+          slimResult = await db.jobs.getByStatusPaginatedSlim(statuses, page, pageSize, dateFilter);
+        }
         data = slimResult.data || [];
         error = slimResult.error;
         count = slimResult.count || 0;
         pages = slimResult.totalPages || 0;
 
         if (error) {
-          const fallback = await db.jobs.getByStatusPaginated(
-            statuses,
-            page,
-            pageSize,
-            dateFilter
-          );
+          const fallbackPage = completedClientFiltersActive ? 1 : page;
+          const fallbackSize = completedClientFiltersActive ? COMPLETED_CLIENT_FILTER_BATCH : pageSize;
+          const fallback = await db.jobs.getByStatusPaginated(statuses, fallbackPage, fallbackSize, dateFilter);
           data = fallback.data || [];
           error = fallback.error;
           count = fallback.count || 0;
@@ -1329,6 +1343,30 @@ const AdminDashboard = () => {
               );
             }
           }
+
+          if (completedClientFiltersActive) {
+            const filterPayload = {
+              leadType: completedLeadTypeFilter,
+              serviceSubType: completedServiceSubTypeFilter,
+              completedBy: completedByFilter,
+            };
+            const filtered = finalData.filter((j: any) =>
+              completedJobMatchesDashboardClientFilters(j, filterPayload, technicians as any)
+            );
+            const filteredCount = filtered.length;
+            const filteredPages =
+              filteredCount > 0 ? Math.ceil(filteredCount / pageSize) : 0;
+            let effectivePage = page;
+            if (filteredPages > 0 && page > filteredPages) effectivePage = filteredPages;
+            if (filteredPages === 0) effectivePage = 1;
+            finalData = filtered.slice((effectivePage - 1) * pageSize, effectivePage * pageSize);
+            count = filteredCount;
+            pages = filteredPages;
+            if (effectivePage !== page) {
+              setCurrentPage(effectivePage);
+            }
+          }
+
           setJobs(finalData);
           setTotalCount(count || 0);
           setTotalPages(pages || 0);
@@ -1378,6 +1416,10 @@ const AdminDashboard = () => {
     completedDatePreset,
     completedRangeStartDate,
     completedRangeEndDate,
+    completedLeadTypeFilter,
+    completedServiceSubTypeFilter,
+    completedByFilter,
+    technicians,
   ]);
 
   const loadCompletedJobDetails = useCallback(async (jobId: string) => {
@@ -7807,46 +7849,12 @@ const AdminDashboard = () => {
     }
     return new Date(job.createdAt).getTime();
   };
-  const getCompletedJobLeadType = (job: any): string => {
-    return (findLeadSource(parseJobRequirements(job?.requirements || [])) || 'Direct call').trim();
-  };
-  const getCompletedJobServiceSubType = (job: any): string => {
-    return ((job?.service_sub_type || job?.serviceSubType || '') as string).trim();
-  };
-  const technicianNameByIdLower = useMemo(() => {
-    const map = new Map<string, string>();
-    technicians.forEach((t) => {
-      if (t.id) map.set(t.id.toLowerCase(), (t.fullName || '').trim());
-    });
-    return map;
-  }, [technicians]);
-  const technicianNameByNameLower = useMemo(() => {
-    const map = new Map<string, string>();
-    technicians.forEach((t) => {
-      const name = (t.fullName || '').trim();
-      if (name) map.set(name.toLowerCase(), name);
-    });
-    return map;
-  }, [technicians]);
-  const getCompletedJobTechnicianName = (job: any): string => {
-    const completedByIdOrName = (job?.completed_by || job?.completedBy || '').toString().trim();
-    const completedByName = (job?.completed_by_name || '').toString().trim();
-    if (completedByIdOrName) {
-      const key = completedByIdOrName.toLowerCase();
-      if (technicianNameByIdLower.has(key)) return technicianNameByIdLower.get(key)!;
-      if (technicianNameByNameLower.has(key)) return technicianNameByNameLower.get(key)!;
-    }
-    if (completedByName) {
-      const key = completedByName.toLowerCase();
-      if (technicianNameByNameLower.has(key)) return technicianNameByNameLower.get(key)!;
-    }
-    return '';
-  };
   function doesCompletedJobMatchFilters(job: any): boolean {
-    if (completedLeadTypeFilter !== 'all' && normalizeLeadType(getCompletedJobLeadType(job)) !== normalizeLeadType(completedLeadTypeFilter)) return false;
-    if (completedServiceSubTypeFilter !== 'all' && normalizeServiceSubType(getCompletedJobServiceSubType(job)) !== normalizeServiceSubType(completedServiceSubTypeFilter)) return false;
-    if (completedByFilter !== 'all' && getCompletedJobTechnicianName(job).toLowerCase() !== completedByFilter.trim().toLowerCase()) return false;
-    return true;
+    return completedJobMatchesDashboardClientFilters(job, {
+      leadType: completedLeadTypeFilter,
+      serviceSubType: completedServiceSubTypeFilter,
+      completedBy: completedByFilter,
+    }, technicians as any);
   }
 
   // Group customers with their jobs (uses baseCustomers so search results get their jobs from current view)
@@ -7899,20 +7907,51 @@ const AdminDashboard = () => {
       // we only see customers from the current page. This is intentional for performance.
 
       jobs.forEach(job => {
-        const customer = (job as any).customer || job.customer;
+        let customer = (job as any).customer || job.customer;
+        const fallbackCustomerId = (job as any).customer_id || (job as any).customerId;
         if (!customer) {
-          // Debug: Log jobs without customer relationship
-          if (import.meta.env.DEV) {
-            console.warn('Job missing customer relationship:', {
-              jobId: job.id,
-              jobNumber: job.job_number || job.jobNumber,
-              hasCustomerField: !!(job as any).customer || !!job.customer,
-              status: job.status,
-              completedAt: (job as any).completed_at || job.completedAt,
-              endTime: (job as any).end_time || job.endTime
-            });
+          if (!fallbackCustomerId) {
+            if (import.meta.env.DEV) {
+              console.warn('Job missing customer relationship:', {
+                jobId: job.id,
+                jobNumber: job.job_number || job.jobNumber,
+                hasCustomerField: !!(job as any).customer || !!job.customer,
+                status: job.status,
+                completedAt: (job as any).completed_at || job.completedAt,
+                endTime: (job as any).end_time || job.endTime
+              });
+            }
+            return;
           }
-          return;
+          // Orphan job or embed failed: still show the row so pagination is not a blank page.
+          customer = {
+            id: fallbackCustomerId,
+            customer_id: null,
+            full_name: 'Customer record unavailable',
+            phone: '',
+            alternate_phone: null,
+            email: null,
+            visible_address: '',
+            address: {},
+            location: null,
+            service_type: null,
+            brand: null,
+            model: null,
+            installation_date: null,
+            warranty_expiry: null,
+            status: null,
+            customer_since: null,
+            last_service_date: null,
+            notes: null,
+            preferred_time_slot: null,
+            preferred_language: null,
+            has_prefilter: null,
+            has_google_review: null,
+            customer_tier: null,
+            raw_water_tds: null,
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+          };
         }
         
         const customerId = customer.id;
