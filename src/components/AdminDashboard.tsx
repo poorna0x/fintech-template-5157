@@ -149,6 +149,9 @@ const AdminDashboard = () => {
   const [jobs, setJobs] = useState<Job[]>([]);
   const [allFollowUpJobs, setAllFollowUpJobs] = useState<Job[]>([]); // All follow-up jobs for glow effect
   const [technicians, setTechnicians] = useState<Technician[]>([]);
+  // Latest technicians for async callbacks (avoids loadFilteredJobs ↔ technicians churn → assign/reassign dialog blink).
+  const techniciansRef = useRef<Technician[]>([]);
+  techniciansRef.current = technicians;
   // Slim technician list for historical displays (Completed By, reports, etc.). Includes INACTIVE.
   const [techniciansForReports, setTechniciansForReports] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
@@ -915,7 +918,10 @@ const AdminDashboard = () => {
             status: t.status
           }))
         });
-        const apply = () => setTechnicians(transformedTechnicians);
+        const apply = () => {
+          techniciansRef.current = transformedTechnicians;
+          setTechnicians(transformedTechnicians);
+        };
         if (options?.transition) {
           startTransition(apply);
         } else {
@@ -1351,7 +1357,11 @@ const AdminDashboard = () => {
               completedBy: completedByFilter,
             };
             const filtered = finalData.filter((j: any) =>
-              completedJobMatchesDashboardClientFilters(j, filterPayload, technicians as any)
+              completedJobMatchesDashboardClientFilters(
+                j,
+                filterPayload,
+                techniciansRef.current as any
+              )
             );
             const filteredCount = filtered.length;
             const filteredPages =
@@ -1419,7 +1429,6 @@ const AdminDashboard = () => {
     completedLeadTypeFilter,
     completedServiceSubTypeFilter,
     completedByFilter,
-    technicians,
   ]);
 
   const loadCompletedJobDetails = useCallback(async (jobId: string) => {
@@ -1502,8 +1511,10 @@ const AdminDashboard = () => {
         console.log('📊 Loaded technicians (dashboard — live GPS omitted; refreshed on Settings / assign / measure distance):', {
           count: transformedTechnicians.length,
         });
+        techniciansRef.current = transformedTechnicians;
         setTechnicians(transformedTechnicians);
       } else {
+        techniciansRef.current = [];
         setTechnicians([]);
       }
 
@@ -5364,11 +5375,14 @@ const AdminDashboard = () => {
       setJobToAssign(null);
       setSelectedTechnicianId('');
 
-      // Refresh jobs data then restore scroll so page stays where user was
-      await loadFilteredJobs(statusFilter, currentPage);
-      requestAnimationFrame(() => {
-        requestAnimationFrame(() => {
-          window.scrollTo(0, scrollY);
+      // Defer refetch so dialog close/layout flush first; silent load avoids global spinner.
+      queueMicrotask(() => {
+        void loadFilteredJobs(statusFilter, currentPage, { silent: true }).finally(() => {
+          requestAnimationFrame(() => {
+            requestAnimationFrame(() => {
+              window.scrollTo(0, scrollY);
+            });
+          });
         });
       });
     } catch (error) {
@@ -5433,9 +5447,8 @@ const AdminDashboard = () => {
       setAddTeamDialogOpen(false);
       setJobForTeam(null);
       setSelectedTeamMemberId('');
-      
-      // Refresh jobs
-      await loadFilteredJobs(statusFilter, currentPage);
+
+      await loadFilteredJobs(statusFilter, currentPage, { silent: true });
     } catch (error: any) {
       console.error('Error adding team member:', error);
       toast.error(error.message || 'Failed to add team member');
@@ -5472,9 +5485,8 @@ const AdminDashboard = () => {
       setRemoveTeamDialogOpen(false);
       setJobForRemoveTeam(null);
       setSelectedTeamMemberToRemove('');
-      
-      // Refresh jobs
-      await loadFilteredJobs(statusFilter, currentPage);
+
+      await loadFilteredJobs(statusFilter, currentPage, { silent: true });
     } catch (error: any) {
       console.error('Error removing team member:', error);
       toast.error(error.message || 'Failed to remove team member');
@@ -5582,12 +5594,14 @@ const AdminDashboard = () => {
       
       setJobToReassign(null);
       setSelectedTechnicianForReassign('');
-      
-      // Reload jobs to ensure consistency then restore scroll so page stays where user was
-      await loadFilteredJobs(statusFilter, currentPage);
-      requestAnimationFrame(() => {
-        requestAnimationFrame(() => {
-          window.scrollTo(0, scrollY);
+
+      queueMicrotask(() => {
+        void loadFilteredJobs(statusFilter, currentPage, { silent: true }).finally(() => {
+          requestAnimationFrame(() => {
+            requestAnimationFrame(() => {
+              window.scrollTo(0, scrollY);
+            });
+          });
         });
       });
     } catch (error: any) {
