@@ -845,29 +845,35 @@ export const db = {
     },
 
     /**
-     * Customer / technician “report” UI: needs requirements, costs, completion narrative — not every jobs.* column.
-     * Omits before_photos/after_photos/images unless `includeAfterPhotos` (technician inline report parses after_photos).
+     * Customer / technician “report” UI: completed jobs only; no photo arrays (use enrichJobsWithAfterPhotosIfNeeded).
      */
-    async getByCustomerIdForReport(
-      customerId: string,
-      opts?: { includeAfterPhotos?: boolean }
-    ) {
+    async getByCustomerIdForReport(customerId: string) {
       const cols = [
         ...JOB_BY_CUSTOMER_SLIM_COLS,
         'brand',
         'model',
         'completion_notes',
         'description',
-        ...(opts?.includeAfterPhotos ? (['after_photos'] as const) : []),
       ].join(', ');
 
       const { data, error } = await supabase
         .from('jobs')
         .select(cols)
         .eq('customer_id', customerId)
+        .eq('status', 'COMPLETED')
         .order('created_at', { ascending: false });
 
       return { data, error };
+    },
+
+    /** Report jobs + lazy after_photos for rows missing payment/bill URLs in requirements. */
+    async getByCustomerIdForReportEnriched(customerId: string) {
+      const { data, error } = await this.getByCustomerIdForReport(customerId);
+      if (error) return { data: data || [], error };
+      if (!data?.length) return { data: data || [], error: null };
+      const { enrichJobsWithAfterPhotosIfNeeded } = await import('@/lib/jobReportPhotos');
+      const enriched = await enrichJobsWithAfterPhotosIfNeeded(data);
+      return { data: enriched, error: null };
     },
 
     /**
@@ -1475,11 +1481,8 @@ export const db = {
       }
       if (opts?.includePhotoFields) {
         jobColList.push('before_photos', 'after_photos', 'images');
-      } else if (isCompletedOnly) {
-        // Bill / payment shots are often stored in after_photos only; reports load these but slim list did not,
-        // so "Payment & Bill Documents" on the card was empty while Customer Report still showed photos.
-        jobColList.push('before_photos', 'after_photos');
       }
+      // Completed list: photos via enrichJobsWithAfterPhotosIfNeeded / loadCompletedJobDetails (not paginated rows).
       const jobCols = jobColList.join(',');
 
       const customerColsSlim = [

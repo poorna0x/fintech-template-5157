@@ -95,6 +95,7 @@ import InventoryManagement from './InventoryManagement';
 import { generateJobNumber, formatPreferredTimeSlot, mapServiceTypesToDbValue, extractLocationFromAddressString, bangaloreAreas, levenshteinDistance, calculateSimilarity, extractPhotoUrls, normalizePhotoUrl, parseJobRequirements, getFormattedTimeSlot, findLeadSource, normalizeLeadType, normalizeServiceSubType, completedJobMatchesDashboardClientFilters } from '@/lib/adminUtils';
 import { formatPhoneForWhatsApp } from '@/lib/utils';
 import { getLocationLinkFromObject } from '@/lib/jobLocationHelpers';
+import { enrichJobsWithAfterPhotosIfNeeded } from '@/lib/jobReportPhotos';
 import { StatusBadge } from './admin/StatusBadge';
 import { CustomerCardHeader } from './admin/CustomerCardHeader';
 import { WhatsAppIcon } from './WhatsAppIcon';
@@ -1376,6 +1377,10 @@ const AdminDashboard = () => {
             if (effectivePage !== page) {
               setCurrentPage(effectivePage);
             }
+          }
+
+          if (filter === 'COMPLETED' && finalData.length > 0) {
+            finalData = await enrichJobsWithAfterPhotosIfNeeded(finalData);
           }
 
           setJobs(finalData);

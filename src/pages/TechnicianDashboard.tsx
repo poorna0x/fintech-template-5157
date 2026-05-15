@@ -1560,9 +1560,7 @@ const TechnicianDashboard = () => {
       try {
         const customerId = selectedCustomerForReport.id || selectedCustomerForReport.customer_id;
         if (customerId) {
-        const { data, error } = await db.jobs.getByCustomerIdForReport(customerId, {
-          includeAfterPhotos: true,
-        });
+        const { data, error } = await db.jobs.getByCustomerIdForReportEnriched(customerId);
           if (error) {
             console.error('Error fetching customer jobs for report:', error);
             setCustomerReportJobs([]);
@@ -8509,10 +8507,6 @@ const TechnicianDashboard = () => {
           {selectedCustomerForReport && (() => {
             // Use fetched customer report jobs (filtered to completed)
             const completedJobs = customerReportJobs
-              .filter(job => {
-                const jobStatus = (job as any).status || job.status;
-                return jobStatus === 'COMPLETED';
-              })
               .sort((a, b) => {
                 // Sort by completed_at date, latest first
                 const dateA = (a as any).completed_at || a.completedAt || a.created_at || a.createdAt || '';

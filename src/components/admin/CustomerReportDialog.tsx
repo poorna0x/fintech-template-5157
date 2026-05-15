@@ -44,7 +44,7 @@ const CustomerReportDialog: React.FC<CustomerReportDialogProps> = ({
     
     setLoadingCustomerReportJobs(true);
     try {
-      const { data, error } = await db.jobs.getByCustomerIdForReport(customer.id, { includeAfterPhotos: true });
+      const { data, error } = await db.jobs.getByCustomerIdForReportEnriched(customer.id);
       if (error) {
         console.error('Error loading customer report jobs:', error);
         return;
@@ -60,10 +60,6 @@ const CustomerReportDialog: React.FC<CustomerReportDialogProps> = ({
   if (!customer) return null;
 
   const completedJobs = customerReportJobs
-    .filter(job => {
-      const jobStatus = (job as any).status || job.status;
-      return jobStatus === 'COMPLETED';
-    })
     .sort((a, b) => {
       // Sort by completion date - latest completed job first
       const aCompletedAt = (a as any).completed_at || (a as any).end_time || a.completedAt || a.endTime || null;
