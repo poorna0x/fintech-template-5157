@@ -183,10 +183,34 @@ export function generateQuotationPDF(quotationData: PDFQuotationData, action: 'p
             border: 1px solid #d1d5db;
           }
           
-          .items-table th:nth-child(1) { width: 50%; }
-          .items-table th:nth-child(2) { width: 15%; }
-          .items-table th:nth-child(3) { width: 20%; }
-          .items-table th:nth-child(4) { width: 15%; }
+          .items-table:not(.items-table-gst) th:nth-child(1) { width: 50%; }
+          .items-table:not(.items-table-gst) th:nth-child(2) { width: 15%; }
+          .items-table:not(.items-table-gst) th:nth-child(3) { width: 20%; }
+          .items-table:not(.items-table-gst) th:nth-child(4) { width: 15%; }
+
+          .items-table.items-table-gst {
+            font-size: 8px;
+            width: calc(100% - 16px);
+            margin: 0 8px 12px 8px;
+          }
+          .items-table.items-table-gst th:nth-child(1) { width: 16%; }
+          .items-table.items-table-gst th:nth-child(2) { width: 9%; }
+          .items-table.items-table-gst th:nth-child(3) { width: 6%; }
+          .items-table.items-table-gst th:nth-child(4) { width: 10%; }
+          .items-table.items-table-gst th:nth-child(5) { width: 10%; }
+          .items-table.items-table-gst th:nth-child(6) { width: 10%; }
+          .items-table.items-table-gst th:nth-child(7) { width: 7%; }
+          .items-table.items-table-gst th:nth-child(8) { width: 10%; }
+          .items-table.items-table-gst th:nth-child(9) { width: 12%; }
+          .items-table.items-table-gst td {
+            font-size: 8px;
+            padding: 5px 2px;
+            overflow: visible;
+            white-space: normal;
+          }
+          .items-table.items-table-gst td:nth-child(1) { text-align: left; }
+          .items-table.items-table-gst td.amount,
+          .items-table.items-table-gst th.amount { text-align: right; }
           
           .items-table td {
             padding: 8px 4px;
@@ -591,10 +615,31 @@ function handleMobilePrint(quotationData: PDFQuotationData, action: 'print' | 'p
         border: 1px solid #d1d5db;
       }
       
-      .items-table th:nth-child(1) { width: 50%; }
-      .items-table th:nth-child(2) { width: 15%; }
-      .items-table th:nth-child(3) { width: 20%; }
-      .items-table th:nth-child(4) { width: 15%; }
+      .items-table:not(.items-table-gst) th:nth-child(1) { width: 50%; }
+      .items-table:not(.items-table-gst) th:nth-child(2) { width: 15%; }
+      .items-table:not(.items-table-gst) th:nth-child(3) { width: 20%; }
+      .items-table:not(.items-table-gst) th:nth-child(4) { width: 15%; }
+
+      .items-table.items-table-gst {
+        font-size: 7px;
+        width: calc(100% - 12px);
+        margin: 0 6px 10px 6px;
+      }
+      .items-table.items-table-gst th:nth-child(1) { width: 16%; }
+      .items-table.items-table-gst th:nth-child(2) { width: 9%; }
+      .items-table.items-table-gst th:nth-child(3) { width: 6%; }
+      .items-table.items-table-gst th:nth-child(4) { width: 10%; }
+      .items-table.items-table-gst th:nth-child(5) { width: 10%; }
+      .items-table.items-table-gst th:nth-child(6) { width: 10%; }
+      .items-table.items-table-gst th:nth-child(7) { width: 7%; }
+      .items-table.items-table-gst th:nth-child(8) { width: 10%; }
+      .items-table.items-table-gst th:nth-child(9) { width: 12%; }
+      .items-table.items-table-gst td {
+        font-size: 7px;
+        padding: 4px 2px;
+        overflow: visible;
+        white-space: normal;
+      }
       
       .items-table td {
         padding: 6px 3px;
@@ -923,6 +968,150 @@ function formatPlaceOfSupplyLine(gstData?: {
   return `<br />Place of Supply: ${gstData.placeOfSupply} (State Code: ${code})<br />GST Type: ${gstType}`;
 }
 
+function resolveQuotationGstOption(data: PDFQuotationData): 'normal' | 'exclude' | 'include' {
+  const raw = data as { gstOption?: string; includeGST?: boolean };
+  if (raw.gstOption === 'normal' || raw.gstOption === 'exclude' || raw.gstOption === 'include') {
+    return raw.gstOption;
+  }
+  if (raw.includeGST === true) return 'include';
+  if (raw.includeGST === false && raw.gstOption === undefined) return 'normal';
+  return 'include';
+}
+
+function formatPdfAmount(value: number): string {
+  return `₹${Number(value || 0).toLocaleString('en-IN', { maximumFractionDigits: 2 })}`;
+}
+
+function renderQuotationItemsTable(data: PDFQuotationData): string {
+  const gstOption = resolveQuotationGstOption(data);
+
+  if (gstOption === 'normal' || gstOption === 'exclude') {
+    return `
+      <table class="items-table">
+        <thead>
+          <tr>
+            <th>Description</th>
+            <th>Qty</th>
+            <th>Unit Price</th>
+            <th>Total</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${data.items
+            .map(
+              (item) => `
+            <tr>
+              <td>${sanitizeForTemplate(item.description)}</td>
+              <td>${item.quantity}</td>
+              <td>₹${item.unitPrice.toLocaleString()}</td>
+              <td>₹${item.total.toLocaleString()}</td>
+            </tr>
+          `
+            )
+            .join('')}
+        </tbody>
+      </table>
+    `;
+  }
+
+  return `
+    <table class="items-table items-table-gst">
+      <colgroup>
+        <col style="width:16%" />
+        <col style="width:9%" />
+        <col style="width:6%" />
+        <col style="width:10%" />
+        <col style="width:10%" />
+        <col style="width:10%" />
+        <col style="width:7%" />
+        <col style="width:10%" />
+        <col style="width:12%" />
+      </colgroup>
+      <thead>
+        <tr>
+          <th>Description</th>
+          <th>HSN/SAC</th>
+          <th>Qty</th>
+          <th class="amount">Unit Price</th>
+          <th class="amount">Base Amount</th>
+          <th class="amount">Taxable Value</th>
+          <th>GST Rate</th>
+          <th class="amount">GST Amount</th>
+          <th class="amount">Total</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${data.items
+          .map((item) => {
+            const baseAmount = item.quantity * item.unitPrice;
+            const taxableValue = baseAmount;
+            const taxRate = item.taxRate ?? 0;
+            const taxAmount = item.taxAmount ?? 0;
+            const lineTotal =
+              gstOption === 'include'
+                ? baseAmount + taxAmount
+                : baseAmount;
+            const hsn = (item as { hsnCode?: string }).hsnCode || '—';
+            return `
+            <tr>
+              <td>${sanitizeForTemplate(item.description)}</td>
+              <td>${sanitizeForTemplate(hsn)}</td>
+              <td>${item.quantity}</td>
+              <td class="amount">${formatPdfAmount(item.unitPrice)}</td>
+              <td class="amount">${formatPdfAmount(baseAmount)}</td>
+              <td class="amount">${formatPdfAmount(taxableValue)}</td>
+              <td>${taxRate}%</td>
+              <td class="amount">${formatPdfAmount(taxAmount)}</td>
+              <td class="amount">${formatPdfAmount(lineTotal)}</td>
+            </tr>
+          `;
+          })
+          .join('')}
+      </tbody>
+    </table>
+  `;
+}
+
+function renderQuotationGstSummary(data: PDFQuotationData, halfGstRate: number, gstRate: number): string {
+  const gstData = (data as { gstData?: { gstBreakup?: Record<string, { taxableAmount: number; taxAmount: number }>; isIntraState?: boolean } }).gstData;
+  const gstOption = (data as { gstOption?: string }).gstOption;
+  if (
+    !gstData?.gstBreakup ||
+    !Object.keys(gstData.gstBreakup).length ||
+    gstOption === 'normal' ||
+    gstOption === 'exclude'
+  ) {
+    return '';
+  }
+
+  return `
+    <div class="summary" style="margin-bottom: 15px; text-align: left;">
+      <div style="font-weight: bold; margin-bottom: 10px;">GST Summary:</div>
+      ${Object.entries(gstData.gstBreakup)
+        .map(([rate, row]) => {
+          const rateNum = parseFloat(rate);
+          if (gstData.isIntraState) {
+            const cgst = row.taxAmount / 2;
+            const sgst = row.taxAmount / 2;
+            return `
+              <div style="display: flex; justify-content: space-between; margin-bottom: 5px; font-size: 12px;">
+                <span>GST @ ${rate}% (Taxable: ₹${row.taxableAmount.toLocaleString()})</span>
+                <span>CGST @ ${rateNum / 2}%: ₹${cgst.toLocaleString()} | SGST @ ${rateNum / 2}%: ₹${sgst.toLocaleString()}</span>
+              </div>
+            `;
+          }
+          return `
+            <div style="display: flex; justify-content: space-between; margin-bottom: 5px; font-size: 12px;">
+              <span>GST @ ${rate}% (Taxable: ₹${row.taxableAmount.toLocaleString()})</span>
+              <span>IGST @ ${rateNum}%: ₹${row.taxAmount.toLocaleString()}</span>
+            </div>
+          `;
+        })
+        .join('')}
+    </div>
+  `;
+}
+
 function createQuotationContent(data: PDFQuotationData): string {
   const validityDate = data.validUntil
     ? new Date(data.validUntil)
@@ -986,31 +1175,14 @@ function createQuotationContent(data: PDFQuotationData): string {
       ` : ''}
       
       <!-- Items Table -->
-      <table class="items-table">
-        <thead>
-          <tr>
-            <th>Description</th>
-            <th>Qty</th>
-            <th>Unit Price</th>
-            <th>Total</th>
-          </tr>
-        </thead>
-        <tbody>
-          ${data.items.map(item => `
-            <tr>
-              <td>${item.description}</td>
-              <td>${item.quantity}</td>
-              <td>₹${item.unitPrice.toLocaleString()}</td>
-              <td>₹${item.total.toLocaleString()}</td>
-            </tr>
-          `).join('')}
-        </tbody>
-      </table>
+      ${renderQuotationItemsTable(data)}
+
+      ${renderQuotationGstSummary(data, halfGstRate, gstRate)}
       
       <!-- Summary -->
       <div class="summary">
         <div class="summary-row">
-          <span>Subtotal:</span>
+          <span>${(data as { gstOption?: string }).gstOption === 'include' ? 'Taxable Value:' : 'Subtotal:'}</span>
           <span>₹${data.subtotal.toLocaleString()}</span>
         </div>
         ${data.serviceCharge && data.serviceCharge > 0 ? `
@@ -1264,10 +1436,32 @@ function generateQuotationHTML(data: PDFQuotationData): string {
           border: 1px solid #d1d5db;
         }
         
-        .items-table th:nth-child(1) { width: 50%; } /* Description */
-        .items-table th:nth-child(2) { width: 15%; } /* Qty */
-        .items-table th:nth-child(3) { width: 20%; } /* Unit Price */
-        .items-table th:nth-child(4) { width: 15%; } /* Total */
+        .items-table:not(.items-table-gst) th:nth-child(1) { width: 50%; }
+        .items-table:not(.items-table-gst) th:nth-child(2) { width: 15%; }
+        .items-table:not(.items-table-gst) th:nth-child(3) { width: 20%; }
+        .items-table:not(.items-table-gst) th:nth-child(4) { width: 15%; }
+
+        .items-table.items-table-gst {
+          font-size: 8px;
+          width: calc(100% - 16px);
+        }
+        .items-table.items-table-gst th:nth-child(1) { width: 16%; }
+        .items-table.items-table-gst th:nth-child(2) { width: 9%; }
+        .items-table.items-table-gst th:nth-child(3) { width: 6%; }
+        .items-table.items-table-gst th:nth-child(4) { width: 10%; }
+        .items-table.items-table-gst th:nth-child(5) { width: 10%; }
+        .items-table.items-table-gst th:nth-child(6) { width: 10%; }
+        .items-table.items-table-gst th:nth-child(7) { width: 7%; }
+        .items-table.items-table-gst th:nth-child(8) { width: 10%; }
+        .items-table.items-table-gst th:nth-child(9) { width: 12%; }
+        .items-table.items-table-gst td {
+          font-size: 8px;
+          padding: 5px 2px;
+          overflow: visible;
+          white-space: normal;
+        }
+        .items-table.items-table-gst td.amount,
+        .items-table.items-table-gst th.amount { text-align: right; }
         
         .items-table td {
           padding: 8px 4px;
@@ -1486,31 +1680,14 @@ function generateQuotationHTML(data: PDFQuotationData): string {
         ` : ''}
         
         <!-- Items Table -->
-        <table class="items-table">
-          <thead>
-            <tr>
-              <th>Description</th>
-              <th>Qty</th>
-              <th>Unit Price</th>
-              <th>Total</th>
-            </tr>
-          </thead>
-          <tbody>
-            ${data.items.map(item => `
-              <tr>
-                <td>${sanitizeForTemplate(item.description)}</td>
-                <td>${item.quantity}</td>
-                <td>₹${item.unitPrice.toLocaleString()}</td>
-                <td>₹${item.total.toLocaleString()}</td>
-              </tr>
-            `).join('')}
-          </tbody>
-        </table>
+        ${renderQuotationItemsTable(data)}
+
+        ${renderQuotationGstSummary(data, halfGstRate, gstRate)}
         
         <!-- Summary -->
         <div class="summary">
           <div class="summary-row">
-            <span>Subtotal:</span>
+            <span>${resolveQuotationGstOption(data) !== 'normal' ? 'Taxable Value:' : 'Subtotal:'}</span>
             <span>₹${data.subtotal.toLocaleString()}</span>
           </div>
           ${data.serviceCharge && data.serviceCharge > 0 ? `

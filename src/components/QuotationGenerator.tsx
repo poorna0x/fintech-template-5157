@@ -50,10 +50,11 @@ const defaultQuotationItems: BillItem[] = [
     description: 'RO Water Purifier Installation',
     quantity: 1,
     unitPrice: 15000,
-    total: 15000,
-    taxRate: 18, // Default 18% GST for RO services
-    taxAmount: 2700 // 18% of 15000
-  }
+    total: 17700,
+    taxRate: 18,
+    taxAmount: 2700,
+    hsnCode: '8421',
+  } as BillItem,
 ];
 
 const defaultBankDetails = {
@@ -102,7 +103,6 @@ export default function QuotationGenerator({ customer, onPrint }: QuotationGener
   
   // Computed values for backward compatibility
   const includeGST = gstOption === 'include';
-  const showGST = gstOption !== 'normal';
   
   // GST-specific state
   const initialPos = resolvePlaceOfSupply({
@@ -161,8 +161,9 @@ export default function QuotationGenerator({ customer, onPrint }: QuotationGener
     });
   }, [customerName, customerPhone, customerEmail, customerGst, customerAddress]);
 
-  // Place of supply from customer GSTIN when available
+  // Place of supply from customer GSTIN when Include GST is selected
   useEffect(() => {
+    if (gstOption !== 'include') return;
     const code = getStateCodeFromGstin(editableCustomer.gst);
     if (!code) return;
     const name = getStateNameByCode(code);
@@ -170,7 +171,7 @@ export default function QuotationGenerator({ customer, onPrint }: QuotationGener
       setPlaceOfSupplyCode(code);
       setPlaceOfSupply(name);
     }
-  }, [editableCustomer.gst]);
+  }, [editableCustomer.gst, gstOption]);
 
   // Generate quotation number
   useEffect(() => {
@@ -194,49 +195,59 @@ export default function QuotationGenerator({ customer, onPrint }: QuotationGener
     setValidUntilDate(next);
   }, [quotationDate, isValidUntilManuallySet]);
 
+  const isIncludeGst = gstOption === 'include';
+
+  const recalculateQuotationItem = (item: BillItem, option: typeof gstOption): BillItem => {
+    const baseTotal = item.quantity * item.unitPrice;
+    let taxAmount = 0;
+    let total = baseTotal;
+
+    if (option === 'include' && item.taxRate > 0) {
+      taxAmount = Math.round((baseTotal * item.taxRate) / 100);
+      total = baseTotal + taxAmount;
+    }
+
+    return { ...item, taxAmount, total };
+  };
+
   const addItem = () => {
-    const newItem: BillItem = {
-      id: Date.now().toString(),
-      description: '',
-      quantity: 1,
-      unitPrice: 0,
-      total: 0,
-      taxRate: 0,
-      taxAmount: 0
-    };
+    const newItem = recalculateQuotationItem(
+      {
+        id: Date.now().toString(),
+        description: '',
+        quantity: 1,
+        unitPrice: 0,
+        total: 0,
+        taxRate: gstOption === 'include' ? 18 : 0,
+        taxAmount: 0,
+        hsnCode: '8421',
+      } as BillItem,
+      gstOption
+    );
     setItems([...items, newItem]);
   };
 
-  const updateItem = (id: string, field: keyof BillItem, value: any) => {
-    setItems(items.map(item => {
-      if (item.id === id) {
+  const updateItem = (id: string, field: keyof BillItem, value: string | number) => {
+    setItems(
+      items.map((item) => {
+        if (item.id !== id) return item;
         const updatedItem = { ...item, [field]: value };
-        
-        // Recalculate totals when quantity or unitPrice changes
-        if (field === 'quantity' || field === 'unitPrice') {
-          updatedItem.total = updatedItem.quantity * updatedItem.unitPrice;
-          // Only calculate tax if GST option is 'include'
-          if (gstOption === 'include' && updatedItem.taxRate > 0) {
-            updatedItem.taxAmount = updatedItem.total * (updatedItem.taxRate / 100);
-          } else {
-            updatedItem.taxAmount = 0;
-          }
+        if (
+          field === 'quantity' ||
+          field === 'unitPrice' ||
+          field === 'taxRate'
+        ) {
+          return recalculateQuotationItem(updatedItem, gstOption);
         }
-        
-        // Recalculate tax when taxRate changes (only if GST is included)
-        if (field === 'taxRate') {
-          if (gstOption === 'include' && updatedItem.taxRate > 0) {
-            updatedItem.taxAmount = updatedItem.total * (updatedItem.taxRate / 100);
-          } else {
-            updatedItem.taxAmount = 0;
-          }
-        }
-        
         return updatedItem;
-      }
-      return item;
-    }));
+      })
+    );
   };
+
+  useEffect(() => {
+    setItems((prev) => prev.map((item) => recalculateQuotationItem(item, gstOption)));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [gstOption]);
 
   const removeItem = (id: string) => {
     setItems(items.filter(item => item.id !== id));
@@ -301,9 +312,33 @@ export default function QuotationGenerator({ customer, onPrint }: QuotationGener
 
   const termsList = termsConditions.split('\n').filter(line => line.trim());
 
-  const subtotal = items.reduce((sum, item) => sum + item.total, 0);
-  // Only calculate tax if GST option is 'include'
-  const totalTax = gstOption === 'include' ? items.reduce((sum, item) => sum + item.taxAmount, 0) : 0;
+  const subtotal = items.reduce(
+    (sum, item) => sum + item.quantity * item.unitPrice,
+    0
+  );
+  const totalTax =
+    gstOption === 'normal'
+      ? 0
+      : items.reduce((sum, item) => sum + item.taxAmount, 0);
+
+  const calculateGSTBreakup = () => {
+    const gstByRate: Record<number, { taxableAmount: number; taxAmount: number }> = {};
+    if (gstOption !== 'include') return gstByRate;
+
+    items.forEach((item) => {
+      if (item.taxRate > 0) {
+        const taxableAmount = item.quantity * item.unitPrice;
+        if (!gstByRate[item.taxRate]) {
+          gstByRate[item.taxRate] = { taxableAmount: 0, taxAmount: 0 };
+        }
+        gstByRate[item.taxRate].taxableAmount += taxableAmount;
+        gstByRate[item.taxRate].taxAmount += item.taxAmount;
+      }
+    });
+    return gstByRate;
+  };
+
+  const gstBreakup = calculateGSTBreakup();
   
   // Determine if intra-state (same state) or inter-state (different state)
   const isIntraState = isIntraStateSupply(
@@ -350,28 +385,24 @@ export default function QuotationGenerator({ customer, onPrint }: QuotationGener
     : subtotal + serviceCharge;
 
   const handlePrint = (action: 'print' | 'pdf' = 'print') => {
-    let posForOutput = preparePlaceOfSupplyForSave({
-      placeName: placeOfSupply,
-      placeCode: placeOfSupplyCode,
-      supplierStateCode: companyStateCode,
-      supplierStateName: defaultCompanyInfo.state,
-    });
+    if (gstOption === 'include') {
+      const posForOutput = preparePlaceOfSupplyForSave({
+        placeName: placeOfSupply,
+        placeCode: placeOfSupplyCode,
+        supplierStateCode: companyStateCode,
+        supplierStateName: defaultCompanyInfo.state,
+      });
 
-    if (gstOption !== 'normal' && !posForOutput.isValid) {
-      toast.error('Please select a valid place of supply (pick a state from the list or enter a 2-digit GST state code).');
-      return;
+      if (!posForOutput.isValid) {
+        toast.error(
+          'Please select a valid place of supply (pick a state from the list or enter a 2-digit GST state code).'
+        );
+        return;
+      }
+
+      setPlaceOfSupply(posForOutput.name);
+      setPlaceOfSupplyCode(posForOutput.code);
     }
-
-    const outputIsIntraState = posForOutput.isIntraState;
-    const outputTaxSplit =
-      gstOption === 'include' && totalTax > 0
-        ? outputIsIntraState
-          ? { cgst: totalTax / 2, sgst: totalTax / 2, igst: 0 }
-          : { cgst: 0, sgst: 0, igst: totalTax }
-        : { cgst: 0, sgst: 0, igst: 0 };
-
-    setPlaceOfSupply(posForOutput.name);
-    setPlaceOfSupplyCode(posForOutput.code);
 
     const quotation: Bill = {
       id: Date.now().toString(),
@@ -417,7 +448,21 @@ export default function QuotationGenerator({ customer, onPrint }: QuotationGener
     // Add GST option and GST data
     (quotation as any).gstOption = gstOption;
     (quotation as any).includeGST = gstOption === 'include'; // For backward compatibility
-    if (gstOption !== 'normal') {
+    if (gstOption === 'include') {
+      const posForOutput = preparePlaceOfSupplyForSave({
+        placeName: placeOfSupply,
+        placeCode: placeOfSupplyCode,
+        supplierStateCode: companyStateCode,
+        supplierStateName: defaultCompanyInfo.state,
+      });
+      const outputIsIntraState = posForOutput.isIntraState;
+      const outputTaxSplit =
+        totalTax > 0
+          ? outputIsIntraState
+            ? { cgst: totalTax / 2, sgst: totalTax / 2, igst: 0 }
+            : { cgst: 0, sgst: 0, igst: totalTax }
+          : { cgst: 0, sgst: 0, igst: 0 };
+
       (quotation as any).gstData = {
         placeOfSupply: posForOutput.name,
         placeOfSupplyCode: posForOutput.code,
@@ -425,6 +470,7 @@ export default function QuotationGenerator({ customer, onPrint }: QuotationGener
         isIntraState: outputIsIntraState,
         taxSplit: outputTaxSplit,
         primaryGstRate,
+        gstBreakup,
       };
     }
 
@@ -490,17 +536,28 @@ export default function QuotationGenerator({ customer, onPrint }: QuotationGener
                   value={gstOption}
                   onValueChange={(value: 'normal' | 'exclude' | 'include') => {
                     setGstOption(value);
-                    // If switching to normal or exclude, clear tax amounts and remove GST note
-                    if (value === 'normal' || value === 'exclude') {
-                      // Clear all tax amounts
-                      setItems(items.map(item => ({ ...item, taxAmount: 0 })));
-                      if (value === 'normal' && addGSTNoteToNotes) {
-                        setAddGSTNoteToNotes(false);
-                      }
-                      setNotes(notes.filter(note => 
-                        !note.includes('Prices include GST') && !note.includes('GST not included') && !note.includes('Prices exclude GST')
-                      ));
+                    setItems(
+                      items.map((item) =>
+                        recalculateQuotationItem(
+                          {
+                            ...item,
+                            taxRate: value === 'include' ? item.taxRate || 18 : 0,
+                          },
+                          value
+                        )
+                      )
+                    );
+                    if (value === 'normal' && addGSTNoteToNotes) {
+                      setAddGSTNoteToNotes(false);
                     }
+                    setNotes(
+                      notes.filter(
+                        (note) =>
+                          !note.includes('Prices include GST') &&
+                          !note.includes('GST not included') &&
+                          !note.includes('Prices exclude GST')
+                      )
+                    );
                   }}
                 >
                   <SelectTrigger>
@@ -554,7 +611,7 @@ export default function QuotationGenerator({ customer, onPrint }: QuotationGener
                   </div>
                 )}
               </div>
-              {(gstOption === 'include' || gstOption === 'exclude') && (
+              {gstOption === 'include' && (
                 <>
                   <div className="sm:col-span-2">
                     <Label htmlFor="placeOfSupplySelect">Place of Supply (India)</Label>
@@ -797,11 +854,14 @@ export default function QuotationGenerator({ customer, onPrint }: QuotationGener
         </CardHeader>
         <CardContent className="space-y-3 sm:space-y-4">
           <div className="space-y-3 sm:space-y-4">
-            {items.map((item, index) => (
+            {items.map((item) => (
               <div key={item.id} className="space-y-3 sm:space-y-4 p-3 sm:p-4 border rounded-lg">
-                {/* Mobile-first grid layout */}
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-4">
-                  <div className="sm:col-span-2 lg:col-span-1">
+                <div
+                  className={`grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4 ${
+                    gstOption === 'include' ? 'lg:grid-cols-5' : 'lg:grid-cols-3'
+                  }`}
+                >
+                  <div className={gstOption === 'include' ? 'sm:col-span-2 lg:col-span-2' : 'sm:col-span-2'}>
                     <Label>Description</Label>
                     <Input
                       value={item.description}
@@ -809,68 +869,165 @@ export default function QuotationGenerator({ customer, onPrint }: QuotationGener
                       placeholder="Item description"
                     />
                   </div>
+                  {gstOption === 'include' && (
+                    <div>
+                      <Label>HSN/SAC</Label>
+                      <Input
+                        value={(item as BillItem & { hsnCode?: string }).hsnCode || ''}
+                        onChange={(e) =>
+                          updateItem(item.id, 'hsnCode' as keyof BillItem, e.target.value)
+                        }
+                        placeholder="8421"
+                      />
+                    </div>
+                  )}
                   <div>
-                    <Label>Quantity</Label>
+                    <Label>Qty</Label>
                     <Input
                       type="number"
                       value={item.quantity}
-                      onChange={(e) => updateItem(item.id, 'quantity', parseFloat(e.target.value) || 0)}
+                      onChange={(e) =>
+                        updateItem(item.id, 'quantity', parseFloat(e.target.value) || 0)
+                      }
                       min="0"
                       step="0.01"
                     />
                   </div>
-                  <div className="flex items-end gap-2">
-                    <div className="flex-1">
-                      <Label>Price</Label>
-                      <Input
-                        type="number"
-                        value={item.unitPrice}
-                        onChange={(e) => updateItem(item.id, 'unitPrice', parseFloat(e.target.value) || 0)}
-                        min="0"
-                        step="0.01"
-                        placeholder="0.00"
-                      />
-                    </div>
-                    {gstOption === 'include' && (
-                      <div className="flex-1">
-                        <Label>Tax %</Label>
-                        <Input
-                          type="number"
-                          value={item.taxRate}
-                          onChange={(e) => updateItem(item.id, 'taxRate', parseFloat(e.target.value) || 0)}
-                          min="0"
-                          max="100"
-                          step="0.01"
-                          placeholder="0"
-                        />
-                      </div>
-                    )}
+                  <div>
+                    <Label>Unit Price</Label>
+                    <Input
+                      type="number"
+                      value={item.unitPrice}
+                      onChange={(e) =>
+                        updateItem(item.id, 'unitPrice', parseFloat(e.target.value) || 0)
+                      }
+                      min="0"
+                      step="0.01"
+                    />
                   </div>
                 </div>
-                
-                {/* Total and Actions */}
-                <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2">
-                  <div className="text-sm text-gray-600">
-                    <strong>Total: ₹{item.total.toLocaleString(undefined, { maximumFractionDigits: 2 })}</strong>
-                    {gstOption === 'include' && item.taxAmount > 0 && (
-                      <span className="ml-2">(Tax: ₹{item.taxAmount.toLocaleString(undefined, { maximumFractionDigits: 2 })})</span>
-                    )}
+                {gstOption === 'include' && (
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3 sm:gap-4">
+                    <div className="sm:col-span-1">
+                      <Label>GST Rate (%)</Label>
+                      <Select
+                        value={item.taxRate.toString()}
+                        onValueChange={(value) =>
+                          updateItem(item.id, 'taxRate', parseFloat(value) || 0)
+                        }
+                      >
+                        <SelectTrigger>
+                          <SelectValue placeholder="GST %" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="0">0%</SelectItem>
+                          <SelectItem value="5">5%</SelectItem>
+                          <SelectItem value="12">12%</SelectItem>
+                          <SelectItem value="18">18%</SelectItem>
+                          <SelectItem value="28">28%</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div className="sm:col-span-1 lg:col-span-4 flex items-end justify-end">
+                      <Button
+                        variant="destructive"
+                        size="sm"
+                        onClick={() => removeItem(item.id)}
+                        disabled={items.length === 1}
+                        className="h-10"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </Button>
+                    </div>
                   </div>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => removeItem(item.id)}
-                    className="text-red-600 hover:text-red-700 hover:bg-red-50"
-                  >
-                    <Trash2 className="w-4 h-4 mr-1" />
-                    Remove
-                  </Button>
+                )}
+                <div
+                  className={`pt-2 border-t ${
+                    gstOption === 'include'
+                      ? 'grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3'
+                      : 'flex items-center justify-between'
+                  }`}
+                >
+                  {gstOption === 'include' && (
+                    <>
+                      <div className="text-sm">
+                        <span className="text-gray-500">Base Amount: </span>
+                        <span className="font-semibold">
+                          ₹{(item.quantity * item.unitPrice).toLocaleString()}
+                        </span>
+                      </div>
+                      <div className="text-sm">
+                        <span className="text-gray-500">Taxable Value: </span>
+                        <span className="font-semibold">
+                          ₹{(item.quantity * item.unitPrice).toLocaleString()}
+                        </span>
+                      </div>
+                      <div className="text-sm">
+                        <span className="text-gray-500">GST ({item.taxRate}%): </span>
+                        <span className="font-semibold">
+                          ₹{item.taxAmount.toLocaleString()}
+                        </span>
+                      </div>
+                    </>
+                  )}
+                  <div className="text-sm sm:col-span-2">
+                    <span className="text-gray-500">Total: </span>
+                    <span className="font-semibold text-lg">
+                      ₹{item.total.toLocaleString(undefined, { maximumFractionDigits: 2 })}
+                      {gstOption === 'exclude' ? ' (excl. GST)' : ''}
+                    </span>
+                  </div>
+                  {gstOption !== 'include' && (
+                    <div className="flex justify-end">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => removeItem(item.id)}
+                        disabled={items.length === 1}
+                        className="text-red-600 hover:text-red-700 hover:bg-red-50"
+                      >
+                        <Trash2 className="w-4 h-4 mr-1" />
+                        Remove
+                      </Button>
+                    </div>
+                  )}
                 </div>
               </div>
             ))}
           </div>
         </CardContent>
       </Card>
+
+      {gstOption === 'include' && Object.keys(gstBreakup).length > 0 && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-lg sm:text-xl">GST Summary</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-2">
+              {Object.entries(gstBreakup).map(([rate, data]) => (
+                <div key={rate} className="flex justify-between text-sm border-b pb-2">
+                  <span>GST @ {rate}%</span>
+                  <div className="text-right">
+                    <div>Taxable: ₹{data.taxableAmount.toLocaleString()}</div>
+                    <div>Tax: ₹{data.taxAmount.toLocaleString()}</div>
+                    {isIntraState ? (
+                      <div className="text-xs text-gray-600">
+                        CGST: ₹{(data.taxAmount / 2).toLocaleString()} | SGST: ₹
+                        {(data.taxAmount / 2).toLocaleString()}
+                      </div>
+                    ) : (
+                      <div className="text-xs text-gray-600">
+                        IGST: ₹{data.taxAmount.toLocaleString()}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       {/* Quotation Summary */}
       <Card>
@@ -880,7 +1037,7 @@ export default function QuotationGenerator({ customer, onPrint }: QuotationGener
         <CardContent className="space-y-3 sm:space-y-4">
           <div className="space-y-3 sm:space-y-4">
             <div className="flex justify-between text-lg">
-              <span>Subtotal:</span>
+              <span>{gstOption === 'include' ? 'Taxable Value:' : 'Subtotal:'}</span>
               <span>₹{subtotal.toLocaleString(undefined, { maximumFractionDigits: 2 })}</span>
             </div>
             {serviceCharge > 0 && (
@@ -889,7 +1046,7 @@ export default function QuotationGenerator({ customer, onPrint }: QuotationGener
                 <span>₹{serviceCharge.toLocaleString(undefined, { maximumFractionDigits: 2 })}</span>
               </div>
             )}
-            {gstOption !== 'normal' && totalTax > 0 && gstOption === 'include' && (
+            {gstOption === 'include' && totalTax > 0 && (
               <>
                 {isIntraState ? (
                   <>

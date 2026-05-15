@@ -38,7 +38,12 @@ export default function QuotationModal({ isOpen, onClose, customer }: QuotationM
         email: customer.email || '',
         gstNumber: customer.gstNumber || ''
       },
-      items: quotation.items,
+      items: quotation.items.map((item) => ({
+        ...item,
+        hsnCode: (item as { hsnCode?: string }).hsnCode || '',
+        taxRate: item.taxRate ?? 0,
+        taxAmount: item.taxAmount ?? 0,
+      })),
       subtotal: quotation.subtotal,
       totalTax: quotation.totalTax,
       serviceCharge: quotation.serviceCharge || 0,
