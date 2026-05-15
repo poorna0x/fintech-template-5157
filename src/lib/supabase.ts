@@ -853,6 +853,8 @@ export const db = {
     ) {
       const cols = [
         ...JOB_BY_CUSTOMER_SLIM_COLS,
+        'brand',
+        'model',
         'completion_notes',
         'description',
         ...(opts?.includeAfterPhotos ? (['after_photos'] as const) : []),

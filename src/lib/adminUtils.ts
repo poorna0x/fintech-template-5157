@@ -461,6 +461,63 @@ export const findLeadSource = (requirements: any[]): string | null => {
   return leadSource;
 };
 
+const isMeaningfulEquipmentValue = (val: unknown): val is string => {
+  if (typeof val !== 'string') return false;
+  const t = val.trim();
+  return t !== '' && t.toLowerCase() !== 'not specified' && t.toLowerCase() !== 'n/a';
+};
+
+/** Label for job equipment row in customer report (RO vs softener). */
+export function getEquipmentModelLabel(serviceType: string | undefined): string {
+  const st = (serviceType || '').toUpperCase();
+  if (st === 'SOFTENER') return 'Softener Model';
+  return 'Purifier Model';
+}
+
+/** Resolve brand/model for a job, with customer fallback (incl. comma-separated multi-service). */
+export function getJobEquipmentDisplay(
+  job: Record<string, unknown>,
+  customer?: Record<string, unknown> | null
+): { label: string; value: string } | null {
+  const jobServiceType = String(job.service_type ?? job.serviceType ?? '').toUpperCase();
+  const jobBrand = String(job.brand ?? '');
+  const jobModel = String(job.model ?? '');
+  const customerBrand = String(customer?.brand ?? '');
+  const customerModel = String(customer?.model ?? '');
+
+  let brand = isMeaningfulEquipmentValue(jobBrand) ? jobBrand.trim() : '';
+  let model = isMeaningfulEquipmentValue(jobModel) ? jobModel.trim() : '';
+
+  if (!brand || !model) {
+    if (customerBrand.includes(',')) {
+      const brands = customerBrand.split(',').map((b) => b.trim());
+      const models = customerModel ? customerModel.split(',').map((m) => m.trim()) : [];
+      if (jobServiceType === 'RO' || jobServiceType === '') {
+        if (!brand) brand = brands[0] || '';
+        if (!model) model = models[0] || '';
+      } else if (jobServiceType === 'SOFTENER' && brands.length > 1) {
+        if (!brand) brand = brands[1] || brands[0] || '';
+        if (!model) model = models[1] || models[0] || '';
+      } else {
+        if (!brand) brand = brands[0] || '';
+        if (!model) model = models[0] || '';
+      }
+    } else {
+      if (!brand && isMeaningfulEquipmentValue(customerBrand)) brand = customerBrand.trim();
+      if (!model && isMeaningfulEquipmentValue(customerModel)) model = customerModel.trim();
+    }
+  }
+
+  const validBrand = isMeaningfulEquipmentValue(brand) ? brand : '';
+  const validModel = isMeaningfulEquipmentValue(model) ? model : '';
+  if (!validBrand && !validModel) return null;
+
+  const value =
+    validBrand && validModel ? `${validBrand} - ${validModel}` : validBrand || validModel;
+
+  return { label: getEquipmentModelLabel(jobServiceType), value };
+}
+
 const SERVICE_SUB_TYPE_NORMALIZE_MAP: Record<string, string> = {
   service: 'Service',
   installation: 'Installation',

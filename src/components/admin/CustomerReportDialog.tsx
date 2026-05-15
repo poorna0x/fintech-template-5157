@@ -6,6 +6,8 @@ import { Customer, Job, Technician } from '@/types';
 import { db } from '@/lib/supabase';
 import { CheckCircle } from 'lucide-react';
 import { customerNameClassName } from '@/lib/customerDisplay';
+import { getJobEquipmentDisplay } from '@/lib/adminUtils';
+import { formatCompletedWhen } from '@/lib/relativeTime';
 
 interface CustomerReportDialogProps {
   open: boolean;
@@ -133,27 +135,11 @@ const CustomerReportDialog: React.FC<CustomerReportDialogProps> = ({
                 {completedJobs.map((job) => {
                   const completionNotes = (job as any).completion_notes || job.completionNotes || '';
                   const completedAt = (job as any).completed_at || job.completedAt || null;
-                  // Format date as "January 5th 2026" with 12-hour time format
-                  const formattedCompletedAt = completedAt ? (() => {
-                    const date = new Date(completedAt);
-                    const day = date.getDate();
-                    const month = date.toLocaleString('en-US', { month: 'long' });
-                    const year = date.getFullYear();
-                    // Get ordinal suffix (1st, 2nd, 3rd, 4th, etc.)
-                    const getOrdinalSuffix = (n: number) => {
-                      const s = ['th', 'st', 'nd', 'rd'];
-                      const v = n % 100;
-                      return s[(v - 20) % 10] || s[v] || s[0];
-                    };
-                    // Format time as 12-hour format (5:30 PM)
-                    const hours = date.getHours();
-                    const minutes = date.getMinutes();
-                    const ampm = hours >= 12 ? 'PM' : 'AM';
-                    const displayHours = hours % 12 || 12;
-                    const displayMinutes = minutes.toString().padStart(2, '0');
-                    const timeStr = `${displayHours}:${displayMinutes} ${ampm}`;
-                    return `${month} ${day}${getOrdinalSuffix(day)} ${year} at ${timeStr}`;
-                  })() : null;
+                  const completedWhenLabel = completedAt ? formatCompletedWhen(completedAt) : null;
+                  const equipmentDisplay = getJobEquipmentDisplay(
+                    job as Record<string, unknown>,
+                    customer as Record<string, unknown>
+                  );
                   const completedBy = (job as any).completed_by || job.completedBy || null;
                   const actualCost = (job as any).actual_cost || job.actual_cost || null;
                   const paymentAmount = (job as any).payment_amount || job.payment_amount || null;
@@ -249,9 +235,9 @@ const CustomerReportDialog: React.FC<CustomerReportDialogProps> = ({
                           <div className="text-sm text-gray-600">
                             {(job as any).service_type || job.serviceType} - {(job as any).service_sub_type || job.serviceSubType}
                           </div>
-                          {formattedCompletedAt && (
+                          {completedWhenLabel && (
                             <div className="text-xs text-gray-500 mt-1">
-                              Completed on {formattedCompletedAt}
+                              Completed {completedWhenLabel}
                             </div>
                           )}
                         </div>
@@ -322,6 +308,13 @@ const CustomerReportDialog: React.FC<CustomerReportDialogProps> = ({
                           <div className="flex items-center gap-2">
                             <span className="text-sm font-medium text-gray-700 w-32">QR Code:</span>
                             <span className="text-sm text-gray-900">{qrPhotos.selected_qr_code_name}</span>
+                          </div>
+                        )}
+
+                        {equipmentDisplay && (
+                          <div className="flex items-center gap-2">
+                            <span className="text-sm font-medium text-gray-700 w-32">{equipmentDisplay.label}:</span>
+                            <span className="text-sm text-gray-900">{equipmentDisplay.value}</span>
                           </div>
                         )}
                         
