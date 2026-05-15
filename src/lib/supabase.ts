@@ -2709,12 +2709,28 @@ export const db = {
     },
     
     async delete(id: string) {
-      const { error } = await supabase
+      const { data, error } = await supabase
         .from('tax_invoices')
         .delete()
-        .eq('id', id);
-      
-      return { error };
+        .eq('id', id)
+        .select('id');
+
+      if (error) {
+        return { data: null, error };
+      }
+
+      if (!data?.length) {
+        return {
+          data: null,
+          error: {
+            message:
+              'Invoice was not deleted. Database permission may be blocking delete — run scripts/fix-tax-invoices-delete-rls.sql in Supabase.',
+            code: 'DELETE_NOT_APPLIED',
+          } as { message: string; code: string },
+        };
+      }
+
+      return { data, error: null };
     },
     
     async checkInvoiceNumberExists(invoiceNumber: string, excludeId?: string) {

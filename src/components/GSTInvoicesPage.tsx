@@ -387,16 +387,31 @@ export default function GSTInvoicesPage() {
     if (!deleteInvoiceId) return;
 
     setIsDeleting(true);
+    const idToDelete = deleteInvoiceId;
     try {
-      const { error } = await db.taxInvoices.delete(deleteInvoiceId);
+      const { error } = await db.taxInvoices.delete(idToDelete);
 
       if (error) {
-        throw error;
+        const message =
+          (error as { message?: string }).message ||
+          'Failed to delete invoice';
+        if (
+          (error as { code?: string }).code === 'DELETE_NOT_APPLIED' ||
+          (error as { code?: string }).code === '42501' ||
+          message.toLowerCase().includes('permission')
+        ) {
+          toast.error(
+            'Could not delete invoice. Run scripts/fix-tax-invoices-delete-rls.sql in Supabase, then try again.'
+          );
+        } else {
+          toast.error(message);
+        }
+        return;
       }
 
-      // Update local state
-      setAllInvoices(prev => prev.filter(inv => inv.id !== deleteInvoiceId));
-      if (selectedInvoice?.id === deleteInvoiceId) {
+      setAllInvoices((prev) => prev.filter((inv) => inv.id !== idToDelete));
+      setInvoices((prev) => prev.filter((inv) => inv.id !== idToDelete));
+      if (selectedInvoice?.id === idToDelete) {
         setViewModalOpen(false);
         setSelectedInvoice(null);
       }
