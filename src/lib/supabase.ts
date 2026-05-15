@@ -4786,11 +4786,56 @@ export const validatePincode = async (pincode: string): Promise<boolean> => {
   return pincode.length === 6 && /^\d+$/.test(pincode);
 };
 
-/** Customer UUID → true if they have at least one COMPLETED job (returning / prior service). Paginates past default row limits. */
+function isRpcNotFoundError(error: unknown): boolean {
+  const e = error as { code?: string; message?: string };
+  if (e?.code === 'PGRST202') return true;
+  const msg = typeof e?.message === 'string' ? e.message : '';
+  return msg.includes('Could not find the function') || msg.includes('does not exist');
+}
+
+function mapFromCustomerIdRows(rows: { customer_id?: string | null }[] | null): Record<string, boolean> {
+  const map: Record<string, boolean> = {};
+  for (const row of rows || []) {
+    if (row.customer_id) map[row.customer_id] = true;
+  }
+  return map;
+}
+
+/** Customer UUID → true if they have at least one COMPLETED job (returning / prior service). */
 export async function fetchCustomerIdsWithCompletedJobsMap(): Promise<Record<string, boolean>> {
   const cacheKey = 'completed_customers_map_v1';
   const hit = cacheGet<Record<string, boolean>>(cacheKey);
   if (hit) return hit;
+
+  // Prefer DISTINCT in Postgres (one row per customer) vs paginating every completed job.
+  const { data: distinctRows, error: distinctError } = await supabase.rpc(
+    'get_distinct_completed_customer_ids'
+  );
+
+  if (!distinctError && distinctRows) {
+    const map = mapFromCustomerIdRows(distinctRows as { customer_id: string }[]);
+    cacheSet(cacheKey, map, 120_000);
+    return map;
+  }
+
+  if (distinctError && !isRpcNotFoundError(distinctError)) {
+    console.warn('[fetchCustomerIdsWithCompletedJobsMap] distinct RPC failed:', distinctError);
+  }
+
+  // Calling page RPC: still one row per customer (more columns, less egress than full job scan).
+  if (!distinctError || isRpcNotFoundError(distinctError)) {
+    const { data: lastPerCustomer, error: lastError } = await supabase.rpc(
+      'get_last_completed_job_per_customer'
+    );
+    if (!lastError && lastPerCustomer) {
+      const map = mapFromCustomerIdRows(lastPerCustomer as { customer_id: string }[]);
+      cacheSet(cacheKey, map, 120_000);
+      return map;
+    }
+    if (lastError && !isRpcNotFoundError(lastError) && import.meta.env.DEV) {
+      console.warn('[fetchCustomerIdsWithCompletedJobsMap] last-job RPC failed:', lastError);
+    }
+  }
 
   const map: Record<string, boolean> = {};
   const pageSize = 2500;
@@ -4804,14 +4849,12 @@ export async function fetchCustomerIdsWithCompletedJobsMap(): Promise<Record<str
       .range(from, from + pageSize - 1);
 
     if (error) {
-      console.warn('[fetchCustomerIdsWithCompletedJobsMap]', error);
+      console.warn('[fetchCustomerIdsWithCompletedJobsMap] paginated fallback failed:', error);
       break;
     }
     if (!data?.length) break;
 
-    for (const row of data as { customer_id: string | null }[]) {
-      if (row.customer_id) map[row.customer_id] = true;
-    }
+    Object.assign(map, mapFromCustomerIdRows(data as { customer_id: string | null }[]));
     if (data.length < pageSize) break;
     from += pageSize;
   }
