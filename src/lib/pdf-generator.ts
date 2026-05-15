@@ -3,6 +3,13 @@
 // For production, consider using libraries like jsPDF or Puppeteer
 
 import { sanitizeForTemplate } from './sanitize';
+import {
+  renderPdfCompanyDetailsHtml,
+  renderPdfFooterHtml,
+  renderPdfLogoHtml,
+  renderPdfSignatureHtml,
+  resolvePdfDocumentBrand,
+} from './document-pdf-brand';
 
 export interface PDFBillData {
   billNumber: string;
@@ -45,6 +52,7 @@ export interface PDFBillData {
   notes?: string;
   terms?: string;
   hideGstInHeader?: boolean;
+  documentBrand?: 'hydrogenro' | 'elevenro';
 }
 
 // Global flag to prevent multiple print operations
@@ -1062,18 +1070,22 @@ function handleMobilePrint(billData: PDFBillData, action: 'print' | 'pdf'): void
 }
 
 function createBillContent(data: PDFBillData): string {
+  const brand = resolvePdfDocumentBrand(data);
+  const companyDetails = renderPdfCompanyDetailsHtml(data.company, brand, {
+    hideGstInHeader: data.hideGstInHeader,
+  });
+  const signatureBlock = renderPdfSignatureHtml(brand, data.billDate);
+  const footerBlock = renderPdfFooterHtml(brand, data.company);
+
   return `
     <div class="bill-container">
       <!-- Header -->
       <div class="header">
         <div class="logo-container">
-          <img src="/fulllogo.webp" alt="Hydrogenro Logo" class="full-logo" />
+          ${renderPdfLogoHtml(resolvePdfDocumentBrand(data))}
         </div>
         <div class="company-details">
-          <div>${data.company.address}, ${data.company.city} - ${data.company.pincode}</div>
-          <div>Phone: ${data.company.phone} | Email: ${data.company.email}</div>
-          ${!data.hideGstInHeader ? `<div>GST: ${data.company.gstNumber}</div>` : ''}
-          ${data.company.website ? `<div>Website: ${data.company.website}</div>` : ''}
+          ${companyDetails}
         </div>
       </div>
       
@@ -1162,28 +1174,22 @@ function createBillContent(data: PDFBillData): string {
       ` : ''}
       
       <!-- Signatures -->
-      <div class="signatures">
-        <div class="signature-box">
-          <div class="signature-label" style="text-align: center;">Authorized Signatory</div>
-          <img src="/HydrogenROSeal.webp" alt="Hydrogen RO Seal" class="signature-seal" />
-          <div class="signature-date" style="text-align: center;">Date: ${new Date(data.billDate).toLocaleDateString('en-IN', { 
-            day: '2-digit', 
-            month: '2-digit', 
-            year: 'numeric' 
-          })}</div>
-        </div>
-      </div>
+      ${signatureBlock}
       
       <!-- Footer -->
-      <div class="footer">
-        <p>Thank you for choosing Hydrogenro!</p>
-        <p>For any queries, contact us at ${data.company.phone} or ${data.company.email}</p>
-      </div>
+      ${footerBlock}
     </div>
   `;
 }
 
 function generateBillHTML(data: PDFBillData): string {
+  const brand = resolvePdfDocumentBrand(data);
+  const companyDetails = renderPdfCompanyDetailsHtml(data.company, brand, {
+    hideGstInHeader: data.hideGstInHeader,
+  });
+  const signatureBlock = renderPdfSignatureHtml(brand, data.billDate);
+  const footerBlock = renderPdfFooterHtml(brand, data.company);
+
   return `
     <!DOCTYPE html>
     <html lang="en">
@@ -1554,13 +1560,10 @@ function generateBillHTML(data: PDFBillData): string {
         <!-- Header -->
         <div class="header">
           <div class="logo-container">
-            <img src="/fulllogo.webp" alt="Hydrogenro Logo" class="full-logo" />
+            ${renderPdfLogoHtml(resolvePdfDocumentBrand(data))}
           </div>
           <div class="company-details">
-            <div>${data.company.address}, ${data.company.city} - ${data.company.pincode}</div>
-            <div>Phone: ${data.company.phone} | Email: ${data.company.email}</div>
-            ${!data.hideGstInHeader ? `<div>GST: ${data.company.gstNumber}</div>` : ''}
-            ${data.company.website ? `<div>Website: ${data.company.website}</div>` : ''}
+            ${companyDetails}
           </div>
         </div>
         
@@ -1649,23 +1652,10 @@ function generateBillHTML(data: PDFBillData): string {
         ` : ''}
         
         <!-- Signatures -->
-        <div class="signatures">
-          <div class="signature-box">
-            <div class="signature-label" style="text-align: center;">Authorized Signatory</div>
-            <img src="/HydrogenROSeal.webp" alt="Hydrogen RO Seal" class="signature-seal" />
-            <div class="signature-date" style="text-align: center;">Date: ${new Date(data.billDate).toLocaleDateString('en-IN', { 
-              day: '2-digit', 
-              month: '2-digit', 
-              year: 'numeric' 
-            })}</div>
-          </div>
-        </div>
+        ${signatureBlock}
         
         <!-- Footer -->
-        <div class="footer">
-          <p>Thank you for choosing Hydrogenro!</p>
-          <p>For any queries, contact us at ${data.company.phone} or ${data.company.email}</p>
-        </div>
+        ${footerBlock}
       </div>
     </body>
     </html>

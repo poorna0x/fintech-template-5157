@@ -25,6 +25,12 @@ import {
   preparePlaceOfSupplyForSave,
   resolvePlaceOfSupply,
 } from '@/lib/indian-state-codes';
+import DocumentBrandPickerDialog from '@/components/DocumentBrandPickerDialog';
+import {
+  DocumentBrand,
+  brandHasGst,
+  getCompanyInfoForBrand,
+} from '@/lib/service-brands';
 
 interface QuotationGeneratorProps {
   customer?: Customer;
@@ -100,6 +106,8 @@ export default function QuotationGenerator({ customer, onPrint }: QuotationGener
   const [addGSTNoteToNotes, setAddGSTNoteToNotes] = useState(false); // Option to add GST note to Additional Info
   const [showBankDetails, setShowBankDetails] = useState(false);
   const [bankDetails, setBankDetails] = useState(defaultBankDetails);
+  const [brandPickerOpen, setBrandPickerOpen] = useState(false);
+  const [pendingPrintAction, setPendingPrintAction] = useState<'print' | 'pdf'>('print');
   
   // Computed values for backward compatibility
   const includeGST = gstOption === 'include';
@@ -384,13 +392,20 @@ export default function QuotationGenerator({ customer, onPrint }: QuotationGener
     ? subtotal + totalTax + serviceCharge 
     : subtotal + serviceCharge;
 
-  const handlePrint = (action: 'print' | 'pdf' = 'print') => {
-    if (gstOption === 'include') {
+  const executePrintWithBrand = (brand: DocumentBrand, action: 'print' | 'pdf') => {
+    const companyInfo = getCompanyInfoForBrand(brand);
+    const effectiveGstOption = brandHasGst(brand) ? gstOption : 'normal';
+    const printTotalAmount =
+      effectiveGstOption === 'include'
+        ? subtotal + totalTax + serviceCharge
+        : subtotal + serviceCharge;
+
+    if (effectiveGstOption === 'include') {
       const posForOutput = preparePlaceOfSupplyForSave({
         placeName: placeOfSupply,
         placeCode: placeOfSupplyCode,
         supplierStateCode: companyStateCode,
-        supplierStateName: defaultCompanyInfo.state,
+        supplierStateName: companyInfo.state,
       });
 
       if (!posForOutput.isValid) {
@@ -408,7 +423,7 @@ export default function QuotationGenerator({ customer, onPrint }: QuotationGener
       id: Date.now().toString(),
       billNumber: quotationNumber,
       billDate: quotationDate,
-      company: defaultCompanyInfo,
+      company: companyInfo,
       customer: {
         id: customer?.id || '',
         fullName: editableCustomer.name,
@@ -431,7 +446,7 @@ export default function QuotationGenerator({ customer, onPrint }: QuotationGener
       subtotal,
       totalTax,
       serviceCharge,
-      totalAmount,
+      totalAmount: printTotalAmount,
       paymentStatus: 'pending',
       paymentMethod: 'cash',
       notes: notes.join('\n'),
@@ -446,14 +461,15 @@ export default function QuotationGenerator({ customer, onPrint }: QuotationGener
     (quotation as any).validUntil = validUntilDate;
 
     // Add GST option and GST data
-    (quotation as any).gstOption = gstOption;
-    (quotation as any).includeGST = gstOption === 'include'; // For backward compatibility
-    if (gstOption === 'include') {
+    (quotation as any).gstOption = effectiveGstOption;
+    (quotation as any).documentBrand = brand;
+    (quotation as any).includeGST = effectiveGstOption === 'include'; // For backward compatibility
+    if (effectiveGstOption === 'include') {
       const posForOutput = preparePlaceOfSupplyForSave({
         placeName: placeOfSupply,
         placeCode: placeOfSupplyCode,
         supplierStateCode: companyStateCode,
-        supplierStateName: defaultCompanyInfo.state,
+        supplierStateName: companyInfo.state,
       });
       const outputIsIntraState = posForOutput.isIntraState;
       const outputTaxSplit =
@@ -474,11 +490,16 @@ export default function QuotationGenerator({ customer, onPrint }: QuotationGener
       };
     }
 
-    if (showBankDetails) {
+    if (showBankDetails && brand === 'hydrogenro') {
       (quotation as any).bankDetails = bankDetails;
     }
 
     onPrint?.(quotation, action);
+  };
+
+  const handlePrint = (action: 'print' | 'pdf' = 'print') => {
+    setPendingPrintAction(action);
+    setBrandPickerOpen(true);
   };
 
   return (
@@ -1424,6 +1445,14 @@ export default function QuotationGenerator({ customer, onPrint }: QuotationGener
           </CardContent>
         )}
       </Card>
+
+      <DocumentBrandPickerDialog
+        open={brandPickerOpen}
+        onOpenChange={setBrandPickerOpen}
+        title="Which brand is this quotation for?"
+        description="Hydrogen RO can show GST. Eleven RO issues quotations without GST."
+        onSelect={(brand) => executePrintWithBrand(brand, pendingPrintAction)}
+      />
     </div>
   );
 }

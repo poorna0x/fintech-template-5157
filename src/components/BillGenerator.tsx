@@ -8,6 +8,12 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Plus, Trash2, Download, Edit, X, FileText } from 'lucide-react';
 import { toast } from 'sonner';
 import { Bill, BillItem, CompanyInfo, Customer } from '@/types';
+import DocumentBrandPickerDialog from '@/components/DocumentBrandPickerDialog';
+import {
+  DocumentBrand,
+  brandHasGst,
+  getCompanyInfoForBrand,
+} from '@/lib/service-brands';
 
 interface BillGeneratorProps {
   customer?: Customer;
@@ -70,6 +76,8 @@ export default function BillGenerator({ customer, onPrint }: BillGeneratorProps)
   const [newTerm, setNewTerm] = useState('');
   const [isEditingNotes, setIsEditingNotes] = useState(false);
   const [hideGstInHeader, setHideGstInHeader] = useState(false);
+  const [brandPickerOpen, setBrandPickerOpen] = useState(false);
+  const [pendingPrintAction, setPendingPrintAction] = useState<'print' | 'pdf'>('print');
 
   // Editable customer information state
   const [isEditingCustomer, setIsEditingCustomer] = useState(false);
@@ -192,17 +200,20 @@ export default function BillGenerator({ customer, onPrint }: BillGeneratorProps)
   const termsList = terms.split('\n').filter(line => line.trim());
   const notesList = notes; // notes is already an array now
 
-  const handlePrint = (action: 'print' | 'pdf' = 'print') => {
+  const executePrintWithBrand = (brand: DocumentBrand, action: 'print' | 'pdf') => {
     if (!customer) {
       toast.error('Please select a customer first');
       return;
     }
 
+    const brandCompany = getCompanyInfoForBrand(brand);
+    setCompany(brandCompany);
+
     const bill: Bill = {
       id: Date.now().toString(),
       billNumber,
       billDate,
-      company,
+      company: brandCompany,
       customer: {
         id: customer.id || '',
         name: editableCustomer.name,
@@ -224,12 +235,22 @@ export default function BillGenerator({ customer, onPrint }: BillGeneratorProps)
       notes: notes.join('\n'),
       terms: showValidityNote ? `${validityNote}\n\n${terms}` : terms,
       serviceType: customerServiceType,
-      hideGstInHeader,
+      hideGstInHeader: !brandHasGst(brand) || hideGstInHeader,
+      documentBrand: brand,
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString()
     } as any;
 
     onPrint?.(bill, action);
+  };
+
+  const handlePrint = (action: 'print' | 'pdf' = 'print') => {
+    if (!customer) {
+      toast.error('Please select a customer first');
+      return;
+    }
+    setPendingPrintAction(action);
+    setBrandPickerOpen(true);
   };
 
   return (
@@ -760,6 +781,14 @@ export default function BillGenerator({ customer, onPrint }: BillGeneratorProps)
           </div>
         </CardContent>
       </Card>
+
+      <DocumentBrandPickerDialog
+        open={brandPickerOpen}
+        onOpenChange={setBrandPickerOpen}
+        title="Which brand is this bill for?"
+        description="Hydrogen RO includes GST on documents. Eleven RO does not use GST."
+        onSelect={(brand) => executePrintWithBrand(brand, pendingPrintAction)}
+      />
     </div>
   );
 }

@@ -86,6 +86,7 @@ import QuotationModal from './QuotationModal';
 import TaxInvoiceModal from './TaxInvoiceModal';
 import GSTInvoicesPage from './GSTInvoicesPage';
 import AMCViewPage from './AMCViewPage';
+import { getAmcDocumentBrandLabel } from '@/lib/amc-brand';
 import ImageUpload from '@/components/ImageUpload';
 import TechnicianPayments from './TechnicianPayments';
 import BillingStats from './BillingStats';
@@ -11242,7 +11243,14 @@ const AdminDashboard = () => {
                     {amcInfo.status}
                   </Badge>
                 </div>
-                
+
+                <div className="flex items-center justify-between text-sm">
+                  <span className="text-gray-600 font-medium">Service brand:</span>
+                  <span className="text-gray-900 font-semibold">
+                    {getAmcDocumentBrandLabel(amcInfo)}
+                  </span>
+                </div>
+
                 <div className="grid grid-cols-2 gap-4 text-sm">
                   <div>
                     <span className="text-gray-600 font-medium">Start Date:</span>

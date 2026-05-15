@@ -33,7 +33,8 @@ export default function BillModal({ isOpen, onClose, customer }: BillModalProps)
       paymentMethod: bill.paymentMethod,
       notes: bill.notes,
       terms: bill.terms,
-      hideGstInHeader: (bill as any).hideGstInHeader || false
+      hideGstInHeader: (bill as any).hideGstInHeader || false,
+      documentBrand: (bill as any).documentBrand
     };
     
     try {

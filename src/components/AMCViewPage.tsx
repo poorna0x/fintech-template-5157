@@ -31,6 +31,8 @@ import { db, supabase } from '@/lib/supabase';
 import { toast } from 'sonner';
 import AdminHeader from './AdminHeader';
 import { useAuth } from '@/contexts/AuthContext';
+import { getAmcDocumentBrand } from '@/lib/amc-brand';
+import { DocumentBrand, getDocumentBrandLabel } from '@/lib/service-brands';
 
 interface AMCRecord {
   id: string;
@@ -53,6 +55,7 @@ interface AMCRecord {
   additionalNotes?: string;
   amount?: number | string;
   servicePeriodMonths?: number | null;
+  serviceBrand: DocumentBrand;
   nextAutoGenerationDate?: string | null;
   nextAMCDueDate?: string | null;
   autoGenerationLabel: string;
@@ -391,6 +394,7 @@ const AMCViewPage: React.FC<AMCViewPageProps> = ({ onBack, onAMCDeleted }) => {
             additionalNotes: additionalNotes,
             amount: amcAmount,
             servicePeriodMonths: (amc as any).service_period_months ?? undefined,
+            serviceBrand: getAmcDocumentBrand(amc),
             ...autoGenerationInfo,
             createdAt: amc.created_at,
             completedAt: null,
@@ -717,6 +721,7 @@ const AMCViewPage: React.FC<AMCViewPageProps> = ({ onBack, onAMCDeleted }) => {
                   <TableHeader>
                     <TableRow>
                       <TableHead>Customer</TableHead>
+                      <TableHead>Issued by brand</TableHead>
                       <TableHead>AMC Given By</TableHead>
                       <TableHead>Service</TableHead>
                       <TableHead>Start Date</TableHead>
@@ -740,6 +745,11 @@ const AMCViewPage: React.FC<AMCViewPageProps> = ({ onBack, onAMCDeleted }) => {
                                 <div className="text-xs text-gray-500">{amc.customerLocation}</div>
                               )}
                             </div>
+                          </TableCell>
+                          <TableCell>
+                            <span className="text-sm font-medium text-gray-900 whitespace-nowrap">
+                              {getDocumentBrandLabel(amc.serviceBrand)}
+                            </span>
                           </TableCell>
                           <TableCell>
                             <span className={amc.givenByTechnicianName === 'Unknown' ? 'text-sm text-gray-500' : 'text-sm font-medium text-gray-900'}>
@@ -867,6 +877,10 @@ const AMCViewPage: React.FC<AMCViewPageProps> = ({ onBack, onAMCDeleted }) => {
                   <div>
                     <Label className="text-xs text-gray-500">Email</Label>
                     <p className="font-medium">{selectedAMC.customerEmail || 'N/A'}</p>
+                  </div>
+                  <div>
+                    <Label className="text-xs text-gray-500">Service brand</Label>
+                    <p className="font-medium">{getDocumentBrandLabel(selectedAMC.serviceBrand)}</p>
                   </div>
                   <div>
                     <Label className="text-xs text-gray-500">AMC Given By</Label>

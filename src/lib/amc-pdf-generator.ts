@@ -1,5 +1,11 @@
 import { Bill } from '@/types';
 import { sanitizeForTemplate } from './sanitize';
+import {
+  renderPdfCompanyDetailsHtml,
+  renderPdfLogoHtml,
+  resolvePdfDocumentBrand,
+} from './document-pdf-brand';
+import { BRAND_SEAL_SRC, getDocumentBrandLabel } from './service-brands';
 
 interface AMCPDFData {
   billNumber: string;
@@ -43,6 +49,7 @@ interface AMCPDFData {
   terms?: string;
   validity?: string;
   agreementIntro?: string;
+  documentBrand?: 'hydrogenro' | 'elevenro';
 }
 
 interface AMCPDFOptions {
@@ -51,6 +58,10 @@ interface AMCPDFOptions {
 }
 
 function generateAMCHTML(data: AMCPDFData, options?: AMCPDFOptions): string {
+  const brand = resolvePdfDocumentBrand(data);
+  const companyDetails = renderPdfCompanyDetailsHtml(data.company, brand);
+  const headerLogo = renderPdfLogoHtml(brand);
+  const brandLabel = getDocumentBrandLabel(brand);
   const includeDetails = options?.includeDetails !== false;
   const isTermsOnly = !includeDetails;
   const documentTitleText = isTermsOnly ? 'AMC AGREEMENT DETAILS' : 'AMC AGREEMENT';
@@ -488,12 +499,10 @@ function generateAMCHTML(data: AMCPDFData, options?: AMCPDFOptions): string {
         <!-- Header -->
         <div class="header">
           <div class="logo-container">
-            <img src="/fulllogo.webp" alt="Hydrogenro Logo" class="full-logo" />
+            ${headerLogo}
           </div>
           <div class="company-details">
-            <div>${data.company.address}, ${data.company.city} - ${data.company.pincode}</div>
-            <div>Phone: ${data.company.phone} | Email: ${data.company.email}</div>
-            <div>GST: ${data.company.gstNumber}</div>
+            ${companyDetails}
           </div>
           <h2 class="document-title">${documentTitleText}</h2>
         </div>
@@ -505,7 +514,7 @@ function generateAMCHTML(data: AMCPDFData, options?: AMCPDFOptions): string {
         </div>
       ` : `
         <div class="agreement-intro">
-          <p>We <strong>Hydrogen RO</strong> will maintain your <strong>RO Water Purifier</strong> on the terms set out below:</p>
+          <p>We <strong>${brandLabel}</strong> will maintain your <strong>RO Water Purifier</strong> on the terms set out below:</p>
         </div>
       `}
 
@@ -773,7 +782,7 @@ function generateAMCHTML(data: AMCPDFData, options?: AMCPDFOptions): string {
       <div class="signatures">
         <div class="signature-box">
           <div class="signature-label">Authorized Signatory</div>
-          <img src="/HydrogenROSeal.webp" alt="Hydrogen RO Seal" class="signature-seal" />
+          <img src="${BRAND_SEAL_SRC[brand]}" alt="${brandLabel} Seal" class="signature-seal" />
           <div class="signature-date">Date: ${new Date(data.billDate).toLocaleDateString('en-IN', { 
             day: '2-digit', 
             month: '2-digit', 
@@ -785,7 +794,7 @@ function generateAMCHTML(data: AMCPDFData, options?: AMCPDFOptions): string {
       <!-- Footer -->
       <div class="footer">
         <div class="footer-logo">
-          <span style="color: #2563eb; font-weight: bold;">💧 Hydrogen RO</span>
+          <span style="color: #2563eb; font-weight: bold;">💧 ${brandLabel}</span>
         </div>
         ${options?.showComputerGeneratedText !== false ? `
         <p class="footer-text">This is a Computer Generated Invoice. No signature is required. This invoice is valid and legally binding.</p>
@@ -796,7 +805,7 @@ function generateAMCHTML(data: AMCPDFData, options?: AMCPDFOptions): string {
           year: 'numeric' 
         })} | Professional RO Water Purifier Services in Bengaluru</p>
         <p class="footer-text" style="margin-top: 10px;">
-          Phone: 8884944288 | Email: mail@hydrogenro.com | Website: hydrogenro.com
+          Phone: ${data.company.phone} | Email: ${data.company.email} | Website: ${data.company.website || ""}
         </p>
       </div>
     </body>
@@ -883,7 +892,8 @@ export function generateAMCPDF(
       notes: bill.notes,
       terms: bill.terms,
       validity: bill.validity,
-      agreementIntro: bill.agreementIntro
+      agreementIntro: bill.agreementIntro,
+      documentBrand: (bill as any).documentBrand
     };
     
     // Write content to new window
@@ -992,7 +1002,8 @@ function handleMobilePrint(
       notes: bill.notes,
       terms: bill.terms,
       validity: bill.validity,
-      agreementIntro: bill.agreementIntro
+      agreementIntro: bill.agreementIntro,
+      documentBrand: (bill as any).documentBrand
     };
     
         // Generate AMC HTML - this is a complete HTML document

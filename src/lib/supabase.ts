@@ -4,6 +4,7 @@ import { chromeStorage } from './storage';
 import { escapeForLike, normalizePhoneForSearch } from './utils';
 import { PENDING_PAYMENT_REMINDER_TITLE } from './pendingPaymentReminder';
 import { cacheGet, cacheSet, cacheInvalidate } from './supabaseQueryCache';
+import { isMissingServiceBrandColumnError } from './amc-brand';
 
 // Supabase configuration
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
@@ -2820,6 +2821,7 @@ export const db = {
       additional_info?: string | null;
       service_period_months?: number | null;
       given_by_technician_id?: string | null;
+      service_brand?: 'hydrogenro' | 'elevenro' | null;
     }) {
       // First, mark any existing active AMC for this customer as RENEWED or EXPIRED
       const { data: existingAMCs } = await supabase
@@ -2846,25 +2848,33 @@ export const db = {
         }
       }
 
-      // Create new AMC contract
-      const { data, error } = await supabase
+      const insertBase = {
+        customer_id: amc.customer_id,
+        job_id: amc.job_id || null,
+        start_date: amc.start_date,
+        end_date: amc.end_date,
+        years: amc.years,
+        includes_prefilter: amc.includes_prefilter,
+        additional_info: amc.additional_info || null,
+        service_period_months: amc.service_period_months ?? null,
+        given_by_technician_id: amc.given_by_technician_id || null,
+        status: 'ACTIVE' as const,
+      };
+
+      let result = await supabase
         .from('amc_contracts')
         .insert({
-          customer_id: amc.customer_id,
-          job_id: amc.job_id || null,
-          start_date: amc.start_date,
-          end_date: amc.end_date,
-          years: amc.years,
-          includes_prefilter: amc.includes_prefilter,
-          additional_info: amc.additional_info || null,
-          service_period_months: amc.service_period_months ?? null,
-          given_by_technician_id: amc.given_by_technician_id || null,
-          status: 'ACTIVE'
+          ...insertBase,
+          ...(amc.service_brand ? { service_brand: amc.service_brand } : {}),
         })
         .select()
         .single();
-      
-      return { data, error };
+
+      if (result.error && amc.service_brand && isMissingServiceBrandColumnError(result.error)) {
+        result = await supabase.from('amc_contracts').insert(insertBase).select().single();
+      }
+
+      return { data: result.data, error: result.error };
     },
 
     async getByCustomerId(customerId: string) {

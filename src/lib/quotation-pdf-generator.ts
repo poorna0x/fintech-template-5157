@@ -3,6 +3,13 @@
 // For production, consider using libraries like jsPDF or Puppeteer
 
 import { sanitizeForTemplate } from './sanitize';
+import {
+  renderPdfCompanyDetailsHtml,
+  renderPdfFooterHtml,
+  renderPdfLogoHtml,
+  renderPdfSignatureHtml,
+  resolvePdfDocumentBrand,
+} from './document-pdf-brand';
 
 export interface PDFQuotationData {
   billNumber: string;
@@ -45,6 +52,7 @@ export interface PDFQuotationData {
   paymentMethod?: string;
   notes?: string;
   terms?: string;
+  documentBrand?: 'hydrogenro' | 'elevenro';
   bankDetails?: {
     accountHolderName?: string;
     bankName?: string;
@@ -1113,6 +1121,10 @@ function renderQuotationGstSummary(data: PDFQuotationData, halfGstRate: number, 
 }
 
 function createQuotationContent(data: PDFQuotationData): string {
+  const brand = resolvePdfDocumentBrand(data);
+  const companyDetails = renderPdfCompanyDetailsHtml(data.company, brand);
+  const signatureBlock = renderPdfSignatureHtml(brand, data.billDate);
+  const footerBlock = renderPdfFooterHtml(brand, data.company);
   const validityDate = data.validUntil
     ? new Date(data.validUntil)
     : new Date(new Date(data.billDate).getTime() + 30 * 24 * 60 * 60 * 1000);
@@ -1125,13 +1137,10 @@ function createQuotationContent(data: PDFQuotationData): string {
       <!-- Header -->
       <div class="header">
         <div class="logo-container">
-          <img src="/fulllogo.webp" alt="Hydrogenro Logo" class="full-logo" />
+          ${renderPdfLogoHtml(brand)}
         </div>
         <div class="company-details">
-          <div>${data.company.address}, ${data.company.city} - ${data.company.pincode}</div>
-          <div>Phone: ${data.company.phone} | Email: ${data.company.email}</div>
-          <div>GST: ${data.company.gstNumber}</div>
-          ${data.company.website ? `<div>Website: ${data.company.website}</div>` : ''}
+          ${companyDetails}
         </div>
       </div>
       
@@ -1295,17 +1304,7 @@ function createQuotationContent(data: PDFQuotationData): string {
       ` : ''}
       
       <!-- Signatures -->
-      <div class="signatures">
-        <div class="signature-box">
-          <div class="signature-label">Authorized Signatory</div>
-          <img src="/HydrogenROSeal.webp" alt="Hydrogen RO Seal" class="signature-seal" />
-          <div class="signature-date">Date: ${new Date(data.billDate).toLocaleDateString('en-IN', { 
-            day: '2-digit', 
-            month: '2-digit', 
-            year: 'numeric' 
-          })}</div>
-        </div>
-      </div>
+      ${signatureBlock}
       
       <!-- Footer -->
       <div class="footer">
@@ -1317,6 +1316,10 @@ function createQuotationContent(data: PDFQuotationData): string {
 }
 
 function generateQuotationHTML(data: PDFQuotationData): string {
+  const brand = resolvePdfDocumentBrand(data);
+  const companyDetails = renderPdfCompanyDetailsHtml(data.company, brand);
+  const signatureBlock = renderPdfSignatureHtml(brand, data.billDate);
+  const footerBlock = renderPdfFooterHtml(brand, data.company);
   const validityDate = new Date(new Date(data.billDate).getTime() + 30 * 24 * 60 * 60 * 1000);
   const gstRate = getQuotationGstRate(data);
   const halfGstRate = gstRate / 2;
@@ -1631,13 +1634,10 @@ function generateQuotationHTML(data: PDFQuotationData): string {
         <!-- Header -->
         <div class="header">
           <div class="logo-container">
-            <img src="/fulllogo.webp" alt="Hydrogenro Logo" class="full-logo" />
+            ${renderPdfLogoHtml(brand)}
           </div>
           <div class="company-details">
-            <div>${data.company.address}, ${data.company.city} - ${data.company.pincode}</div>
-            <div>Phone: ${data.company.phone} | Email: ${data.company.email}</div>
-            <div>GST: ${data.company.gstNumber}</div>
-            ${data.company.website ? `<div>Website: ${data.company.website}</div>` : ''}
+            ${companyDetails}
           </div>
         </div>
         
@@ -1774,23 +1774,10 @@ function generateQuotationHTML(data: PDFQuotationData): string {
         ` : ''}
         
         <!-- Signatures -->
-        <div class="signatures">
-          <div class="signature-box">
-            <div class="signature-label">Authorized Signatory</div>
-            <img src="/HydrogenROSeal.webp" alt="Hydrogen RO Seal" class="signature-seal" />
-            <div class="signature-date">Date: ${new Date(data.billDate).toLocaleDateString('en-IN', { 
-              day: '2-digit', 
-              month: '2-digit', 
-              year: 'numeric' 
-            })}</div>
-          </div>
-        </div>
+        ${signatureBlock}
         
         <!-- Footer -->
-        <div class="footer">
-          <p>Thank you for considering our services!</p>
-          <p>For any queries, contact us at ${data.company.phone} or ${data.company.email}</p>
-        </div>
+        ${footerBlock}
       </div>
     </body>
     </html>

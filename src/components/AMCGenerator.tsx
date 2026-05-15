@@ -10,10 +10,18 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Badge } from '@/components/ui/badge';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Edit, Plus, Download, FileText, User, Phone, MapPin, Building, Droplets, Mail, Save } from 'lucide-react';
+import DocumentBrandLogo from '@/components/DocumentBrandLogo';
 import { toast } from 'sonner';
 import { Customer, Bill, BillItem, CompanyInfo } from '@/types';
 import { generateAMCPDF } from '@/lib/amc-pdf-generator';
 import { db } from '@/lib/supabase';
+import DocumentBrandPickerDialog from '@/components/DocumentBrandPickerDialog';
+import {
+  DocumentBrand,
+  getCompanyInfoForBrand,
+  getDefaultAgreementIntro,
+  getDocumentBrandLabel,
+} from '@/lib/service-brands';
 
 interface AMCGeneratorProps {
   customer: Customer;
@@ -155,6 +163,11 @@ ${notCoveredWithPreFilter}`;
   );
   const [description, setDescription] = useState('');
   const [isSaving, setIsSaving] = useState(false);
+  const [brandPickerOpen, setBrandPickerOpen] = useState(false);
+  const [pendingBrandAction, setPendingBrandAction] = useState<
+    { type: 'save' } | { type: 'print'; options?: { termsOnly?: boolean } }
+  | null>(null);
+  const [documentBrand, setDocumentBrand] = useState<DocumentBrand>('hydrogenro');
 
   // Update terms when pre-sediment filtration or AMC service period (auto job creation) changes
   React.useEffect(() => {
@@ -275,8 +288,15 @@ ${notCoveredWithPreFilter}`;
     return { startDate, endDate: validityEndDate, years: years || 1 };
   };
 
+  const applyBrandToForm = (brand: DocumentBrand) => {
+    setDocumentBrand(brand);
+    setCompany(getCompanyInfoForBrand(brand));
+    setAgreementIntro(getDefaultAgreementIntro(brand));
+  };
+
   // Function to save AMC contract to database
-  const handleSaveToDatabase = async () => {
+  const executeSaveToDatabase = async (brand: DocumentBrand) => {
+    applyBrandToForm(brand);
     if (!billNumber.trim()) {
       toast.error('Please enter an agreement number');
       return;
@@ -323,6 +343,7 @@ ${notCoveredWithPreFilter}`;
         customer_gst: editableCustomer.gst || null,
         customer_address: editableCustomer.address,
         agreement_intro: agreementIntro,
+        document_brand: brand,
         saved_at: new Date().toISOString()
       };
 
@@ -342,7 +363,8 @@ ${notCoveredWithPreFilter}`;
         years: years,
         includes_prefilter: includesPreSedimentFiltration,
         additional_info: JSON.stringify(metadata),
-        service_period_months: servicePeriodKind === 'no_auto' ? 0 : servicePeriodMonths
+        service_period_months: servicePeriodKind === 'no_auto' ? 0 : servicePeriodMonths,
+        service_brand: brand,
       });
 
       if (amcError) {
@@ -352,7 +374,7 @@ ${notCoveredWithPreFilter}`;
         });
       } else {
         toast.success('AMC contract saved to database successfully', {
-          description: `Agreement ${billNumber} has been saved with all details.`
+          description: `Agreement ${billNumber} saved under ${getDocumentBrandLabel(brand)}.`,
         });
         // Notify parent to refresh AMC status
         if (onAMCSaved) {
@@ -369,7 +391,24 @@ ${notCoveredWithPreFilter}`;
     }
   };
 
-  const handlePrint = async (options?: { termsOnly?: boolean }) => {
+  const handleSaveToDatabase = () => {
+    if (!billNumber.trim()) {
+      toast.error('Please enter an agreement number');
+      return;
+    }
+    if (!roModel.trim()) {
+      toast.error('Please enter RO Model/Brand before saving', {
+        description: 'RO Model is required to save the AMC contract.',
+        duration: 6000,
+      });
+      return;
+    }
+    setPendingBrandAction({ type: 'save' });
+    setBrandPickerOpen(true);
+  };
+
+  const executePrint = async (brand: DocumentBrand, options?: { termsOnly?: boolean }) => {
+    applyBrandToForm(brand);
     if (!billNumber.trim()) {
       toast.error('Please enter a bill number');
       return;
@@ -412,7 +451,7 @@ ${notCoveredWithPreFilter}`;
       id: Date.now().toString(),
       billNumber,
       billDate,
-      company,
+      company: getCompanyInfoForBrand(brand),
       customer: {
         id: customer.id,
         name: editableCustomer.name,
@@ -440,6 +479,7 @@ ${notCoveredWithPreFilter}`;
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString()
     };
+    (bill as any).documentBrand = brand;
 
     try {
       // Don't save to database automatically - user must explicitly click "Save to Database" button
@@ -455,18 +495,29 @@ ${notCoveredWithPreFilter}`;
     }
   };
 
+  const handlePrint = (options?: { termsOnly?: boolean }) => {
+    if (!billNumber.trim()) {
+      toast.error('Please enter a bill number');
+      return;
+    }
+    if (!roModel.trim()) {
+      toast.error('Please enter RO Model/Brand before generating AMC Agreement', {
+        description: 'RO Model is required to generate the agreement.',
+        duration: 6000,
+      });
+      return;
+    }
+    setPendingBrandAction({ type: 'print', options });
+    setBrandPickerOpen(true);
+  };
+
   return (
     <div className="max-w-4xl mx-auto p-3 sm:p-4 md:p-6 space-y-3 sm:space-y-4 md:space-y-6">
       {/* Header */}
       <div className="text-center mb-4 sm:mb-6 md:mb-8">
-        <div className="flex flex-col sm:flex-row items-center justify-center mb-3 sm:mb-4 gap-3 sm:gap-0">
-          <div className="w-10 h-10 sm:w-12 sm:h-12 bg-blue-600 rounded-lg flex items-center justify-center sm:mr-3">
-            <Droplets className="w-6 h-6 sm:w-8 sm:h-8 text-white" />
-          </div>
-          <div className="text-center sm:text-left">
-            <h1 className="text-2xl sm:text-3xl font-bold text-blue-600 mb-0">Hydrogen RO</h1>
-            <p className="text-xs sm:text-sm text-gray-600 mt-0">AMC Agreement Generator</p>
-          </div>
+        <div className="flex flex-col items-center justify-center mb-3 sm:mb-4 gap-2">
+          <DocumentBrandLogo brand={documentBrand} />
+          <p className="text-xs sm:text-sm text-gray-600 mt-0">AMC Agreement Generator</p>
         </div>
       </div>
 
@@ -1105,6 +1156,31 @@ ${notCoveredWithPreFilter}`;
           </Card>
         </div>
       </div>
+      <DocumentBrandPickerDialog
+        open={brandPickerOpen}
+        onOpenChange={(open) => {
+          setBrandPickerOpen(open);
+          if (!open) setPendingBrandAction(null);
+        }}
+        title={
+          pendingBrandAction?.type === 'save'
+            ? 'Which brand gave this AMC?'
+            : 'Which brand is this agreement for?'
+        }
+        description={
+          pendingBrandAction?.type === 'save'
+            ? 'Select Hydrogen RO or Eleven RO. This brand is stored on the AMC contract when you save.'
+            : 'The agreement PDF will use the selected brand address and logo.'
+        }
+        onSelect={(brand) => {
+          if (pendingBrandAction?.type === 'save') {
+            void executeSaveToDatabase(brand);
+          } else if (pendingBrandAction?.type === 'print') {
+            void executePrint(brand, pendingBrandAction.options);
+          }
+          setPendingBrandAction(null);
+        }}
+      />
     </div>
   );
 }

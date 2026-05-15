@@ -49,6 +49,7 @@ import {
   Package
 } from 'lucide-react';
 import { toast } from 'sonner';
+import { getAmcDocumentBrandLabel } from '@/lib/amc-brand';
 import { TOAST_VALIDATION } from '@/lib/toastOptions';
 import { formatCompletedWhen } from '@/lib/relativeTime';
 import { getJobEquipmentDisplay } from '@/lib/adminUtils';
@@ -8339,7 +8340,14 @@ const TechnicianDashboard = () => {
                     {amcInfo.status}
                   </Badge>
                 </div>
-                
+
+                <div className="flex items-center justify-between text-sm">
+                  <span className="text-gray-600 font-medium">Service brand:</span>
+                  <span className="text-gray-900 font-semibold">
+                    {getAmcDocumentBrandLabel(amcInfo)}
+                  </span>
+                </div>
+
                 <div className="grid grid-cols-2 gap-4 text-sm">
                   <div>
                     <span className="text-gray-600 font-medium">Start Date:</span>
