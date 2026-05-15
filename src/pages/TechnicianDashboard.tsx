@@ -85,6 +85,10 @@ import { AddReminderDialog } from '@/components/reminders/AddReminderDialog';
 import { bangaloreAreas } from '@/lib/adminUtils';
 import { customerNameClassName } from '@/lib/customerDisplay';
 
+/** Technician job list poll when realtime is healthy vs disconnected. */
+const TECH_JOBS_POLL_MS_OFFLINE = 5_000;
+const TECH_JOBS_POLL_MS_REALTIME_OK = 300_000;
+
 // Calculate Levenshtein distance for fuzzy matching
 const levenshteinDistance = (str1: string, str2: string): number => {
   const s1 = str1.toLowerCase();
@@ -1649,77 +1653,90 @@ const TechnicianDashboard = () => {
         channel = null;
       }
 
+      const handleJobRowChange = async (payload: { new: Record<string, unknown> }) => {
+        if (!isMounted.current) return;
+        const updatedJob = payload.new as any;
+        if (!updatedJob?.id) return;
+        if (processingJobsRef.current.has(updatedJob.id)) return;
+
+        const currentJobsState = jobsRef.current;
+        const jobInList = currentJobsState.find((j) => j.id === updatedJob.id);
+        const isInList = !!jobInList;
+        // Realtime `payload.new` can be sparse (not all columns). Merge with the row we already have
+        // so we do not drop assigned_technician_id / team_members and wrongly remove the job or skip the "fetch slim" path.
+        const mergedForRelevance = jobInList ? { ...(jobInList as any), ...updatedJob } : updatedJob;
+        const shouldBeInList = isJobRelevantToMe(mergedForRelevance);
+
+        // Case 1: Job should NOT be in list (unassigned or removed from team). Do not remove completed jobs — they stay in list for Completed tab.
+        if (!shouldBeInList) {
+          if (isInList) {
+            const listStatus = normalizeJobStatus((jobInList as any).status ?? jobInList.status);
+            if (listStatus === 'COMPLETED') {
+              return;
+            }
+            setJobs((prev) => {
+              const filtered = prev.filter((j) => j.id !== updatedJob.id);
+              jobsRef.current = filtered;
+              return filtered;
+            });
+          }
+          return;
+        }
+
+        processingJobsRef.current.add(updatedJob.id);
+        try {
+          // Reduce Postgres egress: avoid fetching a full job on every UPDATE.
+          // If the job is already in our list, merge payload fields into existing row (keep embedded customer as-is).
+          if (isInList) {
+            setJobs((prev) => {
+              const idx = prev.findIndex((j) => j.id === updatedJob.id);
+              if (idx < 0) return prev;
+              const next = [...prev];
+              next[idx] = { ...(next[idx] as any), ...updatedJob } as any;
+              shouldPreserveOrderRef.current = true;
+              jobsRef.current = next;
+              return next;
+            });
+            return;
+          }
+
+          // If it should be in list but isn't, fetch a slim row once (includes customer basics) and add it.
+          const { data: slimJob, error } = await db.jobs.getByIdSlim(updatedJob.id);
+          if (!isMounted.current) return;
+          if (error || !slimJob) return;
+          setJobs((prev) => {
+            if (prev.some((j) => j.id === slimJob.id)) return prev;
+            const next = [slimJob as any, ...prev];
+            jobsRef.current = next;
+            return next;
+          });
+        } finally {
+          processingJobsRef.current.delete(updatedJob.id);
+        }
+      };
+
+      const jobRowChangeOpts = { schema: 'public' as const, table: 'jobs' as const };
+
       channel = supabase
         .channel(`technician-jobs-${technicianId}`)
         .on(
           'postgres_changes',
+          { ...jobRowChangeOpts, event: 'INSERT' },
+          (payload) => {
+            void handleJobRowChange(payload as { new: Record<string, unknown> });
+          }
+        )
+        .on(
+          'postgres_changes',
           {
+            ...jobRowChangeOpts,
             event: 'UPDATE',
-            schema: 'public',
-            table: 'jobs',
             // No filter - receive all job updates so unassign (new row has assigned_technician_id !== me) is handled
           },
-        async (payload) => {
-          if (!isMounted.current) return;
-          const updatedJob = payload.new as any;
-          if (processingJobsRef.current.has(updatedJob.id)) return;
-
-          const currentJobsState = jobsRef.current;
-          const jobInList = currentJobsState.find((j) => j.id === updatedJob.id);
-          const isInList = !!jobInList;
-          // Realtime `payload.new` can be sparse (not all columns). Merge with the row we already have
-          // so we do not drop assigned_technician_id / team_members and wrongly remove the job or skip the "fetch slim" path.
-          const mergedForRelevance = jobInList ? { ...(jobInList as any), ...updatedJob } : updatedJob;
-          const shouldBeInList = isJobRelevantToMe(mergedForRelevance);
-
-          // Case 1: Job should NOT be in list (unassigned or removed from team). Do not remove completed jobs — they stay in list for Completed tab.
-          if (!shouldBeInList) {
-            if (isInList) {
-              const listStatus = normalizeJobStatus((jobInList as any).status ?? jobInList.status);
-              if (listStatus === 'COMPLETED') {
-                return;
-              }
-              setJobs((prev) => {
-                const filtered = prev.filter((j) => j.id !== updatedJob.id);
-                jobsRef.current = filtered;
-                return filtered;
-              });
-            }
-            return;
+          (payload) => {
+            void handleJobRowChange(payload as { new: Record<string, unknown> });
           }
-
-          processingJobsRef.current.add(updatedJob.id);
-          try {
-            // Reduce Postgres egress: avoid fetching a full job on every UPDATE.
-            // If the job is already in our list, merge payload fields into existing row (keep embedded customer as-is).
-            if (isInList) {
-              setJobs((prev) => {
-                const idx = prev.findIndex((j) => j.id === updatedJob.id);
-                if (idx < 0) return prev;
-                const next = [...prev];
-                next[idx] = { ...(next[idx] as any), ...updatedJob } as any;
-                shouldPreserveOrderRef.current = true;
-                jobsRef.current = next;
-                return next;
-              });
-              return;
-            }
-
-            // If it should be in list but isn't, fetch a slim row once (includes customer basics) and add it.
-            const { data: slimJob, error } = await db.jobs.getByIdSlim(updatedJob.id);
-            if (!isMounted.current) return;
-            if (error || !slimJob) return;
-            setJobs((prev) => {
-              if (prev.some((j) => j.id === slimJob.id)) return prev;
-              const next = [slimJob as any, ...prev];
-              jobsRef.current = next;
-              return next;
-            });
-          } finally {
-            processingJobsRef.current.delete(updatedJob.id);
-          }
-        }
-      )
+        )
         .subscribe((status, err) => {
           if (!isMounted.current) return;
           if (err) {
@@ -2049,12 +2066,15 @@ const TechnicianDashboard = () => {
     };
   }, [user?.technicianId]);
 
-  // Polling: 5s when realtime is down; light 60s sync when realtime is up (missed/sparse postgres_changes — e.g. assign auto AMC job).
+  // Polling backup: 5s when realtime is down; 5min when up (INSERT/UPDATE realtime + focus/visibility refresh handle most changes).
   useEffect(() => {
     if (!user?.technicianId) return;
 
-    const intervalMs = realtimeConnected ? 60_000 : 5_000;
-    const pollInterval = setInterval(() => loadAssignedJobs(), intervalMs);
+    const intervalMs = realtimeConnected ? TECH_JOBS_POLL_MS_REALTIME_OK : TECH_JOBS_POLL_MS_OFFLINE;
+    const pollInterval = setInterval(() => {
+      if (typeof document !== 'undefined' && document.hidden) return;
+      loadAssignedJobs();
+    }, intervalMs);
     return () => clearInterval(pollInterval);
   }, [user?.technicianId, realtimeConnected, loadAssignedJobs]);
 
