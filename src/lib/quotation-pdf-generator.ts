@@ -903,10 +903,33 @@ function handleMobilePrint(quotationData: PDFQuotationData, action: 'print' | 'p
   }
 }
 
+function getQuotationGstRate(data: PDFQuotationData): number {
+  const fromGstData = (data as { gstData?: { primaryGstRate?: number } }).gstData?.primaryGstRate;
+  if (fromGstData && fromGstData > 0) return fromGstData;
+  const fromItem = data.items?.find((item) => item.taxRate > 0)?.taxRate;
+  return fromItem && fromItem > 0 ? fromItem : 18;
+}
+
+function formatPlaceOfSupplyLine(gstData?: {
+  placeOfSupply?: string;
+  placeOfSupplyCode?: string;
+  isIntraState?: boolean;
+}): string {
+  if (!gstData?.placeOfSupply) return '';
+  const code = gstData.placeOfSupplyCode || '—';
+  const gstType = gstData.isIntraState
+    ? 'Intra-state (CGST + SGST)'
+    : 'Inter-state (IGST)';
+  return `<br />Place of Supply: ${gstData.placeOfSupply} (State Code: ${code})<br />GST Type: ${gstType}`;
+}
+
 function createQuotationContent(data: PDFQuotationData): string {
   const validityDate = data.validUntil
     ? new Date(data.validUntil)
     : new Date(new Date(data.billDate).getTime() + 30 * 24 * 60 * 60 * 1000);
+  const gstRate = getQuotationGstRate(data);
+  const halfGstRate = gstRate / 2;
+  const gstData = (data as { gstData?: Record<string, unknown> }).gstData;
   
   return `
     <div class="quotation-container">
@@ -943,7 +966,7 @@ function createQuotationContent(data: PDFQuotationData): string {
             <div><strong>Quotation Number:</strong> ${data.billNumber}</div>
             <div><strong>Quotation Date:</strong> ${new Date(data.billDate).toLocaleDateString()}</div>
             <div><strong>Valid Until:</strong> ${validityDate.toLocaleDateString()}</div>
-            ${(data as any).gstOption !== 'normal' && (data as any).gstData?.placeOfSupply ? `<div><strong>Place of Supply:</strong> ${(data as any).gstData.placeOfSupply} (State Code: ${(data as any).gstData.placeOfSupplyCode || '29'})</div>` : ''}
+            ${(data as any).gstOption !== 'normal' && (data as any).gstData?.placeOfSupply ? `<div><strong>Place of Supply:</strong> ${(data as any).gstData.placeOfSupply} (State Code: ${(data as any).gstData.placeOfSupplyCode || '—'})</div>` : ''}
           </div>
         </div>
       </div>
@@ -951,14 +974,14 @@ function createQuotationContent(data: PDFQuotationData): string {
       ${(data as any).gstOption === 'exclude' ? `
         <div class="gst-note">
           <strong>GST Note:</strong> GST not included in the above prices. Applicable GST will be charged separately if required.
+          ${formatPlaceOfSupplyLine(gstData as { placeOfSupply?: string; placeOfSupplyCode?: string; isIntraState?: boolean })}
         </div>
       ` : ''}
       
       ${((data as any).gstOption === 'include' && data.totalTax > 0) ? `
         <div class="gst-note">
           <strong>GST Note:</strong> Prices include GST.
-          ${(data as any).gstData?.placeOfSupply ? `<br />Place of Supply: ${(data as any).gstData.placeOfSupply} (State Code: ${(data as any).gstData.placeOfSupplyCode || '29'})` : ''}
-          ${(data as any).gstData?.isIntraState ? '<br />GST Type: Intra-state (CGST + SGST)' : ((data as any).gstData ? '<br />GST Type: Inter-state (IGST)' : '')}
+          ${formatPlaceOfSupplyLine(gstData as { placeOfSupply?: string; placeOfSupplyCode?: string; isIntraState?: boolean })}
         </div>
       ` : ''}
       
@@ -999,16 +1022,16 @@ function createQuotationContent(data: PDFQuotationData): string {
         ${(data as any).gstOption !== 'normal' && data.totalTax > 0 && (data as any).gstOption === 'include' && (data as any).gstData ? `
           ${(data as any).gstData.isIntraState ? `
             <div class="summary-row">
-              <span>CGST (9%):</span>
+              <span>CGST (${halfGstRate}%):</span>
               <span>₹${((data as any).gstData.taxSplit?.cgst || 0).toLocaleString(undefined, { maximumFractionDigits: 2 })}</span>
             </div>
             <div class="summary-row">
-              <span>SGST (9%):</span>
+              <span>SGST (${halfGstRate}%):</span>
               <span>₹${((data as any).gstData.taxSplit?.sgst || 0).toLocaleString(undefined, { maximumFractionDigits: 2 })}</span>
             </div>
           ` : `
             <div class="summary-row">
-              <span>IGST (18%):</span>
+              <span>IGST (${gstRate}%):</span>
               <span>₹${((data as any).gstData.taxSplit?.igst || 0).toLocaleString(undefined, { maximumFractionDigits: 2 })}</span>
             </div>
           `}
@@ -1123,6 +1146,9 @@ function createQuotationContent(data: PDFQuotationData): string {
 
 function generateQuotationHTML(data: PDFQuotationData): string {
   const validityDate = new Date(new Date(data.billDate).getTime() + 30 * 24 * 60 * 60 * 1000);
+  const gstRate = getQuotationGstRate(data);
+  const halfGstRate = gstRate / 2;
+  const gstData = (data as { gstData?: Record<string, unknown> }).gstData;
   
   return `
     <!DOCTYPE html>
@@ -1448,14 +1474,14 @@ function generateQuotationHTML(data: PDFQuotationData): string {
         ${(data as any).gstOption === 'exclude' ? `
           <div class="gst-note">
             <strong>GST Note:</strong> GST not included in the above prices. Applicable GST will be charged separately if required.
+            ${formatPlaceOfSupplyLine(gstData as { placeOfSupply?: string; placeOfSupplyCode?: string; isIntraState?: boolean })}
           </div>
         ` : ''}
         
         ${((data as any).gstOption === 'include' && data.totalTax > 0) ? `
           <div class="gst-note">
             <strong>GST Note:</strong> Prices include GST.
-            ${(data as any).gstData?.placeOfSupply ? `<br />Place of Supply: ${(data as any).gstData.placeOfSupply} (State Code: ${(data as any).gstData.placeOfSupplyCode || '29'})` : ''}
-            ${(data as any).gstData?.isIntraState ? '<br />GST Type: Intra-state (CGST + SGST)' : ((data as any).gstData ? '<br />GST Type: Inter-state (IGST)' : '')}
+            ${formatPlaceOfSupplyLine(gstData as { placeOfSupply?: string; placeOfSupplyCode?: string; isIntraState?: boolean })}
           </div>
         ` : ''}
         

@@ -10,6 +10,16 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Plus, Trash2, Download, Edit, X, FileText, Save } from 'lucide-react';
 import { toast } from 'sonner';
 import { Bill, BillItem, CompanyInfo, Customer } from '@/types';
+import {
+  getCompanyStateCode,
+  getStateCodeFromGstin,
+  getStateNameByCode,
+  INDIAN_GST_STATES,
+  isIntraStateSupply,
+  normalizeGstStateCode,
+  preparePlaceOfSupplyForSave,
+  resolvePlaceOfSupply,
+} from '@/lib/indian-state-codes';
 import { Checkbox } from '@/components/ui/checkbox';
 
 // Helper function to convert number to words
@@ -202,9 +212,29 @@ export default function TaxInvoiceGenerator({ customer, onPrint, onTaxInvoiceSav
   const [newTerm, setNewTerm] = useState('');
   const [isEditingNotes, setIsEditingNotes] = useState(false);
   
-  // GST-specific state
-  const [placeOfSupply, setPlaceOfSupply] = useState(customerAddress.state || 'Karnataka');
-  const [placeOfSupplyCode, setPlaceOfSupplyCode] = useState('29'); // Karnataka state code
+  // GST-specific state (all Indian states / UTs)
+  const initialPos = resolvePlaceOfSupply({
+    customerState: customerAddress.state,
+    customerGstin: customerGst,
+    defaultStateCode: getCompanyStateCode(defaultCompanyInfo),
+  });
+  const [placeOfSupply, setPlaceOfSupply] = useState(initialPos.name);
+  const [placeOfSupplyCode, setPlaceOfSupplyCode] = useState(initialPos.code);
+
+  const companyStateCode = getCompanyStateCode(company);
+
+  const handlePlaceOfSupplyCodeChange = (value: string) => {
+    const code = normalizeGstStateCode(value);
+    setPlaceOfSupplyCode(code);
+    const stateName = getStateNameByCode(code);
+    if (stateName) setPlaceOfSupply(stateName);
+  };
+
+  const handlePlaceOfSupplySelect = (code: string) => {
+    setPlaceOfSupplyCode(code);
+    const stateName = getStateNameByCode(code);
+    if (stateName) setPlaceOfSupply(stateName);
+  };
   const [reverseCharge, setReverseCharge] = useState(false);
   const [eWayBillNo, setEWayBillNo] = useState('');
   const [transportMode, setTransportMode] = useState('');
@@ -289,6 +319,17 @@ export default function TaxInvoiceGenerator({ customer, onPrint, onTaxInvoiceSav
     }
   });
 
+  // Place of supply follows customer GSTIN state code when GSTIN is entered/updated
+  useEffect(() => {
+    const code = getStateCodeFromGstin(editableCustomer.gst);
+    if (!code) return;
+    const name = getStateNameByCode(code);
+    if (name) {
+      setPlaceOfSupplyCode(code);
+      setPlaceOfSupply(name);
+    }
+  }, [editableCustomer.gst]);
+
   // Calculate totals with GST (after discounts)
   const subtotal = items.reduce((sum, item) => {
     const baseAmount = item.quantity * item.unitPrice;
@@ -298,8 +339,13 @@ export default function TaxInvoiceGenerator({ customer, onPrint, onTaxInvoiceSav
   const totalDiscount = items.reduce((sum, item) => sum + ((item as any).discount || 0), 0);
   const totalTax = items.reduce((sum, item) => sum + item.taxAmount, 0);
   
-  // Determine if intra-state (same state) or inter-state (different state)
-  const isIntraState = placeOfSupply === company.state;
+  // Intra-state = same GST state code as registered business (Karnataka 29)
+  const isIntraState = isIntraStateSupply(
+    companyStateCode,
+    placeOfSupplyCode,
+    company.state,
+    placeOfSupply
+  );
   
   // Calculate GST breakup by rate (after discounts)
   const calculateGSTBreakup = () => {
@@ -471,6 +517,23 @@ export default function TaxInvoiceGenerator({ customer, onPrint, onTaxInvoiceSav
       return;
     }
 
+    const posForSave = preparePlaceOfSupplyForSave({
+      placeName: placeOfSupply,
+      placeCode: placeOfSupplyCode,
+      supplierStateCode: companyStateCode,
+      supplierStateName: company.state,
+    });
+
+    if (!posForSave.isValid) {
+      toast.error('Please select a valid place of supply (pick a state from the list or enter a 2-digit GST state code).');
+      return;
+    }
+
+    const saveIsIntraState = posForSave.isIntraState;
+    const saveTaxSplit = saveIsIntraState
+      ? { cgst: totalTax / 2, sgst: totalTax / 2, igst: 0 }
+      : { cgst: 0, sgst: 0, igst: totalTax };
+
     setIsSaving(true);
 
     try {
@@ -525,9 +588,9 @@ export default function TaxInvoiceGenerator({ customer, onPrint, onTaxInvoiceSav
         customer_gstin: editableCustomer.gst || null,
         company_info: company,
         items: items,
-        place_of_supply: placeOfSupply || 'Karnataka',
-        place_of_supply_code: placeOfSupplyCode || '29',
-        is_intra_state: isIntraState,
+        place_of_supply: posForSave.name,
+        place_of_supply_code: posForSave.code,
+        is_intra_state: saveIsIntraState,
         reverse_charge: reverseCharge || false,
         e_way_bill_no: eWayBillNo || null,
         transport_mode: transportMode || null,
@@ -536,9 +599,9 @@ export default function TaxInvoiceGenerator({ customer, onPrint, onTaxInvoiceSav
         total_discount: totalDiscount || 0,
         service_charge: serviceCharge || 0,
         total_tax: totalTax || 0,
-        cgst: taxSplit.cgst || 0,
-        sgst: taxSplit.sgst || 0,
-        igst: taxSplit.igst || 0,
+        cgst: saveTaxSplit.cgst || 0,
+        sgst: saveTaxSplit.sgst || 0,
+        igst: saveTaxSplit.igst || 0,
         round_off: finalRoundOff || 0,
         total_amount: totalAmount || 0,
         gst_breakup: gstBreakup || {},
@@ -548,7 +611,10 @@ export default function TaxInvoiceGenerator({ customer, onPrint, onTaxInvoiceSav
           poNumberRequired,
           paymentDueDate,
           deliveryAddress: showDeliveryAddress ? deliveryAddress : null,
-          totalDiscount
+          totalDiscount,
+          companyStateCode,
+          placeOfSupply: posForSave.name,
+          placeOfSupplyCode: posForSave.code,
         },
         bank_details: bankDetails || {},
         notes: notesArray,
@@ -556,7 +622,7 @@ export default function TaxInvoiceGenerator({ customer, onPrint, onTaxInvoiceSav
         validity_note: validityNote || null,
         service_type: customerServiceType || 'RO'
       });
-      
+
       if (saveError) {
         console.error('Database save error details:', {
           error: saveError,
@@ -567,6 +633,10 @@ export default function TaxInvoiceGenerator({ customer, onPrint, onTaxInvoiceSav
         });
         throw new Error(saveError.message || saveError.details || 'Failed to save invoice to database');
       }
+
+      // Keep form in sync with normalized values written to the DB
+      setPlaceOfSupply(posForSave.name);
+      setPlaceOfSupplyCode(posForSave.code);
       
       // Also save to localStorage as backup with month/year pattern
       const now = new Date();
@@ -653,6 +723,7 @@ export default function TaxInvoiceGenerator({ customer, onPrint, onTaxInvoiceSav
     (bill as any).gstData = {
       placeOfSupply,
       placeOfSupplyCode,
+      companyStateCode,
       isIntraState,
       gstBreakup,
       taxSplit,
@@ -768,17 +839,48 @@ export default function TaxInvoiceGenerator({ customer, onPrint, onTaxInvoiceSav
                     className="mt-1"
                   />
               </div>
+              <div className="sm:col-span-2">
+                <Label htmlFor="placeOfSupplySelect">Place of Supply (India)</Label>
+                <Select
+                  value={placeOfSupplyCode || undefined}
+                  onValueChange={handlePlaceOfSupplySelect}
+                >
+                  <SelectTrigger id="placeOfSupplySelect">
+                    <SelectValue placeholder="Select state / UT" />
+                  </SelectTrigger>
+                  <SelectContent className="max-h-72">
+                    {INDIAN_GST_STATES.map(({ code, name }) => (
+                      <SelectItem key={code} value={code}>
+                        {code} — {name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <p className="text-xs text-gray-500 mt-1">
+                  Supplier: {company.state} ({companyStateCode}).{' '}
+                  {isIntraState ? 'Intra-state — CGST + SGST' : 'Inter-state — IGST'}
+                </p>
+              </div>
               <div>
-                <Label htmlFor="placeOfSupply">Place of Supply (State)</Label>
+                <Label htmlFor="placeOfSupplyCode">State Code</Label>
+                <Input
+                  id="placeOfSupplyCode"
+                  value={placeOfSupplyCode}
+                  onChange={(e) => handlePlaceOfSupplyCodeChange(e.target.value)}
+                  placeholder="e.g. 27"
+                  inputMode="numeric"
+                  maxLength={2}
+                />
+              </div>
+              <div>
+                <Label htmlFor="placeOfSupply">State Name</Label>
                 <Input
                   id="placeOfSupply"
                   value={placeOfSupply}
                   onChange={(e) => setPlaceOfSupply(e.target.value)}
-                  placeholder="Karnataka"
+                  placeholder="State name"
                 />
-                <p className="text-xs text-gray-500 mt-1">
-                  {isIntraState ? 'Intra-state (CGST + SGST)' : 'Inter-state (IGST)'}
-                </p>
+                <p className="text-xs text-gray-500 mt-1">Editable after auto-fill from code or GSTIN.</p>
               </div>
               <div className="flex items-center space-x-2 pt-6">
                 <input

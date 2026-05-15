@@ -31,6 +31,7 @@ import { db } from '@/lib/supabase';
 import { toast } from 'sonner';
 import { generateTaxInvoicePDF, generateCombinedTaxInvoicePDF } from '@/lib/tax-invoice-pdf-generator';
 import { exportGSTInvoicesToCSV, exportGSTInvoicesToExcel } from '@/lib/gst-export';
+import { getCompanyStateCode } from '@/lib/indian-state-codes';
 import { Bill, CompanyInfo, BillItem } from '@/types';
 
 interface TaxInvoice {
@@ -264,6 +265,7 @@ export default function GSTInvoicesPage() {
     (bill as any).gstData = {
       placeOfSupply: invoice.place_of_supply,
       placeOfSupplyCode: invoice.place_of_supply_code,
+      companyStateCode: getCompanyStateCode(invoice.company_info),
       isIntraState: invoice.is_intra_state,
       gstBreakup: invoice.gst_breakup,
       taxSplit: {
@@ -573,6 +575,7 @@ export default function GSTInvoicesPage() {
         (bill as any).gstData = {
           placeOfSupply: invoice.place_of_supply,
           placeOfSupplyCode: invoice.place_of_supply_code,
+          companyStateCode: getCompanyStateCode(invoice.company_info),
           isIntraState: invoice.is_intra_state,
           gstBreakup: invoice.gst_breakup,
           taxSplit: {

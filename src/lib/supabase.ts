@@ -2560,9 +2560,11 @@ export const db = {
           customer_gstin: invoice.customer_gstin,
           company_info: invoice.company_info,
           items: invoice.items,
-          place_of_supply: invoice.place_of_supply,
-          place_of_supply_code: invoice.place_of_supply_code,
-          is_intra_state: invoice.is_intra_state,
+          place_of_supply: invoice.place_of_supply?.trim() || null,
+          place_of_supply_code: invoice.place_of_supply_code
+            ? String(invoice.place_of_supply_code).padStart(2, '0').slice(-2)
+            : null,
+          is_intra_state: Boolean(invoice.is_intra_state),
           reverse_charge: invoice.reverse_charge || false,
           e_way_bill_no: invoice.e_way_bill_no,
           transport_mode: invoice.transport_mode,

@@ -1,6 +1,7 @@
 // Tax Invoice PDF Generation utility
 // Based on bill PDF generator but with GST breakdown
 
+import { getCompanyStateCode } from './indian-state-codes';
 import { sanitizeForTemplate } from './sanitize';
 
 // Helper function to convert number to words
@@ -99,6 +100,7 @@ export interface PDFTaxInvoiceData {
     roundOff?: number;
     customerGstRequired?: boolean;
     placeOfSupplyCode?: string;
+    companyStateCode?: string;
   };
   invoiceDetails?: {
     invoiceType?: 'B2B' | 'B2C';
@@ -764,7 +766,7 @@ function createTaxInvoiceContent(data: PDFTaxInvoiceData): string {
           <div><strong>TAX INVOICE</strong> ${(data as any).invoiceDetails?.invoiceType ? `<span style="font-size: 12px; margin-left: 10px; padding: 2px 8px; background: #e5e7eb; border-radius: 4px;">${(data as any).invoiceDetails.invoiceType}</span>` : ''}</div>
           <div><strong>${data.company.name}</strong></div>
           <div>${data.company.address}, ${data.company.city} - ${data.company.pincode}</div>
-          <div>${data.company.state} (State Code: ${data.gstData?.placeOfSupplyCode || '29'})</div>
+          <div>${data.company.state} (State Code: ${data.gstData?.companyStateCode || getCompanyStateCode(data.company)})</div>
           <div>Phone: ${data.company.phone} | Email: ${data.company.email}</div>
           <div><strong>GSTIN:</strong> ${data.company.gstNumber} | <strong>PAN:</strong> ${data.company.panNumber}</div>
           ${data.company.website ? `<div>Website: ${data.company.website}</div>` : ''}
@@ -794,7 +796,7 @@ function createTaxInvoiceContent(data: PDFTaxInvoiceData): string {
             <div><strong>Invoice Number:</strong> ${data.billNumber}</div>
             <div><strong>Invoice Date:</strong> ${new Date(data.billDate).toLocaleDateString('en-IN', { day: '2-digit', month: '2-digit', year: 'numeric' })}</div>
             ${(data as any).invoiceDetails?.poNumber ? `<div><strong>PO Number / Work Order Number:</strong> ${(data as any).invoiceDetails.poNumber} ${(data as any).invoiceDetails?.poNumberRequired ? '<span style="color: #dc2626; font-size: 11px;">(Required for Government)</span>' : ''}</div>` : ''}
-            ${data.gstData?.placeOfSupply ? `<div><strong>Place of Supply:</strong> ${data.gstData.placeOfSupply} (State Code: ${data.gstData.placeOfSupplyCode || '29'})</div>` : ''}
+            ${data.gstData?.placeOfSupply ? `<div><strong>Place of Supply:</strong> ${data.gstData.placeOfSupply} (State Code: ${data.gstData.placeOfSupplyCode || '—'})</div>` : ''}
             ${(data as any).invoiceDetails?.paymentDueDate ? `<div><strong>Payment Due Date:</strong> ${new Date((data as any).invoiceDetails.paymentDueDate).toLocaleDateString('en-IN', { day: '2-digit', month: '2-digit', year: 'numeric' })}</div>` : ''}
             ${data.gstData?.reverseCharge ? `<div><strong>Reverse Charge:</strong> Yes</div>` : ''}
             ${data.gstData?.eWayBillNo ? `<div><strong>E-Way Bill No:</strong> ${data.gstData.eWayBillNo}</div>` : ''}

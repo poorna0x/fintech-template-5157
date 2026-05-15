@@ -15,6 +15,16 @@ import {
 import { Plus, Trash2, Download, Edit, X, FileText } from 'lucide-react';
 import { toast } from 'sonner';
 import { Bill, BillItem, CompanyInfo, Customer } from '@/types';
+import {
+  getCompanyStateCode,
+  getStateCodeFromGstin,
+  getStateNameByCode,
+  INDIAN_GST_STATES,
+  isIntraStateSupply,
+  normalizeGstStateCode,
+  preparePlaceOfSupplyForSave,
+  resolvePlaceOfSupply,
+} from '@/lib/indian-state-codes';
 
 interface QuotationGeneratorProps {
   customer?: Customer;
@@ -95,9 +105,29 @@ export default function QuotationGenerator({ customer, onPrint }: QuotationGener
   const showGST = gstOption !== 'normal';
   
   // GST-specific state
-  const [placeOfSupply, setPlaceOfSupply] = useState(customerAddress.state || '');
-  const [placeOfSupplyCode, setPlaceOfSupplyCode] = useState('');
-  
+  const initialPos = resolvePlaceOfSupply({
+    customerState: customerAddress.state,
+    customerGstin: customerGst,
+    defaultStateCode: getCompanyStateCode(defaultCompanyInfo),
+  });
+  const [placeOfSupply, setPlaceOfSupply] = useState(initialPos.name);
+  const [placeOfSupplyCode, setPlaceOfSupplyCode] = useState(initialPos.code);
+
+  const companyStateCode = getCompanyStateCode(defaultCompanyInfo);
+
+  const handlePlaceOfSupplyCodeChange = (value: string) => {
+    const code = normalizeGstStateCode(value);
+    setPlaceOfSupplyCode(code);
+    const stateName = getStateNameByCode(code);
+    if (stateName) setPlaceOfSupply(stateName);
+  };
+
+  const handlePlaceOfSupplySelect = (code: string) => {
+    setPlaceOfSupplyCode(code);
+    const stateName = getStateNameByCode(code);
+    if (stateName) setPlaceOfSupply(stateName);
+  };
+
   // Customer editing state
   const [isEditingCustomer, setIsEditingCustomer] = useState(false);
   const [editableCustomer, setEditableCustomer] = useState({
@@ -130,6 +160,17 @@ export default function QuotationGenerator({ customer, onPrint }: QuotationGener
       }
     });
   }, [customerName, customerPhone, customerEmail, customerGst, customerAddress]);
+
+  // Place of supply from customer GSTIN when available
+  useEffect(() => {
+    const code = getStateCodeFromGstin(editableCustomer.gst);
+    if (!code) return;
+    const name = getStateNameByCode(code);
+    if (name) {
+      setPlaceOfSupplyCode(code);
+      setPlaceOfSupply(name);
+    }
+  }, [editableCustomer.gst]);
 
   // Generate quotation number
   useEffect(() => {
@@ -265,7 +306,15 @@ export default function QuotationGenerator({ customer, onPrint }: QuotationGener
   const totalTax = gstOption === 'include' ? items.reduce((sum, item) => sum + item.taxAmount, 0) : 0;
   
   // Determine if intra-state (same state) or inter-state (different state)
-  const isIntraState = placeOfSupply === defaultCompanyInfo.state;
+  const isIntraState = isIntraStateSupply(
+    companyStateCode,
+    placeOfSupplyCode,
+    defaultCompanyInfo.state,
+    placeOfSupply
+  );
+
+  const primaryGstRate =
+    items.find((item) => item.taxRate > 0)?.taxRate ?? 18;
   
   // Calculate CGST, SGST (for intra-state) or IGST (for inter-state)
   const calculateTaxSplit = () => {
@@ -301,6 +350,29 @@ export default function QuotationGenerator({ customer, onPrint }: QuotationGener
     : subtotal + serviceCharge;
 
   const handlePrint = (action: 'print' | 'pdf' = 'print') => {
+    let posForOutput = preparePlaceOfSupplyForSave({
+      placeName: placeOfSupply,
+      placeCode: placeOfSupplyCode,
+      supplierStateCode: companyStateCode,
+      supplierStateName: defaultCompanyInfo.state,
+    });
+
+    if (gstOption !== 'normal' && !posForOutput.isValid) {
+      toast.error('Please select a valid place of supply (pick a state from the list or enter a 2-digit GST state code).');
+      return;
+    }
+
+    const outputIsIntraState = posForOutput.isIntraState;
+    const outputTaxSplit =
+      gstOption === 'include' && totalTax > 0
+        ? outputIsIntraState
+          ? { cgst: totalTax / 2, sgst: totalTax / 2, igst: 0 }
+          : { cgst: 0, sgst: 0, igst: totalTax }
+        : { cgst: 0, sgst: 0, igst: 0 };
+
+    setPlaceOfSupply(posForOutput.name);
+    setPlaceOfSupplyCode(posForOutput.code);
+
     const quotation: Bill = {
       id: Date.now().toString(),
       billNumber: quotationNumber,
@@ -347,10 +419,12 @@ export default function QuotationGenerator({ customer, onPrint }: QuotationGener
     (quotation as any).includeGST = gstOption === 'include'; // For backward compatibility
     if (gstOption !== 'normal') {
       (quotation as any).gstData = {
-        placeOfSupply,
-        placeOfSupplyCode,
-        isIntraState,
-        taxSplit
+        placeOfSupply: posForOutput.name,
+        placeOfSupplyCode: posForOutput.code,
+        companyStateCode,
+        isIntraState: outputIsIntraState,
+        taxSplit: outputTaxSplit,
+        primaryGstRate,
       };
     }
 
@@ -480,18 +554,28 @@ export default function QuotationGenerator({ customer, onPrint }: QuotationGener
                   </div>
                 )}
               </div>
-              {gstOption === 'include' && (
+              {(gstOption === 'include' || gstOption === 'exclude') && (
                 <>
-                  <div>
-                    <Label htmlFor="placeOfSupply">Place of Supply (State)</Label>
-                    <Input
-                      id="placeOfSupply"
-                      value={placeOfSupply}
-                      onChange={(e) => setPlaceOfSupply(e.target.value)}
-                      placeholder="Karnataka"
-                    />
+                  <div className="sm:col-span-2">
+                    <Label htmlFor="placeOfSupplySelect">Place of Supply (India)</Label>
+                    <Select
+                      value={placeOfSupplyCode || undefined}
+                      onValueChange={handlePlaceOfSupplySelect}
+                    >
+                      <SelectTrigger id="placeOfSupplySelect">
+                        <SelectValue placeholder="Select state / UT" />
+                      </SelectTrigger>
+                      <SelectContent className="max-h-72">
+                        {INDIAN_GST_STATES.map(({ code, name }) => (
+                          <SelectItem key={code} value={code}>
+                            {code} — {name}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
                     <p className="text-xs text-gray-500 mt-1">
-                      {isIntraState ? 'Intra-state (CGST + SGST)' : 'Inter-state (IGST)'}
+                      Supplier: {defaultCompanyInfo.state} ({companyStateCode}).{' '}
+                      {isIntraState ? 'Intra-state — CGST + SGST' : 'Inter-state — IGST'}
                     </p>
                   </div>
                   <div>
@@ -499,9 +583,21 @@ export default function QuotationGenerator({ customer, onPrint }: QuotationGener
                     <Input
                       id="placeOfSupplyCode"
                       value={placeOfSupplyCode}
-                      onChange={(e) => setPlaceOfSupplyCode(e.target.value)}
-                      placeholder="29"
+                      onChange={(e) => handlePlaceOfSupplyCodeChange(e.target.value)}
+                      placeholder="e.g. 27"
+                      inputMode="numeric"
+                      maxLength={2}
                     />
+                  </div>
+                  <div>
+                    <Label htmlFor="placeOfSupply">State Name</Label>
+                    <Input
+                      id="placeOfSupply"
+                      value={placeOfSupply}
+                      onChange={(e) => setPlaceOfSupply(e.target.value)}
+                      placeholder="State name"
+                    />
+                    <p className="text-xs text-gray-500 mt-1">Editable after auto-fill from code or GSTIN.</p>
                   </div>
                 </>
               )}
@@ -798,17 +894,17 @@ export default function QuotationGenerator({ customer, onPrint }: QuotationGener
                 {isIntraState ? (
                   <>
                     <div className="flex justify-between">
-                      <span>CGST (9%):</span>
+                      <span>CGST ({primaryGstRate / 2}%):</span>
                       <span>₹{taxSplit.cgst.toLocaleString(undefined, { maximumFractionDigits: 2 })}</span>
                     </div>
                     <div className="flex justify-between">
-                      <span>SGST (9%):</span>
+                      <span>SGST ({primaryGstRate / 2}%):</span>
                       <span>₹{taxSplit.sgst.toLocaleString(undefined, { maximumFractionDigits: 2 })}</span>
                     </div>
                   </>
                 ) : (
                   <div className="flex justify-between">
-                    <span>IGST (18%):</span>
+                    <span>IGST ({primaryGstRate}%):</span>
                     <span>₹{taxSplit.igst.toLocaleString(undefined, { maximumFractionDigits: 2 })}</span>
                   </div>
                 )}
