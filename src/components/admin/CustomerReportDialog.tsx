@@ -8,6 +8,7 @@ import { CheckCircle } from 'lucide-react';
 import { customerNameClassName } from '@/lib/customerDisplay';
 import { getJobEquipmentDisplay } from '@/lib/adminUtils';
 import { formatCompletedWhen } from '@/lib/relativeTime';
+import { getDocumentBrandLabel, normalizeDocumentBrand } from '@/lib/service-brands';
 
 interface CustomerReportDialogProps {
   open: boolean;
@@ -262,6 +263,18 @@ const CustomerReportDialog: React.FC<CustomerReportDialogProps> = ({
                             }</span>
                           </div>
                         )}
+
+                        {(() => {
+                          const rawBrand = (job as any).service_brand ?? (job as any).serviceBrand;
+                          const brand = normalizeDocumentBrand(rawBrand);
+                          if (!brand) return null;
+                          return (
+                            <div className="flex items-center gap-2">
+                              <span className="text-sm font-medium text-gray-700 w-32">Service Brand:</span>
+                              <span className="text-sm text-gray-900">{getDocumentBrandLabel(brand)}</span>
+                            </div>
+                          );
+                        })()}
                         
                         {(() => {
                           let leadSource: string | null = null;

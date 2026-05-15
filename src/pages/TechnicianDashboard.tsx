@@ -8725,6 +8725,18 @@ const TechnicianDashboard = () => {
                                   }</span>
                                 </div>
                               )}
+
+                              {(() => {
+                                const rawBrand = (job as any).service_brand ?? (job as any).serviceBrand;
+                                const brand = normalizeServiceBrand(rawBrand);
+                                if (!brand) return null;
+                                return (
+                                  <div className="flex items-center gap-2">
+                                    <span className="text-sm font-medium text-gray-700 w-32">Service Brand:</span>
+                                    <span className="text-sm text-gray-900">{getServiceBrandLabel(brand)}</span>
+                                  </div>
+                                );
+                              })()}
                               
                               {/* Lead Source */}
                               {(() => {
