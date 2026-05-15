@@ -939,6 +939,47 @@ export const db = {
         .in('id', ids);
       return { data: data || [], error };
     },
+
+    /**
+     * Latest COMPLETED job `service_brand` per customer (batched `.in` query).
+     * Rows are ordered by completion time desc; first row per customer_id wins.
+     */
+    async getLastServiceBrandByCustomerIds(customerIds: string[]) {
+      const ids = [...new Set(customerIds.filter(Boolean))];
+      if (ids.length === 0) {
+        return { data: {} as Record<string, string | null>, error: null };
+      }
+
+      const map: Record<string, string | null> = {};
+      const CHUNK = 80;
+
+      for (let i = 0; i < ids.length; i += CHUNK) {
+        const chunk = ids.slice(i, i + CHUNK);
+        const { data, error } = await supabase
+          .from('jobs')
+          .select('customer_id, service_brand, completed_at, end_time, created_at')
+          .in('customer_id', chunk)
+          .eq('status', 'COMPLETED')
+          .not('service_brand', 'is', null)
+          .order('completed_at', { ascending: false, nullsFirst: false })
+          .order('end_time', { ascending: false, nullsFirst: false })
+          .order('created_at', { ascending: false });
+
+        if (error) return { data: map, error };
+
+        for (const row of data || []) {
+          const cid = (row as { customer_id?: string | null }).customer_id;
+          if (!cid || cid in map) continue;
+          map[cid] = (row as { service_brand?: string | null }).service_brand ?? null;
+        }
+      }
+
+      for (const id of ids) {
+        if (!(id in map)) map[id] = null;
+      }
+
+      return { data: map, error: null };
+    },
     
     async getAll(limit?: number, includeCustomer?: boolean) {
       let query;

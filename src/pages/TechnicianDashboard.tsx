@@ -663,45 +663,23 @@ const TechnicianDashboard = () => {
     const missingIds = uniqueIds.filter((id) => !loadedLastBrandCustomerIdsRef.current.has(id));
     if (missingIds.length === 0) return;
 
-    // Simple concurrency pool to avoid flooding the DB with parallel requests.
-    const concurrency = 4;
-    let cursor = 0;
+    missingIds.forEach((id) => loadedLastBrandCustomerIdsRef.current.add(id));
 
-    const results: Record<string, ServiceBrand | null> = {};
-
-    const worker = async () => {
-      while (cursor < missingIds.length) {
-        const customerId = missingIds[cursor++];
-        // Mark as loaded to avoid repeated queries if the component re-renders quickly.
-        loadedLastBrandCustomerIdsRef.current.add(customerId);
-
-        try {
-          const { data, error } = await supabase
-            .from('jobs')
-            .select('service_brand')
-            .eq('customer_id', customerId)
-            .eq('status', 'COMPLETED')
-            .not('service_brand', 'is', null)
-            .order('completed_at', { ascending: false, nullsFirst: false })
-            .order('end_time', { ascending: false, nullsFirst: false })
-            .order('created_at', { ascending: false })
-            .limit(1);
-
-          if (error) throw error;
-
-          const latest = data?.[0] as any;
-          const normalized = normalizeServiceBrand(latest?.service_brand);
-          results[customerId] = normalized;
-        } catch {
-          // Keep it as null on failure; UI will just not show the badge.
-          results[customerId] = null;
-        }
+    try {
+      const { data: brandByCustomer, error } = await db.jobs.getLastServiceBrandByCustomerIds(missingIds);
+      if (error) {
+        console.warn('[TechnicianDashboard] Failed to load last service brands:', error);
+        return;
       }
-    };
 
-    await Promise.all(Array.from({ length: concurrency }, () => worker()));
-
-    setCustomerLastServiceBrand((prev) => ({ ...prev, ...results }));
+      const results: Record<string, ServiceBrand | null> = {};
+      for (const customerId of missingIds) {
+        results[customerId] = normalizeServiceBrand(brandByCustomer?.[customerId]);
+      }
+      setCustomerLastServiceBrand((prev) => ({ ...prev, ...results }));
+    } catch (err) {
+      console.warn('[TechnicianDashboard] Error loading last service brands:', err);
+    }
   }, []);
 
   const loadAssignedJobs = useCallback(async (retryCount = 0) => {
@@ -2688,24 +2666,16 @@ const TechnicianDashboard = () => {
       setIsLoadingServiceBrand(true);
       (async () => {
         try {
-          const { data, error } = await supabase
-            .from('jobs')
-            .select('service_brand, completed_at, end_time, created_at')
-            .eq('customer_id', customerId)
-            .eq('status', 'COMPLETED')
-            .not('service_brand', 'is', null)
-            .order('completed_at', { ascending: false, nullsFirst: false })
-            .order('end_time', { ascending: false, nullsFirst: false })
-            .order('created_at', { ascending: false })
-            .limit(1);
+          const { data: brandByCustomer, error } = await db.jobs.getLastServiceBrandByCustomerIds([
+            customerId,
+          ]);
 
           setIsLoadingServiceBrand(false);
           if (error) {
             console.warn('[TechnicianDashboard] Failed to load last service brand:', error);
             return;
           }
-          const latest = data?.[0];
-          const normalized = normalizeServiceBrand((latest as any)?.service_brand);
+          const normalized = normalizeServiceBrand(brandByCustomer?.[customerId]);
           if (normalized) {
             setLastServiceBrand(normalized);
             setServiceBrand(normalized);
