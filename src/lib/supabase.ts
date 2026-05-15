@@ -3994,6 +3994,24 @@ export const db = {
       return { data, error };
     },
 
+    /** Batch update main stock quantities — no returning rows (low egress). */
+    async bulkUpdateQuantities(updates: Array<{ id: string; quantity: number }>) {
+      if (updates.length === 0) return { error: null };
+      // Partial upsert fails (400): inventory requires product_name/price on insert.
+      const PARALLEL_CHUNK = 25;
+      for (let i = 0; i < updates.length; i += PARALLEL_CHUNK) {
+        const chunk = updates.slice(i, i + PARALLEL_CHUNK);
+        const results = await Promise.all(
+          chunk.map(({ id, quantity }) =>
+            supabase.from('inventory').update({ quantity }).eq('id', id)
+          )
+        );
+        const failed = results.find((r) => r.error);
+        if (failed?.error) return { error: failed.error };
+      }
+      return { error: null };
+    },
+
     async delete(id: string) {
       const { error } = await supabase
         .from('inventory')
@@ -4236,7 +4254,43 @@ export const db = {
         .single();
       
       return { data, error };
-    }
+    },
+
+    /** Minimal rows for assign flows — no joins (low egress). */
+    async getAssignmentKeys(technicianIds: string[], inventoryIds: string[]) {
+      if (technicianIds.length === 0 || inventoryIds.length === 0) {
+        return { data: [] as Array<{ id: string; technician_id: string; inventory_id: string; quantity: number }>, error: null };
+      }
+      const IN_CHUNK = 150;
+      const rows: Array<{ id: string; technician_id: string; inventory_id: string; quantity: number }> = [];
+      for (let i = 0; i < inventoryIds.length; i += IN_CHUNK) {
+        const invChunk = inventoryIds.slice(i, i + IN_CHUNK);
+        const { data, error } = await supabase
+          .from('technician_inventory')
+          .select('id, technician_id, inventory_id, quantity')
+          .in('technician_id', technicianIds)
+          .in('inventory_id', invChunk);
+        if (error) return { data: null, error };
+        if (data?.length) rows.push(...data);
+      }
+      return { data: rows, error: null };
+    },
+
+    /** Batch upsert assignments — no returning rows (low egress). */
+    async bulkUpsertAssignments(
+      items: Array<{ technician_id: string; inventory_id: string; quantity: number }>
+    ) {
+      if (items.length === 0) return { error: null };
+      const UPSERT_CHUNK = 500;
+      for (let i = 0; i < items.length; i += UPSERT_CHUNK) {
+        const chunk = items.slice(i, i + UPSERT_CHUNK);
+        const { error } = await supabase
+          .from('technician_inventory')
+          .upsert(chunk, { onConflict: 'technician_id,inventory_id' });
+        if (error) return { error };
+      }
+      return { error: null };
+    },
   },
 
   // Job Parts Used operations
