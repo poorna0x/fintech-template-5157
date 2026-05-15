@@ -13,6 +13,7 @@ const TAG = 'div';
 export function resolvePdfDocumentBrand(data: {
   documentBrand?: unknown;
   serviceBrand?: unknown;
+  company?: { email?: string; website?: string; name?: string };
 }): DocumentBrand {
   return resolveDocumentBrandFromData(data);
 }

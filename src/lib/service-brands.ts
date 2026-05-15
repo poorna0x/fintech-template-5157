@@ -69,13 +69,36 @@ export const HYDROGEN_BANK_DETAILS = {
   note: 'Account Type: Current Account. Please share the payment confirmation once the transfer is complete.',
 };
 
+/** Fallback when documentBrand was not stored (e.g. older print paths). */
+export function inferDocumentBrandFromCompany(
+  company?: Pick<CompanyInfo, 'email' | 'website' | 'name'> | null
+): DocumentBrand | null {
+  if (!company) return null;
+  const email = (company.email || '').toLowerCase();
+  const website = (company.website || '').toLowerCase();
+  const name = (company.name || '').toLowerCase();
+  if (
+    email.includes('elevenro') ||
+    website.includes('elevenro') ||
+    /\beleven\s*ro\b/.test(name)
+  ) {
+    return 'elevenro';
+  }
+  if (email.includes('hydrogenro') || website.includes('hydrogenro')) {
+    return 'hydrogenro';
+  }
+  return null;
+}
+
 export function resolveDocumentBrandFromData(data: {
   documentBrand?: unknown;
   serviceBrand?: unknown;
+  company?: Pick<CompanyInfo, 'email' | 'website' | 'name'>;
 }): DocumentBrand {
   return (
     normalizeDocumentBrand(data.documentBrand) ||
     normalizeDocumentBrand(data.serviceBrand) ||
+    inferDocumentBrandFromCompany(data.company) ||
     'hydrogenro'
   );
 }
