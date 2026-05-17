@@ -87,11 +87,23 @@ CREATE POLICY technicians_public_id_card
 
 -- ---------------------------------------------------------------------------
 -- Column-level: password hash only via service role (Netlify functions)
+-- Supabase grants table SELECT to anon by default — revoke all, grant ID-card cols only.
 -- ---------------------------------------------------------------------------
 
-REVOKE SELECT (password) ON public.technicians FROM anon, authenticated;
-REVOKE INSERT (password) ON public.technicians FROM anon, authenticated;
-REVOKE UPDATE (password) ON public.technicians FROM anon, authenticated;
+REVOKE ALL ON TABLE public.technicians FROM anon;
+GRANT SELECT (
+  id,
+  full_name,
+  employee_id,
+  phone,
+  email,
+  photo,
+  status
+) ON TABLE public.technicians TO anon;
+
+REVOKE SELECT (password) ON TABLE public.technicians FROM authenticated;
+REVOKE INSERT (password) ON TABLE public.technicians FROM authenticated;
+REVOKE UPDATE (password) ON TABLE public.technicians FROM authenticated;
 
 -- ---------------------------------------------------------------------------
 -- Login routing helper (no password exposure)

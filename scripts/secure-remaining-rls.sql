@@ -65,6 +65,7 @@ BEGIN
         OR policyname LIKE 'follow_ups_%'
         OR policyname LIKE 'Allow anon%'
         OR policyname LIKE 'Allow authenticated%'
+        OR policyname LIKE 'todos_%_anon'
       )
   LOOP
     EXECUTE format('DROP POLICY IF EXISTS %I ON %I.%I', r.policyname, r.schemaname, r.tablename);

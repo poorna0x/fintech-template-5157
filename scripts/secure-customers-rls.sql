@@ -9,6 +9,9 @@
 --
 -- AFTER running: anon can no longer SELECT/UPDATE/DELETE customers directly.
 -- Public booking uses SECURITY DEFINER RPCs below.
+--
+-- OPTIONAL verify: scripts/verify-all-rls.sql
+-- Then run remaining secure-* scripts and patch-legacy-anon-policies.sql if needed.
 
 -- ---------------------------------------------------------------------------
 -- Helpers
@@ -56,8 +59,14 @@ CREATE OR REPLACE FUNCTION public.is_admin_user()
 RETURNS boolean
 LANGUAGE sql
 STABLE
+SECURITY DEFINER
+SET search_path = public
 AS $$
-  SELECT public.auth_user_role() IS DISTINCT FROM 'technician';
+  SELECT auth.uid() IS NOT NULL
+    AND NOT EXISTS (
+      SELECT 1 FROM public.technicians t WHERE t.id = auth.uid()
+    )
+    AND public.auth_user_role() IS DISTINCT FROM 'technician';
 $$;
 
 CREATE OR REPLACE FUNCTION public.is_technician_assigned_to_customer(p_customer_id uuid)
