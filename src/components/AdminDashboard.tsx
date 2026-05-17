@@ -133,7 +133,10 @@ import DenyJobDialog from './admin/DenyJobDialog';
 import ReassignJobDialog from './admin/ReassignJobDialog';
 import EditCompletedJobDialog from './admin/EditCompletedJobDialog';
 import WhatsAppDialog from './admin/WhatsAppDialog';
-import { broadcastTechnicianJobListRefresh } from '@/lib/technicianJobListSync';
+import {
+  broadcastTechnicianJobListRefresh,
+  broadcastTechnicianJobListRefreshForJob,
+} from '@/lib/technicianJobListSync';
 
 const ZERO_COMMISSION_EMPLOYEE_ID = 'TECH851703400';
 
@@ -7269,13 +7272,14 @@ const AdminDashboard = () => {
     if (!jobToDelete) return;
     
     try {
+      broadcastTechnicianJobListRefreshForJob(jobToDelete);
       const { error } = await db.jobs.delete(jobToDelete.id);
       
       if (error) {
         const msg = error.message || 'Failed to delete job';
         if (error.code === '409' || /409|conflict|foreign key|23503/i.test(msg)) {
           throw new Error(
-            'Could not delete this job (linked records or permissions). Run scripts/delete-job-admin-rpc.sql in Supabase if this persists.'
+            'Could not delete this job. Re-run scripts/delete-job-admin-rpc.sql and scripts/technician-job-sync-realtime.sql in Supabase SQL Editor.'
           );
         }
         throw new Error(msg);

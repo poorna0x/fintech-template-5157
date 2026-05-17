@@ -67,7 +67,9 @@ BEGIN
   IF TG_OP = 'INSERT' THEN
     notify := public.job_affected_technician_ids(NEW.assigned_technician_id, NEW.team_members);
   ELSIF TG_OP = 'DELETE' THEN
-    notify := public.job_affected_technician_ids(OLD.assigned_technician_id, OLD.team_members);
+    -- Do not INSERT sync rows on DELETE — job row is gone and job_id FK would 409 the delete.
+    -- Technicians refresh via admin broadcast or poll.
+    RETURN OLD;
   ELSE
     IF OLD.assigned_technician_id IS NOT DISTINCT FROM NEW.assigned_technician_id
        AND OLD.team_members IS NOT DISTINCT FROM NEW.team_members THEN
