@@ -52,6 +52,63 @@ import { AddReminderDialog } from '@/components/reminders/AddReminderDialog';
 import { SettingsPendingPaymentsDialogV2 } from '@/components/reminders/PendingPaymentsDialogV2';
 import QRCodeStyling from 'qr-code-styling';
 
+/** PostgREST error when a table was never created or was dropped (e.g. booking_abandonments). */
+const isMissingTableError = (error: { message?: string; code?: string } | null): boolean => {
+  if (!error) return false;
+  const msg = error.message ?? '';
+  return (
+    error.code === 'PGRST205' ||
+    /could not find the table/i.test(msg) ||
+    /schema cache/i.test(msg)
+  );
+};
+
+/** Tables included in Settings → Data Export (keep in sync with handleDownloadAllData). */
+const DATABASE_EXPORT_TABLES: {
+  name: string;
+  orderBy: string;
+  label: string;
+  /** If true, skip silently when the table is not in Supabase (optional migration). */
+  optional?: boolean;
+}[] = [
+  { name: 'admin_todos', orderBy: 'created_at', label: 'Admin Todos' },
+  { name: 'admin_users', orderBy: 'id', label: 'Admin Users' },
+  { name: 'amc_contracts', orderBy: 'created_at', label: 'AMC Contracts' },
+  { name: 'business_expenses', orderBy: 'expense_date', label: 'Business Expenses' },
+  { name: 'call_history', orderBy: 'contacted_at', label: 'Call History' },
+  { name: 'common_qr_codes', orderBy: 'created_at', label: 'Common QR Codes' },
+  { name: 'customers', orderBy: 'created_at', label: 'Customers' },
+  { name: 'follow_ups', orderBy: 'created_at', label: 'Follow-ups' },
+  { name: 'inventory', orderBy: 'created_at', label: 'Inventory' },
+  { name: 'inventory_bundle_items', orderBy: 'id', label: 'Inventory Bundle Items' },
+  { name: 'inventory_bundles', orderBy: 'updated_at', label: 'Inventory Bundles' },
+  { name: 'job_assignment_requests', orderBy: 'created_at', label: 'Job Assignment Requests' },
+  { name: 'job_parts_used', orderBy: 'created_at', label: 'Job Parts Used' },
+  { name: 'jobs', orderBy: 'created_at', label: 'Jobs' },
+  { name: 'notifications', orderBy: 'created_at', label: 'Notifications' },
+  { name: 'other_expenses', orderBy: 'expense_date', label: 'Other Expenses' },
+  { name: 'parts_inventory', orderBy: 'id', label: 'Parts Inventory' },
+  { name: 'product_qr_codes', orderBy: 'created_at', label: 'Product QR Codes' },
+  { name: 'reminders', orderBy: 'reminder_at', label: 'Reminders' },
+  { name: 'service_areas', orderBy: 'id', label: 'Service Areas' },
+  { name: 'tax_invoices', orderBy: 'created_at', label: 'Tax Invoices' },
+  { name: 'technician_advances', orderBy: 'created_at', label: 'Technician Advances' },
+  { name: 'technician_common_qr', orderBy: 'created_at', label: 'Technician Common QR' },
+  { name: 'technician_expenses', orderBy: 'created_at', label: 'Technician Expenses' },
+  { name: 'technician_extra_commissions', orderBy: 'created_at', label: 'Technician Extra Commissions' },
+  { name: 'technician_holidays', orderBy: 'created_at', label: 'Technician Holidays' },
+  { name: 'technician_inventory', orderBy: 'created_at', label: 'Technician Inventory' },
+  {
+    name: 'technician_job_sync',
+    orderBy: 'created_at',
+    label: 'Technician Job Sync',
+    optional: true,
+  },
+  { name: 'technician_payments', orderBy: 'created_at', label: 'Technician Payments' },
+  { name: 'technicians', orderBy: 'created_at', label: 'Technicians' },
+  { name: 'website_booking_intent', orderBy: 'updated_at', label: 'Website Booking Intent' },
+];
+
 const Settings = () => {
   const { user, isAdmin, logout, authInitializing } = useAuth();
   const navigate = useNavigate();
@@ -231,6 +288,9 @@ const Settings = () => {
   const handleStartDeleteTechnician = (technician: Technician) => {
     setTechnicianToDelete(technician);
     setDeleteTechnicianStep(1);
+    setEditTechnicianDialogOpen(false);
+    setAddTechnicianDialogOpen(false);
+    setSelectedTechnician(null);
   };
 
   const handleExecuteDeleteTechnician = async () => {
@@ -1174,222 +1234,25 @@ const Settings = () => {
     try {
       const timestamp = new Date().toISOString().split('T')[0];
       const tables: { name: string; data: any[] }[] = [];
+      const failedTables: string[] = [];
+      const skippedMissingTables: string[] = [];
 
-      const { data: customers, error: customersError } = await fetchAllFromTable('customers', 'created_at');
-      if (customersError) {
-        toast.error(`Failed to fetch customers: ${customersError.message}`);
-      } else {
-        tables.push({ name: 'customers', data: customers });
-      }
-
-      const { data: jobs, error: jobsError } = await fetchAllFromTable('jobs', 'created_at');
-      if (jobsError) {
-        toast.error(`Failed to fetch jobs: ${jobsError.message}`);
-      } else {
-        tables.push({ name: 'jobs', data: jobs });
-      }
-
-      const { data: technicians, error: techniciansError } = await fetchAllFromTable('technicians', 'created_at');
-      if (techniciansError) {
-        toast.error(`Failed to fetch technicians: ${techniciansError.message}`);
-      } else {
-        tables.push({ name: 'technicians', data: technicians });
-      }
-
-      const { data: taxInvoices, error: taxInvoicesError } = await fetchAllFromTable('tax_invoices', 'created_at');
-      if (taxInvoicesError) {
-        toast.error(`Failed to fetch tax invoices: ${taxInvoicesError.message}`);
-      } else {
-        tables.push({ name: 'tax_invoices', data: taxInvoices });
-      }
-
-      const { data: technicianPayments, error: technicianPaymentsError } = await fetchAllFromTable('technician_payments', 'created_at');
-      if (technicianPaymentsError) {
-        toast.error(`Failed to fetch technician payments: ${technicianPaymentsError.message}`);
-      } else {
-        tables.push({ name: 'technician_payments', data: technicianPayments });
-      }
-
-      const { data: amcContracts, error: amcContractsError } = await fetchAllFromTable('amc_contracts', 'created_at');
-      if (amcContractsError) {
-        toast.error(`Failed to fetch AMC contracts: ${amcContractsError.message}`);
-      } else {
-        tables.push({ name: 'amc_contracts', data: amcContracts });
-      }
-
-      const { data: commonQrCodes, error: commonQrCodesError } = await fetchAllFromTable('common_qr_codes', 'created_at');
-      if (commonQrCodesError) {
-        toast.error(`Failed to fetch common QR codes: ${commonQrCodesError.message}`);
-      } else {
-        tables.push({ name: 'common_qr_codes', data: commonQrCodes });
-      }
-
-      const { data: productQrCodes, error: productQrCodesError } = await fetchAllFromTable('product_qr_codes', 'created_at');
-      if (productQrCodesError) {
-        toast.error(`Failed to fetch product QR codes: ${productQrCodesError.message}`);
-      } else {
-        tables.push({ name: 'product_qr_codes', data: productQrCodes });
-      }
-
-      const { data: jobAssignmentRequests, error: jobAssignmentRequestsError } = await fetchAllFromTable('job_assignment_requests', 'created_at');
-      if (jobAssignmentRequestsError) {
-        toast.error(`Failed to fetch job assignment requests: ${jobAssignmentRequestsError.message}`);
-      } else {
-        tables.push({ name: 'job_assignment_requests', data: jobAssignmentRequests });
-      }
-
-      const { data: technicianExpenses, error: technicianExpensesError } = await fetchAllFromTable('technician_expenses', 'created_at');
-      if (technicianExpensesError) {
-        toast.error(`Failed to fetch technician expenses: ${technicianExpensesError.message}`);
-      } else {
-        tables.push({ name: 'technician_expenses', data: technicianExpenses });
-      }
-
-      const { data: technicianAdvances, error: technicianAdvancesError } = await fetchAllFromTable('technician_advances', 'created_at');
-      if (technicianAdvancesError) {
-        toast.error(`Failed to fetch technician advances: ${technicianAdvancesError.message}`);
-      } else {
-        tables.push({ name: 'technician_advances', data: technicianAdvances });
-      }
-
-      const { data: technicianExtraCommissions, error: technicianExtraCommissionsError } = await fetchAllFromTable('technician_extra_commissions', 'created_at');
-      if (technicianExtraCommissionsError) {
-        toast.error(`Failed to fetch technician extra commissions: ${technicianExtraCommissionsError.message}`);
-      } else {
-        tables.push({ name: 'technician_extra_commissions', data: technicianExtraCommissions });
-      }
-
-      const { data: technicianHolidays, error: technicianHolidaysError } = await fetchAllFromTable('technician_holidays', 'created_at');
-      if (technicianHolidaysError) {
-        toast.error(`Failed to fetch technician holidays: ${technicianHolidaysError.message}`);
-      } else {
-        tables.push({ name: 'technician_holidays', data: technicianHolidays });
-      }
-
-      const { data: callHistory, error: callHistoryError } = await fetchAllFromTable('call_history', 'contacted_at');
-      if (callHistoryError) {
-        toast.error(`Failed to fetch call history: ${callHistoryError.message}`);
-      } else {
-        tables.push({ name: 'call_history', data: callHistory });
-      }
-
-      const { data: adminUsers, error: adminUsersError } = await fetchAllFromTable('admin_users', 'id');
-      if (adminUsersError) {
-        toast.error(`Failed to fetch admin users: ${adminUsersError.message}`);
-      } else {
-        tables.push({ name: 'admin_users', data: adminUsers });
-      }
-
-      const { data: followUps, error: followUpsError } = await fetchAllFromTable('follow_ups', 'created_at');
-      if (followUpsError) {
-        toast.error(`Failed to fetch follow-ups: ${followUpsError.message}`);
-      } else {
-        tables.push({ name: 'follow_ups', data: followUps });
-      }
-
-      const { data: notifications, error: notificationsError } = await fetchAllFromTable('notifications', 'created_at');
-      if (notificationsError) {
-        toast.error(`Failed to fetch notifications: ${notificationsError.message}`);
-      } else {
-        tables.push({ name: 'notifications', data: notifications });
-      }
-
-      const { data: partsInventory, error: partsInventoryError } = await fetchAllFromTable('parts_inventory', 'id');
-      if (partsInventoryError) {
-        toast.error(`Failed to fetch parts inventory: ${partsInventoryError.message}`);
-      } else {
-        tables.push({ name: 'parts_inventory', data: partsInventory });
-      }
-
-      const { data: serviceAreas, error: serviceAreasError } = await fetchAllFromTable('service_areas', 'id');
-      if (serviceAreasError) {
-        toast.error(`Failed to fetch service areas: ${serviceAreasError.message}`);
-      } else {
-        tables.push({ name: 'service_areas', data: serviceAreas });
-      }
-
-      const { data: businessExpenses, error: businessExpensesError } = await fetchAllFromTable('business_expenses', 'expense_date');
-      if (businessExpensesError) {
-        toast.error(`Failed to fetch business expenses: ${businessExpensesError.message}`);
-      } else {
-        tables.push({ name: 'business_expenses', data: businessExpenses });
-      }
-
-      const { data: inventory, error: inventoryError } = await fetchAllFromTable('inventory', 'created_at');
-      if (inventoryError) {
-        toast.error(`Failed to fetch inventory: ${inventoryError.message}`);
-      } else {
-        tables.push({ name: 'inventory', data: inventory });
-      }
-
-      const { data: technicianInventory, error: technicianInventoryError } = await fetchAllFromTable('technician_inventory', 'created_at');
-      if (technicianInventoryError) {
-        toast.error(`Failed to fetch technician inventory: ${technicianInventoryError.message}`);
-      } else {
-        tables.push({ name: 'technician_inventory', data: technicianInventory });
-      }
-
-      const { data: jobPartsUsed, error: jobPartsUsedError } = await fetchAllFromTable('job_parts_used', 'created_at');
-      if (jobPartsUsedError) {
-        toast.error(`Failed to fetch job parts used: ${jobPartsUsedError.message}`);
-      } else {
-        tables.push({ name: 'job_parts_used', data: jobPartsUsed });
-      }
-
-      const { data: adminTodos, error: adminTodosError } = await fetchAllFromTable('admin_todos', 'created_at');
-      if (adminTodosError) {
-        toast.error(`Failed to fetch admin todos: ${adminTodosError.message}`);
-      } else {
-        tables.push({ name: 'admin_todos', data: adminTodos });
-      }
-
-      const { data: reminders, error: remindersError } = await fetchAllFromTable('reminders', 'reminder_at');
-      if (remindersError) {
-        toast.error(`Failed to fetch reminders: ${remindersError.message}`);
-      } else {
-        tables.push({ name: 'reminders', data: reminders });
-      }
-
-      const { data: bookingAbandonments, error: bookingAbandonmentsError } = await fetchAllFromTable('booking_abandonments', 'created_at');
-      if (bookingAbandonmentsError) {
-        toast.error(`Failed to fetch booking abandonments: ${bookingAbandonmentsError.message}`);
-      } else {
-        tables.push({ name: 'booking_abandonments', data: bookingAbandonments });
-      }
-
-      const { data: websiteBookingIntent, error: websiteBookingIntentError } = await fetchAllFromTable('website_booking_intent', 'updated_at');
-      if (websiteBookingIntentError) {
-        toast.error(`Failed to fetch website booking intent: ${websiteBookingIntentError.message}`);
-      } else {
-        tables.push({ name: 'website_booking_intent', data: websiteBookingIntent });
-      }
-
-      const { data: technicianCommonQr, error: technicianCommonQrError } = await fetchAllFromTable('technician_common_qr', 'created_at');
-      if (technicianCommonQrError) {
-        toast.error(`Failed to fetch technician common QR: ${technicianCommonQrError.message}`);
-      } else {
-        tables.push({ name: 'technician_common_qr', data: technicianCommonQr });
-      }
-
-      const { data: inventoryBundles, error: inventoryBundlesError } = await fetchAllFromTable('inventory_bundles', 'updated_at');
-      if (inventoryBundlesError) {
-        toast.error(`Failed to fetch inventory bundles: ${inventoryBundlesError.message}`);
-      } else {
-        tables.push({ name: 'inventory_bundles', data: inventoryBundles });
-      }
-
-      const { data: inventoryBundleItems, error: inventoryBundleItemsError } = await fetchAllFromTable('inventory_bundle_items', 'id');
-      if (inventoryBundleItemsError) {
-        toast.error(`Failed to fetch inventory bundle items: ${inventoryBundleItemsError.message}`);
-      } else {
-        tables.push({ name: 'inventory_bundle_items', data: inventoryBundleItems });
-      }
-
-      const { data: otherExpenses, error: otherExpensesError } = await fetchAllFromTable('other_expenses', 'expense_date');
-      if (otherExpensesError) {
-        toast.error(`Failed to fetch other expenses: ${otherExpensesError.message}`);
-      } else {
-        tables.push({ name: 'other_expenses', data: otherExpenses });
+      for (const { name, orderBy } of DATABASE_EXPORT_TABLES) {
+        const { data, error } = await fetchAllFromTable(name, orderBy);
+        if (error) {
+          if (isMissingTableError(error)) {
+            skippedMissingTables.push(name);
+            continue;
+          }
+          failedTables.push(name);
+          toast.error(`Failed to fetch ${name}: ${error.message}`);
+          continue;
+        }
+        const rows =
+          name === 'technicians'
+            ? data.map(({ password: _password, ...rest }) => rest)
+            : data;
+        tables.push({ name, data: rows });
       }
 
       // Create ZIP file with all CSV files
@@ -1416,7 +1279,19 @@ const Settings = () => {
       document.body.removeChild(zipLink);
       URL.revokeObjectURL(zipUrl);
 
-      toast.success(`Successfully downloaded ${tables.length} table(s) in ZIP file: ${zipFilename}`);
+      if (failedTables.length > 0) {
+        toast.warning(
+          `Downloaded ${tables.length} table(s); failed: ${failedTables.join(', ')}`
+        );
+      } else if (skippedMissingTables.length > 0) {
+        toast.success(
+          `Downloaded ${tables.length} table(s) in ${zipFilename}. Skipped (not in database): ${skippedMissingTables.join(', ')}`
+        );
+      } else {
+        toast.success(
+          `Successfully downloaded ${tables.length} table(s) in ZIP file: ${zipFilename}`
+        );
+      }
     } catch (error) {
       console.error('Error downloading data:', error);
       toast.error('Failed to download data. Please try again.');
@@ -1516,26 +1391,15 @@ const Settings = () => {
           </div>
         </div>
 
-        <div className="flex flex-wrap items-center gap-2">
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => handleEditTechnician(technician)}
-            className="flex-1 min-w-[5rem] text-xs sm:text-sm"
-          >
-            <Edit className="w-3 h-3 sm:w-4 sm:h-4 mr-1" />
-            Edit
-          </Button>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => handleStartDeleteTechnician(technician)}
-            className="flex-1 min-w-[5rem] text-xs sm:text-sm text-red-600 border-red-200 hover:bg-red-50 hover:text-red-700"
-          >
-            <Trash2 className="w-3 h-3 sm:w-4 sm:h-4 mr-1" />
-            Delete
-          </Button>
-        </div>
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() => handleEditTechnician(technician)}
+          className="w-full text-xs sm:text-sm"
+        >
+          <Edit className="w-3 h-3 sm:w-4 sm:h-4 mr-1" />
+          Edit
+        </Button>
       </CardContent>
     </Card>
   );
@@ -2337,39 +2201,15 @@ const Settings = () => {
                 <p className="text-sm text-blue-900 dark:text-blue-200 mb-2">
                   <strong>What will be downloaded:</strong>
                 </p>
-                  <ul className="text-sm text-blue-800 dark:text-blue-300 space-y-1 list-disc list-inside">
-                  <li>Admin Todos</li>
-                  <li>Admin Users</li>
-                  <li>AMC Contracts</li>
-                  <li>Business Expenses</li>
-                  <li>Call History</li>
-                  <li>Common QR Codes</li>
-                  <li>Customers</li>
-                  <li>Follow-ups</li>
-                  <li>Inventory</li>
-                  <li>Inventory Bundle Items</li>
-                  <li>Inventory Bundles</li>
-                  <li>Job Assignment Requests</li>
-                  <li>Job Parts Used</li>
-                  <li>Jobs</li>
-                  <li>Notifications</li>
-                  <li>Other Expenses</li>
-                  <li>Parts Inventory</li>
-                  <li>Product QR Codes</li>
-                  <li>Reminders</li>
-                  <li>Service Areas</li>
-                  <li>Tax Invoices</li>
-                  <li>Technician Common QR</li>
-                  <li>Technician Advances</li>
-                  <li>Technician Expenses</li>
-                  <li>Technician Extra Commissions</li>
-                  <li>Technician Holidays</li>
-                  <li>Technician Inventory</li>
-                  <li>Technician Payments</li>
-                  <li>Technicians</li>
-                </ul>
+                  <ul className="text-sm text-blue-800 dark:text-blue-300 space-y-1 list-disc list-inside columns-1 sm:columns-2">
+                    {DATABASE_EXPORT_TABLES.map((t) => (
+                      <li key={t.name}>{t.label}</li>
+                    ))}
+                  </ul>
                 <p className="text-xs text-blue-700 dark:text-blue-400 mt-3">
-                  All tables will be downloaded as CSV files in a ZIP archive. Files will be named with the table name and current date.
+                  Up to {DATABASE_EXPORT_TABLES.length} tables as CSV in one ZIP. Optional tables (
+                  {DATABASE_EXPORT_TABLES.filter((t) => t.optional).map((t) => t.label).join(', ')}
+                  ) are skipped if not created in Supabase. Technician password hashes are never included.
                 </p>
               </div>
             </CardContent>
@@ -2785,6 +2625,28 @@ const Settings = () => {
               </div>
             )}
           </div>
+
+          {editTechnicianDialogOpen && selectedTechnician && (
+            <div className="rounded-lg border border-red-200 dark:border-red-900/50 bg-red-50/80 dark:bg-red-950/20 p-4 space-y-3">
+              <div>
+                <h3 className="text-sm font-semibold text-red-900 dark:text-red-200">Delete technician</h3>
+                <p className="text-xs text-red-800/90 dark:text-red-300/90 mt-1">
+                  Permanently remove {selectedTechnician.fullName} ({selectedTechnician.employeeId}).
+                  Jobs and customers are kept; assignments are cleared.
+                </p>
+              </div>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => handleStartDeleteTechnician(selectedTechnician)}
+                className="w-full sm:w-auto text-red-600 border-red-300 hover:bg-red-100 hover:text-red-700 dark:border-red-800 dark:hover:bg-red-950"
+              >
+                <Trash2 className="w-4 h-4 mr-2" />
+                Delete technician…
+              </Button>
+            </div>
+          )}
 
           <DialogFooter className="flex flex-col sm:flex-row gap-2 sm:gap-3">
             <Button
