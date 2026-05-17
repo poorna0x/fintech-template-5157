@@ -1,8 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { clearWrongPortalSession, resolveSessionRoleFromSupabaseUser } from '@/lib/authPortal';
+import { clearWrongPortalSession } from '@/lib/authPortal';
 import { useAuth } from '@/contexts/AuthContext';
-import { supabase } from '@/lib/supabase';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -12,7 +11,6 @@ import { Shield, Eye, EyeOff, Droplets } from 'lucide-react';
 import { toast } from 'sonner';
 import AltchaWidget from '@/components/AltchaWidget';
 import { registerAdminPWA } from '@/lib/pwa';
-import { formatWelcomeDisplayName } from '@/lib/welcomeDisplayName';
 
 const AdminLogin = () => {
   const [email, setEmail] = useState('');
@@ -26,7 +24,7 @@ const AdminLogin = () => {
   const [captchaTimeout, setCaptchaTimeout] = useState<NodeJS.Timeout | null>(null);
 
   const navigate = useNavigate();
-  const { user, authInitializing } = useAuth();
+  const { user, authInitializing, login } = useAuth();
 
   // Don't block login page rendering - it should show immediately
   // The auth loading state should not prevent login page from displaying
@@ -108,83 +106,19 @@ const AdminLogin = () => {
     }
 
     try {
-      // Detect Chrome mobile for timeout handling
-      const isChromeMobile = typeof window !== 'undefined' && 
-        /Chrome/i.test(navigator.userAgent) && 
-        /Mobile|Android/i.test(navigator.userAgent);
-      
-      // Add timeout for Chrome mobile (15 seconds) vs normal (30 seconds)
-      const loginTimeout = isChromeMobile ? 15000 : 30000;
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), loginTimeout);
-
-      try {
-        const { data, error } = await supabase.auth.signInWithPassword({
-          email: email,
-          password: password,
-        });
-
-        clearTimeout(timeoutId);
-
-        if (error) {
-          // Handle specific error types for better UX
-          if (error.message.includes('Invalid login credentials')) {
-            setError('Invalid email or password. Please check your credentials.');
-            toast.error('Invalid email or password.');
-          } else if (error.message.includes('timeout') || error.message.includes('network')) {
-            setError('Connection timeout. Please check your internet connection and try again.');
-            toast.error('Connection timeout. Please check your network.');
-          } else {
-            setError(error.message);
-            toast.error('Login failed. Please try again.');
-          }
-          return;
-        }
-
-        if (data.user) {
-          // Force session refresh for Chrome mobile
-          if (isChromeMobile) {
-            try {
-              await supabase.auth.getSession();
-            } catch (sessionError) {
-              console.warn('[AdminLogin] Session refresh warning:', sessionError);
-            }
-          }
-
-          const portalRole = await resolveSessionRoleFromSupabaseUser(data.user);
-          if (portalRole === 'technician') {
-            await supabase.auth.signOut();
-            setError('Technician accounts must use the technician login page.');
-            toast.error('Use the technician login page for this account.');
-            return;
-          }
-
-          toast.success(
-            `Welcome back, ${formatWelcomeDisplayName({
-              fullName: data.user.user_metadata?.full_name,
-              name: data.user.user_metadata?.name,
-              email: data.user.email,
-            })}!`
-          );
-          navigate('/admin', { replace: true });
-        }
-      } catch (abortError: any) {
-        clearTimeout(timeoutId);
-        if (abortError.name === 'AbortError') {
-          setError('Connection timeout. Please check your internet connection and try again.');
-          toast.error('Connection timeout. Please check your network.');
-        } else {
-          throw abortError;
-        }
+      const success = await login(email, password);
+      if (success) {
+        navigate('/admin', { replace: true });
+      } else {
+        setError('Invalid email or password. Please check your credentials.');
       }
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error('Login error:', err);
-      if (err?.message?.includes('timeout') || err?.message?.includes('network')) {
+      const message = err instanceof Error ? err.message : 'Login failed. Please try again.';
+      if (message.includes('timeout') || message.includes('network')) {
         setError('Connection timeout. Please check your internet connection and try again.');
-        toast.error('Connection timeout. Please check your network.');
       } else {
         setError('Login failed. Please try again.');
-        toast.error('Login failed. Please try again.');
       }
     } finally {
       setIsLoading(false);

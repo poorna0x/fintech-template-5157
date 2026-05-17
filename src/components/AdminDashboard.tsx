@@ -149,6 +149,21 @@ declare global {
 
 // Utility functions moved to @/lib/adminUtils
 
+function AdminScreenLoader({ message }: { message: string }) {
+  return (
+    <div className="flex items-center justify-center min-h-screen bg-gray-50">
+      <div className="text-center">
+        <div className="flex items-center justify-center space-x-1 mb-4">
+          <div className="w-3 h-3 bg-black rounded-full animate-bounce" style={{ animationDelay: '0ms' }} />
+          <div className="w-3 h-3 bg-black rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
+          <div className="w-3 h-3 bg-black rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />
+        </div>
+        <p className="text-gray-600">{message}</p>
+      </div>
+    </div>
+  );
+}
+
 const AdminDashboard = () => {
   const navigate = useNavigate();
   const { user, isAdmin, authInitializing, logout } = useAuth();
@@ -1578,11 +1593,32 @@ const AdminDashboard = () => {
 
   const runDashboardLoadOnceSessionReady = useCallback(async () => {
     if (dashboardLoadedWithSessionRef.current) return;
-    const ok = await ensureAdminSupabaseSession();
-    if (!ok) return;
-    await loadDashboardDataRef.current();
-    dashboardLoadedWithSessionRef.current = true;
-    setIsInitialLoad(false);
+
+    setLoading(true);
+    setIsInitialLoad(true);
+
+    let sessionOk = await ensureAdminSupabaseSession(12_000);
+    if (!sessionOk) {
+      await new Promise((resolve) => setTimeout(resolve, 400));
+      sessionOk = await ensureAdminSupabaseSession(8_000);
+    }
+
+    if (!sessionOk) {
+      toast.error('Could not start your session. Please try again or refresh the page.');
+      setLoading(false);
+      setIsInitialLoad(false);
+      return;
+    }
+
+    try {
+      await loadDashboardDataRef.current({ silent: true });
+      dashboardLoadedWithSessionRef.current = true;
+    } catch (error) {
+      console.error('[AdminDashboard] Initial load failed:', error);
+    } finally {
+      setIsInitialLoad(false);
+      setLoading(false);
+    }
   }, []);
 
   // Load dashboard only after admin JWT is ready (RLS on customers requires authenticated admin)
@@ -1595,6 +1631,8 @@ const AdminDashboard = () => {
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
       if (event === 'SIGNED_OUT') {
         dashboardLoadedWithSessionRef.current = false;
+        setIsInitialLoad(true);
+        setLoading(true);
         return;
       }
       if (
@@ -8691,58 +8729,24 @@ const AdminDashboard = () => {
     return deniedDate >= today && deniedDate < tomorrow;
   });
 
+  const isDashboardBootstrapping =
+    Boolean(user && isAdmin) && (loading || isInitialLoad);
+
   // Authentication checks - these can be conditional returns since all hooks are declared above
-  // Show loading only if auth is loading AND we haven't exceeded max wait time
   if (authInitializing && !maxWaitReached) {
-    return (
-      <div className="flex items-center justify-center min-h-screen bg-gray-50">
-        <div className="text-center">
-          <div className="flex items-center justify-center space-x-1 mb-4">
-            <div className="w-3 h-3 bg-black rounded-full animate-bounce" style={{ animationDelay: '0ms' }}></div>
-            <div className="w-3 h-3 bg-black rounded-full animate-bounce" style={{ animationDelay: '150ms' }}></div>
-            <div className="w-3 h-3 bg-black rounded-full animate-bounce" style={{ animationDelay: '300ms' }}></div>
-          </div>
-          <p className="text-gray-600">Checking authentication...</p>
-        </div>
-      </div>
-    );
+    return <AdminScreenLoader message="Checking authentication..." />;
   }
 
-  // If auth finished loading but no user and not waiting, show login
   if (!user && !authInitializing && !waitingForAuth) {
     return <AdminLogin />;
   }
 
-  // Show loading while waiting for auth state to update after login
   if (!user && !authInitializing && waitingForAuth) {
-    return (
-      <div className="flex items-center justify-center min-h-screen bg-gray-50">
-        <div className="text-center">
-          <div className="flex items-center justify-center space-x-1 mb-4">
-            <div className="w-3 h-3 bg-black rounded-full animate-bounce" style={{ animationDelay: '0ms' }}></div>
-            <div className="w-3 h-3 bg-black rounded-full animate-bounce" style={{ animationDelay: '150ms' }}></div>
-            <div className="w-3 h-3 bg-black rounded-full animate-bounce" style={{ animationDelay: '300ms' }}></div>
-          </div>
-          <p className="text-gray-600">Completing login...</p>
-        </div>
-      </div>
-    );
+    return <AdminScreenLoader message="Completing login..." />;
   }
 
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center min-h-screen bg-gray-50">
-        <div className="text-center">
-          {/* 3-dot wavy animation */}
-          <div className="flex items-center justify-center space-x-1 mb-4">
-            <div className="w-3 h-3 bg-black rounded-full animate-bounce" style={{ animationDelay: '0ms' }}></div>
-            <div className="w-3 h-3 bg-black rounded-full animate-bounce" style={{ animationDelay: '150ms' }}></div>
-            <div className="w-3 h-3 bg-black rounded-full animate-bounce" style={{ animationDelay: '300ms' }}></div>
-          </div>
-          <p className="text-gray-600">Loading dashboard...</p>
-        </div>
-      </div>
-    );
+  if (isDashboardBootstrapping) {
+    return <AdminScreenLoader message="Loading dashboard..." />;
   }
 
   // Show GST Invoices page if requested
