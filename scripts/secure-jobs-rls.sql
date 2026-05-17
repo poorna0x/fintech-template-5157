@@ -9,6 +9,7 @@
 --   - anon cannot SELECT/INSERT/UPDATE/DELETE jobs (no mass Cloudinary URL scrape via REST).
 --   - Public /book still works via create_job_for_booking RPC.
 --   - Admins: full job access; Technicians: assigned jobs only.
+--   - For technician assign/unassign Realtime: also run technician-job-sync-realtime.sql
 --
 -- Cloudinary URLs already leaked remain on CDN until you use signed delivery (app) or
 -- change Cloudinary upload presets to authenticated/private for new uploads.
