@@ -84,12 +84,16 @@ import JobPartsUsedDialog from '@/components/admin/JobPartsUsedDialog';
 import { AddReminderDialog } from '@/components/reminders/AddReminderDialog';
 import { bangaloreAreas } from '@/lib/adminUtils';
 import { customerNameClassName } from '@/lib/customerDisplay';
+import {
+  TECHNICIAN_JOB_LIST_BROADCAST_CHANNEL,
+  TECHNICIAN_JOB_LIST_BROADCAST_EVENT,
+  type TechnicianJobListRefreshPayload,
+} from '@/lib/technicianJobListSync';
 
-/** Fallback poll when Realtime is down vs healthy (assign/unassign uses technician_job_sync). */
-const TECH_JOBS_POLL_MS_OFFLINE = 10_000;
-const TECH_JOBS_POLL_MS_REALTIME_OK = 90_000;
-/** Debounce full list refetch after technician_job_sync ping (assign/unassign/team). */
-const TECH_JOB_SYNC_DEBOUNCE_MS = 350;
+/** Visible-tab poll (backup if postgres/broadcast miss). */
+const TECH_JOBS_POLL_MS = 12_000;
+/** Debounce full list refetch after sync ping / admin broadcast. */
+const TECH_JOB_SYNC_DEBOUNCE_MS = 250;
 
 // Calculate Levenshtein distance for fuzzy matching
 const levenshteinDistance = (str1: string, str2: string): number => {
@@ -1611,18 +1615,26 @@ const TechnicianDashboard = () => {
     };
   }, [user]);
 
-  // Realtime jobs: (1) technician_job_sync — assign/unassign/team (RLS-safe pings);
-  // (2) jobs filtered by assigned_technician_id — fast in-place updates while assigned.
+  // Realtime: admin broadcast (instant) + jobs postgres_changes + optional technician_job_sync table.
   useEffect(() => {
     if (!user?.technicianId) return;
 
     const technicianId = user.technicianId;
-    let channel: ReturnType<typeof supabase.channel> | null = null;
-    let retryTimeoutId: ReturnType<typeof setTimeout> | null = null;
-    let retryCount = 0;
+    let jobsChannel: ReturnType<typeof supabase.channel> | null = null;
+    let syncChannel: ReturnType<typeof supabase.channel> | null = null;
+    let broadcastChannel: ReturnType<typeof supabase.channel> | null = null;
+    let jobsRetryTimeout: ReturnType<typeof setTimeout> | null = null;
+    let jobsRetryCount = 0;
     const maxRetries = 3;
     const retryDelay = 2000;
     const isMounted = { current: true };
+    let jobsSubscribed = false;
+    let broadcastSubscribed = false;
+
+    const markRealtimeHealth = () => {
+      if (!isMounted.current) return;
+      setRealtimeConnected(jobsSubscribed || broadcastSubscribed);
+    };
 
     const handleAssignedJobRowChange = async (payload: { new: Record<string, unknown> }) => {
       if (!isMounted.current) return;
@@ -1649,27 +1661,21 @@ const TechnicianDashboard = () => {
           return;
         }
 
-        const { data: slimJob, error } = await db.jobs.getByIdSlim(updatedJob.id);
-        if (!isMounted.current) return;
-        if (error || !slimJob) return;
-        setJobs((prev) => {
-          if (prev.some((j) => j.id === slimJob.id)) return prev;
-          const next = [slimJob as any, ...prev];
-          jobsRef.current = next;
-          return next;
-        });
+        scheduleJobListSync();
       } finally {
         processingJobsRef.current.delete(updatedJob.id);
       }
     };
 
-    const setupSubscription = () => {
+    const setupJobsChannel = () => {
       if (!isMounted.current) return;
-      if (channel) {
+      if (jobsChannel) {
         try {
-          supabase.removeChannel(channel);
+          supabase.removeChannel(jobsChannel);
         } catch (_) {}
-        channel = null;
+        jobsChannel = null;
+        jobsSubscribed = false;
+        markRealtimeHealth();
       }
 
       const jobRowChangeOpts = {
@@ -1678,7 +1684,7 @@ const TechnicianDashboard = () => {
         filter: `assigned_technician_id=eq.${technicianId}`,
       };
 
-      channel = supabase
+      jobsChannel = supabase
         .channel(`technician-jobs-${technicianId}`)
         .on(
           'postgres_changes',
@@ -1694,55 +1700,86 @@ const TechnicianDashboard = () => {
             void handleAssignedJobRowChange(payload as { new: Record<string, unknown> });
           }
         )
-        .on(
-          'postgres_changes',
-          {
-            event: 'INSERT',
-            schema: 'public',
-            table: 'technician_job_sync',
-            filter: `technician_id=eq.${technicianId}`,
-          },
-          () => {
-            scheduleJobListSync();
-          }
-        )
         .subscribe((status, err) => {
           if (!isMounted.current) return;
           if (err) {
-            if (retryCount < maxRetries) {
-              retryCount++;
-              retryTimeoutId = setTimeout(setupSubscription, retryDelay);
-            } else {
-              setRealtimeConnected(false);
+            jobsSubscribed = false;
+            markRealtimeHealth();
+            if (jobsRetryCount < maxRetries) {
+              jobsRetryCount++;
+              jobsRetryTimeout = setTimeout(setupJobsChannel, retryDelay);
             }
             return;
           }
           if (status === 'SUBSCRIBED') {
-            retryCount = 0;
-            setRealtimeConnected(true);
+            jobsRetryCount = 0;
+            jobsSubscribed = true;
+            markRealtimeHealth();
           } else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
-            setRealtimeConnected(false);
-            if (retryCount < maxRetries) {
-              retryCount++;
-              retryTimeoutId = setTimeout(setupSubscription, retryDelay);
+            jobsSubscribed = false;
+            markRealtimeHealth();
+            if (jobsRetryCount < maxRetries) {
+              jobsRetryCount++;
+              jobsRetryTimeout = setTimeout(setupJobsChannel, retryDelay);
             }
           }
         });
     };
 
-    setupSubscription();
+    syncChannel = supabase
+      .channel(`technician-job-sync-${technicianId}`)
+      .on(
+        'postgres_changes',
+        {
+          event: 'INSERT',
+          schema: 'public',
+          table: 'technician_job_sync',
+          filter: `technician_id=eq.${technicianId}`,
+        },
+        () => {
+          scheduleJobListSync();
+        }
+      )
+      .subscribe();
+
+    broadcastChannel = supabase
+      .channel(TECHNICIAN_JOB_LIST_BROADCAST_CHANNEL)
+      .on(
+        'broadcast',
+        { event: TECHNICIAN_JOB_LIST_BROADCAST_EVENT },
+        ({ payload }) => {
+          const p = payload as TechnicianJobListRefreshPayload | undefined;
+          if (p?.technicianIds?.includes(technicianId)) {
+            scheduleJobListSync();
+          }
+        }
+      )
+      .subscribe((status) => {
+        if (!isMounted.current) return;
+        if (status === 'SUBSCRIBED') {
+          broadcastSubscribed = true;
+          markRealtimeHealth();
+        } else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
+          broadcastSubscribed = false;
+          markRealtimeHealth();
+        }
+      });
+
+    setupJobsChannel();
 
     return () => {
       isMounted.current = false;
-      if (retryTimeoutId) clearTimeout(retryTimeoutId);
+      if (jobsRetryTimeout) clearTimeout(jobsRetryTimeout);
       if (jobListSyncTimerRef.current) {
         clearTimeout(jobListSyncTimerRef.current);
         jobListSyncTimerRef.current = null;
       }
-      if (channel) {
-        try {
-          supabase.removeChannel(channel);
-        } catch (_) {}
+      for (const ch of [jobsChannel, syncChannel, broadcastChannel]) {
+        if (ch) {
+          try {
+            supabase.removeChannel(ch);
+          } catch (_) {}
+        }
       }
     };
   }, [user?.technicianId, scheduleJobListSync]);
@@ -2040,17 +2077,16 @@ const TechnicianDashboard = () => {
     };
   }, [user?.technicianId, scheduleJobListSync]);
 
-  // Fallback poll when Realtime is down; sync table + filtered jobs handle assign/unassign when up.
+  // Backup poll while tab is visible (assign/unassign also uses admin broadcast + postgres).
   useEffect(() => {
     if (!user?.technicianId) return;
 
-    const intervalMs = realtimeConnected ? TECH_JOBS_POLL_MS_REALTIME_OK : TECH_JOBS_POLL_MS_OFFLINE;
     const pollInterval = setInterval(() => {
       if (typeof document !== 'undefined' && document.hidden) return;
       loadAssignedJobs();
-    }, intervalMs);
+    }, TECH_JOBS_POLL_MS);
     return () => clearInterval(pollInterval);
-  }, [user?.technicianId, realtimeConnected, loadAssignedJobs]);
+  }, [user?.technicianId, loadAssignedJobs]);
 
   // When realtime comes back, do a one-time sync to ensure list is correct.
   useEffect(() => {

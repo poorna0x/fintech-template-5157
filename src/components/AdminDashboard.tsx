@@ -133,6 +133,7 @@ import DenyJobDialog from './admin/DenyJobDialog';
 import ReassignJobDialog from './admin/ReassignJobDialog';
 import EditCompletedJobDialog from './admin/EditCompletedJobDialog';
 import WhatsAppDialog from './admin/WhatsAppDialog';
+import { broadcastTechnicianJobListRefresh } from '@/lib/technicianJobListSync';
 
 const ZERO_COMMISSION_EMPLOYEE_ID = 'TECH851703400';
 
@@ -3981,6 +3982,10 @@ const AdminDashboard = () => {
         await loadBrandsAndModels();
       }
 
+      if (newJobFormData.assigned_technician_id) {
+        broadcastTechnicianJobListRefresh([newJobFormData.assigned_technician_id]);
+      }
+
       // Send notification if technician is assigned
       if (newJobFormData.assigned_technician_id) {
         const assignedTechnician = technicians.find(t => t.id === newJobFormData.assigned_technician_id);
@@ -5375,6 +5380,8 @@ const AdminDashboard = () => {
 
       if (error) throw error;
 
+      broadcastTechnicianJobListRefresh([selectedTechnicianId]);
+
       // Send notification to technician
       const assignedTechnician = technicians.find(t => t.id === selectedTechnicianId);
       if (assignedTechnician) {
@@ -5474,6 +5481,8 @@ const AdminDashboard = () => {
 
       if (error) throw error;
 
+      broadcastTechnicianJobListRefresh([selectedTeamMemberId]);
+
       // Send notification to team member
       const teamMember = technicians.find(t => t.id === selectedTeamMemberId);
       if (teamMember) {
@@ -5524,6 +5533,8 @@ const AdminDashboard = () => {
       } as any);
 
       if (error) throw error;
+
+      broadcastTechnicianJobListRefresh([selectedTeamMemberToRemove]);
 
       toast.success('Team member removed successfully');
       setRemoveTeamDialogOpen(false);
@@ -5601,6 +5612,13 @@ const AdminDashboard = () => {
         return;
       }
 
+      const previousTechnicianId =
+        (jobToReassign as any).assigned_technician_id || jobToReassign.assignedTechnicianId;
+      broadcastTechnicianJobListRefresh([
+        previousTechnicianId,
+        selectedTechnicianForReassign,
+      ]);
+
       // Update local state
       setJobs(prev => prev.map(job => 
         job.id === jobToReassign.id 
@@ -5656,6 +5674,12 @@ const AdminDashboard = () => {
 
   const handleUnassignJob = async (job: Job) => {
     try {
+      const previousTechnicianId =
+        (job as any).assigned_technician_id || job.assignedTechnicianId;
+      const teamMemberIds = Array.isArray((job as any).team_members)
+        ? ((job as any).team_members as string[])
+        : [];
+
       const { error } = await db.jobs.update(job.id, {
         assigned_technician_id: null,
         assigned_date: null,
@@ -5666,6 +5690,8 @@ const AdminDashboard = () => {
         toast.error('Failed to unassign job');
         return;
       }
+
+      broadcastTechnicianJobListRefresh([previousTechnicianId, ...teamMemberIds]);
 
       // Update local state
       setJobs(prev => prev.map(j => 
@@ -6891,6 +6917,10 @@ const AdminDashboard = () => {
       }
 
       console.log('Job updated successfully:', updatedJob);
+
+      if (shouldAssign) {
+        broadcastTechnicianJobListRefresh([followUpAssignTechnicianId]);
+      }
 
       // Update local state
       setJobs(prev => prev.map(j => {
