@@ -4,11 +4,10 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <!-- Content Security Policy - Secure production configuration -->
-    <meta
-      http-equiv="Content-Security-Policy"
-      content="default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval' https://www.googletagmanager.com https://cdn.gpteng.co https://maps.googleapis.com https://maps.gstatic.com https://*.gstatic.com https://cdn.jsdelivr.net; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://maps.gstatic.com https://*.gstatic.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: https: blob:; worker-src 'self' blob:; connect-src 'self' http://localhost:8888 http://127.0.0.1:8888 ws://localhost:8888 ws://127.0.0.1:8888 wss://*.supabase.co ws://*.supabase.co https://www.google-analytics.com https://*.supabase.co https://api.bigdatacloud.net https://api-bdc.io https://api.cloudinary.com https://res.cloudinary.com https://nominatim.openstreetmap.org https://maps.googleapis.com https://*.googleapis.com https://*.gstatic.com https://www.google.com https://*.google.com https://maps.app.goo.gl https://goo.gl; frame-src 'self';"
-    />
+    <!-- CSP: production via public/_headers (Netlify). Local Vite dev has no CSP meta (see vite.config.ts). -->
+    <script src="/seo-bootstrap.js"></script>
+    <script src="/pwa-manifest-bootstrap.js"></script>
+    <link rel="stylesheet" href="/critical.css" />
     
     <!-- Primary Meta Tags -->
     <title>Hydrogen RO - #1 Best RO Service in Bengaluru Bangalore | 5★ Rated</title>
@@ -19,31 +18,6 @@
     <meta name="robots" content="index, follow, max-snippet:-1, max-image-preview:large, max-video-preview:-1" />
     <meta name="googlebot" content="index, follow" />
     <meta name="bingbot" content="index, follow" />
-    
-    <!-- Canonical URL - set immediately from requested URL so crawlers see correct canonical before React -->
-    <script>
-(function(){
-  var p = (window.location.pathname || '/').replace(/\/$/, '') || '';
-  var pathForTest = '/' + (p || '');
-  var noIndex = /^\/(technician|admin|dashboard|search)(\/|$)/.test(pathForTest);
-  if (noIndex) {
-    var r = document.querySelector('meta[name="robots"]');
-    if (r) r.setAttribute('content', 'noindex, nofollow');
-    else {
-      var m = document.createElement('meta');
-      m.name = 'robots';
-      m.content = 'noindex, nofollow';
-      document.head.appendChild(m);
-    }
-  } else {
-    var h = 'https://hydrogenro.com' + (p ? p : '');
-    var link = document.createElement('link');
-    link.rel = 'canonical';
-    link.href = h;
-    document.head.appendChild(link);
-  }
-})();
-    </script>
     
     <!-- Open Graph / Facebook -->
     <meta property="og:type" content="website" />
@@ -176,27 +150,6 @@
     <!-- Windows tiles -->
     <link rel="icon" type="image/png" sizes="192x192" href="https://hydrogenro.com/android-chrome-192x192.png?v=4" />
     <link rel="icon" type="image/png" sizes="512x512" href="https://hydrogenro.com/android-chrome-512x512.png?v=4" />
-    <!-- PWA Manifest - Set dynamically based on path for iOS compatibility -->
-    <script>
-      // Set correct manifest IMMEDIATELY (before iOS reads it)
-      // This must run synchronously before the manifest link is parsed
-      (function() {
-        const path = window.location.pathname;
-        let manifestHref = '/site.webmanifest';
-        if (path.startsWith('/technician')) {
-          manifestHref = '/technician-manifest.json';
-        } else if (
-          path.startsWith('/admin') ||
-          path.startsWith('/settings') ||
-          path.startsWith('/calling')
-        ) {
-          manifestHref = '/admin-manifest.json';
-        }
-        // Create manifest link with correct href immediately
-        document.write('<link rel="manifest" href="' + manifestHref + '" id="pwa-manifest" />');
-      })();
-    </script>
-    
     <!-- Preconnect for performance -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -204,96 +157,7 @@
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet" media="print" onload="this.media='all'">
     <noscript><link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet"></noscript>
     
-    <!-- Critical CSS to prevent FOUC -->
-    <style>
-      * { box-sizing: border-box; }
-      body { 
-        margin: 0; 
-        padding: 0; 
-        font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-        background-color: hsl(0, 0%, 98%);
-        color: hsl(0, 0%, 20%);
-        -webkit-font-smoothing: antialiased;
-        -moz-osx-font-smoothing: grayscale;
-      }
-      #root { min-height: 100vh; }
-      
-      /* Hide browser's default loading progress bar */
-      html {
-        overflow-x: hidden;
-      }
-      
-      /* Hide progress bar on page reload/navigation */
-      ::-webkit-progress-bar,
-      ::-webkit-progress-value,
-      progress {
-        display: none !important;
-        visibility: hidden !important;
-        opacity: 0 !important;
-        height: 0 !important;
-        width: 0 !important;
-      }
-      
-      /* Hide any top loading indicators */
-      body::before,
-      html::before {
-        display: none !important;
-      }
-      
-      /* Hide browser's default loading indicator (especially on mobile) */
-      @supports (-webkit-appearance: none) {
-        /* Safari/Chrome specific */
-        body {
-          -webkit-overflow-scrolling: touch;
-        }
-      }
-      
-      /* Prevent freeze issues - ensure touch events work */
-      * {
-        -webkit-tap-highlight-color: transparent;
-      }
-      
-      /* Ensure scrolling works in PWA */
-      body, html {
-        overscroll-behavior-y: contain;
-        -webkit-overflow-scrolling: touch;
-      }
-      
-      /* SEO hidden content - Must be in critical CSS to prevent flash */
-      .seo-hidden {
-        display: none !important;
-        visibility: hidden !important;
-        position: absolute !important;
-        left: -9999px !important;
-        top: -9999px !important;
-        width: 1px !important;
-        height: 1px !important;
-        overflow: hidden !important;
-        clip: rect(0, 0, 0, 0) !important;
-        white-space: nowrap !important;
-        border: 0 !important;
-        margin: 0 !important;
-        padding: 0 !important;
-        opacity: 0 !important;
-        pointer-events: none !important;
-      }
-      
-      /* Visually hidden content */
-      .visually-hidden {
-        position: absolute !important;
-        width: 1px !important;
-        height: 1px !important;
-        padding: 0 !important;
-        margin: -1px !important;
-        overflow: hidden !important;
-        clip: rect(0, 0, 0, 0) !important;
-        white-space: nowrap !important;
-        border: 0 !important;
-      }
-    </style>
-    
     <!-- DNS Prefetch for external resources -->
-    <link rel="dns-prefetch" href="//cdn.gpteng.co">
     <link rel="dns-prefetch" href="//fonts.googleapis.com">
     <link rel="dns-prefetch" href="//fonts.gstatic.com">
     <link rel="dns-prefetch" href="//www.googletagmanager.com">
@@ -305,52 +169,7 @@
     <!-- Google Analytics 4 - Initialized by React component for SPA routing -->
     <!-- The GoogleAnalytics component will handle initialization and page view tracking -->
 
-    <!-- Performance & Social Media Tracking -->
-    <script>
-      // Social media and contact tracking
-      window.addEventListener('load', function() {
-        // WhatsApp click tracking
-        const whatsappLinks = document.querySelectorAll('a[href*="wa.me"]');
-        whatsappLinks.forEach(link => {
-          link.addEventListener('click', function() {
-            if (typeof gtag !== 'undefined') {
-              gtag('event', 'click', {
-                'event_category': 'social',
-                'event_label': 'whatsapp_contact'
-              });
-            }
-          });
-        });
-
-        // Phone call tracking
-        const phoneLinks = document.querySelectorAll('a[href^="tel:"]');
-        phoneLinks.forEach(link => {
-          link.addEventListener('click', function() {
-            if (typeof gtag !== 'undefined') {
-              gtag('event', 'click', {
-                'event_category': 'contact',
-                'event_label': 'phone_call'
-              });
-            }
-          });
-        });
-
-        // Performance monitoring
-        if ('performance' in window) {
-          window.addEventListener('load', function() {
-            setTimeout(function() {
-              const perfData = performance.getEntriesByType('navigation')[0];
-              if (perfData && typeof gtag !== 'undefined') {
-                gtag('event', 'timing_complete', {
-                  'name': 'load',
-                  'value': Math.round(perfData.loadEventEnd - perfData.loadEventStart)
-                });
-              }
-            }, 0);
-          });
-        }
-      });
-    </script>
+    <script src="/analytics-bootstrap.js" defer></script>
     
     <!-- Google Maps API for address autocomplete (optional - will use free services if not available) -->
     <!-- <script async defer src="https://maps.googleapis.com/maps/api/js?key=YOUR_ACTUAL_GOOGLE_MAPS_API_KEY&libraries=places"></script> -->
@@ -1384,8 +1203,6 @@
 
   <body>
     <div id="root"></div>
-    <!-- IMPORTANT: DO NOT REMOVE THIS SCRIPT TAG OR THIS VERY COMMENT! -->
-    <script src="https://cdn.gpteng.co/gptengineer.js" type="module"></script>
     <script type="module" src="/src/main.tsx"></script>
     
     <!-- COMPREHENSIVE SEO CONTENT - HIDDEN FROM USERS -->
