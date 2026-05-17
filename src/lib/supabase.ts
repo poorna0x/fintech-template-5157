@@ -487,6 +487,16 @@ async function hasAdminCustomerAccess(): Promise<boolean> {
   return role !== 'technician';
 }
 
+type CustomerTableAuthMode = 'admin' | 'technician' | 'anon';
+
+async function getCustomerTableAuthMode(): Promise<CustomerTableAuthMode> {
+  const { data: { session } } = await supabase.auth.getSession();
+  if (!session?.user) return 'anon';
+  const role =
+    session.user.app_metadata?.role ?? session.user.user_metadata?.role ?? 'admin';
+  return role === 'technician' ? 'technician' : 'admin';
+}
+
 // Database helper functions
 export const db = {
   // Customer operations
@@ -570,7 +580,9 @@ export const db = {
     },
     
     async update(id: string, updates: Database['public']['Tables']['customers']['Update']) {
-      if (!(await hasAdminCustomerAccess())) {
+      const authMode = await getCustomerTableAuthMode();
+
+      if (authMode === 'anon') {
         const phone =
           (updates as { phone?: string }).phone ??
           (updates as { phone_number?: string }).phone_number;
@@ -586,19 +598,18 @@ export const db = {
         };
       }
 
+      // Admin + technician: direct UPDATE (RLS scopes technician to assigned customers).
       const { data, error } = await supabase
         .from('customers')
         .update(updates)
         .eq('id', id)
         .select();
-      
+
       if (error) {
         return { data: null, error };
       }
-      
-      // Return the first (and should be only) updated row
-      const result = { data: data?.[0] || null, error: null };
-      return result;
+
+      return { data: data?.[0] || null, error: null };
     },
     
     async getAll(limit?: number) {
@@ -1273,10 +1284,39 @@ export const db = {
     },
     
     async delete(id: string) {
-      const { error } = await supabase
-        .from('jobs')
+      if (!(await hasAdminCustomerAccess())) {
+        return {
+          data: null,
+          error: { message: 'Only administrators can delete jobs.', code: 'FORBIDDEN' },
+        };
+      }
+
+      const { error: rpcError } = await supabase.rpc('delete_job_admin', {
+        p_job_id: id,
+      });
+
+      if (!rpcError) {
+        cacheInvalidate('job_counts_v1');
+        cacheInvalidate('completed_customers_map_v1');
+        return { data: null, error: null };
+      }
+
+      const rpcMissing =
+        rpcError.code === '42883' ||
+        rpcError.code === 'PGRST202' ||
+        /delete_job_admin/i.test(rpcError.message || '');
+
+      if (!rpcMissing) {
+        return { data: null, error: rpcError };
+      }
+
+      await supabase
+        .from('reminders')
         .delete()
-        .eq('id', id);
+        .eq('entity_type', 'job')
+        .eq('entity_id', id);
+
+      const { error } = await supabase.from('jobs').delete().eq('id', id);
       if (!error) {
         cacheInvalidate('job_counts_v1');
         cacheInvalidate('completed_customers_map_v1');

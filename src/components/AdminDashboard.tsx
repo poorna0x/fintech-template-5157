@@ -7272,7 +7272,13 @@ const AdminDashboard = () => {
       const { error } = await db.jobs.delete(jobToDelete.id);
       
       if (error) {
-        throw new Error(error.message);
+        const msg = error.message || 'Failed to delete job';
+        if (error.code === '409' || /409|conflict|foreign key|23503/i.test(msg)) {
+          throw new Error(
+            'Could not delete this job (linked records or permissions). Run scripts/delete-job-admin-rpc.sql in Supabase if this persists.'
+          );
+        }
+        throw new Error(msg);
       }
 
       const deletedId = jobToDelete.id;
