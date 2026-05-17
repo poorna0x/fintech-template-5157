@@ -37,3 +37,33 @@ export type TechnicianJobListRefreshPayload = {
   technicianIds?: string[];
   at?: number;
 };
+
+/** Collect technician UUIDs from a job row (assignee, completer, team). */
+export function technicianIdsFromJob(job: {
+  assigned_technician_id?: string | null;
+  assignedTechnicianId?: string | null;
+  completed_by?: string | null;
+  completedBy?: string | null;
+  team_members?: unknown;
+}): string[] {
+  const ids: string[] = [];
+  const assigned =
+    job.assigned_technician_id ?? job.assignedTechnicianId ?? null;
+  const completed = job.completed_by ?? job.completedBy ?? null;
+  if (assigned) ids.push(assigned);
+  if (completed) ids.push(completed);
+  const team = job.team_members;
+  if (Array.isArray(team)) {
+    for (const m of team) {
+      if (typeof m === 'string' && m.length > 0) ids.push(m);
+    }
+  }
+  return uniqueTechnicianIds(ids);
+}
+
+/** Notify technicians on this job to refresh their dashboard list (e.g. after admin completes). */
+export function broadcastTechnicianJobListRefreshForJob(
+  job: Parameters<typeof technicianIdsFromJob>[0]
+): void {
+  broadcastTechnicianJobListRefresh(technicianIdsFromJob(job));
+}
