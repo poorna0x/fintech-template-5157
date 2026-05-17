@@ -37,6 +37,8 @@ const distanceMatrix = require('./distance-matrix');
 const provisionTechnicianAuthOnLogin = require('./provision-technician-auth-on-login');
 const syncTechnicianAuthUser = require('./sync-technician-auth-user');
 const deleteTechnicianAndData = require('./delete-technician-and-data');
+const cloudinaryDelete = require('./cloudinary-delete');
+const cloudinarySignedUrl = require('./cloudinary-signed-url');
 
 const PORT = 8888;
 
@@ -78,6 +80,10 @@ const server = http.createServer((req, res) => {
     handler = syncTechnicianAuthUser;
   } else if (req.url.startsWith('/.netlify/functions/delete-technician-and-data')) {
     handler = deleteTechnicianAndData;
+  } else if (req.url.startsWith('/.netlify/functions/cloudinary-delete')) {
+    handler = cloudinaryDelete;
+  } else if (req.url.startsWith('/.netlify/functions/cloudinary-signed-url')) {
+    handler = cloudinarySignedUrl;
   } else {
     console.log('⚠️ No handler found for:', req.url);
   }

@@ -497,21 +497,15 @@ export const db = {
         return db.customers.createForBooking(customer as Record<string, unknown>);
       }
 
-      // Generate customer ID if not provided
-      if (!customer.customer_id) {
-        const { data: generatedId, error: idError } = await supabase
-          .rpc('generate_customer_id');
-        
-        if (idError) {
-          return { data: null, error: idError };
-        }
-        
-        customer.customer_id = generatedId;
+      // customer_id is set by DB trigger set_customer_id (generate_customer_id is not exposed to anon RPC)
+      const insertPayload = { ...customer } as Record<string, unknown>;
+      if (!insertPayload.customer_id) {
+        delete insertPayload.customer_id;
       }
 
       const { data, error } = await supabase
         .from('customers')
-        .insert(customer)
+        .insert(insertPayload as Database['public']['Tables']['customers']['Insert'])
         .select()
         .single();
       
@@ -2859,7 +2853,7 @@ export const db = {
           data: null,
           error: {
             message:
-              'Invoice was not deleted. Database permission may be blocking delete — run scripts/fix-tax-invoices-delete-rls.sql in Supabase.',
+              'Invoice was not deleted. Database permission may be blocking delete — run scripts/secure-tax-invoices-rls.sql in Supabase (admin login required).',
             code: 'DELETE_NOT_APPLIED',
           } as { message: string; code: string },
         };
