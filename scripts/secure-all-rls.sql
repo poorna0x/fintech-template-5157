@@ -470,7 +470,7 @@ BEGIN
   END LOOP;
 END $$;
 
--- technician_inventory + technician_common_qr
+-- technician_inventory (per-technician stock) + technician_common_qr (shared QR catalog — no technician_id column)
 ALTER TABLE public.technician_inventory ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.technician_common_qr ENABLE ROW LEVEL SECURITY;
 
@@ -501,18 +501,19 @@ DROP POLICY IF EXISTS technician_common_qr_insert ON public.technician_common_qr
 DROP POLICY IF EXISTS technician_common_qr_update ON public.technician_common_qr;
 DROP POLICY IF EXISTS technician_common_qr_delete ON public.technician_common_qr;
 
+-- Shared catalog (id, name, qr_code_url only) — technicians read; admin writes
 CREATE POLICY technician_common_qr_select
   ON public.technician_common_qr FOR SELECT TO authenticated
-  USING (public.is_admin_user() OR technician_id = auth.uid());
+  USING (true);
 
 CREATE POLICY technician_common_qr_insert
   ON public.technician_common_qr FOR INSERT TO authenticated
-  WITH CHECK (public.is_admin_user() OR technician_id = auth.uid());
+  WITH CHECK (public.is_admin_user());
 
 CREATE POLICY technician_common_qr_update
   ON public.technician_common_qr FOR UPDATE TO authenticated
-  USING (public.is_admin_user() OR technician_id = auth.uid())
-  WITH CHECK (public.is_admin_user() OR technician_id = auth.uid());
+  USING (public.is_admin_user())
+  WITH CHECK (public.is_admin_user());
 
 CREATE POLICY technician_common_qr_delete
   ON public.technician_common_qr FOR DELETE TO authenticated

@@ -130,6 +130,7 @@ BEGIN
         OR policyname LIKE 'todos_%_anon'
         OR policyname = 'allow_all_technicians'
         OR policyname = 'allow_all_jobs'
+        OR policyname LIKE '%_policy'
       )
   LOOP
     EXECUTE format('DROP POLICY IF EXISTS %I ON public.%I', r.policyname, r.tablename);

@@ -27,7 +27,8 @@ WHERE schemaname = 'public'
     OR policyname LIKE 'Allow %'
     OR policyname LIKE 'Allow anon%'
     OR policyname LIKE 'Allow authenticated%'
-    OR policyname LIKE 'todos_%_anon'
+      OR policyname LIKE 'todos_%_anon'
+      OR policyname LIKE '%_policy'
   )
 ORDER BY tablename, policyname;
 
