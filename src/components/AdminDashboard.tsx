@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback, useMemo, useRef, startTransition } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
+import { ensureAdminSupabaseSession } from '@/lib/auth';
 import AdminHeader from '@/components/AdminHeader';
 import { WebsiteBookingIntentBanner } from '@/components/admin/WebsiteBookingIntentBanner';
 import AdminLogin from '@/components/AdminLogin';
@@ -1460,6 +1461,12 @@ const AdminDashboard = () => {
       if (!silent) {
         setLoading(true);
       }
+
+      const sessionReady = await ensureAdminSupabaseSession();
+      if (!sessionReady) {
+        console.warn('[AdminDashboard] Skipping load — admin Supabase session not ready yet');
+        return;
+      }
       
       // OPTIMIZATION: Run AMC job creation in background without blocking initial load
       // Check auth once and proceed - no wait loop
@@ -1551,15 +1558,46 @@ const AdminDashboard = () => {
   };
 
   const [isInitialLoad, setIsInitialLoad] = useState(true);
+  const dashboardLoadedWithSessionRef = useRef(false);
+  const loadDashboardDataRef = useRef(loadDashboardData);
+  loadDashboardDataRef.current = loadDashboardData;
 
-  // Load data on component mount
-  useEffect(() => {
-    const initialize = async () => {
-      await loadDashboardData();
-      setIsInitialLoad(false);
-    };
-    initialize();
+  const runDashboardLoadOnceSessionReady = useCallback(async () => {
+    if (dashboardLoadedWithSessionRef.current) return;
+    const ok = await ensureAdminSupabaseSession();
+    if (!ok) return;
+    await loadDashboardDataRef.current();
+    dashboardLoadedWithSessionRef.current = true;
+    setIsInitialLoad(false);
   }, []);
+
+  // Load dashboard only after admin JWT is ready (RLS on customers requires authenticated admin)
+  useEffect(() => {
+    if (authLoading || !user || !isAdmin) return;
+    void runDashboardLoadOnceSessionReady();
+  }, [authLoading, user?.id, isAdmin, runDashboardLoadOnceSessionReady]);
+
+  useEffect(() => {
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+      if (event === 'SIGNED_OUT') {
+        dashboardLoadedWithSessionRef.current = false;
+        return;
+      }
+      if (
+        (event === 'INITIAL_SESSION' || event === 'SIGNED_IN') &&
+        session?.user
+      ) {
+        const role =
+          session.user.app_metadata?.role ??
+          session.user.user_metadata?.role ??
+          'admin';
+        if (role !== 'technician') {
+          void runDashboardLoadOnceSessionReady();
+        }
+      }
+    });
+    return () => subscription.unsubscribe();
+  }, [runDashboardLoadOnceSessionReady]);
 
   // Check URL parameters for navigation from Settings page
   useEffect(() => {

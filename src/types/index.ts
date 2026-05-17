@@ -605,6 +605,22 @@ export interface Database {
         };
         Returns: undefined;
       };
+      get_customer_by_phone_for_booking: {
+        Args: { p_phone: string };
+        Returns: Database['public']['Tables']['customers']['Row'][];
+      };
+      create_customer_for_booking: {
+        Args: { p_row: Record<string, unknown> };
+        Returns: Database['public']['Tables']['customers']['Row'];
+      };
+      update_customer_for_booking: {
+        Args: {
+          p_customer_id: string;
+          p_phone: string;
+          p_updates: Record<string, unknown>;
+        };
+        Returns: Database['public']['Tables']['customers']['Row'];
+      };
     };
   };
 }

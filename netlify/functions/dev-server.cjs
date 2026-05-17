@@ -1,15 +1,42 @@
 // Simple development server for Netlify functions
-// Run with: node netlify/functions/dev-server.js
-// This allows local development without Netlify CLI
+// Run with: node netlify/functions/dev-server.cjs
 
 const http = require('http');
 const url = require('url');
+const path = require('path');
+const fs = require('fs');
+
+/** Load .env.local into process.env for function handlers (service role, etc.). */
+function loadEnvLocal() {
+  const envPath = path.join(__dirname, '../../.env.local');
+  if (!fs.existsSync(envPath)) return;
+  const lines = fs.readFileSync(envPath, 'utf8').split('\n');
+  for (const line of lines) {
+    const trimmed = line.trim();
+    if (!trimmed || trimmed.startsWith('#')) continue;
+    const eq = trimmed.indexOf('=');
+    if (eq <= 0) continue;
+    const key = trimmed.slice(0, eq).trim();
+    let val = trimmed.slice(eq + 1).trim();
+    if (
+      (val.startsWith('"') && val.endsWith('"')) ||
+      (val.startsWith("'") && val.endsWith("'"))
+    ) {
+      val = val.slice(1, -1);
+    }
+    if (!process.env[key]) process.env[key] = val;
+  }
+}
+loadEnvLocal();
 
 // Import function handlers
 const altchaVerify = require('./altcha-verify');
 const verifyTechnicianPassword = require('./verify-technician-password');
 const hashTechnicianPassword = require('./hash-technician-password');
 const distanceMatrix = require('./distance-matrix');
+const provisionTechnicianAuthOnLogin = require('./provision-technician-auth-on-login');
+const syncTechnicianAuthUser = require('./sync-technician-auth-user');
+const deleteTechnicianAndData = require('./delete-technician-and-data');
 
 const PORT = 8888;
 
@@ -45,7 +72,12 @@ const server = http.createServer((req, res) => {
     handler = hashTechnicianPassword;
   } else if (req.url.startsWith('/.netlify/functions/distance-matrix')) {
     handler = distanceMatrix;
-    console.log('📍 Distance Matrix handler found:', !!handler);
+  } else if (req.url.startsWith('/.netlify/functions/provision-technician-auth-on-login')) {
+    handler = provisionTechnicianAuthOnLogin;
+  } else if (req.url.startsWith('/.netlify/functions/sync-technician-auth-user')) {
+    handler = syncTechnicianAuthUser;
+  } else if (req.url.startsWith('/.netlify/functions/delete-technician-and-data')) {
+    handler = deleteTechnicianAndData;
   } else {
     console.log('⚠️ No handler found for:', req.url);
   }
@@ -131,9 +163,30 @@ const server = http.createServer((req, res) => {
       }
     })();
   } else {
+    const fnName = (req.url || '').replace('/.netlify/functions/', '').split('?')[0];
     res.writeHead(404, { 'Content-Type': 'application/json' });
-    res.end(JSON.stringify({ error: 'Not found' }));
+    res.end(
+      JSON.stringify({
+        error: 'Not found',
+        hint: fnName
+          ? `Function "${fnName}" is not registered. Stop and run: npm run dev`
+          : 'Unknown function path',
+      })
+    );
   }
+});
+
+server.on('error', (err) => {
+  if (err.code === 'EADDRINUSE') {
+    console.error(
+      `\n❌ Port ${PORT} is already in use (old dev-server still running).\n` +
+        `   Run: npm run dev:kill-stale\n` +
+        `   Or:  lsof -ti:${PORT} | xargs kill -9\n` +
+        `   Then start again: npm run dev\n`
+    );
+    process.exit(1);
+  }
+  throw err;
 });
 
 server.listen(PORT, '0.0.0.0', () => {
@@ -160,5 +213,17 @@ server.listen(PORT, '0.0.0.0', () => {
   console.log(`🔐 Password verification: http://localhost:${PORT}/.netlify/functions/verify-technician-password`);
   console.log(`🔒 Password hashing: http://localhost:${PORT}/.netlify/functions/hash-technician-password`);
   console.log(`📍 Distance Matrix: http://localhost:${PORT}/.netlify/functions/distance-matrix`);
+  console.log(
+    `👤 Provision technician Auth: http://localhost:${PORT}/.netlify/functions/provision-technician-auth-on-login`
+  );
+  console.log(
+    `🔑 Sync technician Auth: http://localhost:${PORT}/.netlify/functions/sync-technician-auth-user`
+  );
+  const hasServiceKey = !!process.env.SUPABASE_SERVICE_ROLE_KEY;
+  console.log(
+    hasServiceKey
+      ? '✅ SUPABASE_SERVICE_ROLE_KEY loaded from .env.local'
+      : '⚠️  SUPABASE_SERVICE_ROLE_KEY missing — add to .env.local for technician Auth provisioning'
+  );
   console.log(`\n✅ Keep this running and use 'npm run dev:vite' in another terminal\n`);
 });

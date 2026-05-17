@@ -5,6 +5,7 @@
 const DEFAULT_ORIGINS = [
   'http://localhost:8080',           // Vite dev server (HTTP)
   'https://localhost:8080',          // Vite dev server (HTTPS)
+  'http://localhost:8081',           // Vite when 8080 is in use
   'http://localhost:5173',            // Vite default dev port
   'http://localhost:3000',           // Alternative dev port
   'http://localhost:8888',           // Netlify functions dev server

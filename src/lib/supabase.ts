@@ -479,11 +479,25 @@ export const CUSTOMER_ADMIN_LIST_PATCH_COLUMNS = [
   'updated_at',
 ].join(',');
 
+/** True when logged-in admin may use direct customers table (not anon / technician). */
+async function hasAdminCustomerAccess(): Promise<boolean> {
+  const { data: { session } } = await supabase.auth.getSession();
+  if (!session?.user) return false;
+  const role =
+    session.user.app_metadata?.role ?? session.user.user_metadata?.role ?? 'admin';
+  return role !== 'technician';
+}
+
 // Database helper functions
 export const db = {
   // Customer operations
   customers: {
     async create(customer: Database['public']['Tables']['customers']['Insert']) {
+      // Public booking (anon): must use SECURITY DEFINER RPC after customers RLS lockdown
+      if (!(await hasAdminCustomerAccess())) {
+        return db.customers.createForBooking(customer as Record<string, unknown>);
+      }
+
       // Generate customer ID if not provided
       if (!customer.customer_id) {
         const { data: generatedId, error: idError } = await supabase
@@ -526,6 +540,10 @@ export const db = {
     },
     
     async getByPhone(phone: string) {
+      if (!(await hasAdminCustomerAccess())) {
+        return db.customers.getByPhoneForBooking(phone);
+      }
+
       const { data, error } = await supabase
         .from('customers')
         .select(CUSTOMER_ROW_COLUMNS)
@@ -534,8 +552,47 @@ export const db = {
       
       return { data, error };
     },
+
+    /** Public booking only — phone-scoped RPC; safe under locked-down customers RLS. */
+    async getByPhoneForBooking(phone: string) {
+      const { data, error } = await supabase.rpc('get_customer_by_phone_for_booking', {
+        p_phone: phone,
+      });
+      const row = Array.isArray(data) ? data[0] : data;
+      return { data: row ?? null, error };
+    },
+
+    async createForBooking(customer: Record<string, unknown>) {
+      const { createBookingCustomer } = await import('@/lib/bookingCustomer');
+      return createBookingCustomer(customer);
+    },
+
+    async updateForBooking(id: string, phone: string, updates: Record<string, unknown>) {
+      const { data, error } = await supabase.rpc('update_customer_for_booking', {
+        p_customer_id: id,
+        p_phone: phone,
+        p_updates: updates,
+      });
+      return { data: data ?? null, error };
+    },
     
     async update(id: string, updates: Database['public']['Tables']['customers']['Update']) {
+      if (!(await hasAdminCustomerAccess())) {
+        const phone =
+          (updates as { phone?: string }).phone ??
+          (updates as { phone_number?: string }).phone_number;
+        if (phone) {
+          return db.customers.updateForBooking(id, phone, updates as Record<string, unknown>);
+        }
+        return {
+          data: null,
+          error: {
+            message:
+              'Public booking must use updateForBooking(id, phone, updates) after customers RLS is enabled',
+          },
+        };
+      }
+
       const { data, error } = await supabase
         .from('customers')
         .update(updates)

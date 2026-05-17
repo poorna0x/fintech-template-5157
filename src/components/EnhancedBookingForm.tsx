@@ -15,6 +15,7 @@ import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Calendar, Phone, MessageCircle, MapPin, User, Clock, ChevronLeft, ChevronRight, Check, Settings, Filter, Upload, Camera, Loader2, Mail } from 'lucide-react';
 import { toast } from 'sonner';
 import { db, generateJobNumber } from '@/lib/supabase';
+import { createBookingCustomer } from '@/lib/bookingCustomer';
 import { emailService } from '@/lib/email';
 import AltchaWidget from '@/components/AltchaWidget';
 
@@ -238,7 +239,7 @@ const EnhancedBookingForm = () => {
         preferred_language: data.preferredLanguage,
       };
 
-      const { data: customer, error: customerError } = await db.customers.create(customerData);
+      const { data: customer, error: customerError } = await createBookingCustomer(customerData);
       
       if (customerError) {
         throw new Error(customerError.message);

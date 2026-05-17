@@ -38,6 +38,7 @@ import {
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { db, supabase } from '@/lib/supabase';
+import { deleteTechnicianCompletely } from '@/lib/deleteTechnician';
 import { buildTechnicianSalaryPayload, getCurrentMonthKey } from '@/lib/technicianSalaryForPeriod';
 import { Technician } from '@/types';
 import ImageUpload from '@/components/ImageUpload';
@@ -71,6 +72,9 @@ const Settings = () => {
   const [addTechnicianDialogOpen, setAddTechnicianDialogOpen] = useState(false);
   const [editTechnicianDialogOpen, setEditTechnicianDialogOpen] = useState(false);
   const [selectedTechnician, setSelectedTechnician] = useState<Technician | null>(null);
+  const [technicianToDelete, setTechnicianToDelete] = useState<Technician | null>(null);
+  const [deleteTechnicianStep, setDeleteTechnicianStep] = useState<0 | 1 | 2>(0);
+  const [isDeletingTechnician, setIsDeletingTechnician] = useState(false);
   
   // Common QR Code management states (payment QR codes)
   const [commonQrCodes, setCommonQrCodes] = useState<CommonQrCode[]>([]);
@@ -214,6 +218,41 @@ const Settings = () => {
     } catch (error) {
       console.error('Error loading technicians:', error);
       toast.error('Failed to load technicians');
+    }
+  };
+
+  const resetDeleteTechnicianFlow = () => {
+    setTechnicianToDelete(null);
+    setDeleteTechnicianStep(0);
+    setIsDeletingTechnician(false);
+  };
+
+  const handleStartDeleteTechnician = (technician: Technician) => {
+    setTechnicianToDelete(technician);
+    setDeleteTechnicianStep(1);
+  };
+
+  const handleExecuteDeleteTechnician = async () => {
+    if (!technicianToDelete) return;
+
+    setIsDeletingTechnician(true);
+    try {
+      const { authSyncSkipped } = await deleteTechnicianCompletely(technicianToDelete.id);
+
+      toast.success(`Technician "${technicianToDelete.fullName}" and all related data were deleted`);
+      if (authSyncSkipped) {
+        toast.warning(
+          'Technician removed from the app. Restart dev server (npm run dev) or deploy to also remove their login account.'
+        );
+      }
+      resetDeleteTechnicianFlow();
+      await loadTechnicians();
+      invalidateQrCodesCache();
+    } catch (error) {
+      console.error('Delete technician error:', error);
+      toast.error(error instanceof Error ? error.message : 'Failed to delete technician');
+    } finally {
+      setIsDeletingTechnician(false);
     }
   };
 
@@ -378,6 +417,8 @@ const Settings = () => {
         technicianData.password = hashedPassword;
       }
 
+      let savedTechnicianId: string | null = null;
+
       if (editTechnicianDialogOpen && selectedTechnician) {
         // Update existing technician - only update password if provided
         const updateData = { ...technicianData };
@@ -386,6 +427,7 @@ const Settings = () => {
         }
         const { error } = await db.technicians.update(selectedTechnician.id, updateData);
         if (error) throw error;
+        savedTechnicianId = selectedTechnician.id;
         toast.success('Technician updated successfully');
       } else {
         // Create new technician - password is required
@@ -442,10 +484,40 @@ const Settings = () => {
         
         // Store the newly created technician ID to show link
         if (newTechnician && newTechnician.id) {
+          savedTechnicianId = newTechnician.id;
           setNewlyCreatedTechnicianId(newTechnician.id);
         }
         
         toast.success('Technician created successfully');
+      }
+
+      if (technicianFormData.password?.trim() && savedTechnicianId) {
+        const techId = savedTechnicianId;
+        const { data: sessionData } = await supabase.auth.getSession();
+        const accessToken = sessionData.session?.access_token;
+        if (accessToken && techId) {
+          try {
+            const syncRes = await fetch('/.netlify/functions/sync-technician-auth-user', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                technicianId: techId,
+                email: technicianFormData.email,
+                password: technicianFormData.password,
+                accessToken,
+              }),
+            });
+            if (!syncRes.ok) {
+              const errBody = await syncRes.json().catch(() => ({}));
+              console.warn('Technician auth sync failed:', errBody);
+              toast.warning(
+                'Technician saved but login sync failed. Run provision script or retry with a new password.'
+              );
+            }
+          } catch (syncErr) {
+            console.warn('Technician auth sync error:', syncErr);
+          }
+        }
       }
 
       // Refresh technicians list
@@ -1438,6 +1510,15 @@ const Settings = () => {
           >
             <Edit className="w-3 h-3 sm:w-4 sm:h-4 mr-1" />
             Edit
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => handleStartDeleteTechnician(technician)}
+            className="flex-1 min-w-[5rem] text-xs sm:text-sm text-red-600 border-red-200 hover:bg-red-50 hover:text-red-700"
+          >
+            <Trash2 className="w-3 h-3 sm:w-4 sm:h-4 mr-1" />
+            Delete
           </Button>
         </div>
       </CardContent>
@@ -3155,6 +3236,83 @@ const Settings = () => {
               className="bg-blue-600 hover:bg-blue-700 w-full sm:w-auto order-1 sm:order-2 h-10 sm:h-9 text-sm sm:text-sm font-medium"
             >
               Complete Task
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Delete technician — 2-step confirmation */}
+      <AlertDialog
+        open={deleteTechnicianStep === 1}
+        onOpenChange={(open) => {
+          if (!open) resetDeleteTechnicianFlow();
+        }}
+      >
+        <AlertDialogContent className="mx-4 sm:mx-0 max-w-lg">
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete technician? (Step 1 of 2)</AlertDialogTitle>
+            <AlertDialogDescription asChild>
+              <div className="space-y-2 text-sm text-muted-foreground">
+                <p>
+                  You are about to permanently delete{' '}
+                  <strong className="text-foreground">{technicianToDelete?.fullName}</strong> (
+                  {technicianToDelete?.employeeId}). This cannot be undone.
+                </p>
+                <p>The following will be removed:</p>
+                <ul className="list-disc pl-5 space-y-1">
+                  <li>Profile, login, ID card link, salary and inventory records</li>
+                  <li>Assignment requests, parts used, and messages to this technician</li>
+                </ul>
+                <p>
+                  <strong className="text-foreground">Jobs and customers are not deleted.</strong> Job
+                  assignments will be cleared.
+                </p>
+              </div>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter className="flex-col-reverse sm:flex-row gap-2">
+            <AlertDialogCancel className="mt-0">Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-red-600 hover:bg-red-700"
+              onClick={(e) => {
+                e.preventDefault();
+                setDeleteTechnicianStep(2);
+              }}
+            >
+              Continue
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <AlertDialog
+        open={deleteTechnicianStep === 2}
+        onOpenChange={(open) => {
+          if (!open) resetDeleteTechnicianFlow();
+        }}
+      >
+        <AlertDialogContent className="mx-4 sm:mx-0 max-w-lg">
+          <AlertDialogHeader>
+            <AlertDialogTitle>Confirm deletion (Step 2 of 2)</AlertDialogTitle>
+            <AlertDialogDescription>
+              Permanently delete{' '}
+              <strong>{technicianToDelete?.fullName}</strong> and all related data? This cannot be
+              undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter className="flex-col-reverse sm:flex-row gap-2">
+            <AlertDialogCancel className="mt-0" disabled={isDeletingTechnician}>
+              Cancel
+            </AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-red-600 hover:bg-red-700"
+              disabled={isDeletingTechnician}
+              onClick={(e) => {
+                e.preventDefault();
+                void handleExecuteDeleteTechnician();
+              }}
+            >
+              {isDeletingTechnician ? 'Deleting…' : 'Delete permanently'}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

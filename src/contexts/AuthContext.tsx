@@ -1,7 +1,13 @@
 import React, { createContext, useContext, useState, useEffect, useRef, ReactNode } from 'react';
 import { toast } from 'sonner';
 import { supabase } from '@/lib/supabase';
-import { authenticateUser, setAuthSession, getAuthSession, clearAuthSession, isTechnicianEmail, type AuthUser } from '@/lib/auth';
+import {
+  setAuthSession,
+  getAuthSession,
+  clearAuthSession,
+  isTechnicianEmail,
+  loginTechnician,
+} from '@/lib/auth';
 import type { User as SupabaseUser } from '@supabase/supabase-js';
 
 export interface User {
@@ -63,37 +69,41 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       }, overallTimeout);
 
       try {
-        // First check custom auth session (for technicians) - this is synchronous and fast
-        const customSession = getAuthSession();
-        if (customSession) {
-          clearTimeout(timeoutId);
-          setUser(customSession);
-          setLoading(false);
-          technicianSessionRef.current = true;
-          setInitialized(true);
-          return;
-        }
-
-        // Then check Supabase auth session (for admins) with aggressive timeout for Chrome mobile
         const sessionPromise = supabase.auth.getSession();
-        const timeoutPromise = new Promise<{ data: { session: null } }>((_, reject) => 
+        const timeoutPromise = new Promise<{ data: { session: null } }>((_, reject) =>
           setTimeout(() => reject(new Error('Session check timeout')), sessionTimeout)
         );
 
         const result = await Promise.race([sessionPromise, timeoutPromise]);
         const { data: { session } } = result;
-        
+
         clearTimeout(timeoutId);
-        
+
         if (session?.user) {
-          const userRole = session.user.user_metadata?.role || session.user.app_metadata?.role || 'admin';
-          setUser({
+          const userRole =
+            session.user.user_metadata?.role || session.user.app_metadata?.role || 'admin';
+          const nextUser: User = {
             id: session.user.id,
             email: session.user.email || '',
-            role: userRole,
-            fullName: session.user.user_metadata?.full_name || session.user.user_metadata?.name
-          });
-          technicianSessionRef.current = false;
+            role: userRole === 'technician' ? 'technician' : 'admin',
+            fullName:
+              session.user.user_metadata?.full_name || session.user.user_metadata?.name,
+            technicianId: userRole === 'technician' ? session.user.id : undefined,
+          };
+          setUser(nextUser);
+          technicianSessionRef.current = userRole === 'technician';
+          if (userRole === 'technician') {
+            setAuthSession(nextUser);
+          }
+          setLoading(false);
+          setInitialized(true);
+          return;
+        }
+
+        const customSession = getAuthSession();
+        if (customSession?.role === 'technician') {
+          setUser(customSession);
+          technicianSessionRef.current = true;
         }
       } catch (error) {
         clearTimeout(timeoutId);
@@ -114,14 +124,21 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     // Listen for Supabase auth changes (for admins)
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
       if (session?.user) {
-        const userRole = session.user.user_metadata?.role || session.user.app_metadata?.role || 'admin';
-        setUser({
+        const userRole =
+          session.user.user_metadata?.role || session.user.app_metadata?.role || 'admin';
+        const nextUser: User = {
           id: session.user.id,
           email: session.user.email || '',
-          role: userRole,
-          fullName: session.user.user_metadata?.full_name || session.user.user_metadata?.name
-        });
-        technicianSessionRef.current = false;
+          role: userRole === 'technician' ? 'technician' : 'admin',
+          fullName:
+            session.user.user_metadata?.full_name || session.user.user_metadata?.name,
+          technicianId: userRole === 'technician' ? session.user.id : undefined,
+        };
+        setUser(nextUser);
+        technicianSessionRef.current = userRole === 'technician';
+        if (userRole === 'technician') {
+          setAuthSession(nextUser);
+        }
         setLoading(false);
         return;
       }
@@ -251,137 +268,73 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   }, [initialized, user]);
 
   const login = async (email: string, password: string): Promise<boolean> => {
-    console.log('[AuthContext] 🔐 login() called');
-    console.log('[AuthContext] Email:', email);
-    console.log('[AuthContext] Password length:', password.length);
-    console.log('[AuthContext] Current path:', typeof window !== 'undefined' ? window.location.pathname : 'N/A');
-    
     try {
       setLoading(true);
-      console.log('[AuthContext] Set loading to true');
-      
-      // Detect Chrome mobile for timeout handling
-      const isChromeMobile = typeof window !== 'undefined' && 
-        /Chrome/i.test(navigator.userAgent) && 
-        /Mobile|Android/i.test(navigator.userAgent);
-      
-      console.log('[AuthContext] Browser:', isChromeMobile ? 'Chrome Mobile' : 'Other');
-      console.log('[AuthContext] Auth timeout:', isChromeMobile ? '10s' : '20s');
-      
-      // Add timeout wrapper for Chrome mobile
-      console.log('[AuthContext] Calling authenticateUser()...');
-      const authPromise = authenticateUser(email, password);
-      const timeoutPromise = new Promise<AuthUser | null>((_, reject) => 
-        setTimeout(() => reject(new Error('Authentication timeout')), isChromeMobile ? 10000 : 20000)
-      );
-      
-      // First try custom authentication (for technicians)
-      console.log('[AuthContext] Waiting for authenticateUser() response...');
-      const customUser = await Promise.race([authPromise, timeoutPromise]);
-      console.log('[AuthContext] authenticateUser() response received');
-      console.log('[AuthContext] Custom user result:', customUser ? { id: customUser.id, email: customUser.email, role: customUser.role } : null);
-      
-      if (customUser) {
-        console.log('[AuthContext] ✅ Technician authentication successful');
-        console.log('[AuthContext] User details:', { id: customUser.id, email: customUser.email, role: customUser.role, fullName: customUser.fullName });
-        
-        // Ensure any existing Supabase session is cleared so it doesn't override technician auth on reload
-        console.log('[AuthContext] Clearing any existing Supabase session...');
-        try {
-          const { error: signOutError } = await supabase.auth.signOut();
-          if (signOutError) {
-            console.warn('[AuthContext] ⚠️ Warning clearing Supabase session after technician login:', signOutError);
-          } else {
-            console.log('[AuthContext] ✅ Supabase session cleared successfully');
-          }
-        } catch (signOutErr) {
-          console.warn('[AuthContext] ⚠️ Failed to clear Supabase session after technician login:', signOutErr);
+
+      const isTechnicianLoginPage =
+        typeof window !== 'undefined' &&
+        window.location.pathname.includes('/technician/login');
+      const isTechnician = isTechnicianLoginPage || (await isTechnicianEmail(email));
+
+      if (isTechnician) {
+        const techUser = await loginTechnician(email, password);
+        if (!techUser) {
+          toast.error('Invalid credentials. Please check your email and password.');
+          return false;
         }
-        
-        console.log('[AuthContext] Setting user state...');
-        setUser(customUser);
-        console.log('[AuthContext] Saving auth session to storage...');
-        setAuthSession(customUser);
+        setUser(techUser);
+        setAuthSession(techUser);
         technicianSessionRef.current = true;
-        console.log('[AuthContext] ✅ Technician login complete, showing success toast...');
-        toast.success(`Welcome back, ${customUser.fullName || customUser.email}!`);
-        console.log('[AuthContext] Returning true');
+        const { data: { session } } = await supabase.auth.getSession();
+        if (session?.user?.id === techUser.id) {
+          toast.success(`Welcome back, ${techUser.fullName || techUser.email}!`);
+        } else {
+          toast.success(`Welcome back, ${techUser.fullName || techUser.email}!`);
+          toast.warning(
+            'Supabase login not linked yet. Restart dev server (npm run dev) or set SUPABASE_SERVICE_ROLE_KEY on Netlify, then log in again.',
+            { duration: 8000 }
+          );
+        }
         return true;
       }
 
-      console.log('[AuthContext] Custom authentication returned null, checking if email belongs to technician...');
-      // Before trying Supabase auth, check if this email belongs to a technician
-      // If it does, don't try Supabase auth (even if technician auth failed)
-      const isTechnician = await isTechnicianEmail(email);
-      console.log('[AuthContext] isTechnicianEmail() result:', isTechnician);
-      
-      if (isTechnician) {
-        console.log('[AuthContext] ❌ Email belongs to a technician but authentication failed - not trying Supabase auth');
-        toast.error('Invalid credentials. Please check your email and password.');
-        return false;
-      }
-      
-      // If not a technician, try Supabase auth (for admins only)
-      // BUT: Only do this if we're not on the technician login page
-      // Check the current path to determine context
-      const isTechnicianLoginPage = typeof window !== 'undefined' && 
-        window.location.pathname.includes('/technician/login');
-      
-      console.log('[AuthContext] Is technician login page?', isTechnicianLoginPage);
-      
-      if (isTechnicianLoginPage) {
-        // On technician login page - don't try admin auth
-        console.log('[AuthContext] ❌ On technician login page - not trying Supabase auth for admin');
-        toast.error('Invalid credentials. Please check your email and password.');
-        return false;
-      }
-      
-      console.log('[AuthContext] Not a technician email, trying Supabase auth for admin...');
-      
       const { data, error } = await supabase.auth.signInWithPassword({
-        email: email,
-        password: password,
+        email,
+        password,
       });
 
-      console.log('[AuthContext] Supabase auth response received');
-      console.log('[AuthContext] Supabase error:', error);
-      console.log('[AuthContext] Supabase user:', data?.user ? { id: data.user.id, email: data.user.email } : null);
-
       if (error) {
-        console.error('[AuthContext] ❌ Supabase auth error:', error.message);
         toast.error('Invalid email or password');
         return false;
       }
 
       if (data.user) {
-        const userRole = data.user.user_metadata?.role || data.user.app_metadata?.role || 'admin';
-        const user = {
+        const userRole =
+          data.user.user_metadata?.role || data.user.app_metadata?.role || 'admin';
+        if (userRole === 'technician') {
+          await supabase.auth.signOut();
+          toast.error('Use the technician login page for this account.');
+          return false;
+        }
+        const adminUser: User = {
           id: data.user.id,
           email: data.user.email || '',
-          role: userRole,
-          fullName: data.user.user_metadata?.full_name || data.user.user_metadata?.name
+          role: 'admin',
+          fullName:
+            data.user.user_metadata?.full_name || data.user.user_metadata?.name,
         };
-        console.log('[AuthContext] ✅ Supabase auth successful');
-        console.log('[AuthContext] User role:', userRole);
-        console.log('[AuthContext] Setting user state...');
-        setUser(user);
+        setUser(adminUser);
         technicianSessionRef.current = false;
-        console.log('[AuthContext] ✅ Admin login complete, showing success toast...');
-        toast.success(`Welcome back, ${user.fullName || user.email}!`);
+        clearAuthSession();
+        toast.success(`Welcome back, ${adminUser.fullName || adminUser.email}!`);
         return true;
       }
-      
-      console.log('[AuthContext] ❌ No user data returned from Supabase');
+
       return false;
-    } catch (error: any) {
-      console.error('[AuthContext] ❌ Login exception caught:', error);
-      console.error('[AuthContext] Error name:', error?.name);
-      console.error('[AuthContext] Error message:', error?.message);
-      console.error('[AuthContext] Error stack:', error?.stack);
+    } catch {
       toast.error('Login failed. Please try again.');
       return false;
     } finally {
-      console.log('[AuthContext] Login process finished, setting loading to false');
       setLoading(false);
     }
   };

@@ -15,6 +15,11 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } f
 import { toast } from 'sonner';
 import { ChevronLeft, ChevronRight, MapPin, Camera, Upload, Check, Phone, Mail, User, Home, Clock, Wrench, Loader2, Search, Navigation, X, ExternalLink } from 'lucide-react';
 import { db } from '@/lib/supabase';
+import {
+  createBookingCustomer,
+  getBookingCustomerByPhone,
+  updateBookingCustomer,
+} from '@/lib/bookingCustomer';
 import { cloudinaryService, compressImage } from '@/lib/cloudinary';
 import { emailService } from '@/lib/email';
 import { isIOS, isPWA, shouldUseFileInputFallback, requestCameraAccess, createVideoElement } from '@/lib/cameraUtils';
@@ -1356,7 +1361,7 @@ const Booking: React.FC = () => {
       let findError = null;
       
       try {
-        const result = await db.customers.getByPhone(formData.phone);
+        const result = await getBookingCustomerByPhone(formData.phone);
         existingCustomer = result.data;
         findError = result.error;
       } catch (networkError: any) {
@@ -1447,7 +1452,11 @@ const Booking: React.FC = () => {
         let updateError = null;
 
         try {
-          const result = await db.customers.update((existingCustomer as any).id, updateData);
+          const result = await updateBookingCustomer(
+            (existingCustomer as any).id,
+            formData.phone,
+            updateData
+          );
           updatedCustomer = result.data;
           updateError = result.error;
         } catch (networkError: any) {
@@ -1537,7 +1546,7 @@ const Booking: React.FC = () => {
         let customerError = null;
         
         try {
-          const result = await db.customers.create(customerData);
+          const result = await createBookingCustomer(customerData);
           newCustomer = result.data;
           customerError = result.error;
         } catch (networkError: any) {

@@ -217,6 +217,113 @@ export const authenticateUser = async (email: string, password: string): Promise
   }
 };
 
+/** Create/update Supabase Auth user after password verified server-side (migration). */
+export const provisionTechnicianAuthOnLogin = async (
+  email: string,
+  password: string
+): Promise<{ ok: boolean; error?: string }> => {
+  try {
+    const res = await fetch('/.netlify/functions/provision-technician-auth-on-login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email, password }),
+    });
+    const body = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      const msg = body?.error || body?.hint || `HTTP ${res.status}`;
+      if (import.meta.env.DEV) {
+        console.error('[provisionTechnicianAuthOnLogin]', msg);
+      }
+      return { ok: false, error: msg };
+    }
+    return { ok: !!body?.ok };
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : 'Network error';
+    if (import.meta.env.DEV) {
+      console.error('[provisionTechnicianAuthOnLogin]', msg);
+    }
+    return { ok: false, error: msg };
+  }
+};
+
+/** Technician login via Supabase Auth (auth.users.id must equal technicians.id). */
+export const loginTechnicianWithSupabase = async (
+  email: string,
+  password: string
+): Promise<AuthUser | null> => {
+  const { data, error } = await supabase.auth.signInWithPassword({
+    email: email.toLowerCase().trim(),
+    password,
+  });
+
+  if (error || !data.user) {
+    return null;
+  }
+
+  const role =
+    data.user.app_metadata?.role || data.user.user_metadata?.role || 'technician';
+  if (role !== 'technician') {
+    await supabase.auth.signOut();
+    return null;
+  }
+
+  const { data: tech, error: techError } = await supabase
+    .from('technicians')
+    .select('id, full_name, email, account_status')
+    .eq('id', data.user.id)
+    .single();
+
+  if (techError || !tech || tech.account_status !== 'ACTIVE') {
+    await supabase.auth.signOut();
+    return null;
+  }
+
+  return {
+    id: tech.id,
+    email: tech.email,
+    role: 'technician',
+    technicianId: tech.id,
+    fullName: tech.full_name,
+  };
+};
+
+/**
+ * Safe migration login: Supabase first → auto-provision Auth user → legacy fallback.
+ * Legacy keeps working until secure-customers-rls.sql is applied; Supabase session is ready before then.
+ */
+export const loginTechnician = async (
+  email: string,
+  password: string
+): Promise<AuthUser | null> => {
+  let user = await loginTechnicianWithSupabase(email, password);
+  if (user) return user;
+
+  let provision = await provisionTechnicianAuthOnLogin(email, password);
+  if (provision.ok) {
+    user = await loginTechnicianWithSupabase(email, password);
+    if (user) return user;
+  }
+
+  const legacy = await authenticateUser(email, password);
+  if (!legacy) return null;
+
+  // Legacy login succeeded but Auth may not exist yet (e.g. dev server 404) — retry provision
+  provision = await provisionTechnicianAuthOnLogin(email, password);
+  if (provision.ok) {
+    user = await loginTechnicianWithSupabase(email, password);
+    if (user) return user;
+  }
+
+  if (import.meta.env.DEV && !provision.ok) {
+    console.warn(
+      '[loginTechnician] Logged in via legacy path; Supabase Auth not linked:',
+      provision.error
+    );
+  }
+
+  return legacy;
+};
+
 // Export a function to check if technician exists (to prevent Supabase auth fallback)
 export const isTechnicianEmail = async (email: string): Promise<boolean> => {
   try {
@@ -230,6 +337,23 @@ export const isTechnicianEmail = async (email: string): Promise<boolean> => {
     return false;
   }
 };
+
+/** Wait until admin Supabase JWT is available (needed before customers RLS queries). */
+export async function ensureAdminSupabaseSession(maxWaitMs = 8000): Promise<boolean> {
+  const started = Date.now();
+  while (Date.now() - started < maxWaitMs) {
+    const { data: { session } } = await supabase.auth.getSession();
+    if (session?.user) {
+      const role =
+        session.user.app_metadata?.role ?? session.user.user_metadata?.role ?? 'admin';
+      if (role !== 'technician') {
+        return true;
+      }
+    }
+    await new Promise((resolve) => setTimeout(resolve, 50));
+  }
+  return false;
+}
 
 // Simple session storage with Chrome-compatible fallback
 export const setAuthSession = (user: AuthUser) => {

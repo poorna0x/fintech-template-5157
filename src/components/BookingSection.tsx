@@ -9,6 +9,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Calendar, Phone, MessageCircle, MapPin, User, Clock, ChevronLeft, ChevronRight, Check, Settings, Filter, Upload, Camera, Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { db, generateJobNumber } from '@/lib/supabase';
+import { createBookingCustomer } from '@/lib/bookingCustomer';
 import { emailService } from '@/lib/email';
 import ImageUpload from './ImageUpload';
 
@@ -372,7 +373,7 @@ const BookingSection = () => {
         preferred_language: 'ENGLISH' as const,
       };
 
-      const { data: customer, error: customerError } = await db.customers.create(customerData);
+      const { data: customer, error: customerError } = await createBookingCustomer(customerData);
       
       if (customerError) {
         throw new Error(customerError.message);
