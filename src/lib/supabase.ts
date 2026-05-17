@@ -6,6 +6,7 @@ import { escapeForLike, normalizePhoneForSearch } from './utils';
 import { PENDING_PAYMENT_REMINDER_TITLE } from './pendingPaymentReminder';
 import { cacheGet, cacheSet, cacheInvalidate } from './supabaseQueryCache';
 import { isMissingServiceBrandColumnError } from './amc-brand';
+import { isPWAMode } from './pwa';
 
 // Debug logging in development
 if (import.meta.env.DEV) {
@@ -72,9 +73,10 @@ export const supabase = createClient<Database>(buildTimeUrl, buildTimeKey, {
       //   });
       // }
       
-      // Add timeout to prevent hanging requests in PWA
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 30000); // 30 second timeout
+      const fetchTimeoutMs =
+        typeof window !== 'undefined' && isPWAMode() ? 60_000 : 30_000;
+      const timeoutId = setTimeout(() => controller.abort(), fetchTimeoutMs);
 
       if (!isSupabaseConfigured() && String(url).includes('placeholder.supabase.co')) {
         clearTimeout(timeoutId);

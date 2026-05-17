@@ -75,24 +75,8 @@ self.addEventListener('fetch', (event) => {
     url.hostname.includes('nominatim.openstreetmap.org') ||
     request.headers.get('X-Requested-With') === 'XMLHttpRequest';
 
-  // For API requests, always fetch from network with timeout
+  // Never intercept API/auth requests — SW fetch + synthetic 503 breaks Supabase in PWA
   if (isAPIRequest) {
-    event.respondWith(
-      Promise.race([
-        fetch(request),
-        new Promise((_, reject) => 
-          setTimeout(() => reject(new Error('Request timeout')), 30000)
-        )
-      ]).catch((error) => {
-        console.error('[Admin PWA] API request failed:', error);
-        // Return error response instead of hanging
-        return new Response(JSON.stringify({ error: 'Network request failed' }), {
-          status: 503,
-          statusText: 'Service Unavailable',
-          headers: { 'Content-Type': 'application/json' }
-        });
-      })
-    );
     return;
   }
 

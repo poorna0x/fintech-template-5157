@@ -16,12 +16,35 @@ export function getAuthPortal(pathname: string): AuthPortal {
   return 'public';
 }
 
-export function sessionRoleFromSupabaseUser(
+/** Role only when explicitly set on JWT metadata (no default — avoids misclassifying technicians as admins). */
+function jwtMetadataRole(
   user: SupabaseUser | null | undefined
 ): 'admin' | 'technician' | null {
   if (!user) return null;
-  const role = user.app_metadata?.role ?? user.user_metadata?.role ?? 'admin';
-  return role === 'technician' ? 'technician' : 'admin';
+  const raw = user.app_metadata?.role ?? user.user_metadata?.role;
+  if (raw === 'technician') return 'technician';
+  if (raw === 'admin') return 'admin';
+  return null;
+}
+
+/**
+ * Resolve portal role for the signed-in Auth user.
+ * Legacy technician Auth users may omit role on JWT; those rows use auth.users.id = technicians.id.
+ */
+export async function resolveSessionRoleFromSupabaseUser(
+  user: SupabaseUser
+): Promise<'admin' | 'technician'> {
+  const direct = jwtMetadataRole(user);
+  if (direct !== null) return direct;
+
+  const { data, error } = await supabase
+    .from('technicians')
+    .select('id')
+    .eq('id', user.id)
+    .maybeSingle();
+
+  if (!error && data) return 'technician';
+  return 'admin';
 }
 
 export function isSessionRoleAllowedForPortal(
@@ -42,7 +65,7 @@ export async function clearWrongPortalSession(expectedPortal: AuthPortal): Promi
       clearAuthSession();
       return;
     }
-    const role = sessionRoleFromSupabaseUser(session.user);
+    const role = await resolveSessionRoleFromSupabaseUser(session.user);
     if (!isSessionRoleAllowedForPortal(role, expectedPortal)) {
       await supabase.auth.signOut();
       clearAuthSession();

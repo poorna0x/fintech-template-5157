@@ -8,9 +8,17 @@ const registrationPromises = new Map<string, Promise<ServiceWorkerRegistration |
 let globalInstallPromptHandler: ((event: Event) => void) | null = null;
 let isPWAEnabled = false;
 
-const isStandalone = () => {
-  return window.matchMedia('(display-mode: standalone)').matches || (navigator as any).standalone === true;
+/** Installed PWA (home screen) — slower network + service worker; not the same as mobile browser tab. */
+export const isPWAMode = (): boolean => {
+  if (typeof window === 'undefined') return false;
+  return (
+    window.matchMedia('(display-mode: standalone)').matches ||
+    (navigator as Navigator & { standalone?: boolean }).standalone === true ||
+    document.referrer.includes('android-app://')
+  );
 };
+
+const isStandalone = () => isPWAMode();
 
 // Initialize global handler to prevent install prompts on non-PWA pages
 const initGlobalInstallPromptHandler = () => {

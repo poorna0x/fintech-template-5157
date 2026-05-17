@@ -4,12 +4,17 @@ import { supabase } from './supabase';
 import { chromeStorage } from './storage';
 import { getSupabaseConfigError } from './supabaseConfig';
 
-const FUNCTION_FETCH_TIMEOUT_MS = 12_000;
+import { isPWAMode } from './pwa';
+
+function functionFetchTimeoutMs(): number {
+  if (typeof window !== 'undefined' && isPWAMode()) return 35_000;
+  return 20_000;
+}
 
 async function fetchWithTimeout(
   input: RequestInfo | URL,
   init?: RequestInit,
-  timeoutMs = FUNCTION_FETCH_TIMEOUT_MS
+  timeoutMs = functionFetchTimeoutMs()
 ): Promise<Response> {
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), timeoutMs);

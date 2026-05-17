@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { clearWrongPortalSession } from '@/lib/authPortal';
+import { clearWrongPortalSession, resolveSessionRoleFromSupabaseUser } from '@/lib/authPortal';
 import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/lib/supabase';
 import { Button } from '@/components/ui/button';
@@ -12,6 +12,7 @@ import { Shield, Eye, EyeOff, Droplets } from 'lucide-react';
 import { toast } from 'sonner';
 import AltchaWidget from '@/components/AltchaWidget';
 import { registerAdminPWA } from '@/lib/pwa';
+import { formatWelcomeDisplayName } from '@/lib/welcomeDisplayName';
 
 const AdminLogin = () => {
   const [email, setEmail] = useState('');
@@ -149,9 +150,22 @@ const AdminLogin = () => {
               console.warn('[AdminLogin] Session refresh warning:', sessionError);
             }
           }
-          
-          // Any authenticated user can access admin dashboard
-          toast.success('Welcome back, Admin!');
+
+          const portalRole = await resolveSessionRoleFromSupabaseUser(data.user);
+          if (portalRole === 'technician') {
+            await supabase.auth.signOut();
+            setError('Technician accounts must use the technician login page.');
+            toast.error('Use the technician login page for this account.');
+            return;
+          }
+
+          toast.success(
+            `Welcome back, ${formatWelcomeDisplayName({
+              fullName: data.user.user_metadata?.full_name,
+              name: data.user.user_metadata?.name,
+              email: data.user.email,
+            })}!`
+          );
           navigate('/admin', { replace: true });
         }
       } catch (abortError: any) {

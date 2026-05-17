@@ -10,7 +10,7 @@ import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Wrench, Eye, EyeOff, Droplets } from 'lucide-react';
 import { toast } from 'sonner';
 import AltchaWidget from '@/components/AltchaWidget';
-import { registerTechnicianPWA, disablePWA } from '@/lib/pwa';
+import { registerTechnicianPWA, disablePWA, isPWAMode } from '@/lib/pwa';
 import { clearWrongPortalSession } from '@/lib/authPortal';
 
 const TechnicianLogin = () => {
@@ -124,7 +124,11 @@ const TechnicianLogin = () => {
         /Chrome/i.test(navigator.userAgent) && 
         /Mobile|Android/i.test(navigator.userAgent);
       
-      const loginTimeoutMs = isChromeMobile ? 25000 : 45000;
+      const loginTimeoutMs = isPWAMode()
+        ? 70_000
+        : isChromeMobile
+          ? 35_000
+          : 50_000;
       console.log('[TechnicianLogin] Browser:', isChromeMobile ? 'Chrome Mobile' : 'Other');
       console.log('[TechnicianLogin] Timeout:', `${loginTimeoutMs / 1000}s`);
       

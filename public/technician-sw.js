@@ -1,5 +1,5 @@
-const STATIC_CACHE = 'technician-static-v1';
-const RUNTIME_CACHE = 'technician-runtime-v1';
+const STATIC_CACHE = 'technician-static-v2';
+const RUNTIME_CACHE = 'technician-runtime-v2';
 const OFFLINE_FALLBACK = '/technician';
 const PRECACHE_URLS = [
   '/',
@@ -61,24 +61,8 @@ self.addEventListener('fetch', (event) => {
     url.hostname.includes('maps.googleapis.com') ||
     request.headers.get('X-Requested-With') === 'XMLHttpRequest';
 
-  // For API requests, always fetch from network with timeout
+  // Never intercept API/auth requests — SW fetch + synthetic 503 breaks Supabase login in PWA
   if (isAPIRequest) {
-    event.respondWith(
-      Promise.race([
-        fetch(request),
-        new Promise((_, reject) => 
-          setTimeout(() => reject(new Error('Request timeout')), 30000)
-        )
-      ]).catch((error) => {
-        console.error('[Technician PWA] API request failed:', error);
-        // Return error response instead of hanging
-        return new Response(JSON.stringify({ error: 'Network request failed' }), {
-          status: 503,
-          statusText: 'Service Unavailable',
-          headers: { 'Content-Type': 'application/json' }
-        });
-      })
-    );
     return;
   }
 

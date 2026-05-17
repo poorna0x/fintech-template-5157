@@ -19,10 +19,12 @@ import {
 } from '@/lib/auth';
 import {
   getAuthPortal,
-  sessionRoleFromSupabaseUser,
+  resolveSessionRoleFromSupabaseUser,
   isSessionRoleAllowedForPortal,
   clearWrongPortalSession,
 } from '@/lib/authPortal';
+import { isPWAMode } from '@/lib/pwa';
+import { formatWelcomeDisplayName } from '@/lib/welcomeDisplayName';
 import type { Session } from '@supabase/supabase-js';
 
 export interface User {
@@ -48,8 +50,7 @@ interface AuthContextType {
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
-function userFromSession(session: Session): User {
-  const role = sessionRoleFromSupabaseUser(session.user);
+function userFromSession(session: Session, role: 'admin' | 'technician'): User {
   const isTechnician = role === 'technician';
   return {
     id: session.user.id,
@@ -83,21 +84,21 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   const [authInitializing, setAuthInitializing] = useState(true);
   const [loading, setLoading] = useState(false);
 
-  const applySessionUser = useCallback((session: Session | null, portal = portalRef.current) => {
+  const applySessionUser = useCallback(async (session: Session | null, portal = portalRef.current) => {
     if (!session?.user) {
       setUser(null);
       technicianSessionRef.current = false;
       return;
     }
 
-    const role = sessionRoleFromSupabaseUser(session.user);
+    const role = await resolveSessionRoleFromSupabaseUser(session.user);
     if (!isSessionRoleAllowedForPortal(role, portal)) {
       setUser(null);
       technicianSessionRef.current = false;
       return;
     }
 
-    const nextUser = userFromSession(session);
+    const nextUser = userFromSession(session, role);
     setUser(nextUser);
     technicianSessionRef.current = nextUser.role === 'technician';
     if (nextUser.role === 'technician') {
@@ -115,7 +116,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       if (portal === 'public') return;
 
       const { data: { session } } = await supabase.auth.getSession();
-      const role = session?.user ? sessionRoleFromSupabaseUser(session.user) : null;
+      const role = session?.user ? await resolveSessionRoleFromSupabaseUser(session.user) : null;
 
       if (session?.user && role && !isSessionRoleAllowedForPortal(role, portal)) {
         await supabase.auth.signOut();
@@ -125,19 +126,20 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         return;
       }
 
-      applySessionUser(session, portal);
+      await applySessionUser(session, portal);
     },
     [applySessionUser]
   );
 
   useEffect(() => {
+    const pwa = isPWAMode();
     const isChromeMobile =
       typeof window !== 'undefined' &&
       /Chrome/i.test(navigator.userAgent) &&
       /Mobile|Android/i.test(navigator.userAgent);
 
-    const sessionTimeoutMs = isChromeMobile ? 4000 : 6000;
-    const overallTimeoutMs = isChromeMobile ? 5000 : 8000;
+    const sessionTimeoutMs = pwa ? 20_000 : isChromeMobile ? 8_000 : 12_000;
+    const overallTimeoutMs = pwa ? 25_000 : isChromeMobile ? 10_000 : 15_000;
 
     let cancelled = false;
 
@@ -159,7 +161,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
 
         const session = result.data.session;
         if (session?.user) {
-          applySessionUser(session);
+          await applySessionUser(session);
         } else {
           const stored = getAuthSession();
           if (stored?.role === 'admin' && portalRef.current === 'admin') {
@@ -171,9 +173,9 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
           }
         }
       } catch {
-        if (!cancelled) {
-          clearAuthSession();
-          setUser(null);
+        // Do not wipe session on slow getSession (common in installed PWA); onAuthStateChange will reconcile
+        if (!cancelled && import.meta.env.DEV) {
+          console.warn('[Auth] Initial session check timed out');
         }
       } finally {
         clearTimeout(timeoutId);
@@ -194,7 +196,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
 
       if (session?.user) {
         if (event === 'TOKEN_REFRESHED' || event === 'SIGNED_IN' || event === 'INITIAL_SESSION') {
-          applySessionUser(session);
+          void applySessionUser(session);
         }
         setAuthInitializing(false);
         return;
@@ -240,7 +242,12 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         setAuthSession(techUser);
         technicianSessionRef.current = true;
         portalRef.current = 'technician';
-        toast.success(`Welcome back, ${techUser.fullName || techUser.email}!`);
+        toast.success(
+          `Welcome back, ${formatWelcomeDisplayName({
+            fullName: techUser.fullName,
+            email: techUser.email,
+          })}!`
+        );
         return true;
       }
 
@@ -274,7 +281,12 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         technicianSessionRef.current = false;
         clearAuthSession();
         portalRef.current = 'admin';
-        toast.success(`Welcome back, ${adminUser.fullName || adminUser.email}!`);
+        toast.success(
+          `Welcome back, ${formatWelcomeDisplayName({
+            fullName: adminUser.fullName,
+            email: adminUser.email,
+          })}!`
+        );
         return true;
       }
 

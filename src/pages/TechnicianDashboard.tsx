@@ -58,7 +58,7 @@ import { db, supabase, fetchCustomerIdsWithCompletedJobsMap } from '@/lib/supaba
 import { Job, JobAssignmentRequest } from '@/types';
 import { sendNotification, createJobCompletedNotification, createJobAssignmentRequestNotification, createJobAssignmentAcceptedNotification, createJobAssignmentRejectedNotification, requestNotificationPermission } from '@/lib/notifications';
 import FollowUpModal from '@/components/FollowUpModal';
-import { registerTechnicianPWA, disablePWA } from '@/lib/pwa';
+import { registerTechnicianPWA, disablePWA, isPWAMode } from '@/lib/pwa';
 import {
   cacheQrCodes,
   cacheTechnicianQrCode,
@@ -840,7 +840,7 @@ const TechnicianDashboard = () => {
       setAuthGraceExpired(false);
       return;
     }
-    const t = setTimeout(() => setAuthGraceExpired(true), 4000);
+    const t = setTimeout(() => setAuthGraceExpired(true), isPWAMode() ? 12_000 : 6_000);
     return () => clearTimeout(t);
   }, [authInitializing]);
 
