@@ -417,7 +417,7 @@ const BookingSection = () => {
         booking_domain: hostname,
       };
 
-      const { data: job, error: jobError } = await db.jobs.create(jobData);
+      const { data: job, error: jobError } = await db.jobs.create(jobData, 0, formData.phone);
       
       if (jobError) {
         throw new Error(jobError.message);

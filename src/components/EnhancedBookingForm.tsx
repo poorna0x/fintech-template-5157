@@ -282,7 +282,7 @@ const EnhancedBookingForm = () => {
         booking_domain: hostname,
       };
 
-      const { data: job, error: jobError } = await db.jobs.create(jobData);
+      const { data: job, error: jobError } = await db.jobs.create(jobData, 0, data.phone);
       
       if (jobError) {
         throw new Error(jobError.message);

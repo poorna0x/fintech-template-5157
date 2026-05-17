@@ -1683,7 +1683,7 @@ const Booking: React.FC = () => {
       let job: any = null;
       let jobError: any = null;
       for (let attempt = 0; attempt < 2; attempt++) {
-        const result = await db.jobs.create(jobData as any);
+        const result = await db.jobs.create(jobData as any, 0, formData.phone);
         job = result.data;
         jobError = result.error;
         if (!jobError) break;

@@ -775,7 +775,35 @@ export const db = {
 
   // Job operations
   jobs: {
-    async create(job: Database['public']['Tables']['jobs']['Insert'], retryCount: number = 0) {
+    async create(
+      job: Database['public']['Tables']['jobs']['Insert'],
+      retryCount: number = 0,
+      bookingPhone?: string
+    ) {
+      // Public booking (anon): SECURITY DEFINER RPC after jobs RLS lockdown
+      if (!(await hasAdminCustomerAccess())) {
+        if (!bookingPhone?.trim()) {
+          return {
+            data: null,
+            error: { message: 'booking phone is required for public job creation', code: 'BOOKING_PHONE_REQUIRED' } as any,
+          };
+        }
+        const { createBookingJob } = await import('@/lib/bookingJob');
+        const { data: rpcJob, error: rpcError } = await createBookingJob(bookingPhone.trim(), job as Record<string, unknown>);
+        if (rpcError?.code === '23505' && rpcError.message?.includes('job_number') && retryCount < 3) {
+          const serviceType = (job as any).service_type || 'RO';
+          const prefix = serviceType === 'RO' ? 'RO' : 'WS';
+          const timestamp = Date.now().toString().slice(-6);
+          const random = Math.floor(Math.random() * 10000).toString().padStart(4, '0');
+          const newJobNumber = `${prefix}${timestamp}${random}`;
+          return this.create({ ...job, job_number: newJobNumber }, retryCount + 1, bookingPhone);
+        }
+        if (!rpcError) {
+          cacheInvalidate('job_counts_v1');
+        }
+        return { data: rpcJob as any, error: rpcError };
+      }
+
       // Return same shape as getOngoing (explicit columns + customer) so UI can prepend without refetch.
       const { data, error } = await supabase
         .from('jobs')
@@ -793,7 +821,7 @@ export const db = {
         const newJobNumber = `${prefix}${timestamp}${random}`;
         
         // Retry with new job number
-        return this.create({ ...job, job_number: newJobNumber }, retryCount + 1);
+        return this.create({ ...job, job_number: newJobNumber }, retryCount + 1, bookingPhone);
       }
 
       if (!error) {
@@ -803,6 +831,11 @@ export const db = {
         }
       }
       return { data, error };
+    },
+
+    async createForBooking(phone: string, row: Record<string, unknown>) {
+      const { createBookingJob } = await import('@/lib/bookingJob');
+      return createBookingJob(phone, row);
     },
     
     async getById(id: string) {
