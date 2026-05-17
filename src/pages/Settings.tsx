@@ -53,7 +53,7 @@ import { SettingsPendingPaymentsDialogV2 } from '@/components/reminders/PendingP
 import QRCodeStyling from 'qr-code-styling';
 
 const Settings = () => {
-  const { user, isAdmin, logout, loading: authLoading } = useAuth();
+  const { user, isAdmin, logout, authInitializing } = useAuth();
   const navigate = useNavigate();
 
   useEffect(() => {
@@ -62,11 +62,11 @@ const Settings = () => {
 
   // Admin Settings lives at /settings; after logout there is no user but this route still mounted — send to /admin so AdminLogin shows.
   useEffect(() => {
-    if (authLoading) return;
+    if (authInitializing) return;
     if (!user) {
       navigate('/admin', { replace: true });
     }
-  }, [user, authLoading, navigate]);
+  }, [user, authInitializing, navigate]);
 
   // Technician management states
   const [technicians, setTechnicians] = useState<Technician[]>([]);

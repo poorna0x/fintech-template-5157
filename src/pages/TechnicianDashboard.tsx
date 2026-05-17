@@ -305,7 +305,8 @@ function emptyTechnicianQrLiveRef(): TechnicianQrLiveRef {
 }
 
 const TechnicianDashboard = () => {
-  const { user, logout, isTechnician, loading } = useAuth();
+  const { user, logout, isTechnician, authInitializing } = useAuth();
+  const [authGraceExpired, setAuthGraceExpired] = useState(false);
   const navigate = useNavigate();
 
   // Legacy: offline job-completion queue removed; clear stale drafts from older builds.
@@ -834,20 +835,22 @@ const TechnicianDashboard = () => {
     }, TECH_JOB_SYNC_DEBOUNCE_MS);
   }, [loadAssignedJobs]);
 
-  // Redirect if not technician
   useEffect(() => {
-    console.log('TechnicianDashboard: Checking auth status...', { isTechnician, user, loading, userRole: user?.role });
-    
-    // Only redirect if loading is complete and user is not a technician
-    // Wait for loading to complete before checking auth status
-    if (!loading) {
-      // If no user or user is not a technician, redirect to login
-      if (!user || user.role !== 'technician') {
-        console.log('Not a technician, redirecting to login...', { user, isTechnician, userRole: user?.role });
-        navigate('/technician/login', { replace: true });
-      }
+    if (!authInitializing) {
+      setAuthGraceExpired(false);
+      return;
     }
-  }, [isTechnician, navigate, user, loading]);
+    const t = setTimeout(() => setAuthGraceExpired(true), 4000);
+    return () => clearTimeout(t);
+  }, [authInitializing]);
+
+  // Redirect if not technician (after auth finishes or grace timeout)
+  useEffect(() => {
+    if (authInitializing && !authGraceExpired) return;
+    if (!user || user.role !== 'technician') {
+      navigate('/technician/login', { replace: true });
+    }
+  }, [isTechnician, navigate, user, authInitializing, authGraceExpired]);
 
   // Load assigned jobs and assignment requests
   useEffect(() => {
@@ -1395,12 +1398,10 @@ const TechnicianDashboard = () => {
       userRole: user?.role,
       userId: user?.id,
       technicianId: user?.technicianId,
-      loading: loading
+      loading: authInitializing
     });
 
-    // Wait for auth to finish loading
-    if (loading) {
-      console.log('⏳ Auth still loading, waiting...');
+    if (authInitializing) {
       return;
     }
 
@@ -1411,7 +1412,7 @@ const TechnicianDashboard = () => {
     } else {
       console.log('⚠️ No user, not loading QR codes');
     }
-  }, [user, loading, loadQrCodes]);
+  }, [user, authInitializing, loadQrCodes]);
 
   useEffect(() => {
     if (!user) {
@@ -4554,12 +4555,12 @@ const TechnicianDashboard = () => {
     );
   };
 
-  if (loading) {
+  if (authInitializing && !authGraceExpired) {
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center">
         <div className="text-center">
           <ThreeDotLoader size="lg" />
-          <p className="text-gray-600 mt-4">Loading...</p>
+          <p className="text-gray-600 mt-4">Checking authentication...</p>
         </div>
       </div>
     );

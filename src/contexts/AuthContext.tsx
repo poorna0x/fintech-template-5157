@@ -1,4 +1,12 @@
-import React, { createContext, useContext, useState, useEffect, useRef, ReactNode } from 'react';
+import React, {
+  createContext,
+  useContext,
+  useState,
+  useEffect,
+  useRef,
+  ReactNode,
+  useCallback,
+} from 'react';
 import { toast } from 'sonner';
 import { supabase } from '@/lib/supabase';
 import {
@@ -9,7 +17,13 @@ import {
   loginTechnician,
   hasTechnicianSupabaseSession,
 } from '@/lib/auth';
-import type { User as SupabaseUser } from '@supabase/supabase-js';
+import {
+  getAuthPortal,
+  sessionRoleFromSupabaseUser,
+  isSessionRoleAllowedForPortal,
+  clearWrongPortalSession,
+} from '@/lib/authPortal';
+import type { Session } from '@supabase/supabase-js';
 
 export interface User {
   id: string;
@@ -21,14 +35,31 @@ export interface User {
 
 interface AuthContextType {
   user: User | null;
+  /** True only during the first session resolution on app load. */
+  authInitializing: boolean;
+  /** True while login() is in progress. */
   loading: boolean;
   login: (email: string, password: string) => Promise<boolean>;
   logout: () => Promise<void>;
+  reconcileAuthPortal: (pathname: string) => Promise<void>;
   isAdmin: boolean;
   isTechnician: boolean;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
+
+function userFromSession(session: Session): User {
+  const role = sessionRoleFromSupabaseUser(session.user);
+  const isTechnician = role === 'technician';
+  return {
+    id: session.user.id,
+    email: session.user.email || '',
+    role: isTechnician ? 'technician' : 'admin',
+    fullName:
+      session.user.user_metadata?.full_name || session.user.user_metadata?.name,
+    technicianId: isTechnician ? session.user.id : undefined,
+  };
+}
 
 interface AuthProviderProps {
   children: ReactNode;
@@ -36,228 +67,150 @@ interface AuthProviderProps {
 
 export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   const technicianSessionRef = useRef(false);
+  const portalRef = useRef(getAuthPortal(typeof window !== 'undefined' ? window.location.pathname : '/'));
+
   const [user, setUser] = useState<User | null>(() => {
-    if (typeof window === 'undefined') {
-      return null;
-    }
+    if (typeof window === 'undefined') return null;
+    const portal = getAuthPortal(window.location.pathname);
+    if (portal !== 'admin') return null;
     const existingSession = getAuthSession();
-    // Technicians must use Supabase JWT only — do not boot from localStorage alone
-    if (existingSession && existingSession.role !== 'technician') {
-      technicianSessionRef.current = false;
+    if (existingSession && existingSession.role === 'admin') {
       return existingSession;
     }
     return null;
   });
-  const [loading, setLoading] = useState(true);
-  const [initialized, setInitialized] = useState(false);
 
-  useEffect(() => {
-    // Detect Chrome mobile for aggressive timeouts
-    const isChromeMobile = typeof window !== 'undefined' && 
-      /Chrome/i.test(navigator.userAgent) && 
-      /Mobile|Android/i.test(navigator.userAgent);
-    
-    // Aggressive timeout for Chrome mobile (1 second), normal for others (2 seconds)
-    const sessionTimeout = isChromeMobile ? 1000 : 2000;
-    const overallTimeout = isChromeMobile ? 1500 : 3000;
+  const [authInitializing, setAuthInitializing] = useState(true);
+  const [loading, setLoading] = useState(false);
 
-    // Check for existing session on app load with aggressive timeout for Chrome mobile
-    const checkSession = async () => {
-      // Set a timeout to prevent infinite loading - VERY AGGRESSIVE for Chrome mobile
-      const timeoutId = setTimeout(() => {
-        console.warn('[Auth] Session check timeout - proceeding without session');
-        setLoading(false);
-        setInitialized(true);
-      }, overallTimeout);
+  const applySessionUser = useCallback((session: Session | null, portal = portalRef.current) => {
+    if (!session?.user) {
+      setUser(null);
+      technicianSessionRef.current = false;
+      return;
+    }
 
-      try {
-        const sessionPromise = supabase.auth.getSession();
-        const timeoutPromise = new Promise<{ data: { session: null } }>((_, reject) =>
-          setTimeout(() => reject(new Error('Session check timeout')), sessionTimeout)
-        );
+    const role = sessionRoleFromSupabaseUser(session.user);
+    if (!isSessionRoleAllowedForPortal(role, portal)) {
+      setUser(null);
+      technicianSessionRef.current = false;
+      return;
+    }
 
-        const result = await Promise.race([sessionPromise, timeoutPromise]);
-        const { data: { session } } = result;
+    const nextUser = userFromSession(session);
+    setUser(nextUser);
+    technicianSessionRef.current = nextUser.role === 'technician';
+    if (nextUser.role === 'technician') {
+      setAuthSession(nextUser);
+    } else {
+      clearAuthSession();
+    }
+  }, []);
 
-        clearTimeout(timeoutId);
+  const reconcileAuthPortal = useCallback(
+    async (pathname: string) => {
+      const portal = getAuthPortal(pathname);
+      portalRef.current = portal;
 
-        if (session?.user) {
-          const userRole =
-            session.user.user_metadata?.role || session.user.app_metadata?.role || 'admin';
-          const nextUser: User = {
-            id: session.user.id,
-            email: session.user.email || '',
-            role: userRole === 'technician' ? 'technician' : 'admin',
-            fullName:
-              session.user.user_metadata?.full_name || session.user.user_metadata?.name,
-            technicianId: userRole === 'technician' ? session.user.id : undefined,
-          };
-          setUser(nextUser);
-          technicianSessionRef.current = userRole === 'technician';
-          if (userRole === 'technician') {
-            setAuthSession(nextUser);
-          }
-          setLoading(false);
-          setInitialized(true);
-          return;
-        }
+      if (portal === 'public') return;
 
-        // Technicians must have a Supabase JWT (required for customers RLS) — no localStorage-only restore
+      const { data: { session } } = await supabase.auth.getSession();
+      const role = session?.user ? sessionRoleFromSupabaseUser(session.user) : null;
+
+      if (session?.user && role && !isSessionRoleAllowedForPortal(role, portal)) {
+        await supabase.auth.signOut();
         clearAuthSession();
-      } catch (error) {
-        clearTimeout(timeoutId);
-        // Don't log timeout errors in production - they're expected on Chrome mobile
-        if (import.meta.env.DEV && !(error instanceof Error && error.message.includes('timeout'))) {
-          console.error('Auth session check error:', error);
-        }
-        // Don't block app loading on auth errors - user can still use the app
-      } finally {
-        clearTimeout(timeoutId);
-        setLoading(false);
-        setInitialized(true);
-      }
-    };
-
-    checkSession();
-
-    // Listen for Supabase auth changes (for admins)
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
-      if (session?.user) {
-        const userRole =
-          session.user.user_metadata?.role || session.user.app_metadata?.role || 'admin';
-        const nextUser: User = {
-          id: session.user.id,
-          email: session.user.email || '',
-          role: userRole === 'technician' ? 'technician' : 'admin',
-          fullName:
-            session.user.user_metadata?.full_name || session.user.user_metadata?.name,
-          technicianId: userRole === 'technician' ? session.user.id : undefined,
-        };
-        setUser(nextUser);
-        technicianSessionRef.current = userRole === 'technician';
-        if (userRole === 'technician') {
-          setAuthSession(nextUser);
-        }
-        setLoading(false);
+        setUser(null);
+        technicianSessionRef.current = false;
         return;
       }
 
-      // Only clear user if it's a SIGNED_OUT event (technicians use Supabase session only)
-      // Don't clear on TOKEN_REFRESHED for technicians (they use localStorage, not Supabase tokens)
+      applySessionUser(session, portal);
+    },
+    [applySessionUser]
+  );
+
+  useEffect(() => {
+    const isChromeMobile =
+      typeof window !== 'undefined' &&
+      /Chrome/i.test(navigator.userAgent) &&
+      /Mobile|Android/i.test(navigator.userAgent);
+
+    const sessionTimeoutMs = isChromeMobile ? 4000 : 6000;
+    const overallTimeoutMs = isChromeMobile ? 5000 : 8000;
+
+    let cancelled = false;
+
+    const finishInit = () => {
+      if (!cancelled) setAuthInitializing(false);
+    };
+
+    const timeoutId = setTimeout(finishInit, overallTimeoutMs);
+
+    const checkSession = async () => {
+      try {
+        const result = await Promise.race([
+          supabase.auth.getSession(),
+          new Promise<{ data: { session: null } }>((_, reject) =>
+            setTimeout(() => reject(new Error('Session check timeout')), sessionTimeoutMs)
+          ),
+        ]);
+        if (cancelled) return;
+
+        const session = result.data.session;
+        if (session?.user) {
+          applySessionUser(session);
+        } else {
+          const stored = getAuthSession();
+          if (stored?.role === 'admin' && portalRef.current === 'admin') {
+            setUser(stored);
+            technicianSessionRef.current = false;
+          } else {
+            clearAuthSession();
+            setUser(null);
+          }
+        }
+      } catch {
+        if (!cancelled) {
+          clearAuthSession();
+          setUser(null);
+        }
+      } finally {
+        clearTimeout(timeoutId);
+        finishInit();
+      }
+    };
+
+    void checkSession();
+
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
       if (event === 'SIGNED_OUT') {
         clearAuthSession();
         setUser(null);
-        setLoading(false);
-        setInitialized(true);
+        technicianSessionRef.current = false;
+        setAuthInitializing(false);
+        return;
       }
-      // Don't clear user on TOKEN_REFRESHED - technicians don't use Supabase tokens
-      // Don't clear on INITIAL_SESSION - let the session check handle it
 
-      setLoading(false);
+      if (session?.user) {
+        if (event === 'TOKEN_REFRESHED' || event === 'SIGNED_IN' || event === 'INITIAL_SESSION') {
+          applySessionUser(session);
+        }
+        setAuthInitializing(false);
+        return;
+      }
+
+      if (event === 'INITIAL_SESSION') {
+        setAuthInitializing(false);
+      }
     });
 
-    return () => subscription.unsubscribe();
-  }, []);
-
-  // Keep technician session in sync from localStorage
-  // This is especially important for iOS PWA where localStorage can be cleared
-  useEffect(() => {
-    const restoreSessionFromStorage = async () => {
-      try {
-        const { data: { session } } = await supabase.auth.getSession();
-        if (session?.user) {
-          return;
-        }
-        const storedSession = getAuthSession();
-        if (storedSession?.role === 'technician') {
-          clearAuthSession();
-          setUser(null);
-          technicianSessionRef.current = false;
-          return;
-        }
-        if (storedSession) {
-          setUser(prev => {
-            if (prev && prev.id === storedSession.id && prev.role === storedSession.role) {
-              return prev;
-            }
-            return storedSession;
-          });
-          technicianSessionRef.current = storedSession.role === 'technician';
-        } else if (user && user.role === 'technician') {
-          // If we had a technician session but it's now missing from localStorage,
-          // it was likely cleared by logout - clear user state
-          console.log('Technician session cleared from localStorage, clearing user state');
-          setUser(null);
-          technicianSessionRef.current = false;
-        }
-      } catch (error) {
-        console.error('Error restoring session from storage:', error);
-      }
-    };
-
-    // Only attempt to restore if user is missing AND we're initialized
-    // Don't restore if we're on login page (user should be null there)
-    if (initialized && !user) {
-      // Check if we're on a login page - if so, don't restore
-      const isLoginPage = window.location.pathname.includes('/login');
-      if (!isLoginPage) {
-        restoreSessionFromStorage();
-      }
-    }
-
-    // Listen for storage events (cross-tab sync)
-    window.addEventListener('storage', restoreSessionFromStorage);
-    
-    // iOS PWA specific: Restore session when app comes back to foreground
-    // iOS PWAs can clear localStorage when app goes to background
-    const handleVisibilityChange = () => {
-      if (document.visibilityState === 'visible') {
-        // App came back to foreground - restore session
-        restoreSessionFromStorage();
-      }
-    };
-    
-    const handleFocus = () => {
-      // Window regained focus - restore session
-      restoreSessionFromStorage();
-    };
-    
-    // Listen for visibility changes (iOS PWA)
-    document.addEventListener('visibilitychange', handleVisibilityChange);
-    window.addEventListener('focus', handleFocus);
-    
-    // Periodic check for iOS PWA (every 30 seconds)
-    // iOS can clear localStorage without firing events
-    const intervalId = setInterval(() => {
-      if (user && user.role === 'technician') {
-        const storedSession = getAuthSession();
-        if (!storedSession) {
-          // Session was cleared - try to restore from current user state
-          // This is a fallback for iOS PWA localStorage clearing
-          console.warn('Technician session cleared from localStorage, attempting to restore');
-          try {
-            setAuthSession(user);
-          } catch (error) {
-            console.error('Failed to restore session to localStorage:', error);
-          }
-        } else if (storedSession.id !== user.id) {
-          // Session changed - update user state
-          setUser(storedSession);
-          technicianSessionRef.current = storedSession.role === 'technician';
-        }
-      } else if (!user) {
-        // No user - try to restore
-        restoreSessionFromStorage();
-      }
-    }, 30000); // Check every 30 seconds
-    
     return () => {
-      window.removeEventListener('storage', restoreSessionFromStorage);
-      document.removeEventListener('visibilitychange', handleVisibilityChange);
-      window.removeEventListener('focus', handleFocus);
-      clearInterval(intervalId);
+      cancelled = true;
+      clearTimeout(timeoutId);
+      subscription.unsubscribe();
     };
-  }, [initialized, user]);
+  }, [applySessionUser]);
 
   const login = async (email: string, password: string): Promise<boolean> => {
     try {
@@ -269,6 +222,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       const isTechnician = isTechnicianLoginPage || (await isTechnicianEmail(email));
 
       if (isTechnician) {
+        await clearWrongPortalSession('technician');
         const techUser = await loginTechnician(email, password);
         if (!techUser) {
           toast.error('Invalid credentials. Please check your email and password.');
@@ -285,10 +239,12 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         setUser(techUser);
         setAuthSession(techUser);
         technicianSessionRef.current = true;
+        portalRef.current = 'technician';
         toast.success(`Welcome back, ${techUser.fullName || techUser.email}!`);
         return true;
       }
 
+      await clearWrongPortalSession('admin');
       const { data, error } = await supabase.auth.signInWithPassword({
         email,
         password,
@@ -317,6 +273,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         setUser(adminUser);
         technicianSessionRef.current = false;
         clearAuthSession();
+        portalRef.current = 'admin';
         toast.success(`Welcome back, ${adminUser.fullName || adminUser.email}!`);
         return true;
       }
@@ -333,62 +290,42 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
 
   const logout = async (): Promise<void> => {
     try {
-      // Clear custom auth session (for technicians) - do this first
       clearAuthSession();
       technicianSessionRef.current = false;
-      setUser(null); // Clear user state immediately
-      setLoading(false); // Stop loading state
-      setInitialized(true); // Mark as initialized so login page can render
-      
-      // Sign out from Supabase auth (for admins) with timeout
+      setUser(null);
+      setAuthInitializing(false);
+
       const signOutPromise = supabase.auth.signOut();
-      const timeoutPromise = new Promise((_, reject) => 
+      const timeoutPromise = new Promise((_, reject) =>
         setTimeout(() => reject(new Error('Sign out timeout')), 5000)
       );
-      
+
       try {
         await Promise.race([signOutPromise, timeoutPromise]);
       } catch (error) {
-        // Even if signOut fails, we've already cleared local state
         console.warn('Supabase signOut timeout or error (non-critical):', error);
       }
-      
-      // Clear any Supabase session storage
-      try {
-        localStorage.removeItem('sb-' + (supabase as any).supabaseUrl?.split('//')[1]?.split('.')[0] + '-auth-token');
-        // Also clear any other Supabase storage keys
-        Object.keys(localStorage).forEach(key => {
-          if (key.startsWith('sb-') && key.includes('auth')) {
-            localStorage.removeItem(key);
-          }
-        });
-      } catch (storageError) {
-        console.warn('Error clearing Supabase storage:', storageError);
-      }
-      
+
       toast.success('Logged out successfully');
     } catch (error) {
       console.error('Logout error:', error);
-      // Even on error, clear local state
       clearAuthSession();
       setUser(null);
-      setLoading(false);
-      setInitialized(true);
+      setAuthInitializing(false);
       toast.error('Logged out (some cleanup may have failed)');
     }
   };
 
   const value: AuthContextType = {
     user,
-    // Don't block login pages - they should render immediately
-    // Only show loading for protected routes that need user data
-    loading: loading && initialized === false, // Only loading if not initialized yet
+    authInitializing,
+    loading,
     login,
     logout,
+    reconcileAuthPortal,
     isAdmin: user?.role === 'admin',
     isTechnician: user?.role === 'technician',
   };
-
 
   return (
     <AuthContext.Provider value={value}>

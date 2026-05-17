@@ -6,6 +6,7 @@ import { BrowserRouter, Routes, Route, useLocation } from "react-router-dom";
 import { ThemeProvider } from "./contexts/ThemeContext";
 import { SecurityProvider } from "./contexts/SecurityContext";
 import { AuthProvider } from "./contexts/AuthContext";
+import { AuthPortalCoordinator } from "./components/AuthPortalCoordinator";
 import { Suspense, lazy, useEffect } from "react";
 import Index from "./pages/Index";
 import NotFound from "./pages/NotFound";
@@ -92,6 +93,7 @@ const App = () => (
             <Toaster />
             <Sonner />
             <BrowserRouter>
+              <AuthPortalCoordinator />
               <GoogleAnalytics />
               <CanonicalTag />
               <PWARouteHandler />

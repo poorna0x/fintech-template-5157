@@ -75,7 +75,7 @@ interface CallingPageProps {
 
 const CallingPage = ({ hideHeader = false, onBack }: CallingPageProps = {}) => {
   const navigate = useNavigate();
-  const { user, isAdmin, loading: authLoading } = useAuth();
+  const { user, isAdmin, authInitializing } = useAuth();
   const [customers, setCustomers] = useState<CustomerWithHistory[]>([]);
   const [filteredCustomers, setFilteredCustomers] = useState<CustomerWithHistory[]>([]);
   const [loading, setLoading] = useState(true);
@@ -120,13 +120,13 @@ const CallingPage = ({ hideHeader = false, onBack }: CallingPageProps = {}) => {
 
   // Redirect to admin login if not authenticated or not admin (only if standalone page)
   useEffect(() => {
-    if (!hideHeader && !authLoading) {
+    if (!hideHeader && !authInitializing) {
       if (!user || !isAdmin) {
         toast.error('Access denied. Admin authentication required.');
         navigate('/admin');
       }
     }
-  }, [user, isAdmin, authLoading, navigate, hideHeader]);
+  }, [user, isAdmin, authInitializing, navigate, hideHeader]);
 
   useEffect(() => {
     loadCustomers();
@@ -766,12 +766,12 @@ const CallingPage = ({ hideHeader = false, onBack }: CallingPageProps = {}) => {
   const callingTotalPages = Math.max(1, Math.ceil(filteredCustomers.length / itemsPerPage));
 
   // Show loading while checking auth or loading data
-  if (authLoading || loading) {
+  if (authInitializing || loading) {
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center">
         <div className="text-center">
           <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-gray-900 mx-auto mb-3"></div>
-          <p className="text-gray-600">{authLoading ? 'Checking authentication...' : 'Loading customers...'}</p>
+          <p className="text-gray-600">{authInitializing ? 'Checking authentication...' : 'Loading customers...'}</p>
         </div>
       </div>
     );

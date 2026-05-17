@@ -11,8 +11,7 @@ import { Wrench, Eye, EyeOff, Droplets } from 'lucide-react';
 import { toast } from 'sonner';
 import AltchaWidget from '@/components/AltchaWidget';
 import { registerTechnicianPWA, disablePWA } from '@/lib/pwa';
-import { clearAuthSession } from '@/lib/auth';
-import { supabase } from '@/lib/supabase';
+import { clearWrongPortalSession } from '@/lib/authPortal';
 
 const TechnicianLogin = () => {
   const [email, setEmail] = useState('');
@@ -25,7 +24,7 @@ const TechnicianLogin = () => {
   const [captchaStartTime] = useState(Date.now());
   const [captchaTimeout, setCaptchaTimeout] = useState<NodeJS.Timeout | null>(null);
 
-  const { login, loading: authLoading, user } = useAuth();
+  const { login, loading: authLoading, user, authInitializing } = useAuth();
   const navigate = useNavigate();
   const userRef = React.useRef(user); // Track user state for role checking
   
@@ -37,30 +36,25 @@ const TechnicianLogin = () => {
   
   useEffect(() => {
     registerTechnicianPWA();
-    
-    // PWA fix: Clear any stale auth state when login page loads
-    // This ensures clean state after logout
-    if (user) {
-      console.log('[Login] User still exists after logout, clearing...');
-      // Force clear - user shouldn't be here on login page
-      clearAuthSession();
-      // Clear Supabase session too
-      supabase.auth.signOut().catch(() => {});
-    }
-    
-    // Reset ALTCHA state on mount (important after logout)
+    void clearWrongPortalSession('technician');
     setIsCaptchaVerified(false);
     setShowSecurityStep(false);
     if (captchaTimeout) {
       clearTimeout(captchaTimeout);
       setCaptchaTimeout(null);
     }
-    
-    // Cleanup: disable PWA when component unmounts
     return () => {
       disablePWA();
     };
-  }, []); // Only run on mount
+  }, []);
+
+  // Already logged in as technician — go to dashboard (avoids stuck spinner loop)
+  useEffect(() => {
+    if (authInitializing) return;
+    if (user?.role === 'technician') {
+      navigate('/technician', { replace: true });
+    }
+  }, [user, authInitializing, navigate]);
 
   // Don't block login page rendering - it should show immediately
   // The auth loading state should not prevent login page from displaying

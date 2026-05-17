@@ -15,6 +15,7 @@ import { getCachedQrCodes, CommonQrCode } from '@/lib/qrCodeManager';
 import { useAuth } from '@/contexts/AuthContext';
 import { RefreshCw } from 'lucide-react';
 import { customerNameClassName } from '@/lib/customerDisplay';
+import { broadcastTechnicianJobListRefreshForJob } from '@/lib/technicianJobListSync';
 
 interface CompleteJobDialogProps {
   open: boolean;
@@ -565,6 +566,16 @@ export const CompleteJobDialog: React.FC<CompleteJobDialogProps> = ({
           // Don't fail the job completion if customer update fails - just log it
         }
       }
+
+      broadcastTechnicianJobListRefreshForJob({
+        ...job,
+        assigned_technician_id:
+          updateData.assigned_technician_id ??
+          (job as any).assigned_technician_id ??
+          job.assignedTechnicianId,
+        completed_by: completedByTechnicianId,
+        team_members: (job as any).team_members,
+      });
 
       toast.success('Job completed successfully');
       handleClose();

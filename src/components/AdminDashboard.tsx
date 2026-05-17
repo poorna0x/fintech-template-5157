@@ -151,7 +151,7 @@ declare global {
 
 const AdminDashboard = () => {
   const navigate = useNavigate();
-  const { user, isAdmin, loading: authLoading, logout } = useAuth();
+  const { user, isAdmin, authInitializing, logout } = useAuth();
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [jobs, setJobs] = useState<Job[]>([]);
   const [allFollowUpJobs, setAllFollowUpJobs] = useState<Job[]>([]); // All follow-up jobs for glow effect
@@ -353,7 +353,7 @@ const AdminDashboard = () => {
   
   // Authentication effects - MUST be declared before any conditional returns
   useEffect(() => {
-    if (authLoading) {
+    if (authInitializing) {
       // Reset maxWaitReached when auth starts loading
       setMaxWaitReached(false);
       const maxWaitTimeout = setTimeout(() => {
@@ -365,7 +365,7 @@ const AdminDashboard = () => {
       // Auth finished loading - reset maxWaitReached
       setMaxWaitReached(false);
     }
-  }, [authLoading]);
+  }, [authInitializing]);
 
   // When user becomes available, stop waiting
   useEffect(() => {
@@ -374,7 +374,7 @@ const AdminDashboard = () => {
 
   // One-time session check on mount when auth is ready and no user yet (no polling)
   useEffect(() => {
-    if (user || authLoading) return;
+    if (user || authInitializing) return;
 
     let isCleanedUp = false;
     supabase.auth.getSession().then(({ data: { session } }) => {
@@ -397,7 +397,7 @@ const AdminDashboard = () => {
       isCleanedUp = true;
       clearTimeout(safetyTimeout);
     };
-  }, [user, authLoading]);
+  }, [user, authInitializing]);
 
   // Listen to Supabase auth state changes (replaces polling; handles sign-in, refresh, initial session)
   useEffect(() => {
@@ -1577,9 +1577,9 @@ const AdminDashboard = () => {
 
   // Load dashboard only after admin JWT is ready (RLS on customers requires authenticated admin)
   useEffect(() => {
-    if (authLoading || !user || !isAdmin) return;
+    if (authInitializing || !user || !isAdmin) return;
     void runDashboardLoadOnceSessionReady();
-  }, [authLoading, user?.id, isAdmin, runDashboardLoadOnceSessionReady]);
+  }, [authInitializing, user?.id, isAdmin, runDashboardLoadOnceSessionReady]);
 
   useEffect(() => {
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
@@ -8683,7 +8683,7 @@ const AdminDashboard = () => {
 
   // Authentication checks - these can be conditional returns since all hooks are declared above
   // Show loading only if auth is loading AND we haven't exceeded max wait time
-  if (authLoading && !maxWaitReached) {
+  if (authInitializing && !maxWaitReached) {
     return (
       <div className="flex items-center justify-center min-h-screen bg-gray-50">
         <div className="text-center">
@@ -8699,12 +8699,12 @@ const AdminDashboard = () => {
   }
 
   // If auth finished loading but no user and not waiting, show login
-  if (!user && !authLoading && !waitingForAuth) {
+  if (!user && !authInitializing && !waitingForAuth) {
     return <AdminLogin />;
   }
 
   // Show loading while waiting for auth state to update after login
-  if (!user && !authLoading && waitingForAuth) {
+  if (!user && !authInitializing && waitingForAuth) {
     return (
       <div className="flex items-center justify-center min-h-screen bg-gray-50">
         <div className="text-center">
