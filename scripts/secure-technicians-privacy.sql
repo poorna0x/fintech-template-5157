@@ -1,18 +1,19 @@
--- CRITICAL: Lock down public.technicians (bcrypt hashes + open PATCH via anon key).
--- Run once in Supabase SQL Editor after secure-customers-rls.sql.
--- For GPS/salary scanner findings, also run scripts/secure-technicians-privacy.sql (idempotent).
+-- HIGH: Block anon from reading technician GPS, salary, and password hashes.
+-- Safe to re-run (idempotent).
 --
--- BEFORE running:
---   1. All technicians can log in via Supabase Auth (provision script or Settings sync).
---   2. SUPABASE_SERVICE_ROLE_KEY set on Netlify (sync + provision functions).
---   3. Deploy latest app (password hash written only via sync function, not client INSERT).
+-- Run in Supabase SQL Editor (after secure-customers-rls.sql; can replace re-running secure-technicians-rls.sql).
 --
--- AFTER running:
---   - anon cannot SELECT/UPDATE/DELETE technicians (including password hashes).
---   - authenticated cannot read/write password column (service role + Netlify only).
---   - Public ID card: anon may SELECT non-sensitive columns for ACTIVE technicians only.
+-- Fixes:
+--   - Drops allow_all_technicians and legacy USING (true) policies
+--   - Anon: only ID-card columns (no current_location, salary, password)
+--   - Authenticated: password never readable/writable from client
+--   - Technician peer lists: RPC get_technician_roster_for_app() (no GPS/salary)
+--   - Admin: full row via is_admin_user() policies (unchanged)
 
--- Reuse helpers from secure-customers-rls.sql (safe to re-run)
+-- ---------------------------------------------------------------------------
+-- Helpers
+-- ---------------------------------------------------------------------------
+
 CREATE OR REPLACE FUNCTION public.auth_user_role()
 RETURNS text
 LANGUAGE sql
@@ -34,10 +35,32 @@ AS $$
 $$;
 
 -- ---------------------------------------------------------------------------
--- Drop open policy (anon + authenticated full access)
+-- Drop open / legacy policies
 -- ---------------------------------------------------------------------------
 
 DROP POLICY IF EXISTS allow_all_technicians ON public.technicians;
+
+DO $$
+DECLARE
+  r RECORD;
+BEGIN
+  FOR r IN
+    SELECT policyname
+    FROM pg_policies
+    WHERE schemaname = 'public'
+      AND tablename = 'technicians'
+      AND (
+        policyname LIKE 'Allow %'
+        OR policyname LIKE 'allow_all_%'
+        OR policyname LIKE '%_policy'
+        OR qual = 'true'
+        OR with_check = 'true'
+      )
+      AND policyname NOT LIKE 'technicians_%'
+  LOOP
+    EXECUTE format('DROP POLICY IF EXISTS %I ON public.technicians', r.policyname);
+  END LOOP;
+END $$;
 
 -- ---------------------------------------------------------------------------
 -- Row policies
@@ -49,11 +72,11 @@ DROP POLICY IF EXISTS technicians_admin_update ON public.technicians;
 DROP POLICY IF EXISTS technicians_admin_delete ON public.technicians;
 DROP POLICY IF EXISTS technicians_self_select ON public.technicians;
 DROP POLICY IF EXISTS technicians_self_update ON public.technicians;
+DROP POLICY IF EXISTS technicians_roster_peers_select ON public.technicians;
 DROP POLICY IF EXISTS technicians_public_id_card ON public.technicians;
 
 ALTER TABLE public.technicians ENABLE ROW LEVEL SECURITY;
 
--- Admin: full row access (password column blocked separately below)
 CREATE POLICY technicians_admin_select
   ON public.technicians FOR SELECT TO authenticated
   USING (public.is_admin_user());
@@ -71,7 +94,6 @@ CREATE POLICY technicians_admin_delete
   ON public.technicians FOR DELETE TO authenticated
   USING (public.is_admin_user());
 
--- Technician: own profile (location, status, etc.) — not other technicians
 CREATE POLICY technicians_self_select
   ON public.technicians FOR SELECT TO authenticated
   USING (auth.uid() = id);
@@ -81,14 +103,12 @@ CREATE POLICY technicians_self_update
   USING (auth.uid() = id)
   WITH CHECK (auth.uid() = id);
 
--- Public ID card page (/technician-id/:id): name, photo, contact only — never password
 CREATE POLICY technicians_public_id_card
   ON public.technicians FOR SELECT TO anon
   USING (account_status = 'ACTIVE');
 
 -- ---------------------------------------------------------------------------
--- Column-level: password hash only via service role (Netlify functions)
--- Supabase grants table SELECT to anon by default — revoke all, grant ID-card cols only.
+-- Column privileges: anon ID card only; no client password access
 -- ---------------------------------------------------------------------------
 
 REVOKE ALL ON TABLE public.technicians FROM anon;
@@ -107,7 +127,69 @@ REVOKE INSERT (password) ON TABLE public.technicians FROM authenticated;
 REVOKE UPDATE (password) ON TABLE public.technicians FROM authenticated;
 
 -- ---------------------------------------------------------------------------
--- Login routing helper (no password exposure)
+-- Technician roster RPC (QR picker / reports) — excludes GPS + salary
+-- ---------------------------------------------------------------------------
+
+CREATE OR REPLACE FUNCTION public.get_technician_roster_for_app()
+RETURNS TABLE (
+  id uuid,
+  full_name character varying,
+  phone character varying,
+  email character varying,
+  employee_id character varying,
+  skills jsonb,
+  service_areas jsonb,
+  status character varying,
+  work_schedule jsonb,
+  performance jsonb,
+  vehicle jsonb,
+  qr_code text,
+  photo text,
+  visible_qr_codes jsonb,
+  common_qr_code_ids jsonb,
+  account_status character varying,
+  created_at timestamptz,
+  updated_at timestamptz
+)
+LANGUAGE sql
+STABLE
+SECURITY DEFINER
+SET search_path = public
+AS $$
+  SELECT
+    t.id,
+    t.full_name,
+    t.phone,
+    t.email,
+    t.employee_id,
+    t.skills,
+    t.service_areas,
+    t.status,
+    t.work_schedule,
+    t.performance,
+    t.vehicle,
+    t.qr_code,
+    t.photo,
+    t.visible_qr_codes,
+    t.common_qr_code_ids,
+    t.account_status,
+    t.created_at,
+    t.updated_at
+  FROM public.technicians t
+  WHERE auth.uid() IS NOT NULL
+    AND public.auth_user_role() = 'technician'
+    AND (
+      t.account_status IS NULL
+      OR t.account_status IN ('ACTIVE', 'SUSPENDED')
+    )
+  ORDER BY t.created_at DESC;
+$$;
+
+REVOKE ALL ON FUNCTION public.get_technician_roster_for_app() FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.get_technician_roster_for_app() TO authenticated;
+
+-- ---------------------------------------------------------------------------
+-- Login routing (no password exposure)
 -- ---------------------------------------------------------------------------
 
 CREATE OR REPLACE FUNCTION public.is_technician_email(p_email text)

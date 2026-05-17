@@ -2267,6 +2267,12 @@ export const db = {
       const { data, error } = await query;
       return { data, error };
     },
+
+    /** Technician PWA: peer roster without GPS/salary (RLS-safe RPC). */
+    async getRosterForTechnicianApp() {
+      const { data, error } = await supabase.rpc('get_technician_roster_for_app');
+      return { data, error };
+    },
     
     async getAvailable() {
       const { data, error } = await supabase

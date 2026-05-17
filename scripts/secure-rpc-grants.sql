@@ -3,6 +3,7 @@
 --
 -- Public booking keeps only: get/create/update_customer_for_booking, create_job_for_booking,
 -- upsert_website_booking_intent, mark_website_booking_intent_booked, is_technician_email.
+-- Technician roster (no GPS/salary): get_technician_roster_for_app — authenticated only (see secure-technicians-privacy.sql).
 
 -- Requires is_admin_user from secure-customers-rls.sql
 CREATE OR REPLACE FUNCTION public.auth_user_role()
@@ -172,4 +173,13 @@ BEGIN
     EXECUTE format('REVOKE EXECUTE ON FUNCTION %s FROM PUBLIC', r.sig);
     EXECUTE format('GRANT EXECUTE ON FUNCTION %s TO authenticated', r.sig);
   END LOOP;
+END $$;
+
+DO $$
+BEGIN
+  IF EXISTS (SELECT 1 FROM pg_proc WHERE proname = 'get_technician_roster_for_app') THEN
+    REVOKE EXECUTE ON FUNCTION public.get_technician_roster_for_app() FROM anon;
+    REVOKE EXECUTE ON FUNCTION public.get_technician_roster_for_app() FROM PUBLIC;
+    GRANT EXECUTE ON FUNCTION public.get_technician_roster_for_app() TO authenticated;
+  END IF;
 END $$;

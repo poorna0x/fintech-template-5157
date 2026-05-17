@@ -4,16 +4,18 @@
 --
 -- === RUN SCRIPTS IN THIS ORDER (skip any already applied) ===
 --  1. scripts/secure-customers-rls.sql
---  2. scripts/secure-technicians-rls.sql
+--  2. scripts/secure-technicians-rls.sql   (or scripts/secure-technicians-privacy.sql alone)
 --  3. scripts/secure-jobs-rls.sql          (or secure-all-rls.sql which includes jobs)
 --  4. scripts/secure-all-rls.sql           (main table policies)
 --  5. scripts/secure-financial-rls.sql     (if separate)
 --  6. scripts/secure-rpc-grants.sql      (revoke anon on internal RPCs)
 --  7. scripts/patch-legacy-anon-policies.sql
---  8. scripts/lock-down-anon-access.sql    (this file — defense in depth)
---  9. scripts/add-auth-login-attempts.sql  (login lockout table)
--- 10. scripts/migrate-auth-login-escalating-lockout.sql (if lockout already exists)
--- 11. scripts/verify-all-rls.sql          (review output — should be empty / minimal)
+--  8. scripts/secure-technicians-privacy.sql (GPS/salary/password: drop allow_all + anon column grants)
+--  9. scripts/secure-jobs-privacy.sql      (jobs: block anon + redact GPS on complete)
+-- 10. scripts/lock-down-anon-access.sql    (this file — defense in depth)
+-- 11. scripts/add-auth-login-attempts.sql  (login lockout table)
+-- 12. scripts/migrate-auth-login-escalating-lockout.sql (if lockout already exists)
+-- 13. scripts/verify-all-rls.sql          (review output — should be empty / minimal)
 --
 -- App requirements: admin + technician login via Supabase Auth; booking via RPCs only.
 
