@@ -3,71 +3,20 @@ const { createClient } = require('@supabase/supabase-js');
 const { getCorsHeaders, isOriginAllowed } = require('./cors-helper');
 
 async function removeTechnicianFromTeamMembers(admin, technicianId) {
-  const { data: teamJobs, error } = await admin
+  const { data: allJobs, error: allErr } = await admin
     .from('jobs')
     .select('id, team_members')
-    .contains('team_members', [technicianId]);
+    .not('team_members', 'is', null);
+  if (allErr) throw allErr;
 
-  if (error) {
-    console.warn('team_members cleanup query failed, scanning jobs:', error.message);
-    const { data: allJobs, error: allErr } = await admin
-      .from('jobs')
-      .select('id, team_members')
-      .not('team_members', 'is', null);
-    if (allErr) throw allErr;
-    for (const job of allJobs || []) {
-      if (!Array.isArray(job.team_members) || !job.team_members.includes(technicianId)) continue;
-      const team = job.team_members.filter((id) => id !== technicianId);
-      const { error: upErr } = await admin
-        .from('jobs')
-        .update({ team_members: team.length > 0 ? team : null })
-        .eq('id', job.id);
-      if (upErr) throw upErr;
-    }
-    return;
-  }
-
-  for (const job of teamJobs || []) {
-    const team = (job.team_members || []).filter((id) => id !== technicianId);
+  for (const job of allJobs || []) {
+    if (!Array.isArray(job.team_members) || !job.team_members.includes(technicianId)) continue;
+    const team = job.team_members.filter((id) => id !== technicianId);
     const { error: upErr } = await admin
       .from('jobs')
       .update({ team_members: team.length > 0 ? team : null })
       .eq('id', job.id);
     if (upErr) throw upErr;
-  }
-}
-
-async function cleanupMessages(admin, technicianId) {
-  const { error: delDirect } = await admin
-    .from('messages')
-    .delete()
-    .eq('recipient_technician_id', technicianId);
-  if (delDirect && delDirect.code !== '42P01') {
-    throw delDirect;
-  }
-
-  const { data: multiMsgs, error: multiErr } = await admin
-    .from('messages')
-    .select('id, recipient_technician_ids')
-    .contains('recipient_technician_ids', [technicianId]);
-
-  if (multiErr) {
-    if (multiErr.code === '42P01') return;
-    throw multiErr;
-  }
-
-  for (const msg of multiMsgs || []) {
-    const ids = (msg.recipient_technician_ids || []).filter((id) => id !== technicianId);
-    if (ids.length === 0) {
-      const { error: delErr } = await admin.from('messages').delete().eq('id', msg.id);
-      if (delErr) throw delErr;
-    } else {
-      const { error: upErr } = await admin
-        .from('messages')
-        .update({ recipient_technician_ids: ids })
-        .eq('id', msg.id);
-      if (upErr) throw upErr;
-    }
   }
 }
 
@@ -221,7 +170,6 @@ exports.handler = async (event) => {
       .from('amc_contracts')
       .update({ given_by_technician_id: null })
       .eq('given_by_technician_id', technicianId);
-    await cleanupMessages(admin, technicianId);
 
     const { error: deleteRowError } = await admin.from('technicians').delete().eq('id', technicianId);
     if (deleteRowError) {

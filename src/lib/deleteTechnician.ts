@@ -1,5 +1,16 @@
 import { supabase, db } from '@/lib/supabase';
 
+function isNetlifyFallbackError(message: string): boolean {
+  const m = message.toLowerCase();
+  return (
+    message === 'FUNCTION_NOT_REGISTERED' ||
+    m.includes('failed to fetch') ||
+    m.includes('public.messages') ||
+    m.includes('schema cache') ||
+    m.includes('could not find the table')
+  );
+}
+
 async function clearTechnicianJobReferences(technicianId: string) {
   await supabase.from('jobs').update({ assigned_technician_id: null }).eq('assigned_technician_id', technicianId);
   await supabase.from('jobs').update({ assigned_by: null }).eq('assigned_by', technicianId);
@@ -8,7 +19,7 @@ async function clearTechnicianJobReferences(technicianId: string) {
   const { data: teamJobs } = await supabase
     .from('jobs')
     .select('id, team_members')
-    .contains('team_members', [technicianId]);
+    .not('team_members', 'is', null);
 
   for (const job of teamJobs || []) {
     if (!Array.isArray(job.team_members) || !job.team_members.includes(technicianId)) continue;
@@ -23,8 +34,6 @@ async function clearTechnicianJobReferences(technicianId: string) {
     .from('amc_contracts')
     .update({ given_by_technician_id: null })
     .eq('given_by_technician_id', technicianId);
-
-  await supabase.from('messages').delete().eq('recipient_technician_id', technicianId);
 }
 
 async function deleteTechnicianViaSupabase(technicianId: string): Promise<{ authSyncSkipped: boolean }> {
@@ -76,7 +85,7 @@ export async function deleteTechnicianCompletely(technicianId: string): Promise<
     return { authSyncSkipped: false };
   } catch (err) {
     const message = err instanceof Error ? err.message : '';
-    if (message !== 'FUNCTION_NOT_REGISTERED' && !message.includes('Failed to fetch')) {
+    if (!isNetlifyFallbackError(message)) {
       throw err;
     }
   }
