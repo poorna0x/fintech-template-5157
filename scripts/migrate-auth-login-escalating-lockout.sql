@@ -1,24 +1,11 @@
--- Account lockout after repeated failed logins (used by secure-auth-login Netlify function).
--- Escalating lock: 1st = 15 min, 2nd = 30 min, 3rd+ = 60 min (per email, any browser).
--- Run in Supabase SQL Editor. Service role only — no anon/authenticated access.
-
-CREATE TABLE IF NOT EXISTS public.auth_login_attempts (
-  email text PRIMARY KEY,
-  failed_count integer NOT NULL DEFAULT 0 CHECK (failed_count >= 0),
-  lockout_count integer NOT NULL DEFAULT 0 CHECK (lockout_count >= 0),
-  locked_until timestamptz,
-  last_attempt_at timestamptz NOT NULL DEFAULT now()
-);
+-- Escalating lockout: 1st lock 15 min → 2nd 30 min → 3rd+ 60 min (per email).
+-- Run in Supabase SQL Editor if you already applied add-auth-login-attempts.sql.
 
 ALTER TABLE public.auth_login_attempts
   ADD COLUMN IF NOT EXISTS lockout_count integer NOT NULL DEFAULT 0 CHECK (lockout_count >= 0);
 
-ALTER TABLE public.auth_login_attempts ENABLE ROW LEVEL SECURITY;
-
-COMMENT ON TABLE public.auth_login_attempts IS
-  'Failed login counters; updated only via SECURITY DEFINER RPCs (service role).';
 COMMENT ON COLUMN public.auth_login_attempts.lockout_count IS
-  'Times account was locked; 0→15min, 1→30min, 2+→60min. Cleared on successful login.';
+  'Number of lockouts applied; drives 15 / 30 / 60 minute durations. Reset on successful login.';
 
 CREATE OR REPLACE FUNCTION public.check_auth_login_allowed(p_email text)
 RETURNS jsonb
@@ -139,27 +126,3 @@ BEGIN
   );
 END;
 $$;
-
-CREATE OR REPLACE FUNCTION public.record_auth_login_success(p_email text)
-RETURNS void
-LANGUAGE plpgsql
-SECURITY DEFINER
-SET search_path = public
-AS $$
-DECLARE
-  v_email text := lower(trim(p_email));
-BEGIN
-  IF v_email IS NULL OR v_email = '' THEN
-    RETURN;
-  END IF;
-  DELETE FROM public.auth_login_attempts WHERE email = v_email;
-END;
-$$;
-
-REVOKE ALL ON FUNCTION public.check_auth_login_allowed(text) FROM PUBLIC;
-REVOKE ALL ON FUNCTION public.record_auth_login_failure(text) FROM PUBLIC;
-REVOKE ALL ON FUNCTION public.record_auth_login_success(text) FROM PUBLIC;
-
-GRANT EXECUTE ON FUNCTION public.check_auth_login_allowed(text) TO service_role;
-GRANT EXECUTE ON FUNCTION public.record_auth_login_failure(text) TO service_role;
-GRANT EXECUTE ON FUNCTION public.record_auth_login_success(text) TO service_role;

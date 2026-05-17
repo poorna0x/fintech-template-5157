@@ -35,6 +35,7 @@ const verifyTechnicianPassword = require('./verify-technician-password');
 const hashTechnicianPassword = require('./hash-technician-password');
 const distanceMatrix = require('./distance-matrix');
 const provisionTechnicianAuthOnLogin = require('./provision-technician-auth-on-login');
+const secureAuthLogin = require('./secure-auth-login');
 const syncTechnicianAuthUser = require('./sync-technician-auth-user');
 const deleteTechnicianAndData = require('./delete-technician-and-data');
 const cloudinaryDelete = require('./cloudinary-delete');
@@ -76,6 +77,8 @@ const server = http.createServer((req, res) => {
     handler = distanceMatrix;
   } else if (req.url.startsWith('/.netlify/functions/provision-technician-auth-on-login')) {
     handler = provisionTechnicianAuthOnLogin;
+  } else if (req.url.startsWith('/.netlify/functions/secure-auth-login')) {
+    handler = secureAuthLogin;
   } else if (req.url.startsWith('/.netlify/functions/sync-technician-auth-user')) {
     handler = syncTechnicianAuthUser;
   } else if (req.url.startsWith('/.netlify/functions/delete-technician-and-data')) {
@@ -134,11 +137,18 @@ const server = http.createServer((req, res) => {
         });
 
         // Convert to Netlify function event format
+        const clientIp =
+          req.headers['x-forwarded-for'] ||
+          req.socket?.remoteAddress ||
+          '127.0.0.1';
         const event = {
           httpMethod: req.method,
           path: req.url,
           queryStringParameters: parsedUrl.query || {},
-          headers: req.headers,
+          headers: {
+            ...req.headers,
+            'x-forwarded-for': clientIp,
+          },
           body: body || '{}',
         };
 
@@ -221,6 +231,9 @@ server.listen(PORT, '0.0.0.0', () => {
   console.log(`📍 Distance Matrix: http://localhost:${PORT}/.netlify/functions/distance-matrix`);
   console.log(
     `👤 Provision technician Auth: http://localhost:${PORT}/.netlify/functions/provision-technician-auth-on-login`
+  );
+  console.log(
+    `🔐 Secure auth login: http://localhost:${PORT}/.netlify/functions/secure-auth-login`
   );
   console.log(
     `🔑 Sync technician Auth: http://localhost:${PORT}/.netlify/functions/sync-technician-auth-user`

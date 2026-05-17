@@ -4,6 +4,9 @@ import { supabase } from './supabase';
 import { chromeStorage } from './storage';
 import { getSupabaseConfigError } from './supabaseConfig';
 import { secureAuthLogin } from './secureAuthLogin';
+import type { AuthLoginResult } from './loginResult';
+
+export type TechnicianLoginResult = AuthLoginResult & { user?: AuthUser };
 
 import { isPWAMode } from './pwa';
 
@@ -249,7 +252,7 @@ export const authenticateUser = async (email: string, password: string): Promise
 export const provisionTechnicianAuthOnLogin = async (
   email: string,
   password: string
-): Promise<{ ok: boolean; error?: string }> => {
+): Promise<{ ok: boolean; error?: string; locked?: boolean; retryAfter?: number }> => {
   try {
     const res = await fetchWithTimeout('/.netlify/functions/provision-technician-auth-on-login', {
       method: 'POST',
@@ -258,11 +261,21 @@ export const provisionTechnicianAuthOnLogin = async (
     });
     const body = await res.json().catch(() => ({}));
     if (!res.ok) {
-      const msg = body?.error || body?.hint || `HTTP ${res.status}`;
+      const msg =
+        res.status === 429
+          ? body?.message ||
+            body?.error ||
+            'Too many login attempts. Wait a minute and try again.'
+          : body?.error || body?.hint || `HTTP ${res.status}`;
       if (import.meta.env.DEV) {
         console.error('[provisionTechnicianAuthOnLogin]', msg);
       }
-      return { ok: false, error: msg };
+      return {
+        ok: false,
+        error: msg,
+        locked: res.status === 429,
+        retryAfter: body?.retryAfter,
+      };
     }
     return { ok: !!body?.ok };
   } catch (e) {
@@ -280,7 +293,7 @@ export const loginTechnicianWithSupabase = async (
   password: string,
   altchaLoginToken: string,
   altchaPayload?: string
-): Promise<AuthUser | null> => {
+): Promise<TechnicianLoginResult> => {
   const result = await secureAuthLogin(
     email,
     password,
@@ -290,12 +303,18 @@ export const loginTechnicianWithSupabase = async (
   );
 
   if (!result.ok) {
-    return null;
+    return {
+      ok: false,
+      error: result.error,
+      locked: result.locked,
+      retryAfter: result.retryAfter,
+      remainingAttempts: result.remainingAttempts,
+    };
   }
 
   const { data: { user: authUser } } = await supabase.auth.getUser();
   if (!authUser) {
-    return null;
+    return { ok: false, error: 'Login failed. Please try again.' };
   }
 
   const data = { user: authUser };
@@ -304,7 +323,7 @@ export const loginTechnicianWithSupabase = async (
     data.user.app_metadata?.role || data.user.user_metadata?.role || 'technician';
   if (role !== 'technician') {
     await supabase.auth.signOut();
-    return null;
+    return { ok: false, error: 'Use the admin login page for this account.' };
   }
 
   const { data: tech, error: techError } = await supabase
@@ -315,15 +334,18 @@ export const loginTechnicianWithSupabase = async (
 
   if (techError || !tech || tech.account_status !== 'ACTIVE') {
     await supabase.auth.signOut();
-    return null;
+    return { ok: false, error: 'Account is not active.' };
   }
 
   return {
-    id: tech.id,
-    email: tech.email,
-    role: 'technician',
-    technicianId: tech.id,
-    fullName: tech.full_name,
+    ok: true,
+    user: {
+      id: tech.id,
+      email: tech.email,
+      role: 'technician',
+      technicianId: tech.id,
+      fullName: tech.full_name,
+    },
   };
 };
 
@@ -338,32 +360,50 @@ export const loginTechnician = async (
   password: string,
   altchaLoginToken: string,
   altchaPayload?: string
-): Promise<AuthUser | null> => {
+): Promise<TechnicianLoginResult> => {
   const configError = getSupabaseConfigError();
   if (configError) {
     throw new Error(configError);
   }
 
-  let user = await loginTechnicianWithSupabase(
+  let attempt = await loginTechnicianWithSupabase(
     email,
     password,
     altchaLoginToken,
     altchaPayload
   );
-  if (user) return user;
+  if (attempt.ok) return attempt;
+
+  // Do not call provision when blocked by rate limit / lockout (provision returns generic 401).
+  if (attempt.locked || attempt.retryAfter != null) {
+    return attempt;
+  }
+  const errMsg = (attempt.error || '').toLowerCase();
+  if (
+    errMsg.includes('too many login attempts') ||
+    errMsg.includes('account temporarily locked') ||
+    errMsg.includes('rate limit exceeded')
+  ) {
+    return attempt;
+  }
 
   const provision = await provisionTechnicianAuthOnLogin(email, password);
   if (!provision.ok) {
-    return null;
+    return {
+      ok: false,
+      error: provision.error || 'Invalid credentials.',
+      locked: provision.locked,
+      retryAfter: provision.retryAfter,
+    };
   }
 
-  user = await loginTechnicianWithSupabase(
+  attempt = await loginTechnicianWithSupabase(
     email,
     password,
     altchaLoginToken,
     altchaPayload
   );
-  return user;
+  return attempt;
 };
 
 /** True when the current Supabase session is a technician linked to technicians.id */

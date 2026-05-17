@@ -60,6 +60,7 @@ export async function secureAuthLogin(
         ok: false,
         error: data.error || data.message || 'Invalid email or password',
         remainingAttempts: data.remainingAttempts,
+        locked: data.locked === true,
       };
     }
 

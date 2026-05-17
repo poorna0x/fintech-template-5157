@@ -11,6 +11,7 @@ import { Shield, Eye, EyeOff, Droplets } from 'lucide-react';
 import { toast } from 'sonner';
 import AltchaWidget from '@/components/AltchaWidget';
 import { registerAdminPWA } from '@/lib/pwa';
+import { formatLoginError } from '@/lib/loginResult';
 
 const AdminLogin = () => {
   const [email, setEmail] = useState('');
@@ -110,11 +111,16 @@ const AdminLogin = () => {
     }
 
     try {
-      const success = await login(email, password, altchaLoginToken, altchaPayload);
-      if (success) {
+      const result = await login(email, password, altchaLoginToken, altchaPayload);
+      if (result.ok) {
         navigate('/admin', { replace: true });
       } else {
-        setError('Invalid email or password. Please check your credentials.');
+        setError(
+          formatLoginError(
+            result,
+            'Invalid email or password. Please check your credentials.'
+          )
+        );
       }
     } catch (err: unknown) {
       console.error('Login error:', err);

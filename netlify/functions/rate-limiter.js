@@ -5,6 +5,13 @@
 // Rate limit store: Map<identifier, { count: number, resetTime: number }>
 const rateLimitStore = new Map();
 
+/** Netlify production/deploy contexts only — local dev-server has no CONTEXT. */
+function isRateLimitEnabled() {
+  const ctx = process.env.CONTEXT;
+  if (!ctx || ctx === 'dev') return false;
+  return true;
+}
+
 // Cleanup old entries periodically
 setInterval(() => {
   const now = Date.now();
@@ -92,8 +99,8 @@ function checkRateLimit(event, options = {}) {
 /**
  * Rate limit by arbitrary key (e.g. normalized email for auth)
  */
+/** Per-email auth limits — always on (localhost + production). */
 function checkRateLimitForKey(key, options = {}) {
-  const fakeEvent = { headers: {} };
   const clientId = key;
   const endpoint = options.endpoint || 'key';
   const {
@@ -147,6 +154,10 @@ function rateLimitResponseForKey(result) {
  */
 function createRateLimiter(options = {}) {
   return (event) => {
+    if (!isRateLimitEnabled()) {
+      return null;
+    }
+
     const result = checkRateLimit(event, options);
 
     if (!result.allowed) {

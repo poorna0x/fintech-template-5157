@@ -3,7 +3,7 @@
 const bcrypt = require('bcryptjs');
 const { createClient } = require('@supabase/supabase-js');
 const { getCorsHeaders, isOriginAllowed } = require('./cors-helper');
-const { rateLimiters } = require('./rate-limiter');
+const { enforceLoginRateLimits } = require('./auth-rate-limits');
 const { addSecurityHeaders } = require('./security-headers');
 const { upsertTechnicianAuthUser } = require('./technician-auth-upsert');
 
@@ -41,11 +41,6 @@ exports.handler = async (event) => {
     };
   }
 
-  const rateLimitResult = rateLimiters.password(event);
-  if (rateLimitResult) {
-    return { ...rateLimitResult, headers: { ...rateLimitResult.headers, ...corsHeaders } };
-  }
-
   const supabaseUrl = process.env.VITE_SUPABASE_URL || process.env.SUPABASE_URL;
   const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
@@ -77,11 +72,15 @@ exports.handler = async (event) => {
     };
   }
 
+  const normalizedEmail = email.toLowerCase().trim();
+  const rateLimits = enforceLoginRateLimits(event, normalizedEmail, corsHeaders);
+  if (rateLimits.blocked) {
+    return rateLimits.response;
+  }
+
   const admin = createClient(supabaseUrl, serviceKey, {
     auth: { autoRefreshToken: false, persistSession: false },
   });
-
-  const normalizedEmail = email.toLowerCase().trim();
 
   const { data: technician, error: techError } = await admin
     .from('technicians')

@@ -19,6 +19,7 @@ import {
   hasTechnicianSupabaseSession,
 } from '@/lib/auth';
 import { secureAuthLogin } from '@/lib/secureAuthLogin';
+import type { AuthLoginResult } from '@/lib/loginResult';
 import {
   getAuthPortal,
   resolveSessionRoleFromSupabaseUser,
@@ -48,7 +49,7 @@ interface AuthContextType {
     password: string,
     altchaLoginToken: string,
     altchaPayload?: string
-  ) => Promise<boolean>;
+  ) => Promise<AuthLoginResult>;
   logout: () => Promise<void>;
   reconcileAuthPortal: (pathname: string) => Promise<void>;
   isAdmin: boolean;
@@ -226,13 +227,14 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     password: string,
     altchaLoginToken: string,
     altchaPayload?: string
-  ): Promise<boolean> => {
+  ): Promise<AuthLoginResult> => {
     try {
       setLoading(true);
 
       if (!altchaLoginToken) {
-        toast.error('Complete security verification before signing in.');
-        return false;
+        const msg = 'Complete security verification before signing in.';
+        toast.error(msg);
+        return { ok: false, error: msg };
       }
 
       const isTechnicianLoginPage =
@@ -242,23 +244,32 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
 
       if (isTechnician) {
         await clearWrongPortalSession('technician');
-        const techUser = await loginTechnician(
+        const techResult = await loginTechnician(
           email,
           password,
           altchaLoginToken,
           altchaPayload
         );
-        if (!techUser) {
-          toast.error('Invalid credentials. Please check your email and password.');
-          return false;
+        if (!techResult.ok || !techResult.user) {
+          const err =
+            techResult.error || 'Invalid credentials. Please check your email and password.';
+          toast.error(err);
+          return {
+            ok: false,
+            error: err,
+            locked: techResult.locked,
+            retryAfter: techResult.retryAfter,
+            remainingAttempts: techResult.remainingAttempts,
+          };
         }
+        const techUser = techResult.user;
         const linked = await hasTechnicianSupabaseSession();
         if (!linked) {
-          toast.error(
-            'Login could not start a Supabase session. Ensure SUPABASE_SERVICE_ROLE_KEY is set on Netlify and try again.'
-          );
+          const msg =
+            'Login could not start a Supabase session. Ensure SUPABASE_SERVICE_ROLE_KEY is set on Netlify and try again.';
+          toast.error(msg);
           await supabase.auth.signOut();
-          return false;
+          return { ok: false, error: msg };
         }
         setUser(techUser);
         setAuthSession(techUser);
@@ -270,7 +281,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
             email: techUser.email,
           })}!`
         );
-        return true;
+        return { ok: true };
       }
 
       await clearWrongPortalSession('admin');
@@ -283,18 +294,22 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       );
 
       if (!authResult.ok) {
-        if (authResult.locked) {
-          toast.error(authResult.error || 'Account temporarily locked. Try again later.');
-        } else {
-          toast.error(authResult.error || 'Invalid email or password');
-        }
-        return false;
+        const err = authResult.error || 'Invalid email or password';
+        toast.error(err);
+        return {
+          ok: false,
+          error: err,
+          locked: authResult.locked,
+          retryAfter: authResult.retryAfter,
+          remainingAttempts: authResult.remainingAttempts,
+        };
       }
 
       const { data: { session } } = await supabase.auth.getSession();
       if (!session?.user) {
-        toast.error('Login failed. Please try again.');
-        return false;
+        const msg = 'Login failed. Please try again.';
+        toast.error(msg);
+        return { ok: false, error: msg };
       }
 
       const userRole =
@@ -303,8 +318,9 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         'admin';
       if (userRole === 'technician') {
         await supabase.auth.signOut();
-        toast.error('Use the technician login page for this account.');
-        return false;
+        const msg = 'Use the technician login page for this account.';
+        toast.error(msg);
+        return { ok: false, error: msg };
       }
 
       const adminUser: User = {
@@ -324,11 +340,11 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
           email: adminUser.email,
         })}!`
       );
-      return true;
+      return { ok: true };
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Login failed. Please try again.';
       toast.error(message);
-      return false;
+      return { ok: false, error: message };
     } finally {
       setLoading(false);
     }

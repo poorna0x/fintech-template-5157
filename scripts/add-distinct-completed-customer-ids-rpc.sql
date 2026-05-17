@@ -18,6 +18,8 @@ AS $$
     AND j.customer_id IS NOT NULL;
 $$;
 
-GRANT EXECUTE ON FUNCTION public.get_distinct_completed_customer_ids() TO anon;
+-- Admin dashboard only — never grant to anon (client bundle exposes anon key)
+REVOKE EXECUTE ON FUNCTION public.get_distinct_completed_customer_ids() FROM anon;
+REVOKE EXECUTE ON FUNCTION public.get_distinct_completed_customer_ids() FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.get_distinct_completed_customer_ids() TO authenticated;
 GRANT EXECUTE ON FUNCTION public.get_distinct_completed_customer_ids() TO service_role;

@@ -12,6 +12,7 @@ import { toast } from 'sonner';
 import AltchaWidget from '@/components/AltchaWidget';
 import { registerTechnicianPWA, disablePWA, isPWAMode } from '@/lib/pwa';
 import { clearWrongPortalSession } from '@/lib/authPortal';
+import { formatLoginError } from '@/lib/loginResult';
 
 const TechnicianLogin = () => {
   const [email, setEmail] = useState('');
@@ -139,15 +140,15 @@ const TechnicianLogin = () => {
       // Add timeout wrapper for Chrome mobile
       console.log('[TechnicianLogin] Calling login() from AuthContext...');
       const loginPromise = login(email, password, altchaLoginToken, altchaPayload);
-      const timeoutPromise = new Promise<boolean>((_, reject) => 
+      const timeoutPromise = new Promise<never>((_, reject) =>
         setTimeout(() => reject(new Error('Login timeout')), loginTimeoutMs)
       );
-      
+
       console.log('[TechnicianLogin] Waiting for login response...');
-      const success = await Promise.race([loginPromise, timeoutPromise]) as boolean;
-      console.log('[TechnicianLogin] Login response received. Success:', success);
-      
-      if (success) {
+      const result = await Promise.race([loginPromise, timeoutPromise]);
+      console.log('[TechnicianLogin] Login response received. Success:', result.ok);
+
+      if (result.ok) {
         console.log('[TechnicianLogin] ✅ Login reported success, checking user role...');
         // IMPORTANT: Check if user is actually a technician before navigating
         // Wait a bit for AuthContext to update user state
@@ -176,9 +177,10 @@ const TechnicianLogin = () => {
           }, 1500);
         }
       } else {
-        console.error('[TechnicianLogin] ❌ Login failed - success was false');
-        console.error('[TechnicianLogin] This means login() returned false');
-        setError('Login failed. Please check your credentials.');
+        console.error('[TechnicianLogin] ❌ Login failed:', result.error);
+        setError(
+          formatLoginError(result, 'Login failed. Please check your credentials.')
+        );
       }
     } catch (err: any) {
       console.error('[TechnicianLogin] ❌ Login exception caught:', err);

@@ -2,7 +2,7 @@
 // Clients must not call signInWithPassword directly — use this endpoint + setSession.
 const { createClient } = require('@supabase/supabase-js');
 const { getCorsHeaders, isOriginAllowed } = require('./cors-helper');
-const { rateLimiters, checkRateLimitForKey, rateLimitResponseForKey } = require('./rate-limiter');
+const { enforceLoginRateLimits } = require('./auth-rate-limits');
 const { addSecurityHeaders } = require('./security-headers');
 const { verifyLoginToken, consumeLoginToken, isPlaceholderKey } = require('./altcha-guard');
 const {
@@ -25,7 +25,7 @@ async function signInWithPasswordServer(supabaseUrl, anonKey, email, password) {
   });
 
   const body = await res.json().catch(() => ({}));
-  return { ok: res.ok, status: res.status, body };
+  return { ok: res.ok, status: res.status, body, headers: res.headers };
 }
 
 exports.handler = async (event) => {
@@ -61,11 +61,6 @@ exports.handler = async (event) => {
         message: 'Set ALTCHA_HMAC_KEY in Netlify environment.',
       }),
     };
-  }
-
-  const ipLimit = rateLimiters.auth(event);
-  if (ipLimit) {
-    return { ...ipLimit, headers: { ...ipLimit.headers, ...corsHeaders } };
   }
 
   const supabaseUrl = process.env.VITE_SUPABASE_URL || process.env.SUPABASE_URL;
@@ -110,19 +105,9 @@ exports.handler = async (event) => {
   const normalizedEmail = email.toLowerCase().trim();
   const expectedPortal = portal === 'technician' ? 'technician' : 'admin';
 
-  const emailLimit = checkRateLimitForKey(`email:${normalizedEmail}`, {
-    maxRequests: 5,
-    windowMs: 900000,
-    endpoint: 'auth-email',
-  });
-  if (!emailLimit.allowed) {
-    return {
-      ...rateLimitResponseForKey(emailLimit),
-      headers: {
-        ...rateLimitResponseForKey(emailLimit).headers,
-        ...corsHeaders,
-      },
-    };
+  const rateLimits = enforceLoginRateLimits(event, normalizedEmail, corsHeaders);
+  if (rateLimits.blocked) {
+    return rateLimits.response;
   }
 
   const tokenCheck = verifyLoginToken(altchaLoginToken, altchaPayload);
@@ -141,6 +126,7 @@ exports.handler = async (event) => {
   const lockStatus = await checkLoginAllowed(admin, normalizedEmail);
   if (lockStatus.allowed === false) {
     const retrySec = lockStatus.retry_after_seconds || 900;
+    const lockMins = Math.max(1, Math.ceil(retrySec / 60));
     return {
       statusCode: 429,
       headers: addSecurityHeaders({
@@ -150,9 +136,10 @@ exports.handler = async (event) => {
       }),
       body: JSON.stringify({
         error: 'Account temporarily locked',
-        message: `Too many failed login attempts. Try again in ${Math.ceil(retrySec / 60)} minutes.`,
+        message: `Too many failed login attempts. Try again in ${lockMins} minute(s).`,
         retryAfter: retrySec,
         locked: true,
+        lockoutCount: lockStatus.lockout_count,
       }),
     };
   }
@@ -165,12 +152,39 @@ exports.handler = async (event) => {
   );
 
   if (!authResult.ok) {
+    if (authResult.status === 429) {
+      const retrySec = parseInt(authResult.headers?.get?.('retry-after') || '300', 10);
+      return {
+        statusCode: 429,
+        headers: addSecurityHeaders({
+          ...corsHeaders,
+          'Content-Type': 'application/json',
+          'Retry-After': String(retrySec),
+        }),
+        body: JSON.stringify({
+          error: 'Too many login attempts',
+          message:
+            authResult.body?.msg ||
+            authResult.body?.message ||
+            'Too many sign-in attempts. Please wait and try again.',
+          retryAfter: retrySec,
+          locked: true,
+        }),
+      };
+    }
+
     const failureMeta = await recordLoginFailure(admin, normalizedEmail);
     const remaining = failureMeta?.remaining_attempts;
     const locked = failureMeta?.locked === true;
 
     if (locked) {
       const retrySec = failureMeta.retry_after_seconds || 900;
+      const lockMins = failureMeta.lock_minutes || Math.max(1, Math.ceil(retrySec / 60));
+      const lockoutCount = failureMeta.lockout_count;
+      let message = `Too many failed login attempts. Try again in ${lockMins} minute(s).`;
+      if (lockoutCount != null && lockoutCount > 1) {
+        message += ' Repeated lockouts increase wait time (15 → 30 → 60 minutes).';
+      }
       return {
         statusCode: 429,
         headers: addSecurityHeaders({
@@ -180,18 +194,27 @@ exports.handler = async (event) => {
         }),
         body: JSON.stringify({
           error: 'Account temporarily locked',
-          message: `Too many failed login attempts. Try again in ${Math.ceil(retrySec / 60)} minutes.`,
+          message,
           retryAfter: retrySec,
           locked: true,
+          lockMinutes: lockMins,
+          lockoutCount,
         }),
       };
     }
+
+    const attemptsMsg =
+      typeof remaining === 'number' && remaining > 0
+        ? ` Invalid email or password. ${remaining} attempt(s) remaining before lockout.`
+        : typeof remaining === 'number' && remaining === 0
+          ? ' Invalid email or password. Account will be locked on the next failed attempt.'
+          : ` ${GENERIC_AUTH_ERROR}`;
 
     return {
       statusCode: 401,
       headers: addSecurityHeaders({ ...corsHeaders, 'Content-Type': 'application/json' }),
       body: JSON.stringify({
-        error: GENERIC_AUTH_ERROR,
+        error: attemptsMsg.trim(),
         ...(typeof remaining === 'number' ? { remainingAttempts: remaining } : {}),
       }),
     };
