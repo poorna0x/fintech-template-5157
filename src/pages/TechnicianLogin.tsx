@@ -38,6 +38,7 @@ const TechnicianLogin = () => {
   }, [user]);
   
   useEffect(() => {
+    document.title = 'Hydrogen RO Technician';
     registerTechnicianPWA();
     void clearWrongPortalSession('technician');
     setIsCaptchaVerified(false);

@@ -474,9 +474,9 @@ const TechnicianDashboard = () => {
   const [reminderEntity, setReminderEntity] = useState<{ type: 'customer' | 'job' | 'general'; id: string | null }>({ type: 'general', id: null });
   const [reminderContextLabel, setReminderContextLabel] = useState<string>('');
   useEffect(() => {
+    document.title = 'Hydrogen RO Technician';
     registerTechnicianPWA();
-    
-    // Cleanup: disable PWA when component unmounts
+
     return () => {
       disablePWA();
     };

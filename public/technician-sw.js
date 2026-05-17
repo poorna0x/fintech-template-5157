@@ -1,8 +1,7 @@
-const STATIC_CACHE = 'technician-static-v2';
-const RUNTIME_CACHE = 'technician-runtime-v2';
+const STATIC_CACHE = 'technician-static-v3';
+const RUNTIME_CACHE = 'technician-runtime-v3';
 const OFFLINE_FALLBACK = '/technician';
 const PRECACHE_URLS = [
-  '/',
   '/technician',
   '/technician/login'
 ];
@@ -93,7 +92,8 @@ self.addEventListener('fetch', (event) => {
               return offlineResponse;
             }
           }
-          return caches.match('/') || Response.error();
+          const fallback = await caches.match(OFFLINE_FALLBACK);
+          return fallback || Response.error();
         })
     );
     return;

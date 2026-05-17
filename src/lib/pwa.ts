@@ -114,7 +114,7 @@ export const registerTechnicianPWA = () => {
   
   return registerPWA({
     swUrl: '/technician-sw.js',
-    scope: '/technician/',
+    scope: '/technician',
     label: 'Technician PWA',
   });
 };

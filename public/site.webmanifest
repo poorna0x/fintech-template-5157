@@ -51,18 +51,6 @@
   ],
   "shortcuts": [
     {
-      "name": "Technician Dashboard",
-      "short_name": "Technician",
-      "description": "Open the technician dashboard to view your assigned jobs.",
-      "url": "/technician"
-    },
-    {
-      "name": "Technician Login",
-      "short_name": "Tech Login",
-      "description": "Quickly jump to the technician login screen.",
-      "url": "/technician/login"
-    },
-    {
       "name": "Admin Dashboard",
       "short_name": "Admin",
       "description": "Open the admin dashboard to manage jobs and technicians.",
