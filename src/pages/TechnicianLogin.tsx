@@ -20,6 +20,8 @@ const TechnicianLogin = () => {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState('');
   const [isCaptchaVerified, setIsCaptchaVerified] = useState(false);
+  const [altchaLoginToken, setAltchaLoginToken] = useState('');
+  const [altchaPayload, setAltchaPayload] = useState('');
   const [showSecurityStep, setShowSecurityStep] = useState(false);
   const [captchaStartTime] = useState(Date.now());
   const [captchaTimeout, setCaptchaTimeout] = useState<NodeJS.Timeout | null>(null);
@@ -38,6 +40,8 @@ const TechnicianLogin = () => {
     registerTechnicianPWA();
     void clearWrongPortalSession('technician');
     setIsCaptchaVerified(false);
+    setAltchaLoginToken('');
+    setAltchaPayload('');
     setShowSecurityStep(false);
     if (captchaTimeout) {
       clearTimeout(captchaTimeout);
@@ -134,7 +138,7 @@ const TechnicianLogin = () => {
       
       // Add timeout wrapper for Chrome mobile
       console.log('[TechnicianLogin] Calling login() from AuthContext...');
-      const loginPromise = login(email, password);
+      const loginPromise = login(email, password, altchaLoginToken, altchaPayload);
       const timeoutPromise = new Promise<boolean>((_, reject) => 
         setTimeout(() => reject(new Error('Login timeout')), loginTimeoutMs)
       );
@@ -201,7 +205,7 @@ const TechnicianLogin = () => {
     setError('');
     
     // Check if CAPTCHA is verified before proceeding
-    if (!isCaptchaVerified) {
+    if (!isCaptchaVerified || !altchaLoginToken) {
       // Show security step if not verified yet (fallback)
       setShowSecurityStep(true);
       setError('Please complete the security verification before logging in.');
@@ -236,9 +240,11 @@ const TechnicianLogin = () => {
   }, [isCaptchaVerified]);
 
   // Track verification status
-  const handleVerify = (isValid: boolean) => {
+  const handleVerify = (isValid: boolean, payload?: string, loginToken?: string) => {
     console.log('[Login] ALTCHA verification result:', isValid);
     setIsCaptchaVerified(isValid);
+    if (payload) setAltchaPayload(payload);
+    if (loginToken) setAltchaLoginToken(loginToken);
     if (isValid) {
       setShowSecurityStep(false);
       // Clear timeout if verification succeeds
@@ -353,7 +359,7 @@ const TechnicianLogin = () => {
               <Button
                 type="submit"
                 className="w-full h-11 font-semibold shadow-lg hover:shadow-xl transition-all duration-300"
-                disabled={isLoading || !isCaptchaVerified}
+                disabled={isLoading || !isCaptchaVerified || !altchaLoginToken}
               >
                 {isLoading ? (
                   <div className="flex items-center">

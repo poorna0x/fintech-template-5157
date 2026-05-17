@@ -90,6 +90,57 @@ function checkRateLimit(event, options = {}) {
 }
 
 /**
+ * Rate limit by arbitrary key (e.g. normalized email for auth)
+ */
+function checkRateLimitForKey(key, options = {}) {
+  const fakeEvent = { headers: {} };
+  const clientId = key;
+  const endpoint = options.endpoint || 'key';
+  const {
+    maxRequests = 10,
+    windowMs = 60000,
+  } = options;
+
+  const fullKey = `${endpoint}:${clientId}`;
+  const now = Date.now();
+  let entry = rateLimitStore.get(fullKey);
+
+  if (!entry || entry.resetTime < now) {
+    entry = { count: 0, resetTime: now + windowMs };
+    rateLimitStore.set(fullKey, entry);
+  }
+
+  entry.count++;
+  const remaining = Math.max(0, maxRequests - entry.count);
+  const allowed = entry.count <= maxRequests;
+
+  return {
+    allowed,
+    remaining,
+    resetTime: entry.resetTime,
+    limit: maxRequests,
+  };
+}
+
+function rateLimitResponseForKey(result) {
+  return {
+    statusCode: 429,
+    headers: {
+      'Content-Type': 'application/json',
+      'Retry-After': Math.ceil((result.resetTime - Date.now()) / 1000).toString(),
+      'X-RateLimit-Limit': result.limit.toString(),
+      'X-RateLimit-Remaining': '0',
+      'X-RateLimit-Reset': new Date(result.resetTime).toISOString(),
+    },
+    body: JSON.stringify({
+      error: 'Too many requests',
+      message: `Rate limit exceeded. Please try again after ${Math.ceil((result.resetTime - Date.now()) / 1000)} seconds.`,
+      retryAfter: Math.ceil((result.resetTime - Date.now()) / 1000),
+    }),
+  };
+}
+
+/**
  * Rate limit middleware for Netlify Functions
  * @param {Object} options - Rate limit configuration
  * @returns {Function} Middleware function
@@ -152,6 +203,13 @@ const rateLimiters = {
     endpoint: 'altcha'
   }),
 
+  // Auth login proxy — strict per-IP (brute force on /auth/v1/token)
+  auth: createRateLimiter({
+    maxRequests: 10,
+    windowMs: 60000,
+    endpoint: 'auth',
+  }),
+
   // Default rate limiter
   default: createRateLimiter({
     maxRequests: 100,    // 100 requests
@@ -162,6 +220,8 @@ const rateLimiters = {
 
 module.exports = {
   checkRateLimit,
+  checkRateLimitForKey,
+  rateLimitResponseForKey,
   createRateLimiter,
   rateLimiters,
   getClientIdentifier

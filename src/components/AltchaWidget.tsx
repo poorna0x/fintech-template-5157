@@ -27,7 +27,7 @@ declare global {
 /* eslint-enable @typescript-eslint/no-namespace */
 
 interface AltchaWidgetProps {
-  onVerify: (isValid: boolean, payload?: string) => void;
+  onVerify: (isValid: boolean, payload?: string, loginToken?: string) => void;
   onAutoSubmit?: () => void;
   className?: string;
   autoStart?: boolean; // If false, requires manual activation
@@ -287,7 +287,7 @@ const AltchaWidget: React.FC<AltchaWidgetProps> = ({
           console.log('[ALTCHA] ✅ Server verification successful!');
           setIsLoading(false);
           setError(null);
-          onVerifyRef.current(true, payload);
+          onVerifyRef.current(true, payload, result.loginToken);
           // Auto-submit if callback provided
           if (onAutoSubmitRef.current) {
             setTimeout(() => {

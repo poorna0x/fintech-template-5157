@@ -19,6 +19,8 @@ const AdminLogin = () => {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState('');
   const [isCaptchaVerified, setIsCaptchaVerified] = useState(false);
+  const [altchaLoginToken, setAltchaLoginToken] = useState('');
+  const [altchaPayload, setAltchaPayload] = useState('');
   const [showSecurityStep, setShowSecurityStep] = useState(false);
   const [captchaStartTime] = useState(Date.now());
   const [captchaTimeout, setCaptchaTimeout] = useState<NodeJS.Timeout | null>(null);
@@ -33,6 +35,8 @@ const AdminLogin = () => {
     registerAdminPWA();
     void clearWrongPortalSession('admin');
     setIsCaptchaVerified(false);
+    setAltchaLoginToken('');
+    setAltchaPayload('');
     setShowSecurityStep(false);
     if (captchaTimeout) {
       clearTimeout(captchaTimeout);
@@ -106,7 +110,7 @@ const AdminLogin = () => {
     }
 
     try {
-      const success = await login(email, password);
+      const success = await login(email, password, altchaLoginToken, altchaPayload);
       if (success) {
         navigate('/admin', { replace: true });
       } else {
@@ -130,7 +134,7 @@ const AdminLogin = () => {
     setError('');
     
     // Check if CAPTCHA is verified before proceeding
-    if (!isCaptchaVerified) {
+    if (!isCaptchaVerified || !altchaLoginToken) {
       // Show security step if not verified yet (fallback)
       setShowSecurityStep(true);
       setError('Please complete the security verification before logging in.');
@@ -166,9 +170,11 @@ const AdminLogin = () => {
   }, [isCaptchaVerified]);
 
   // Track verification status
-  const handleVerify = (isValid: boolean) => {
+  const handleVerify = (isValid: boolean, payload?: string, loginToken?: string) => {
     console.log('[Login] ALTCHA verification result:', isValid);
     setIsCaptchaVerified(isValid);
+    if (payload) setAltchaPayload(payload);
+    if (loginToken) setAltchaLoginToken(loginToken);
     if (isValid) {
       setShowSecurityStep(false);
       // Clear timeout if verification succeeds
@@ -278,7 +284,7 @@ const AdminLogin = () => {
               <Button
                 type="submit"
                 className="w-full font-semibold shadow-lg hover:shadow-xl transition-all duration-300"
-                disabled={isLoading || !isCaptchaVerified}
+                disabled={isLoading || !isCaptchaVerified || !altchaLoginToken}
               >
                 {isLoading ? (
                   <div className="flex items-center">

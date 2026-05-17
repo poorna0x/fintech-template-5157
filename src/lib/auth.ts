@@ -3,6 +3,7 @@
 import { supabase } from './supabase';
 import { chromeStorage } from './storage';
 import { getSupabaseConfigError } from './supabaseConfig';
+import { secureAuthLogin } from './secureAuthLogin';
 
 import { isPWAMode } from './pwa';
 
@@ -273,19 +274,31 @@ export const provisionTechnicianAuthOnLogin = async (
   }
 };
 
-/** Technician login via Supabase Auth (auth.users.id must equal technicians.id). */
+/** Technician login via secure proxy (auth.users.id must equal technicians.id). */
 export const loginTechnicianWithSupabase = async (
   email: string,
-  password: string
+  password: string,
+  altchaLoginToken: string,
+  altchaPayload?: string
 ): Promise<AuthUser | null> => {
-  const { data, error } = await supabase.auth.signInWithPassword({
-    email: email.toLowerCase().trim(),
+  const result = await secureAuthLogin(
+    email,
     password,
-  });
+    altchaLoginToken,
+    'technician',
+    altchaPayload
+  );
 
-  if (error || !data.user) {
+  if (!result.ok) {
     return null;
   }
+
+  const { data: { user: authUser } } = await supabase.auth.getUser();
+  if (!authUser) {
+    return null;
+  }
+
+  const data = { user: authUser };
 
   const role =
     data.user.app_metadata?.role || data.user.user_metadata?.role || 'technician';
@@ -322,14 +335,21 @@ export const loginTechnicianWithSupabase = async (
  */
 export const loginTechnician = async (
   email: string,
-  password: string
+  password: string,
+  altchaLoginToken: string,
+  altchaPayload?: string
 ): Promise<AuthUser | null> => {
   const configError = getSupabaseConfigError();
   if (configError) {
     throw new Error(configError);
   }
 
-  let user = await loginTechnicianWithSupabase(email, password);
+  let user = await loginTechnicianWithSupabase(
+    email,
+    password,
+    altchaLoginToken,
+    altchaPayload
+  );
   if (user) return user;
 
   const provision = await provisionTechnicianAuthOnLogin(email, password);
@@ -337,7 +357,12 @@ export const loginTechnician = async (
     return null;
   }
 
-  user = await loginTechnicianWithSupabase(email, password);
+  user = await loginTechnicianWithSupabase(
+    email,
+    password,
+    altchaLoginToken,
+    altchaPayload
+  );
   return user;
 };
 

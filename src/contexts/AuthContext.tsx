@@ -18,6 +18,7 @@ import {
   loginTechnician,
   hasTechnicianSupabaseSession,
 } from '@/lib/auth';
+import { secureAuthLogin } from '@/lib/secureAuthLogin';
 import {
   getAuthPortal,
   resolveSessionRoleFromSupabaseUser,
@@ -42,7 +43,12 @@ interface AuthContextType {
   authInitializing: boolean;
   /** True while login() is in progress. */
   loading: boolean;
-  login: (email: string, password: string) => Promise<boolean>;
+  login: (
+    email: string,
+    password: string,
+    altchaLoginToken: string,
+    altchaPayload?: string
+  ) => Promise<boolean>;
   logout: () => Promise<void>;
   reconcileAuthPortal: (pathname: string) => Promise<void>;
   isAdmin: boolean;
@@ -215,9 +221,19 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     };
   }, [applySessionUser]);
 
-  const login = async (email: string, password: string): Promise<boolean> => {
+  const login = async (
+    email: string,
+    password: string,
+    altchaLoginToken: string,
+    altchaPayload?: string
+  ): Promise<boolean> => {
     try {
       setLoading(true);
+
+      if (!altchaLoginToken) {
+        toast.error('Complete security verification before signing in.');
+        return false;
+      }
 
       const isTechnicianLoginPage =
         typeof window !== 'undefined' &&
@@ -226,7 +242,12 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
 
       if (isTechnician) {
         await clearWrongPortalSession('technician');
-        const techUser = await loginTechnician(email, password);
+        const techUser = await loginTechnician(
+          email,
+          password,
+          altchaLoginToken,
+          altchaPayload
+        );
         if (!techUser) {
           toast.error('Invalid credentials. Please check your email and password.');
           return false;
@@ -253,45 +274,57 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       }
 
       await clearWrongPortalSession('admin');
-      const { data, error } = await supabase.auth.signInWithPassword({
+      const authResult = await secureAuthLogin(
         email,
         password,
-      });
+        altchaLoginToken,
+        'admin',
+        altchaPayload
+      );
 
-      if (error) {
-        toast.error('Invalid email or password');
+      if (!authResult.ok) {
+        if (authResult.locked) {
+          toast.error(authResult.error || 'Account temporarily locked. Try again later.');
+        } else {
+          toast.error(authResult.error || 'Invalid email or password');
+        }
         return false;
       }
 
-      if (data.user) {
-        const userRole =
-          data.user.user_metadata?.role || data.user.app_metadata?.role || 'admin';
-        if (userRole === 'technician') {
-          await supabase.auth.signOut();
-          toast.error('Use the technician login page for this account.');
-          return false;
-        }
-        const adminUser: User = {
-          id: data.user.id,
-          email: data.user.email || '',
-          role: 'admin',
-          fullName:
-            data.user.user_metadata?.full_name || data.user.user_metadata?.name,
-        };
-        setUser(adminUser);
-        technicianSessionRef.current = false;
-        clearAuthSession();
-        portalRef.current = 'admin';
-        toast.success(
-          `Welcome back, ${formatWelcomeDisplayName({
-            fullName: adminUser.fullName,
-            email: adminUser.email,
-          })}!`
-        );
-        return true;
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session?.user) {
+        toast.error('Login failed. Please try again.');
+        return false;
       }
 
-      return false;
+      const userRole =
+        session.user.user_metadata?.role ||
+        session.user.app_metadata?.role ||
+        'admin';
+      if (userRole === 'technician') {
+        await supabase.auth.signOut();
+        toast.error('Use the technician login page for this account.');
+        return false;
+      }
+
+      const adminUser: User = {
+        id: session.user.id,
+        email: session.user.email || '',
+        role: 'admin',
+        fullName:
+          session.user.user_metadata?.full_name || session.user.user_metadata?.name,
+      };
+      setUser(adminUser);
+      technicianSessionRef.current = false;
+      clearAuthSession();
+      portalRef.current = 'admin';
+      toast.success(
+        `Welcome back, ${formatWelcomeDisplayName({
+          fullName: adminUser.fullName,
+          email: adminUser.email,
+        })}!`
+      );
+      return true;
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Login failed. Please try again.';
       toast.error(message);
