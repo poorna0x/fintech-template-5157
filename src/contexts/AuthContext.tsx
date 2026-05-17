@@ -13,6 +13,7 @@ import {
   setAuthSession,
   getAuthSession,
   clearAuthSession,
+  purgeSupabaseAuthStorage,
   isTechnicianEmail,
   loginTechnician,
   hasTechnicianSupabaseSession,
@@ -68,23 +69,17 @@ interface AuthProviderProps {
 
 export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   const technicianSessionRef = useRef(false);
+  const loggingOutRef = useRef(false);
   const portalRef = useRef(getAuthPortal(typeof window !== 'undefined' ? window.location.pathname : '/'));
 
-  const [user, setUser] = useState<User | null>(() => {
-    if (typeof window === 'undefined') return null;
-    const portal = getAuthPortal(window.location.pathname);
-    if (portal !== 'admin') return null;
-    const existingSession = getAuthSession();
-    if (existingSession && existingSession.role === 'admin') {
-      return existingSession;
-    }
-    return null;
-  });
+  const [user, setUser] = useState<User | null>(null);
 
   const [authInitializing, setAuthInitializing] = useState(true);
   const [loading, setLoading] = useState(false);
 
   const applySessionUser = useCallback(async (session: Session | null, portal = portalRef.current) => {
+    if (loggingOutRef.current) return;
+
     if (!session?.user) {
       setUser(null);
       technicianSessionRef.current = false;
@@ -164,11 +159,17 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
           await applySessionUser(session);
         } else {
           const stored = getAuthSession();
-          if (stored?.role === 'admin' && portalRef.current === 'admin') {
-            setUser(stored);
-            technicianSessionRef.current = false;
+          if (stored?.role === 'technician' && portalRef.current === 'technician') {
+            setUser({
+              id: stored.id,
+              email: stored.email,
+              role: 'technician',
+              fullName: stored.fullName,
+              technicianId: stored.technicianId,
+            });
+            technicianSessionRef.current = true;
           } else {
-            clearAuthSession();
+            if (stored?.role !== 'technician') clearAuthSession();
             setUser(null);
           }
         }
@@ -301,30 +302,41 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   };
 
   const logout = async (): Promise<void> => {
+    loggingOutRef.current = true;
     try {
       clearAuthSession();
       technicianSessionRef.current = false;
       setUser(null);
       setAuthInitializing(false);
 
-      const signOutPromise = supabase.auth.signOut();
-      const timeoutPromise = new Promise((_, reject) =>
-        setTimeout(() => reject(new Error('Sign out timeout')), 5000)
-      );
+      // Clear local JWT immediately so dashboard cannot re-hydrate from stale storage
+      try {
+        await supabase.auth.signOut({ scope: 'local' });
+      } catch (error) {
+        console.warn('Supabase local signOut:', error);
+      }
+      purgeSupabaseAuthStorage();
 
       try {
+        const signOutPromise = supabase.auth.signOut();
+        const timeoutPromise = new Promise((_, reject) =>
+          setTimeout(() => reject(new Error('Sign out timeout')), 15_000)
+        );
         await Promise.race([signOutPromise, timeoutPromise]);
       } catch (error) {
-        console.warn('Supabase signOut timeout or error (non-critical):', error);
+        console.warn('Supabase global signOut timeout or error:', error);
       }
 
       toast.success('Logged out successfully');
     } catch (error) {
       console.error('Logout error:', error);
       clearAuthSession();
+      purgeSupabaseAuthStorage();
       setUser(null);
       setAuthInitializing(false);
       toast.error('Logged out (some cleanup may have failed)');
+    } finally {
+      loggingOutRef.current = false;
     }
   };
 

@@ -350,6 +350,8 @@ const AdminDashboard = () => {
   // Authentication state hooks - MUST be declared before any conditional returns
   const [maxWaitReached, setMaxWaitReached] = useState(false);
   const [waitingForAuth, setWaitingForAuth] = useState(false);
+  const hadAuthenticatedUserRef = useRef(false);
+  const sessionRecoveryDoneRef = useRef(false);
   
   // Authentication effects - MUST be declared before any conditional returns
   useEffect(() => {
@@ -369,12 +371,20 @@ const AdminDashboard = () => {
 
   // When user becomes available, stop waiting
   useEffect(() => {
-    if (user) setWaitingForAuth(false);
+    if (user) {
+      hadAuthenticatedUserRef.current = true;
+      setWaitingForAuth(false);
+    }
   }, [user]);
 
-  // One-time session check on mount when auth is ready and no user yet (no polling)
+  // Cold-load only: recover session once before login UI (not after explicit logout)
   useEffect(() => {
-    if (user || authInitializing) return;
+    if (user) return;
+    if (authInitializing) return;
+    if (sessionRecoveryDoneRef.current) return;
+    if (hadAuthenticatedUserRef.current) return;
+
+    sessionRecoveryDoneRef.current = true;
 
     let isCleanedUp = false;
     supabase.auth.getSession().then(({ data: { session } }) => {

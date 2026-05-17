@@ -258,6 +258,13 @@ const normalizeJobStatus = (value: unknown): string => {
   return value.trim().toUpperCase().replace(/\s+/g, '_');
 };
 
+const ONGOING_JOB_STATUSES = ['PENDING', 'ASSIGNED', 'EN_ROUTE', 'IN_PROGRESS'] as const;
+
+const isOngoingJob = (job: Job): boolean => {
+  const status = normalizeJobStatus((job as { status?: unknown }).status ?? job.status);
+  return (ONGOING_JOB_STATUSES as readonly string[]).includes(status);
+};
+
 /** Main square color for AMC / Google review / prior (returning) customer — Technician lists. Blue only when no AMC and no Google review (green/red/orange unchanged). */
 function technicianCustomerIndicatorMainClass(hasAmc: boolean, hasG: boolean, hasPrior: boolean): string {
   if (hasAmc && hasG) return 'bg-orange-500 ring-2 ring-orange-300 shadow-[0_0_12px_rgba(249,115,22,0.9)]';
@@ -737,11 +744,7 @@ const TechnicianDashboard = () => {
         });
       }
 
-      // Calculate ongoing jobs count (PENDING, ASSIGNED, EN_ROUTE, IN_PROGRESS)
-      const ongoingJobs = allJobs.filter(job => {
-        const status = (job as any).status || job.status;
-        return ['PENDING', 'ASSIGNED', 'EN_ROUTE', 'IN_PROGRESS'].includes(status);
-      });
+      const ongoingJobs = allJobs.filter(isOngoingJob);
       
       console.log(`📊 Jobs loaded from database: ${data?.length || 0} total`, {
         ongoing: ongoingJobs.length,
@@ -2212,11 +2215,7 @@ const TechnicianDashboard = () => {
 
     // Filter by status
     if (statusFilter === 'ONGOING') {
-      // Show ongoing jobs (pending, assigned, en_route, in-progress)
-      filtered = filtered.filter(job => {
-        const status = normalizeJobStatus((job as any).status || job.status);
-        return ['PENDING', 'ASSIGNED', 'EN_ROUTE', 'IN_PROGRESS'].includes(status);
-      });
+      filtered = filtered.filter(isOngoingJob);
     } else if (statusFilter === 'RESCHEDULED') {
       // Filter for follow-up jobs (FOLLOW_UP status)
       filtered = filtered.filter(job => normalizeJobStatus(job.status) === 'FOLLOW_UP');
@@ -4566,11 +4565,8 @@ const TechnicianDashboard = () => {
     );
   }
 
-  const ongoingCount = jobs.filter(job => {
-    const status = (job as any).status || job.status;
-    return !['FOLLOW_UP', 'DENIED', 'COMPLETED'].includes(status);
-  }).length; // Jobs excluding follow-up, denied, and completed
-  const followUpCount = jobs.filter(job => job.status === 'FOLLOW_UP').length;
+  const ongoingCount = jobs.filter(isOngoingJob).length;
+  const followUpCount = jobs.filter(job => normalizeJobStatus(job.status) === 'FOLLOW_UP').length;
   const deniedCount = jobs.filter(job => {
     if (job.status !== 'DENIED') return false;
     const technicianName = user?.fullName || '';

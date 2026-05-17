@@ -428,3 +428,18 @@ export const clearAuthSession = () => {
     console.error('Error clearing session:', error);
   }
 };
+
+/** Remove persisted Supabase JWT from storage when signOut is slow or fails (e.g. PWA). */
+export const purgeSupabaseAuthStorage = (): void => {
+  if (typeof window === 'undefined') return;
+  try {
+    const keys: string[] = [];
+    for (let i = 0; i < localStorage.length; i++) {
+      const key = localStorage.key(i);
+      if (key?.startsWith('sb-')) keys.push(key);
+    }
+    keys.forEach((key) => chromeStorage.removeItem(key));
+  } catch (error) {
+    console.warn('[auth] purgeSupabaseAuthStorage failed:', error);
+  }
+};
