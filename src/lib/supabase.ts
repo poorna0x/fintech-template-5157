@@ -1,14 +1,11 @@
 import { createClient } from '@supabase/supabase-js';
 import { Database } from '@/types';
 import { chromeStorage } from './storage';
+import { isSupabaseConfigured, supabaseAnonKey, supabaseUrl } from './supabaseConfig';
 import { escapeForLike, normalizePhoneForSearch } from './utils';
 import { PENDING_PAYMENT_REMINDER_TITLE } from './pendingPaymentReminder';
 import { cacheGet, cacheSet, cacheInvalidate } from './supabaseQueryCache';
 import { isMissingServiceBrandColumnError } from './amc-brand';
-
-// Supabase configuration
-const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
-const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
 
 // Debug logging in development
 if (import.meta.env.DEV) {
@@ -16,17 +13,12 @@ if (import.meta.env.DEV) {
   console.log('[Supabase Config] Anon Key:', supabaseAnonKey ? '✓ Set (' + supabaseAnonKey.substring(0, 20) + '...)' : '✗ Missing');
 }
 
-// Use placeholder values during build if env vars are missing (prevents build failures)
-// The app will fail at runtime if these are actually missing, but build will succeed
+// Placeholders only so `vite build` succeeds; real values must be set on Netlify for production.
 const buildTimeUrl = supabaseUrl || 'https://placeholder.supabase.co';
 const buildTimeKey = supabaseAnonKey || 'placeholder-key';
 
-// Runtime validation - check if env vars are actually set when app runs
-if (typeof window !== 'undefined' && (!supabaseUrl || !supabaseAnonKey)) {
-  console.error('[Supabase Config] Missing environment variables at runtime!');
-  console.error('[Supabase Config] URL:', supabaseUrl ? '✓ Set' : '✗ Missing');
-  console.error('[Supabase Config] Anon Key:', supabaseAnonKey ? '✓ Set' : '✗ Missing');
-  console.error('[Supabase Config] Please set VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY in your environment variables.');
+if (typeof window !== 'undefined' && !isSupabaseConfigured()) {
+  console.error('[Supabase Config] Missing or placeholder Supabase env at runtime — login will fail in production.');
 }
 
 // Create a storage adapter compatible with Supabase's expected interface
@@ -83,6 +75,13 @@ export const supabase = createClient<Database>(buildTimeUrl, buildTimeKey, {
       // Add timeout to prevent hanging requests in PWA
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), 30000); // 30 second timeout
+
+      if (!isSupabaseConfigured() && String(url).includes('placeholder.supabase.co')) {
+        clearTimeout(timeoutId);
+        throw new Error(
+          'Supabase is not configured. Set VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY on Netlify and redeploy.'
+        );
+      }
 
       return fetch(url, {
         ...options,
@@ -2124,10 +2123,11 @@ export const db = {
   // Technician operations
   technicians: {
     async create(technician: Database['public']['Tables']['technicians']['Insert']) {
+      const { password: _password, ...row } = technician as Record<string, unknown>;
       const { data, error } = await supabase
         .from('technicians')
-        .insert(technician)
-        .select()
+        .insert(row)
+        .select(TECHNICIAN_ROW_COLUMNS)
         .single();
       
       return { data, error };
@@ -2211,11 +2211,12 @@ export const db = {
     },
     
     async update(id: string, updates: Database['public']['Tables']['technicians']['Update']) {
+      const { password: _password, ...row } = updates as Record<string, unknown>;
       const { data, error } = await supabase
         .from('technicians')
-        .update(updates)
+        .update(row)
         .eq('id', id)
-        .select();
+        .select(TECHNICIAN_ROW_COLUMNS);
       
       if (error) {
         return { data: null, error };

@@ -104,6 +104,15 @@ const AdminLogin = () => {
     setIsLoading(true);
     setError('');
 
+    const { getSupabaseConfigError } = await import('@/lib/supabaseConfig');
+    const configError = getSupabaseConfigError();
+    if (configError) {
+      setError(configError);
+      toast.error('Server configuration error — contact admin');
+      setIsLoading(false);
+      return;
+    }
+
     try {
       // Detect Chrome mobile for timeout handling
       const isChromeMobile = typeof window !== 'undefined' && 

@@ -115,20 +115,30 @@ const TechnicianLogin = () => {
     setIsLoading(true);
     setError('');
 
+    const { getSupabaseConfigError } = await import('@/lib/supabaseConfig');
+    const configError = getSupabaseConfigError();
+    if (configError) {
+      setError(configError);
+      toast.error('Server configuration error — contact admin');
+      setIsLoading(false);
+      return;
+    }
+
     try {
       // Detect Chrome mobile for timeout handling
       const isChromeMobile = typeof window !== 'undefined' && 
         /Chrome/i.test(navigator.userAgent) && 
         /Mobile|Android/i.test(navigator.userAgent);
       
+      const loginTimeoutMs = isChromeMobile ? 25000 : 45000;
       console.log('[TechnicianLogin] Browser:', isChromeMobile ? 'Chrome Mobile' : 'Other');
-      console.log('[TechnicianLogin] Timeout:', isChromeMobile ? '15s' : '30s');
+      console.log('[TechnicianLogin] Timeout:', `${loginTimeoutMs / 1000}s`);
       
       // Add timeout wrapper for Chrome mobile
       console.log('[TechnicianLogin] Calling login() from AuthContext...');
       const loginPromise = login(email, password);
       const timeoutPromise = new Promise<boolean>((_, reject) => 
-        setTimeout(() => reject(new Error('Login timeout')), isChromeMobile ? 15000 : 30000)
+        setTimeout(() => reject(new Error('Login timeout')), loginTimeoutMs)
       );
       
       console.log('[TechnicianLogin] Waiting for login response...');

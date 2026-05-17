@@ -91,6 +91,11 @@ DROP POLICY IF EXISTS "Allow authenticated users to delete customers" ON public.
 -- Authenticated: admin full access; technician only assigned customers
 -- ---------------------------------------------------------------------------
 
+DROP POLICY IF EXISTS customers_select_authenticated ON public.customers;
+DROP POLICY IF EXISTS customers_insert_admin ON public.customers;
+DROP POLICY IF EXISTS customers_update_authenticated ON public.customers;
+DROP POLICY IF EXISTS customers_delete_admin ON public.customers;
+
 CREATE POLICY customers_select_authenticated
   ON public.customers
   FOR SELECT

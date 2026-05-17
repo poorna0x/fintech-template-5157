@@ -5,6 +5,7 @@ const { createClient } = require('@supabase/supabase-js');
 const { getCorsHeaders, isOriginAllowed } = require('./cors-helper');
 const { rateLimiters } = require('./rate-limiter');
 const { addSecurityHeaders } = require('./security-headers');
+const { upsertTechnicianAuthUser } = require('./technician-auth-upsert');
 
 async function verifyPassword(plain, stored) {
   if (!stored) return false;
@@ -113,67 +114,20 @@ exports.handler = async (event) => {
     };
   }
 
-  const { error: createError } = await admin.auth.admin.createUser({
-    id: technician.id,
+  const result = await upsertTechnicianAuthUser(admin, {
+    technicianId: technician.id,
     email: normalizedEmail,
     password,
-    email_confirm: true,
-    user_metadata: { role: 'technician', full_name: technician.full_name },
-    app_metadata: { role: 'technician' },
+    fullName: technician.full_name,
   });
 
-  if (!createError) {
-    return {
-      statusCode: 200,
-      headers: addSecurityHeaders({ ...corsHeaders, 'Content-Type': 'application/json' }),
-      body: JSON.stringify({ ok: true, action: 'created' }),
-    };
-  }
-
-  // Email may exist on a different auth id (e.g. old admin test account) — remove and recreate with technicians.id
-  if (
-    createError.message?.includes('already') ||
-    createError.message?.includes('registered') ||
-    createError.status === 422
-  ) {
-    const { data: listData } = await admin.auth.admin.listUsers({ page: 1, perPage: 1000 });
-    const conflict = listData?.users?.find(
-      (u) => u.email?.toLowerCase() === normalizedEmail && u.id !== technician.id
-    );
-    if (conflict) {
-      await admin.auth.admin.deleteUser(conflict.id);
-      const { error: retryError } = await admin.auth.admin.createUser({
-        id: technician.id,
-        email: normalizedEmail,
-        password,
-        email_confirm: true,
-        user_metadata: { role: 'technician', full_name: technician.full_name },
-        app_metadata: { role: 'technician' },
-      });
-      if (!retryError) {
-        return {
-          statusCode: 200,
-          headers: addSecurityHeaders({ ...corsHeaders, 'Content-Type': 'application/json' }),
-          body: JSON.stringify({ ok: true, action: 'recreated' }),
-        };
-      }
-    }
-  }
-
-  const { error: updateError } = await admin.auth.admin.updateUserById(technician.id, {
-    email: normalizedEmail,
-    password,
-    user_metadata: { role: 'technician', full_name: technician.full_name },
-    app_metadata: { role: 'technician' },
-  });
-
-  if (updateError) {
-    console.error('[provision-technician-auth-on-login]', createError?.message, updateError.message);
+  if (!result.ok) {
+    console.error('[provision-technician-auth-on-login]', result.error);
     return {
       statusCode: 500,
       headers: addSecurityHeaders({ ...corsHeaders, 'Content-Type': 'application/json' }),
       body: JSON.stringify({
-        error: updateError.message,
+        error: result.error,
         hint: 'Ensure SUPABASE_SERVICE_ROLE_KEY is set. Auth user id must match technicians.id.',
       }),
     };
@@ -182,6 +136,6 @@ exports.handler = async (event) => {
   return {
     statusCode: 200,
     headers: addSecurityHeaders({ ...corsHeaders, 'Content-Type': 'application/json' }),
-    body: JSON.stringify({ ok: true, action: 'updated' }),
+    body: JSON.stringify({ ok: true, action: result.action }),
   };
 };

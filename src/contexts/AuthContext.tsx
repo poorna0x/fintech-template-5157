@@ -7,6 +7,7 @@ import {
   clearAuthSession,
   isTechnicianEmail,
   loginTechnician,
+  hasTechnicianSupabaseSession,
 } from '@/lib/auth';
 import type { User as SupabaseUser } from '@supabase/supabase-js';
 
@@ -40,8 +41,9 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       return null;
     }
     const existingSession = getAuthSession();
-    if (existingSession) {
-      technicianSessionRef.current = existingSession.role === 'technician';
+    // Technicians must use Supabase JWT only — do not boot from localStorage alone
+    if (existingSession && existingSession.role !== 'technician') {
+      technicianSessionRef.current = false;
       return existingSession;
     }
     return null;
@@ -100,11 +102,8 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
           return;
         }
 
-        const customSession = getAuthSession();
-        if (customSession?.role === 'technician') {
-          setUser(customSession);
-          technicianSessionRef.current = true;
-        }
+        // Technicians must have a Supabase JWT (required for customers RLS) — no localStorage-only restore
+        clearAuthSession();
       } catch (error) {
         clearTimeout(timeoutId);
         // Don't log timeout errors in production - they're expected on Chrome mobile
@@ -143,29 +142,13 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         return;
       }
 
-      const customSession = getAuthSession();
-      if (customSession) {
-        setUser(prev => {
-          if (prev && prev.id === customSession.id && prev.role === customSession.role) {
-            return prev;
-          }
-          return customSession;
-        });
-        technicianSessionRef.current = customSession.role === 'technician';
-        setLoading(false);
-        return;
-      }
-
-      // Only clear user if it's a SIGNED_OUT event AND no custom session exists
+      // Only clear user if it's a SIGNED_OUT event (technicians use Supabase session only)
       // Don't clear on TOKEN_REFRESHED for technicians (they use localStorage, not Supabase tokens)
       if (event === 'SIGNED_OUT') {
-        // Double-check for technician session before clearing
-        const techSession = getAuthSession();
-        if (!techSession) {
-          setUser(null);
-          setLoading(false);
-          setInitialized(true); // Mark as initialized so login page can render
-        }
+        clearAuthSession();
+        setUser(null);
+        setLoading(false);
+        setInitialized(true);
       }
       // Don't clear user on TOKEN_REFRESHED - technicians don't use Supabase tokens
       // Don't clear on INITIAL_SESSION - let the session check handle it
@@ -179,12 +162,21 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   // Keep technician session in sync from localStorage
   // This is especially important for iOS PWA where localStorage can be cleared
   useEffect(() => {
-    const restoreSessionFromStorage = () => {
+    const restoreSessionFromStorage = async () => {
       try {
+        const { data: { session } } = await supabase.auth.getSession();
+        if (session?.user) {
+          return;
+        }
         const storedSession = getAuthSession();
+        if (storedSession?.role === 'technician') {
+          clearAuthSession();
+          setUser(null);
+          technicianSessionRef.current = false;
+          return;
+        }
         if (storedSession) {
           setUser(prev => {
-            // Avoid unnecessary state updates if session is unchanged
             if (prev && prev.id === storedSession.id && prev.role === storedSession.role) {
               return prev;
             }
@@ -282,19 +274,18 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
           toast.error('Invalid credentials. Please check your email and password.');
           return false;
         }
+        const linked = await hasTechnicianSupabaseSession();
+        if (!linked) {
+          toast.error(
+            'Login could not start a Supabase session. Ensure SUPABASE_SERVICE_ROLE_KEY is set on Netlify and try again.'
+          );
+          await supabase.auth.signOut();
+          return false;
+        }
         setUser(techUser);
         setAuthSession(techUser);
         technicianSessionRef.current = true;
-        const { data: { session } } = await supabase.auth.getSession();
-        if (session?.user?.id === techUser.id) {
-          toast.success(`Welcome back, ${techUser.fullName || techUser.email}!`);
-        } else {
-          toast.success(`Welcome back, ${techUser.fullName || techUser.email}!`);
-          toast.warning(
-            'Supabase login not linked yet. Restart dev server (npm run dev) or set SUPABASE_SERVICE_ROLE_KEY on Netlify, then log in again.',
-            { duration: 8000 }
-          );
-        }
+        toast.success(`Welcome back, ${techUser.fullName || techUser.email}!`);
         return true;
       }
 
@@ -331,8 +322,9 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       }
 
       return false;
-    } catch {
-      toast.error('Login failed. Please try again.');
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Login failed. Please try again.';
+      toast.error(message);
       return false;
     } finally {
       setLoading(false);

@@ -42,8 +42,10 @@ function getAllowedOrigins() {
   // Fallback: production domains
   if (inProduction) {
     return [
-      'https://hydrogenro.com',           // Production domain
-      'https://www.hydrogenro.com',       // Production domain with www
+      'https://hydrogenro.com',
+      'https://www.hydrogenro.com',
+      'https://elevenro.com',
+      'https://www.elevenro.com',
     ];
   }
   

@@ -2,6 +2,28 @@
 // Note: Admin authentication is handled by Supabase Auth (see AdminLogin.tsx)
 import { supabase } from './supabase';
 import { chromeStorage } from './storage';
+import { getSupabaseConfigError } from './supabaseConfig';
+
+const FUNCTION_FETCH_TIMEOUT_MS = 12_000;
+
+async function fetchWithTimeout(
+  input: RequestInfo | URL,
+  init?: RequestInit,
+  timeoutMs = FUNCTION_FETCH_TIMEOUT_MS
+): Promise<Response> {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    return await fetch(input, { ...init, signal: controller.signal });
+  } catch (error) {
+    if (error instanceof Error && error.name === 'AbortError') {
+      throw new Error('Request timed out — check your connection or try again');
+    }
+    throw error;
+  } finally {
+    clearTimeout(timeoutId);
+  }
+}
 
 export interface AuthUser {
   id: string;
@@ -108,7 +130,7 @@ export const authenticateUser = async (email: string, password: string): Promise
           console.log('[auth.ts] API URL:', apiUrl);
           console.log('[auth.ts] Request body:', { password_length: password.length, hashed_password_length: technician.password.length });
           
-          const verifyResponse = await fetch(apiUrl, {
+          const verifyResponse = await fetchWithTimeout(apiUrl, {
             method: 'POST',
             headers: {
               'Content-Type': 'application/json',
@@ -223,7 +245,7 @@ export const provisionTechnicianAuthOnLogin = async (
   password: string
 ): Promise<{ ok: boolean; error?: string }> => {
   try {
-    const res = await fetch('/.netlify/functions/provision-technician-auth-on-login', {
+    const res = await fetchWithTimeout('/.netlify/functions/provision-technician-auth-on-login', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ email, password }),
@@ -288,51 +310,54 @@ export const loginTechnicianWithSupabase = async (
 };
 
 /**
- * Safe migration login: Supabase first → auto-provision Auth user → legacy fallback.
- * Legacy keeps working until secure-customers-rls.sql is applied; Supabase session is ready before then.
+ * Technician login — Supabase Auth only (no localStorage-only session).
+ * 1. signInWithPassword (auth.users.id must equal technicians.id)
+ * 2. If missing Auth user: provision via Netlify (verifies DB password, creates Auth user)
+ * 3. signInWithPassword again — must succeed or login fails
  */
 export const loginTechnician = async (
   email: string,
   password: string
 ): Promise<AuthUser | null> => {
+  const configError = getSupabaseConfigError();
+  if (configError) {
+    throw new Error(configError);
+  }
+
   let user = await loginTechnicianWithSupabase(email, password);
   if (user) return user;
 
-  let provision = await provisionTechnicianAuthOnLogin(email, password);
-  if (provision.ok) {
-    user = await loginTechnicianWithSupabase(email, password);
-    if (user) return user;
+  const provision = await provisionTechnicianAuthOnLogin(email, password);
+  if (!provision.ok) {
+    return null;
   }
 
-  const legacy = await authenticateUser(email, password);
-  if (!legacy) return null;
-
-  // Legacy login succeeded but Auth may not exist yet (e.g. dev server 404) — retry provision
-  provision = await provisionTechnicianAuthOnLogin(email, password);
-  if (provision.ok) {
-    user = await loginTechnicianWithSupabase(email, password);
-    if (user) return user;
-  }
-
-  if (import.meta.env.DEV && !provision.ok) {
-    console.warn(
-      '[loginTechnician] Logged in via legacy path; Supabase Auth not linked:',
-      provision.error
-    );
-  }
-
-  return legacy;
+  user = await loginTechnicianWithSupabase(email, password);
+  return user;
 };
+
+/** True when the current Supabase session is a technician linked to technicians.id */
+export async function hasTechnicianSupabaseSession(): Promise<boolean> {
+  const { data: { session } } = await supabase.auth.getSession();
+  if (!session?.user) return false;
+  const role =
+    session.user.app_metadata?.role || session.user.user_metadata?.role || 'technician';
+  return role === 'technician';
+}
 
 // Export a function to check if technician exists (to prevent Supabase auth fallback)
 export const isTechnicianEmail = async (email: string): Promise<boolean> => {
   try {
-    const { data, error } = await supabase
-      .from('technicians')
-      .select('id')
-      .eq('email', email.toLowerCase())
-      .single();
-    return !error && !!data;
+    const { data, error } = await supabase.rpc('is_technician_email', {
+      p_email: email.toLowerCase().trim(),
+    });
+    if (error) {
+      if (import.meta.env.DEV) {
+        console.warn('[isTechnicianEmail] RPC failed:', error.message);
+      }
+      return false;
+    }
+    return data === true;
   } catch {
     return false;
   }

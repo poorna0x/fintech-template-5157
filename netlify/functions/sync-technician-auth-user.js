@@ -2,6 +2,7 @@
 // Called from admin Settings when saving a technician password.
 const { createClient } = require('@supabase/supabase-js');
 const { getCorsHeaders, isOriginAllowed } = require('./cors-helper');
+const { upsertTechnicianAuthUser } = require('./technician-auth-upsert');
 
 exports.handler = async (event) => {
   const requestOrigin = event.headers.origin || event.headers.Origin;
@@ -35,7 +36,7 @@ exports.handler = async (event) => {
     return {
       statusCode: 500,
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ error: 'Server misconfigured' }),
+      body: JSON.stringify({ error: 'Server misconfigured (missing Supabase keys)' }),
     };
   }
 
@@ -50,7 +51,7 @@ exports.handler = async (event) => {
     };
   }
 
-  const { technicianId, email, password, accessToken } = body;
+  const { technicianId, email, password, accessToken, fullName, hashedPassword } = body;
   if (!technicianId || !email || !password || !accessToken) {
     return {
       statusCode: 400,
@@ -67,7 +68,10 @@ exports.handler = async (event) => {
     return {
       statusCode: 401,
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ error: 'Unauthorized' }),
+      body: JSON.stringify({
+        error: 'Unauthorized',
+        hint: 'Log out and log in again as admin so Settings can sync technician login.',
+      }),
     };
   }
 
@@ -87,43 +91,44 @@ exports.handler = async (event) => {
     auth: { autoRefreshToken: false, persistSession: false },
   });
 
-  const normalizedEmail = String(email).toLowerCase().trim();
-
-  const { data: created, error: createError } = await admin.auth.admin.createUser({
-    id: technicianId,
-    email: normalizedEmail,
+  const result = await upsertTechnicianAuthUser(admin, {
+    technicianId,
+    email,
     password,
-    email_confirm: true,
-    user_metadata: { role: 'technician' },
-    app_metadata: { role: 'technician' },
+    fullName,
   });
 
-  if (!createError) {
-    return {
-      statusCode: 200,
-      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ ok: true, action: 'created' }),
-    };
+  if (hashedPassword && typeof hashedPassword === 'string') {
+    const { error: hashErr } = await admin
+      .from('technicians')
+      .update({ password: hashedPassword })
+      .eq('id', technicianId);
+    if (hashErr) {
+      return {
+        statusCode: 500,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          error: hashErr.message,
+          hint: 'Auth user updated but DB password hash could not be saved.',
+        }),
+      };
+    }
   }
 
-  const { error: updateError } = await admin.auth.admin.updateUserById(technicianId, {
-    email: normalizedEmail,
-    password,
-    user_metadata: { role: 'technician' },
-    app_metadata: { role: 'technician' },
-  });
-
-  if (updateError) {
+  if (!result.ok) {
     return {
       statusCode: 500,
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ error: updateError.message }),
+      body: JSON.stringify({
+        error: result.error,
+        hint: 'Technician can still log in once; first login will link Supabase Auth automatically.',
+      }),
     };
   }
 
   return {
     statusCode: 200,
     headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-    body: JSON.stringify({ ok: true, action: 'updated' }),
+    body: JSON.stringify({ ok: true, action: result.action }),
   };
 };

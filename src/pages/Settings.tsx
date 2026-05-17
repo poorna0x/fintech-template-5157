@@ -38,6 +38,7 @@ import {
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { db, supabase } from '@/lib/supabase';
+import { ensureAdminSupabaseSession } from '@/lib/auth';
 import { deleteTechnicianCompletely } from '@/lib/deleteTechnician';
 import { buildTechnicianSalaryPayload, getCurrentMonthKey } from '@/lib/technicianSalaryForPeriod';
 import { Technician } from '@/types';
@@ -412,19 +413,13 @@ const Settings = () => {
           ? technicianFormData.accountStatus || 'ACTIVE'
           : 'ACTIVE';
 
-      // Add hashed password if provided
-      if (hashedPassword) {
-        technicianData.password = hashedPassword;
-      }
-
+      // Password hash is written only via sync-technician-auth-user (service role), not client INSERT/UPDATE
       let savedTechnicianId: string | null = null;
 
       if (editTechnicianDialogOpen && selectedTechnician) {
         // Update existing technician - only update password if provided
         const updateData = { ...technicianData };
-        if (!hashedPassword) {
-          delete updateData.password; // Don't update password if not provided
-        }
+        delete updateData.password;
         const { error } = await db.technicians.update(selectedTechnician.id, updateData);
         if (error) throw error;
         savedTechnicianId = selectedTechnician.id;
@@ -493,9 +488,16 @@ const Settings = () => {
 
       if (technicianFormData.password?.trim() && savedTechnicianId) {
         const techId = savedTechnicianId;
+        const sessionReady = await ensureAdminSupabaseSession();
         const { data: sessionData } = await supabase.auth.getSession();
         const accessToken = sessionData.session?.access_token;
-        if (accessToken && techId) {
+
+        if (!sessionReady || !accessToken) {
+          toast.warning(
+            'Technician saved. Log in to Supabase as admin (admin login page), then edit and re-save the password to link login immediately — or the technician can log in once to link automatically.',
+            { duration: 10000 }
+          );
+        } else {
           try {
             const syncRes = await fetch('/.netlify/functions/sync-technician-auth-user', {
               method: 'POST',
@@ -504,18 +506,31 @@ const Settings = () => {
                 technicianId: techId,
                 email: technicianFormData.email,
                 password: technicianFormData.password,
+                hashedPassword: hashedPassword || undefined,
                 accessToken,
+                fullName: technicianFormData.fullName,
               }),
             });
-            if (!syncRes.ok) {
-              const errBody = await syncRes.json().catch(() => ({}));
+            if (syncRes.ok) {
+              toast.success('Technician login linked to Supabase Auth');
+            } else {
+              const errBody = (await syncRes.json().catch(() => ({}))) as {
+                error?: string;
+                hint?: string;
+              };
               console.warn('Technician auth sync failed:', errBody);
               toast.warning(
-                'Technician saved but login sync failed. Run provision script or retry with a new password.'
+                errBody.hint ||
+                  'Technician saved. First login will link Supabase Auth automatically (no action needed).',
+                { duration: 9000 }
               );
             }
           } catch (syncErr) {
             console.warn('Technician auth sync error:', syncErr);
+            toast.warning(
+              'Technician saved. They can log in normally — Supabase Auth links on first login.',
+              { duration: 8000 }
+            );
           }
         }
       }
