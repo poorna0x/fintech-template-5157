@@ -30,7 +30,7 @@ import BehavioralTracker from '@/components/BehavioralTracker';
 import SecurityStatus from '@/components/SecurityStatus';
 import { useSecurity } from '@/contexts/SecurityContext';
 import DraggableMap from '@/components/DraggableMap';
-import { removePlusCode, haversineKm } from '@/lib/maps';
+import { removePlusCode } from '@/lib/maps';
 
 const WEBSITE_BOOKING_SITE_KEY: 'hydrogenro' | 'elevenro' =
   (import.meta.env.VITE_WEBSITE_BOOKING_SITE_KEY as 'hydrogenro' | 'elevenro') ?? 'hydrogenro';
@@ -94,6 +94,8 @@ const Booking: React.FC = () => {
   const [showModelSuggestions, setShowModelSuggestions] = useState(false);
   const [showValidation, setShowValidation] = useState(false);
   const [isCaptchaVerified, setIsCaptchaVerified] = useState(false);
+  const [altchaLoginToken, setAltchaLoginToken] = useState('');
+  const [altchaPayload, setAltchaPayload] = useState('');
   const [showSecurityStep, setShowSecurityStep] = useState(false);
   const [captchaStartTime] = useState(Date.now());
   const [backgroundVerificationFailed, setBackgroundVerificationFailed] = useState(false);
@@ -1359,9 +1361,18 @@ const Booking: React.FC = () => {
 
       let existingCustomer = null;
       let findError = null;
+
+      if (!altchaLoginToken) {
+        throw new Error('Security verification expired. Please complete the check on step 5 and try again.');
+      }
       
       try {
-        const result = await getBookingCustomerByPhone(formData.phone);
+        const result = await getBookingCustomerByPhone(formData.phone, {
+          altchaLoginToken,
+          altchaPayload: altchaPayload || undefined,
+          lat: formData.coordinates?.lat,
+          lng: formData.coordinates?.lng,
+        });
         existingCustomer = result.data;
         findError = result.error;
       } catch (networkError: any) {
@@ -1387,24 +1398,10 @@ const Booking: React.FC = () => {
         // Customer exists — update their information
         isExistingCustomer = true;
 
-        // Same or within 2 km: keep previous address/location (don't overwrite)
-        const existingLoc = (existingCustomer as any).location;
-        const existingLat = existingLoc?.latitude ?? existingLoc?.lat;
-        const existingLng = existingLoc?.longitude ?? existingLoc?.lng;
-        const newLat = formData.coordinates?.lat ?? 0;
-        const newLng = formData.coordinates?.lng ?? 0;
-        const hasExistingCoords =
-          typeof existingLat === 'number' &&
-          typeof existingLng === 'number' &&
-          (existingLat !== 0 || existingLng !== 0);
-        const hasNewCoords =
-          typeof newLat === 'number' &&
-          typeof newLng === 'number' &&
-          (newLat !== 0 || newLng !== 0);
+        // Same or within 2 km: keep previous address/location (server-computed when possible)
         const keepPreviousLocationValue =
-          hasExistingCoords &&
-          hasNewCoords &&
-          haversineKm(existingLat, existingLng, newLat, newLng) <= 2;
+          (existingCustomer as { keepPreviousLocation?: boolean }).keepPreviousLocation ===
+          true;
         keepPreviousLocation = keepPreviousLocationValue;
 
         const updateData: Record<string, unknown> = {
@@ -2720,8 +2717,10 @@ const Booking: React.FC = () => {
             {/* Background ALTCHA verification - runs silently in background (hidden) */}
             {currentStep === 5 && !isCaptchaVerified && !backgroundVerificationFailed && (
               <AltchaWidget 
-                onVerify={(verified) => {
+                onVerify={(verified, payload, loginToken) => {
                   setIsCaptchaVerified(verified);
+                  if (payload) setAltchaPayload(payload);
+                  if (loginToken) setAltchaLoginToken(loginToken);
                   if (verified) {
                     setShowSecurityStep(false);
                     setBackgroundVerificationFailed(false);
@@ -2745,8 +2744,10 @@ const Booking: React.FC = () => {
                 </div>
                 <div className="max-w-md mx-auto">
                   <AltchaWidget 
-                    onVerify={(verified) => {
+                    onVerify={(verified, payload, loginToken) => {
                       setIsCaptchaVerified(verified);
+                      if (payload) setAltchaPayload(payload);
+                      if (loginToken) setAltchaLoginToken(loginToken);
                       if (verified) {
                         setShowSecurityStep(false);
                         setBackgroundVerificationFailed(false);

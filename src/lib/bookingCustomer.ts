@@ -1,12 +1,69 @@
 import { supabase } from '@/lib/supabase';
 
-/** Public /book flow only — always uses RLS-safe RPC (never direct customers table). */
-export async function getBookingCustomerByPhone(phone: string) {
-  const { data, error } = await supabase.rpc('get_customer_by_phone_for_booking', {
-    p_phone: phone,
-  });
-  const row = Array.isArray(data) ? data[0] : data;
-  return { data: row ?? null, error };
+export interface BookingCustomerLookupOptions {
+  altchaLoginToken: string;
+  altchaPayload?: string;
+  lat?: number;
+  lng?: number;
+}
+
+/** Minimal row returned for existing-customer booking flow (no PII enumeration). */
+export interface BookingCustomerLookupResult {
+  id: string;
+  keepPreviousLocation?: boolean;
+}
+
+/** Public /book — ALTCHA-gated proxy; never calls Supabase RPC with anon key. */
+export async function getBookingCustomerByPhone(
+  phone: string,
+  options: BookingCustomerLookupOptions
+) {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 25_000);
+
+  try {
+    const res = await fetch('/.netlify/functions/booking-customer-lookup', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        phone,
+        altchaLoginToken: options.altchaLoginToken,
+        altchaPayload: options.altchaPayload,
+        lat: options.lat,
+        lng: options.lng,
+      }),
+      signal: controller.signal,
+    });
+
+    const data = await res.json().catch(() => ({}));
+
+    if (!res.ok) {
+      return {
+        data: null,
+        error: { message: data.error || data.message || `HTTP ${res.status}` },
+      };
+    }
+
+    if (!data.found) {
+      return { data: null, error: null };
+    }
+
+    const row: BookingCustomerLookupResult = {
+      id: data.id,
+      keepPreviousLocation: data.keepPreviousLocation === true,
+    };
+    return { data: row, error: null };
+  } catch (e) {
+    const msg =
+      e instanceof Error && e.name === 'AbortError'
+        ? 'Request timed out — check your connection'
+        : e instanceof Error
+          ? e.message
+          : 'Lookup failed';
+    return { data: null, error: { message: msg } };
+  } finally {
+    clearTimeout(timeoutId);
+  }
 }
 
 export async function createBookingCustomer(row: Record<string, unknown>) {

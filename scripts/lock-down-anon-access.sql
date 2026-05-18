@@ -198,7 +198,8 @@ GRANT EXECUTE ON FUNCTION public.is_technician_email(text) TO anon, authenticate
 DO $$
 BEGIN
   IF EXISTS (SELECT 1 FROM pg_proc WHERE proname = 'get_customer_by_phone_for_booking') THEN
-    GRANT EXECUTE ON FUNCTION public.get_customer_by_phone_for_booking(text) TO anon, authenticated;
+    REVOKE EXECUTE ON FUNCTION public.get_customer_by_phone_for_booking(text) FROM anon, authenticated;
+    GRANT EXECUTE ON FUNCTION public.get_customer_by_phone_for_booking(text) TO service_role;
   END IF;
   IF EXISTS (SELECT 1 FROM pg_proc WHERE proname = 'create_customer_for_booking') THEN
     GRANT EXECUTE ON FUNCTION public.create_customer_for_booking(jsonb) TO anon, authenticated;

@@ -1,7 +1,8 @@
 -- HIGH: Lock down RPCs callable by anon (e.g. generate_customer_id revealing C1168-style counts).
 -- Run in Supabase SQL Editor after secure-customers-rls.sql. Safe to re-run.
 --
--- Public booking keeps only: get/create/update_customer_for_booking, create_job_for_booking,
+-- Public booking keeps only: create/update_customer_for_booking, create_job_for_booking,
+-- get_customer_by_phone_for_booking via Netlify booking-customer-lookup (service_role only).
 -- upsert_website_booking_intent, mark_website_booking_intent_booked, is_technician_email.
 -- Technician roster (no GPS/salary): get_technician_roster_for_app — authenticated only (see secure-technicians-privacy.sql).
 

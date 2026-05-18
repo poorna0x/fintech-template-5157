@@ -558,13 +558,15 @@ export const db = {
       return { data, error };
     },
 
-    /** Public booking only — phone-scoped RPC; safe under locked-down customers RLS. */
-    async getByPhoneForBooking(phone: string) {
-      const { data, error } = await supabase.rpc('get_customer_by_phone_for_booking', {
-        p_phone: phone,
-      });
-      const row = Array.isArray(data) ? data[0] : data;
-      return { data: row ?? null, error };
+    /** @deprecated Use getBookingCustomerByPhone() — anon RPC revoked (PII enumeration fix). */
+    async getByPhoneForBooking(_phone: string) {
+      return {
+        data: null,
+        error: {
+          message:
+            'Direct customer lookup is disabled. Use getBookingCustomerByPhone with ALTCHA verification.',
+        },
+      };
     },
 
     async createForBooking(customer: Record<string, unknown>) {
