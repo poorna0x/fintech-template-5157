@@ -151,6 +151,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
 
     let cancelled = false;
     let authInitSettled = false;
+    let initialSessionUserId: string | null = null;
 
     const settleAuthInit = () => {
       if (cancelled || authInitSettled) return;
@@ -186,9 +187,12 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
 
     const resolveInitialSession = async (session: Session | null) => {
       if (session?.user) {
+        if (initialSessionUserId === session.user.id) return;
+        initialSessionUserId = session.user.id;
         await applySessionUser(session);
         return;
       }
+      initialSessionUserId = null;
       restoreTechnicianFromLocalStorage();
     };
 

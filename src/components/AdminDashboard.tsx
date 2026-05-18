@@ -362,90 +362,6 @@ const AdminDashboard = () => {
   const [isLoadingCustomDistance, setIsLoadingCustomDistance] = useState(false);
   
   // Authentication state hooks - MUST be declared before any conditional returns
-  const [maxWaitReached, setMaxWaitReached] = useState(false);
-  const [waitingForAuth, setWaitingForAuth] = useState(false);
-  const hadAuthenticatedUserRef = useRef(false);
-  const sessionRecoveryDoneRef = useRef(false);
-  
-  // Authentication effects - MUST be declared before any conditional returns
-  useEffect(() => {
-    if (authInitializing) {
-      // Reset maxWaitReached when auth starts loading
-      setMaxWaitReached(false);
-      const maxWaitTimeout = setTimeout(() => {
-        console.warn('[AdminDashboard] Maximum wait time reached, proceeding anyway');
-        setMaxWaitReached(true);
-      }, 2000); // Maximum 2 seconds wait (reduced from 3)
-      return () => clearTimeout(maxWaitTimeout);
-    } else {
-      // Auth finished loading - reset maxWaitReached
-      setMaxWaitReached(false);
-    }
-  }, [authInitializing]);
-
-  // When user becomes available, stop waiting
-  useEffect(() => {
-    if (user) {
-      hadAuthenticatedUserRef.current = true;
-      setWaitingForAuth(false);
-    }
-  }, [user]);
-
-  // Cold-load only: recover session once before login UI (not after explicit logout)
-  useEffect(() => {
-    if (user) return;
-    if (authInitializing) return;
-    if (sessionRecoveryDoneRef.current) return;
-    if (hadAuthenticatedUserRef.current) return;
-
-    sessionRecoveryDoneRef.current = true;
-
-    let isCleanedUp = false;
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      if (isCleanedUp) return;
-      if (session?.user) {
-        setWaitingForAuth(true);
-        console.log('✅ [AdminDashboard] Session found, waiting for AuthContext update...');
-      }
-    }).catch((error) => {
-      console.error('Error checking session:', error);
-      if (!isCleanedUp) setWaitingForAuth(false);
-    });
-
-    const safetyTimeout = setTimeout(() => {
-      setWaitingForAuth(false);
-      console.warn('[AdminDashboard] Safety timeout reached, stopping auth check');
-    }, 1500);
-
-    return () => {
-      isCleanedUp = true;
-      clearTimeout(safetyTimeout);
-    };
-  }, [user, authInitializing]);
-
-  // Listen to Supabase auth state changes (replaces polling; handles sign-in, refresh, initial session)
-  useEffect(() => {
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
-      console.log('[AdminDashboard] Auth state changed:', event, session?.user?.email);
-
-      if (event === 'INITIAL_SESSION' && session?.user) {
-        setWaitingForAuth(true);
-      } else if (event === 'SIGNED_IN' && session?.user) {
-        setWaitingForAuth(false);
-        console.log('✅ [AdminDashboard] SIGNED_IN event detected');
-      } else if (event === 'SIGNED_OUT') {
-        setWaitingForAuth(false);
-      } else if (event === 'TOKEN_REFRESHED' && session?.user) {
-        setWaitingForAuth(false);
-        console.log('✅ [AdminDashboard] TOKEN_REFRESHED event detected');
-      }
-    });
-
-    return () => {
-      subscription.unsubscribe();
-    };
-  }, []);
-
   
   // Brand and model data - Comprehensive list of popular RO and Softener brands in India (including local: Aqua Grand, Aqua Smart, Dolphin, etc.)
   const brandData = {
@@ -1596,12 +1512,8 @@ const AdminDashboard = () => {
     setLoading(true);
     setIsInitialLoad(true);
 
-    let sessionOk = await ensureAdminSupabaseSession(12_000);
-    if (!sessionOk) {
-      await new Promise((resolve) => setTimeout(resolve, 400));
-      sessionOk = await ensureAdminSupabaseSession(8_000);
-    }
-
+    // AdminPortal already resolved auth; avoid 12s+ polling loop before first query.
+    const sessionOk = await ensureAdminSupabaseSession(1_500);
     if (!sessionOk) {
       toast.error('Could not start your session. Please try again or refresh the page.');
       setLoading(false);

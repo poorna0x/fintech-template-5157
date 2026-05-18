@@ -1,9 +1,8 @@
-import { Suspense, lazy, useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import AdminLogin from '@/components/AdminLogin';
 
 const adminDashboardImport = () => import('@/components/AdminDashboard');
-const AdminDashboard = lazy(adminDashboardImport);
 
 function AdminPortalLoader({ message }: { message: string }) {
   return (
@@ -29,15 +28,24 @@ function AdminPortalLoader({ message }: { message: string }) {
   );
 }
 
-/** /admin entry — loader until session settled; never flash login while session restores. */
+/** /admin entry — one loader: auth + dashboard chunk in parallel (no Suspense flash). */
 export default function AdminPortal() {
   const { user, isAdmin, authInitializing } = useAuth();
+  const [Dashboard, setDashboard] = useState<React.ComponentType | null>(null);
 
   useEffect(() => {
-    void adminDashboardImport();
+    let cancelled = false;
+    void adminDashboardImport().then((mod) => {
+      if (!cancelled) setDashboard(() => mod.default);
+    });
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
-  if (authInitializing) {
+  const booting = authInitializing || (user && isAdmin && !Dashboard);
+
+  if (booting) {
     return <AdminPortalLoader message="Loading..." />;
   }
 
@@ -45,9 +53,5 @@ export default function AdminPortal() {
     return <AdminLogin />;
   }
 
-  return (
-    <Suspense fallback={<AdminPortalLoader message="Loading..." />}>
-      <AdminDashboard />
-    </Suspense>
-  );
+  return <Dashboard />;
 }

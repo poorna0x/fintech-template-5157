@@ -78,6 +78,13 @@ const PWARouteHandler = () => {
     }
     // Note: PWA is enabled by registerTechnicianPWA() or registerAdminPWA() 
     // when those components mount, so we don't need to enable it here
+
+    if (location.pathname.startsWith('/admin')) {
+      void import('./components/AdminDashboard');
+      void import('./lib/supabase');
+    } else if (location.pathname.startsWith('/technician')) {
+      void import('./pages/TechnicianDashboard');
+    }
   }, [location.pathname]);
 
   return null;
