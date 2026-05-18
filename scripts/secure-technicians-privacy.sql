@@ -208,4 +208,5 @@ AS $$
 $$;
 
 REVOKE ALL ON FUNCTION public.is_technician_email(text) FROM PUBLIC;
-GRANT EXECUTE ON FUNCTION public.is_technician_email(text) TO anon, authenticated;
+REVOKE EXECUTE ON FUNCTION public.is_technician_email(text) FROM anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.is_technician_email(text) TO service_role;

@@ -199,7 +199,9 @@ BEGIN
 END $$;
 
 -- Anon may only call booking / login-routing RPCs (re-grant idempotently)
-GRANT EXECUTE ON FUNCTION public.is_technician_email(text) TO anon, authenticated;
+-- is_technician_email: service_role only (see scripts/secure-is-technician-email-rpc.sql)
+REVOKE EXECUTE ON FUNCTION public.is_technician_email(text) FROM anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.is_technician_email(text) TO service_role;
 
 DO $$
 BEGIN

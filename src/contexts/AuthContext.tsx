@@ -14,7 +14,6 @@ import {
   getAuthSession,
   clearAuthSession,
   purgeSupabaseAuthStorage,
-  isTechnicianEmail,
   loginTechnician,
 } from '@/lib/auth';
 import { secureAuthLogin } from '@/lib/secureAuthLogin';
@@ -266,10 +265,11 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         return { ok: false, error: msg };
       }
 
-      const isTechnicianLoginPage =
+      // Route by login page only — do not call is_technician_email RPC (enumeration risk).
+      // Wrong portal → secure-auth-login returns 403 with a redirect hint.
+      const isTechnician =
         typeof window !== 'undefined' &&
         window.location.pathname.includes('/technician/login');
-      const isTechnician = isTechnicianLoginPage || (await isTechnicianEmail(email));
 
       if (isTechnician) {
         await clearWrongPortalSession('technician');

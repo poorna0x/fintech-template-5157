@@ -431,24 +431,6 @@ export async function hasTechnicianSupabaseSession(): Promise<boolean> {
   return role === 'technician';
 }
 
-// Export a function to check if technician exists (to prevent Supabase auth fallback)
-export const isTechnicianEmail = async (email: string): Promise<boolean> => {
-  try {
-    const { data, error } = await supabase.rpc('is_technician_email', {
-      p_email: email.toLowerCase().trim(),
-    });
-    if (error) {
-      if (import.meta.env.DEV) {
-        console.warn('[isTechnicianEmail] RPC failed:', error.message);
-      }
-      return false;
-    }
-    return data === true;
-  } catch {
-    return false;
-  }
-};
-
 /** Wait until admin Supabase JWT is available (needed before customers RLS queries). */
 export async function ensureAdminSupabaseSession(maxWaitMs = 8000): Promise<boolean> {
   const started = Date.now();
