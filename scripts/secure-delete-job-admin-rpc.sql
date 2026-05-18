@@ -1,11 +1,16 @@
--- Admin job delete (completed jobs have technician_payments etc.).
+-- CRITICAL: Block anon/public from delete_job_admin; fix auth helpers so anon is never treated as admin.
 -- Run in Supabase SQL Editor. Safe to re-run.
 --
--- Also run scripts/technician-job-sync-realtime.sql (DELETE fix) if job delete still 409s.
+-- Admin dashboard deletes jobs via authenticated JWT + delete_job_admin RPC only.
 
--- Use secure helpers (see scripts/secure-delete-job-admin-rpc.sql). Do not default anon to admin.
+-- ---------------------------------------------------------------------------
+-- Auth helpers (anon must NOT default to admin)
+-- ---------------------------------------------------------------------------
 CREATE OR REPLACE FUNCTION public.auth_user_role()
-RETURNS text LANGUAGE sql STABLE AS $$
+RETURNS text
+LANGUAGE sql
+STABLE
+AS $$
   SELECT CASE
     WHEN auth.uid() IS NULL THEN NULL
     ELSE coalesce(
@@ -17,12 +22,22 @@ RETURNS text LANGUAGE sql STABLE AS $$
 $$;
 
 CREATE OR REPLACE FUNCTION public.is_admin_user()
-RETURNS boolean LANGUAGE sql STABLE SECURITY DEFINER SET search_path = public AS $$
+RETURNS boolean
+LANGUAGE sql
+STABLE
+SECURITY DEFINER
+SET search_path = public
+AS $$
   SELECT auth.uid() IS NOT NULL
-    AND NOT EXISTS (SELECT 1 FROM public.technicians t WHERE t.id = auth.uid())
+    AND NOT EXISTS (
+      SELECT 1 FROM public.technicians t WHERE t.id = auth.uid()
+    )
     AND public.auth_user_role() IS DISTINCT FROM 'technician';
 $$;
 
+-- ---------------------------------------------------------------------------
+-- delete_job_admin: require signed-in admin
+-- ---------------------------------------------------------------------------
 CREATE OR REPLACE FUNCTION public.delete_job_admin(p_job_id uuid)
 RETURNS void
 LANGUAGE plpgsql
@@ -47,7 +62,6 @@ BEGIN
   DELETE FROM public.reminders
   WHERE entity_type = 'job' AND entity_id = p_job_id;
 
-  -- Completed jobs: clear payment/parts rows before job (CASCADE should handle; explicit for safety).
   DELETE FROM public.technician_payments WHERE job_id = p_job_id;
   DELETE FROM public.job_parts_used WHERE job_id = p_job_id;
   DELETE FROM public.job_assignment_requests WHERE job_id = p_job_id;

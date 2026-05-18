@@ -1,5 +1,6 @@
 -- CRITICAL: Block anon from modifying customers / creating jobs via booking RPCs.
 -- Run in Supabase SQL Editor after deploy of booking-customer-mutate + booking-job-create Netlify functions.
+-- Prefer scripts/secure-booking-rpc-definer-guards.sql (revokes + in-function service_role guard).
 -- Safe to re-run.
 --
 -- Public /book uses:

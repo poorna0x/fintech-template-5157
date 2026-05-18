@@ -10,6 +10,7 @@ const {
   pickBookingCustomerUpdates,
   getClientIdentifier,
 } = require('./booking-guard');
+const { checkRateLimit } = require('./rate-limiter');
 
 exports.handler = async (event) => {
   const pre = preflightOrReject(event);
@@ -35,6 +36,20 @@ exports.handler = async (event) => {
 
   const limited = rateLimitBooking(event, corsHeaders, phoneNorm, 'booking-customer-mutate');
   if (limited) return limited;
+
+  if (action === 'create') {
+    const createLimit = checkRateLimit(event, {
+      maxRequests: 3,
+      windowMs: 3_600_000,
+      endpoint: 'booking-customer-create',
+    });
+    if (!createLimit.allowed) {
+      return jsonResponse(429, corsHeaders, {
+        error: 'Too many requests',
+        message: 'Please wait before creating another booking.',
+      });
+    }
+  }
 
   const altcha = verifyAltcha(body, corsHeaders);
   if (!altcha.ok) return altcha.response;

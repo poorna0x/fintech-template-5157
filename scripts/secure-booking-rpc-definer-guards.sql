@@ -1,0 +1,225 @@
+-- CRITICAL: Booking RPCs — service_role only + in-function guard (blocks anon even if GRANT was wrong).
+-- Run in Supabase SQL Editor after Netlify booking-* functions are deployed. Safe to re-run.
+--
+-- Public /book uses:
+--   /.netlify/functions/booking-customer-lookup
+--   /.netlify/functions/booking-customer-mutate
+--   /.netlify/functions/booking-job-create
+
+CREATE OR REPLACE FUNCTION public.assert_booking_rpc_service_role()
+RETURNS void
+LANGUAGE plpgsql
+STABLE
+SET search_path = public
+AS $$
+BEGIN
+  IF auth.role() IS DISTINCT FROM 'service_role' THEN
+    RAISE EXCEPTION 'not authorized' USING ERRCODE = '42501';
+  END IF;
+END;
+$$;
+
+REVOKE ALL ON FUNCTION public.assert_booking_rpc_service_role() FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.assert_booking_rpc_service_role() TO service_role;
+
+CREATE OR REPLACE FUNCTION public.get_customer_by_phone_for_booking(p_phone text)
+RETURNS SETOF public.customers
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+  norm text;
+BEGIN
+  PERFORM public.assert_booking_rpc_service_role();
+
+  norm := public.normalize_indian_phone(p_phone);
+  RETURN QUERY
+  SELECT c.*
+  FROM public.customers c
+  WHERE right(regexp_replace(c.phone, '\D', '', 'g'), 10) = norm
+     OR right(regexp_replace(coalesce(c.alternate_phone, ''), '\D', '', 'g'), 10) = norm
+  LIMIT 1;
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION public.create_customer_for_booking(p_row jsonb)
+RETURNS public.customers
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+  norm text;
+  inserted public.customers;
+BEGIN
+  PERFORM public.assert_booking_rpc_service_role();
+
+  norm := public.normalize_indian_phone(p_row ->> 'phone');
+
+  IF EXISTS (
+    SELECT 1 FROM public.customers c
+    WHERE right(regexp_replace(c.phone, '\D', '', 'g'), 10) = norm
+  ) THEN
+    RAISE EXCEPTION 'customer already exists for phone';
+  END IF;
+
+  INSERT INTO public.customers (
+    customer_id,
+    full_name, phone, alternate_phone, email, address, location,
+    service_type, brand, model, status, customer_since,
+    preferred_time_slot, custom_time, preferred_language,
+    visible_address, has_prefilter, raw_water_tds, photos
+  )
+  VALUES (
+    public.generate_customer_id(),
+    p_row ->> 'full_name',
+    coalesce(p_row ->> 'phone', norm),
+    nullif(p_row ->> 'alternate_phone', ''),
+    coalesce(p_row ->> 'email', ''),
+    coalesce(p_row -> 'address', '{}'::jsonb),
+    coalesce(p_row -> 'location', '{}'::jsonb),
+    p_row ->> 'service_type',
+    coalesce(p_row ->> 'brand', 'Not specified'),
+    coalesce(p_row ->> 'model', 'Not specified'),
+    coalesce(p_row ->> 'status', 'ACTIVE'),
+    coalesce((p_row ->> 'customer_since')::timestamptz, now()),
+    nullif(p_row ->> 'preferred_time_slot', ''),
+    nullif(p_row ->> 'custom_time', ''),
+    coalesce(p_row ->> 'preferred_language', 'ENGLISH'),
+    nullif(p_row ->> 'visible_address', ''),
+    (p_row ->> 'has_prefilter')::boolean,
+    (p_row ->> 'raw_water_tds')::integer,
+    coalesce(p_row -> 'photos', '[]'::jsonb)
+  )
+  RETURNING * INTO inserted;
+
+  RETURN inserted;
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION public.update_customer_for_booking(
+  p_customer_id uuid,
+  p_phone text,
+  p_updates jsonb
+)
+RETURNS public.customers
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+  norm text;
+  updated public.customers;
+BEGIN
+  PERFORM public.assert_booking_rpc_service_role();
+
+  norm := public.normalize_indian_phone(p_phone);
+
+  UPDATE public.customers c
+  SET
+    full_name = coalesce(p_updates ->> 'full_name', c.full_name),
+    email = coalesce(nullif(p_updates ->> 'email', ''), c.email),
+    alternate_phone = CASE
+      WHEN p_updates ? 'alternate_phone' THEN nullif(p_updates ->> 'alternate_phone', '')
+      ELSE c.alternate_phone
+    END,
+    address = CASE WHEN p_updates ? 'address' THEN p_updates -> 'address' ELSE c.address END,
+    location = CASE WHEN p_updates ? 'location' THEN p_updates -> 'location' ELSE c.location END,
+    preferred_time_slot = CASE
+      WHEN p_updates ? 'preferred_time_slot' THEN nullif(p_updates ->> 'preferred_time_slot', '')
+      ELSE c.preferred_time_slot
+    END,
+    custom_time = CASE
+      WHEN p_updates ? 'custom_time' THEN nullif(p_updates ->> 'custom_time', '')
+      ELSE c.custom_time
+    END,
+    updated_at = coalesce((p_updates ->> 'updated_at')::timestamptz, now())
+  WHERE c.id = p_customer_id
+    AND right(regexp_replace(c.phone, '\D', '', 'g'), 10) = norm
+  RETURNING * INTO updated;
+
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'customer not found or phone mismatch';
+  END IF;
+
+  RETURN updated;
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION public.create_job_for_booking(p_phone text, p_row jsonb)
+RETURNS public.jobs
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+  norm text;
+  cust_id uuid;
+  inserted public.jobs;
+BEGIN
+  PERFORM public.assert_booking_rpc_service_role();
+
+  norm := public.normalize_indian_phone(p_phone);
+  cust_id := (p_row ->> 'customer_id')::uuid;
+  IF cust_id IS NULL THEN
+    RAISE EXCEPTION 'customer_id required';
+  END IF;
+  IF NOT EXISTS (
+    SELECT 1 FROM public.customers c
+    WHERE c.id = cust_id
+      AND (
+        right(regexp_replace(c.phone, '\D', '', 'g'), 10) = norm
+        OR right(regexp_replace(coalesce(c.alternate_phone, ''), '\D', '', 'g'), 10) = norm
+      )
+  ) THEN
+    RAISE EXCEPTION 'customer not found or phone mismatch';
+  END IF;
+  IF coalesce(p_row ->> 'job_number', '') = '' THEN
+    RAISE EXCEPTION 'job_number required';
+  END IF;
+
+  INSERT INTO public.jobs (
+    job_number, customer_id, service_type, service_sub_type, brand, model,
+    scheduled_date, scheduled_time_slot, estimated_duration,
+    service_address, service_location, status, priority, description,
+    requirements, estimated_cost, payment_status, before_photos, images
+  ) VALUES (
+    p_row ->> 'job_number', cust_id,
+    p_row ->> 'service_type', p_row ->> 'service_sub_type',
+    coalesce(p_row ->> 'brand', 'Not specified'), coalesce(p_row ->> 'model', 'Not specified'),
+    (p_row ->> 'scheduled_date')::date, p_row ->> 'scheduled_time_slot',
+    coalesce((p_row ->> 'estimated_duration')::integer, 120),
+    coalesce(p_row -> 'service_address', '{}'::jsonb),
+    coalesce(p_row -> 'service_location', '{}'::jsonb),
+    'PENDING', coalesce(p_row ->> 'priority', 'MEDIUM'),
+    coalesce(p_row ->> 'description', ''),
+    coalesce(p_row -> 'requirements', '[]'::jsonb),
+    coalesce((p_row ->> 'estimated_cost')::numeric, 0),
+    coalesce(p_row ->> 'payment_status', 'PENDING'),
+    coalesce(p_row -> 'before_photos', '[]'::jsonb),
+    coalesce(p_row -> 'images', coalesce(p_row -> 'before_photos', '[]'::jsonb))
+  ) RETURNING * INTO inserted;
+  RETURN inserted;
+END;
+$$;
+
+REVOKE ALL ON FUNCTION public.get_customer_by_phone_for_booking(text) FROM PUBLIC;
+REVOKE EXECUTE ON FUNCTION public.get_customer_by_phone_for_booking(text) FROM anon;
+REVOKE EXECUTE ON FUNCTION public.get_customer_by_phone_for_booking(text) FROM authenticated;
+GRANT EXECUTE ON FUNCTION public.get_customer_by_phone_for_booking(text) TO service_role;
+
+REVOKE ALL ON FUNCTION public.create_customer_for_booking(jsonb) FROM PUBLIC;
+REVOKE EXECUTE ON FUNCTION public.create_customer_for_booking(jsonb) FROM anon;
+REVOKE EXECUTE ON FUNCTION public.create_customer_for_booking(jsonb) FROM authenticated;
+GRANT EXECUTE ON FUNCTION public.create_customer_for_booking(jsonb) TO service_role;
+
+REVOKE ALL ON FUNCTION public.update_customer_for_booking(uuid, text, jsonb) FROM PUBLIC;
+REVOKE EXECUTE ON FUNCTION public.update_customer_for_booking(uuid, text, jsonb) FROM anon;
+REVOKE EXECUTE ON FUNCTION public.update_customer_for_booking(uuid, text, jsonb) FROM authenticated;
+GRANT EXECUTE ON FUNCTION public.update_customer_for_booking(uuid, text, jsonb) TO service_role;
+
+REVOKE ALL ON FUNCTION public.create_job_for_booking(text, jsonb) FROM PUBLIC;
+REVOKE EXECUTE ON FUNCTION public.create_job_for_booking(text, jsonb) FROM anon;
+REVOKE EXECUTE ON FUNCTION public.create_job_for_booking(text, jsonb) FROM authenticated;
+GRANT EXECUTE ON FUNCTION public.create_job_for_booking(text, jsonb) TO service_role;

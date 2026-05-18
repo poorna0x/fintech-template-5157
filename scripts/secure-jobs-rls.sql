@@ -106,7 +106,8 @@ END;
 $$;
 
 REVOKE ALL ON FUNCTION public.create_job_for_booking(text, jsonb) FROM PUBLIC;
-GRANT EXECUTE ON FUNCTION public.create_job_for_booking(text, jsonb) TO anon, authenticated;
+REVOKE EXECUTE ON FUNCTION public.create_job_for_booking(text, jsonb) FROM anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.create_job_for_booking(text, jsonb) TO service_role;
 
 ALTER TABLE public.jobs ENABLE ROW LEVEL SECURITY;
 
