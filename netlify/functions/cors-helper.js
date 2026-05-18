@@ -1,23 +1,28 @@
-// CORS helper for secure origin validation
-// Only allows requests from allowed origins
+// CORS helper — allowlisted origins only on Netlify/production; permissive localhost for local dev only.
 
-// Default allowed origins (for development)
 const DEFAULT_ORIGINS = [
-  'http://localhost:8080',           // Vite dev server (HTTP)
-  'https://localhost:8080',          // Vite dev server (HTTPS)
-  'http://localhost:8081',           // Vite when 8080 is in use
-  'http://localhost:5173',            // Vite default dev port
-  'http://localhost:3000',           // Alternative dev port
-  'http://localhost:8888',           // Netlify functions dev server
+  'http://localhost:8080',
+  'https://localhost:8080',
+  'http://localhost:8081',
+  'http://localhost:5173',
+  'http://localhost:3000',
+  'http://localhost:8888',
 ];
 
-// Detect if we're in production
-function isProduction() {
-  // Netlify sets CONTEXT to 'production' in production builds
-  // Also check NODE_ENV as fallback
-  return process.env.CONTEXT === 'production' || 
-         process.env.NODE_ENV === 'production' ||
-         process.env.NETLIFY === 'true'; // Netlify sets this in production
+const PRODUCTION_ORIGINS = [
+  'https://hydrogenro.com',
+  'https://www.hydrogenro.com',
+  'https://hydrogenro.netlify.app',
+  'https://elevenro.com',
+  'https://www.elevenro.com',
+];
+
+/** Local `netlify dev` / dev-server only — not Netlify deployed functions. */
+function isLocalDev() {
+  if (process.env.CORS_PERMISSIVE === 'true') return true;
+  if (process.env.CONTEXT === 'dev') return true;
+  if (process.env.NETLIFY || process.env.CONTEXT) return false;
+  return process.env.NODE_ENV !== 'production';
 }
 
 function getNetlifyDeployOrigins() {
@@ -25,121 +30,83 @@ function getNetlifyDeployOrigins() {
   return [...new Set(urls.map((u) => String(u).replace(/\/$/, '')))];
 }
 
-// Get allowed origins from environment variable or use defaults
 function getAllowedOrigins() {
-  // Read from environment variable (comma-separated list)
   const envOrigins = process.env.ALLOWED_ORIGINS;
-  const inProduction = isProduction();
   const deployOrigins = getNetlifyDeployOrigins();
-  
+
   if (envOrigins) {
-    // Parse comma-separated origins from environment variable
-    const origins = envOrigins.split(',').map(origin => origin.trim()).filter(Boolean);
-    
-    // In production, only use env origins (no localhost)
-    if (inProduction) {
-      return [...new Set([...origins, ...deployOrigins])];
+    const parsed = envOrigins.split(',').map((o) => o.trim()).filter(Boolean);
+    if (isLocalDev()) {
+      return [...new Set([...DEFAULT_ORIGINS, ...parsed, ...deployOrigins])];
     }
-    
-    // In development, combine with localhost origins
-    return [...DEFAULT_ORIGINS, ...origins, ...deployOrigins];
+    return [...new Set([...parsed, ...deployOrigins, ...PRODUCTION_ORIGINS])];
   }
-  
-  // Fallback: production domains
-  if (inProduction) {
-    return [
-      'https://hydrogenro.com',
-      'https://www.hydrogenro.com',
-      'https://hydrogenro.netlify.app',
-      'https://elevenro.com',
-      'https://www.elevenro.com',
-      ...deployOrigins,
-    ];
+
+  if (isLocalDev()) {
+    return [...DEFAULT_ORIGINS, ...PRODUCTION_ORIGINS, ...deployOrigins];
   }
-  
-  // Development fallback: include localhost
-  return [
-    ...DEFAULT_ORIGINS,
-    'https://hydrogenro.com',           // Production domain (for testing)
-    'https://www.hydrogenro.com',       // Production domain with www
-  ];
+
+  return [...new Set([...PRODUCTION_ORIGINS, ...deployOrigins])];
 }
 
-const ALLOWED_ORIGINS = getAllowedOrigins();
-
-// Get allowed origin based on request
 function getAllowedOrigin(requestOrigin) {
-  // TEMPORARY: Allow all origins for debugging - REMOVE IN PRODUCTION!
-  if (!isProduction()) {
-    return requestOrigin || '*'; // Allow all origins in development
-  }
-
-  // If no origin header (same-origin request), allow it
   if (!requestOrigin) {
-    return null; // Same-origin requests don't need CORS headers
+    return null;
   }
 
-  // Check if origin is in allowed list
-  if (ALLOWED_ORIGINS.includes(requestOrigin)) {
+  const allowed = getAllowedOrigins();
+  if (allowed.includes(requestOrigin)) {
     return requestOrigin;
   }
 
-  // For development, allow localhost with any port (only if not in production)
-  // Support both HTTP and HTTPS for localhost
-  if (!isProduction() && (requestOrigin.startsWith('http://localhost:') || requestOrigin.startsWith('https://localhost:'))) {
-    return requestOrigin;
-  }
-
-  // For development, allow local network IPs (192.168.x.x, 10.x.x.x, 172.16-31.x.x) with any port
-  // This enables testing from mobile devices on the same network
-  // Support both HTTP and HTTPS for local development
-  if (!isProduction()) {
-    const localNetworkPattern = /^https?:\/\/(192\.168\.\d{1,3}\.\d{1,3}|10\.\d{1,3}\.\d{1,3}\.\d{1,3}|172\.(1[6-9]|2[0-9]|3[01])\.\d{1,3}\.\d{1,3})(:\d+)?\/?$/;
+  if (isLocalDev()) {
+    if (
+      requestOrigin.startsWith('http://localhost:') ||
+      requestOrigin.startsWith('https://localhost:')
+    ) {
+      return requestOrigin;
+    }
+    const localNetworkPattern =
+      /^https?:\/\/(192\.168\.\d{1,3}\.\d{1,3}|10\.\d{1,3}\.\d{1,3}\.\d{1,3}|172\.(1[6-9]|2[0-9]|3[01])\.\d{1,3}\.\d{1,3})(:\d+)?\/?$/;
     if (localNetworkPattern.test(requestOrigin)) {
       return requestOrigin;
     }
   }
 
-  // Origin not allowed
   return null;
 }
 
-// Get CORS headers for response
-function getCorsHeaders(requestOrigin) {
-  // TEMPORARY: Allow all origins for debugging - REMOVE IN PRODUCTION!
-  if (!isProduction()) {
-    return {
-      'Access-Control-Allow-Origin': '*', // Allow all origins in development
-      'Access-Control-Allow-Methods': 'POST, GET, OPTIONS, PUT, DELETE',
-      'Access-Control-Allow-Headers': 'Content-Type, Authorization',
-      'Access-Control-Allow-Credentials': 'false',
-    };
-  }
+const STRICT_METHODS = 'POST, OPTIONS';
+const STRICT_HEADERS = 'Content-Type, Authorization';
 
-  // Production code (original logic)
+function getCorsHeaders(requestOrigin) {
   const allowedOrigin = getAllowedOrigin(requestOrigin);
-  
+
   if (!allowedOrigin) {
-    // Return minimal headers if origin not allowed (will be rejected by browser)
     return {
       'Access-Control-Allow-Origin': 'null',
-      'Access-Control-Allow-Methods': 'POST, GET, OPTIONS',
-      'Access-Control-Allow-Headers': 'Content-Type',
+      'Access-Control-Allow-Methods': STRICT_METHODS,
+      'Access-Control-Allow-Headers': STRICT_HEADERS,
       'Access-Control-Allow-Credentials': 'false',
     };
   }
 
   return {
     'Access-Control-Allow-Origin': allowedOrigin,
-    'Access-Control-Allow-Methods': 'POST, GET, OPTIONS',
-    'Access-Control-Allow-Headers': 'Content-Type',
+    'Access-Control-Allow-Methods': STRICT_METHODS,
+    'Access-Control-Allow-Headers': STRICT_HEADERS,
     'Access-Control-Allow-Credentials': 'false',
   };
 }
 
-// Check if request origin is allowed
 function isOriginAllowed(requestOrigin) {
+  if (isLocalDev() && !requestOrigin) return true;
   return getAllowedOrigin(requestOrigin) !== null;
+}
+
+/** @deprecated Use isLocalDev(); kept for booking-guard imports */
+function isProduction() {
+  return !isLocalDev();
 }
 
 module.exports = {
@@ -147,5 +114,5 @@ module.exports = {
   getCorsHeaders,
   isOriginAllowed,
   isProduction,
+  isLocalDev,
 };
-
