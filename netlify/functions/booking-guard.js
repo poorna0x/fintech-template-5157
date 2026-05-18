@@ -1,5 +1,5 @@
 const { createClient } = require('@supabase/supabase-js');
-const { getCorsHeaders, isOriginAllowed } = require('./cors-helper');
+const { getCorsHeaders, isOriginAllowed, isProduction } = require('./cors-helper');
 const { addSecurityHeaders } = require('./security-headers');
 const {
   checkRateLimit,
@@ -35,6 +35,13 @@ function preflightOrReject(event) {
 
   if (event.httpMethod === 'OPTIONS') {
     return { handled: true, response: { statusCode: 200, headers: addSecurityHeaders(corsHeaders), body: '' } };
+  }
+
+  if (isProduction() && !requestOrigin) {
+    return {
+      handled: true,
+      response: jsonResponse(403, corsHeaders, { error: 'Forbidden' }),
+    };
   }
 
   if (requestOrigin && !isOriginAllowed(requestOrigin)) {

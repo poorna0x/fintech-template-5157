@@ -1,5 +1,6 @@
-// Email service utility for sending booking confirmations
-// This is a placeholder implementation - you'll need to integrate with your preferred email service
+// Email service utility for sending booking confirmations via secured Netlify function.
+
+import type { BookingAltchaContext } from '@/lib/bookingCustomer';
 
 export interface EmailData {
   to: string;
@@ -469,11 +470,19 @@ export class EmailService {
     this.fromEmail = import.meta.env.VITE_EMAIL_FROM || 'noreply@hydrogenro.com';
   }
 
-  async sendEmail(emailData: EmailData): Promise<boolean> {
+  async sendEmail(
+    emailData: EmailData,
+    ctx: BookingAltchaContext,
+    phone: string
+  ): Promise<boolean> {
     try {
       // For development, don't actually send emails
       if (import.meta.env.DEV) {
         return false; // Return false in dev mode to indicate email wasn't actually sent
+      }
+
+      if (!ctx.altchaLoginToken) {
+        return false;
       }
 
       // Send email via API
@@ -483,6 +492,10 @@ export class EmailService {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
+          purpose: 'booking_confirmation',
+          altchaLoginToken: ctx.altchaLoginToken,
+          altchaPayload: ctx.altchaPayload,
+          phone,
           to: emailData.to,
           subject: emailData.subject,
           html: emailData.data.html,
@@ -510,19 +523,31 @@ export class EmailService {
     }
   }
 
-  sendBookingConfirmation(data: BookingConfirmationData): Promise<boolean> {
+  sendBookingConfirmation(
+    data: BookingConfirmationData,
+    ctx?: BookingAltchaContext,
+    phone?: string
+  ): Promise<boolean> {
+    if (!ctx?.altchaLoginToken || !phone) {
+      return Promise.resolve(false);
+    }
+
     const template = emailTemplates.bookingConfirmation(data);
     
-    return this.sendEmail({
-      to: data.email,
-      subject: template.subject,
-      template: 'bookingConfirmation',
-      data: {
-        ...data,
-        html: template.html,
-        text: template.text
-      }
-    });
+    return this.sendEmail(
+      {
+        to: data.email,
+        subject: template.subject,
+        template: 'bookingConfirmation',
+        data: {
+          ...data,
+          html: template.html,
+          text: template.text,
+        },
+      },
+      ctx,
+      phone
+    );
   }
 }
 

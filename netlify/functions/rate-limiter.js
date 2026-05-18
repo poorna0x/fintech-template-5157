@@ -192,11 +192,11 @@ const rateLimiters = {
     endpoint: 'password'
   }),
 
-  // Moderate limits for email sending (spam protection)
+  // Strict limits for email sending (spam / relay abuse protection)
   email: createRateLimiter({
-    maxRequests: 10,      // 10 emails
-    windowMs: 3600000,   // per hour
-    endpoint: 'email'
+    maxRequests: 5,
+    windowMs: 3600000,
+    endpoint: 'email',
   }),
 
   // Moderate limits for hashing (DoS protection)

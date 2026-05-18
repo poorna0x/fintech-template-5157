@@ -20,11 +20,17 @@ function isProduction() {
          process.env.NETLIFY === 'true'; // Netlify sets this in production
 }
 
+function getNetlifyDeployOrigins() {
+  const urls = [process.env.URL, process.env.DEPLOY_PRIME_URL].filter(Boolean);
+  return [...new Set(urls.map((u) => String(u).replace(/\/$/, '')))];
+}
+
 // Get allowed origins from environment variable or use defaults
 function getAllowedOrigins() {
   // Read from environment variable (comma-separated list)
   const envOrigins = process.env.ALLOWED_ORIGINS;
   const inProduction = isProduction();
+  const deployOrigins = getNetlifyDeployOrigins();
   
   if (envOrigins) {
     // Parse comma-separated origins from environment variable
@@ -32,11 +38,11 @@ function getAllowedOrigins() {
     
     // In production, only use env origins (no localhost)
     if (inProduction) {
-      return origins;
+      return [...new Set([...origins, ...deployOrigins])];
     }
     
     // In development, combine with localhost origins
-    return [...DEFAULT_ORIGINS, ...origins];
+    return [...DEFAULT_ORIGINS, ...origins, ...deployOrigins];
   }
   
   // Fallback: production domains
@@ -44,8 +50,10 @@ function getAllowedOrigins() {
     return [
       'https://hydrogenro.com',
       'https://www.hydrogenro.com',
+      'https://hydrogenro.netlify.app',
       'https://elevenro.com',
       'https://www.elevenro.com',
+      ...deployOrigins,
     ];
   }
   
@@ -138,5 +146,6 @@ module.exports = {
   getAllowedOrigin,
   getCorsHeaders,
   isOriginAllowed,
+  isProduction,
 };
 

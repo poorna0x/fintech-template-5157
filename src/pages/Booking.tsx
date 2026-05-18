@@ -1687,7 +1687,12 @@ const Booking: React.FC = () => {
       let job: any = null;
       let jobError: any = null;
       for (let attempt = 0; attempt < 2; attempt++) {
-        const result = await createBookingJob(formData.phone, jobData as Record<string, unknown>, altchaCtx);
+        const result = await createBookingJob(
+          formData.phone,
+          jobData as Record<string, unknown>,
+          altchaCtx,
+          { consumeToken: false }
+        );
         job = result.data;
         jobError = result.error;
         if (!jobError) break;
@@ -1726,19 +1731,27 @@ const Booking: React.FC = () => {
         : formData.googleMapsLink;
 
       // Send confirmation email (non-blocking for faster response)
-      emailService.sendBookingConfirmation({
-          customerName: formData.fullName,
-          email: formData.email,
-          jobNumber: (job as any)?.job_number || (job as any)?.jobNumber || 'N/A',
-          serviceType: formData.serviceType,
-          serviceSubType: formData.service === 'Other' ? formData.customService : formData.service,
-          brand: formData.brandName || 'Not specified',
-          model: formData.modelName || 'Not specified',
-          scheduledDate: formData.serviceDate ? formData.serviceDate : new Date().toISOString().split('T')[0],
-          scheduledTimeSlot: formData.preferredTime,
-          serviceAddress: displayAddress,
-          phone: formData.phone,
-      }).catch(error => {
+      emailService
+        .sendBookingConfirmation(
+          {
+            customerName: formData.fullName,
+            email: formData.email,
+            jobNumber: (job as any)?.job_number || (job as any)?.jobNumber || 'N/A',
+            serviceType: formData.serviceType,
+            serviceSubType: formData.service === 'Other' ? formData.customService : formData.service,
+            brand: formData.brandName || 'Not specified',
+            model: formData.modelName || 'Not specified',
+            scheduledDate: formData.serviceDate
+              ? formData.serviceDate
+              : new Date().toISOString().split('T')[0],
+            scheduledTimeSlot: formData.preferredTime,
+            serviceAddress: displayAddress,
+            phone: formData.phone,
+          },
+          altchaCtx,
+          formData.phone
+        )
+        .catch(error => {
         console.error('Email sending failed:', error);
       });
 
