@@ -7,6 +7,7 @@ import { PENDING_PAYMENT_REMINDER_TITLE } from './pendingPaymentReminder';
 import { cacheGet, cacheSet, cacheInvalidate } from './supabaseQueryCache';
 import { isMissingServiceBrandColumnError } from './amc-brand';
 import { isPWAMode } from './pwa';
+import { sanitizePostgrestErrorBody } from './sanitizePostgrestError';
 
 // Debug logging in development
 if (import.meta.env.DEV) {
@@ -90,8 +91,24 @@ export const supabase = createClient<Database>(buildTimeUrl, buildTimeKey, {
         headers: headers,
         signal: controller.signal,
       })
-        .then((response) => {
+        .then(async (response) => {
           clearTimeout(timeoutId);
+          if (!response.ok && import.meta.env.PROD) {
+            const ct = response.headers.get('content-type') || '';
+            if (ct.includes('application/json')) {
+              try {
+                const body = await response.clone().json();
+                const sanitized = sanitizePostgrestErrorBody(body);
+                return new Response(JSON.stringify(sanitized), {
+                  status: response.status,
+                  statusText: response.statusText,
+                  headers: response.headers,
+                });
+              } catch {
+                /* keep original response */
+              }
+            }
+          }
           return response;
         })
         .catch((error) => {
