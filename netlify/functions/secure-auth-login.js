@@ -1,7 +1,7 @@
 // Rate-limited, CAPTCHA-gated proxy for Supabase password login.
 // Clients must not call signInWithPassword directly — use this endpoint + setSession.
 const { createClient } = require('@supabase/supabase-js');
-const { getCorsHeaders, isOriginAllowed } = require('./cors-helper');
+const { getCorsHeaders, isOriginAllowed, isProduction } = require('./cors-helper');
 const { enforceLoginRateLimits } = require('./auth-rate-limits');
 const { addSecurityHeaders } = require('./security-headers');
 const { verifyLoginToken, consumeLoginToken, isPlaceholderKey } = require('./altcha-guard');
@@ -34,6 +34,14 @@ exports.handler = async (event) => {
 
   if (event.httpMethod === 'OPTIONS') {
     return { statusCode: 200, headers: addSecurityHeaders(corsHeaders), body: '' };
+  }
+
+  if (isProduction() && !requestOrigin) {
+    return {
+      statusCode: 403,
+      headers: addSecurityHeaders({ 'Content-Type': 'application/json' }),
+      body: JSON.stringify({ error: 'Forbidden' }),
+    };
   }
 
   if (requestOrigin && !isOriginAllowed(requestOrigin)) {

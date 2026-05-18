@@ -7,18 +7,24 @@
 -- Technician roster (no GPS/salary): get_technician_roster_for_app — authenticated only (see secure-technicians-privacy.sql).
 
 -- Requires is_admin_user from secure-customers-rls.sql
+-- See scripts/secure-auth-helpers-and-is-admin-rpc.sql
 CREATE OR REPLACE FUNCTION public.auth_user_role()
 RETURNS text LANGUAGE sql STABLE AS $$
-  SELECT coalesce(
-    auth.jwt() -> 'app_metadata' ->> 'role',
-    auth.jwt() -> 'user_metadata' ->> 'role',
-    'admin'
-  );
+  SELECT CASE
+    WHEN auth.uid() IS NULL THEN NULL
+    ELSE coalesce(
+      auth.jwt() -> 'app_metadata' ->> 'role',
+      auth.jwt() -> 'user_metadata' ->> 'role',
+      'admin'
+    )
+  END;
 $$;
 
 CREATE OR REPLACE FUNCTION public.is_admin_user()
-RETURNS boolean LANGUAGE sql STABLE AS $$
-  SELECT public.auth_user_role() IS DISTINCT FROM 'technician';
+RETURNS boolean LANGUAGE sql STABLE SECURITY DEFINER SET search_path = public AS $$
+  SELECT auth.uid() IS NOT NULL
+    AND NOT EXISTS (SELECT 1 FROM public.technicians t WHERE t.id = auth.uid())
+    AND public.auth_user_role() IS DISTINCT FROM 'technician';
 $$;
 
 -- ---------------------------------------------------------------------------
