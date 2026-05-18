@@ -47,7 +47,7 @@ const AdminLogin = () => {
 
   useEffect(() => {
     if (authInitializing) return;
-    if (user?.role === 'admin') {
+    if (user?.role === 'admin' && window.location.pathname !== '/admin') {
       navigate('/admin', { replace: true });
     }
   }, [user, authInitializing, navigate]);

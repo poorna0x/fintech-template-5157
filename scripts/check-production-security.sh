@@ -1,0 +1,76 @@
+#!/usr/bin/env bash
+# Post-deploy / post-build checks for BreachMe LOW findings. Exit 1 on hard failures.
+set -euo pipefail
+ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+SITE="${1:-https://hydrogenro.netlify.app}"
+FAIL=0
+
+echo "=== 1) CSP: no localhost in production HTTP header ==="
+CSP=$(curl -sI "$SITE/" | tr -d '\r' | grep -i '^content-security-policy:' || true)
+if [[ -z "$CSP" ]]; then
+  echo "  FAIL: no Content-Security-Policy HTTP header"
+  FAIL=1
+elif echo "$CSP" | grep -qiE 'localhost|127\.0\.0\.1'; then
+  echo "  FAIL: localhost found in CSP"
+  echo "  $CSP"
+  FAIL=1
+else
+  echo "  OK — production CSP has no localhost"
+fi
+
+echo ""
+echo "=== 2) Bundle: no dev URLs in public index chunk ==="
+INDEX_PATH=$(curl -s "$SITE/" | grep -oE 'assets/index-[^"]+\.js' | head -1 || true)
+if [[ -z "$INDEX_PATH" ]]; then
+  echo "  WARN: could not find index-*.js in HTML"
+else
+  BODY=$(curl -s "$SITE/${INDEX_PATH}")
+  if echo "$BODY" | grep -qE 'localhost:8888|127\.0\.0\.1:8888'; then
+    echo "  FAIL: dev proxy URLs in $INDEX_PATH"
+    FAIL=1
+  else
+    echo "  OK — $INDEX_PATH has no localhost:8888"
+  fi
+fi
+
+if [[ -d "$ROOT/dist/assets" ]]; then
+  LOCAL_INDEX=$(ls "$ROOT/dist/assets"/index-*.js 2>/dev/null | head -1 || true)
+  if [[ -n "$LOCAL_INDEX" ]] && grep -qE 'localhost:8888|127\.0\.0\.1:8888' "$LOCAL_INDEX"; then
+    echo "  FAIL: dev URLs in local dist/$(basename "$LOCAL_INDEX")"
+    FAIL=1
+  fi
+fi
+
+echo ""
+echo "=== 3) HTTP headers: fingerprint reduction ==="
+HDRS=$(curl -sI "$SITE/" | tr -d '\r')
+for h in server x-powered-by x-nf-request-id cache-status; do
+  if echo "$HDRS" | grep -qi "^${h}:"; then
+    echo "  WARN: $h still present (Netlify may re-add some after Edge)"
+  else
+    echo "  OK: $h not present"
+  fi
+done
+
+echo ""
+echo "=== 4) Supabase anon key in client bundle (expected — mitigated by RLS + RPC locks) ==="
+if [[ -n "${INDEX_PATH:-}" ]]; then
+  if echo "$BODY" | grep -q 'supabase.co'; then
+    echo "  INFO: Supabase URL appears in JS — required for @supabase/supabase-js in browser"
+    echo "  INFO: Ensure dashboard MFA, RLS, and scripts/secure-* SQL are applied"
+  else
+    echo "  OK: no obvious supabase.co string in index (may still use env at runtime)"
+  fi
+fi
+
+echo ""
+echo "=== 5) Portal route guard ==="
+bash "$ROOT/scripts/test-portal-route-guard.sh" "$SITE" || FAIL=1
+
+echo ""
+if [[ "$FAIL" -eq 0 ]]; then
+  echo "All automated checks passed."
+else
+  echo "One or more checks failed."
+fi
+exit "$FAIL"

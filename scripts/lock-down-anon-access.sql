@@ -221,10 +221,5 @@ BEGIN
     REVOKE EXECUTE ON FUNCTION public.create_job_for_booking(text, jsonb) FROM anon, authenticated;
     GRANT EXECUTE ON FUNCTION public.create_job_for_booking(text, jsonb) TO service_role;
   END IF;
-  IF EXISTS (SELECT 1 FROM pg_proc WHERE proname = 'upsert_website_booking_intent') THEN
-    GRANT EXECUTE ON FUNCTION public.upsert_website_booking_intent(text, text, text, smallint, text) TO anon;
-  END IF;
-  IF EXISTS (SELECT 1 FROM pg_proc WHERE proname = 'mark_website_booking_intent_booked') THEN
-    GRANT EXECUTE ON FUNCTION public.mark_website_booking_intent_booked(text, text, text) TO anon;
-  END IF;
+  -- website_booking_intent RPCs: service_role only (see scripts/secure-website-booking-intent-rpc.sql)
 END $$;

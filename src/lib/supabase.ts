@@ -1,131 +1,16 @@
-import { createClient } from '@supabase/supabase-js';
+import type { SupabaseClient } from '@supabase/supabase-js';
 import { Database } from '@/types';
-import { chromeStorage } from './storage';
-import { isSupabaseConfigured, supabaseAnonKey, supabaseUrl } from './supabaseConfig';
+import { supabase as supabaseAuthClient } from './supabaseClient';
 import { escapeForLike, normalizePhoneForSearch } from './utils';
 import { PENDING_PAYMENT_REMINDER_TITLE } from './pendingPaymentReminder';
 import { cacheGet, cacheSet, cacheInvalidate } from './supabaseQueryCache';
 import { isMissingServiceBrandColumnError } from './amc-brand';
-import { isPWAMode } from './pwa';
-import { sanitizePostgrestErrorBody } from './sanitizePostgrestError';
 
-// Debug logging in development
-if (import.meta.env.DEV) {
-  console.log('[Supabase Config] URL:', supabaseUrl ? '✓ Set' : '✗ Missing');
-  console.log('[Supabase Config] Anon Key:', supabaseAnonKey ? '✓ Set (' + supabaseAnonKey.substring(0, 20) + '...)' : '✗ Missing');
-}
+export { supabaseAuthClient as supabase };
+export { generateJobNumber } from './jobNumber';
 
-// Placeholders only so `vite build` succeeds; real values must be set on Netlify for production.
-const buildTimeUrl = supabaseUrl || 'https://placeholder.supabase.co';
-const buildTimeKey = supabaseAnonKey || 'placeholder-key';
-
-if (typeof window !== 'undefined' && !isSupabaseConfigured()) {
-  console.error('[Supabase Config] Missing or placeholder Supabase env at runtime — login will fail in production.');
-}
-
-// Create a storage adapter compatible with Supabase's expected interface
-const supabaseStorageAdapter = typeof window !== 'undefined' ? {
-  getItem: (key: string) => chromeStorage.getItem(key),
-  setItem: (key: string, value: string) => chromeStorage.setItem(key, value),
-  removeItem: (key: string) => chromeStorage.removeItem(key),
-} : undefined;
-
-// Create Supabase client with better error handling for local development and Chrome mobile
-export const supabase = createClient<Database>(buildTimeUrl, buildTimeKey, {
-  auth: {
-    // Use Chrome-compatible storage adapter for session persistence
-    storage: supabaseStorageAdapter,
-    autoRefreshToken: true,
-    persistSession: true,
-    detectSessionInUrl: true,
-    // Don't redirect on auth errors - let the app handle it
-    flowType: 'pkce',
-  },
-  realtime: {
-    params: {
-      eventsPerSecond: 10,
-    },
-  },
-  global: {
-    // Better error handling and ensure API key is sent
-    fetch: (url, options = {}) => {
-      // Ensure apikey header is always included
-      // Convert headers to a plain object if needed, then back to Headers
-      const existingHeaders = options.headers || {};
-      const headers = new Headers(existingHeaders instanceof Headers ? existingHeaders : existingHeaders);
-      
-      // Always set apikey header if not present (Supabase requires this)
-      const actualKey = supabaseAnonKey || buildTimeKey;
-      if (!headers.has('apikey') && actualKey) {
-        headers.set('apikey', actualKey);
-      }
-      // Set Authorization header if not present (for auth requests)
-      if (!headers.has('Authorization') && actualKey) {
-        headers.set('Authorization', `Bearer ${actualKey}`);
-      }
-      
-      // Logging disabled to reduce console noise
-      // Uncomment below for debugging if needed:
-      // if (import.meta.env.DEV) {
-      //   console.log('[Supabase Request]', url.toString());
-      //   console.log('[Supabase Headers]', {
-      //     hasApikey: headers.has('apikey'),
-      //     hasAuthorization: headers.has('Authorization'),
-      //   });
-      // }
-      
-      const controller = new AbortController();
-      const fetchTimeoutMs =
-        typeof window !== 'undefined' && isPWAMode() ? 60_000 : 30_000;
-      const timeoutId = setTimeout(() => controller.abort(), fetchTimeoutMs);
-
-      if (!isSupabaseConfigured() && String(url).includes('placeholder.supabase.co')) {
-        clearTimeout(timeoutId);
-        throw new Error(
-          'Supabase is not configured. Set VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY on Netlify and redeploy.'
-        );
-      }
-
-      return fetch(url, {
-        ...options,
-        headers: headers,
-        signal: controller.signal,
-      })
-        .then(async (response) => {
-          clearTimeout(timeoutId);
-          if (!response.ok && import.meta.env.PROD) {
-            const ct = response.headers.get('content-type') || '';
-            if (ct.includes('application/json')) {
-              try {
-                const body = await response.clone().json();
-                const sanitized = sanitizePostgrestErrorBody(body);
-                return new Response(JSON.stringify(sanitized), {
-                  status: response.status,
-                  statusText: response.statusText,
-                  headers: response.headers,
-                });
-              } catch {
-                /* keep original response */
-              }
-            }
-          }
-          return response;
-        })
-        .catch((error) => {
-          clearTimeout(timeoutId);
-          // Log fetch errors for debugging
-          if (import.meta.env.DEV) {
-            console.error('[Supabase Fetch Error]', error);
-          }
-          // If it's an abort error (timeout), provide a more helpful message
-          if (error.name === 'AbortError') {
-            throw new Error('Request timeout - please check your internet connection');
-          }
-          throw error;
-        });
-    },
-  },
-});
+/** Typed client for admin/technician data layer (admin-data chunk). */
+const supabase = supabaseAuthClient as SupabaseClient<Database>;
 
 /** Explicit job columns for ongoing admin list + technician job list (no before/after/images — use getPhotoFieldsForJobIds). */
 const JOB_SELECT_ONGOING_AND_TECH = [
@@ -4915,35 +4800,17 @@ export const db = {
     },
   },
 
-  /** Public /book page pushes name+phone+step (debounced). Admin reads + dismisses. */
+  /** Admin dashboard: live booking intent banner (writes go via booking-intent Netlify function). */
   websiteBookingIntent: {
-    async pushLive(row: {
-      full_name: string;
-      phone: string;
-      phone_normalized: string;
-      current_step: number;
-      site_key: 'hydrogenro' | 'elevenro';
-    }) {
-      const { error } = await supabase.rpc('upsert_website_booking_intent', {
-        p_full_name: row.full_name.trim(),
-        p_phone: row.phone,
-        p_phone_normalized: row.phone_normalized,
-        p_current_step: row.current_step,
-        p_site_key: row.site_key,
-      });
-      return { error };
+    /** @deprecated Use pushWebsiteBookingIntent from @/lib/bookingIntent */
+    async pushLive() {
+      return {
+        error: { message: 'Direct intent RPC disabled — use booking-intent function', code: 'INTENT_PROXY_REQUIRED' } as any,
+      };
     },
-    async markBooked(row: {
-      phone_normalized: string;
-      site_key: 'hydrogenro' | 'elevenro';
-      job_number: string;
-    }) {
-      const { error } = await supabase.rpc('mark_website_booking_intent_booked', {
-        p_phone_normalized: row.phone_normalized,
-        p_site_key: row.site_key,
-        p_job_number: row.job_number,
-      });
-      return { error };
+    /** @deprecated Use markWebsiteBookingIntentBooked from @/lib/bookingIntent */
+    async markBooked() {
+      return { error: null };
     },
     async listActive(limit = 10) {
       const lim = Math.min(Math.max(1, limit), 20);
@@ -4958,7 +4825,8 @@ export const db = {
         .gte('updated_at', cutoff)
         .order('updated_at', { ascending: false })
         .limit(lim);
-      return { data: data || [], error };
+      const rows = (data || []).filter((row) => (row as { quarantined?: boolean }).quarantined !== true);
+      return { data: rows, error };
     },
     async dismiss(id: string) {
       const { error } = await supabase.from('website_booking_intent').delete().eq('id', id);
@@ -4980,13 +4848,6 @@ export function getBookingAbandonBucketDateIST(): string {
   const d = parts.find((p) => p.type === 'day')?.value;
   return `${y}-${m}-${d}`;
 }
-
-// Utility functions
-export const generateJobNumber = (serviceType: string, year: number = new Date().getFullYear()) => {
-  const prefix = serviceType.toUpperCase();
-  const timestamp = Date.now().toString().slice(-6);
-  return `${prefix}-${year}-${timestamp}`;
-};
 
 export const validatePincode = async (pincode: string): Promise<boolean> => {
   // This would typically check against your service area database

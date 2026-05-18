@@ -2,7 +2,7 @@ import { Toaster } from "@/components/ui/toaster";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { BrowserRouter, Routes, Route, useLocation } from "react-router-dom";
+import { BrowserRouter, Routes, Route, useLocation, Navigate } from "react-router-dom";
 import { ThemeProvider } from "./contexts/ThemeContext";
 import { SecurityProvider } from "./contexts/SecurityContext";
 import { AuthProvider } from "./contexts/AuthContext";
@@ -16,7 +16,7 @@ import GoogleAnalytics from "./components/GoogleAnalytics";
 import { disablePWA } from "@/lib/pwa";
 
 // Lazy load heavy components for better performance
-const AdminDashboard = lazy(() => import("./components/AdminDashboard"));
+import AdminPortal from "./pages/AdminPortal";
 const Booking = lazy(() => import("./pages/Booking"));
 const TechnicianLogin = lazy(() => import("./pages/TechnicianLogin"));
 const TechnicianDashboard = lazy(() => import("./pages/TechnicianDashboard"));
@@ -101,7 +101,8 @@ const App = () => (
                 <Routes>
                   <Route path="/" element={<Index />} />
                   <Route path="/book" element={<Booking />} />
-                  <Route path="/admin" element={<AdminDashboard />} />
+                  <Route path="/admin/login" element={<Navigate to="/admin" replace />} />
+                  <Route path="/admin" element={<AdminPortal />} />
                   <Route path="/settings" element={<Settings />} />
                   <Route path="/calling" element={<CallingPage />} />
                   <Route path="/technician/login" element={<TechnicianLogin />} />

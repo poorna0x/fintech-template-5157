@@ -36,6 +36,8 @@ const hashTechnicianPassword = require('./hash-technician-password');
 const distanceMatrix = require('./distance-matrix');
 const provisionTechnicianAuthOnLogin = require('./provision-technician-auth-on-login');
 const secureAuthLogin = require('./secure-auth-login');
+const syncPortalSession = require('./sync-portal-session');
+const clearPortalSession = require('./clear-portal-session');
 const syncTechnicianAuthUser = require('./sync-technician-auth-user');
 const deleteTechnicianAndData = require('./delete-technician-and-data');
 const cloudinaryDelete = require('./cloudinary-delete');
@@ -79,6 +81,10 @@ const server = http.createServer((req, res) => {
     handler = provisionTechnicianAuthOnLogin;
   } else if (req.url.startsWith('/.netlify/functions/secure-auth-login')) {
     handler = secureAuthLogin;
+  } else if (req.url.startsWith('/.netlify/functions/sync-portal-session')) {
+    handler = syncPortalSession;
+  } else if (req.url.startsWith('/.netlify/functions/clear-portal-session')) {
+    handler = clearPortalSession;
   } else if (req.url.startsWith('/.netlify/functions/sync-technician-auth-user')) {
     handler = syncTechnicianAuthUser;
   } else if (req.url.startsWith('/.netlify/functions/delete-technician-and-data')) {

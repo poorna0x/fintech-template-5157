@@ -14,18 +14,21 @@ import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
 import { toast } from 'sonner';
 import { ChevronLeft, ChevronRight, MapPin, Camera, Upload, Check, Phone, Mail, User, Home, Clock, Wrench, Loader2, Search, Navigation, X, ExternalLink } from 'lucide-react';
-import { db } from '@/lib/supabase';
 import {
   createBookingCustomer,
   getBookingCustomerByPhone,
   updateBookingCustomer,
   type BookingAltchaContext,
 } from '@/lib/bookingCustomer';
+import {
+  pushWebsiteBookingIntent,
+  markWebsiteBookingIntentBooked,
+} from '@/lib/bookingIntent';
 import { createBookingJob } from '@/lib/bookingJob';
 import { cloudinaryService, compressImage } from '@/lib/cloudinary';
 import { emailService } from '@/lib/email';
 import { isIOS, isPWA, shouldUseFileInputFallback, requestCameraAccess, createVideoElement } from '@/lib/cameraUtils';
-import { generateJobNumber } from '@/lib/supabase';
+import { generateJobNumber } from '@/lib/jobNumber';
 import AltchaWidget from '@/components/AltchaWidget';
 import HoneypotField from '@/components/HoneypotField';
 import BehavioralTracker from '@/components/BehavioralTracker';
@@ -524,7 +527,7 @@ const Booking: React.FC = () => {
     }
     const name = formData.fullName.trim();
     const phoneNorm = normalizePhoneNumber(formData.phone);
-    if (name.length < 2 || !/^[6-9]\d{9}$/.test(phoneNorm)) {
+    if (name.length < 2 || !/^[6-9]\d{9}$/.test(phoneNorm) || !altchaLoginToken) {
       if (websiteIntentTimerRef.current) {
         clearTimeout(websiteIntentTimerRef.current);
         websiteIntentTimerRef.current = null;
@@ -551,7 +554,11 @@ const Booking: React.FC = () => {
       ) {
         return;
       }
-      void db.websiteBookingIntent.pushLive(payload).then(({ error }) => {
+      const altchaCtx: BookingAltchaContext = {
+        altchaLoginToken,
+        altchaPayload: altchaPayload || undefined,
+      };
+      void pushWebsiteBookingIntent(payload, altchaCtx).then(({ error }) => {
         if (!error) {
           websiteIntentLastSentRef.current = {
             full_name: payload.full_name,
@@ -575,6 +582,8 @@ const Booking: React.FC = () => {
     showConfirmation,
     showSuccessLoader,
     isSubmitting,
+    altchaLoginToken,
+    altchaPayload,
   ]);
 
   const handleInputChange = (field: keyof FormData, value: any) => {
@@ -1713,11 +1722,18 @@ const Booking: React.FC = () => {
         const phoneNorm = normalizePhoneNumber(formData.phone);
         const jobNumber = (job as any)?.job_number || (job as any)?.jobNumber;
         if (phoneNorm && jobNumber) {
-          void db.websiteBookingIntent.markBooked({
-            phone_normalized: phoneNorm,
-            site_key: WEBSITE_BOOKING_SITE_KEY,
-            job_number: String(jobNumber),
-          });
+          void markWebsiteBookingIntentBooked(
+            {
+              phone_normalized: phoneNorm,
+              site_key: WEBSITE_BOOKING_SITE_KEY,
+              job_number: String(jobNumber),
+              phone: formData.phone,
+            },
+            {
+              altchaLoginToken,
+              altchaPayload: altchaPayload || undefined,
+            }
+          );
         }
       } catch {
         // ignore
@@ -2734,9 +2750,16 @@ const Booking: React.FC = () => {
               </div>
             </div>
             
-            {/* Background ALTCHA verification - runs silently in background (hidden) */}
-            {currentStep === 5 && !isCaptchaVerified && !backgroundVerificationFailed && (
-              <AltchaWidget 
+            {/* Background ALTCHA — starts once name+phone are valid (live intent + submit) */}
+            {!showConfirmation &&
+              !showSuccessLoader &&
+              !isSubmitting &&
+              formData.fullName.trim().length >= 2 &&
+              /^[6-9]\d{9}$/.test(normalizePhoneNumber(formData.phone)) &&
+              !isCaptchaVerified &&
+              !backgroundVerificationFailed && (
+              <AltchaWidget
+                tokenPurpose="booking"
                 onVerify={(verified, payload, loginToken) => {
                   setIsCaptchaVerified(verified);
                   if (payload) setAltchaPayload(payload);
@@ -2744,8 +2767,7 @@ const Booking: React.FC = () => {
                   if (verified) {
                     setShowSecurityStep(false);
                     setBackgroundVerificationFailed(false);
-                  } else {
-                    // Background verification failed, show manual widget
+                  } else if (currentStep === 5) {
                     setBackgroundVerificationFailed(true);
                     setShowSecurityStep(true);
                   }
@@ -2763,7 +2785,8 @@ const Booking: React.FC = () => {
                   <p className="text-sm text-muted-foreground">Please complete the security check to submit your booking</p>
                 </div>
                 <div className="max-w-md mx-auto">
-                  <AltchaWidget 
+                  <AltchaWidget
+                    tokenPurpose="booking"
                     onVerify={(verified, payload, loginToken) => {
                       setIsCaptchaVerified(verified);
                       if (payload) setAltchaPayload(payload);

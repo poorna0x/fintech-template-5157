@@ -33,6 +33,8 @@ interface AltchaWidgetProps {
   autoStart?: boolean; // If false, requires manual activation
   buttonText?: string; // For backward compatibility (not used with official widget)
   hidden?: boolean; // Run in background
+  /** Longer-lived login token for multi-step public booking flows */
+  tokenPurpose?: 'booking' | 'login';
 }
 
 const AltchaWidget: React.FC<AltchaWidgetProps> = ({
@@ -41,6 +43,7 @@ const AltchaWidget: React.FC<AltchaWidgetProps> = ({
   className = '',
   autoStart = true,
   hidden = false,
+  tokenPurpose = 'login',
 }) => {
   const widgetRef = useRef<HTMLElement | null>(null);
   const [isLoading, setIsLoading] = useState(false);
@@ -78,7 +81,7 @@ const AltchaWidget: React.FC<AltchaWidgetProps> = ({
       return;
     }
 
-    // Same-origin path: Vite proxies /.netlify/functions → localhost:8888 (vite.config.ts).
+    // Same-origin path: Vite dev server proxies /.netlify/functions in development only.
     // Direct http://…:8888 breaks when only Vite runs, or from LAN when :8888 isn’t reachable.
     const apiUrl = '/.netlify/functions/altcha-verify';
 
@@ -241,7 +244,10 @@ const AltchaWidget: React.FC<AltchaWidgetProps> = ({
           response = await fetch(apiUrl, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ payload }),
+            body: JSON.stringify({
+              payload,
+              ...(tokenPurpose === 'booking' ? { purpose: 'booking' } : {}),
+            }),
             signal: controller.signal,
           });
           clearTimeout(timeoutId);

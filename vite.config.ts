@@ -3,6 +3,7 @@ import react from "@vitejs/plugin-react-swc";
 import path from "path";
 import { componentTagger } from "lovable-tagger";
 import { securityCspPlugin } from "./scripts/vite-plugin-security-csp.mjs";
+import { manualChunks } from "./vite.config.chunks";
 
 // https://vitejs.dev/config/
 export default defineConfig(({ mode }) => ({
@@ -45,6 +46,7 @@ export default defineConfig(({ mode }) => ({
     alias: {
       "@": path.resolve(__dirname, "./src"),
     },
+    dedupe: ["react", "react-dom"],
   },
   build: {
     // Optimize bundle size
@@ -63,78 +65,8 @@ export default defineConfig(({ mode }) => ({
     // Code splitting for better performance
     rollupOptions: {
       output: {
-        manualChunks: {
-          // Vendor chunks (split so unused code loads only when route needs it)
-          'react-vendor': ['react', 'react-dom'],
-          'router-vendor': ['react-router-dom'],
-          'mui-vendor': [
-            '@mui/material',
-            '@mui/x-date-pickers',
-            '@emotion/react',
-            '@emotion/styled',
-            'dayjs',
-          ],
-          'ui-vendor': [
-            '@radix-ui/react-dialog',
-            '@radix-ui/react-select',
-            '@radix-ui/react-toast',
-            '@radix-ui/react-dropdown-menu',
-            '@radix-ui/react-popover',
-            '@radix-ui/react-tabs',
-            '@radix-ui/react-accordion',
-            '@radix-ui/react-alert-dialog',
-            '@radix-ui/react-avatar',
-            '@radix-ui/react-checkbox',
-            '@radix-ui/react-label',
-            '@radix-ui/react-separator',
-            '@radix-ui/react-switch',
-            '@radix-ui/react-tooltip',
-            '@radix-ui/react-slot',
-            '@radix-ui/react-scroll-area',
-            '@radix-ui/react-progress',
-            '@radix-ui/react-radio-group',
-            '@radix-ui/react-slider',
-            '@radix-ui/react-toggle',
-            '@radix-ui/react-toggle-group',
-            '@radix-ui/react-hover-card',
-            '@radix-ui/react-navigation-menu',
-            '@radix-ui/react-menubar',
-            '@radix-ui/react-context-menu',
-            '@radix-ui/react-collapsible',
-            '@radix-ui/react-aspect-ratio',
-          ],
-          'form-vendor': [
-            'react-hook-form',
-            '@hookform/resolvers',
-            'zod',
-            'input-otp',
-          ],
-          'supabase-vendor': [
-            '@supabase/supabase-js',
-            '@supabase/auth-helpers-react',
-            '@supabase/ssr',
-          ],
-          'charts-vendor': ['recharts'],
-          'utils-vendor': [
-            'clsx',
-            'tailwind-merge',
-            'class-variance-authority',
-            'date-fns',
-            'lucide-react',
-            'sonner',
-            'cmdk',
-            'vaul',
-            'embla-carousel-react',
-            'react-resizable-panels',
-            'next-themes',
-            'i18next',
-            'i18next-browser-languagedetector',
-            'react-i18next',
-            'react-day-picker',
-            'cloudinary-react',
-            '@tanstack/react-query',
-          ],
-        },
+        manualChunks,
+        chunkFileNames: 'assets/[name]-[hash].js',
       },
     },
     // Optimize chunk size

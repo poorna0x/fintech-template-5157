@@ -1,16 +1,12 @@
 // Security headers helper for Netlify functions
 // Provides common security headers to prevent various attacks
 
-// geolocation/camera=(self): booking + technician flows; all other sensitive APIs denied
+// geolocation/camera=(self): booking + technician flows; omit deprecated/unrecognized features
 const PERMISSIONS_POLICY =
-  'accelerometer=(), ambient-light-sensor=(), autoplay=(), battery=(), bluetooth=(), ' +
-  'camera=(self), clipboard-read=(), clipboard-write=(self), compute-pressure=(), ' +
-  'display-capture=(), encrypted-media=(), fullscreen=(self), gamepad=(), geolocation=(self), ' +
-  'gyroscope=(), hid=(), identity-credentials-get=(), idle-detection=(), local-fonts=(), ' +
-  'magnetometer=(), microphone=(), midi=(), otp-credentials=(), payment=(), ' +
-  'picture-in-picture=(), publickey-credentials-create=(), publickey-credentials-get=(), ' +
-  'screen-wake-lock=(), serial=(), speaker-selection=(), sync-xhr=(), usb=(), web-share=(), ' +
-  'window-management=(), xr-spatial-tracking=()';
+  'accelerometer=(), autoplay=(), bluetooth=(), camera=(self), clipboard-read=(), ' +
+  'clipboard-write=(self), display-capture=(), encrypted-media=(), fullscreen=(self), ' +
+  'geolocation=(self), gyroscope=(), microphone=(), midi=(), payment=(), picture-in-picture=(), ' +
+  'publickey-credentials-create=(), publickey-credentials-get=(), usb=(), web-share=()';
 
 /**
  * Get security headers for responses

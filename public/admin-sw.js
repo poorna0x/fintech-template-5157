@@ -1,42 +1,38 @@
-const STATIC_CACHE = 'admin-static-v2';
-const RUNTIME_CACHE = 'admin-runtime-v2';
+const STATIC_CACHE = 'admin-static-v4';
+const RUNTIME_CACHE = 'admin-runtime-v4';
 const OFFLINE_FALLBACK = '/admin';
 
-const PRECACHE_URLS = [
-  '/',
-  '/admin',
-  '/settings'
-];
+const PRECACHE_URLS = ['/', '/admin', '/settings'];
 
 self.addEventListener('install', (event) => {
   event.waitUntil(
-    caches.open(STATIC_CACHE)
-      .then((cache) => cache.addAll(PRECACHE_URLS))
-      .then(() => {
-        // Don't automatically skip waiting - wait for user to close all tabs
-        // This prevents automatic page refresh
-        console.log('[Admin PWA] Service worker installed, waiting for activation');
-      })
-      .catch((error) => {
-        console.error('[Admin PWA] Install failed:', error);
-      })
+    caches.open(STATIC_CACHE).then(async (cache) => {
+      await Promise.all(
+        PRECACHE_URLS.map((url) =>
+          cache.add(url).catch((err) => {
+            console.warn('[Admin PWA] Precache skipped:', url, err);
+          })
+        )
+      );
+      console.log('[Admin PWA] Service worker installed, waiting for activation');
+    })
   );
-  // Don't call skipWaiting() to prevent automatic refresh
 });
 
 self.addEventListener('activate', (event) => {
   event.waitUntil(
-    caches.keys().then((keys) =>
-      Promise.all(
-        keys
-          .filter((key) => key !== STATIC_CACHE && key !== RUNTIME_CACHE)
-          .map((key) => caches.delete(key))
+    caches
+      .keys()
+      .then((keys) =>
+        Promise.all(
+          keys
+            .filter((key) => key !== STATIC_CACHE && key !== RUNTIME_CACHE)
+            .map((key) => caches.delete(key))
+        )
       )
-    ).then(() => {
-      // Don't automatically claim clients - this prevents automatic refresh
-      // The service worker will activate when all tabs are closed
-      console.log('[Admin PWA] Service worker activated');
-    })
+      .then(() => {
+        console.log('[Admin PWA] Service worker activated');
+      })
   );
 });
 
@@ -49,12 +45,9 @@ self.addEventListener('fetch', (event) => {
 
   const url = new URL(request.url);
   const isSameOrigin = url.origin === self.location.origin;
-  const adminPaths = ['/admin', '/settings'];
+  const adminPaths = ['/admin', '/settings', '/calling'];
   const isAdminPath = adminPaths.some((path) => url.pathname.startsWith(path));
 
-  // Do not intercept Google Maps / Google CDNs — SW timeout + 503 JSON breaks scripts, tiles,
-  // Distance Matrix, Places, and XHRs that match isAPIRequest. Bypass all *.googleapis.com,
-  // *.gstatic.com, and *.google.com (tile servers e.g. mt0.google.com).
   const h = url.hostname;
   if (
     h.endsWith('.googleapis.com') ||
@@ -65,9 +58,9 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
-  // NEVER cache API requests - always fetch from network
-  const isAPIRequest = 
+  const isAPIRequest =
     url.pathname.includes('/api/') ||
+    url.pathname.includes('/.netlify/functions/') ||
     url.hostname.includes('supabase.co') ||
     url.hostname.includes('cloudinary.com') ||
     url.hostname.includes('bigdatacloud.net') ||
@@ -75,7 +68,6 @@ self.addEventListener('fetch', (event) => {
     url.hostname.includes('nominatim.openstreetmap.org') ||
     request.headers.get('X-Requested-With') === 'XMLHttpRequest';
 
-  // Never intercept API/auth requests — SW fetch + synthetic 503 breaks Supabase in PWA
   if (isAPIRequest) {
     return;
   }
@@ -84,12 +76,11 @@ self.addEventListener('fetch', (event) => {
     event.respondWith(
       Promise.race([
         fetch(request),
-        new Promise((_, reject) => 
+        new Promise((_, reject) =>
           setTimeout(() => reject(new Error('Request timeout')), 10000)
-        )
+        ),
       ])
         .then((response) => {
-          // Only cache successful HTML responses
           if (response.ok && response.headers.get('content-type')?.includes('text/html')) {
             const copy = response.clone();
             caches.open(RUNTIME_CACHE).then((cache) => cache.put(request, copy));
@@ -102,7 +93,8 @@ self.addEventListener('fetch', (event) => {
             return cachedResponse;
           }
           if (isAdminPath) {
-            const offlineResponse = await caches.match(OFFLINE_FALLBACK);
+            const offlineResponse =
+              await caches.match(OFFLINE_FALLBACK);
             if (offlineResponse) {
               return offlineResponse;
             }
@@ -117,12 +109,11 @@ self.addEventListener('fetch', (event) => {
     event.respondWith(
       Promise.race([
         fetch(request),
-        new Promise((_, reject) => 
+        new Promise((_, reject) =>
           setTimeout(() => reject(new Error('Request timeout')), 10000)
-        )
+        ),
       ])
         .then((response) => {
-          // Only cache successful responses
           if (response.ok) {
             const copy = response.clone();
             caches.open(RUNTIME_CACHE).then((cache) => cache.put(request, copy));
@@ -136,5 +127,3 @@ self.addEventListener('fetch', (event) => {
     );
   }
 });
-
-

@@ -4,7 +4,6 @@ import { useAuth } from '@/contexts/AuthContext';
 import { ensureAdminSupabaseSession } from '@/lib/auth';
 import AdminHeader from '@/components/AdminHeader';
 import { WebsiteBookingIntentBanner } from '@/components/admin/WebsiteBookingIntentBanner';
-import AdminLogin from '@/components/AdminLogin';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { DatePicker } from '@/components/ui/date-picker';
@@ -8732,19 +8731,7 @@ const AdminDashboard = () => {
   const isDashboardBootstrapping =
     Boolean(user && isAdmin) && (loading || isInitialLoad);
 
-  // Authentication checks - these can be conditional returns since all hooks are declared above
-  if (authInitializing && !maxWaitReached) {
-    return <AdminScreenLoader message="Checking authentication..." />;
-  }
-
-  if (!user && !authInitializing && !waitingForAuth) {
-    return <AdminLogin />;
-  }
-
-  if (!user && !authInitializing && waitingForAuth) {
-    return <AdminScreenLoader message="Completing login..." />;
-  }
-
+  // Auth gate handled by AdminPortal — dashboard mounts only when user is admin
   if (isDashboardBootstrapping) {
     return <AdminScreenLoader message="Loading dashboard..." />;
   }

@@ -10,6 +10,7 @@ const {
   recordLoginFailure,
   recordLoginSuccess,
 } = require('./auth-lockout');
+const { signPortalCookie, cookieHeader } = require('./portal-session');
 
 const GENERIC_AUTH_ERROR = 'Invalid email or password';
 
@@ -278,9 +279,17 @@ exports.handler = async (event) => {
   await recordLoginSuccess(admin, normalizedEmail);
   consumeLoginToken(tokenCheck.consumeKey, tokenCheck.exp);
 
+  const portalRole = isTechnician ? 'technician' : 'admin';
+  const cookieMaxAge = Math.min(Math.max(Number(session.expires_in) || 43200, 300), 60 * 60 * 24 * 7);
+  const portalCookie = signPortalCookie(portalRole, cookieMaxAge);
+
   return {
     statusCode: 200,
-    headers: addSecurityHeaders({ ...corsHeaders, 'Content-Type': 'application/json' }),
+    headers: addSecurityHeaders({
+      ...corsHeaders,
+      'Content-Type': 'application/json',
+      'Set-Cookie': cookieHeader(portalCookie, cookieMaxAge),
+    }),
     body: JSON.stringify({
       access_token: session.access_token,
       refresh_token: session.refresh_token,

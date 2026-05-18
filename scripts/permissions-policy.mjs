@@ -1,0 +1,22 @@
+/** Permissions-Policy for Netlify headers (omit features Chrome flags as unrecognized). */
+export const PERMISSIONS_POLICY = [
+  'accelerometer=()',
+  'autoplay=()',
+  'bluetooth=()',
+  'camera=(self)',
+  'clipboard-read=()',
+  'clipboard-write=(self)',
+  'display-capture=()',
+  'encrypted-media=()',
+  'fullscreen=(self)',
+  'geolocation=(self)',
+  'gyroscope=()',
+  'microphone=()',
+  'midi=()',
+  'payment=()',
+  'picture-in-picture=()',
+  'publickey-credentials-create=()',
+  'publickey-credentials-get=()',
+  'usb=()',
+  'web-share=()',
+].join(', ');

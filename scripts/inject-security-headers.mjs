@@ -4,6 +4,7 @@ import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { PRODUCTION_CSP } from './csp-config.mjs';
+import { PERMISSIONS_POLICY } from './permissions-policy.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const distDir = path.join(__dirname, '..', 'dist');
@@ -15,7 +16,7 @@ const block = `
   X-Frame-Options: DENY
   X-Content-Type-Options: nosniff
   Referrer-Policy: strict-origin-when-cross-origin
-  Permissions-Policy: accelerometer=(), ambient-light-sensor=(), autoplay=(), battery=(), bluetooth=(), camera=(self), clipboard-read=(), clipboard-write=(self), compute-pressure=(), display-capture=(), encrypted-media=(), fullscreen=(self), gamepad=(), geolocation=(self), gyroscope=(), hid=(), identity-credentials-get=(), idle-detection=(), local-fonts=(), magnetometer=(), microphone=(), midi=(), otp-credentials=(), payment=(), picture-in-picture=(), publickey-credentials-create=(), publickey-credentials-get=(), screen-wake-lock=(), serial=(), speaker-selection=(), sync-xhr=(), usb=(), web-share=(), window-management=(), xr-spatial-tracking=()
+  Permissions-Policy: ${PERMISSIONS_POLICY}
   Strict-Transport-Security: max-age=31536000; includeSubDomains; preload
 `;
 
@@ -32,4 +33,24 @@ if (fs.existsSync(headersPath)) {
 if (!existing.includes('Content-Security-Policy')) {
   fs.writeFileSync(headersPath, existing.trimEnd() + block);
   console.log('[inject-security-headers] wrote dist/_headers with CSP');
+}
+
+// Fail production build if dev URLs leaked into bundle
+const assetDir = path.join(distDir, 'assets');
+if (fs.existsSync(assetDir)) {
+  const indexJs = fs
+    .readdirSync(assetDir)
+    .filter((f) => /^index-.*\.js$/.test(f))
+    .map((f) => path.join(assetDir, f))[0];
+  if (indexJs) {
+    const js = fs.readFileSync(indexJs, 'utf8');
+    if (/localhost:8888|127\.0\.0\.1:8888/.test(js)) {
+      console.error('[inject-security-headers] FAIL: dev localhost URLs found in', path.basename(indexJs));
+      process.exit(1);
+    }
+    if (/connect-src[^;]*localhost/.test(js)) {
+      console.error('[inject-security-headers] FAIL: localhost in embedded CSP meta — use HTTP header only in prod');
+      process.exit(1);
+    }
+  }
 }

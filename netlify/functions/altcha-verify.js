@@ -133,12 +133,14 @@ async function handlePost(event, corsHeaders) {
   try {
     // Parse request body
     let payload;
+    let tokenPurpose;
     const rawBody = event.body || '';
     
-    // Try to parse as JSON first (we're sending { payload: "..." })
+    // Try to parse as JSON first (we're sending { payload: "...", purpose?: "booking" })
     try {
       const body = JSON.parse(rawBody);
       payload = body.payload;
+      tokenPurpose = body.purpose === 'booking' ? 'booking' : undefined;
     } catch (e) {
       // If not JSON, assume it's the payload string directly
       payload = rawBody;
@@ -286,7 +288,7 @@ async function handlePost(event, corsHeaders) {
       const loginToken =
         process.env.CONTEXT === 'production' && altchaIsPlaceholder()
           ? undefined
-          : createLoginToken(payload);
+          : createLoginToken(payload, { purpose: tokenPurpose });
 
       return {
         statusCode: 200,

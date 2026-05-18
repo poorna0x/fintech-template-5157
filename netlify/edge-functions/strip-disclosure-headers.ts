@@ -1,11 +1,16 @@
 import type { Config, Context } from '@netlify/edge-functions';
 
-/** Strip platform fingerprint headers (scanner: Server / X-Powered-By disclosure). */
+/** Strip platform fingerprint headers where Edge can remove them (Netlify may re-add Server). */
 const HEADERS_TO_STRIP = [
   'server',
   'x-powered-by',
   'x-aspnet-version',
   'x-aspnetmvc-version',
+  'x-nf-request-id',
+  'x-nf-geo',
+  'x-nf-cache-status',
+  'cache-status',
+  'via',
 ];
 
 export default async (_request: Request, context: Context) => {

@@ -8,7 +8,7 @@ import React, {
   useCallback,
 } from 'react';
 import { toast } from 'sonner';
-import { supabase } from '@/lib/supabase';
+import { supabase } from '@/lib/supabaseClient';
 import {
   setAuthSession,
   getAuthSession,
@@ -26,6 +26,7 @@ import {
 } from '@/lib/authPortal';
 import { isPWAMode } from '@/lib/pwa';
 import { formatWelcomeDisplayName } from '@/lib/welcomeDisplayName';
+import { syncPortalSessionCookie } from '@/lib/syncPortalSession';
 import type { Session } from '@supabase/supabase-js';
 
 export interface User {
@@ -109,6 +110,9 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       setAuthSession(nextUser);
     } else {
       clearAuthSession();
+    }
+    if (portal !== 'public') {
+      void syncPortalSessionCookie();
     }
   }, []);
 
@@ -386,6 +390,15 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         console.warn('Supabase local signOut:', error);
       }
       purgeSupabaseAuthStorage();
+
+      try {
+        await fetch('/.netlify/functions/clear-portal-session', {
+          method: 'POST',
+          credentials: 'include',
+        });
+      } catch {
+        /* non-blocking */
+      }
 
       try {
         const signOutPromise = supabase.auth.signOut();

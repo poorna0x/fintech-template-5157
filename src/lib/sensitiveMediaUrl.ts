@@ -1,4 +1,4 @@
-import { supabase } from '@/lib/supabase';
+import { supabase } from '@/lib/supabaseClient';
 
 const PRIMARY_CLOUD = import.meta.env.VITE_CLOUDINARY_CLOUD_NAME || '';
 const SECONDARY_CLOUD = import.meta.env.VITE_CLOUDINARY_SECONDARY_CLOUD_NAME || '';

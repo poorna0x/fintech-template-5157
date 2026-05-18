@@ -27,6 +27,7 @@ try {
 
 const HMAC_KEY = process.env.ALTCHA_HMAC_KEY || 'PLACEHOLDER-DO-NOT-USE-IN-PRODUCTION-GENERATE-REAL-KEY';
 const LOGIN_TOKEN_TTL_MS = 5 * 60 * 1000;
+const BOOKING_LOGIN_TOKEN_TTL_MS = 30 * 60 * 1000;
 const usedLoginTokens = new Map();
 
 setInterval(() => {
@@ -45,8 +46,10 @@ function hashPayload(payload) {
 }
 
 /** Issue a one-time login token after ALTCHA payload is verified. */
-function createLoginToken(payload) {
-  const exp = Date.now() + LOGIN_TOKEN_TTL_MS;
+function createLoginToken(payload, options = {}) {
+  const ttlMs =
+    options.purpose === 'booking' ? BOOKING_LOGIN_TOKEN_TTL_MS : LOGIN_TOKEN_TTL_MS;
+  const exp = Date.now() + ttlMs;
   const data = JSON.stringify({ h: hashPayload(payload), exp });
   const sig = crypto.createHmac('sha256', HMAC_KEY).update(data).digest('hex');
   return Buffer.from(JSON.stringify({ data, sig })).toString('base64url');

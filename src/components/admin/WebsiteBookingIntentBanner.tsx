@@ -34,9 +34,10 @@ const STEP_LABEL: Record<number, string> = {
 
 function mergeRow(rows: Row[], raw: Record<string, unknown>): Row[] {
   const dismissed = raw.dismissed_at != null && raw.dismissed_at !== '';
+  const quarantined = raw.quarantined === true;
   const id = raw.id as string | undefined;
   if (!id) return rows;
-  if (dismissed) return rows.filter((r) => r.id !== id);
+  if (dismissed || quarantined) return rows.filter((r) => r.id !== id);
 
   const full_name = raw.full_name as string | undefined;
   const phone = raw.phone as string | undefined;

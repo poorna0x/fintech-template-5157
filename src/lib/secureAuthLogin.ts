@@ -34,6 +34,7 @@ export async function secureAuthLogin(
     const res = await fetch('/.netlify/functions/secure-auth-login', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
+      credentials: 'include',
       body: JSON.stringify({
         email,
         password,
