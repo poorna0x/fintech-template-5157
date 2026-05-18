@@ -267,6 +267,4 @@ REVOKE ALL ON FUNCTION public.get_customer_by_phone_for_booking(text) FROM PUBLI
 REVOKE ALL ON FUNCTION public.create_customer_for_booking(jsonb) FROM PUBLIC;
 REVOKE ALL ON FUNCTION public.update_customer_for_booking(uuid, text, jsonb) FROM PUBLIC;
 
--- get_customer_by_phone_for_booking: service_role only (see scripts/secure-booking-customer-lookup.sql)
-GRANT EXECUTE ON FUNCTION public.create_customer_for_booking(jsonb) TO anon, authenticated;
-GRANT EXECUTE ON FUNCTION public.update_customer_for_booking(uuid, text, jsonb) TO anon, authenticated;
+-- Booking RPCs: service_role only (see scripts/secure-booking-customer-lookup.sql, secure-booking-customer-mutate.sql)

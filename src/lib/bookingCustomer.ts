@@ -1,8 +1,9 @@
-import { supabase } from '@/lib/supabase';
-
-export interface BookingCustomerLookupOptions {
+export interface BookingAltchaContext {
   altchaLoginToken: string;
   altchaPayload?: string;
+}
+
+export interface BookingCustomerLookupOptions extends BookingAltchaContext {
   lat?: number;
   lng?: number;
 }
@@ -13,75 +14,96 @@ export interface BookingCustomerLookupResult {
   keepPreviousLocation?: boolean;
 }
 
-/** Public /book — ALTCHA-gated proxy; never calls Supabase RPC with anon key. */
-export async function getBookingCustomerByPhone(
-  phone: string,
-  options: BookingCustomerLookupOptions
-) {
+async function bookingFetch(
+  path: string,
+  body: Record<string, unknown>
+): Promise<{ data: unknown; error: { message: string } | null }> {
   const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), 25_000);
+  const timeoutId = setTimeout(() => controller.abort(), 30_000);
 
   try {
-    const res = await fetch('/.netlify/functions/booking-customer-lookup', {
+    const res = await fetch(`/.netlify/functions/${path}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        phone,
-        altchaLoginToken: options.altchaLoginToken,
-        altchaPayload: options.altchaPayload,
-        lat: options.lat,
-        lng: options.lng,
-      }),
+      body: JSON.stringify(body),
       signal: controller.signal,
     });
 
-    const data = await res.json().catch(() => ({}));
+    const json = await res.json().catch(() => ({}));
 
     if (!res.ok) {
       return {
         data: null,
-        error: { message: data.error || data.message || `HTTP ${res.status}` },
+        error: { message: json.error || json.message || `HTTP ${res.status}` },
       };
     }
 
-    if (!data.found) {
-      return { data: null, error: null };
-    }
-
-    const row: BookingCustomerLookupResult = {
-      id: data.id,
-      keepPreviousLocation: data.keepPreviousLocation === true,
-    };
-    return { data: row, error: null };
+    return { data: json.data ?? json, error: null };
   } catch (e) {
     const msg =
       e instanceof Error && e.name === 'AbortError'
         ? 'Request timed out — check your connection'
         : e instanceof Error
           ? e.message
-          : 'Lookup failed';
+          : 'Request failed';
     return { data: null, error: { message: msg } };
   } finally {
     clearTimeout(timeoutId);
   }
 }
 
-export async function createBookingCustomer(row: Record<string, unknown>) {
-  const { data, error } = await supabase.rpc('create_customer_for_booking', {
-    p_row: row,
+/** Public /book — ALTCHA-gated proxy; never calls Supabase RPC with anon key. */
+export async function getBookingCustomerByPhone(
+  phone: string,
+  options: BookingCustomerLookupOptions
+) {
+  const res = await bookingFetch('booking-customer-lookup', {
+    phone,
+    altchaLoginToken: options.altchaLoginToken,
+    altchaPayload: options.altchaPayload,
+    lat: options.lat,
+    lng: options.lng,
   });
-  return { data: data ?? null, error };
+
+  if (res.error) return { data: null, error: res.error };
+
+  const payload = res.data as { found?: boolean; id?: string; keepPreviousLocation?: boolean } | null;
+  if (!payload?.found) {
+    return { data: null, error: null };
+  }
+
+  const row: BookingCustomerLookupResult = {
+    id: payload.id as string,
+    keepPreviousLocation: payload.keepPreviousLocation === true,
+  };
+  return { data: row, error: null };
+}
+
+export async function createBookingCustomer(
+  row: Record<string, unknown>,
+  ctx: BookingAltchaContext
+) {
+  return bookingFetch('booking-customer-mutate', {
+    action: 'create',
+    phone: row.phone,
+    row,
+    altchaLoginToken: ctx.altchaLoginToken,
+    altchaPayload: ctx.altchaPayload,
+  });
 }
 
 export async function updateBookingCustomer(
   customerId: string,
   phone: string,
-  updates: Record<string, unknown>
+  updates: Record<string, unknown>,
+  ctx: BookingAltchaContext
 ) {
-  const { data, error } = await supabase.rpc('update_customer_for_booking', {
-    p_customer_id: customerId,
-    p_phone: phone,
-    p_updates: updates,
+  return bookingFetch('booking-customer-mutate', {
+    action: 'update',
+    phone,
+    customerId,
+    updates,
+    altchaLoginToken: ctx.altchaLoginToken,
+    altchaPayload: ctx.altchaPayload,
   });
-  return { data: data ?? null, error };
 }

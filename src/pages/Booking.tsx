@@ -19,7 +19,9 @@ import {
   createBookingCustomer,
   getBookingCustomerByPhone,
   updateBookingCustomer,
+  type BookingAltchaContext,
 } from '@/lib/bookingCustomer';
+import { createBookingJob } from '@/lib/bookingJob';
 import { cloudinaryService, compressImage } from '@/lib/cloudinary';
 import { emailService } from '@/lib/email';
 import { isIOS, isPWA, shouldUseFileInputFallback, requestCameraAccess, createVideoElement } from '@/lib/cameraUtils';
@@ -1365,11 +1367,15 @@ const Booking: React.FC = () => {
       if (!altchaLoginToken) {
         throw new Error('Security verification expired. Please complete the check on step 5 and try again.');
       }
+
+      const altchaCtx: BookingAltchaContext = {
+        altchaLoginToken,
+        altchaPayload: altchaPayload || undefined,
+      };
       
       try {
         const result = await getBookingCustomerByPhone(formData.phone, {
-          altchaLoginToken,
-          altchaPayload: altchaPayload || undefined,
+          ...altchaCtx,
           lat: formData.coordinates?.lat,
           lng: formData.coordinates?.lng,
         });
@@ -1452,7 +1458,8 @@ const Booking: React.FC = () => {
           const result = await updateBookingCustomer(
             (existingCustomer as any).id,
             formData.phone,
-            updateData
+            updateData,
+            altchaCtx
           );
           updatedCustomer = result.data;
           updateError = result.error;
@@ -1543,7 +1550,7 @@ const Booking: React.FC = () => {
         let customerError = null;
         
         try {
-          const result = await createBookingCustomer(customerData);
+          const result = await createBookingCustomer(customerData, altchaCtx);
           newCustomer = result.data;
           customerError = result.error;
         } catch (networkError: any) {
@@ -1680,7 +1687,7 @@ const Booking: React.FC = () => {
       let job: any = null;
       let jobError: any = null;
       for (let attempt = 0; attempt < 2; attempt++) {
-        const result = await db.jobs.create(jobData as any, 0, formData.phone);
+        const result = await createBookingJob(formData.phone, jobData as Record<string, unknown>, altchaCtx);
         job = result.data;
         jobError = result.error;
         if (!jobError) break;

@@ -11,3 +11,5 @@ REVOKE EXECUTE ON FUNCTION public.get_customer_by_phone_for_booking(text) FROM a
 
 -- Internal / Netlify service_role only
 GRANT EXECUTE ON FUNCTION public.get_customer_by_phone_for_booking(text) TO service_role;
+
+

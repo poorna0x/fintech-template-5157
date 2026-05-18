@@ -1,10 +1,48 @@
-import { supabase } from '@/lib/supabase';
+import type { BookingAltchaContext } from '@/lib/bookingCustomer';
 
-/** Public /book flow — SECURITY DEFINER RPC (no direct jobs table for anon). */
-export async function createBookingJob(phone: string, row: Record<string, unknown>) {
-  const { data, error } = await supabase.rpc('create_job_for_booking', {
-    p_phone: phone,
-    p_row: row,
-  });
-  return { data: data ?? null, error };
+/** Public /book flow — ALTCHA-gated proxy (no direct jobs RPC for anon). */
+export async function createBookingJob(
+  phone: string,
+  row: Record<string, unknown>,
+  ctx: BookingAltchaContext,
+  options?: { consumeToken?: boolean }
+) {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 30_000);
+
+  try {
+    const res = await fetch('/.netlify/functions/booking-job-create', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        phone,
+        row,
+        altchaLoginToken: ctx.altchaLoginToken,
+        altchaPayload: ctx.altchaPayload,
+        consumeToken: options?.consumeToken !== false,
+      }),
+      signal: controller.signal,
+    });
+
+    const json = await res.json().catch(() => ({}));
+
+    if (!res.ok) {
+      return {
+        data: null,
+        error: { message: json.error || json.message || `HTTP ${res.status}` },
+      };
+    }
+
+    return { data: json.data ?? null, error: null };
+  } catch (e) {
+    const msg =
+      e instanceof Error && e.name === 'AbortError'
+        ? 'Request timed out — check your connection'
+        : e instanceof Error
+          ? e.message
+          : 'Request failed';
+    return { data: null, error: { message: msg } };
+  } finally {
+    clearTimeout(timeoutId);
+  }
 }
