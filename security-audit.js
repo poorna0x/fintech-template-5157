@@ -244,8 +244,8 @@ async function testSecurity() {
     const securityHeaders = {
       'x-content-type-options': 'nosniff',
       'x-frame-options': 'DENY',
-      'x-xss-protection': '1; mode=block'
     };
+    const deprecatedHeaders = ['x-xss-protection'];
     
     let headersFound = 0;
     for (const [header, expected] of Object.entries(securityHeaders)) {
@@ -253,10 +253,18 @@ async function testSecurity() {
         headersFound++;
       }
     }
+
+    const deprecatedPresent = deprecatedHeaders.filter((h) => headers[h]);
+    if (deprecatedPresent.length > 0) {
+      results.warnings.push(
+        `Security Headers: deprecated header(s) present: ${deprecatedPresent.join(', ')}`
+      );
+      console.log(`   ⚠️  Deprecated headers: ${deprecatedPresent.join(', ')}`);
+    }
     
-    if (headersFound > 0) {
+    if (headersFound >= Object.keys(securityHeaders).length) {
       results.passed.push(`Security Headers: ${headersFound} headers present`);
-      console.log(`   ✅ ${headersFound} security headers present`);
+      console.log(`   ✅ ${headersFound} security headers present (CSP via index.html)`);
     } else {
       results.warnings.push('Security Headers: Not all headers present');
       console.log('   ⚠️  Some security headers may be missing');

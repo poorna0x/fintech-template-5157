@@ -24,9 +24,6 @@ function getSecurityHeaders() {
     // Prevent clickjacking attacks
     'X-Frame-Options': 'DENY',
     
-    // Enable XSS protection in older browsers
-    'X-XSS-Protection': '1; mode=block',
-    
     // Referrer policy (don't leak referrer information)
     'Referrer-Policy': 'strict-origin-when-cross-origin',
 

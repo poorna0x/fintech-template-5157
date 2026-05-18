@@ -250,8 +250,8 @@ async function testSecurity() {
     const securityHeaders = {
       'x-content-type-options': 'nosniff',
       'x-frame-options': 'DENY',
-      'x-xss-protection': '1; mode=block'
     };
+    const deprecatedHeaders = ['x-xss-protection'];
     
     let headersFound = 0;
     const foundHeaders = [];
@@ -263,12 +263,23 @@ async function testSecurity() {
         foundHeaders.push(header);
       }
     }
+
+    const deprecatedPresent = deprecatedHeaders.filter(
+      (h) => headers[h.toLowerCase()] || headers[h]
+    );
+    if (deprecatedPresent.length > 0) {
+      results.warnings.push(
+        `Security Headers: deprecated header(s) present: ${deprecatedPresent.join(', ')}`
+      );
+      console.log(`   ⚠️  Deprecated headers: ${deprecatedPresent.join(', ')}`);
+    }
     
-    if (headersFound >= 3) {
+    const required = Object.keys(securityHeaders).length;
+    if (headersFound >= required) {
       results.passed.push(`Security Headers: All ${headersFound} headers present`);
-      console.log(`   ✅ ${headersFound} security headers present: ${foundHeaders.join(', ')}`);
+      console.log(`   ✅ ${headersFound} security headers present: ${foundHeaders.join(', ')} (CSP via index.html)`);
     } else if (headersFound > 0) {
-      results.warnings.push(`Security Headers: Only ${headersFound} of 3 headers present`);
+      results.warnings.push(`Security Headers: Only ${headersFound} of ${required} headers present`);
       console.log(`   ⚠️  Only ${headersFound} security headers present: ${foundHeaders.join(', ')}`);
     } else {
       results.warnings.push('Security Headers: No headers detected');
