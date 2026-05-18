@@ -843,17 +843,16 @@ const TechnicianDashboard = () => {
       setAuthGraceExpired(false);
       return;
     }
-    const t = setTimeout(() => setAuthGraceExpired(true), isPWAMode() ? 12_000 : 6_000);
+    const t = setTimeout(() => setAuthGraceExpired(true), isPWAMode() ? 22_000 : 8_000);
     return () => clearTimeout(t);
   }, [authInitializing]);
 
   // Redirect if not technician (after auth finishes or grace timeout)
   useEffect(() => {
     if (authInitializing && !authGraceExpired) return;
-    if (!user || user.role !== 'technician') {
-      navigate('/technician/login', { replace: true });
-    }
-  }, [isTechnician, navigate, user, authInitializing, authGraceExpired]);
+    if (user?.role === 'technician') return;
+    navigate('/technician/login', { replace: true });
+  }, [navigate, user, authInitializing, authGraceExpired]);
 
   // Load assigned jobs and assignment requests
   useEffect(() => {

@@ -58,11 +58,19 @@ class ChromeCompatibleStorage implements StorageAdapter {
   getItem(key: string): string | null {
     try {
       if (this.isStorageAvailable) {
-        return localStorage.getItem(key);
+        const value = localStorage.getItem(key);
+        if (value !== null) return value;
       }
     } catch (error) {
       console.warn('[Storage] Error reading from localStorage:', error);
       this.isStorageAvailable = false;
+    }
+
+    try {
+      const fromSession = sessionStorage.getItem(key);
+      if (fromSession !== null) return fromSession;
+    } catch (error) {
+      console.warn('[Storage] Error reading from sessionStorage:', error);
     }
     
     // Fallback to memory storage
@@ -70,15 +78,25 @@ class ChromeCompatibleStorage implements StorageAdapter {
   }
 
   setItem(key: string, value: string): void {
+    let persisted = false;
     try {
       if (this.isStorageAvailable) {
         localStorage.setItem(key, value);
-        return;
+        persisted = true;
       }
     } catch (error) {
       console.warn('[Storage] Error writing to localStorage:', error);
       this.isStorageAvailable = false;
     }
+
+    try {
+      sessionStorage.setItem(key, value);
+      persisted = true;
+    } catch (error) {
+      console.warn('[Storage] Error writing to sessionStorage:', error);
+    }
+
+    if (persisted) return;
     
     // Fallback to memory storage
     this.memoryStorage.set(key, value);
@@ -96,6 +114,12 @@ class ChromeCompatibleStorage implements StorageAdapter {
       }
     } catch (error) {
       console.warn('[Storage] Error removing from localStorage:', error);
+    }
+
+    try {
+      sessionStorage.removeItem(key);
+    } catch (error) {
+      console.warn('[Storage] Error removing from sessionStorage:', error);
     }
     
     this.memoryStorage.delete(key);

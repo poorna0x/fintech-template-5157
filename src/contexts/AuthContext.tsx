@@ -16,7 +16,6 @@ import {
   purgeSupabaseAuthStorage,
   isTechnicianEmail,
   loginTechnician,
-  hasTechnicianSupabaseSession,
 } from '@/lib/auth';
 import { secureAuthLogin } from '@/lib/secureAuthLogin';
 import type { AuthLoginResult } from '@/lib/loginResult';
@@ -77,6 +76,7 @@ interface AuthProviderProps {
 export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   const technicianSessionRef = useRef(false);
   const loggingOutRef = useRef(false);
+  const roleCacheRef = useRef<Map<string, 'admin' | 'technician'>>(new Map());
   const portalRef = useRef(getAuthPortal(typeof window !== 'undefined' ? window.location.pathname : '/'));
 
   const [user, setUser] = useState<User | null>(null);
@@ -93,7 +93,10 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       return;
     }
 
-    const role = await resolveSessionRoleFromSupabaseUser(session.user);
+    const cachedRole = roleCacheRef.current.get(session.user.id);
+    const role =
+      cachedRole ?? (await resolveSessionRoleFromSupabaseUser(session.user));
+    roleCacheRef.current.set(session.user.id, role);
     if (!isSessionRoleAllowedForPortal(role, portal)) {
       setUser(null);
       technicianSessionRef.current = false;
@@ -140,8 +143,8 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       /Chrome/i.test(navigator.userAgent) &&
       /Mobile|Android/i.test(navigator.userAgent);
 
-    const sessionTimeoutMs = pwa ? 20_000 : isChromeMobile ? 8_000 : 12_000;
-    const overallTimeoutMs = pwa ? 25_000 : isChromeMobile ? 10_000 : 15_000;
+    const sessionTimeoutMs = pwa ? 25_000 : isChromeMobile ? 12_000 : 12_000;
+    const overallTimeoutMs = pwa ? 30_000 : isChromeMobile ? 14_000 : 15_000;
 
     let cancelled = false;
 
@@ -175,6 +178,11 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
               technicianId: stored.technicianId,
             });
             technicianSessionRef.current = true;
+            void supabase.auth.refreshSession().then(({ data: { session: refreshed } }) => {
+              if (refreshed?.user && !loggingOutRef.current) {
+                void applySessionUser(refreshed);
+              }
+            });
           } else {
             if (stored?.role !== 'technician') clearAuthSession();
             setUser(null);
@@ -195,15 +203,36 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
       if (event === 'SIGNED_OUT') {
+        if (!loggingOutRef.current) {
+          const stored = getAuthSession();
+          if (stored?.role === 'technician' && portalRef.current === 'technician') {
+            void supabase.auth.refreshSession().then(({ data: { session: refreshed } }) => {
+              if (refreshed?.user) {
+                void applySessionUser(refreshed);
+                return;
+              }
+              clearAuthSession();
+              setUser(null);
+              technicianSessionRef.current = false;
+            });
+            setAuthInitializing(false);
+            return;
+          }
+        }
         clearAuthSession();
         setUser(null);
         technicianSessionRef.current = false;
+        roleCacheRef.current.clear();
         setAuthInitializing(false);
         return;
       }
 
       if (session?.user) {
-        if (event === 'TOKEN_REFRESHED' || event === 'SIGNED_IN' || event === 'INITIAL_SESSION') {
+        if (
+          event === 'TOKEN_REFRESHED' ||
+          event === 'SIGNED_IN' ||
+          event === 'INITIAL_SESSION'
+        ) {
           void applySessionUser(session);
         }
         setAuthInitializing(false);
@@ -263,14 +292,6 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
           };
         }
         const techUser = techResult.user;
-        const linked = await hasTechnicianSupabaseSession();
-        if (!linked) {
-          const msg =
-            'Login could not start a Supabase session. Ensure SUPABASE_SERVICE_ROLE_KEY is set on Netlify and try again.';
-          toast.error(msg);
-          await supabase.auth.signOut();
-          return { ok: false, error: msg };
-        }
         setUser(techUser);
         setAuthSession(techUser);
         technicianSessionRef.current = true;

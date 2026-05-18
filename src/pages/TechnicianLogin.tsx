@@ -29,13 +29,6 @@ const TechnicianLogin = () => {
 
   const { login, loading: authLoading, user, authInitializing } = useAuth();
   const navigate = useNavigate();
-  const userRef = React.useRef(user); // Track user state for role checking
-  
-  // Update ref when user changes
-  useEffect(() => {
-    userRef.current = user;
-    console.log('[TechnicianLogin] User state updated:', user ? { id: user.id, email: user.email, role: user.role } : null);
-  }, [user]);
   
   useEffect(() => {
     document.title = 'Hydrogen RO Technician';
@@ -150,33 +143,8 @@ const TechnicianLogin = () => {
       console.log('[TechnicianLogin] Login response received. Success:', result.ok);
 
       if (result.ok) {
-        console.log('[TechnicianLogin] ✅ Login reported success, checking user role...');
-        // IMPORTANT: Check if user is actually a technician before navigating
-        // Wait a bit for AuthContext to update user state
-        const waitTime = isChromeMobile ? 150 : 300;
-        console.log('[TechnicianLogin] Waiting', waitTime, 'ms for AuthContext to update...');
-        await new Promise(resolve => setTimeout(resolve, waitTime));
-        
-        // Check user role from AuthContext - use ref to get latest value
-        const currentUser = userRef.current;
-        console.log('[TechnicianLogin] Current user from ref:', currentUser ? { id: currentUser.id, email: currentUser.email, role: currentUser.role } : null);
-        console.log('[TechnicianLogin] Current user from hook:', user ? { id: user.id, email: user.email, role: user.role } : null);
-        
-        if (currentUser && currentUser.role === 'technician') {
-          console.log('[TechnicianLogin] ✅ Technician login successful, navigating to technician dashboard...');
-          navigate('/technician', { replace: true });
-        } else {
-          // User logged in but is not a technician (probably admin logged in)
-          console.warn('[TechnicianLogin] ⚠️ Login succeeded but user is not a technician');
-          console.warn('[TechnicianLogin] User role:', currentUser?.role);
-          console.warn('[TechnicianLogin] User object:', currentUser);
-          setError('This account is not a technician account. Redirecting to admin dashboard...');
-          toast.error('This account is not a technician account.');
-          // Redirect to admin dashboard
-          setTimeout(() => {
-            navigate('/admin', { replace: true });
-          }, 1500);
-        }
+        console.log('[TechnicianLogin] ✅ Login successful, navigating to dashboard');
+        navigate('/technician', { replace: true });
       } else {
         console.error('[TechnicianLogin] ❌ Login failed:', result.error);
         setError(

@@ -1,6 +1,6 @@
 import type { User as SupabaseUser } from '@supabase/supabase-js';
 import { supabase } from './supabase';
-import { clearAuthSession } from './auth';
+import { clearAuthSession, getAuthSession } from './auth';
 
 export type AuthPortal = 'admin' | 'technician' | 'public';
 
@@ -44,6 +44,20 @@ export async function resolveSessionRoleFromSupabaseUser(
     .maybeSingle();
 
   if (!error && data) return 'technician';
+  if (!error && !data) return 'admin';
+
+  // Slow/offline DB: keep technician signed in when persisted session matches
+  const stored = getAuthSession();
+  if (stored?.role === 'technician') {
+    if (stored.id === user.id) return 'technician';
+    if (
+      stored.email &&
+      user.email &&
+      stored.email.toLowerCase() === user.email.toLowerCase()
+    ) {
+      return 'technician';
+    }
+  }
   return 'admin';
 }
 

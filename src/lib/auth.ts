@@ -312,24 +312,40 @@ export const loginTechnicianWithSupabase = async (
     };
   }
 
-  const { data: { user: authUser } } = await supabase.auth.getUser();
+  const { data: { session } } = await supabase.auth.getSession();
+  const authUser = session?.user;
   if (!authUser) {
     return { ok: false, error: 'Login failed. Please try again.' };
   }
 
-  const data = { user: authUser };
-
   const role =
-    data.user.app_metadata?.role || data.user.user_metadata?.role || 'technician';
+    authUser.app_metadata?.role || authUser.user_metadata?.role || 'technician';
   if (role !== 'technician') {
     await supabase.auth.signOut();
     return { ok: false, error: 'Use the admin login page for this account.' };
   }
 
+  const metaFullName =
+    authUser.user_metadata?.full_name || authUser.user_metadata?.name;
+  const metaEmail = authUser.email || '';
+
+  if (metaFullName && metaEmail) {
+    return {
+      ok: true,
+      user: {
+        id: authUser.id,
+        email: metaEmail,
+        role: 'technician',
+        technicianId: authUser.id,
+        fullName: metaFullName,
+      },
+    };
+  }
+
   const { data: tech, error: techError } = await supabase
     .from('technicians')
     .select('id, full_name, email, account_status')
-    .eq('id', data.user.id)
+    .eq('id', authUser.id)
     .single();
 
   if (techError || !tech || tech.account_status !== 'ACTIVE') {
