@@ -69,6 +69,14 @@ const modelData = {
   }
 };
 
+export interface JobAssignedToTechnicianPayload {
+  technicianId: string;
+  serviceSubType: string;
+  customerName: string;
+  visibleAddress?: string;
+  address?: { area?: string; city?: string };
+}
+
 interface AddCustomerDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -78,6 +86,8 @@ interface AddCustomerDialogProps {
   onExistingCustomerFound?: (customer: Customer) => void;
   /** When provided, runs once when user clicks Next from step 1; only proceed if no duplicate. Not called on blur. */
   onCheckExistingCustomer?: (phone: string, email?: string) => Promise<Customer | null>;
+  /** When a new job is created with a technician assigned (step 5), open WhatsApp notify flow in parent. */
+  onJobAssignedToTechnician?: (payload: JobAssignedToTechnicianPayload) => void;
 }
 
 const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
@@ -86,7 +96,8 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
   customers,
   onCustomerCreated,
   onExistingCustomerFound,
-  onCheckExistingCustomer
+  onCheckExistingCustomer,
+  onJobAssignedToTechnician,
 }) => {
   const [currentStep, setCurrentStep] = useState(1);
   const [formErrors, setFormErrors] = useState<{[key: string]: string}>({});
@@ -1022,6 +1033,29 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
         toast.error('Failed to create job. Please create it manually.');
       } else {
         toast.success(`Customer ${newCustomer.customer_id || newCustomer.customerId} created successfully!`);
+      }
+
+      if (
+        shouldCreateJob &&
+        newJob &&
+        step5JobData.assigned_technician_id &&
+        onJobAssignedToTechnician
+      ) {
+        const serviceSubType =
+          step5JobData.service_sub_type === 'Custom'
+            ? step5JobData.service_sub_type_custom
+            : step5JobData.service_sub_type;
+        onJobAssignedToTechnician({
+          technicianId: step5JobData.assigned_technician_id,
+          serviceSubType: serviceSubType || 'Service',
+          customerName:
+            addFormData.full_name ||
+            (newCustomer as { full_name?: string; fullName?: string })?.full_name ||
+            (newCustomer as { fullName?: string })?.fullName ||
+            'Customer',
+          visibleAddress: addFormData.visible_address,
+          address: customerData.address,
+        });
       }
 
       // Reset form after dialog is closed
