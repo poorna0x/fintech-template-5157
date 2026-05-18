@@ -175,7 +175,7 @@ const AMC = () => {
         'Filters / RO Membrane / Consumables / Electricals / Motor: Company will clean, repair, or replace filters and parts needed for smooth working.',
         'Safe RO output: Water quality TDS between 50 to 150, as per WHO guidelines or as per customer preference.',
         'Clean cosmetics and smooth working of the machine.',
-        'Quick service: Any breakdown will be resolved within 24 hours.',
+        'Quick service: Any breakdown will be resolved within 24 hours on weekdays and within 48 hours on weekends.',
         'Full Care of RO: The company takes responsibility for complete maintenance and support for 1 year, including Pre Sediment Filtration (with terms & conditions).'
       ];
       
@@ -199,6 +199,9 @@ const AMC = () => {
         'No Early Termination: You cannot cancel this agreement before expiry. It also cannot be transferred to another person if you sell/gift the machine.',
         'Extra Charges: If service is outside municipal limits, extra charges for travel/stay will apply.',
         'Disputes: Any legal disputes will be handled only in Bangalore courts.',
+        'Parts Availability: Replacement of parts is subject to market availability. If specific spare parts are unavailable or discontinued, equivalent alternatives may be used.',
+        'Service Timelines: Service timelines are approximate and may vary due to workload, weather, traffic, festivals, emergencies, or operational reasons.',
+        'Limitation of Liability: The company shall not be held liable for failure or delay in providing services due to business closure, financial difficulties, natural calamities, supplier issues, government restrictions, strikes, pandemics, acts beyond reasonable control, or discontinuation of operations.',
         'Renewal: After expiry, renewal requires a new agreement.',
         'Customer\'s Duty: The customer must make the RO available for servicing when the company\'s authorized representative visits.',
         'If the customer fails to give the machine for servicing, it will still be treated as service given, and no refund will be made.',
@@ -511,7 +514,7 @@ const AMC = () => {
                                 <li className="leading-relaxed">Filters / RO Membrane / Consumables / Electricals / Motor: Company will clean, repair, or replace filters and parts needed for smooth working.</li>
                                 <li className="leading-relaxed">Safe RO output: Water quality TDS between 50 to 150, as per WHO guidelines or as per customer preference.</li>
                                 <li className="leading-relaxed">Clean cosmetics and smooth working of the machine.</li>
-                                <li className="leading-relaxed">Quick service: Any breakdown will be resolved within 24 hours.</li>
+                                <li className="leading-relaxed">Quick service: Any breakdown will be resolved within 24 hours on weekdays and within 48 hours on weekends.</li>
                                 <li className="leading-relaxed">Full Care of RO: The company takes responsibility for complete maintenance and support for 1 year, including Pre Sediment Filtration (with terms & conditions).</li>
                               </ul>
                             </div>
@@ -523,6 +526,9 @@ const AMC = () => {
                                 <li className="leading-relaxed">No Early Termination: You cannot cancel this agreement before expiry. It also cannot be transferred to another person if you sell/gift the machine.</li>
                                 <li className="leading-relaxed">Extra Charges: If service is outside municipal limits, extra charges for travel/stay will apply.</li>
                                 <li className="leading-relaxed">Disputes: Any legal disputes will be handled only in Bangalore courts.</li>
+                                <li className="leading-relaxed">Parts Availability: Replacement of parts is subject to market availability. If specific spare parts are unavailable or discontinued, equivalent alternatives may be used.</li>
+                                <li className="leading-relaxed">Service Timelines: Service timelines are approximate and may vary due to workload, weather, traffic, festivals, emergencies, or operational reasons.</li>
+                                <li className="leading-relaxed">Limitation of Liability: The company shall not be held liable for failure or delay in providing services due to business closure, financial difficulties, natural calamities, supplier issues, government restrictions, strikes, pandemics, acts beyond reasonable control, or discontinuation of operations.</li>
                                 <li className="leading-relaxed">Renewal: After expiry, renewal requires a new agreement.</li>
                                 <li className="leading-relaxed">Customer's Duty: The customer must make the RO available for servicing when the company's authorized representative visits.</li>
                                 <li className="leading-relaxed">If the customer fails to give the machine for servicing, it will still be treated as service given, and no refund will be made.</li>
@@ -676,7 +682,7 @@ const AMC = () => {
                   <li>Filters / RO Membrane / Consumables / Electricals / Motor: Company will clean, repair, or replace filters and parts needed for smooth working.</li>
                   <li>Safe RO output: Water quality TDS between 50 to 150, as per WHO guidelines or as per customer preference.</li>
                   <li>Clean cosmetics and smooth working of the machine.</li>
-                  <li>Quick service: Any breakdown will be resolved within 24 hours.</li>
+                  <li>Quick service: Any breakdown will be resolved within 24 hours on weekdays and within 48 hours on weekends.</li>
                   <li>Full Care of RO: The company takes responsibility for complete maintenance and support for 1 year, including Pre Sediment Filtration (with terms & conditions).</li>
                 </ul>
               </div>
@@ -690,6 +696,9 @@ const AMC = () => {
                   <li>No Early Termination: You cannot cancel this agreement before expiry. It also cannot be transferred to another person if you sell/gift the machine.</li>
                   <li>Extra Charges: If service is outside municipal limits, extra charges for travel/stay will apply.</li>
                   <li>Disputes: Any legal disputes will be handled only in Bangalore courts.</li>
+                  <li>Parts Availability: Replacement of parts is subject to market availability. If specific spare parts are unavailable or discontinued, equivalent alternatives may be used.</li>
+                  <li>Service Timelines: Service timelines are approximate and may vary due to workload, weather, traffic, festivals, emergencies, or operational reasons.</li>
+                  <li>Limitation of Liability: The company shall not be held liable for failure or delay in providing services due to business closure, financial difficulties, natural calamities, supplier issues, government restrictions, strikes, pandemics, acts beyond reasonable control, or discontinuation of operations.</li>
                   <li>Renewal: After expiry, renewal requires a new agreement.</li>
                   <li>Customer's Duty: The customer must make the RO available for servicing when the company's authorized representative visits.</li>
                   <li>If the customer fails to give the machine for servicing, it will still be treated as service given, and no refund will be made.</li>

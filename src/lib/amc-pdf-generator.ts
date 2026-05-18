@@ -747,7 +747,7 @@ function generateAMCHTML(data: AMCPDFData, options?: AMCPDFOptions): string {
             <li><strong>Filters / RO Membrane / Consumables / Electricals / Motor:</strong> Company will clean, repair, or replace filters and parts needed for smooth working.</li>
             <li><strong>Safe RO output:</strong> Water quality TDS between 50 to 150, as per WHO guidelines or as per customer preference.</li>
             <li><strong>Clean cosmetics and smooth working</strong> of the machine.</li>
-            <li><strong>Quick service:</strong> Any breakdown will be resolved within 24 hours.</li>
+            <li><strong>Quick service:</strong> Any breakdown will be resolved within 24 hours on weekdays and within 48 hours on weekends.</li>
             <li><strong>Full Care of RO:</strong> The company takes responsibility for complete maintenance and support during the AMC period.</li>
           </ul>
         </div>
@@ -759,6 +759,9 @@ function generateAMCHTML(data: AMCPDFData, options?: AMCPDFOptions): string {
             <li><strong>No Early Termination:</strong> You cannot cancel this agreement before expiry. It also cannot be transferred to another person if you sell/gift the machine.</li>
             <li><strong>Extra Charges:</strong> If service is outside municipal limits, extra charges for travel/stay will apply.</li>
             <li><strong>Disputes:</strong> Any legal disputes will be handled only in Bangalore courts.</li>
+            <li><strong>Parts Availability:</strong> Replacement of parts is subject to market availability. If specific spare parts are unavailable or discontinued, equivalent alternatives may be used.</li>
+            <li><strong>Service Timelines:</strong> Service timelines are approximate and may vary due to workload, weather, traffic, festivals, emergencies, or operational reasons.</li>
+            <li><strong>Limitation of Liability:</strong> The company shall not be held liable for failure or delay in providing services due to business closure, financial difficulties, natural calamities, supplier issues, government restrictions, strikes, pandemics, acts beyond reasonable control, or discontinuation of operations.</li>
             <li><strong>Renewal:</strong> After expiry, renewal requires a new agreement.</li>
             <li><strong>Customer's Duty:</strong> The customer must make the RO available for servicing when the company's authorized representative visits.</li>
             <li>If the customer fails to give the machine for servicing, it will still be treated as service given, and no refund will be made.</li>

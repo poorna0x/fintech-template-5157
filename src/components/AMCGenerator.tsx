@@ -105,7 +105,7 @@ Safe RO output: Water quality TDS between 50 to 150, as per WHO guidelines or as
 
 Clean cosmetics and smooth working of the machine.
 
-Quick service: Any breakdown will be resolved within 24 hours.
+Quick service: Any breakdown will be resolved within 24 hours on weekdays and within 48 hours on weekends.
 
 Full Care of RO: The company takes responsibility for complete maintenance and support during the AMC period.`;
 
@@ -120,6 +120,12 @@ No Early Termination: You cannot cancel this agreement before expiry. It also ca
 Extra Charges: If service is outside municipal limits, extra charges for travel/stay will apply.
 
 Disputes: Any legal disputes will be handled only in Bangalore courts.
+
+Parts Availability: Replacement of parts is subject to market availability. If specific spare parts are unavailable or discontinued, equivalent alternatives may be used.
+
+Service Timelines: Service timelines are approximate and may vary due to workload, weather, traffic, festivals, emergencies, or operational reasons.
+
+Limitation of Liability: The company shall not be held liable for failure or delay in providing services due to business closure, financial difficulties, natural calamities, supplier issues, government restrictions, strikes, pandemics, acts beyond reasonable control, or discontinuation of operations.
 
 ${scheduledMaintenanceLine}
 
