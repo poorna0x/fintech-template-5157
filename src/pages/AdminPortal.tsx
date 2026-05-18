@@ -1,8 +1,9 @@
-import { Suspense, lazy } from 'react';
+import { Suspense, lazy, useEffect } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import AdminLogin from '@/components/AdminLogin';
 
-const AdminDashboard = lazy(() => import('@/components/AdminDashboard'));
+const adminDashboardImport = () => import('@/components/AdminDashboard');
+const AdminDashboard = lazy(adminDashboardImport);
 
 function AdminPortalLoader({ message }: { message: string }) {
   return (
@@ -28,12 +29,16 @@ function AdminPortalLoader({ message }: { message: string }) {
   );
 }
 
-/** /admin entry — show login immediately; load dashboard bundle only after auth. */
+/** /admin entry — loader until session settled; never flash login while session restores. */
 export default function AdminPortal() {
   const { user, isAdmin, authInitializing } = useAuth();
 
+  useEffect(() => {
+    void adminDashboardImport();
+  }, []);
+
   if (authInitializing) {
-    return <AdminPortalLoader message="Checking authentication..." />;
+    return <AdminPortalLoader message="Loading..." />;
   }
 
   if (!user || !isAdmin) {
@@ -41,7 +46,7 @@ export default function AdminPortal() {
   }
 
   return (
-    <Suspense fallback={<AdminPortalLoader message="Loading dashboard..." />}>
+    <Suspense fallback={<AdminPortalLoader message="Loading..." />}>
       <AdminDashboard />
     </Suspense>
   );

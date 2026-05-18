@@ -150,12 +150,47 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     const overallTimeoutMs = pwa ? 30_000 : isChromeMobile ? 14_000 : 15_000;
 
     let cancelled = false;
+    let authInitSettled = false;
 
-    const finishInit = () => {
-      if (!cancelled) setAuthInitializing(false);
+    const settleAuthInit = () => {
+      if (cancelled || authInitSettled) return;
+      authInitSettled = true;
+      clearTimeout(timeoutId);
+      setAuthInitializing(false);
     };
 
-    const timeoutId = setTimeout(finishInit, overallTimeoutMs);
+    const timeoutId = setTimeout(settleAuthInit, overallTimeoutMs);
+
+    const restoreTechnicianFromLocalStorage = () => {
+      const stored = getAuthSession();
+      if (stored?.role === 'technician' && portalRef.current === 'technician') {
+        setUser({
+          id: stored.id,
+          email: stored.email,
+          role: 'technician',
+          fullName: stored.fullName,
+          technicianId: stored.technicianId,
+        });
+        technicianSessionRef.current = true;
+        void supabase.auth.refreshSession().then(({ data: { session: refreshed } }) => {
+          if (refreshed?.user && !loggingOutRef.current) {
+            void applySessionUser(refreshed);
+          }
+        });
+        return;
+      }
+      if (stored?.role !== 'technician') clearAuthSession();
+      setUser(null);
+      technicianSessionRef.current = false;
+    };
+
+    const resolveInitialSession = async (session: Session | null) => {
+      if (session?.user) {
+        await applySessionUser(session);
+        return;
+      }
+      restoreTechnicianFromLocalStorage();
+    };
 
     const checkSession = async () => {
       try {
@@ -167,38 +202,12 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         ]);
         if (cancelled) return;
 
-        const session = result.data.session;
-        if (session?.user) {
-          await applySessionUser(session);
-        } else {
-          const stored = getAuthSession();
-          if (stored?.role === 'technician' && portalRef.current === 'technician') {
-            setUser({
-              id: stored.id,
-              email: stored.email,
-              role: 'technician',
-              fullName: stored.fullName,
-              technicianId: stored.technicianId,
-            });
-            technicianSessionRef.current = true;
-            void supabase.auth.refreshSession().then(({ data: { session: refreshed } }) => {
-              if (refreshed?.user && !loggingOutRef.current) {
-                void applySessionUser(refreshed);
-              }
-            });
-          } else {
-            if (stored?.role !== 'technician') clearAuthSession();
-            setUser(null);
-          }
-        }
+        await resolveInitialSession(result.data.session);
       } catch {
-        // Do not wipe session on slow getSession (common in installed PWA); onAuthStateChange will reconcile
+        // Do not settle here — onAuthStateChange INITIAL_SESSION or timeout will reconcile.
         if (!cancelled && import.meta.env.DEV) {
           console.warn('[Auth] Initial session check timed out');
         }
-      } finally {
-        clearTimeout(timeoutId);
-        finishInit();
       }
     };
 
@@ -218,7 +227,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
               setUser(null);
               technicianSessionRef.current = false;
             });
-            setAuthInitializing(false);
+            settleAuthInit();
             return;
           }
         }
@@ -226,24 +235,27 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         setUser(null);
         technicianSessionRef.current = false;
         roleCacheRef.current.clear();
-        setAuthInitializing(false);
-        return;
-      }
-
-      if (session?.user) {
-        if (
-          event === 'TOKEN_REFRESHED' ||
-          event === 'SIGNED_IN' ||
-          event === 'INITIAL_SESSION'
-        ) {
-          void applySessionUser(session);
-        }
-        setAuthInitializing(false);
+        settleAuthInit();
         return;
       }
 
       if (event === 'INITIAL_SESSION') {
-        setAuthInitializing(false);
+        void resolveInitialSession(session).finally(() => {
+          settleAuthInit();
+        });
+        return;
+      }
+
+      if (session?.user) {
+        if (event === 'SIGNED_IN') {
+          void applySessionUser(session).finally(() => {
+            settleAuthInit();
+          });
+          return;
+        }
+        if (event === 'TOKEN_REFRESHED') {
+          void applySessionUser(session);
+        }
       }
     });
 
