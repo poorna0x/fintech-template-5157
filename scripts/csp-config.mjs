@@ -40,6 +40,8 @@ export const PRODUCTION_CSP = [
     'https://hydrogenro.com',
     'https://www.hydrogenro.com',
     'https://hydrogenro.netlify.app',
+    'https://elevenro.com',
+    'https://www.elevenro.com',
   ].join(' '),
   "frame-src 'self' https://www.google.com https://maps.google.com",
   "frame-ancestors 'none'",
