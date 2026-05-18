@@ -1,6 +1,6 @@
 // Technician authentication system using database credentials
 // Note: Admin authentication is handled by Supabase Auth (see AdminLogin.tsx)
-import { supabase } from './supabase';
+import { supabase } from './supabaseClient';
 import { chromeStorage } from './storage';
 import { getSupabaseConfigError } from './supabaseConfig';
 import { secureAuthLogin } from './secureAuthLogin';

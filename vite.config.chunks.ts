@@ -1,4 +1,4 @@
-/** Rollup manualChunks — keeps vendor splits and isolates admin DB layer from public index. */
+/** Rollup manualChunks — only split admin DB layer; keep React + UI in one chunk to avoid circular deps. */
 export function manualChunks(id: string): string | undefined {
   if (id.includes('/src/lib/supabase.ts')) {
     return 'admin-data';
@@ -12,10 +12,6 @@ export function manualChunks(id: string): string | undefined {
     return 'router-vendor';
   }
 
-  if (id.includes('@mui/') || id.includes('@emotion/') || id.includes('dayjs')) {
-    return 'mui-vendor';
-  }
-
   if (id.includes('@supabase/') || id.includes('supabase-js')) {
     return 'supabase-vendor';
   }
@@ -24,7 +20,7 @@ export function manualChunks(id: string): string | undefined {
     return 'charts-vendor';
   }
 
-  // Radix and other React UI libs must share the same chunk as react/react-dom.
+  // Single React chunk: react, radix, mui, forms, and all React-dependent UI libs.
   if (
     id.includes('react-dom') ||
     id.includes('/react/') ||
@@ -33,6 +29,9 @@ export function manualChunks(id: string): string | undefined {
     id.includes('@floating-ui') ||
     id.includes('react-remove-scroll') ||
     id.includes('aria-hidden') ||
+    id.includes('@mui/') ||
+    id.includes('@emotion/') ||
+    id.includes('dayjs') ||
     id.includes('vaul') ||
     id.includes('cmdk') ||
     id.includes('sonner') ||
@@ -43,20 +42,14 @@ export function manualChunks(id: string): string | undefined {
     id.includes('react-i18next') ||
     id.includes('cloudinary-react') ||
     id.includes('input-otp') ||
-    id.includes('lucide-react')
-  ) {
-    return 'react-vendor';
-  }
-
-  if (
+    id.includes('lucide-react') ||
     id.includes('react-hook-form') ||
     id.includes('@hookform/') ||
     id.includes('zod')
   ) {
-    return 'form-vendor';
+    return 'react-vendor';
   }
 
-  // Pure utilities only — must not import React (avoids circular chunk with react-vendor).
   if (
     id.includes('date-fns') ||
     id.includes('clsx') ||

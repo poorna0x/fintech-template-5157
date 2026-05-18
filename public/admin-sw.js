@@ -1,8 +1,8 @@
-const STATIC_CACHE = 'admin-static-v4';
-const RUNTIME_CACHE = 'admin-runtime-v4';
-const OFFLINE_FALLBACK = '/admin';
+const STATIC_CACHE = 'admin-static-v6';
+const RUNTIME_CACHE = 'admin-runtime-v6';
 
-const PRECACHE_URLS = ['/', '/admin', '/settings'];
+/** Do not precache HTML — cached index.html keeps old /assets/* hashes and breaks after deploy. */
+const PRECACHE_URLS = [];
 
 self.addEventListener('install', (event) => {
   event.waitUntil(
@@ -14,7 +14,8 @@ self.addEventListener('install', (event) => {
           })
         )
       );
-      console.log('[Admin PWA] Service worker installed, waiting for activation');
+      await self.skipWaiting();
+      console.log('[Admin PWA] Service worker installed');
     })
   );
 });
@@ -30,6 +31,7 @@ self.addEventListener('activate', (event) => {
             .map((key) => caches.delete(key))
         )
       )
+      .then(() => self.clients.claim())
       .then(() => {
         console.log('[Admin PWA] Service worker activated');
       })
@@ -45,8 +47,6 @@ self.addEventListener('fetch', (event) => {
 
   const url = new URL(request.url);
   const isSameOrigin = url.origin === self.location.origin;
-  const adminPaths = ['/admin', '/settings', '/calling'];
-  const isAdminPath = adminPaths.some((path) => url.pathname.startsWith(path));
 
   const h = url.hostname;
   if (
@@ -72,47 +72,16 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
+  // Never cache HTML navigations — stale shell references removed vendor chunks (ui-vendor).
   if (request.mode === 'navigate' && isSameOrigin) {
-    event.respondWith(
-      Promise.race([
-        fetch(request),
-        new Promise((_, reject) =>
-          setTimeout(() => reject(new Error('Request timeout')), 10000)
-        ),
-      ])
-        .then((response) => {
-          if (response.ok && response.headers.get('content-type')?.includes('text/html')) {
-            const copy = response.clone();
-            caches.open(RUNTIME_CACHE).then((cache) => cache.put(request, copy));
-          }
-          return response;
-        })
-        .catch(async () => {
-          const cachedResponse = await caches.match(request);
-          if (cachedResponse) {
-            return cachedResponse;
-          }
-          if (isAdminPath) {
-            const offlineResponse =
-              await caches.match(OFFLINE_FALLBACK);
-            if (offlineResponse) {
-              return offlineResponse;
-            }
-          }
-          return caches.match('/') || Response.error();
-        })
-    );
+    event.respondWith(fetch(request));
     return;
   }
 
-  if (isSameOrigin && isAdminPath) {
+  // Hashed build assets: network-first, optional runtime cache for offline reuse.
+  if (isSameOrigin && url.pathname.startsWith('/assets/')) {
     event.respondWith(
-      Promise.race([
-        fetch(request),
-        new Promise((_, reject) =>
-          setTimeout(() => reject(new Error('Request timeout')), 10000)
-        ),
-      ])
+      fetch(request)
         .then((response) => {
           if (response.ok) {
             const copy = response.clone();

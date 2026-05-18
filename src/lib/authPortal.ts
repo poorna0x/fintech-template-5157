@@ -1,5 +1,5 @@
 import type { User as SupabaseUser } from '@supabase/supabase-js';
-import { supabase } from './supabase';
+import { supabase } from './supabaseClient';
 import { clearAuthSession, getAuthSession } from './auth';
 
 export type AuthPortal = 'admin' | 'technician' | 'public';

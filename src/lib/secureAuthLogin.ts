@@ -1,4 +1,4 @@
-import { supabase } from './supabase';
+import { supabase } from './supabaseClient';
 import { isPWAMode } from './pwa';
 
 export type AuthPortal = 'admin' | 'technician';
