@@ -33,11 +33,11 @@ AS $$
     AND public.auth_user_role() IS DISTINCT FROM 'technician';
 $$;
 
--- Not callable via PostgREST — only for RLS / other SQL functions
+-- Block anon/PUBLIC RPC calls; authenticated still needs EXECUTE for RLS policy expressions.
 REVOKE ALL ON FUNCTION public.is_admin_user() FROM PUBLIC;
 REVOKE EXECUTE ON FUNCTION public.is_admin_user() FROM anon;
-REVOKE EXECUTE ON FUNCTION public.is_admin_user() FROM authenticated;
+GRANT EXECUTE ON FUNCTION public.is_admin_user() TO authenticated;
 
 REVOKE ALL ON FUNCTION public.auth_user_role() FROM PUBLIC;
 REVOKE EXECUTE ON FUNCTION public.auth_user_role() FROM anon;
-REVOKE EXECUTE ON FUNCTION public.auth_user_role() FROM authenticated;
+GRANT EXECUTE ON FUNCTION public.auth_user_role() TO authenticated;
