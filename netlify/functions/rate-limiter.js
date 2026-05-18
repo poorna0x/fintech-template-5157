@@ -229,12 +229,53 @@ const rateLimiters = {
   })
 };
 
+const SEND_EMAIL_IP_LIMIT = {
+  maxRequests: 5,
+  windowMs: 3_600_000,
+  endpoint: 'send-email-ip',
+};
+
+const SEND_EMAIL_RECIPIENT_LIMIT = {
+  maxRequests: 3,
+  windowMs: 3_600_000,
+  endpoint: 'send-email-recipient',
+};
+
+/**
+ * Always-on limits for send-email (not gated by isRateLimitEnabled).
+ * @returns {Object|null} 429 response object or null if allowed
+ */
+function enforceSendEmailRateLimits(event, recipientEmail) {
+  if (process.env.CONTEXT === 'dev') {
+    return null;
+  }
+
+  const ipResult = checkRateLimit(event, SEND_EMAIL_IP_LIMIT);
+  if (!ipResult.allowed) {
+    return rateLimitResponseForKey(ipResult);
+  }
+
+  if (recipientEmail && typeof recipientEmail === 'string') {
+    const toKey = recipientEmail.trim().toLowerCase();
+    if (toKey) {
+      const toResult = checkRateLimitForKey(toKey, SEND_EMAIL_RECIPIENT_LIMIT);
+      if (!toResult.allowed) {
+        return rateLimitResponseForKey(toResult);
+      }
+    }
+  }
+
+  return null;
+}
+
 module.exports = {
   checkRateLimit,
   checkRateLimitForKey,
   rateLimitResponseForKey,
   createRateLimiter,
   rateLimiters,
-  getClientIdentifier
+  getClientIdentifier,
+  enforceSendEmailRateLimits,
+  SEND_EMAIL_IP_LIMIT,
 };
 

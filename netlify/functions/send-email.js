@@ -9,7 +9,7 @@ const {
   jsonResponse,
   getClientIdentifier,
 } = require('./booking-guard');
-const { rateLimiters } = require('./rate-limiter');
+const { enforceSendEmailRateLimits } = require('./rate-limiter');
 const { validateBookingEmailBody, getFixedFromAddress } = require('./email-guard');
 
 exports.handler = async (event) => {
@@ -17,12 +17,9 @@ exports.handler = async (event) => {
   if (pre.handled) return pre.response;
   const corsHeaders = pre.corsHeaders;
 
-  const rateLimitResult = rateLimiters.email(event);
-  if (rateLimitResult) {
-    return {
-      ...rateLimitResult,
-      headers: { ...rateLimitResult.headers, ...corsHeaders },
-    };
+  const earlyLimit = enforceSendEmailRateLimits(event);
+  if (earlyLimit) {
+    return { ...earlyLimit, headers: { ...earlyLimit.headers, ...corsHeaders } };
   }
 
   let body;
@@ -46,6 +43,15 @@ exports.handler = async (event) => {
       reason: validated.error,
     });
     return jsonResponse(400, corsHeaders, { error: validated.error });
+  }
+
+  const emailRateLimit = enforceSendEmailRateLimits(event, validated.to);
+  if (emailRateLimit) {
+    console.warn('[send-email] rate limited', { ip: getClientIdentifier(event) });
+    return {
+      ...emailRateLimit,
+      headers: { ...emailRateLimit.headers, ...corsHeaders },
+    };
   }
 
   const fromAddress = getFixedFromAddress();
