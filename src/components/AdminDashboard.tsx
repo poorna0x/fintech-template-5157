@@ -96,6 +96,13 @@ import { generateJobNumber, formatPreferredTimeSlot, mapServiceTypesToDbValue, e
 import { formatPhoneForWhatsApp } from '@/lib/utils';
 import { getLocationLinkFromObject } from '@/lib/jobLocationHelpers';
 import { enrichJobsWithAfterPhotosIfNeeded } from '@/lib/jobReportPhotos';
+import {
+  consumeAdminDashboardPrefetch,
+  readAdminDashboardCache,
+  writeAdminDashboardCache,
+  clearAdminDashboardCache,
+  type AdminDashboardSnapshot,
+} from '@/lib/adminDashboardCache';
 import { StatusBadge } from './admin/StatusBadge';
 import { CustomerCardHeader } from './admin/CustomerCardHeader';
 import { WhatsAppIcon } from './WhatsAppIcon';
@@ -1399,50 +1406,22 @@ const AdminDashboard = () => {
     }
   }, [loadedCompletedJobDetails, loadingCompletedJobDetails]);
 
-  const loadDashboardData = async (options?: { silent?: boolean }) => {
-    const silent = options?.silent === true;
-    try {
-      if (!silent) {
-        setLoading(true);
-      }
+  const applyAdminSnapshot = useCallback((snap: AdminDashboardSnapshot) => {
+    const jobList = (snap.jobs as Job[]) ?? [];
+    setJobs(jobList);
+    setTotalCount(jobList.length);
+    setTotalPages(1);
+    const transformed = (snap.technicianRows as any[]).map(transformTechnicianData);
+    techniciansRef.current = transformed;
+    setTechnicians(transformed);
+    setJobCounts(snap.jobCounts);
+  }, []);
 
-      const sessionReady = await ensureAdminSupabaseSession();
-      if (!sessionReady) {
-        console.warn('[AdminDashboard] Skipping load — admin Supabase session not ready yet');
-        return;
-      }
-      
-      // OPTIMIZATION: Run AMC job creation in background without blocking initial load
-      // Check auth once and proceed - no wait loop
-      supabase.auth.getSession().then(({ data: { session } }) => {
-          if (session) {
-          // Run AMC job creation in background without blocking
-        db.amcContracts.createAMCServiceJobs().then((result) => {
-          if (result.error) {
-            console.error('Error creating AMC service jobs:', result.error);
-          } else if (result.created > 0) {
-            console.log(`✅ Created ${result.created} AMC service jobs automatically`);
-            toast.success(`Created ${result.created} AMC service job${result.created > 1 ? 's' : ''} automatically`);
-            // Reload jobs after creating AMC service jobs
-            loadFilteredJobs(statusFilter, currentPage);
-          }
-        }).catch((error) => {
-          console.error('Error in AMC service job creation:', error);
-        });
-        }
-      }).catch(() => {
-        // Silently fail - auth check failed, skip AMC job creation
-      });
-      
-      // Don't load all customers – list comes from jobs (useEffect below). Duplicate check uses a single query when user adds customer.
-      const [techniciansResult, techniciansAllResult, amcContractsResult, jobCountsResult, priorCompletedMap] = await Promise.all([
-        db.technicians.getAllForDashboard(100), // roster list (excludes INACTIVE by default)
-        db.technicians.getList(500, { activeRosterOnly: false }), // slim reports/history list (includes INACTIVE)
-        supabase
-          .from('amc_contracts')
-          .select('customer_id, status')
-          .eq('status', 'ACTIVE'),
-        db.jobs.getCounts(),
+  const loadDashboardSecondary = useCallback(async () => {
+    try {
+      const [techniciansAllResult, amcContractsResult, priorCompletedMap] = await Promise.all([
+        db.technicians.getList(500, { activeRosterOnly: false }),
+        supabase.from('amc_contracts').select('customer_id, status').eq('status', 'ACTIVE'),
         fetchCustomerIdsWithCompletedJobsMap(),
       ]);
 
@@ -1455,45 +1434,127 @@ const AdminDashboard = () => {
       setCustomerAMCStatus(amcStatusMap);
       setCustomerPriorServiceStatus(priorCompletedMap);
 
+      if (techniciansAllResult?.data) {
+        setTechniciansForReports(techniciansAllResult.data);
+      }
+
+      void loadBrandsAndModels();
+      void db.jobs
+        .getFollowUpForGlow()
+        .then(({ data }) => {
+          if (data) setAllFollowUpJobs(data as Job[]);
+        })
+        .catch(() => setAllFollowUpJobs([]));
+    } catch (e) {
+      console.warn('[AdminDashboard] Secondary load failed:', e);
+    }
+  }, []);
+
+  const scheduleAmcJobCreation = useCallback(() => {
+    supabase.auth
+      .getSession()
+      .then(({ data: { session } }) => {
+        if (!session) return;
+        db.amcContracts.createAMCServiceJobs().then((result) => {
+          if (result.error) {
+            console.error('Error creating AMC service jobs:', result.error);
+          } else if (result.created > 0) {
+            toast.success(
+              `Created ${result.created} AMC service job${result.created > 1 ? 's' : ''} automatically`
+            );
+            loadFilteredJobs(statusFilter, currentPage);
+          }
+        });
+      })
+      .catch(() => {});
+  }, [statusFilter, currentPage, loadFilteredJobs]);
+
+  const loadDashboardData = async (options?: {
+    silent?: boolean;
+    skipOngoingFetch?: boolean;
+  }) => {
+    const silent = options?.silent === true;
+    const skipOngoingFetch = options?.skipOngoingFetch === true;
+    try {
+      if (!silent) {
+        setLoading(true);
+      }
+
+      if (!silent) {
+        const sessionReady = await ensureAdminSupabaseSession();
+        if (!sessionReady) {
+          console.warn('[AdminDashboard] Skipping load — admin Supabase session not ready yet');
+          return;
+        }
+      }
+
+      scheduleAmcJobCreation();
+
+      const [techniciansResult, jobCountsResult, ongoingResult] = await Promise.all([
+        db.technicians.getAllForDashboard(100),
+        db.jobs.getCounts(),
+        skipOngoingFetch && statusFilter === 'ONGOING'
+          ? Promise.resolve({ data: null as Job[] | null, error: null })
+          : statusFilter === 'ONGOING'
+            ? db.jobs.getOngoing(100)
+            : Promise.resolve({ data: null, error: null }),
+      ]);
+
       if (jobCountsResult.data) {
         setJobCounts(jobCountsResult.data);
       }
 
-      if (techniciansResult.error) {
-        console.error('Failed to load technicians:', techniciansResult.error);
-      }
-
       if (techniciansResult.data) {
         const transformedTechnicians = techniciansResult.data.map(transformTechnicianData);
-        console.log('📊 Loaded technicians (dashboard — live GPS omitted; refreshed on Settings / assign / measure distance):', {
-          count: transformedTechnicians.length,
-        });
         techniciansRef.current = transformedTechnicians;
         setTechnicians(transformedTechnicians);
-      } else {
+      } else if (techniciansResult.error) {
+        console.error('Failed to load technicians:', techniciansResult.error);
         techniciansRef.current = [];
         setTechnicians([]);
       }
 
-      if (techniciansAllResult?.data) {
-        setTechniciansForReports(techniciansAllResult.data);
-      } else {
-        // Fallback: at least keep roster list for lookups.
-        setTechniciansForReports(techniciansResult.data || []);
+      if (!skipOngoingFetch && statusFilter === 'ONGOING' && ongoingResult) {
+        if (ongoingResult.error) {
+          setJobs([]);
+        } else {
+          const list = ongoingResult.data || [];
+          setJobs(list);
+          setTotalCount(list.length);
+          setTotalPages(1);
+        }
+      } else if (!skipOngoingFetch && statusFilter !== 'ONGOING') {
+        await loadFilteredJobs(statusFilter, currentPage, { silent: true });
       }
 
-      // Load brands/models and jobs in parallel; await so loading stays true until done (avoids double refresh blink)
-      await Promise.all([
-        loadBrandsAndModels(),
-        loadFilteredJobs(statusFilter, currentPage, { silent }),
-        db.jobs.getFollowUpForGlow().then(({ data }) => {
-          if (data) setAllFollowUpJobs(data as Job[]);
-        }).catch(() => {
-          setAllFollowUpJobs([]);
-        })
-      ]);
+      const jobsForCache =
+        skipOngoingFetch && statusFilter === 'ONGOING'
+          ? undefined
+          : statusFilter === 'ONGOING'
+            ? ongoingResult?.data ?? []
+            : undefined;
+
+      if (jobsForCache && techniciansResult.data) {
+        writeAdminDashboardCache({
+          savedAt: Date.now(),
+          jobs: jobsForCache,
+          technicianRows: techniciansResult.data,
+          jobCounts: jobCountsResult.data ?? {
+            ongoing: 0,
+            followup: 0,
+            denied: 0,
+            completed: 0,
+          },
+        });
+      }
+
+      void loadDashboardSecondary();
     } catch (error) {
-      toast.error(`Failed to load dashboard data: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      if (!silent) {
+        toast.error(
+          `Failed to load dashboard data: ${error instanceof Error ? error.message : 'Unknown error'}`
+        );
+      }
     } finally {
       if (!silent) {
         setLoading(false);
@@ -1509,10 +1570,18 @@ const AdminDashboard = () => {
   const runDashboardLoadOnceSessionReady = useCallback(async () => {
     if (dashboardLoadedWithSessionRef.current) return;
 
-    setLoading(true);
-    setIsInitialLoad(true);
+    let showedInstantData = false;
+    const cached = readAdminDashboardCache();
+    if (cached) {
+      applyAdminSnapshot(cached);
+      showedInstantData = true;
+      setIsInitialLoad(false);
+      setLoading(false);
+    } else {
+      setLoading(true);
+      setIsInitialLoad(true);
+    }
 
-    // AdminPortal already resolved auth; avoid 12s+ polling loop before first query.
     const sessionOk = await ensureAdminSupabaseSession(1_500);
     if (!sessionOk) {
       toast.error('Could not start your session. Please try again or refresh the page.');
@@ -1521,8 +1590,21 @@ const AdminDashboard = () => {
       return;
     }
 
+    if (!showedInstantData) {
+      const prefetched = await consumeAdminDashboardPrefetch();
+      if (prefetched) {
+        applyAdminSnapshot(prefetched);
+        showedInstantData = true;
+        setIsInitialLoad(false);
+        setLoading(false);
+      }
+    }
+
     try {
-      await loadDashboardDataRef.current({ silent: true });
+      await loadDashboardDataRef.current({
+        silent: true,
+        skipOngoingFetch: showedInstantData && statusFilter === 'ONGOING',
+      });
       dashboardLoadedWithSessionRef.current = true;
     } catch (error) {
       console.error('[AdminDashboard] Initial load failed:', error);
@@ -1530,7 +1612,7 @@ const AdminDashboard = () => {
       setIsInitialLoad(false);
       setLoading(false);
     }
-  }, []);
+  }, [applyAdminSnapshot, statusFilter]);
 
   // Load dashboard only after admin JWT is ready (RLS on customers requires authenticated admin)
   useEffect(() => {
@@ -1542,6 +1624,7 @@ const AdminDashboard = () => {
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
       if (event === 'SIGNED_OUT') {
         dashboardLoadedWithSessionRef.current = false;
+        clearAdminDashboardCache();
         setIsInitialLoad(true);
         setLoading(true);
         return;

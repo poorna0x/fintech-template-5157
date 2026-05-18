@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import AdminLogin from '@/components/AdminLogin';
+import { startAdminDashboardPrefetch } from '@/lib/adminDashboardCache';
 
 const adminDashboardImport = () => import('@/components/AdminDashboard');
 
@@ -42,6 +43,13 @@ export default function AdminPortal() {
       cancelled = true;
     };
   }, []);
+
+  // Fetch jobs/roster/counts while the dashboard JS chunk downloads.
+  useEffect(() => {
+    if (user && isAdmin) {
+      void startAdminDashboardPrefetch();
+    }
+  }, [user, isAdmin]);
 
   const booting = authInitializing || (user && isAdmin && !Dashboard);
 

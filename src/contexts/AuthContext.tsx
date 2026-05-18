@@ -152,6 +152,10 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     let cancelled = false;
     let authInitSettled = false;
     let initialSessionUserId: string | null = null;
+    /** Session already applied this boot — ignore later null INITIAL_SESSION / getSession races. */
+    let establishedSessionUserId: string | null = null;
+    let initialAuthEventDone = false;
+    let getSessionCheckDone = false;
 
     const settleAuthInit = () => {
       if (cancelled || authInitSettled) return;
@@ -160,7 +164,16 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       setAuthInitializing(false);
     };
 
-    const timeoutId = setTimeout(settleAuthInit, overallTimeoutMs);
+    const maybeSettleAuthInit = () => {
+      if (!initialAuthEventDone || !getSessionCheckDone) return;
+      settleAuthInit();
+    };
+
+    const timeoutId = setTimeout(() => {
+      initialAuthEventDone = true;
+      getSessionCheckDone = true;
+      settleAuthInit();
+    }, overallTimeoutMs);
 
     const restoreTechnicianFromLocalStorage = () => {
       const stored = getAuthSession();
@@ -189,9 +202,11 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       if (session?.user) {
         if (initialSessionUserId === session.user.id) return;
         initialSessionUserId = session.user.id;
+        establishedSessionUserId = session.user.id;
         await applySessionUser(session);
         return;
       }
+      if (establishedSessionUserId) return;
       initialSessionUserId = null;
       restoreTechnicianFromLocalStorage();
     };
@@ -208,10 +223,13 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
 
         await resolveInitialSession(result.data.session);
       } catch {
-        // Do not settle here — onAuthStateChange INITIAL_SESSION or timeout will reconcile.
         if (!cancelled && import.meta.env.DEV) {
           console.warn('[Auth] Initial session check timed out');
         }
+      } finally {
+        if (cancelled) return;
+        getSessionCheckDone = true;
+        maybeSettleAuthInit();
       }
     };
 
@@ -245,7 +263,9 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
 
       if (event === 'INITIAL_SESSION') {
         void resolveInitialSession(session).finally(() => {
-          settleAuthInit();
+          if (cancelled) return;
+          initialAuthEventDone = true;
+          maybeSettleAuthInit();
         });
         return;
       }
@@ -253,6 +273,9 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       if (session?.user) {
         if (event === 'SIGNED_IN') {
           void applySessionUser(session).finally(() => {
+            if (cancelled) return;
+            initialAuthEventDone = true;
+            getSessionCheckDone = true;
             settleAuthInit();
           });
           return;
