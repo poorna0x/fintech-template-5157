@@ -95,10 +95,8 @@ import {
   resolveJobBillAndPaymentPhotos,
 } from '@/lib/jobReportPhotos';
 
-/** Visible-tab poll when realtime is down (backup if postgres/broadcast miss). */
+/** Visible-tab poll (backup if postgres/broadcast miss). */
 const TECH_JOBS_POLL_MS = 12_000;
-/** Slower poll when realtime is up — list still syncs via postgres/broadcast. */
-const TECH_JOBS_POLL_REALTIME_MS = 300_000;
 /** Debounce full list refetch after sync ping / admin broadcast. */
 const TECH_JOB_SYNC_DEBOUNCE_MS = 250;
 
@@ -2265,17 +2263,12 @@ const TechnicianDashboard = () => {
   useEffect(() => {
     if (!user?.technicianId) return;
 
-    const pollMs = realtimeConnected ? TECH_JOBS_POLL_REALTIME_MS : TECH_JOBS_POLL_MS;
     const pollInterval = setInterval(() => {
       if (typeof document !== 'undefined' && document.hidden) return;
-      const activeOnly =
-        realtimeConnected &&
-        (statusFilterRef.current === 'ONGOING' || statusFilterRef.current === 'PENDING' ||
-          statusFilterRef.current === 'ASSIGNED' || statusFilterRef.current === 'IN_PROGRESS');
-      void loadAssignedJobs(0, { activeOnly });
-    }, pollMs);
+      void loadAssignedJobs();
+    }, TECH_JOBS_POLL_MS);
     return () => clearInterval(pollInterval);
-  }, [user?.technicianId, loadAssignedJobs, realtimeConnected]);
+  }, [user?.technicianId, loadAssignedJobs]);
 
   // When realtime comes back, do a one-time sync to ensure list is correct.
   useEffect(() => {
