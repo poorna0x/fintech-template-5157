@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
-import { format, addMonths } from 'date-fns';
+import { format } from 'date-fns';
 import { Bell, Plus, Pencil, Trash2, Calendar, Check } from 'lucide-react';
 import { db } from '@/lib/supabase';
 import { toast } from 'sonner';
@@ -9,6 +9,7 @@ import { AddReminderDialog } from './AddReminderDialog';
 import type { Reminder } from '@/types';
 import type { Customer } from '@/types';
 import {
+  addMonthsToReminderAt,
   isPendingPaymentReminderTitle,
   parsePendingPaymentReminderNotes,
   parseReminderAtLocalDate,
@@ -148,8 +149,8 @@ export function CustomerRemindersDialog({ open, onOpenChange, customer }: Custom
       return;
     }
     if (r.interval_type === 'months' && r.interval_value) {
-      const nextDate = addMonths(new Date(r.reminder_at), r.interval_value);
-      const nextAt = format(nextDate, 'yyyy-MM-dd');
+      const nextAt = addMonthsToReminderAt(r.reminder_at, r.interval_value);
+      const nextDate = parseReminderAtLocalDate(nextAt);
       await db.reminders.create({
         entity_type: r.entity_type,
         entity_id: r.entity_id ?? null,

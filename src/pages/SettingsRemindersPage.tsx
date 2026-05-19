@@ -10,7 +10,11 @@ import { toast } from 'sonner';
 import { AddReminderDialog } from '@/components/reminders/AddReminderDialog';
 import { ReminderRow } from '@/components/reminders/RemindersList';
 import type { Reminder } from '@/types';
-import { isPendingPaymentReminderTitle } from '@/lib/pendingPaymentReminder';
+import {
+  addMonthsToReminderAt,
+  isPendingPaymentReminderTitle,
+  parseReminderAtLocalDate,
+} from '@/lib/pendingPaymentReminder';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -128,9 +132,8 @@ export default function SettingsRemindersPage() {
       return;
     }
     if (r.interval_type === 'months' && r.interval_value) {
-      const base = new Date(r.reminder_at);
-      const nextDate = addMonths(base, r.interval_value);
-      const nextAt = format(nextDate, 'yyyy-MM-dd');
+      const nextAt = addMonthsToReminderAt(r.reminder_at, r.interval_value);
+      const nextDate = parseReminderAtLocalDate(nextAt);
       const { error: createError } = await db.reminders.create({
         entity_type: r.entity_type,
         entity_id: r.entity_id ?? null,

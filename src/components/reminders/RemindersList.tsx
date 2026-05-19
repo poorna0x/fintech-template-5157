@@ -8,6 +8,9 @@ import { toast } from 'sonner';
 import { AddReminderDialog } from './AddReminderDialog';
 import type { Reminder } from '@/types';
 import {
+  addMonthsToReminderAt,
+  getLocalCalendarDateYmd,
+  getLocalTomorrowYmd,
   isPendingPaymentReminderTitle,
   parsePendingPaymentReminderNotes,
   parseReminderAtLocalDate,
@@ -23,8 +26,8 @@ import {
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
 
-const todayStr = new Date().toISOString().split('T')[0];
-const tomorrowStr = new Date(Date.now() + 86400000).toISOString().split('T')[0];
+const todayStr = getLocalCalendarDateYmd();
+const tomorrowStr = getLocalTomorrowYmd();
 const RECENT_COMPLETED_DAYS = 7;
 
 type CustomerLabel = { name: string; customerId: string };
@@ -204,9 +207,8 @@ export function RemindersList() {
       return;
     }
     if (r.interval_type === 'months' && r.interval_value) {
-      const base = new Date(r.reminder_at);
-      const nextDate = addMonths(base, r.interval_value);
-      const nextAt = format(nextDate, 'yyyy-MM-dd');
+      const nextAt = addMonthsToReminderAt(r.reminder_at, r.interval_value);
+      const nextDate = parseReminderAtLocalDate(nextAt);
       const { error: createError } = await db.reminders.create({
         entity_type: r.entity_type,
         entity_id: r.entity_id ?? null,

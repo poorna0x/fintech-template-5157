@@ -38,6 +38,7 @@ import {
   computeAmcPreExpiryAutoCreate,
   getDefaultAmcServicePeriodMonths,
 } from '@/lib/amcAutoJobSchedule';
+import { getLocalCalendarDateYmd } from '@/lib/pendingPaymentReminder';
 
 interface AMCRecord {
   id: string;
@@ -162,7 +163,7 @@ const AMCViewPage: React.FC<AMCViewPageProps> = ({ onBack, onAMCDeleted }) => {
     lastCompletedDate: string | undefined,
     hasOpenAMCJob: boolean
   ): Pick<AMCRecord, 'nextAutoGenerationDate' | 'nextAMCDueDate' | 'autoGenerationLabel' | 'autoGenerationStatus'> => {
-    const todayStr = new Date().toISOString().split('T')[0];
+    const todayStr = getLocalCalendarDateYmd();
     const periodMonths =
       amc.service_period_months != null ? amc.service_period_months : getDefaultAmcServicePeriodMonths();
 

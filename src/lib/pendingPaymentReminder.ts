@@ -1,5 +1,23 @@
+import { addMonths, format } from 'date-fns';
+
 /** Must match reminders created from Settings → Pending payments. */
 export const PENDING_PAYMENT_REMINDER_TITLE = 'Pending payment';
+
+/** YYYY-MM-DD in local calendar (not UTC) — matches reminder_at storage and India timezone. */
+export function getLocalCalendarDateYmd(date: Date = new Date()): string {
+  return format(date, 'yyyy-MM-dd');
+}
+
+export function getLocalTomorrowYmd(): string {
+  const d = new Date();
+  d.setDate(d.getDate() + 1);
+  return getLocalCalendarDateYmd(d);
+}
+
+/** Next recurring reminder date after marking done (avoids UTC shift from `new Date('YYYY-MM-DD')`). */
+export function addMonthsToReminderAt(reminderAt: string, months: number): string {
+  return format(addMonths(parseReminderAtLocalDate(reminderAt), months), 'yyyy-MM-dd');
+}
 
 export function isPendingPaymentReminderTitle(title: string | null | undefined): boolean {
   return (title ?? '').trim() === PENDING_PAYMENT_REMINDER_TITLE;
@@ -31,7 +49,8 @@ export function parsePendingPaymentReminderNotes(
  * reminder_at is stored as YYYY-MM-DD. Parsing with `new Date('YYYY-MM-DD')` is UTC and can
  * show the wrong calendar day in some timezones; use local midnight instead.
  */
-export function parseReminderAtLocalDate(reminderAt: string): Date {
+export function parseReminderAtLocalDate(reminderAt: string | Date): Date {
+  if (reminderAt instanceof Date) return reminderAt;
   const s = (reminderAt ?? '').trim().split('T')[0];
   const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(s);
   if (m) {

@@ -3131,8 +3131,8 @@ export const db = {
         return { data: null, error: authError || new Error('Not authenticated'), created: 0 };
       }
 
-      const today = new Date();
-      const todayStr = today.toISOString().split('T')[0];
+      const { getLocalCalendarDateYmd } = await import('@/lib/pendingPaymentReminder');
+      const todayStr = getLocalCalendarDateYmd();
 
       // Only contracts still in force: ACTIVE and not past end_date (avoids jobs if status was never flipped to EXPIRED)
       const { data: activeAMCsRaw, error: amcError } = await supabase
@@ -3358,9 +3358,7 @@ export const db = {
           const serviceType = customer.service_type || 'RO';
           const jobNumber = generateJobNumber(serviceType);
 
-          const scheduledDate = new Date();
-          scheduledDate.setHours(0, 0, 0, 0);
-          const scheduledDateStr = scheduledDate.toISOString().split('T')[0];
+          const scheduledDateStr = getLocalCalendarDateYmd();
 
           const formattedEndDate = endDateStr ? formatAmcDateEnIN(endDateStr) : '';
           const description =

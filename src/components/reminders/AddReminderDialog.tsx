@@ -13,6 +13,7 @@ import { cn } from '@/lib/utils';
 import { db } from '@/lib/supabase';
 import { toast } from 'sonner';
 import type { Reminder } from '@/types';
+import { parseReminderAtLocalDate } from '@/lib/pendingPaymentReminder';
 
 type SlimCustomer = {
   id: string;
@@ -92,7 +93,9 @@ export function AddReminderDialog({
       if (editReminder) {
         setTitle(editReminder.title);
         setNotes(editReminder.notes || '');
-        setDate(editReminder.reminder_at ? new Date(editReminder.reminder_at) : new Date());
+        setDate(
+          editReminder.reminder_at ? parseReminderAtLocalDate(editReminder.reminder_at) : new Date()
+        );
         setRepeatType(editReminder.interval_type === 'months' ? 'months' : 'none');
         setRepeatValueStr(editReminder.interval_value != null ? String(editReminder.interval_value) : '1');
       } else {

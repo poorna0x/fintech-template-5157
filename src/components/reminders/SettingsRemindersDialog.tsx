@@ -25,7 +25,11 @@ import {
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
 import { AddReminderDialog } from './AddReminderDialog';
-import { isPendingPaymentReminderTitle } from '@/lib/pendingPaymentReminder';
+import {
+  addMonthsToReminderAt,
+  isPendingPaymentReminderTitle,
+  parseReminderAtLocalDate,
+} from '@/lib/pendingPaymentReminder';
 
 const RECENT_COMPLETED_DAYS = 7;
 const UPCOMING_DAYS = 7;
@@ -164,9 +168,8 @@ export function SettingsRemindersDialog({ open, onOpenChange }: SettingsReminder
       return;
     }
     if (r.interval_type === 'months' && r.interval_value) {
-      const base = new Date(r.reminder_at);
-      const nextDate = addMonths(base, r.interval_value);
-      const nextAt = format(nextDate, 'yyyy-MM-dd');
+      const nextAt = addMonthsToReminderAt(r.reminder_at, r.interval_value);
+      const nextDate = parseReminderAtLocalDate(nextAt);
       const { error: createError } = await db.reminders.create({
         entity_type: r.entity_type,
         entity_id: r.entity_id ?? null,
