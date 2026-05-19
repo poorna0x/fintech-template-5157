@@ -445,6 +445,29 @@ export const db = {
         .in('id', ids);
       return { data: data || [], error };
     },
+
+    /** Returning-customer flags: customers with last_service_date set (batched). */
+    async getLastServiceDateFlags(customerIds: string[]) {
+      const ids = [...new Set(customerIds.filter(Boolean))];
+      const map: Record<string, boolean> = {};
+      if (ids.length === 0) return { data: map, error: null };
+
+      const CHUNK = 80;
+      for (let i = 0; i < ids.length; i += CHUNK) {
+        const chunk = ids.slice(i, i + CHUNK);
+        const { data, error } = await supabase
+          .from('customers')
+          .select('id, last_service_date')
+          .in('id', chunk);
+        if (error) return { data: map, error };
+        for (const row of data || []) {
+          if ((row as { last_service_date?: string | null }).last_service_date) {
+            map[(row as { id: string }).id] = true;
+          }
+        }
+      }
+      return { data: map, error: null };
+    },
     
     async getByPhone(phone: string) {
       if (!(await hasAdminCustomerAccess())) {
@@ -994,6 +1017,29 @@ export const db = {
         if (!(id in map)) map[id] = null;
       }
 
+      return { data: map, error: null };
+    },
+
+    /** Among given customer UUIDs, which have at least one COMPLETED job (returning-customer UI). */
+    async getCustomerIdsWithCompletedAmong(customerIds: string[]) {
+      const ids = [...new Set(customerIds.filter(Boolean))];
+      const map: Record<string, boolean> = {};
+      if (ids.length === 0) return { data: map, error: null };
+
+      const CHUNK = 80;
+      for (let i = 0; i < ids.length; i += CHUNK) {
+        const chunk = ids.slice(i, i + CHUNK);
+        const { data, error } = await supabase
+          .from('jobs')
+          .select('customer_id')
+          .in('customer_id', chunk)
+          .eq('status', 'COMPLETED');
+        if (error) return { data: map, error };
+        for (const row of data || []) {
+          const cid = (row as { customer_id?: string | null }).customer_id;
+          if (cid) map[cid] = true;
+        }
+      }
       return { data: map, error: null };
     },
     
@@ -2191,6 +2237,14 @@ export const db = {
     /** Technician PWA: peer roster without GPS/salary (RLS-safe RPC). */
     async getRosterForTechnicianApp() {
       const { data, error } = await supabase.rpc('get_technician_roster_for_app');
+      if (error && isRpcNotFoundError(error)) {
+        if (import.meta.env.DEV) {
+          console.warn(
+            '[technicians] get_technician_roster_for_app missing — run scripts/patch-technician-roster-rpc.sql in Supabase'
+          );
+        }
+        return { data: [] as Record<string, unknown>[], error: null };
+      }
       return { data, error };
     },
     

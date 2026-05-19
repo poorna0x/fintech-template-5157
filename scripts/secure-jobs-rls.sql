@@ -118,7 +118,14 @@ DROP POLICY IF EXISTS jobs_delete ON public.jobs;
 
 CREATE POLICY jobs_select
   ON public.jobs FOR SELECT TO authenticated
-  USING (public.is_admin_user() OR public.technician_can_access_job(id));
+  USING (
+    public.is_admin_user()
+    OR public.technician_can_access_job(id)
+    OR (
+      public.auth_user_role() = 'technician'
+      AND public.is_technician_assigned_to_customer(customer_id)
+    )
+  );
 
 CREATE POLICY jobs_insert
   ON public.jobs FOR INSERT TO authenticated

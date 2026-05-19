@@ -52,7 +52,7 @@ import { toast } from 'sonner';
 import { getAmcDocumentBrandLabel } from '@/lib/amc-brand';
 import { TOAST_VALIDATION } from '@/lib/toastOptions';
 import { formatCompletedWhen } from '@/lib/relativeTime';
-import { getJobEquipmentDisplay } from '@/lib/adminUtils';
+import { getJobEquipmentDisplay, parseJobRequirements } from '@/lib/adminUtils';
 import { canVibrate, hapticConfirm, hapticTap } from '@/lib/haptics';
 import { db, supabase, fetchCustomerIdsWithCompletedJobsMap } from '@/lib/supabase';
 import { Job, JobAssignmentRequest } from '@/types';
@@ -89,6 +89,11 @@ import {
   TECHNICIAN_JOB_LIST_BROADCAST_EVENT,
   type TechnicianJobListRefreshPayload,
 } from '@/lib/technicianJobListSync';
+import {
+  enrichJobsWithAfterPhotosIfNeeded,
+  resolveCustomerUuidForQueries,
+  resolveJobBillAndPaymentPhotos,
+} from '@/lib/jobReportPhotos';
 
 /** Visible-tab poll (backup if postgres/broadcast miss). */
 const TECH_JOBS_POLL_MS = 12_000;
@@ -386,12 +391,23 @@ const TechnicianDashboard = () => {
   const [customerPriorServiceStatus, setCustomerPriorServiceStatus] = useState<Record<string, boolean>>({}); // ≥1 completed job (returning)
   const [customerLastServiceBrand, setCustomerLastServiceBrand] = useState<Record<string, ServiceBrand | null>>({});
   const loadedLastBrandCustomerIdsRef = useRef<Set<string>>(new Set());
-  const techCustomerHasPriorService = useCallback((customer: any) => {
-    const cid = customer?.id;
-    if (!cid) return false;
-    if (customerPriorServiceStatus[cid]) return true;
-    return Boolean(customer?.last_service_date ?? customer?.lastServiceDate);
-  }, [customerPriorServiceStatus]);
+  const techCustomerHasPriorService = useCallback(
+    (customer: any, opts?: { excludeJobId?: string }) => {
+      const cid = customer?.id;
+      if (!cid) return false;
+      if (customerPriorServiceStatus[cid]) return true;
+      if (customer?.last_service_date ?? customer?.lastServiceDate) return true;
+      const excludeJobId = opts?.excludeJobId;
+      return jobs.some((j) => {
+        const jcid = (j as any).customer_id || (j.customer as any)?.id;
+        if (jcid !== cid) return false;
+        if (excludeJobId && j.id === excludeJobId) return false;
+        const st = (j as any).status || j.status;
+        return st === 'COMPLETED';
+      });
+    },
+    [customerPriorServiceStatus, jobs]
+  );
   const [amcInfoDialogOpen, setAmcInfoDialogOpen] = useState(false);
   const [selectedCustomerForAMC, setSelectedCustomerForAMC] = useState<{id: string, name: string} | null>(null);
   const [amcInfo, setAmcInfo] = useState<any>(null);
@@ -672,6 +688,28 @@ const TechnicianDashboard = () => {
   );
 
   // Define loadAssignedJobs before useEffect hooks that use it
+  const hydrateCustomerPriorServiceFlags = useCallback(async (customerIds: string[]) => {
+    const ids = Array.from(new Set((customerIds || []).filter(Boolean)));
+    if (ids.length === 0) return;
+
+    try {
+      const [lastServiceRes, completedRes] = await Promise.all([
+        db.customers.getLastServiceDateFlags(ids),
+        db.jobs.getCustomerIdsWithCompletedAmong(ids),
+      ]);
+
+      const merged: Record<string, boolean> = {};
+      if (lastServiceRes.data) Object.assign(merged, lastServiceRes.data);
+      if (completedRes.data) Object.assign(merged, completedRes.data);
+
+      if (Object.keys(merged).length > 0) {
+        setCustomerPriorServiceStatus((prev) => ({ ...prev, ...merged }));
+      }
+    } catch (e) {
+      console.warn('[TechnicianDashboard] hydrateCustomerPriorServiceFlags failed:', e);
+    }
+  }, []);
+
   const loadCustomerLastServiceBrands = useCallback(async (customerIds: string[]) => {
     const uniqueIds = Array.from(new Set((customerIds || []).filter(Boolean)));
     const missingIds = uniqueIds.filter((id) => !loadedLastBrandCustomerIdsRef.current.has(id));
@@ -744,6 +782,22 @@ const TechnicianDashboard = () => {
         });
       }
 
+      const completedJobs = allJobs.filter(
+        (j) => ((j as any).status || j.status) === 'COMPLETED'
+      );
+      if (completedJobs.length > 0) {
+        try {
+          const enriched = await enrichJobsWithAfterPhotosIfNeeded(completedJobs);
+          const enrichedById = new Map(enriched.map((j) => [j.id, j]));
+          for (let i = 0; i < allJobs.length; i++) {
+            const row = enrichedById.get(allJobs[i].id);
+            if (row) allJobs[i] = row;
+          }
+        } catch (enrichErr) {
+          console.warn('Failed to enrich completed job photos:', enrichErr);
+        }
+      }
+
       const ongoingJobs = allJobs.filter(isOngoingJob);
       
       console.log(`📊 Jobs loaded from database: ${data?.length || 0} total`, {
@@ -781,6 +835,18 @@ const TechnicianDashboard = () => {
         const isPrior = st === 'COMPLETED' || Boolean(c?.last_service_date ?? c?.lastServiceDate);
         if (isPrior) priorCustomerIds.add(cid);
       }
+      const allCustomerIdsForFlags = new Set<string>();
+      for (const j of allJobs) {
+        const cid = (j as any).customer_id || (j.customer as any)?.id;
+        if (cid) allCustomerIdsForFlags.add(cid);
+      }
+
+      if (allCustomerIdsForFlags.size > 0) {
+        setTimeout(() => {
+          hydrateCustomerPriorServiceFlags(Array.from(allCustomerIdsForFlags)).catch(() => {});
+        }, 50);
+      }
+
       if (priorCustomerIds.size > 0) {
         // Defer slightly so the main list paints first.
         setTimeout(() => {
@@ -906,6 +972,17 @@ const TechnicianDashboard = () => {
 
     loadCustomerLastServiceBrands(Array.from(idsToPrefetch)).catch(() => {});
   }, [assignmentRequests, customerPriorServiceStatus, jobs, loadCustomerLastServiceBrands]);
+
+  useEffect(() => {
+    const ids = new Set<string>();
+    for (const req of assignmentRequests) {
+      const job = req.job as any;
+      const cid = job?.customer_id || job?.customer?.id;
+      if (cid) ids.add(cid);
+    }
+    if (ids.size === 0) return;
+    hydrateCustomerPriorServiceFlags(Array.from(ids)).catch(() => {});
+  }, [assignmentRequests, hydrateCustomerPriorServiceFlags]);
 
   // Always show AMC question first when entering step 3
   useEffect(() => {
@@ -1548,6 +1625,25 @@ const TechnicianDashboard = () => {
     };
   }, [user]);
 
+  /** Merge API report rows with completed jobs already on this device (same customer). */
+  const mergeCustomerReportJobsForUuid = useCallback(
+    (fromApi: any[], customerUuid: string) => {
+      const byId = new Map<string, any>();
+      for (const row of fromApi || []) {
+        if (row?.id) byId.set(row.id, row);
+      }
+      for (const j of jobsRef.current) {
+        const cid = (j as any).customer_id || (j.customer as any)?.id;
+        if (cid !== customerUuid) continue;
+        const st = String((j as any).status || j.status || '').toUpperCase();
+        if (st !== 'COMPLETED') continue;
+        if (!byId.has(j.id)) byId.set(j.id, j);
+      }
+      return Array.from(byId.values());
+    },
+    []
+  );
+
   // Fetch customer jobs when report dialog opens
   useEffect(() => {
     const fetchCustomerReportJobs = async () => {
@@ -1558,15 +1654,33 @@ const TechnicianDashboard = () => {
 
       setLoadingCustomerReportJobs(true);
       try {
-        const customerId = selectedCustomerForReport.id || selectedCustomerForReport.customer_id;
-        if (customerId) {
-        const { data, error } = await db.jobs.getByCustomerIdForReportEnriched(customerId);
+        const customerUuid = await resolveCustomerUuidForQueries(selectedCustomerForReport);
+
+        if (customerUuid) {
+          const { data, error } = await db.jobs.getByCustomerIdForReportEnriched(customerUuid);
           if (error) {
             console.error('Error fetching customer jobs for report:', error);
-            setCustomerReportJobs([]);
+            setCustomerReportJobs(mergeCustomerReportJobsForUuid([], customerUuid));
           } else {
-            setCustomerReportJobs(data || []);
+            const merged = mergeCustomerReportJobsForUuid(data || [], customerUuid);
+            const needsEnrich = merged.some(
+              (j) =>
+                !(Array.isArray((j as any).after_photos) && (j as any).after_photos.length > 0) &&
+                !(Array.isArray((j as any).afterPhotos) && (j as any).afterPhotos.length > 0)
+            );
+            if (needsEnrich && merged.length > 0) {
+              try {
+                const enriched = await enrichJobsWithAfterPhotosIfNeeded(merged);
+                setCustomerReportJobs(enriched);
+              } catch {
+                setCustomerReportJobs(merged);
+              }
+            } else {
+              setCustomerReportJobs(merged);
+            }
           }
+        } else {
+          setCustomerReportJobs([]);
         }
       } catch (error) {
         console.error('Error fetching customer jobs for report:', error);
@@ -1577,7 +1691,7 @@ const TechnicianDashboard = () => {
     };
 
     fetchCustomerReportJobs();
-  }, [customerReportDialogOpen, selectedCustomerForReport]);
+  }, [customerReportDialogOpen, selectedCustomerForReport, mergeCustomerReportJobsForUuid]);
 
   // Show notification if there are queued photos or job completions (less frequent)
   useEffect(() => {
@@ -4012,6 +4126,21 @@ const TechnicianDashboard = () => {
     return parts.join(', ') || 'Address not available';
   };
 
+  /** Load photo arrays when slim list row has none (legacy after_photos / images). */
+  const fetchJobPhotoUrlsForDialog = async (job: Job): Promise<string[]> => {
+    const fromRow = getAllJobPhotos(job);
+    if (fromRow.length > 0) return fromRow;
+
+    const { data: photoRows } = await db.jobs.getPhotoFieldsForJobIds([job.id]);
+    const row = photoRows?.[0];
+    if (!row) return [];
+
+    const merged = { ...job, ...row } as Job;
+    const { allPhotos } = resolveJobBillAndPaymentPhotos(merged as any);
+    if (allPhotos.length > 0) return allPhotos;
+    return getAllJobPhotos(merged);
+  };
+
   // Helper function to get all photos for a job
   const getAllJobPhotos = (job: Job): string[] => {
     const photos: string[] = [];
@@ -4108,39 +4237,46 @@ const TechnicianDashboard = () => {
   ]);
 
   // Helper function to get all photos for a customer (from jobs + customer-level photos without a job)
-  const getAllCustomerPhotos = async (customerId: string): Promise<string[]> => {
+  const getAllCustomerPhotos = async (
+    customerIdOrCustomer: string | { id?: string; customer_id?: string; customerId?: string }
+  ): Promise<string[]> => {
     try {
       setLoadingCustomerPhotos(true);
-      
-      // First, check if customerId is customer_id (string) or UUID - get customer for UUID and for customer.photos
-      let customerUuid = customerId;
-      let customerRecord: any = null;
-      
-      if (customerId && customerId.startsWith('C') && customerId.length < 36) {
-        const { data: customer, error: customerError } = await db.customers.getByCustomerId(customerId);
-        if (customerError || !customer) {
-          console.error('Error fetching customer:', customerError);
-          return [];
-        }
-        customerUuid = customer.id;
-        customerRecord = customer;
-      } else {
-        const { data: customer, error: customerError } = await db.customers.getById(customerId);
-        if (!customerError && customer) customerRecord = customer;
-      }
-      
-      const { data: customerJobs, error } = await db.jobs.getByCustomerIdForPhotoAggregation(customerUuid);
-      
-      if (error) {
-        console.error('Error fetching customer jobs:', error);
+
+      const customerUuid = await resolveCustomerUuidForQueries(customerIdOrCustomer);
+      if (!customerUuid) {
+        console.error('Error resolving customer UUID for photos');
         return [];
       }
+
+      let customerRecord: any = null;
+      const { data: customer, error: customerError } = await db.customers.getById(customerUuid);
+      if (!customerError && customer) customerRecord = customer;
       
+      const { data: customerJobs, error } = await db.jobs.getByCustomerIdForPhotoAggregation(customerUuid);
+
+      if (error) {
+        console.error('Error fetching customer jobs:', error);
+      }
+
+      const jobById = new Map<string, any>();
+      for (const row of customerJobs || []) {
+        if (row?.id) jobById.set(row.id, row);
+      }
+      for (const j of jobsRef.current) {
+        const cid = (j as any).customer_id || (j.customer as any)?.id;
+        if (cid === customerUuid && !jobById.has(j.id)) jobById.set(j.id, j);
+      }
+      const allCustomerJobs = Array.from(jobById.values());
+      if (allCustomerJobs.length === 0 && error) {
+        return [];
+      }
+
       // Use Map to track photo URLs with their job dates for sorting (latest first)
       const photoMap = new Map<string, number>(); // URL -> timestamp
       
       // Sort jobs by completion/creation date (latest first) to prioritize newer photos
-      const sortedJobs = [...(customerJobs || [])].sort((a, b) => {
+      const sortedJobs = [...allCustomerJobs].sort((a, b) => {
         const dateA = (a as any).completed_at || a.completedAt || a.created_at || a.createdAt || '';
         const dateB = (b as any).completed_at || b.completedAt || b.created_at || b.createdAt || '';
         if (!dateA && !dateB) return 0;
@@ -4802,7 +4938,9 @@ const TechnicianDashboard = () => {
                   const customer = job?.customer as any;
                   const hasAmcR = Boolean(customerAMCStatus[customer?.id]);
                   const hasGR = Boolean(customer?.has_google_review);
-                  const hasPriorR = techCustomerHasPriorService(customer);
+                  const hasPriorR = techCustomerHasPriorService(customer, {
+                    excludeJobId: (job as any)?.id,
+                  });
                   const showPriorCornerR = hasPriorR && hasAmcR && !hasGR;
                   
                   return (
@@ -4940,28 +5078,37 @@ const TechnicianDashboard = () => {
 
                                 {/* Photos */}
                                 {(() => {
-                                  const customerId = (customer as any)?.id || customer?.id;
+                                  const customerRef = customer as any;
+                                  const hasCustomerKey =
+                                    customerRef?.id ||
+                                    customerRef?.customer_id ||
+                                    customerRef?.customerId;
                                   return (
                                     <div className="bg-white rounded-lg p-3 border border-gray-200 hover:border-gray-300 hover:shadow-sm transition-all duration-200">
                                       <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-3">
                                         <div className="w-8 h-8 sm:w-10 sm:h-10 bg-gray-100 rounded-lg flex items-center justify-center flex-shrink-0">
                                           <button
                                             onClick={async () => {
-                                              if (customerId) {
+                                              if (hasCustomerKey) {
                                                 setLoadingCustomerPhotos(true);
-                                                const allCustomerPhotos = await getAllCustomerPhotos(customerId);
-                                                setSelectedJobPhotos({ 
-                                                  jobId: job.id, 
+                                                const allCustomerPhotos = await getAllCustomerPhotos(customerRef);
+                                                const resolvedId = await resolveCustomerUuidForQueries(customerRef);
+                                                setSelectedJobPhotos({
+                                                  jobId: job.id,
                                                   photos: allCustomerPhotos,
-                                                  customerId 
+                                                  customerId: resolvedId ?? undefined,
                                                 });
                                                 setPhotosDialogOpen(true);
                                                 setLoadingCustomerPhotos(false);
                                               } else {
-                                                // Fallback to job photos only - only load when button is clicked
-                                                const jobPhotos = getAllJobPhotos(job);
-                                                setSelectedJobPhotos({ jobId: job.id, photos: jobPhotos });
-                                                setPhotosDialogOpen(true);
+                                                setLoadingCustomerPhotos(true);
+                                                try {
+                                                  const jobPhotos = await fetchJobPhotoUrlsForDialog(job);
+                                                  setSelectedJobPhotos({ jobId: job.id, photos: jobPhotos });
+                                                  setPhotosDialogOpen(true);
+                                                } finally {
+                                                  setLoadingCustomerPhotos(false);
+                                                }
                                               }
                                             }}
                                             className="cursor-pointer"
@@ -4973,9 +5120,9 @@ const TechnicianDashboard = () => {
                                         <div className="flex-1 min-w-0">
                                           <div className="text-sm font-semibold text-gray-900">Photos</div>
                                           <div className="text-xs text-gray-500">
-                                            {loadingCustomerPhotos 
+                                            {loadingCustomerPhotos
                                               ? 'Loading...'
-                                              : customerId
+                                              : hasCustomerKey
                                                 ? 'View all customer photos'
                                                 : 'View photos'}
                                           </div>
@@ -5314,7 +5461,7 @@ const TechnicianDashboard = () => {
                             const jc = job.customer as any;
                             const hasAmcJ = Boolean(customerAMCStatus[jc?.id]);
                             const hasGJ = Boolean(jc?.has_google_review);
-                            const hasPriorJ = techCustomerHasPriorService(jc);
+                            const hasPriorJ = techCustomerHasPriorService(jc, { excludeJobId: job.id });
                             const showPriorCornerJ = hasPriorJ && hasAmcJ && !hasGJ;
                             return (
                           <div className={`w-4 h-4 ${technicianCustomerIndicatorMainClass(hasAmcJ, hasGJ, hasPriorJ)} rounded-sm flex items-center justify-center relative`}>
@@ -5346,7 +5493,7 @@ const TechnicianDashboard = () => {
                         </div>
                       {(() => {
                         const jc = job.customer as any;
-                        const hasPriorJ = techCustomerHasPriorService(jc);
+                        const hasPriorJ = techCustomerHasPriorService(jc, { excludeJobId: job.id });
                         const cid = jc?.id as string | undefined;
                         const lastBrand = cid ? customerLastServiceBrand[cid] : null;
                         return hasPriorJ && lastBrand ? (
@@ -5687,24 +5834,8 @@ const TechnicianDashboard = () => {
 
                       {/* View Bill & Add Parts for Completed Jobs (Add Reminder removed from completed section) */}
                       {statusFilter === 'COMPLETED' && (job.status === 'COMPLETED' || (job as any).status === 'COMPLETED') && (() => {
-                        let requirements: any[] = [];
-                        try {
-                          const reqData = (job as any).requirements || job.requirements;
-                          if (typeof reqData === 'string') {
-                            requirements = JSON.parse(reqData);
-                          } else if (Array.isArray(reqData)) {
-                            requirements = reqData;
-                          } else if (reqData && typeof reqData === 'object') {
-                            requirements = [reqData];
-                          }
-                        } catch (e) {
-                          requirements = [];
-                        }
-                        const billPhotosReq = requirements.find((r: any) => r?.bill_photos);
-                        const qrReq = requirements.find((r: any) => r?.qr_photos);
-                        const billPhotos: string[] = Array.isArray(billPhotosReq?.bill_photos) ? billPhotosReq.bill_photos : [];
-                        const paymentScreenshot = qrReq?.qr_photos?.payment_screenshot || null;
-                        const hasBill = (billPhotos.length > 0) || !!paymentScreenshot;
+                        const { allPhotos } = resolveJobBillAndPaymentPhotos(job as any);
+                        const hasBill = allPhotos.length > 0;
                         return (
                           <div className="mb-3 pt-3 border-t border-gray-200 flex flex-wrap gap-2">
                             {hasBill && (
@@ -5712,9 +5843,6 @@ const TechnicianDashboard = () => {
                                 size="sm"
                                 variant="outline"
                                 onClick={() => {
-                                  const allPhotos: string[] = [];
-                                  allPhotos.push(...billPhotos);
-                                  if (paymentScreenshot) allPhotos.push(paymentScreenshot);
                                   if (allPhotos.length > 0) {
                                     setSelectedBillPhotos(allPhotos);
                                     setSelectedPhoto({ url: allPhotos[0], index: 0, total: allPhotos.length });
@@ -5900,10 +6028,14 @@ const TechnicianDashboard = () => {
                                           setPhotosDialogOpen(true);
                                           setLoadingCustomerPhotos(false);
                                         } else {
-                                          // Fallback to job photos only - only load when button is clicked
-                                          const jobPhotos = getAllJobPhotos(job);
-                                          setSelectedJobPhotos({ jobId: job.id, photos: jobPhotos });
-                                          setPhotosDialogOpen(true);
+                                          setLoadingCustomerPhotos(true);
+                                          try {
+                                            const jobPhotos = await fetchJobPhotoUrlsForDialog(job);
+                                            setSelectedJobPhotos({ jobId: job.id, photos: jobPhotos });
+                                            setPhotosDialogOpen(true);
+                                          } finally {
+                                            setLoadingCustomerPhotos(false);
+                                          }
                                         }
                                       }}
                                       className="cursor-pointer"
@@ -8272,11 +8404,27 @@ const TechnicianDashboard = () => {
                 variant="outline"
                 className="w-full justify-start"
                 onClick={async () => {
-                  const customer = (selectedJobForOptions.customer as any);
-                  if (customer) {
-                    setSelectedCustomerForReport(customer);
+                  const job = selectedJobForOptions;
+                  const customer = job.customer as any;
+                  const customerUuid =
+                    customer?.id || (job as any).customer_id || (job as any).customerId;
+                  if (customer || customerUuid) {
+                    setSelectedCustomerForReport({
+                      ...(customer || {}),
+                      id: customerUuid,
+                      customer_id:
+                        customer?.customer_id ||
+                        customer?.customerId ||
+                        (customer as any)?.customer_id,
+                      full_name:
+                        customer?.full_name ||
+                        customer?.fullName ||
+                        'Customer',
+                      phone: customer?.phone,
+                      email: customer?.email,
+                    });
                     setCustomerReportDialogOpen(true);
-                    setOptionsDialogOpen(prev => ({ ...prev, [selectedJobForOptions.id]: false }));
+                    setOptionsDialogOpen(prev => ({ ...prev, [job.id]: false }));
                     setSelectedJobForOptions(null);
                   }
                 }}
@@ -8607,95 +8755,16 @@ const TechnicianDashboard = () => {
                           }
                         }
                         
-                        let requirements: any[] = [];
-                        try {
-                          const reqData = (job as any).requirements || job.requirements;
-                          if (typeof reqData === 'string') {
-                            requirements = JSON.parse(reqData);
-                          } else if (Array.isArray(reqData)) {
-                            requirements = reqData;
-                          } else if (reqData && typeof reqData === 'object') {
-                            requirements = [reqData];
-                          }
-                        } catch (e) {
-                          requirements = [];
-                        }
-                        
+                        const requirements = parseJobRequirements(
+                          (job as any).requirements || job.requirements
+                        );
                         const amcInfo = requirements.find((r: any) => r?.amc_info)?.amc_info || null;
                         const qrPhotos = requirements.find((r: any) => r?.qr_photos)?.qr_photos || null;
-                        
-                        // Get payment screenshot from qr_photos (primary source)
-                        let paymentScreenshot: string | null = null;
-                        if (qrPhotos?.payment_screenshot) {
-                          const extractedUrls = extractPhotoUrls([qrPhotos.payment_screenshot]);
-                          paymentScreenshot = extractedUrls.length > 0 ? extractedUrls[0] : null;
-                          console.log('📸 Payment screenshot from qr_photos:', paymentScreenshot);
-                        }
-                        
-                        // Get all photos from after_photos field (contains both bill photos + payment screenshot)
-                        const afterPhotos = Array.isArray((job as any).after_photos || job.afterPhotos) 
-                          ? ((job as any).after_photos || job.afterPhotos) 
-                          : [];
-                        const extractedAfterPhotos = extractPhotoUrls(afterPhotos);
-                        console.log('📸 All photos from after_photos:', extractedAfterPhotos);
-                        
-                        // Get bill photos from requirements.bill_photos (fallback)
-                        const billPhotosFromReq = requirements.find((r: any) => r?.bill_photos)?.bill_photos || [];
-                        const extractedBillPhotosFromReq = extractPhotoUrls(billPhotosFromReq);
-                        
-                        // Determine bill photos: use after_photos (which includes payment screenshot) but exclude payment screenshot if we found it
-                        let billPhotos: string[] = [];
-                        
-                        if (extractedAfterPhotos.length > 0) {
-                          // after_photos contains both bill photos and payment screenshot
-                          if (paymentScreenshot) {
-                            // Filter out payment screenshot from after_photos to get just bill photos
-                            billPhotos = extractedAfterPhotos.filter(url => {
-                              // Compare URLs (handle both full URLs and normalized URLs)
-                              const normalizedUrl1 = url.trim().toLowerCase();
-                              const normalizedUrl2 = paymentScreenshot!.trim().toLowerCase();
-                              return normalizedUrl1 !== normalizedUrl2;
-                            });
-                            console.log('📸 Filtered bill photos (excluded payment screenshot):', billPhotos);
-                          } else {
-                            // Payment screenshot not found in qr_photos, but might be in after_photos
-                            // Use all after_photos as bill photos (payment screenshot will be shown if found later)
-                            billPhotos = extractedAfterPhotos;
-                          }
-                        } else {
-                          // No after_photos, use bill_photos from requirements
-                          billPhotos = extractedBillPhotosFromReq;
-                        }
-                        
-                        // If payment screenshot not in qr_photos but payment method is ONLINE and we have after_photos,
-                        // the payment screenshot should be in after_photos (we added it there)
-                        // Try to find it by comparing with bill_photos from requirements
-                        if (!paymentScreenshot && (paymentMethod === 'ONLINE' || paymentMethod === 'UPI' || paymentMethod === 'CARD' || paymentMethod === 'BANK_TRANSFER')) {
-                          if (extractedAfterPhotos.length > extractedBillPhotosFromReq.length) {
-                            // There's at least one extra photo in after_photos - likely the payment screenshot
-                            // Find the photo that's not in bill_photos from requirements
-                            const paymentScreenshotCandidate = extractedAfterPhotos.find(url => 
-                              !extractedBillPhotosFromReq.some(billUrl => {
-                                const normalized1 = url.trim().toLowerCase();
-                                const normalized2 = billUrl.trim().toLowerCase();
-                                return normalized1 === normalized2;
-                              })
-                            );
-                            if (paymentScreenshotCandidate) {
-                              paymentScreenshot = paymentScreenshotCandidate;
-                              // Remove it from bill photos
-                              billPhotos = billPhotos.filter(url => {
-                                const normalized1 = url.trim().toLowerCase();
-                                const normalized2 = paymentScreenshot!.trim().toLowerCase();
-                                return normalized1 !== normalized2;
-                              });
-                              console.log('📸 Found payment screenshot in after_photos:', paymentScreenshot);
-                            }
-                          }
-                        }
-                        
-                        console.log('📸 Final bill photos count:', billPhotos.length);
-                        console.log('📸 Final payment screenshot:', paymentScreenshot);
+                        const { billPhotos, paymentScreenshot, allPhotos: reportBillAllPhotos } =
+                          resolveJobBillAndPaymentPhotos({
+                            ...(job as any),
+                            payment_method: paymentMethod,
+                          });
                         
                         return (
                           <div key={job.id} className="border border-gray-200 rounded-lg p-4 bg-white">
@@ -8823,19 +8892,21 @@ const TechnicianDashboard = () => {
                               )}
                               
                               {/* Payment Screenshot & Bill Photos - Combined Section */}
-                              {((paymentMethod === 'ONLINE' || paymentMethod === 'UPI' || paymentMethod === 'CARD' || paymentMethod === 'BANK_TRANSFER') && paymentScreenshot) || (billPhotos && Array.isArray(billPhotos) && billPhotos.length > 0) ? (
+                              {reportBillAllPhotos.length > 0 ? (
                                 <div className="mt-3 pt-3 border-t border-gray-200">
                                   <div className="font-medium text-gray-900 mb-3">Payment & Bill Documents</div>
                                   <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
                                     {/* Payment Screenshot */}
-                                    {(paymentMethod === 'ONLINE' || paymentMethod === 'UPI' || paymentMethod === 'CARD' || paymentMethod === 'BANK_TRANSFER') && paymentScreenshot && (
+                                    {paymentScreenshot && (
                                       <div 
                                         className="relative group cursor-pointer rounded-lg overflow-hidden border-2 border-blue-300 hover:border-blue-500 transition-all"
                                         onClick={() => {
-                                          // Combine payment screenshot and bill photos for navigation
-                                          const allPhotos = [paymentScreenshot, ...billPhotos];
-                                          setSelectedBillPhotos(allPhotos);
-                                          setSelectedPhoto({ url: paymentScreenshot, index: 0, total: allPhotos.length });
+                                          setSelectedBillPhotos(reportBillAllPhotos);
+                                          setSelectedPhoto({
+                                            url: paymentScreenshot!,
+                                            index: 0,
+                                            total: reportBillAllPhotos.length,
+                                          });
                                           setPhotoViewerOpen(true);
                                         }}
                                       >
@@ -8856,22 +8927,22 @@ const TechnicianDashboard = () => {
                                     )}
                                     
                                     {/* Bill Photos */}
-                                    {billPhotos && Array.isArray(billPhotos) && billPhotos.length > 0 && billPhotos.map((photo, idx) => {
-                                      // Calculate index including payment screenshot if it exists
-                                      const paymentScreenshotExists = (paymentMethod === 'ONLINE' || paymentMethod === 'UPI' || paymentMethod === 'CARD' || paymentMethod === 'BANK_TRANSFER') && paymentScreenshot;
-                                      const photoIndex = paymentScreenshotExists ? idx + 1 : idx;
-                                      const allPhotos = paymentScreenshotExists ? [paymentScreenshot, ...billPhotos] : billPhotos;
+                                    {billPhotos.length > 0 &&
+                                      billPhotos.map((photo, idx) => {
+                                      const photoIndex = paymentScreenshot
+                                        ? reportBillAllPhotos.indexOf(photo)
+                                        : idx;
                                       
                                       return (
-                                      <div 
-                                        key={idx} 
+                                      <div
+                                        key={idx}
                                         className="relative group cursor-pointer rounded-lg overflow-hidden border-2 border-green-300 hover:border-green-500 transition-all"
                                         onClick={() => {
-                                          setSelectedBillPhotos(allPhotos);
+                                          setSelectedBillPhotos(reportBillAllPhotos);
                                           setSelectedPhoto({
                                             url: photo,
-                                            index: photoIndex,
-                                            total: allPhotos.length
+                                            index: photoIndex >= 0 ? photoIndex : idx,
+                                            total: reportBillAllPhotos.length,
                                           });
                                           setPhotoViewerOpen(true);
                                         }}
