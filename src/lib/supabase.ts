@@ -1195,8 +1195,103 @@ export const db = {
       return { data: mergeJobPhotoFieldsIntoRows(rows, photoRows as Record<string, unknown>[]), error: null };
     },
 
-    /** Low-egress technician job list. No photo arrays; minimal customer embed. */
+    /**
+     * Technician PWA dashboard: fetch only what the UI needs (not one .limit(100) scan).
+     * Active + follow-up + today/yesterday completed + today's denied.
+     */
+    async getByTechnicianIdForDashboard(
+      technicianId: string,
+      options?: { activeOnly?: boolean }
+    ) {
+      const orFilter = `assigned_technician_id.eq.${technicianId},team_members.cs.["${technicianId}"]`;
+      const select = `${JOB_SELECT_ONGOING_AND_TECH},customer:customers(${CUSTOMER_EMBED_FOR_TECH_JOBS_SLIM})`;
+
+      const now = new Date();
+      const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+      const tomorrowStart = new Date(todayStart);
+      tomorrowStart.setDate(tomorrowStart.getDate() + 1);
+      const yesterdayStart = new Date(todayStart);
+      yesterdayStart.setDate(yesterdayStart.getDate() - 1);
+
+      const activeQuery = supabase
+        .from('jobs')
+        .select(select)
+        .or(orFilter)
+        .in('status', ['PENDING', 'ASSIGNED', 'EN_ROUTE', 'IN_PROGRESS'])
+        .order('updated_at', { ascending: false })
+        .limit(40);
+
+      const followUpQuery = supabase
+        .from('jobs')
+        .select(select)
+        .or(orFilter)
+        .eq('status', 'FOLLOW_UP')
+        .order('updated_at', { ascending: false })
+        .limit(20);
+
+      const completedQuery = supabase
+        .from('jobs')
+        .select(select)
+        .or(orFilter)
+        .eq('status', 'COMPLETED')
+        .gte('completed_at', yesterdayStart.toISOString())
+        .lt('completed_at', tomorrowStart.toISOString())
+        .order('completed_at', { ascending: false })
+        .limit(50);
+
+      const deniedQuery = supabase
+        .from('jobs')
+        .select(select)
+        .or(orFilter)
+        .eq('status', 'DENIED')
+        .gte('denied_at', todayStart.toISOString())
+        .lt('denied_at', tomorrowStart.toISOString())
+        .order('denied_at', { ascending: false })
+        .limit(15);
+
+      let activeRes: Awaited<typeof activeQuery>;
+      let followUpRes: Awaited<typeof followUpQuery>;
+      let completedRes: Awaited<typeof completedQuery> | null = null;
+      let deniedRes: Awaited<typeof deniedQuery> | null = null;
+
+      if (options?.activeOnly) {
+        [activeRes, followUpRes] = await Promise.all([activeQuery, followUpQuery]);
+      } else {
+        [activeRes, followUpRes, completedRes, deniedRes] = await Promise.all([
+          activeQuery,
+          followUpQuery,
+          completedQuery,
+          deniedQuery,
+        ]);
+      }
+
+      const byId = new Map<string, unknown>();
+      let firstError: { message?: string } | null = null;
+      const resultSets = options?.activeOnly
+        ? [activeRes, followUpRes]
+        : [activeRes, followUpRes, completedRes!, deniedRes!];
+      for (const res of resultSets) {
+        if (res.error && !firstError) firstError = res.error;
+        for (const row of res.data || []) {
+          const id = (row as { id?: string }).id;
+          if (id) byId.set(id, row);
+        }
+      }
+
+      if (byId.size === 0 && firstError) {
+        return { data: [], error: firstError };
+      }
+
+      return { data: Array.from(byId.values()), error: null };
+    },
+
+    /** Low-egress technician job list. Prefer getByTechnicianIdForDashboard for the PWA. */
     async getByTechnicianIdSlim(technicianId: string) {
+      const dashboard = await this.getByTechnicianIdForDashboard(technicianId);
+      if (!dashboard.error && (dashboard.data?.length ?? 0) > 0) {
+        return dashboard;
+      }
+
       const orFilter = `assigned_technician_id.eq.${technicianId},team_members.cs.["${technicianId}"]`;
       const result = await supabase
         .from('jobs')

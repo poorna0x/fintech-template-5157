@@ -95,8 +95,10 @@ import {
   resolveJobBillAndPaymentPhotos,
 } from '@/lib/jobReportPhotos';
 
-/** Visible-tab poll (backup if postgres/broadcast miss). */
+/** Visible-tab poll when realtime is down (backup if postgres/broadcast miss). */
 const TECH_JOBS_POLL_MS = 12_000;
+/** Slower poll when realtime is up — list still syncs via postgres/broadcast. */
+const TECH_JOBS_POLL_REALTIME_MS = 300_000;
 /** Debounce full list refetch after sync ping / admin broadcast. */
 const TECH_JOB_SYNC_DEBOUNCE_MS = 250;
 
@@ -269,6 +271,17 @@ const isOngoingJob = (job: Job): boolean => {
   const status = normalizeJobStatus((job as { status?: unknown }).status ?? job.status);
   return (ONGOING_JOB_STATUSES as readonly string[]).includes(status);
 };
+
+/** Keep completed/denied rows when refreshing only active + follow-up (poll on Ongoing). */
+function mergeActiveDashboardJobRefresh(existing: Job[], incoming: Job[]): Job[] {
+  const byId = new Map<string, Job>();
+  for (const j of existing) {
+    const st = normalizeJobStatus((j as { status?: unknown }).status ?? j.status);
+    if (st === 'COMPLETED' || st === 'DENIED') byId.set(j.id, j);
+  }
+  for (const j of incoming) byId.set(j.id, j);
+  return Array.from(byId.values());
+}
 
 /** Main square color for AMC / Google review / prior (returning) customer — Technician lists. Blue only when no AMC and no Google review (green/red/orange unchanged). */
 function technicianCustomerIndicatorMainClass(hasAmc: boolean, hasG: boolean, hasPrior: boolean): string {
@@ -444,6 +457,8 @@ const TechnicianDashboard = () => {
   const [confirmStartWorkDialog, setConfirmStartWorkDialog] = useState<{open: boolean, job: Job | null}>({open: false, job: null});
   const [confirmCompleteJobDialog, setConfirmCompleteJobDialog] = useState<{open: boolean, job: Job | null}>({open: false, job: null});
   const [statusFilter, setStatusFilter] = useState<'ONGOING' | 'PENDING' | 'ASSIGNED' | 'IN_PROGRESS' | 'COMPLETED' | 'CANCELLED' | 'RESCHEDULED'>('ONGOING');
+  const statusFilterRef = useRef(statusFilter);
+  statusFilterRef.current = statusFilter;
   const [completedDateFilter, setCompletedDateFilter] = useState<'today' | 'yesterday'>('today');
   const [selectedJob, setSelectedJob] = useState<Job | null>(null);
   const [jobNotes, setJobNotes] = useState('');
@@ -710,6 +725,9 @@ const TechnicianDashboard = () => {
     }
   }, []);
 
+  const dashboardHistoryLoadedRef = useRef(false);
+  const completedPhotosEnrichedRef = useRef(false);
+
   const loadCustomerLastServiceBrands = useCallback(async (customerIds: string[]) => {
     const uniqueIds = Array.from(new Set((customerIds || []).filter(Boolean)));
     const missingIds = uniqueIds.filter((id) => !loadedLastBrandCustomerIdsRef.current.has(id));
@@ -734,22 +752,38 @@ const TechnicianDashboard = () => {
     }
   }, []);
 
-  const loadAssignedJobs = useCallback(async (retryCount = 0) => {
+  const enrichCompletedJobsInList = useCallback(async (jobList: Job[]) => {
+    const completed = jobList.filter(
+      (j) => normalizeJobStatus((j as { status?: unknown }).status ?? j.status) === 'COMPLETED'
+    );
+    if (completed.length === 0) return jobList;
+    try {
+      const enriched = await enrichJobsWithAfterPhotosIfNeeded(completed);
+      const byId = new Map(enriched.map((j) => [j.id, j]));
+      return jobList.map((j) => (byId.has(j.id) ? (byId.get(j.id) as Job) : j));
+    } catch {
+      return jobList;
+    }
+  }, []);
+
+  const loadAssignedJobs = useCallback(async (
+    retryCount = 0,
+    loadOpts?: { activeOnly?: boolean }
+  ) => {
     if (!user?.technicianId) return;
+
+    const activeOnly = loadOpts?.activeOnly === true;
 
     try {
       // Only show loading if we haven't loaded jobs before (first load)
       if (!hasJobsRef.current) {
         setJobsLoading(true);
       }
-      console.time('loadAssignedJobs'); // Performance timing
-      
-      // Use proper timeout handling - only timeout if request actually takes too long
-      // The Supabase client already has a 30s timeout, so we don't need an additional timeout here
-      // Just let the request complete naturally - if it's fast, it will be fast; if it's slow, Supabase will timeout
-      // Low-egress list fetch: no photo arrays; customer embed includes address/location for correct maps/dialog.
-      const { data, error } = await db.jobs.getByTechnicianIdSlim(user.technicianId);
-      console.timeEnd('loadAssignedJobs'); // Performance timing
+      const loadStartedAt = import.meta.env.DEV ? performance.now() : 0;
+
+      const { data, error } = await db.jobs.getByTechnicianIdForDashboard(user.technicianId, {
+        activeOnly,
+      });
       
       if (error) {
         console.error('Error loading assigned jobs:', error);
@@ -762,48 +796,41 @@ const TechnicianDashboard = () => {
         throw new Error(error.message);
       }
 
-      // All jobs go to regular jobs list (ASSIGNED jobs will show with blue border in the list)
-      const allJobs: Job[] = [];
+      let allJobs: Job[] = [];
       const newAssignedJobs: Job[] = [];
       const statusCounts: Record<string, number> = {};
-      
-      if (data && data.length > 0) {
-        data.forEach((job: Job) => {
-          const status = (job as any).status || job.status || 'UNKNOWN';
+
+      if (activeOnly && hasJobsRef.current && jobsRef.current.length > 0) {
+        allJobs = mergeActiveDashboardJobRefresh(jobsRef.current, (data || []) as Job[]);
+      } else if (data && data.length > 0) {
+        (data as Job[]).forEach((job: Job) => {
           allJobs.push(job);
-          
-          // Count jobs by status
-          statusCounts[status] = (statusCounts[status] || 0) + 1;
-          
-          // Track ASSIGNED jobs for notifications
-          if (status === 'ASSIGNED') {
-            newAssignedJobs.push(job);
-          }
         });
       }
 
-      const completedJobs = allJobs.filter(
-        (j) => ((j as any).status || j.status) === 'COMPLETED'
-      );
-      if (completedJobs.length > 0) {
-        try {
-          const enriched = await enrichJobsWithAfterPhotosIfNeeded(completedJobs);
-          const enrichedById = new Map(enriched.map((j) => [j.id, j]));
-          for (let i = 0; i < allJobs.length; i++) {
-            const row = enrichedById.get(allJobs[i].id);
-            if (row) allJobs[i] = row;
-          }
-        } catch (enrichErr) {
-          console.warn('Failed to enrich completed job photos:', enrichErr);
-        }
+      for (const job of allJobs) {
+        const status = (job as any).status || job.status || 'UNKNOWN';
+        statusCounts[status] = (statusCounts[status] || 0) + 1;
+        if (status === 'ASSIGNED') newAssignedJobs.push(job);
+      }
+
+      if (
+        !activeOnly &&
+        statusFilterRef.current === 'COMPLETED' &&
+        allJobs.some((j) => normalizeJobStatus((j as any).status ?? j.status) === 'COMPLETED')
+      ) {
+        allJobs = await enrichCompletedJobsInList(allJobs);
       }
 
       const ongoingJobs = allJobs.filter(isOngoingJob);
-      
-      console.log(`📊 Jobs loaded from database: ${data?.length || 0} total`, {
-        ongoing: ongoingJobs.length,
-        statusBreakdown: statusCounts
-      });
+
+      if (import.meta.env.DEV) {
+        const ms = Math.round(performance.now() - loadStartedAt);
+        console.log(`📊 Jobs loaded (${ms}ms): ${allJobs.length} rows for dashboard`, {
+          ongoing: ongoingJobs.length,
+          statusBreakdown: statusCounts,
+        });
+      }
       
       // Mark that we should sort (loading from database)
       shouldPreserveOrderRef.current = false;
@@ -835,15 +862,17 @@ const TechnicianDashboard = () => {
         const isPrior = st === 'COMPLETED' || Boolean(c?.last_service_date ?? c?.lastServiceDate);
         if (isPrior) priorCustomerIds.add(cid);
       }
-      const allCustomerIdsForFlags = new Set<string>();
+      const activeWorkCustomerIds = new Set<string>();
       for (const j of allJobs) {
+        const st = normalizeJobStatus((j as any).status ?? j.status);
+        if (st === 'COMPLETED' || st === 'DENIED') continue;
         const cid = (j as any).customer_id || (j.customer as any)?.id;
-        if (cid) allCustomerIdsForFlags.add(cid);
+        if (cid) activeWorkCustomerIds.add(cid);
       }
 
-      if (allCustomerIdsForFlags.size > 0) {
+      if (activeWorkCustomerIds.size > 0) {
         setTimeout(() => {
-          hydrateCustomerPriorServiceFlags(Array.from(allCustomerIdsForFlags)).catch(() => {});
+          hydrateCustomerPriorServiceFlags(Array.from(activeWorkCustomerIds)).catch(() => {});
         }, 50);
       }
 
@@ -854,12 +883,21 @@ const TechnicianDashboard = () => {
         }, 100);
       }
       
-      // Load AMC status in background (non-blocking) - defer for mobile performance
-      if (data && data.length > 0) {
-        // Use setTimeout to defer AMC loading - don't block UI
+      // AMC dots on active cards only — skip bulk completed customer_ids (global map covers returning)
+      if (allJobs.length > 0) {
         setTimeout(async () => {
           try {
-            const customerIds = data.map((job: any) => job.customer_id || (job.customer as any)?.id).filter(Boolean);
+            const customerIds = [
+              ...new Set(
+                allJobs
+                  .filter((job) => {
+                    const st = normalizeJobStatus((job as any).status ?? job.status);
+                    return st !== 'COMPLETED' && st !== 'DENIED';
+                  })
+                  .map((job: any) => job.customer_id || job.customer?.id)
+                  .filter(Boolean)
+              ),
+            ];
             if (customerIds.length > 0) {
               // AMC query - Supabase already has 30s timeout, no need for additional Promise.race
               // This prevents false timeout errors on fast networks
@@ -884,6 +922,10 @@ const TechnicianDashboard = () => {
         }, 100); // Defer by 100ms to let jobs render first
       }
       
+      if (!activeOnly) {
+        dashboardHistoryLoadedRef.current = true;
+      }
+
       // Update last job IDs for next comparison (new-assignment toast removed; list uses NEW tag)
       lastJobIdsRef.current = new Set(allJobs.map(j => j.id));
     } catch (error) {
@@ -893,7 +935,32 @@ const TechnicianDashboard = () => {
     } finally {
       setJobsLoading(false);
     }
-  }, [user?.technicianId]);
+  }, [user?.technicianId, enrichCompletedJobsInList]);
+
+  // Full dashboard slices when opening Completed / Denied / Follow-up (first time only).
+  useEffect(() => {
+    if (!user?.technicianId || !hasJobsRef.current) return;
+    const needsHistory =
+      statusFilter === 'COMPLETED' ||
+      statusFilter === 'CANCELLED' ||
+      statusFilter === 'RESCHEDULED';
+    if (!needsHistory) return;
+    if (dashboardHistoryLoadedRef.current) return;
+    void loadAssignedJobs(0, { activeOnly: false });
+  }, [statusFilter, user?.technicianId, loadAssignedJobs]);
+
+  useEffect(() => {
+    if (statusFilter !== 'COMPLETED') {
+      completedPhotosEnrichedRef.current = false;
+      return;
+    }
+    if (completedPhotosEnrichedRef.current || jobsRef.current.length === 0) return;
+    completedPhotosEnrichedRef.current = true;
+    void enrichCompletedJobsInList(jobsRef.current).then((enriched) => {
+      setJobs(enriched);
+      jobsRef.current = enriched;
+    });
+  }, [statusFilter, enrichCompletedJobsInList]);
 
   const jobListSyncTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const scheduleJobListSync = useCallback(() => {
@@ -2198,12 +2265,17 @@ const TechnicianDashboard = () => {
   useEffect(() => {
     if (!user?.technicianId) return;
 
+    const pollMs = realtimeConnected ? TECH_JOBS_POLL_REALTIME_MS : TECH_JOBS_POLL_MS;
     const pollInterval = setInterval(() => {
       if (typeof document !== 'undefined' && document.hidden) return;
-      loadAssignedJobs();
-    }, TECH_JOBS_POLL_MS);
+      const activeOnly =
+        realtimeConnected &&
+        (statusFilterRef.current === 'ONGOING' || statusFilterRef.current === 'PENDING' ||
+          statusFilterRef.current === 'ASSIGNED' || statusFilterRef.current === 'IN_PROGRESS');
+      void loadAssignedJobs(0, { activeOnly });
+    }, pollMs);
     return () => clearInterval(pollInterval);
-  }, [user?.technicianId, loadAssignedJobs]);
+  }, [user?.technicianId, loadAssignedJobs, realtimeConnected]);
 
   // When realtime comes back, do a one-time sync to ensure list is correct.
   useEffect(() => {
