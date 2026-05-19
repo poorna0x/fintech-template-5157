@@ -33,6 +33,10 @@ import AdminHeader from './AdminHeader';
 import { useAuth } from '@/contexts/AuthContext';
 import { getAmcDocumentBrand } from '@/lib/amc-brand';
 import { DocumentBrand, getDocumentBrandLabel } from '@/lib/service-brands';
+import {
+  computeAmcAutoCreateDue,
+  getDefaultAmcServicePeriodMonths,
+} from '@/lib/amcAutoJobSchedule';
 
 interface AMCRecord {
   id: string;
@@ -146,29 +150,9 @@ const AMCViewPage: React.FC<AMCViewPageProps> = ({ onBack, onAMCDeleted }) => {
     return new Date(value as any).toISOString().split('T')[0];
   };
 
-  const addMonthsToDate = (dateStr: string, months: number): string => {
-    const date = new Date(dateStr + 'T12:00:00');
-    date.setMonth(date.getMonth() + months);
-    return date.toISOString().split('T')[0];
-  };
-
-  const subtractDaysFromDate = (dateStr: string, days: number): string => {
-    const date = new Date(dateStr + 'T12:00:00');
-    date.setDate(date.getDate() - days);
-    return date.toISOString().split('T')[0];
-  };
-
   const formatDate = (dateStr?: string | null): string => {
     if (!dateStr) return 'N/A';
     return new Date(dateStr + 'T00:00:00').toLocaleDateString('en-IN');
-  };
-
-  const getDefaultServicePeriodMonths = (): number => {
-    if (typeof window === 'undefined') return 4;
-    const stored = localStorage.getItem('amc_default_service_period_months');
-    if (stored === null || stored === '') return 4;
-    const parsed = parseInt(stored, 10);
-    return Number.isNaN(parsed) ? 4 : parsed;
   };
 
   const getAutoGenerationInfo = (
@@ -178,7 +162,8 @@ const AMCViewPage: React.FC<AMCViewPageProps> = ({ onBack, onAMCDeleted }) => {
     hasOpenAMCJob: boolean
   ): Pick<AMCRecord, 'nextAutoGenerationDate' | 'nextAMCDueDate' | 'autoGenerationLabel' | 'autoGenerationStatus'> => {
     const todayStr = new Date().toISOString().split('T')[0];
-    const periodMonths = amc.service_period_months != null ? amc.service_period_months : getDefaultServicePeriodMonths();
+    const periodMonths =
+      amc.service_period_months != null ? amc.service_period_months : getDefaultAmcServicePeriodMonths();
 
     if (periodMonths <= 0) {
       return {
@@ -208,23 +193,26 @@ const AMCViewPage: React.FC<AMCViewPageProps> = ({ onBack, onAMCDeleted }) => {
       };
     }
 
-    const nextDueDate = addMonthsToDate(referenceDate, periodMonths);
-    const generationDate = subtractDaysFromDate(nextDueDate, 10);
+    const { nextDue, reminderStart, shouldCreate } = computeAmcAutoCreateDue(
+      referenceDate,
+      periodMonths,
+      todayStr
+    );
 
     if (hasOpenAMCJob) {
       return {
-        nextAutoGenerationDate: generationDate,
-        nextAMCDueDate: nextDueDate,
+        nextAutoGenerationDate: reminderStart,
+        nextAMCDueDate: nextDue,
         autoGenerationLabel: 'Already generated',
         autoGenerationStatus: 'GENERATED',
       };
     }
 
     return {
-      nextAutoGenerationDate: generationDate,
-      nextAMCDueDate: nextDueDate,
-      autoGenerationLabel: formatDate(generationDate),
-      autoGenerationStatus: todayStr >= generationDate ? 'DUE' : 'SCHEDULED',
+      nextAutoGenerationDate: reminderStart,
+      nextAMCDueDate: nextDue,
+      autoGenerationLabel: formatDate(reminderStart),
+      autoGenerationStatus: shouldCreate ? 'DUE' : 'SCHEDULED',
     };
   };
 
@@ -254,7 +242,7 @@ const AMCViewPage: React.FC<AMCViewPageProps> = ({ onBack, onAMCDeleted }) => {
       if (customerIds.length > 0) {
         const { data: completedJobs } = await supabase
           .from('jobs')
-          .select('id, customer_id, assigned_technician_id, completed_at, end_time, requirements')
+          .select('id, customer_id, assigned_technician_id, completed_at, end_time, requirements, service_sub_type')
           .in('customer_id', customerIds)
           .eq('status', 'COMPLETED')
           .not('completed_at', 'is', null)

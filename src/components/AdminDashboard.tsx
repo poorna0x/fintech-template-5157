@@ -1450,14 +1450,23 @@ const AdminDashboard = () => {
     }
   }, []);
 
+  const amcAutoCreateAttemptedRef = useRef(false);
+
   const scheduleAmcJobCreation = useCallback(() => {
+    if (amcAutoCreateAttemptedRef.current) return;
+    amcAutoCreateAttemptedRef.current = true;
+
     supabase.auth
       .getSession()
       .then(({ data: { session } }) => {
-        if (!session) return;
+        if (!session) {
+          amcAutoCreateAttemptedRef.current = false;
+          return;
+        }
         db.amcContracts.createAMCServiceJobs().then((result) => {
           if (result.error) {
             console.error('Error creating AMC service jobs:', result.error);
+            amcAutoCreateAttemptedRef.current = false;
           } else if (result.created > 0) {
             toast.success(
               `Created ${result.created} AMC service job${result.created > 1 ? 's' : ''} automatically`
@@ -1466,7 +1475,9 @@ const AdminDashboard = () => {
           }
         });
       })
-      .catch(() => {});
+      .catch(() => {
+        amcAutoCreateAttemptedRef.current = false;
+      });
   }, [statusFilter, currentPage, loadFilteredJobs]);
 
   const loadDashboardData = async (options?: {
@@ -1624,6 +1635,7 @@ const AdminDashboard = () => {
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
       if (event === 'SIGNED_OUT') {
         dashboardLoadedWithSessionRef.current = false;
+        amcAutoCreateAttemptedRef.current = false;
         clearAdminDashboardCache();
         setIsInitialLoad(true);
         setLoading(true);

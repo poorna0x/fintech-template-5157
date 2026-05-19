@@ -3088,18 +3088,24 @@ export const db = {
       if (dryRun) console.log('🔵 [DRY RUN] AMC service job creation preview...');
       else if (isDev) console.log('🔵 Starting AMC service job creation...');
 
-      // Throttle: run at most once per 6 hours on refresh to avoid heavy work every time (admin mount/refresh)
-      const AMC_THROTTLE_MS = 6 * 60 * 60 * 1000; // 6 hours
-      if (!dryRun && typeof window !== 'undefined') {
-        const lastRun = window.localStorage.getItem('amc_service_jobs_last_run');
-        if (lastRun) {
-          const elapsed = Date.now() - parseInt(lastRun, 10);
-          if (!Number.isNaN(elapsed) && elapsed < AMC_THROTTLE_MS) {
-            if (isDev) console.log('ℹ️ AMC job creation skipped (throttled, last run < 6h ago)');
-            return { data: [], error: null, created: 0 };
-          }
+      const {
+        computeAmcAutoCreateDue,
+        getDefaultAmcServicePeriodMonths,
+        markAmcJobCreationRun,
+        shouldRunAmcJobCreationNow,
+        toDateOnly,
+        withAmcJobCreationLock,
+      } = await import('@/lib/amcAutoJobSchedule');
+
+      if (!dryRun) {
+        if (!shouldRunAmcJobCreationNow()) {
+          if (isDev) console.log('ℹ️ AMC job creation skipped (throttled, last run < 6h ago)');
+          return { data: [], error: null, created: 0 };
         }
+        markAmcJobCreationRun();
       }
+
+      const runCreation = async () => {
 
       // Batch IN clauses to avoid URL/query limits (~200–300 IDs per request)
       const BATCH_SIZE = 200;
@@ -3166,31 +3172,9 @@ export const db = {
         customers: customersData?.find(c => c.id === amc.customer_id) || null
       }));
 
-      // Default AMC service period from settings (localStorage); only in browser
-      const getDefaultServicePeriodMonths = (): number => {
-        if (typeof window === 'undefined') return 4;
-        const stored = localStorage.getItem('amc_default_service_period_months');
-        if (stored === null || stored === '') return 4;
-        const n = parseInt(stored, 10);
-        return Number.isNaN(n) ? 4 : n;
-      };
-      const defaultPeriodMonths = getDefaultServicePeriodMonths();
+      const defaultPeriodMonths = getDefaultAmcServicePeriodMonths();
 
-      // Helper: add months to YYYY-MM-DD, return YYYY-MM-DD
-      const addMonthsToDate = (dateStr: string, months: number): string => {
-        const d = new Date(dateStr + 'T12:00:00');
-        d.setMonth(d.getMonth() + months);
-        return d.toISOString().split('T')[0];
-      };
-
-      // Helper: subtract days from YYYY-MM-DD, return YYYY-MM-DD
-      const subtractDaysFromDate = (dateStr: string, days: number): string => {
-        const d = new Date(dateStr + 'T12:00:00');
-        d.setDate(d.getDate() - days);
-        return d.toISOString().split('T')[0];
-      };
-
-      // Get last completed job per customer (batched for scale)
+      // Last completed job per customer — any service type (repair, AMC, install, etc.)
       const customerIds = [...new Set(activeAMCs.map(amc => amc.customer_id).filter(Boolean))] as string[];
       const lastServiceMap = new Map<string, string>();
       const jobChunks = chunk(customerIds, BATCH_SIZE);
@@ -3204,7 +3188,9 @@ export const db = {
           .order('completed_at', { ascending: false });
         if (!jobsError && lastJobs) {
           lastJobs.forEach((job: any) => {
-            if (!lastServiceMap.has(job.customer_id)) lastServiceMap.set(job.customer_id, job.completed_at);
+            if (!lastServiceMap.has(job.customer_id)) {
+              lastServiceMap.set(job.customer_id, job.completed_at);
+            }
           });
         }
       }
@@ -3285,18 +3271,20 @@ export const db = {
           continue;
         }
 
-        // Reference date for next due: last service date, else AMC start date (creation)
-        const lastServiceDateRaw = lastServiceMap.get(customer.id) || customer.last_service_date || amc.start_date;
-        if (isDev) console.log(`  📅 Last service raw:`, lastServiceDateRaw, `(from job / customer.last_service_date / amc.start_date)`);
-
-        let referenceDateStr: string | null = null;
-        if (lastServiceDateRaw) {
-          if (typeof lastServiceDateRaw === 'string') {
-            referenceDateStr = lastServiceDateRaw.split('T')[0].split(' ')[0];
-          } else {
-            referenceDateStr = new Date(lastServiceDateRaw).toISOString().split('T')[0];
-          }
+        // Reference: last completed job (any service), else customer last_service_date, else AMC start
+        const lastServiceDateRaw =
+          lastServiceMap.get(customer.id) || customer.last_service_date || amc.start_date;
+        if (isDev) {
+          console.log(
+            `  📅 Last service raw:`,
+            lastServiceDateRaw,
+            `(any completed job / customer.last_service_date / amc.start_date)`
+          );
         }
+
+        const referenceDateStr = toDateOnly(
+          lastServiceDateRaw != null ? String(lastServiceDateRaw) : null
+        );
         if (!referenceDateStr) {
           if (isDev) console.log(`  ⏭️ Skipping - no reference date`);
           preview.push({
@@ -3311,10 +3299,13 @@ export const db = {
           continue;
         }
 
-        const nextDueStr = addMonthsToDate(referenceDateStr, periodMonths);
-        const reminderStartStr = subtractDaysFromDate(nextDueStr, 10);
-        const due = todayStr >= reminderStartStr;
-        if (isDev) console.log(`  📅 Reference: ${referenceDateStr}, period: ${periodMonths} months, next due: ${nextDueStr}, reminder starts: ${reminderStartStr}, within window: ${due}`);
+        const { nextDue: nextDueStr, reminderStart: reminderStartStr, shouldCreate: due } =
+          computeAmcAutoCreateDue(referenceDateStr, periodMonths, todayStr);
+        if (isDev) {
+          console.log(
+            `  📅 Reference: ${referenceDateStr}, period: ${periodMonths} months, next due: ${nextDueStr}, reminder starts: ${reminderStartStr}, should create: ${due}`
+          );
+        }
 
         if (!due) {
           if (isDev) console.log(`  ❌ Skipping - not yet within 10-day window`);
@@ -3413,13 +3404,17 @@ export const db = {
           // Batch insert bypasses db.jobs.create — keep dashboard count cache in sync
           cacheInvalidate('job_counts_v1');
         }
-        if (typeof window !== 'undefined') window.localStorage.setItem('amc_service_jobs_last_run', String(Date.now()));
         return { data: createdJobsData, error: null, created: createdCount };
       }
 
       if (isDev) console.log('ℹ️ No jobs to create');
-      if (typeof window !== 'undefined') window.localStorage.setItem('amc_service_jobs_last_run', String(Date.now()));
       return { data: [], error: null, created: 0 };
+      };
+
+      if (dryRun) {
+        return runCreation();
+      }
+      return withAmcJobCreationLock(runCreation);
     }
   },
 
