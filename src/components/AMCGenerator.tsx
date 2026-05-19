@@ -1128,7 +1128,7 @@ ${notCoveredWithPreFilter}`;
                 <p className="text-xs text-gray-500">
                   {servicePeriodKind === 'no_auto'
                     ? 'No automatic AMC service jobs will be created for this contract.'
-                    : `An AMC service job is auto-created ${servicePeriodKind === '4' ? '4' : servicePeriodKind === '6' ? '6' : servicePeriodCustomMonths} months after the customer's last completed service (any type — repair, AMC visit, etc.), or from AMC start if there is no service yet.`}
+                    : `An AMC service job is auto-created ${servicePeriodKind === '4' ? '4' : servicePeriodKind === '6' ? '6' : servicePeriodCustomMonths} months after the customer's last completed service (any type). If that next visit would be after the AMC end date, a final job is auto-created 10 days before the AMC expires instead.`}
                 </p>
               </div>
 

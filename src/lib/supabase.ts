@@ -3090,6 +3090,8 @@ export const db = {
 
       const {
         computeAmcAutoCreateDue,
+        computeAmcPreExpiryAutoCreate,
+        formatAmcDateEnIN,
         getDefaultAmcServicePeriodMonths,
         markAmcJobCreationRun,
         shouldRunAmcJobCreationNow,
@@ -3299,16 +3301,36 @@ export const db = {
           continue;
         }
 
-        const { nextDue: nextDueStr, reminderStart: reminderStartStr, shouldCreate: due } =
+        const { nextDue: nextDueStr, reminderStart: reminderStartStr, shouldCreate: regularDue } =
           computeAmcAutoCreateDue(referenceDateStr, periodMonths, todayStr);
+        const endDateStr = toDateOnly(amc.end_date);
+        const formattedLastServiceDate = formatAmcDateEnIN(referenceDateStr);
+
+        let createReason: 'regular' | 'pre_expiry' | null = null;
+        let preExpiryWindowStart: string | null = null;
+
+        if (regularDue) {
+          createReason = 'regular';
+        } else if (endDateStr && nextDueStr > endDateStr) {
+          const preExpiry = computeAmcPreExpiryAutoCreate(endDateStr, todayStr);
+          preExpiryWindowStart = preExpiry.preExpiryWindowStart;
+          if (preExpiry.shouldCreate) {
+            createReason = 'pre_expiry';
+          }
+        }
+
         if (isDev) {
           console.log(
-            `  📅 Reference: ${referenceDateStr}, period: ${periodMonths} months, next due: ${nextDueStr}, reminder starts: ${reminderStartStr}, should create: ${due}`
+            `  📅 Reference: ${referenceDateStr}, period: ${periodMonths}mo, next due: ${nextDueStr}, AMC ends: ${endDateStr ?? 'n/a'}, regular: ${regularDue}, pre-expiry: ${createReason === 'pre_expiry'}`
           );
         }
 
-        if (!due) {
-          if (isDev) console.log(`  ❌ Skipping - not yet within 10-day window`);
+        if (!createReason) {
+          const skipReason =
+            endDateStr && nextDueStr > endDateStr && preExpiryWindowStart
+              ? `Next service (${nextDueStr}) is after AMC ends (${endDateStr}); pre-expiry window starts ${preExpiryWindowStart}`
+              : `Not yet within 10-day window (next due ${nextDueStr}, window starts ${reminderStartStr})`;
+          if (isDev) console.log(`  ❌ Skipping - ${skipReason}`);
           preview.push({
             customer_id: customer.customer_id || customer.id,
             customer_name: customer.full_name || 'Unknown',
@@ -3316,7 +3338,7 @@ export const db = {
             period_months: periodMonths,
             next_due: nextDueStr,
             would_create: false,
-            skip_reason: `Not yet within 10-day window (next due ${nextDueStr}, window starts ${reminderStartStr})`
+            skip_reason: skipReason,
           });
           continue;
         }
@@ -3326,27 +3348,25 @@ export const db = {
           customer_name: customer.full_name || 'Unknown',
           reference_date: referenceDateStr,
           period_months: periodMonths,
-          next_due: nextDueStr,
-          would_create: true
+          next_due: createReason === 'pre_expiry' ? endDateStr : nextDueStr,
+          would_create: true,
+          skip_reason: createReason === 'pre_expiry' ? 'Pre-expiry (AMC ending soon)' : undefined,
         });
 
         {
-          if (isDev) console.log(`  ✅ Will create job for ${customer.customer_id || customer.id}`);
-          // Generate job number
+          if (isDev) console.log(`  ✅ Will create ${createReason} job for ${customer.customer_id || customer.id}`);
           const serviceType = customer.service_type || 'RO';
           const jobNumber = generateJobNumber(serviceType);
 
-          // Determine scheduled date (today)
           const scheduledDate = new Date();
           scheduledDate.setHours(0, 0, 0, 0);
           const scheduledDateStr = scheduledDate.toISOString().split('T')[0];
 
-          // Format reference (last service / AMC start) date for display
-          const formattedLastServiceDate = new Date(referenceDateStr + 'T00:00:00').toLocaleDateString('en-IN', {
-            day: 'numeric',
-            month: 'short',
-            year: 'numeric'
-          });
+          const formattedEndDate = endDateStr ? formatAmcDateEnIN(endDateStr) : '';
+          const description =
+            createReason === 'pre_expiry'
+              ? `AMC Service - Final visit before AMC contract ends on ${formattedEndDate}. Last service was on ${formattedLastServiceDate}. The next scheduled service (${formatAmcDateEnIN(nextDueStr)}) would fall after the AMC end date, so this job was auto-created in the last 10 days before expiry.`
+              : `AMC Service - Scheduled maintenance service. Last service was on ${formattedLastServiceDate}. This is an automatic AMC service job created for regular maintenance.`;
 
           const jobData = {
             job_number: jobNumber,
@@ -3361,17 +3381,21 @@ export const db = {
             service_address: customer.address || {},
             service_location: customer.location || {},
             status: 'PENDING',
-            priority: 'MEDIUM',
-            description: `AMC Service - Scheduled maintenance service. Last service was on ${formattedLastServiceDate}. This is an automatic AMC service job created for regular maintenance.`,
-            requirements: [{ 
-              amc_contract_id: amc.id,
-              auto_created: true,
-              service_due: true,
-              amc_service: true,
-              lead_source: 'Direct call'
-            }],
+            priority: createReason === 'pre_expiry' ? 'HIGH' : 'MEDIUM',
+            description,
+            requirements: [
+              {
+                amc_contract_id: amc.id,
+                auto_created: true,
+                service_due: true,
+                amc_service: true,
+                pre_expiry: createReason === 'pre_expiry',
+                amc_expires_on: endDateStr ?? undefined,
+                lead_source: 'Direct call',
+              },
+            ],
             estimated_cost: 0,
-            payment_status: 'PENDING'
+            payment_status: 'PENDING',
           };
 
           jobsToCreate.push(jobData);

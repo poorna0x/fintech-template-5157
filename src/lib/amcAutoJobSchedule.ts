@@ -39,15 +39,35 @@ export function toDateOnly(value: string | null | undefined): string | null {
  * Job is created when today is within 10 days before that due date (or later),
  * and the customer has no open AMC Service job yet.
  */
+export const AMC_REMINDER_DAYS_BEFORE = 10;
+
 export function computeAmcAutoCreateDue(
   referenceDateStr: string,
   periodMonths: number,
   todayStr: string
 ): { nextDue: string; reminderStart: string; shouldCreate: boolean } {
   const nextDue = addMonthsToDate(referenceDateStr, periodMonths);
-  const reminderStart = subtractDaysFromDate(nextDue, 10);
+  const reminderStart = subtractDaysFromDate(nextDue, AMC_REMINDER_DAYS_BEFORE);
   const shouldCreate = todayStr >= reminderStart;
   return { nextDue, reminderStart, shouldCreate };
+}
+
+/** When the next period-based service falls after AMC end, create one job in the last 10 days of the contract. */
+export function computeAmcPreExpiryAutoCreate(
+  endDateStr: string,
+  todayStr: string
+): { preExpiryWindowStart: string; shouldCreate: boolean } {
+  const preExpiryWindowStart = subtractDaysFromDate(endDateStr, AMC_REMINDER_DAYS_BEFORE);
+  const shouldCreate = todayStr >= preExpiryWindowStart && todayStr <= endDateStr;
+  return { preExpiryWindowStart, shouldCreate };
+}
+
+export function formatAmcDateEnIN(dateStr: string): string {
+  return new Date(dateStr + 'T00:00:00').toLocaleDateString('en-IN', {
+    day: 'numeric',
+    month: 'short',
+    year: 'numeric',
+  });
 }
 
 export function shouldRunAmcJobCreationNow(): boolean {

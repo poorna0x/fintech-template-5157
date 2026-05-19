@@ -35,6 +35,7 @@ import { getAmcDocumentBrand } from '@/lib/amc-brand';
 import { DocumentBrand, getDocumentBrandLabel } from '@/lib/service-brands';
 import {
   computeAmcAutoCreateDue,
+  computeAmcPreExpiryAutoCreate,
   getDefaultAmcServicePeriodMonths,
 } from '@/lib/amcAutoJobSchedule';
 
@@ -193,18 +194,35 @@ const AMCViewPage: React.FC<AMCViewPageProps> = ({ onBack, onAMCDeleted }) => {
       };
     }
 
-    const { nextDue, reminderStart, shouldCreate } = computeAmcAutoCreateDue(
+    const { nextDue, reminderStart, shouldCreate: regularDue } = computeAmcAutoCreateDue(
       referenceDate,
       periodMonths,
       todayStr
     );
+    const endDate = toDateOnly(amc.end_date);
+    const nextServiceAfterAmcEnds = Boolean(endDate && nextDue > endDate);
 
     if (hasOpenAMCJob) {
       return {
-        nextAutoGenerationDate: reminderStart,
-        nextAMCDueDate: nextDue,
+        nextAutoGenerationDate: nextServiceAfterAmcEnds && endDate
+          ? computeAmcPreExpiryAutoCreate(endDate, todayStr).preExpiryWindowStart
+          : reminderStart,
+        nextAMCDueDate: nextServiceAfterAmcEnds && endDate ? endDate : nextDue,
         autoGenerationLabel: 'Already generated',
         autoGenerationStatus: 'GENERATED',
+      };
+    }
+
+    if (nextServiceAfterAmcEnds && endDate) {
+      const { preExpiryWindowStart, shouldCreate: preExpiryDue } = computeAmcPreExpiryAutoCreate(
+        endDate,
+        todayStr
+      );
+      return {
+        nextAutoGenerationDate: preExpiryWindowStart,
+        nextAMCDueDate: endDate,
+        autoGenerationLabel: `Final visit before AMC ends (${formatDate(endDate)})`,
+        autoGenerationStatus: preExpiryDue ? 'DUE' : 'SCHEDULED',
       };
     }
 
@@ -212,7 +230,7 @@ const AMCViewPage: React.FC<AMCViewPageProps> = ({ onBack, onAMCDeleted }) => {
       nextAutoGenerationDate: reminderStart,
       nextAMCDueDate: nextDue,
       autoGenerationLabel: formatDate(reminderStart),
-      autoGenerationStatus: shouldCreate ? 'DUE' : 'SCHEDULED',
+      autoGenerationStatus: regularDue ? 'DUE' : 'SCHEDULED',
     };
   };
 
