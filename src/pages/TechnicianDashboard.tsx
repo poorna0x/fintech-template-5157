@@ -5899,8 +5899,8 @@ const TechnicianDashboard = () => {
 
                       {/* View Bill & Add Parts for Completed Jobs (Add Reminder removed from completed section) */}
                       {statusFilter === 'COMPLETED' && (job.status === 'COMPLETED' || (job as any).status === 'COMPLETED') && (() => {
-                        const { allPhotos } = resolveJobBillAndPaymentPhotos(job as any);
-                        const hasBill = allPhotos.length > 0;
+                        const { billPhotos } = resolveJobBillAndPaymentPhotos(job as any);
+                        const hasBill = billPhotos.length > 0;
                         return (
                           <div className="mb-3 pt-3 border-t border-gray-200 flex flex-wrap gap-2">
                             {hasBill && (
@@ -5908,9 +5908,9 @@ const TechnicianDashboard = () => {
                                 size="sm"
                                 variant="outline"
                                 onClick={() => {
-                                  if (allPhotos.length > 0) {
-                                    setSelectedBillPhotos(allPhotos);
-                                    setSelectedPhoto({ url: allPhotos[0], index: 0, total: allPhotos.length });
+                                  if (billPhotos.length > 0) {
+                                    setSelectedBillPhotos(billPhotos);
+                                    setSelectedPhoto({ url: billPhotos[0], index: 0, total: billPhotos.length });
                                     setPhotoViewerOpen(true);
                                   }
                                 }}
