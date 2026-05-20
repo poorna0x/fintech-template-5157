@@ -203,30 +203,15 @@ const TechnicianTopUpDialog: React.FC<TechnicianTopUpDialogProps> = ({
         toast.success('Skipped (0 qty)');
       } else {
         const mainItem = mainInventory.find((i) => i.id === currentItem.inventory_id);
-        if (!mainItem) {
-          toast.error('Product not found in main inventory');
-          return;
-        }
-        if (mainItem.quantity < qty) {
+        if (mainItem && mainItem.quantity < qty) {
           toast.error(`Insufficient stock in main inventory. Available: ${mainItem.quantity}, needed: ${qty}.`);
           return;
         }
-        const existingItem = myInventory.find((item) => item.inventory_id === currentItem.inventory_id);
-        if (existingItem) {
-          const { error } = await db.technicianInventory.update(existingItem.id, { quantity: existingItem.quantity + qty });
-          if (error) throw error;
-        } else {
-          const { error } = await db.technicianInventory.upsert({
-            technician_id: technicianId,
-            inventory_id: currentItem.inventory_id,
-            quantity: qty,
-          });
-          if (error) throw error;
-        }
-        const { error: updateMainError } = await db.inventory.update(currentItem.inventory_id, {
-          quantity: mainItem.quantity - qty,
-        });
-        if (updateMainError) throw updateMainError;
+        const { error: rpcError } = await db.technicianInventory.topUpFromMain(
+          currentItem.inventory_id,
+          qty
+        );
+        if (rpcError) throw rpcError;
         toast.success(`Added ${qty} ${currentItem.inventory?.product_name || 'items'}`);
       }
 

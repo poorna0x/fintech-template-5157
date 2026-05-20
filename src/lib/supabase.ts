@@ -4283,6 +4283,15 @@ export const db = {
       return { data, error };
     },
 
+    /** Decrement main inventory via SECURITY DEFINER RPC (technicians lack direct UPDATE). */
+    async decrementForJob(inventoryId: string, qty: number) {
+      const { data, error } = await supabase.rpc('decrement_main_inventory_for_job', {
+        p_inventory_id: inventoryId,
+        p_qty: qty,
+      });
+      return { data, error };
+    },
+
     /** Batch update main stock quantities — no returning rows (low egress). */
     async bulkUpdateQuantities(updates: Array<{ id: string; quantity: number }>) {
       if (updates.length === 0) return { error: null };
@@ -4563,6 +4572,15 @@ export const db = {
         if (data?.length) rows.push(...data);
       }
       return { data: rows, error: null };
+    },
+
+    /** Top Up via SECURITY DEFINER RPC: move qty from main → caller's technician_inventory. */
+    async topUpFromMain(inventoryId: string, qty: number) {
+      const { data, error } = await supabase.rpc('technician_top_up_used_item', {
+        p_inventory_id: inventoryId,
+        p_qty: qty,
+      });
+      return { data, error };
     },
 
     /** Batch upsert assignments — no returning rows (low egress). */

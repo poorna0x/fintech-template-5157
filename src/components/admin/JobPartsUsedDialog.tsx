@@ -277,23 +277,20 @@ const JobPartsUsedDialog: React.FC<JobPartsUsedDialogProps> = ({
 
   // Deduct from main inventory (warehouse). Returns error message if insufficient.
   // If existingMainItem is provided (e.g. from a prior getById for price), skip the fetch to avoid double getById.
+  // Uses SECURITY DEFINER RPC so technicians (blocked by RLS on direct UPDATE) can deduct too.
   const deductMainInventory = async (
     inventoryId: string,
     quantity: number,
     existingMainItem?: { quantity?: number } | null
   ): Promise<string | null> => {
-    let current: number;
-    const existingQty = existingMainItem != null ? (existingMainItem as any).quantity : undefined;
-    if (existingMainItem != null && (existingQty !== undefined && existingQty !== null && !Number.isNaN(Number(existingQty)))) {
-      current = Number(existingQty);
-    } else {
-      const { data: mainItem, error: fetchErr } = await db.inventory.getById(inventoryId);
-      if (fetchErr || !mainItem) return 'Could not load main inventory';
-      current = Number((mainItem as any).quantity ?? 0);
+    if (existingMainItem != null) {
+      const existingQty = Number((existingMainItem as any).quantity ?? NaN);
+      if (!Number.isNaN(existingQty) && existingQty < quantity) {
+        return `Main inventory has ${existingQty}, need ${quantity}`;
+      }
     }
-    if (current < quantity) return `Main inventory has ${current}, need ${quantity}`;
-    const { error: updateErr } = await db.inventory.update(inventoryId, { quantity: current - quantity });
-    return updateErr ? updateErr.message : null;
+    const { error: rpcErr } = await db.inventory.decrementForJob(inventoryId, quantity);
+    return rpcErr ? (rpcErr as { message?: string }).message || 'Failed to update main inventory' : null;
   };
 
   // Handle add part - opens dialog with search
