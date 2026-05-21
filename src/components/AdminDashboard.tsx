@@ -1435,7 +1435,7 @@ const AdminDashboard = () => {
       setCustomerPriorServiceStatus(priorCompletedMap);
 
       if (techniciansAllResult?.data) {
-        setTechniciansForReports(techniciansAllResult.data);
+        setTechniciansForReports(techniciansAllResult.data.map(transformTechnicianData));
       }
 
       void loadBrandsAndModels();
