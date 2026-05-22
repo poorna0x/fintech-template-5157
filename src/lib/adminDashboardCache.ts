@@ -54,6 +54,22 @@ export function clearAdminDashboardCache(): void {
   inflightPrefetch = null;
 }
 
+/**
+ * Drop every stale-able cache the admin dashboard reads from before a manual refresh.
+ * Counts (25s TTL) and the returning-customer flag map (120s TTL) survive otherwise,
+ * so clicking the refresh button could show data older than the most recent mutation.
+ */
+export async function invalidateAdminDashboardCaches(): Promise<void> {
+  clearAdminDashboardCache();
+  try {
+    const { cacheInvalidate } = await import('./supabaseQueryCache');
+    cacheInvalidate('job_counts_v1');
+    cacheInvalidate('completed_customers_map_v1');
+  } catch {
+    /* ignore */
+  }
+}
+
 async function fetchCriticalSnapshot(): Promise<AdminDashboardSnapshot | null> {
   try {
     const { ensureAdminSupabaseSession } = await import('@/lib/auth');

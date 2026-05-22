@@ -873,9 +873,32 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
         preferred_time_slot: 'MORNING' as 'MORNING' | 'AFTERNOON' | 'EVENING'
       };
 
-      const { data: newCustomer, error } = await db.customers.create(customerData);
-      if (error) {
-        throw new Error(error.message);
+      let { data: newCustomer, error } = await db.customers.create(customerData);
+      // Idle JWT refreshes / brief network blips can drop the INSERT response while the row
+      // still landed in Postgres. Treat a matching phone created in the last 90s as success.
+      if (error || !newCustomer) {
+        const fallbackPhone = customerData.phone;
+        if (fallbackPhone) {
+          try {
+            await new Promise((resolve) => setTimeout(resolve, 600));
+            const lookup = await db.customers.getByPhone(fallbackPhone);
+            const candidate = lookup?.data as { id?: string; created_at?: string } | null;
+            const createdAt = candidate?.created_at ? new Date(candidate.created_at).getTime() : 0;
+            if (candidate?.id && createdAt && Date.now() - createdAt < 90_000) {
+              console.warn(
+                '[AddCustomer] create returned error but row exists; treating as success',
+                { phone: fallbackPhone, error: error?.message }
+              );
+              newCustomer = candidate as any;
+              error = null;
+            }
+          } catch (lookupErr) {
+            console.warn('[AddCustomer] phone-based fallback lookup failed', lookupErr);
+          }
+        }
+      }
+      if (error || !newCustomer) {
+        throw new Error(error?.message || 'Customer create returned no data');
       }
 
       let newJob = null;

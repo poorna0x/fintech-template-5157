@@ -55,11 +55,13 @@ REVOKE ALL ON FUNCTION public.decrement_main_inventory_for_job(uuid, integer) FR
 REVOKE EXECUTE ON FUNCTION public.decrement_main_inventory_for_job(uuid, integer) FROM anon;
 GRANT EXECUTE ON FUNCTION public.decrement_main_inventory_for_job(uuid, integer) TO authenticated;
 
--- Top Up: move p_qty from main inventory to the calling technician's inventory.
+-- Top Up: move p_qty from main inventory to a technician's inventory.
+-- Technicians: omit p_technician_id (uses auth.uid()). Admins: pass selected technician id.
 -- Used by TechnicianTopUpDialog ("Add to Inventory" button).
 CREATE OR REPLACE FUNCTION public.technician_top_up_used_item(
   p_inventory_id uuid,
-  p_qty integer
+  p_qty integer,
+  p_technician_id uuid DEFAULT NULL
 )
 RETURNS jsonb
 LANGUAGE plpgsql
@@ -67,13 +69,26 @@ SECURITY DEFINER
 SET search_path = public
 AS $$
 DECLARE
-  v_tech uuid := auth.uid();
+  v_caller uuid := auth.uid();
+  v_tech uuid;
   v_current integer;
   v_existing_id uuid;
 BEGIN
-  IF v_tech IS NULL THEN
+  IF v_caller IS NULL THEN
     RAISE EXCEPTION 'not authenticated';
   END IF;
+
+  IF p_technician_id IS NOT NULL AND p_technician_id IS DISTINCT FROM v_caller THEN
+    IF NOT public.is_admin_user() THEN
+      RAISE EXCEPTION 'not allowed';
+    END IF;
+    v_tech := p_technician_id;
+  ELSIF p_technician_id IS NOT NULL THEN
+    v_tech := p_technician_id;
+  ELSE
+    v_tech := v_caller;
+  END IF;
+
   IF NOT EXISTS (SELECT 1 FROM public.technicians t WHERE t.id = v_tech) THEN
     RAISE EXCEPTION 'not a technician';
   END IF;
@@ -120,6 +135,6 @@ BEGIN
 END;
 $$;
 
-REVOKE ALL ON FUNCTION public.technician_top_up_used_item(uuid, integer) FROM PUBLIC;
-REVOKE EXECUTE ON FUNCTION public.technician_top_up_used_item(uuid, integer) FROM anon;
-GRANT EXECUTE ON FUNCTION public.technician_top_up_used_item(uuid, integer) TO authenticated;
+REVOKE ALL ON FUNCTION public.technician_top_up_used_item(uuid, integer, uuid) FROM PUBLIC;
+REVOKE EXECUTE ON FUNCTION public.technician_top_up_used_item(uuid, integer, uuid) FROM anon;
+GRANT EXECUTE ON FUNCTION public.technician_top_up_used_item(uuid, integer, uuid) TO authenticated;

@@ -4574,11 +4574,12 @@ export const db = {
       return { data: rows, error: null };
     },
 
-    /** Top Up via SECURITY DEFINER RPC: move qty from main → caller's technician_inventory. */
-    async topUpFromMain(inventoryId: string, qty: number) {
+    /** Top Up via SECURITY DEFINER RPC: move qty from main → technician_inventory (self or admin for p_technician_id). */
+    async topUpFromMain(inventoryId: string, qty: number, technicianId?: string) {
       const { data, error } = await supabase.rpc('technician_top_up_used_item', {
         p_inventory_id: inventoryId,
         p_qty: qty,
+        ...(technicianId ? { p_technician_id: technicianId } : {}),
       });
       return { data, error };
     },

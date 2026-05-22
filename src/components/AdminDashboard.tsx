@@ -101,6 +101,7 @@ import {
   readAdminDashboardCache,
   writeAdminDashboardCache,
   clearAdminDashboardCache,
+  invalidateAdminDashboardCaches,
   type AdminDashboardSnapshot,
 } from '@/lib/adminDashboardCache';
 import { StatusBadge } from './admin/StatusBadge';
@@ -3720,9 +3721,32 @@ const AdminDashboard = () => {
         toast.success(`Customer ${updatedCustomer.customer_id || updatedCustomer.customerId} updated successfully!`);
       } else {
         // Create new customer
-        const { data: newCustomer, error } = await db.customers.create(customerData);
-        if (error) {
-          throw new Error(error.message);
+        let { data: newCustomer, error } = await db.customers.create(customerData);
+        // Idle JWT refreshes / brief network blips can drop the INSERT response while the row
+        // still landed in Postgres. Treat a matching phone created in the last 90s as success.
+        if (error || !newCustomer) {
+          const fallbackPhone = customerData.phone;
+          if (fallbackPhone) {
+            try {
+              await new Promise((resolve) => setTimeout(resolve, 600));
+              const lookup = await db.customers.getByPhone(fallbackPhone);
+              const candidate = lookup?.data as { id?: string; created_at?: string } | null;
+              const createdAt = candidate?.created_at ? new Date(candidate.created_at).getTime() : 0;
+              if (candidate?.id && createdAt && Date.now() - createdAt < 90_000) {
+                console.warn(
+                  '[AdminDashboard] customer create returned error but row exists; treating as success',
+                  { phone: fallbackPhone, error: error?.message }
+                );
+                newCustomer = candidate as any;
+                error = null;
+              }
+            } catch (lookupErr) {
+              console.warn('[AdminDashboard] phone-based fallback lookup failed', lookupErr);
+            }
+          }
+        }
+        if (error || !newCustomer) {
+          throw new Error(error?.message || 'Customer create returned no data');
         }
         result = newCustomer;
         toast.success(`Customer ${newCustomer.customer_id || newCustomer.customerId} created successfully!`);
@@ -8923,7 +8947,11 @@ const AdminDashboard = () => {
                 title="Refresh data (no full page reload)"
                 onClick={async () => {
                   hapticTap();
+                  await invalidateAdminDashboardCaches();
                   await loadDashboardData();
+                  if (statusFilter !== 'ONGOING') {
+                    await loadFilteredJobs(statusFilter, currentPage);
+                  }
                 }}
               >
                 <RefreshCw className="w-4 h-4" />
@@ -9065,7 +9093,11 @@ const AdminDashboard = () => {
               title="Refresh data (no full page reload)"
               onClick={async () => {
                 hapticTap();
+                await invalidateAdminDashboardCaches();
                 await loadDashboardData();
+                if (statusFilter !== 'ONGOING') {
+                  await loadFilteredJobs(statusFilter, currentPage);
+                }
               }}
             >
               <RefreshCw className="w-4 h-4" />

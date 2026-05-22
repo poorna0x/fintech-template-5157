@@ -209,7 +209,8 @@ const TechnicianTopUpDialog: React.FC<TechnicianTopUpDialogProps> = ({
         }
         const { error: rpcError } = await db.technicianInventory.topUpFromMain(
           currentItem.inventory_id,
-          qty
+          qty,
+          technicianId
         );
         if (rpcError) throw rpcError;
         toast.success(`Added ${qty} ${currentItem.inventory?.product_name || 'items'}`);
