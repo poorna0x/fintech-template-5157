@@ -2868,6 +2868,7 @@ const TechnicianDashboard = () => {
     setCompletionSubmitError(null);
     setCompletionRetryPhaseBOnly(false);
     setBillPhotosSkipConfirmOpen(false);
+    setIsSubmittingJobCompletion(false);
   }, []);
 
   const captureCompleteJobDraft = useCallback((): TechnicianCompleteJobDraft | null => {
@@ -7091,9 +7092,11 @@ const TechnicianDashboard = () => {
           onOpenChange={(open) => {
             setResumeCompleteJobDraftOpen(open);
             if (!open) {
-              // Dismissed without explicit action — release the held job so the next Complete Job click works.
+              // Just clear the pending-draft pointer. Do NOT touch selectedJobForComplete here:
+              // the Resume action sets completeDialogOpen=true in the same tick and Radix
+              // auto-fires this onOpenChange(false) with a stale closure value, which would
+              // otherwise null out the job and silently break Next/Back inside the wizard.
               setCompleteJobDraftToResume(null);
-              setSelectedJobForComplete((prev) => (completeDialogOpen ? prev : null));
             }
           }}
         >
