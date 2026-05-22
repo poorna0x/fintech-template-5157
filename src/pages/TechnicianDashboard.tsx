@@ -94,6 +94,15 @@ import {
   resolveCustomerUuidForQueries,
   resolveJobBillAndPaymentPhotos,
 } from '@/lib/jobReportPhotos';
+import {
+  clearTechnicianCompleteJobDraft,
+  friendlyCompletionErrorMessage,
+  parseJobRequirementsArray,
+  readTechnicianCompleteJobDraft,
+  stripCompletionDraftMarkers,
+  writeTechnicianCompleteJobDraft,
+  type TechnicianCompleteJobDraft,
+} from '@/lib/technicianCompleteJobDraft';
 
 /** Visible-tab poll (backup if postgres/broadcast miss). */
 const TECH_JOBS_POLL_MS = 12_000;
@@ -611,6 +620,8 @@ const TechnicianDashboard = () => {
   const [allTechnicians, setAllTechnicians] = useState<any[]>([]); // Store all technicians (filtered for QR codes)
   const [allTechniciansForReports, setAllTechniciansForReports] = useState<any[]>([]); // Store ALL technicians for reports lookup
   const [technicianVisibleQrCodes, setTechnicianVisibleQrCodes] = useState<string[]>([]); // Current technician's visibility settings
+  const [selectedQrCodeName, setSelectedQrCodeName] = useState<string>('');
+  const [selectedQrCodeUrlState, setSelectedQrCodeUrlState] = useState<string>('');
   const [paymentScreenshot, setPaymentScreenshot] = useState<string>('');
   const [partialCashAmount, setPartialCashAmount] = useState<string>('');
   const [partialOnlineAmount, setPartialOnlineAmount] = useState<string>('');
@@ -622,6 +633,10 @@ const TechnicianDashboard = () => {
   const [extraPhotosStep6, setExtraPhotosStep6] = useState<string[]>([]);
   const [dontSendMessageToCustomer, setDontSendMessageToCustomer] = useState(false);
   const [isExtraPhotosStep6Uploading, setIsExtraPhotosStep6Uploading] = useState(false);
+  const [completionSubmitError, setCompletionSubmitError] = useState<string | null>(null);
+  const [completionRetryPhaseBOnly, setCompletionRetryPhaseBOnly] = useState(false);
+  const [resumeCompleteJobDraftOpen, setResumeCompleteJobDraftOpen] = useState(false);
+  const [completeJobDraftToResume, setCompleteJobDraftToResume] = useState<TechnicianCompleteJobDraft | null>(null);
 
   // Phone popup state
   const [phonePopupOpen, setPhonePopupOpen] = useState(false);
@@ -2816,6 +2831,153 @@ const TechnicianDashboard = () => {
     setConfirmCompleteJobDialog({ open: true, job });
   };
 
+  const resetCompleteJobFormState = useCallback(() => {
+    setCompletionNotes('');
+    setCompleteJobStep(1);
+    setBillAmount('');
+    setBillPhotos([]);
+    setOptionalCompletionPhotos([]);
+    setExtraPhotosStep6([]);
+    setDontSendMessageToCustomer(false);
+    const today = new Date().toISOString().split('T')[0];
+    setAmcDateGiven(today);
+    setAmcYears(0);
+    setAmcEndDate('');
+    setAmcIncludesPrefilter(null);
+    setHasAMC(null);
+    setAmcAdditionalInfo('');
+    setAmcAmount('');
+    setAmcServicePeriodKind('');
+    setAmcServicePeriodCustomMonths(4);
+    setPaymentScreenshot('');
+    setPaymentMode('');
+    setPartialCashAmount('');
+    setPartialOnlineAmount('');
+    setCustomerHasPrefilter(null);
+    setRawWaterTds('');
+    setQrCodeType('');
+    setSelectedQrCodeId('');
+    setSelectedQrCodeName('');
+    setSelectedQrCodeUrlState('');
+    setOtpInput(['', '', '', '']);
+    setOtpError('');
+    otpInputRefs.current = [];
+    setServiceBrand(null);
+    setLastServiceBrand(null);
+    setIsLoadingServiceBrand(false);
+    setCompletionSubmitError(null);
+    setCompletionRetryPhaseBOnly(false);
+    setBillPhotosSkipConfirmOpen(false);
+  }, []);
+
+  const captureCompleteJobDraft = useCallback((): TechnicianCompleteJobDraft | null => {
+    if (!selectedJobForComplete) return null;
+    return {
+      version: 1,
+      jobId: selectedJobForComplete.id,
+      savedAt: Date.now(),
+      completeJobStep,
+      completionNotes,
+      billAmount,
+      billPhotos,
+      optionalCompletionPhotos,
+      extraPhotosStep6,
+      dontSendMessageToCustomer,
+      amcDateGiven,
+      amcEndDate,
+      amcYears,
+      amcIncludesPrefilter,
+      amcAdditionalInfo,
+      amcAmount,
+      amcServicePeriodKind,
+      amcServicePeriodCustomMonths,
+      hasAMC,
+      paymentMode,
+      partialCashAmount,
+      partialOnlineAmount,
+      customerHasPrefilter,
+      rawWaterTds,
+      qrCodeType,
+      selectedQrCodeId,
+      paymentScreenshot,
+      otpInput,
+      serviceBrand,
+      selectedQrCodeName,
+      selectedQrCodeUrl: selectedQrCodeUrlState,
+    };
+  }, [
+    selectedJobForComplete,
+    completeJobStep,
+    completionNotes,
+    billAmount,
+    billPhotos,
+    optionalCompletionPhotos,
+    extraPhotosStep6,
+    dontSendMessageToCustomer,
+    amcDateGiven,
+    amcEndDate,
+    amcYears,
+    amcIncludesPrefilter,
+    amcAdditionalInfo,
+    amcAmount,
+    amcServicePeriodKind,
+    amcServicePeriodCustomMonths,
+    hasAMC,
+    paymentMode,
+    partialCashAmount,
+    partialOnlineAmount,
+    customerHasPrefilter,
+    rawWaterTds,
+    qrCodeType,
+    selectedQrCodeId,
+    paymentScreenshot,
+    otpInput,
+    serviceBrand,
+    selectedQrCodeName,
+    selectedQrCodeUrlState,
+  ]);
+
+  const applyCompleteJobDraft = useCallback((draft: TechnicianCompleteJobDraft) => {
+    setCompleteJobStep(draft.completeJobStep);
+    setCompletionNotes(draft.completionNotes);
+    setBillAmount(draft.billAmount);
+    setBillPhotos(draft.billPhotos);
+    setOptionalCompletionPhotos(draft.optionalCompletionPhotos);
+    setExtraPhotosStep6(draft.extraPhotosStep6);
+    setDontSendMessageToCustomer(draft.dontSendMessageToCustomer);
+    setAmcDateGiven(draft.amcDateGiven);
+    setAmcEndDate(draft.amcEndDate);
+    setAmcYears(draft.amcYears);
+    setAmcIncludesPrefilter(draft.amcIncludesPrefilter);
+    setAmcAdditionalInfo(draft.amcAdditionalInfo);
+    setAmcAmount(draft.amcAmount);
+    setAmcServicePeriodKind(draft.amcServicePeriodKind);
+    setAmcServicePeriodCustomMonths(draft.amcServicePeriodCustomMonths);
+    setHasAMC(draft.hasAMC);
+    setPaymentMode(draft.paymentMode);
+    setPartialCashAmount(draft.partialCashAmount);
+    setPartialOnlineAmount(draft.partialOnlineAmount);
+    setCustomerHasPrefilter(draft.customerHasPrefilter);
+    setRawWaterTds(draft.rawWaterTds);
+    setQrCodeType(draft.qrCodeType);
+    setSelectedQrCodeId(draft.selectedQrCodeId);
+    setSelectedQrCodeName(draft.selectedQrCodeName || '');
+    setSelectedQrCodeUrlState(draft.selectedQrCodeUrl || '');
+    setPaymentScreenshot(draft.paymentScreenshot);
+    setOtpInput(draft.otpInput?.length === 4 ? draft.otpInput : ['', '', '', '']);
+    setOtpError('');
+    setServiceBrand(draft.serviceBrand);
+    setCompletionSubmitError(null);
+    setCompletionRetryPhaseBOnly(false);
+  }, []);
+
+  useEffect(() => {
+    if (!completeDialogOpen || !selectedJobForComplete || isSubmittingJobCompletion) return;
+    const draft = captureCompleteJobDraft();
+    if (draft) writeTechnicianCompleteJobDraft(draft);
+  }, [completeDialogOpen, selectedJobForComplete, isSubmittingJobCompletion, captureCompleteJobDraft]);
+
+
   // Actually open the completion dialog
   const performCompleteJob = async (job: Job) => {
     // Fetch full job data with customer if not already loaded
@@ -2833,38 +2995,24 @@ const TechnicianDashboard = () => {
     }
     
     setSelectedJobForComplete(jobWithCustomer);
-    
-    // Always reset to fresh defaults (don't restore saved progress)
-      setCompletionNotes('');
-      setCompleteJobStep(1);
-      setBillAmount('');
-      setBillPhotos([]);
-      setOptionalCompletionPhotos([]);
-      const today = new Date().toISOString().split('T')[0];
-      setAmcDateGiven(today);
-    setAmcYears(0);
-    setAmcEndDate('');
-      setAmcIncludesPrefilter(null);
-    setHasAMC(null);
-        setAmcAdditionalInfo('');
-    setAmcAmount('');
-    setAmcServicePeriodKind('');
-    setAmcServicePeriodCustomMonths(4);
-        setPaymentScreenshot('');
-        setPaymentMode('');
-      setCustomerHasPrefilter(null);
-      setRawWaterTds('');
-      setQrCodeType('');
-      setSelectedQrCodeId('');
-      setOtpInput(['', '', '', '']);
-      setOtpError('');
-      otpInputRefs.current = [];
+    resetCompleteJobFormState();
 
-    // Service brand: no default, prefer last used when available
-    setServiceBrand(null);
-    setLastServiceBrand(null);
-    setIsLoadingServiceBrand(false);
+    const savedDraft = readTechnicianCompleteJobDraft(jobWithCustomer.id);
+    if (savedDraft) {
+      // Defer opening the wizard until the user picks Resume / Start fresh.
+      setCompleteJobDraftToResume(savedDraft);
+      setResumeCompleteJobDraftOpen(true);
+      return;
+    }
 
+    setCompleteJobDraftToResume(null);
+    setResumeCompleteJobDraftOpen(false);
+    await openCompleteJobWizardFresh(jobWithCustomer);
+  };
+
+  // Opens the wizard fresh with auto-prefills (customer's last brand, prefilter, TDS).
+  // Only called when there is no saved draft to resume.
+  const openCompleteJobWizardFresh = async (jobWithCustomer: Job) => {
     const customerId =
       (jobWithCustomer.customer as any)?.id ||
       jobWithCustomer.customer?.id ||
@@ -2896,16 +3044,15 @@ const TechnicianDashboard = () => {
         }
       })();
     }
-    
-    // Initialize customerHasPrefilter from customer's existing value if available
-    const customerPrefilter = jobWithCustomer.customer 
+
+    const customerPrefilter = jobWithCustomer.customer
       ? ((jobWithCustomer.customer as any).has_prefilter ?? (jobWithCustomer.customer as any).hasPrefilter ?? null)
       : null;
     setCustomerHasPrefilter(customerPrefilter);
 
-    // Only prefill if value > 0; empty by default so mobile users can easily type (0 is hard to clear)
     const existingTds = (jobWithCustomer.customer as any)?.raw_water_tds;
     setRawWaterTds(existingTds != null && Number(existingTds) > 0 ? String(existingTds) : '');
+
     setCompleteDialogOpen(true);
   };
 
@@ -3376,12 +3523,111 @@ const TechnicianDashboard = () => {
     setCompleteJobStep(nextStep);
   };
 
+  const afterJobCompletionSaved = useCallback(
+    async (uploadedBillPhotos: string[]) => {
+      if (!selectedJobForComplete) return;
+      const jobId = selectedJobForComplete.id;
+      clearTechnicianCompleteJobDraft(jobId);
+      setCompletionRetryPhaseBOnly(false);
+      setCompletionSubmitError(null);
+
+      const totalPhotosCount =
+        uploadedBillPhotos.length +
+        (paymentScreenshot && paymentScreenshot.startsWith('http') ? 1 : 0);
+      if (totalPhotosCount > 0) {
+        toast.success(`Job completed successfully with ${totalPhotosCount} photo(s)!`, {
+          duration: 3000,
+        });
+      } else {
+        toast.success('Job completed successfully!', { duration: 3000 });
+      }
+
+      const customerId =
+        (selectedJobForComplete.customer as any)?.id ||
+        selectedJobForComplete.customer?.id ||
+        selectedJobForComplete.customer_id ||
+        (selectedJobForComplete as any).customer_id ||
+        selectedJobForComplete.customerId;
+
+      if (customerId) {
+        try {
+          const updatePayload: Record<string, any> = {};
+          if (!isSoftenerService()) {
+            if (customerHasPrefilter !== null) updatePayload.has_prefilter = customerHasPrefilter;
+            const tdsVal = parseInt(rawWaterTds, 10);
+            if (!isNaN(tdsVal) && tdsVal >= 0) {
+              updatePayload.raw_water_tds = tdsVal;
+            } else if (rawWaterTds === '') {
+              updatePayload.raw_water_tds = 0;
+            }
+          }
+          if (Object.keys(updatePayload).length > 0) {
+            const { error } = await db.customers.update(customerId, updatePayload);
+            if (error) {
+              toast.error(`Failed to update customer: ${error.message || 'Unknown error'}`);
+            }
+          }
+        } catch (error: any) {
+          toast.error(`Failed to update customer: ${error?.message || 'Unknown error'}`);
+        }
+      }
+
+      shouldPreserveOrderRef.current = true;
+      setJobs((prev) =>
+        prev.map((job) =>
+          job.id === jobId
+            ? {
+                ...job,
+                status: 'COMPLETED',
+                end_time: new Date().toISOString(),
+                completionNotes: completionNotes.trim(),
+                completedBy: user?.id || user?.technicianId || null,
+                completedAt: new Date().toISOString(),
+                actual_cost: parseFloat(billAmount) || 0,
+                payment_amount: parseFloat(billAmount) || 0,
+                customer: job.customer,
+              }
+            : job
+        )
+      );
+
+      const completedCustId =
+        (selectedJobForComplete.customer as any)?.id ||
+        selectedJobForComplete.customer_id ||
+        (selectedJobForComplete as any).customer_id;
+      if (completedCustId) {
+        setCustomerPriorServiceStatus((prev) => ({ ...prev, [completedCustId]: true }));
+      }
+
+      setIsSubmittingJobCompletion(false);
+      setCompleteDialogOpen(false);
+      setSelectedJobForComplete(null);
+      resetCompleteJobFormState();
+    },
+    [
+      selectedJobForComplete,
+      paymentScreenshot,
+      billAmount,
+      completionNotes,
+      customerHasPrefilter,
+      rawWaterTds,
+      user,
+      resetCompleteJobFormState,
+    ]
+  );
+
   const handleCompleteJobSubmit = async () => {
     if (!selectedJobForComplete) return;
     if (isSubmittingJobCompletion) return;
 
+    // In retry mode, step gates are bypassed below and the submit block runs unconditionally.
+    // We only nudge the visual step indicator to step 6 so the header copy stays consistent.
+    if (completionRetryPhaseBOnly && completeJobStep !== 6) {
+      setCompleteJobStep(6);
+    }
+
     // Step 1: Bill Amount - validate and show confirmation
-    if (completeJobStep === 1) {
+    if (!completionRetryPhaseBOnly && completeJobStep === 1) {
       if (!serviceBrand) {
         toast.error('Please select service brand');
         return;
@@ -3406,7 +3652,7 @@ const TechnicianDashboard = () => {
     }
 
     // Step 2: Bill photos optional — no skip dialog while uploads run (Next/Skip disabled until done)
-    if (completeJobStep === 2) {
+    if (!completionRetryPhaseBOnly && completeJobStep === 2) {
       if (isBillPhotosUploading || hasPendingBillPhotosInState()) {
         toast.error(
           isBillPhotosUploading
@@ -3426,7 +3672,7 @@ const TechnicianDashboard = () => {
     }
 
     // Step 3: AMC Information (optional, can skip) - move to next step
-    if (completeJobStep === 3) {
+    if (!completionRetryPhaseBOnly && completeJobStep === 3) {
       // Skip AMC step if bill is zero or service is softener (shouldn't reach here, but safety check)
       const billIsZeroStep3 = isBillAmountZero();
       const isSoftenerStep3 = isSoftenerService();
@@ -3522,7 +3768,7 @@ const TechnicianDashboard = () => {
     }
 
     // Step 4: Payment Mode - validate and move to step 5
-    if (completeJobStep === 4) {
+    if (!completionRetryPhaseBOnly && completeJobStep === 4) {
       // Skip payment step if bill amount is zero (shouldn't reach here, but safety check)
       if (isBillAmountZero()) {
         // Skip to step 7 (OTP) if required, or step 6 (prefilter) or submit if softener
@@ -3548,29 +3794,10 @@ const TechnicianDashboard = () => {
         toast.error('Please select a payment mode');
         return;
       }
-      // If Online, need to check QR code selection first
       if (paymentMode === 'ONLINE') {
         if (!selectedQrCodeId) {
           toast.error('Please select a QR code');
           return;
-        }
-        // Save QR code selection
-        let selectedQrCodeUrl: string | undefined;
-        let selectedQrCodeName: string | undefined;
-        if (selectedQrCodeId.startsWith('common_')) {
-          const qrId = selectedQrCodeId.replace('common_', '');
-          const selectedQr = commonQrCodes.find(qr => qr.id === qrId);
-          if (selectedQr) {
-            selectedQrCodeUrl = selectedQr.qrCodeUrl;
-            selectedQrCodeName = selectedQr.name;
-          }
-        } else if (selectedQrCodeId.startsWith('technician_')) {
-          const techId = selectedQrCodeId.replace('technician_', '');
-          const selectedTech = technicians.find(t => t.id === techId);
-          if (selectedTech && selectedTech.qrCode) {
-            selectedQrCodeUrl = selectedTech.qrCode;
-            selectedQrCodeName = selectedTech.fullName || 'Technician';
-          }
         }
       }
       // Move to step 5 (Payment Screenshot)
@@ -3579,7 +3806,7 @@ const TechnicianDashboard = () => {
     }
 
     // Step 5: Payment screenshot (optional) — uploads still validated at submit if present
-    if (completeJobStep === 5) {
+    if (!completionRetryPhaseBOnly && completeJobStep === 5) {
       if (!isBillAmountZero() && (isPaymentScreenshotUploading || hasPendingPaymentScreenshotState())) {
         toast.error(
           isPaymentScreenshotUploading
@@ -3613,7 +3840,7 @@ const TechnicianDashboard = () => {
     }
 
     // Step 7: OTP Verification (if required)
-    if (completeJobStep === 7) {
+    if (!completionRetryPhaseBOnly && completeJobStep === 7) {
       // Validate OTP - check all 4 boxes are filled
       const otpValue = otpInput.join('');
       if (otpValue.length !== 4) {
@@ -3637,7 +3864,7 @@ const TechnicianDashboard = () => {
     }
 
     // Step 6: Prefilter - submit the form (or submit directly if softener service skipped this step)
-    if (completeJobStep === 6) {
+    if (completeJobStep === 6 || completionRetryPhaseBOnly) {
       // If softener service, customerHasPrefilter should be null (not applicable)
       if (isSoftenerService()) {
         setCustomerHasPrefilter(null);
@@ -3666,8 +3893,41 @@ const TechnicianDashboard = () => {
     }
 
     setIsSubmittingJobCompletion(true);
+    setCompletionSubmitError(null);
     
     try {
+      const jobId = selectedJobForComplete.id;
+
+      if (completionRetryPhaseBOnly) {
+        const { data: latestForRetry, error: fetchRetryErr } = await db.jobs.getByIdFull(jobId);
+        if (fetchRetryErr) {
+          console.warn('Could not fetch job before retry finalize:', fetchRetryErr);
+        }
+        const reqsForRetry = stripCompletionDraftMarkers(
+          parseJobRequirementsArray(latestForRetry?.requirements)
+        );
+        const phaseBRetry = {
+          status: 'COMPLETED' as const,
+          end_time: new Date().toISOString(),
+          completed_at: new Date().toISOString(),
+          completed_by: user?.id || user?.technicianId || null,
+          requirements: JSON.stringify(reqsForRetry),
+        };
+        const { error: retryErr } = await withTimeout(
+          db.jobs.update(jobId, phaseBRetry),
+          30000,
+          'Finalizing job completion is taking longer than expected'
+        );
+        if (retryErr) {
+          const friendly = friendlyCompletionErrorMessage(retryErr);
+          setCompletionSubmitError(`${friendly} Tap Retry finish to try again.`);
+          setIsSubmittingJobCompletion(false);
+          return;
+        }
+        await afterJobCompletionSaved(billPhotos.filter(isUploadedMediaUrl));
+        return;
+      }
+
       // STEP 1: Bill photos — gated by getCompletionMediaNotReadyReason(); only remote URLs here
       const uploadedBillPhotos = billPhotos.filter(isUploadedMediaUrl);
       
@@ -3675,40 +3935,28 @@ const TechnicianDashboard = () => {
       // Note: QR codes are NOT uploaded to Cloudinary - we use the existing URL directly
       // QR codes are already stored in the database (common_qr_codes table) or technician profiles
       // If the QR code URL is already a Cloudinary URL, we use it as-is without uploading
-      let selectedQrCodeUrl: string | undefined;
-      let selectedQrCodeName: string | undefined;
-      
+      // Resolve QR code details with multiple fallbacks (handles draft restore + visibility filtering)
+      let selectedQrCodeUrl: string | undefined = selectedQrCodeUrlState || undefined;
+      let selectedQrCodeNameLocal: string | undefined = selectedQrCodeName || undefined;
+
       if (selectedQrCodeId && selectedQrCodeId.startsWith('common_')) {
         const qrId = selectedQrCodeId.replace('common_', '');
-        const selectedQr = commonQrCodes.find(qr => qr.id === qrId);
+        const selectedQr =
+          commonQrCodes.find(qr => qr.id === qrId) ||
+          allCommonQrCodes.find(qr => qr.id === qrId) ||
+          commonQrCodesForTechnician.find(qr => qr.id === qrId);
         if (selectedQr) {
-          selectedQrCodeUrl = selectedQr.qrCodeUrl;
-          selectedQrCodeName = selectedQr.name;
-          // Check if QR code URL is already a Cloudinary URL - if so, use it directly (no upload needed)
-          if (selectedQrCodeUrl && (
-            selectedQrCodeUrl.includes('cloudinary.com') || 
-            selectedQrCodeUrl.includes('res.cloudinary.com') ||
-            selectedQrCodeUrl.startsWith('http://') || 
-            selectedQrCodeUrl.startsWith('https://')
-          )) {
-            console.log('✅ QR code URL is already a valid URL (Cloudinary or other), using directly:', selectedQrCodeUrl);
-          }
+          selectedQrCodeUrl = selectedQr.qrCodeUrl || selectedQrCodeUrl;
+          selectedQrCodeNameLocal = selectedQr.name || selectedQrCodeNameLocal;
         }
       } else if (selectedQrCodeId && selectedQrCodeId.startsWith('technician_')) {
         const techId = selectedQrCodeId.replace('technician_', '');
-        const selectedTech = technicians.find(t => t.id === techId);
-        if (selectedTech && selectedTech.qrCode) {
-          selectedQrCodeUrl = selectedTech.qrCode;
-          selectedQrCodeName = selectedTech.fullName || 'Technician';
-          // Check if QR code URL is already a Cloudinary URL - if so, use it directly (no upload needed)
-          if (selectedQrCodeUrl && (
-            selectedQrCodeUrl.includes('cloudinary.com') || 
-            selectedQrCodeUrl.includes('res.cloudinary.com') ||
-            selectedQrCodeUrl.startsWith('http://') || 
-            selectedQrCodeUrl.startsWith('https://')
-          )) {
-            console.log('✅ Technician QR code URL is already a valid URL (Cloudinary or other), using directly:', selectedQrCodeUrl);
-          }
+        const selectedTech =
+          technicians.find(t => t.id === techId) ||
+          allTechnicians.find(t => t.id === techId);
+        if (selectedTech && (selectedTech as any).qrCode) {
+          selectedQrCodeUrl = (selectedTech as any).qrCode || selectedQrCodeUrl;
+          selectedQrCodeNameLocal = (selectedTech as any).fullName || selectedQrCodeNameLocal || 'Technician';
         }
       }
 
@@ -3777,7 +4025,18 @@ const TechnicianDashboard = () => {
         }
 
         // Remove existing photo-related requirements to avoid duplicates
-        requirements = requirements.filter((req: any) => !req.bill_photos && !req.payment_photos && !req.qr_photos);
+        // Strip any prior completion-time entries so retries don't accumulate duplicates in jobs.requirements.
+        requirements = requirements.filter((req: any) => {
+          if (!req || typeof req !== 'object') return true;
+          if (req.bill_photos !== undefined) return false;
+          if (req.payment_photos !== undefined) return false;
+          if (req.qr_photos !== undefined) return false;
+          if (req.completion_draft !== undefined) return false;
+          if (req.amc_info !== undefined) return false;
+          if (req.dont_send_message !== undefined) return false;
+          if (req.partial_cash_amount !== undefined || req.partial_online_amount !== undefined) return false;
+          return true;
+        });
 
         // Add bill photos (all should be uploaded Cloudinary URLs at this point)
         if (uploadedBillPhotos.length > 0) {
@@ -3866,7 +4125,7 @@ const TechnicianDashboard = () => {
             selected_qr_code_id: selectedQrCodeId,
             payment_screenshot: isPaymentScreenshotUploaded ? paymentScreenshot : null,
             selected_qr_code_url: selectedQrCodeUrl,
-            selected_qr_code_name: selectedQrCodeName,
+            selected_qr_code_name: selectedQrCodeNameLocal,
           };
           requirements.push({ qr_photos: qrPhotos });
           console.log('✅ Added qr_photos to requirements:', qrPhotos);
@@ -3932,157 +4191,66 @@ const TechnicianDashboard = () => {
           requirements.push({ dont_send_message: true });
         }
 
-        // Always update requirements (even if empty) to ensure job is marked as completed
-        updateData.requirements = JSON.stringify(requirements);
+        const requirementsBeforeDraft = [...requirements];
+        const requirementsWithDraft = [
+          ...requirementsBeforeDraft,
+          { completion_draft: true, saved_at: new Date().toISOString() },
+        ];
 
-        // Wrap database update with timeout (30 seconds)
-        const updatePromise = db.jobs.update(selectedJobForComplete.id, updateData);
-        const { error } = await withTimeout(
-          updatePromise,
-          30000, // 30 second timeout
-          'Job completion submission is taking longer than expected'
+        const phaseAData = { ...updateData };
+        delete phaseAData.status;
+        delete phaseAData.end_time;
+        delete phaseAData.completed_at;
+        delete phaseAData.completed_by;
+        phaseAData.requirements = JSON.stringify(requirementsWithDraft);
+
+        const { error: phaseAError } = await withTimeout(
+          db.jobs.update(jobId, phaseAData),
+          30000,
+          'Saving completion details is taking longer than expected'
         );
-
-        if (error) {
-          throw new Error(error.message);
-        }
-        
-        // Verify requirements were saved correctly
-        const { data: verifyJobData } = await db.jobs.getByIdFull(selectedJobForComplete.id);
-        if (verifyJobData) {
-          const savedRequirements = typeof verifyJobData.requirements === 'string' 
-            ? JSON.parse(verifyJobData.requirements) 
-            : verifyJobData.requirements;
-          const savedBillPhotos = savedRequirements?.find((req: any) => req.bill_photos)?.bill_photos || [];
-          console.log(`✅ Job completed! Saved ${savedBillPhotos.length} bill photos to requirements:`, savedBillPhotos);
-        }
-        
-        
-        // Job completed successfully!
-        // Count all photos: bill photos + payment screenshot
-        const totalPhotosCount = uploadedBillPhotos.length + (paymentScreenshot && paymentScreenshot.startsWith('http') ? 1 : 0);
-        if (totalPhotosCount > 0) {
-          toast.success(`Job completed successfully with ${totalPhotosCount} photo(s)!`, {
-            duration: 3000,
-          });
-        } else {
-          toast.success('Job completed successfully!', {
-            duration: 3000,
-          });
+        if (phaseAError) {
+          throw new Error(phaseAError.message);
         }
 
-        // Update customer (prefilter/TDS for RO)
-        const customerId =
-          (selectedJobForComplete.customer as any)?.id ||
-          selectedJobForComplete.customer?.id ||
-          selectedJobForComplete.customer_id ||
-          (selectedJobForComplete as any).customer_id ||
-          selectedJobForComplete.customerId;
-
-        if (customerId) {
-          try {
-            const updatePayload: Record<string, any> = {};
-            if (!isSoftenerService()) {
-              if (customerHasPrefilter !== null) updatePayload.has_prefilter = customerHasPrefilter;
-              const tdsVal = parseInt(rawWaterTds, 10);
-              if (!isNaN(tdsVal) && tdsVal >= 0) {
-                updatePayload.raw_water_tds = tdsVal;
-              } else if (rawWaterTds === '') {
-                updatePayload.raw_water_tds = 0;
-              }
-            }
-
-            if (Object.keys(updatePayload).length > 0) {
-              const { data, error } = await db.customers.update(customerId, updatePayload);
-
-              if (error) {
-                console.error('❌ Failed to update customer on job completion:', {
-                  error,
-                  customerId,
-                  updatePayload,
-                  errorMessage: error.message,
-                });
-                toast.error(`Failed to update customer: ${error.message || 'Unknown error'}`);
-              } else {
-                console.log('✅ Customer updated on job completion:', { customerId, updatePayload, data });
-              }
-            }
-          } catch (error: any) {
-            console.error('❌ Error updating customer on job completion:', error);
-            toast.error(`Failed to update customer: ${error?.message || 'Unknown error'}`);
-          }
-        } else {
-          console.warn('⚠️ Cannot update customer: customer UUID not found in job', {
-            jobId: selectedJobForComplete.id,
-            jobNumber: (selectedJobForComplete as any).job_number || selectedJobForComplete.jobNumber,
-          });
-          if (!isSoftenerService()) {
-            toast.warning('Could not update customer: customer ID not found');
-          }
+        const reqsForPhaseB = stripCompletionDraftMarkers(requirementsBeforeDraft);
+        const phaseBData = {
+          status: 'COMPLETED' as const,
+          end_time: new Date().toISOString(),
+          completed_at: new Date().toISOString(),
+          completed_by: user?.id || user?.technicianId || null,
+          requirements: JSON.stringify(reqsForPhaseB),
+        };
+        const { error: phaseBError } = await withTimeout(
+          db.jobs.update(jobId, phaseBData),
+          30000,
+          'Finalizing job completion is taking longer than expected'
+        );
+        if (phaseBError) {
+          setCompletionRetryPhaseBOnly(true);
+          const friendly = friendlyCompletionErrorMessage(phaseBError);
+          setCompletionSubmitError(
+            `${friendly} Your bill and photos are already saved — tap Retry finish to mark the job completed.`
+          );
+          setIsSubmittingJobCompletion(false);
+          return;
         }
 
-        // Update local state - preserve order (don't re-sort)
-        shouldPreserveOrderRef.current = true;
-        setJobs(prev => prev.map(job => 
-          job.id === selectedJobForComplete.id ? { 
-                ...job, 
-                status: 'COMPLETED',
-                end_time: new Date().toISOString(),
-            completionNotes: completionNotes.trim(),
-                completedBy: user?.id || user?.technicianId || null,
-            completedAt: new Date().toISOString(),
-            actual_cost: parseFloat(billAmount) || 0,
-            payment_amount: parseFloat(billAmount) || 0,
-                customer: job.customer
-          } : job
-        ));
-
-        const completedCustId =
-          (selectedJobForComplete.customer as any)?.id ||
-          selectedJobForComplete.customer_id ||
-          (selectedJobForComplete as any).customer_id;
-        if (completedCustId) {
-          setCustomerPriorServiceStatus((prev) => ({ ...prev, [completedCustId]: true }));
-        }
-        
-        setIsSubmittingJobCompletion(false);
-        // Job completed - dialog will close automatically
-        setCompleteDialogOpen(false);
-        
-        // Reset form state
-        setSelectedJobForComplete(null);
-        setCompletionNotes('');
-        setCompleteJobStep(1);
-        setBillAmount('');
-        setBillPhotos([]);
-        setOptionalCompletionPhotos([]);
-        setExtraPhotosStep6([]);
-        setDontSendMessageToCustomer(false);
-        setAmcDateGiven(new Date().toISOString().split('T')[0]);
-        setAmcEndDate('');
-        setAmcYears(0);
-        setAmcIncludesPrefilter(null);
-        setAmcServicePeriodKind('4');
-        setAmcServicePeriodCustomMonths(4);
-        setHasAMC(null);
-        setPaymentMode('');
-        setPartialCashAmount('');
-        setPartialOnlineAmount('');
-        setCustomerHasPrefilter(null);
-        setRawWaterTds('');
-        setQrCodeType('');
-        setSelectedQrCodeId('');
-        setPaymentScreenshot('');
+        await afterJobCompletionSaved(uploadedBillPhotos);
 
       } catch (submitError: any) {
         setIsSubmittingJobCompletion(false);
+        const friendly = friendlyCompletionErrorMessage(submitError);
+        setCompletionSubmitError(friendly);
         console.error('Job completion submission failed:', submitError);
-        toast.error(`Failed to complete job: ${submitError?.message || 'Unknown error'}`);
+        toast.error(friendly);
       }
     } catch (error: any) {
       setIsSubmittingJobCompletion(false);
+      const friendly = friendlyCompletionErrorMessage(error);
+      setCompletionSubmitError(friendly);
       console.error('Error preparing job completion:', error);
-      toast.error('Failed to save job completion. Please try again.');
+      toast.error(friendly);
     }
   };
 
@@ -6918,37 +7086,62 @@ const TechnicianDashboard = () => {
         </Dialog>
 
         {/* Complete Job Dialog */}
+        <AlertDialog
+          open={resumeCompleteJobDraftOpen}
+          onOpenChange={(open) => {
+            setResumeCompleteJobDraftOpen(open);
+            if (!open) {
+              // Dismissed without explicit action — release the held job so the next Complete Job click works.
+              setCompleteJobDraftToResume(null);
+              setSelectedJobForComplete((prev) => (completeDialogOpen ? prev : null));
+            }
+          }}
+        >
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>Resume previous completion?</AlertDialogTitle>
+              <AlertDialogDescription>
+                You have saved progress for this job (step {completeJobDraftToResume?.completeJobStep ?? '?'}).
+                Resume where you left off, or start over.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel
+                onClick={() => {
+                  if (selectedJobForComplete) {
+                    clearTechnicianCompleteJobDraft(selectedJobForComplete.id);
+                  }
+                  setCompleteJobDraftToResume(null);
+                  if (selectedJobForComplete) {
+                    void openCompleteJobWizardFresh(selectedJobForComplete);
+                  }
+                }}
+              >
+                Start over
+              </AlertDialogCancel>
+              <AlertDialogAction
+                className="bg-black hover:bg-gray-800"
+                onClick={() => {
+                  if (completeJobDraftToResume) {
+                    applyCompleteJobDraft(completeJobDraftToResume);
+                  }
+                  setCompleteJobDraftToResume(null);
+                  setCompleteDialogOpen(true);
+                }}
+              >
+                Resume
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
+
         <Dialog open={completeDialogOpen} onOpenChange={(open) => {
           if (!open && !isSubmittingJobCompletion) {
-            // Only allow closing if not submitting (data is safe in localStorage)
+            const draft = captureCompleteJobDraft();
+            if (draft) writeTechnicianCompleteJobDraft(draft);
             setCompleteDialogOpen(false);
             setSelectedJobForComplete(null);
-            setCompletionNotes('');
-            setCompleteJobStep(1);
-            setBillAmount('');
-            setBillPhotos([]);
-            setOptionalCompletionPhotos([]);
-            setExtraPhotosStep6([]);
-            setDontSendMessageToCustomer(false);
-            const today = new Date().toISOString().split('T')[0];
-            setAmcDateGiven(today);
-            setAmcEndDate('');
-            setAmcYears(0);
-            setAmcIncludesPrefilter(null);
-            setAmcServicePeriodKind('');
-            setAmcServicePeriodCustomMonths(4);
-            setHasAMC(null);
-            setPaymentMode('');
-            setCustomerHasPrefilter(null);
-            setRawWaterTds('');
-            setQrCodeType('');
-            setSelectedQrCodeId('');
-            setPaymentScreenshot('');
-            setIsSubmittingJobCompletion(false);
-            setServiceBrand(null);
-            setLastServiceBrand(null);
-            setIsLoadingServiceBrand(false);
-            setBillPhotosSkipConfirmOpen(false);
+            resetCompleteJobFormState();
           }
         }}>
           <DialogContent className="w-[95vw] sm:w-[500px] max-w-[500px] h-[85vh] sm:h-[600px] max-h-[85vh] flex flex-col p-0">
@@ -6957,8 +7150,10 @@ const TechnicianDashboard = () => {
               <DialogDescription>
                 {isSubmittingJobCompletion ? (
                   <span className="text-blue-600 font-medium">
-                    💾 Submitting job completion... Your data is saved safely.
+                    Submitting job completion… Your progress is saved locally and on the server.
                   </span>
+                ) : completionSubmitError ? (
+                  <span className="text-red-600 font-medium">{completionSubmitError}</span>
                 ) : (
                   <>
                     {completeJobStep === 1 && 'Select service brand & enter bill amount'}
@@ -7575,15 +7770,17 @@ const TechnicianDashboard = () => {
                           value={selectedQrCodeId} 
                           onValueChange={(value) => {
                             setSelectedQrCodeId(value);
-                            // Set QR code type based on selection
                             let qrType = '';
-                            let qrUrl: string | undefined;
-                            let qrName: string | undefined;
-                            
+                            let qrUrl = '';
+                            let qrName = '';
+
                             if (value.startsWith('common_')) {
                               qrType = 'common';
                               const qrId = value.replace('common_', '');
-                              const selectedQr = commonQrCodes.find(qr => qr.id === qrId);
+                              const selectedQr =
+                                commonQrCodes.find(qr => qr.id === qrId) ||
+                                allCommonQrCodes.find(qr => qr.id === qrId) ||
+                                commonQrCodesForTechnician.find(qr => qr.id === qrId);
                               if (selectedQr) {
                                 qrUrl = selectedQr.qrCodeUrl;
                                 qrName = selectedQr.name;
@@ -7591,14 +7788,18 @@ const TechnicianDashboard = () => {
                             } else if (value.startsWith('technician_')) {
                               qrType = 'technician';
                               const techId = value.replace('technician_', '');
-                              const selectedTech = technicians.find(t => t.id === techId);
-                              if (selectedTech && selectedTech.qrCode) {
-                                qrUrl = selectedTech.qrCode;
-                                qrName = selectedTech.fullName || 'Technician';
+                              const selectedTech =
+                                technicians.find(t => t.id === techId) ||
+                                allTechnicians.find(t => t.id === techId);
+                              if (selectedTech && (selectedTech as any).qrCode) {
+                                qrUrl = (selectedTech as any).qrCode;
+                                qrName = (selectedTech as any).fullName || 'Technician';
                               }
                             }
-                            
+
                             setQrCodeType(qrType);
+                            setSelectedQrCodeName(qrName);
+                            setSelectedQrCodeUrlState(qrUrl);
                           }}
                         >
                           <SelectTrigger className="mt-1">
@@ -7980,35 +8181,11 @@ const TechnicianDashboard = () => {
                       setOtpInput(['', '', '', '']); // Reset OTP when going back
                     }
                   } else {
-                  setCompleteDialogOpen(false);
-                  setSelectedJobForComplete(null);
-                  setCompletionNotes('');
-                    setCompleteJobStep(1);
-                    setBillAmount('');
-                    setBillPhotos([]);
-                    setOptionalCompletionPhotos([]);
-                    setExtraPhotosStep6([]);
-                    setDontSendMessageToCustomer(false);
-                    const today = new Date().toISOString().split('T')[0];
-                    setAmcDateGiven(today);
-                    setAmcEndDate('');
-                    setAmcYears(0);
-                    setAmcIncludesPrefilter(null);
-                    setAmcServicePeriodKind('');
-                    setAmcServicePeriodCustomMonths(4);
-                    setHasAMC(null);
-                    setPaymentMode('');
-                    setCustomerHasPrefilter(null);
-        setRawWaterTds('');
-      setQrCodeType('');
-      setSelectedQrCodeId('');
-      setPaymentScreenshot('');
-      setOtpInput(['', '', '', '']);
-      setOtpError('');
-      otpInputRefs.current = [];
-      setServiceBrand(null);
-      setLastServiceBrand(null);
-      setIsLoadingServiceBrand(false);
+                    const draft = captureCompleteJobDraft();
+                    if (draft) writeTechnicianCompleteJobDraft(draft);
+                    setCompleteDialogOpen(false);
+                    setSelectedJobForComplete(null);
+                    resetCompleteJobFormState();
                   }
                 }}
               >
@@ -8039,6 +8216,19 @@ const TechnicianDashboard = () => {
                   Skip
                 </Button>
               )}
+              {completionSubmitError && (
+                <Button
+                  variant="outline"
+                  className="border-red-300 text-red-700 hover:bg-red-50"
+                  disabled={isSubmittingJobCompletion}
+                  onClick={() => {
+                    if (completeJobStep !== 6) setCompleteJobStep(6);
+                    void handleCompleteJobSubmit();
+                  }}
+                >
+                  {completionRetryPhaseBOnly ? 'Retry finish' : 'Retry'}
+                </Button>
+              )}
               <Button
                 onClick={handleCompleteJobSubmit}
                 className="bg-black hover:bg-gray-800 !text-white font-semibold"
@@ -8046,8 +8236,8 @@ const TechnicianDashboard = () => {
                   isSubmittingJobCompletion ||
                   completeJobNextDisabledByUploads ||
                   (completeJobStep === 1 && !serviceBrand) ||
-                  (isCompleteJobFooterSubmit() && hasAnyPendingCompletionUploads()) ||
-                  (completeJobStep === 6 && !isSoftenerService() && !rawWaterTds.trim()) ||
+                  (isCompleteJobFooterSubmit() && hasAnyPendingCompletionUploads() && !completionRetryPhaseBOnly) ||
+                  (completeJobStep === 6 && !isSoftenerService() && !rawWaterTds.trim() && !completionRetryPhaseBOnly) ||
                   (completeJobStep === 4 && !isBillAmountZero() && !paymentMode) ||
                   (completeJobStep === 4 && !isBillAmountZero() && (paymentMode === 'ONLINE' || paymentMode === 'PARTIAL') && (paymentMode === 'ONLINE' ? !selectedQrCodeId : (parseFloat(partialOnlineAmount) > 0 && !selectedQrCodeId))) ||
                   (completeJobStep === 7 && otpInput.join('').length !== 4)
@@ -8059,7 +8249,7 @@ const TechnicianDashboard = () => {
                     Submitting…
                   </>
                 ) : isCompleteJobFooterSubmit() ? (
-                  'Complete Job'
+                  completionRetryPhaseBOnly ? 'Retry finish' : 'Complete Job'
                 ) : (
                   'Next'
                 )}
