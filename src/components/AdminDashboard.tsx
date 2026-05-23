@@ -1662,6 +1662,7 @@ const AdminDashboard = () => {
   useEffect(() => {
     const searchParams = new URLSearchParams(window.location.search);
     const view = searchParams.get('view');
+    const searchPrefill = searchParams.get('search');
     if (view === 'gst-invoices') {
       setShowGSTInvoicesPage(true);
       // Clean up URL
@@ -1670,6 +1671,38 @@ const AdminDashboard = () => {
       setShowAMCViewPage(true);
       // Clean up URL
       window.history.replaceState({}, '', '/admin');
+    } else if (searchPrefill && searchPrefill.trim()) {
+      // Pre-fill the admin search box and trigger a search so deep-links from
+      // Settings → Advanced search → "Open in Admin" / "Photos" land directly on the result.
+      const trimmed = searchPrefill.trim();
+      const action = searchParams.get('action');
+      setSearchQuery(trimmed);
+      setSearchTerm(trimmed);
+      window.history.replaceState({}, '', '/admin');
+      void (async () => {
+        try {
+          const { data, error } = await db.customers.searchSlim(trimmed, 50, {
+            includeAddressAndLocation: true,
+          });
+          if (!error) {
+            const transformed = (data || []).map((row: any) => transformCustomerData(row));
+            setSearchResults(transformed);
+            if (action === 'photos' && transformed.length > 0) {
+              const match =
+                transformed.find(
+                  (c: any) =>
+                    String(c.phone || '').replace(/\D/g, '') ===
+                    trimmed.replace(/\D/g, '')
+                ) || transformed[0];
+              if (match) {
+                handleViewPhotos(match);
+              }
+            }
+          }
+        } catch {
+          /* swallow — user can hit Search button manually */
+        }
+      })();
     }
   }, []);
 

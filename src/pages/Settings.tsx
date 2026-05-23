@@ -50,6 +50,7 @@ import { registerAdminPWA } from '@/lib/pwa';
 import { SettingsRemindersDialog } from '@/components/reminders/SettingsRemindersDialog';
 import { AddReminderDialog } from '@/components/reminders/AddReminderDialog';
 import { SettingsPendingPaymentsDialogV2 } from '@/components/reminders/PendingPaymentsDialogV2';
+import AdvancedCustomerSearchDialog from '@/components/admin/AdvancedCustomerSearchDialog';
 import QRCodeStyling from 'qr-code-styling';
 
 /** PostgREST error when a table was never created or was dropped (e.g. booking_abandonments). */
@@ -204,6 +205,7 @@ const Settings = () => {
   const [showCallingPage, setShowCallingPage] = useState(false);
 
   const [remindersDialogOpen, setRemindersDialogOpen] = useState(false);
+  const [advancedSearchDialogOpen, setAdvancedSearchDialogOpen] = useState(false);
   const [addGeneralReminderOpen, setAddGeneralReminderOpen] = useState(false);
   const [addCustomerReminderOpen, setAddCustomerReminderOpen] = useState(false);
 
@@ -1585,6 +1587,33 @@ const Settings = () => {
               </div>
             </CardContent>
           </Card>
+
+          {/* Advanced customer search */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2 text-lg sm:text-xl">
+                <Users className="w-5 h-5" />
+                Advanced customer search
+              </CardTitle>
+              <CardDescription className="text-sm mt-1">
+                Combine brand, location, service type, AMC, last service date, and more to find customers — like "Livpure in Kasavanahalli or Haralur".
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="p-4 sm:p-6">
+              <Button
+                type="button"
+                className="w-full sm:w-auto"
+                onClick={() => setAdvancedSearchDialogOpen(true)}
+              >
+                <Users className="w-4 h-4 mr-2 shrink-0" />
+                Open advanced search
+              </Button>
+            </CardContent>
+          </Card>
+          <AdvancedCustomerSearchDialog
+            open={advancedSearchDialogOpen}
+            onOpenChange={setAdvancedSearchDialogOpen}
+          />
 
           {/* Reminders: add general / customer, then load list dialog */}
           <Card>
