@@ -58,8 +58,11 @@ export const CustomerCardHeader: React.FC<CustomerCardHeaderProps> = ({
     (customer as any).has_google_review === 'true' ||
     (customer as any).has_google_review === 1 ||
     (customer as any).has_google_review === '1';
-  /** DB UUID — maps (AMC / prior) are keyed by this; fall back if `id` alias missing */
-  const customerUuid = (customer.id || (customer as any).customer_id) as string | undefined;
+  /** DB UUID only — never use human `customer_id` code (e.g. C0679) for map lookups. */
+  const customerUuid =
+    typeof customer.id === 'string' && customer.id.includes('-')
+      ? customer.id
+      : undefined;
   const hasPriorService = Boolean(
     (customerUuid && customerPriorServiceStatus[customerUuid]) ||
       priorServiceFromJobs ||

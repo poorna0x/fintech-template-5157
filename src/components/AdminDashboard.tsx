@@ -1433,7 +1433,7 @@ const AdminDashboard = () => {
         });
       }
       setCustomerAMCStatus(amcStatusMap);
-      setCustomerPriorServiceStatus(priorCompletedMap);
+      setCustomerPriorServiceStatus((prev) => ({ ...prev, ...priorCompletedMap }));
 
       if (techniciansAllResult?.data) {
         setTechniciansForReports(techniciansAllResult.data.map(transformTechnicianData));
@@ -2296,6 +2296,30 @@ const AdminDashboard = () => {
 
   const handleOpenCustomerReport = async (customer: Customer) => {
     const c = await loadFullCustomerForAction(customer);
+    const customerUuid = c.id;
+    if (customerUuid) {
+      try {
+        const { data: completedRows } = await db.jobs.getByCustomerIdForReport(customerUuid);
+        if (completedRows?.length) {
+          setCustomerPriorServiceStatus((prev) => ({ ...prev, [customerUuid]: true }));
+          setCustomers((prev) =>
+            prev.map((row) =>
+              row.id === customerUuid
+                ? {
+                    ...row,
+                    lastServiceDate:
+                      row.lastServiceDate ||
+                      (c as any).last_service_date ||
+                      new Date().toISOString().split('T')[0],
+                  }
+                : row
+            )
+          );
+        }
+      } catch {
+        /* report dialog still opens */
+      }
+    }
     setSelectedCustomerForReport(c);
     setCustomerReportDialogOpen(true);
   };
@@ -8960,6 +8984,7 @@ const AdminDashboard = () => {
                 onClick={async () => {
                   hapticTap();
                   await invalidateAdminDashboardCaches();
+                  await reloadCustomerPriorServiceStatus();
                   await loadDashboardData();
                   if (statusFilter !== 'ONGOING') {
                     await loadFilteredJobs(statusFilter, currentPage);
@@ -9106,6 +9131,7 @@ const AdminDashboard = () => {
               onClick={async () => {
                 hapticTap();
                 await invalidateAdminDashboardCaches();
+                await reloadCustomerPriorServiceStatus();
                 await loadDashboardData();
                 if (statusFilter !== 'ONGOING') {
                   await loadFilteredJobs(statusFilter, currentPage);
@@ -11741,13 +11767,20 @@ const AdminDashboard = () => {
               (completedJob as any)?.customerId ||
               ((completedJob as any)?.customer && (completedJob as any).customer.id);
             if (completedCustomerId) {
-              setCustomerPriorServiceStatus((prev) =>
-                prev[completedCustomerId]
-                  ? prev
-                  : { ...prev, [completedCustomerId]: true }
+              const serviceDate = new Date().toISOString().split('T')[0];
+              setCustomerPriorServiceStatus((prev) => ({ ...prev, [completedCustomerId]: true }));
+              setCustomers((prev) =>
+                prev.map((c) =>
+                  c.id === completedCustomerId
+                    ? { ...c, lastServiceDate: c.lastServiceDate || serviceDate }
+                    : c
+                )
               );
+              void db.customers.update(completedCustomerId, { last_service_date: serviceDate });
             }
           }
+          await invalidateAdminDashboardCaches();
+          await reloadCustomerPriorServiceStatus();
           await loadFilteredJobs(statusFilter, currentPage);
           setSelectedTechnicianForComplete('');
         }}

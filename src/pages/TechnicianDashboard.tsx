@@ -3552,7 +3552,9 @@ const TechnicianDashboard = () => {
 
       if (customerId) {
         try {
-          const updatePayload: Record<string, any> = {};
+          const updatePayload: Record<string, any> = {
+            last_service_date: new Date().toISOString().split('T')[0],
+          };
           if (!isSoftenerService()) {
             if (customerHasPrefilter !== null) updatePayload.has_prefilter = customerHasPrefilter;
             const tdsVal = parseInt(rawWaterTds, 10);
