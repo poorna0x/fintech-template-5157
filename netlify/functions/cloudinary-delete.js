@@ -1,21 +1,47 @@
-// Netlify Function: delete image from Cloudinary using server-side API secret
-// Uses Basic Auth (no signature) to avoid encoding/whitespace issues
+// Netlify Function: delete image from Cloudinary using server-side API secret.
+// Uses Basic Auth (no signature) to avoid encoding/whitespace issues.
+//
+// SECURITY: This endpoint is admin/technician-only. It requires:
+//   1. A valid Supabase access token (Authorization: Bearer ... or body.accessToken)
+//   2. An allowed Origin
+//   3. Per-IP and per-user rate limits
+//   4. A strict publicId format (no shell/path injection, length-bounded)
+const { createClient } = require('@supabase/supabase-js');
 const { getCorsHeaders, isOriginAllowed } = require('./cors-helper');
 const { addSecurityHeaders } = require('./security-headers');
+const {
+  checkRateLimit,
+  checkRateLimitForKey,
+  rateLimitResponseForKey,
+} = require('./rate-limiter');
 
-// Prefer CLOUDINARY_* (server-only); fall back to VITE_* so Netlify works without adding new vars.
-// Trim all values - Netlify env can have trailing newlines which break signature.
+// Cloudinary public_id rules + our app conventions:
+//   - allow letters, digits, underscore, hyphen, slash, dot
+//   - max 200 chars (Cloudinary max is 255; we cap below to leave headroom)
+//   - reject leading/trailing slashes and any double-slash, "../", or NUL byte
+const PUBLIC_ID_RE = /^[A-Za-z0-9._\-/]{1,200}$/;
+function isValidPublicId(id) {
+  if (typeof id !== 'string') return false;
+  if (!PUBLIC_ID_RE.test(id)) return false;
+  if (id.startsWith('/') || id.endsWith('/')) return false;
+  if (id.includes('//') || id.includes('..') || id.includes('\u0000')) return false;
+  return true;
+}
+
+// Server-only Cloudinary config. We intentionally do NOT fall back to VITE_* —
+// those would also be inlined into the public browser bundle by Vite.
+// Trim all values: Netlify env can have trailing newlines which break Basic Auth.
 function getCloudinaryConfig(useSecondary) {
   const trim = (s) => (s && typeof s === 'string' ? s.trim() : s);
   if (useSecondary) {
-    const cloudName = trim(process.env.CLOUDINARY_SECONDARY_CLOUD_NAME || process.env.VITE_CLOUDINARY_SECONDARY_CLOUD_NAME);
-    const apiKey = trim(process.env.CLOUDINARY_SECONDARY_API_KEY || process.env.VITE_CLOUDINARY_SECONDARY_API_KEY);
-    const apiSecret = trim(process.env.CLOUDINARY_SECONDARY_API_SECRET || process.env.VITE_CLOUDINARY_SECONDARY_API_SECRET);
+    const cloudName = trim(process.env.CLOUDINARY_SECONDARY_CLOUD_NAME);
+    const apiKey = trim(process.env.CLOUDINARY_SECONDARY_API_KEY);
+    const apiSecret = trim(process.env.CLOUDINARY_SECONDARY_API_SECRET);
     return cloudName && apiKey && apiSecret ? { cloudName, apiKey, apiSecret } : null;
   }
-  const cloudName = trim(process.env.CLOUDINARY_CLOUD_NAME || process.env.VITE_CLOUDINARY_CLOUD_NAME);
-  const apiKey = trim(process.env.CLOUDINARY_API_KEY || process.env.VITE_CLOUDINARY_API_KEY);
-  const apiSecret = trim(process.env.CLOUDINARY_API_SECRET || process.env.VITE_CLOUDINARY_API_SECRET);
+  const cloudName = trim(process.env.CLOUDINARY_CLOUD_NAME);
+  const apiKey = trim(process.env.CLOUDINARY_API_KEY);
+  const apiSecret = trim(process.env.CLOUDINARY_API_SECRET);
   return cloudName && apiKey && apiSecret ? { cloudName, apiKey, apiSecret } : null;
 }
 
@@ -49,6 +75,22 @@ exports.handler = async (event, context) => {
     };
   }
 
+  // Per-IP brute-force / abuse limit (best-effort; per-Lambda-instance only).
+  const ipLimit = checkRateLimit(event, {
+    maxRequests: 60,
+    windowMs: 60_000,
+    endpoint: 'cloudinary-delete-ip',
+  });
+  if (!ipLimit.allowed) {
+    return {
+      ...rateLimitResponseForKey(ipLimit),
+      headers: addSecurityHeaders({
+        ...rateLimitResponseForKey(ipLimit).headers,
+        ...corsHeaders,
+      }),
+    };
+  }
+
   let body;
   try {
     body = JSON.parse(event.body || '{}');
@@ -60,16 +102,92 @@ exports.handler = async (event, context) => {
     };
   }
 
+  // --- AUTHENTICATION: require a valid Supabase access token (admin or technician) ---
+  const accessToken =
+    body.accessToken ||
+    (event.headers.authorization || event.headers.Authorization || '').replace(/^Bearer\s+/i, '');
+  if (!accessToken) {
+    return {
+      statusCode: 401,
+      headers: addSecurityHeaders({ ...corsHeaders, 'Content-Type': 'application/json' }),
+      body: JSON.stringify({ deleted: false, error: 'Unauthorized' }),
+    };
+  }
+
+  const supabaseUrl = (process.env.VITE_SUPABASE_URL || process.env.SUPABASE_URL || '').trim();
+  const anonKey = (process.env.VITE_SUPABASE_ANON_KEY || process.env.SUPABASE_ANON_KEY || '').trim();
+  if (!supabaseUrl || !anonKey) {
+    return {
+      statusCode: 503,
+      headers: addSecurityHeaders({ ...corsHeaders, 'Content-Type': 'application/json' }),
+      body: JSON.stringify({ deleted: false, error: 'Server misconfigured' }),
+    };
+  }
+
+  const userClient = createClient(supabaseUrl, anonKey, {
+    auth: { autoRefreshToken: false, persistSession: false },
+  });
+  const { data: userData, error: userErr } = await userClient.auth.getUser(accessToken);
+  if (userErr || !userData?.user) {
+    return {
+      statusCode: 401,
+      headers: addSecurityHeaders({ ...corsHeaders, 'Content-Type': 'application/json' }),
+      body: JSON.stringify({ deleted: false, error: 'Unauthorized' }),
+    };
+  }
+
+  const role =
+    userData.user.app_metadata?.role ||
+    userData.user.user_metadata?.role ||
+    'admin';
+  if (role !== 'admin' && role !== 'technician') {
+    return {
+      statusCode: 403,
+      headers: addSecurityHeaders({ ...corsHeaders, 'Content-Type': 'application/json' }),
+      body: JSON.stringify({ deleted: false, error: 'Forbidden' }),
+    };
+  }
+
+  // Per-user limit (shared with IP limit). Tighter than IP because each authenticated
+  // user is a single principal and deletes should not happen in bursts.
+  const userLimit = checkRateLimitForKey(`cloudinary-delete-user:${userData.user.id}`, {
+    maxRequests: 100,
+    windowMs: 60 * 60 * 1000,
+    endpoint: 'cloudinary-delete-user',
+  });
+  if (!userLimit.allowed) {
+    return {
+      ...rateLimitResponseForKey(userLimit),
+      headers: addSecurityHeaders({
+        ...rateLimitResponseForKey(userLimit).headers,
+        ...corsHeaders,
+      }),
+    };
+  }
+
   const { publicId: rawPublicId, useSecondary = false } = body;
-  if (!rawPublicId || typeof rawPublicId !== 'string' || !rawPublicId.trim()) {
+  if (!rawPublicId || typeof rawPublicId !== 'string') {
     return {
       statusCode: 400,
       headers: addSecurityHeaders({ ...corsHeaders, 'Content-Type': 'application/json' }),
       body: JSON.stringify({ deleted: false, error: 'Missing or invalid publicId' }),
     };
   }
-
   const id = rawPublicId.trim();
+  if (!isValidPublicId(id)) {
+    return {
+      statusCode: 400,
+      headers: addSecurityHeaders({ ...corsHeaders, 'Content-Type': 'application/json' }),
+      body: JSON.stringify({ deleted: false, error: 'Invalid publicId format' }),
+    };
+  }
+  if (typeof useSecondary !== 'boolean') {
+    return {
+      statusCode: 400,
+      headers: addSecurityHeaders({ ...corsHeaders, 'Content-Type': 'application/json' }),
+      body: JSON.stringify({ deleted: false, error: 'Invalid useSecondary flag' }),
+    };
+  }
 
   const tryDestroyWithConfig = async (idToTry, config) => {
     const formBody = new URLSearchParams({

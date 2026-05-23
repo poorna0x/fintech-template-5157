@@ -8,15 +8,16 @@ const { addSecurityHeaders } = require('./security-headers');
 const trim = (s) => (s && typeof s === 'string' ? s.trim() : s);
 
 function getCloudinaryConfig(useSecondary) {
+  // Server-only. Do NOT fall back to VITE_* — those would leak into the browser bundle.
   if (useSecondary) {
-    const cloudName = trim(process.env.CLOUDINARY_SECONDARY_CLOUD_NAME || process.env.VITE_CLOUDINARY_SECONDARY_CLOUD_NAME);
-    const apiKey = trim(process.env.CLOUDINARY_SECONDARY_API_KEY || process.env.VITE_CLOUDINARY_SECONDARY_API_KEY);
-    const apiSecret = trim(process.env.CLOUDINARY_SECONDARY_API_SECRET || process.env.VITE_CLOUDINARY_SECONDARY_API_SECRET);
+    const cloudName = trim(process.env.CLOUDINARY_SECONDARY_CLOUD_NAME);
+    const apiKey = trim(process.env.CLOUDINARY_SECONDARY_API_KEY);
+    const apiSecret = trim(process.env.CLOUDINARY_SECONDARY_API_SECRET);
     return cloudName && apiKey && apiSecret ? { cloudName, apiKey, apiSecret } : null;
   }
-  const cloudName = trim(process.env.CLOUDINARY_CLOUD_NAME || process.env.VITE_CLOUDINARY_CLOUD_NAME);
-  const apiKey = trim(process.env.CLOUDINARY_API_KEY || process.env.VITE_CLOUDINARY_API_KEY);
-  const apiSecret = trim(process.env.CLOUDINARY_API_SECRET || process.env.VITE_CLOUDINARY_API_SECRET);
+  const cloudName = trim(process.env.CLOUDINARY_CLOUD_NAME);
+  const apiKey = trim(process.env.CLOUDINARY_API_KEY);
+  const apiSecret = trim(process.env.CLOUDINARY_API_SECRET);
   return cloudName && apiKey && apiSecret ? { cloudName, apiKey, apiSecret } : null;
 }
 

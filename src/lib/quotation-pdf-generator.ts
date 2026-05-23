@@ -91,7 +91,7 @@ export function generateQuotationPDF(quotationData: PDFQuotationData, action: 'p
       <!DOCTYPE html>
       <html>
       <head>
-        <title>Quotation - ${quotationData.billNumber}</title>
+        <title>Quotation - ${sanitizeForTemplate(quotationData.billNumber)}</title>
         <style>
           @import url('https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&display=swap');
           
@@ -1151,20 +1151,20 @@ function createQuotationContent(data: PDFQuotationData): string {
           <div class="customer-info">
             <div><strong>${sanitizeForTemplate(data.customer.name)}</strong></div>
             ${data.customer.address ? `<div>${sanitizeForTemplate(data.customer.address)}</div>` : ''}
-            ${(data.customer.city || data.customer.state || data.customer.pincode) ? `<div>${data.customer.city}, ${data.customer.state} - ${data.customer.pincode}</div>` : ''}
-            ${data.customer.phone ? `<div>Phone: ${data.customer.phone}</div>` : ''}
-            ${data.customer.email ? `<div>Email: ${data.customer.email}</div>` : ''}
-            ${data.customer.gstNumber ? `<div>GST: ${data.customer.gstNumber}</div>` : ''}
+            ${(data.customer.city || data.customer.state || data.customer.pincode) ? `<div>${sanitizeForTemplate(data.customer.city)}, ${sanitizeForTemplate(data.customer.state)} - ${sanitizeForTemplate(data.customer.pincode)}</div>` : ''}
+            ${data.customer.phone ? `<div>Phone: ${sanitizeForTemplate(data.customer.phone)}</div>` : ''}
+            ${data.customer.email ? `<div>Email: ${sanitizeForTemplate(data.customer.email)}</div>` : ''}
+            ${data.customer.gstNumber ? `<div>GST: ${sanitizeForTemplate(data.customer.gstNumber)}</div>` : ''}
           </div>
         </div>
         
         <div class="quotation-details">
           <div class="section-title">Quotation Details:</div>
           <div class="quotation-meta">
-            <div><strong>Quotation Number:</strong> ${data.billNumber}</div>
+            <div><strong>Quotation Number:</strong> ${sanitizeForTemplate(data.billNumber)}</div>
             <div><strong>Quotation Date:</strong> ${new Date(data.billDate).toLocaleDateString()}</div>
             <div><strong>Valid Until:</strong> ${validityDate.toLocaleDateString()}</div>
-            ${(data as any).gstOption !== 'normal' && (data as any).gstData?.placeOfSupply ? `<div><strong>Place of Supply:</strong> ${(data as any).gstData.placeOfSupply} (State Code: ${(data as any).gstData.placeOfSupplyCode || '—'})</div>` : ''}
+            ${(data as any).gstOption !== 'normal' && (data as any).gstData?.placeOfSupply ? `<div><strong>Place of Supply:</strong> ${sanitizeForTemplate((data as any).gstData.placeOfSupply)} (State Code: ${sanitizeForTemplate((data as any).gstData.placeOfSupplyCode || '—')})</div>` : ''}
           </div>
         </div>
       </div>
@@ -1236,7 +1236,7 @@ function createQuotationContent(data: PDFQuotationData): string {
       ${data.notes ? `
         <div class="notes-section">
           <div class="notes-title">Additional Info:</div>
-          <div class="notes-content">${data.notes}</div>
+          <div class="notes-content">${sanitizeForTemplate(data.notes)}</div>
         </div>
       ` : ''}
       
@@ -1331,7 +1331,7 @@ function generateQuotationHTML(data: PDFQuotationData): string {
     <head>
       <meta charset="UTF-8">
       <meta name="viewport" content="width=device-width, initial-scale=1.0">
-      <title>Quotation - ${data.billNumber}</title>
+      <title>Quotation - ${sanitizeForTemplate(data.billNumber)}</title>
       <style>
         @import url('https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&display=swap');
         
@@ -1646,19 +1646,19 @@ function generateQuotationHTML(data: PDFQuotationData): string {
           <div class="quotation-to">
             <div class="section-title">Quotation To:</div>
             <div class="customer-info">
-              <div><strong>${data.customer.name}</strong></div>
-              ${data.customer.address ? `<div>${data.customer.address}</div>` : ''}
-              ${(data.customer.city || data.customer.state || data.customer.pincode) ? `<div>${data.customer.city}, ${data.customer.state} - ${data.customer.pincode}</div>` : ''}
-              ${data.customer.phone ? `<div>Phone: ${data.customer.phone}</div>` : ''}
-              ${data.customer.email ? `<div>Email: ${data.customer.email}</div>` : ''}
-              ${data.customer.gstNumber ? `<div>GST: ${data.customer.gstNumber}</div>` : ''}
+              <div><strong>${sanitizeForTemplate(data.customer.name)}</strong></div>
+              ${data.customer.address ? `<div>${sanitizeForTemplate(data.customer.address)}</div>` : ''}
+              ${(data.customer.city || data.customer.state || data.customer.pincode) ? `<div>${sanitizeForTemplate(data.customer.city)}, ${sanitizeForTemplate(data.customer.state)} - ${sanitizeForTemplate(data.customer.pincode)}</div>` : ''}
+              ${data.customer.phone ? `<div>Phone: ${sanitizeForTemplate(data.customer.phone)}</div>` : ''}
+              ${data.customer.email ? `<div>Email: ${sanitizeForTemplate(data.customer.email)}</div>` : ''}
+              ${data.customer.gstNumber ? `<div>GST: ${sanitizeForTemplate(data.customer.gstNumber)}</div>` : ''}
             </div>
           </div>
           
           <div class="quotation-details">
             <div class="section-title">Quotation Details:</div>
             <div class="quotation-meta">
-              <div><strong>Quotation Number:</strong> ${data.billNumber}</div>
+              <div><strong>Quotation Number:</strong> ${sanitizeForTemplate(data.billNumber)}</div>
               <div><strong>Quotation Date:</strong> ${new Date(data.billDate).toLocaleDateString()}</div>
               <div><strong>Valid Until:</strong> ${validityDate.toLocaleDateString()}</div>
             </div>

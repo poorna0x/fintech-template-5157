@@ -72,7 +72,7 @@ function generateAMCHTML(data: AMCPDFData, options?: AMCPDFOptions): string {
     <head>
       <meta charset="UTF-8">
       <meta name="viewport" content="width=device-width, initial-scale=1.0">
-      <title>AMC Agreement - ${data.billNumber}</title>
+      <title>AMC Agreement - ${sanitizeForTemplate(data.billNumber)}</title>
       <style>
         @import url('https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&display=swap');
         
@@ -533,12 +533,12 @@ function generateAMCHTML(data: AMCPDFData, options?: AMCPDFOptions): string {
             </div>
             <div class="detail-item-new">
               <div class="detail-label-new">Phone Number</div>
-              <div class="detail-value-new">${data.customer.phone}</div>
+              <div class="detail-value-new">${sanitizeForTemplate(data.customer.phone)}</div>
             </div>
             ${data.customer.email && data.customer.email.trim() ? `
             <div class="detail-item-new">
               <div class="detail-label-new">Email</div>
-              <div class="detail-value-new">${data.customer.email.trim()}</div>
+              <div class="detail-value-new">${sanitizeForTemplate(data.customer.email.trim())}</div>
             </div>
             ` : ''}
             <div class="detail-item-new">
@@ -548,7 +548,7 @@ function generateAMCHTML(data: AMCPDFData, options?: AMCPDFOptions): string {
             ${data.customer.gstNumber && data.customer.gstNumber.trim() ? `
             <div class="detail-item-new">
               <div class="detail-label-new">GST Number</div>
-              <div class="detail-value-new">${data.customer.gstNumber.trim()}</div>
+              <div class="detail-value-new">${sanitizeForTemplate(data.customer.gstNumber.trim())}</div>
             </div>
             ` : ''}
             <div class="detail-item-new">
@@ -564,7 +564,7 @@ function generateAMCHTML(data: AMCPDFData, options?: AMCPDFOptions): string {
           <div class="detail-items-list">
             <div class="detail-item-new">
               <div class="detail-label-new">Agreement Number</div>
-              <div class="detail-value-new">${data.billNumber}</div>
+              <div class="detail-value-new">${sanitizeForTemplate(data.billNumber)}</div>
             </div>
             <div class="detail-item-new">
               <div class="detail-label-new">Date of Agreement</div>

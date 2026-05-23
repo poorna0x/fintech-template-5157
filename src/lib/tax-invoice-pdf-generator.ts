@@ -161,7 +161,7 @@ export function generateTaxInvoicePDF(billData: PDFTaxInvoiceData, action: 'prin
       <!DOCTYPE html>
       <html>
       <head>
-        <title>Tax Invoice - ${billData.billNumber}</title>
+        <title>Tax Invoice - ${sanitizeForTemplate(billData.billNumber)}</title>
         <style>
           @import url('https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&display=swap');
           
@@ -781,10 +781,10 @@ function createTaxInvoiceContent(data: PDFTaxInvoiceData): string {
             <div><strong>${sanitizeForTemplate(data.customer.name)}</strong></div>
             ${(data as any).invoiceDetails?.invoiceType === 'B2B' ? '<div style="font-size: 11px; color: #059669; font-weight: bold;">(Registered Business - B2B)</div>' : ''}
             ${data.customer.address ? `<div>${sanitizeForTemplate(data.customer.address)}</div>` : ''}
-            ${(data.customer.city || data.customer.state || data.customer.pincode) ? `<div>${data.customer.city}, ${data.customer.state} - ${data.customer.pincode}</div>` : ''}
-            ${data.customer.phone ? `<div>Phone: ${data.customer.phone}</div>` : ''}
-            ${data.customer.email ? `<div>Email: ${data.customer.email}</div>` : ''}
-            ${data.customer.gstNumber ? `<div><strong>GSTIN:</strong> ${data.customer.gstNumber}</div>` : ''}
+            ${(data.customer.city || data.customer.state || data.customer.pincode) ? `<div>${sanitizeForTemplate(data.customer.city)}, ${sanitizeForTemplate(data.customer.state)} - ${sanitizeForTemplate(data.customer.pincode)}</div>` : ''}
+            ${data.customer.phone ? `<div>Phone: ${sanitizeForTemplate(data.customer.phone)}</div>` : ''}
+            ${data.customer.email ? `<div>Email: ${sanitizeForTemplate(data.customer.email)}</div>` : ''}
+            ${data.customer.gstNumber ? `<div><strong>GSTIN:</strong> ${sanitizeForTemplate(data.customer.gstNumber)}</div>` : ''}
             ${(data as any).invoiceDetails?.invoiceType === 'B2B' && !data.customer.gstNumber ? '<div style="color: #dc2626; font-weight: bold;">⚠ GSTIN Required for B2B Invoice</div>' : ''}
           </div>
         </div>
@@ -792,11 +792,11 @@ function createTaxInvoiceContent(data: PDFTaxInvoiceData): string {
         <div class="bill-details">
           <div class="section-title">Invoice Details:</div>
           <div class="bill-meta">
-            <div><strong>Invoice Type:</strong> ${(data as any).invoiceDetails?.invoiceType || 'B2C'} ${(data as any).invoiceDetails?.invoiceType === 'B2B' ? '(Business to Business)' : '(Business to Consumer)'}</div>
-            <div><strong>Invoice Number:</strong> ${data.billNumber}</div>
+            <div><strong>Invoice Type:</strong> ${sanitizeForTemplate((data as any).invoiceDetails?.invoiceType || 'B2C')} ${(data as any).invoiceDetails?.invoiceType === 'B2B' ? '(Business to Business)' : '(Business to Consumer)'}</div>
+            <div><strong>Invoice Number:</strong> ${sanitizeForTemplate(data.billNumber)}</div>
             <div><strong>Invoice Date:</strong> ${new Date(data.billDate).toLocaleDateString('en-IN', { day: '2-digit', month: '2-digit', year: 'numeric' })}</div>
-            ${(data as any).invoiceDetails?.poNumber ? `<div><strong>PO Number / Work Order Number:</strong> ${(data as any).invoiceDetails.poNumber} ${(data as any).invoiceDetails?.poNumberRequired ? '<span style="color: #dc2626; font-size: 11px;">(Required for Government)</span>' : ''}</div>` : ''}
-            ${data.gstData?.placeOfSupply ? `<div><strong>Place of Supply:</strong> ${data.gstData.placeOfSupply} (State Code: ${data.gstData.placeOfSupplyCode || '—'})</div>` : ''}
+            ${(data as any).invoiceDetails?.poNumber ? `<div><strong>PO Number / Work Order Number:</strong> ${sanitizeForTemplate((data as any).invoiceDetails.poNumber)} ${(data as any).invoiceDetails?.poNumberRequired ? '<span style="color: #dc2626; font-size: 11px;">(Required for Government)</span>' : ''}</div>` : ''}
+            ${data.gstData?.placeOfSupply ? `<div><strong>Place of Supply:</strong> ${sanitizeForTemplate(data.gstData.placeOfSupply)} (State Code: ${sanitizeForTemplate(data.gstData.placeOfSupplyCode || '—')})</div>` : ''}
             ${(data as any).invoiceDetails?.paymentDueDate ? `<div><strong>Payment Due Date:</strong> ${new Date((data as any).invoiceDetails.paymentDueDate).toLocaleDateString('en-IN', { day: '2-digit', month: '2-digit', year: 'numeric' })}</div>` : ''}
             ${data.gstData?.reverseCharge ? `<div><strong>Reverse Charge:</strong> Yes</div>` : ''}
             ${data.gstData?.eWayBillNo ? `<div><strong>E-Way Bill No:</strong> ${data.gstData.eWayBillNo}</div>` : ''}
@@ -973,7 +973,7 @@ function createTaxInvoiceContent(data: PDFTaxInvoiceData): string {
               <ul class="terms-list">
                 ${data.terms.split('\n').filter(line => line.trim()).map(term => {
                   const cleanTerm = term.replace(/^\d+\.\s*/, '');
-                  return `<li>${cleanTerm}</li>`;
+                  return `<li>${sanitizeForTemplate(cleanTerm)}</li>`;
                 }).join('')}
               </ul>
             </div>
@@ -1050,7 +1050,7 @@ function generateTaxInvoiceHTML(data: PDFTaxInvoiceData): string {
     <head>
       <meta charset="UTF-8">
       <meta name="viewport" content="width=device-width, initial-scale=1.0">
-      <title>Tax Invoice - ${data.billNumber}</title>
+      <title>Tax Invoice - ${sanitizeForTemplate(data.billNumber)}</title>
       <style>
         @import url('https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&display=swap');
         

@@ -93,7 +93,7 @@ export function generateBillPDF(billData: PDFBillData, action: 'print' | 'pdf' =
       <!DOCTYPE html>
       <html>
       <head>
-        <title>Bill - ${billData.billNumber}</title>
+        <title>Bill - ${sanitizeForTemplate(billData.billNumber)}</title>
         <style>
           @import url('https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&display=swap');
           
@@ -1096,17 +1096,17 @@ function createBillContent(data: PDFBillData): string {
           <div class="customer-info">
             <div><strong>${sanitizeForTemplate(data.customer.name)}</strong></div>
             ${data.customer.address ? `<div>${sanitizeForTemplate(data.customer.address)}</div>` : ''}
-            ${(data.customer.city || data.customer.state || data.customer.pincode) ? `<div>${data.customer.city}, ${data.customer.state} - ${data.customer.pincode}</div>` : ''}
-            ${data.customer.phone ? `<div>Phone: ${data.customer.phone}</div>` : ''}
-            ${data.customer.email ? `<div>Email: ${data.customer.email}</div>` : ''}
-            ${data.customer.gstNumber ? `<div>GST: ${data.customer.gstNumber}</div>` : ''}
+            ${(data.customer.city || data.customer.state || data.customer.pincode) ? `<div>${sanitizeForTemplate(data.customer.city)}, ${sanitizeForTemplate(data.customer.state)} - ${sanitizeForTemplate(data.customer.pincode)}</div>` : ''}
+            ${data.customer.phone ? `<div>Phone: ${sanitizeForTemplate(data.customer.phone)}</div>` : ''}
+            ${data.customer.email ? `<div>Email: ${sanitizeForTemplate(data.customer.email)}</div>` : ''}
+            ${data.customer.gstNumber ? `<div>GST: ${sanitizeForTemplate(data.customer.gstNumber)}</div>` : ''}
           </div>
         </div>
         
         <div class="bill-details">
           <div class="section-title">Bill Details:</div>
           <div class="bill-meta">
-            <div><strong>Bill Number:</strong> ${data.billNumber}</div>
+            <div><strong>Bill Number:</strong> ${sanitizeForTemplate(data.billNumber)}</div>
             <div><strong>Bill Date:</strong> ${new Date(data.billDate).toLocaleDateString()}</div>
           </div>
         </div>
@@ -1164,8 +1164,8 @@ function createBillContent(data: PDFBillData): string {
             <div class="notes-content">
               <ul class="terms-list">
                 ${data.terms.split('\n').filter(line => line.trim()).map(term => {
-                  const cleanTerm = term.replace(/^\d+\.\s*/, ''); // Remove number if present
-                  return `<li>${cleanTerm}</li>`;
+                  const cleanTerm = term.replace(/^\d+\.\s*/, '');
+                  return `<li>${sanitizeForTemplate(cleanTerm)}</li>`;
                 }).join('')}
               </ul>
             </div>
@@ -1196,7 +1196,7 @@ function generateBillHTML(data: PDFBillData): string {
     <head>
       <meta charset="UTF-8">
       <meta name="viewport" content="width=device-width, initial-scale=1.0">
-      <title>Bill - ${data.billNumber}</title>
+      <title>Bill - ${sanitizeForTemplate(data.billNumber)}</title>
       <style>
         @import url('https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&display=swap');
         
@@ -1574,17 +1574,17 @@ function generateBillHTML(data: PDFBillData): string {
             <div class="customer-info">
               <div><strong>${sanitizeForTemplate(data.customer.name)}</strong></div>
               ${data.customer.address ? `<div>${sanitizeForTemplate(data.customer.address)}</div>` : ''}
-              ${(data.customer.city || data.customer.state || data.customer.pincode) ? `<div>${data.customer.city}, ${data.customer.state} - ${data.customer.pincode}</div>` : ''}
-              ${data.customer.phone ? `<div>Phone: ${data.customer.phone}</div>` : ''}
-              ${data.customer.email ? `<div>Email: ${data.customer.email}</div>` : ''}
-              ${data.customer.gstNumber ? `<div>GST: ${data.customer.gstNumber}</div>` : ''}
+              ${(data.customer.city || data.customer.state || data.customer.pincode) ? `<div>${sanitizeForTemplate(data.customer.city)}, ${sanitizeForTemplate(data.customer.state)} - ${sanitizeForTemplate(data.customer.pincode)}</div>` : ''}
+              ${data.customer.phone ? `<div>Phone: ${sanitizeForTemplate(data.customer.phone)}</div>` : ''}
+              ${data.customer.email ? `<div>Email: ${sanitizeForTemplate(data.customer.email)}</div>` : ''}
+              ${data.customer.gstNumber ? `<div>GST: ${sanitizeForTemplate(data.customer.gstNumber)}</div>` : ''}
             </div>
           </div>
           
           <div class="bill-details">
             <div class="section-title">Bill Details:</div>
             <div class="bill-meta">
-              <div><strong>Bill Number:</strong> ${data.billNumber}</div>
+              <div><strong>Bill Number:</strong> ${sanitizeForTemplate(data.billNumber)}</div>
               <div><strong>Bill Date:</strong> ${new Date(data.billDate).toLocaleDateString()}</div>
             </div>
           </div>

@@ -15,11 +15,12 @@ export interface CloudinaryUploadResult {
   bytes: number;
 }
 
+// SECURITY: API key / secret intentionally NOT modelled here.
+// They are server-only (see netlify/functions/cloudinary-delete.js and cloudinary-signed-url.js).
+// Browser code uses unsigned uploads with the upload preset only.
 export interface CloudinaryConfig {
   cloudName: string;
   uploadPreset: string;
-  apiKey?: string;
-  apiSecret?: string;
 }
 
 class CloudinaryService {
@@ -30,22 +31,16 @@ class CloudinaryService {
     this.config = {
       cloudName: import.meta.env.VITE_CLOUDINARY_CLOUD_NAME || '',
       uploadPreset: import.meta.env.VITE_CLOUDINARY_UPLOAD_PRESET || '',
-      apiKey: import.meta.env.VITE_CLOUDINARY_API_KEY || '',
-      apiSecret: import.meta.env.VITE_CLOUDINARY_API_SECRET || '',
     };
 
     // Secondary Cloudinary account for optimized/temporary images
     const secondaryCloudName = import.meta.env.VITE_CLOUDINARY_SECONDARY_CLOUD_NAME;
     const secondaryUploadPreset = import.meta.env.VITE_CLOUDINARY_SECONDARY_UPLOAD_PRESET;
-    const secondaryApiKey = import.meta.env.VITE_CLOUDINARY_SECONDARY_API_KEY;
-    const secondaryApiSecret = import.meta.env.VITE_CLOUDINARY_SECONDARY_API_SECRET;
 
     if (secondaryCloudName && secondaryUploadPreset) {
       this.secondaryConfig = {
         cloudName: secondaryCloudName,
         uploadPreset: secondaryUploadPreset,
-        apiKey: secondaryApiKey || '',
-        apiSecret: secondaryApiSecret || '',
       };
     } else {
       this.secondaryConfig = null;
@@ -65,12 +60,10 @@ class CloudinaryService {
       activeConfig = this.secondaryConfig;
       isUsingSecondary = true;
       
-      // Debug logging in development
       if (import.meta.env.DEV) {
         console.log('[Cloudinary] Using secondary account:', {
           cloudName: activeConfig.cloudName,
           uploadPreset: activeConfig.uploadPreset,
-          hasApiKey: !!activeConfig.apiKey
         });
       }
     } else {
@@ -259,69 +252,60 @@ class CloudinaryService {
       
       const testFile = new File([blob], 'test.png', { type: 'image/png' });
       const result = await this.uploadImage(testFile, 'test');
-      
-      // Clean up test image (only if API key is available)
-      if (this.config.apiKey) {
-        const del = await this.deleteImage(result.public_id);
-        if (!del.success) return;
-      }
-      
+
+      // Best-effort cleanup of the test image via the authenticated delete function.
+      // A failure here doesn't invalidate the config (auth may be absent in this context).
+      await this.deleteImage(result.public_id).catch(() => undefined);
+
       return { valid: true };
     } catch (error) {
-      return { 
-        valid: false, 
-        error: error instanceof Error ? error.message : 'Unknown error' 
+      return {
+        valid: false,
+        error: error instanceof Error ? error.message : 'Unknown error'
       };
     }
   }
 
-  // Generate signature for Cloudinary API calls
-  private async generateSignature(params: Record<string, string | number>, apiSecret: string): Promise<string> {
-    // Sort parameters alphabetically (excluding signature itself)
-    const sortedKeys = Object.keys(params).sort();
-    const paramString = sortedKeys
-      .map(key => `${key}=${params[key]}`)
-      .join('&');
-    
-    // Cloudinary signature format: SHA-1 hash of (sorted_params + apiSecret)
-    // Note: apiSecret is appended WITHOUT an ampersand
-    // IMPORTANT: api_key is NOT included in signature generation
-    const message = paramString + apiSecret;
-    
-    console.log('🔐 Generating Cloudinary signature:', {
-      paramString,
-      stringToSign: paramString,
-      messageLength: message.length,
-      note: 'api_key is excluded from signature'
-    });
-    
-    const msgBuffer = new TextEncoder().encode(message);
-    const hashBuffer = await crypto.subtle.digest('SHA-1', msgBuffer);
-    const hashArray = Array.from(new Uint8Array(hashBuffer));
-    
-    // Convert hash bytes to hex string (Cloudinary expects hex, not base64)
-    const hexHash = hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
-    
-    console.log('✅ Generated signature (hex):', hexHash.substring(0, 20) + '...');
-    
-    return hexHash;
-  }
-
-  /** Delete image via Netlify function. Returns { success, error } so UI can show the real failure reason. */
+  /**
+   * Delete image via Netlify function. Returns { success, error } so UI can show the real failure reason.
+   *
+   * SECURITY: The server endpoint requires a Supabase access token (admin or technician).
+   * We attach it via `Authorization: Bearer …`. Calls made without an active session
+   * receive a 401 from the server — that is the intended behaviour.
+   */
   async deleteImage(publicId: string, useSecondary: boolean = false): Promise<{ success: boolean; error?: string }> {
     const functionUrl = getCloudinaryDeleteFunctionUrl();
     try {
+      // Lazy import to avoid pulling the Supabase auth chunk into pages that never delete.
+      const { supabase } = await import('./supabaseClient');
+      const { data: sessionData } = await supabase.auth.getSession();
+      const accessToken = sessionData?.session?.access_token;
+      if (!accessToken) {
+        const msg = 'Not signed in — cannot delete image.';
+        console.warn(`⚠️ Cloudinary delete refused for ${publicId}:`, msg);
+        return { success: false, error: msg };
+      }
+
+      const headers: Record<string, string> = {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${accessToken}`,
+      };
+
       const response = await fetch(functionUrl, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers,
         body: JSON.stringify({ publicId: publicId.trim(), useSecondary }),
       });
       const data = await response.json().catch(() => ({}));
       if (response.ok && data.deleted === true) {
-        console.log(`✅ Deleted image from Cloudinary: ${publicId}`);
+        if (import.meta.env.DEV) console.log(`✅ Deleted image from Cloudinary: ${publicId}`);
         return { success: true };
       }
-      const errMsg = data.error || (response.status === 503 ? 'Cloudinary not configured (set CLOUDINARY_* in Netlify env)' : `HTTP ${response.status}`);
+      const errMsg =
+        data.error ||
+        (response.status === 401 ? 'Unauthorized — sign in again.' :
+         response.status === 503 ? 'Cloudinary not configured (set CLOUDINARY_* in Netlify env)' :
+         `HTTP ${response.status}`);
       console.warn(`⚠️ Cloudinary delete failed for ${publicId}:`, errMsg);
       return { success: false, error: errMsg };
     } catch (error) {

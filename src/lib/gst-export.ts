@@ -105,14 +105,14 @@ export function exportGSTInvoicesToCSV(invoices: TaxInvoice[], filename: string 
         }
 
         const row = [
-          invoice.invoice_number,
+          escapeCSV(invoice.invoice_number),
           formatDateForCSV(invoice.invoice_date),
           invoice.invoice_type,
           escapeCSV(invoice.customer_name),
-          invoice.customer_gstin || '',
-          invoice.place_of_supply || '',
-          invoice.place_of_supply_code || '',
-          (item as any).hsnCode || '',
+          escapeCSV(invoice.customer_gstin || ''),
+          escapeCSV(invoice.place_of_supply || ''),
+          escapeCSV(invoice.place_of_supply_code || ''),
+          escapeCSV((item as any).hsnCode || ''),
           escapeCSV(item.description),
           item.quantity.toString(),
           item.unitPrice.toFixed(2),
@@ -122,27 +122,25 @@ export function exportGSTInvoicesToCSV(invoices: TaxInvoice[], filename: string 
           itemSGST.toFixed(2),
           itemIGST.toFixed(2),
           item.taxAmount.toFixed(2),
-          // Total invoice value only on first item row
           itemIndex === 0 ? invoice.total_amount.toFixed(2) : '',
-          invoice.customer_phone || '',
-          invoice.customer_email || '',
-          invoice.e_way_bill_no || '',
-          invoice.vehicle_no || '',
+          escapeCSV(invoice.customer_phone || ''),
+          escapeCSV(invoice.customer_email || ''),
+          escapeCSV(invoice.e_way_bill_no || ''),
+          escapeCSV(invoice.vehicle_no || ''),
           invoice.reverse_charge ? 'Yes' : 'No'
         ];
         
         csvRows.push(row.join(','));
       });
     } else {
-      // Invoice with no items - create summary row
       const row = [
-        invoice.invoice_number,
+        escapeCSV(invoice.invoice_number),
         formatDateForCSV(invoice.invoice_date),
         invoice.invoice_type,
         escapeCSV(invoice.customer_name),
-        invoice.customer_gstin || '',
-        invoice.place_of_supply || '',
-        invoice.place_of_supply_code || '',
+        escapeCSV(invoice.customer_gstin || ''),
+        escapeCSV(invoice.place_of_supply || ''),
+        escapeCSV(invoice.place_of_supply_code || ''),
         '',
         'Service/Product',
         '1',
@@ -154,10 +152,10 @@ export function exportGSTInvoicesToCSV(invoices: TaxInvoice[], filename: string 
         invoice.igst.toFixed(2),
         invoice.total_tax.toFixed(2),
         invoice.total_amount.toFixed(2),
-        invoice.customer_phone || '',
-        invoice.customer_email || '',
-        (invoice as any).e_way_bill_no || '',
-        (invoice as any).vehicle_no || '',
+        escapeCSV(invoice.customer_phone || ''),
+        escapeCSV(invoice.customer_email || ''),
+        escapeCSV((invoice as any).e_way_bill_no || ''),
+        escapeCSV((invoice as any).vehicle_no || ''),
         invoice.reverse_charge ? 'Yes' : 'No'
       ];
       
@@ -248,15 +246,15 @@ export function exportGSTInvoicesToExcel(invoices: TaxInvoice[], filename: strin
         }
 
         const row = [
-          invoice.invoice_number,
+          safeExcelCell(invoice.invoice_number),
           formatDateForCSV(invoice.invoice_date),
           invoice.invoice_type,
-          invoice.customer_name,
-          invoice.customer_gstin || '',
-          invoice.place_of_supply || '',
-          invoice.place_of_supply_code || '',
-          (item as any).hsnCode || '',
-          item.description,
+          safeExcelCell(invoice.customer_name),
+          safeExcelCell(invoice.customer_gstin || ''),
+          safeExcelCell(invoice.place_of_supply || ''),
+          safeExcelCell(invoice.place_of_supply_code || ''),
+          safeExcelCell((item as any).hsnCode || ''),
+          safeExcelCell(item.description),
           item.quantity,
           item.unitPrice,
           taxableValue,
@@ -266,10 +264,10 @@ export function exportGSTInvoicesToExcel(invoices: TaxInvoice[], filename: strin
           itemIGST,
           item.taxAmount,
           itemIndex === 0 ? invoice.total_amount : '',
-          invoice.customer_phone || '',
-          invoice.customer_email || '',
-          invoice.e_way_bill_no || '',
-          invoice.vehicle_no || '',
+          safeExcelCell(invoice.customer_phone || ''),
+          safeExcelCell(invoice.customer_email || ''),
+          safeExcelCell(invoice.e_way_bill_no || ''),
+          safeExcelCell(invoice.vehicle_no || ''),
           invoice.reverse_charge ? 'Yes' : 'No'
         ];
         
@@ -277,13 +275,13 @@ export function exportGSTInvoicesToExcel(invoices: TaxInvoice[], filename: strin
       });
     } else {
       const row = [
-        invoice.invoice_number,
+        safeExcelCell(invoice.invoice_number),
         formatDateForCSV(invoice.invoice_date),
         invoice.invoice_type,
-        invoice.customer_name,
-        invoice.customer_gstin || '',
-        invoice.place_of_supply || '',
-        invoice.place_of_supply_code || '',
+        safeExcelCell(invoice.customer_name),
+        safeExcelCell(invoice.customer_gstin || ''),
+        safeExcelCell(invoice.place_of_supply || ''),
+        safeExcelCell(invoice.place_of_supply_code || ''),
         '',
         'Service/Product',
         1,
@@ -295,10 +293,10 @@ export function exportGSTInvoicesToExcel(invoices: TaxInvoice[], filename: strin
         invoice.igst,
         invoice.total_tax,
         invoice.total_amount,
-        invoice.customer_phone || '',
-        invoice.customer_email || '',
-        (invoice as any).e_way_bill_no || '',
-        (invoice as any).vehicle_no || '',
+        safeExcelCell(invoice.customer_phone || ''),
+        safeExcelCell(invoice.customer_email || ''),
+        safeExcelCell((invoice as any).e_way_bill_no || ''),
+        safeExcelCell((invoice as any).vehicle_no || ''),
         invoice.reverse_charge ? 'Yes' : 'No'
       ];
       
@@ -534,11 +532,38 @@ function formatDateForFilename(date: Date): string {
   return `${year}${month}${day}`;
 }
 
+/**
+ * Prefix the value with a single quote if it begins with a character that
+ * Excel / Google Sheets / LibreOffice would interpret as a formula.
+ * Mitigates CSV/XLSX formula-injection (CWE-1236) when user-controlled text
+ * is exported and then opened in a spreadsheet application.
+ *
+ * Reference: OWASP — "CSV Injection".
+ */
+function neutraliseFormulaPrefix(value: string): string {
+  if (!value) return value;
+  return /^[=+\-@\t\r]/.test(value) ? `'${value}` : value;
+}
+
+/**
+ * CSV-safe cell: neutralise formula chars, then apply RFC 4180 quoting
+ * if the result contains a comma, double-quote or newline.
+ */
 function escapeCSV(value: string): string {
   if (!value) return '';
-  // If value contains comma, quote, or newline, wrap in quotes and escape quotes
-  if (value.includes(',') || value.includes('"') || value.includes('\n')) {
-    return `"${value.replace(/"/g, '""')}"`;
+  const v = neutraliseFormulaPrefix(value);
+  if (v.includes(',') || v.includes('"') || v.includes('\n')) {
+    return `"${v.replace(/"/g, '""')}"`;
   }
-  return value;
+  return v;
+}
+
+/**
+ * Excel-safe cell value: neutralise formula chars only (XLSX cells do not need
+ * comma/quote escaping). Pass non-string values through unchanged so that
+ * numbers stay numeric in the workbook.
+ */
+function safeExcelCell<T>(value: T): T | string {
+  if (typeof value !== 'string') return value;
+  return neutraliseFormulaPrefix(value);
 }
