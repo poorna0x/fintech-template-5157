@@ -110,7 +110,7 @@ const formatLocation = (row: AdvancedSearchRow): string => {
 };
 
 const formatLastService = (raw: string | null): string => {
-  if (!raw) return '—';
+  if (!raw) return 'Never serviced';
   try {
     const d = new Date(raw);
     if (Number.isNaN(d.getTime())) return raw;
@@ -780,7 +780,11 @@ const ResultRow: React.FC<ResultRowProps> = ({
             </div>
             <div className="truncate">
               <span className="font-medium">Last service:</span>{' '}
-              {formatLastService(row.last_service_date)}
+              {row.last_service_date ? (
+                formatLastService(row.last_service_date)
+              ) : (
+                <span className="italic text-muted-foreground/80">Never serviced</span>
+              )}
             </div>
           </div>
         </div>
