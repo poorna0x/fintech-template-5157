@@ -11155,6 +11155,28 @@ const AdminDashboard = () => {
         }}
         onBrandsModelsReload={loadBrandsAndModels}
         parseDbServiceType={parseDbServiceType}
+        onJobAssignedToTechnician={(payload) => {
+          const assignedTechnician = technicians.find((t) => t.id === payload.technicianId);
+          if (!assignedTechnician?.phone) return;
+          scrollPositionBeforeWhatsAppRef.current = window.scrollY;
+          const vis = payload.visibleAddress;
+          const addr = payload.address;
+          const locationText =
+            vis && String(vis).trim()
+              ? String(vis).trim()
+              : addr?.area || addr?.city || '';
+          setWhatsappTechnician({
+            name:
+              assignedTechnician.fullName ||
+              (assignedTechnician as { full_name?: string }).full_name ||
+              'Technician',
+            phone: assignedTechnician.phone,
+          });
+          setWhatsappServiceSubType(payload.serviceSubType);
+          setWhatsappCustomerName(payload.customerName);
+          setWhatsappLocation(locationText || '');
+          setWhatsappDialogOpen(true);
+        }}
       />
 
       {/* Customer Photo Gallery Dialog */}

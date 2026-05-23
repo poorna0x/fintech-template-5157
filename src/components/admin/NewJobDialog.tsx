@@ -15,6 +15,7 @@ import { cloudinaryService, compressImage, validateImageFile } from '@/lib/cloud
 import { generateJobNumber } from '@/lib/adminUtils';
 import { db } from '@/lib/supabase';
 import { createJobAssignedNotification, sendNotification } from '@/lib/notifications';
+import type { JobAssignedToTechnicianPayload } from './AddCustomerDialog';
 
 interface NewJobFormData {
   service_type: 'RO' | 'SOFTENER';
@@ -45,6 +46,8 @@ interface NewJobDialogProps {
   onCustomerUpdated?: (customer: Customer) => void;
   onBrandsModelsReload?: () => Promise<void>;
   parseDbServiceType?: (serviceType: string) => string[];
+  /** When the new job is created with a technician assigned, open WhatsApp notify flow in parent. */
+  onJobAssignedToTechnician?: (payload: JobAssignedToTechnicianPayload) => void;
 }
 
 const NewJobDialog: React.FC<NewJobDialogProps> = ({
@@ -55,7 +58,8 @@ const NewJobDialog: React.FC<NewJobDialogProps> = ({
   onJobCreated,
   onCustomerUpdated,
   onBrandsModelsReload,
-  parseDbServiceType
+  parseDbServiceType,
+  onJobAssignedToTechnician,
 }) => {
   const [isDragOverNewJob, setIsDragOverNewJob] = useState(false);
   const [isCreatingJob, setIsCreatingJob] = useState(false);
@@ -453,7 +457,32 @@ const NewJobDialog: React.FC<NewJobDialogProps> = ({
       }
 
       toast.success(`Job ${newJob.job_number} created successfully!`);
+
+      // Capture values needed for the WhatsApp notify dialog BEFORE handleClose() resets the form.
+      const assignedTechIdToNotify = newJobFormData.assigned_technician_id;
+      const subTypeToNotify =
+        newJobFormData.service_sub_type === 'Other'
+          ? newJobFormData.service_sub_type_custom
+          : newJobFormData.service_sub_type;
+
       handleClose();
+
+      if (assignedTechIdToNotify && onJobAssignedToTechnician && customer) {
+        const customerVisible =
+          (customer as { visible_address?: string }).visible_address ||
+          (customer as { visibleAddress?: string }).visibleAddress;
+        const customerName =
+          (customer as { fullName?: string }).fullName ||
+          (customer as { full_name?: string }).full_name ||
+          'Customer';
+        onJobAssignedToTechnician({
+          technicianId: assignedTechIdToNotify,
+          serviceSubType: subTypeToNotify || 'Service',
+          customerName,
+          visibleAddress: customerVisible,
+          address: customer.address as { area?: string; city?: string } | undefined,
+        });
+      }
     } catch (error) {
       toast.error('Failed to create job');
     } finally {
@@ -798,6 +827,41 @@ const NewJobDialog: React.FC<NewJobDialogProps> = ({
                   </p>
                 </div>
               )}
+
+              {/* Assign to Technician (Optional) */}
+              <div className="space-y-2 pt-2 border-t border-gray-200">
+                <Label htmlFor="job_technician">Assign to Technician (Optional)</Label>
+                <Select
+                  value={newJobFormData.assigned_technician_id || 'none'}
+                  onValueChange={(value) =>
+                    handleFormChange('assigned_technician_id', value === 'none' ? '' : value)
+                  }
+                >
+                  <SelectTrigger id="job_technician" className="bg-background">
+                    <SelectValue placeholder="Select technician (optional)" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="none">None (Assign later)</SelectItem>
+                    {technicians
+                      .filter((tech) => tech && tech.id && (tech.fullName || tech.full_name))
+                      .map((tech) => {
+                        const techName = tech.fullName || tech.full_name || 'Unknown';
+                        const techCode = tech.employeeId || tech.employee_id;
+                        return (
+                          <SelectItem key={tech.id} value={tech.id}>
+                            {techName}
+                            {techCode ? ` (${techCode})` : ''}
+                          </SelectItem>
+                        );
+                      })}
+                  </SelectContent>
+                </Select>
+                {newJobFormData.assigned_technician_id && (
+                  <p className="text-xs text-gray-500">
+                    Job will be assigned immediately and a WhatsApp notification can be sent.
+                  </p>
+                )}
+              </div>
 
               {/* OTP Verification Toggle */}
               <div className="space-y-2 pt-2 border-t border-gray-200">
