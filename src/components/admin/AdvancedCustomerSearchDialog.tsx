@@ -29,6 +29,10 @@ import {
   ChevronUp,
   FileText,
   Image as ImageIcon,
+  ChevronLeft,
+  ChevronRight,
+  ChevronsLeft,
+  ChevronsRight,
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
@@ -171,6 +175,10 @@ const AdvancedCustomerSearchDialog: React.FC<AdvancedCustomerSearchDialogProps> 
   const [reportDialogOpen, setReportDialogOpen] = useState(false);
   const [reportCustomer, setReportCustomer] = useState<Customer | null>(null);
   const [reportTechniciansLoading, setReportTechniciansLoading] = useState(false);
+  // Client-side pagination over the already-fetched result set. Avoids
+  // re-querying Supabase per page and respects the user's "less egress" ask.
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState<25 | 50 | 100>(25);
 
   /** Load slim technician list once. Used by both the "Completed by" filter and the Report dialog. */
   const ensureTechniciansLoaded = async (): Promise<TechRow[]> => {
@@ -220,6 +228,7 @@ const AdvancedCustomerSearchDialog: React.FC<AdvancedCustomerSearchDialogProps> 
     setFilters(EMPTY_FILTERS);
     setResults([]);
     setHasSearched(false);
+    setPage(1);
   };
 
   const handleSearch = async () => {
@@ -234,6 +243,9 @@ const AdvancedCustomerSearchDialog: React.FC<AdvancedCustomerSearchDialogProps> 
         if (data.length === 0) toast.info('No customers matched these filters');
       }
       setHasSearched(true);
+      // New result set — always restart at page 1 so the user lands on the
+      // most relevant rows and a stale "page 5" can't render an empty list.
+      setPage(1);
     } finally {
       setIsSearching(false);
     }
@@ -284,15 +296,33 @@ const AdvancedCustomerSearchDialog: React.FC<AdvancedCustomerSearchDialogProps> 
     window.open(url, '_blank', 'noopener,noreferrer');
   };
 
+  const totalResults = results.length;
+  const totalPages = Math.max(1, Math.ceil(totalResults / pageSize));
+  // Clamp the current page if results shrink (e.g. user changes pageSize or
+  // a stale page index outlives a filter change). Runs as a derived value so
+  // we never render an out-of-range slice.
+  const safePage = Math.min(Math.max(1, page), totalPages);
+  useEffect(() => {
+    if (page !== safePage) setPage(safePage);
+  }, [page, safePage]);
+  const sliceStart = (safePage - 1) * pageSize;
+  const sliceEnd = Math.min(sliceStart + pageSize, totalResults);
+  const pageRows = useMemo(
+    () => results.slice(sliceStart, sliceEnd),
+    [results, sliceStart, sliceEnd]
+  );
+
   const headerStats = useMemo(() => {
     if (!hasSearched) return null;
-    const n = results.length;
+    if (totalResults === 0) {
+      return <span className="text-sm text-muted-foreground">No matches</span>;
+    }
     return (
       <span className="text-sm text-muted-foreground">
-        {n === 0 ? 'No matches' : `${n} customer${n === 1 ? '' : 's'} matched`}
+        Showing {sliceStart + 1}–{sliceEnd} of {totalResults}
       </span>
     );
-  }, [hasSearched, results.length]);
+  }, [hasSearched, totalResults, sliceStart, sliceEnd]);
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -684,24 +714,100 @@ const AdvancedCustomerSearchDialog: React.FC<AdvancedCustomerSearchDialogProps> 
                   No customers matched. Loosen a filter and try again.
                 </div>
               ) : (
-                <div className="space-y-2">
-                  {results.map((row) => (
-                    <ResultRow
-                      key={row.id}
-                      row={row}
-                      onOpen={() => handleOpenInAdmin(row)}
-                      onCopyPhone={() => handleCopyPhone(row.phone)}
-                      onMap={() => handleOpenMap(row)}
-                      onReport={() => handleOpenReport(row)}
-                      onPhotos={() => handleOpenInAdmin(row, 'photos')}
-                      reportLoading={
-                        reportTechniciansLoading &&
-                        reportCustomer?.id === row.id &&
-                        !reportDialogOpen
-                      }
-                    />
-                  ))}
-                </div>
+                <>
+                  <div className="space-y-2">
+                    {pageRows.map((row) => (
+                      <ResultRow
+                        key={row.id}
+                        row={row}
+                        onOpen={() => handleOpenInAdmin(row)}
+                        onCopyPhone={() => handleCopyPhone(row.phone)}
+                        onMap={() => handleOpenMap(row)}
+                        onReport={() => handleOpenReport(row)}
+                        onPhotos={() => handleOpenInAdmin(row, 'photos')}
+                        reportLoading={
+                          reportTechniciansLoading &&
+                          reportCustomer?.id === row.id &&
+                          !reportDialogOpen
+                        }
+                      />
+                    ))}
+                  </div>
+
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pt-3 border-t">
+                    <div className="flex items-center gap-2 text-xs sm:text-sm text-muted-foreground">
+                      <span>Per page</span>
+                      <Select
+                        value={String(pageSize)}
+                        onValueChange={(v) => {
+                          const next = (parseInt(v, 10) as 25 | 50 | 100) || 25;
+                          setPageSize(next);
+                          // Keep the user near the row they were looking at
+                          // when changing page size — recompute which page
+                          // contains the current first-visible row.
+                          const firstVisibleIndex = sliceStart;
+                          setPage(Math.floor(firstVisibleIndex / next) + 1);
+                        }}
+                      >
+                        <SelectTrigger className="h-8 w-[80px]">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="25">25</SelectItem>
+                          <SelectItem value="50">50</SelectItem>
+                          <SelectItem value="100">100</SelectItem>
+                        </SelectContent>
+                      </Select>
+                      <span className="hidden sm:inline">·</span>
+                      <span>
+                        Page {safePage} of {totalPages}
+                      </span>
+                    </div>
+
+                    <div className="flex items-center gap-1">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="h-8 w-8 p-0"
+                        onClick={() => setPage(1)}
+                        disabled={safePage === 1}
+                        title="First page"
+                      >
+                        <ChevronsLeft className="w-4 h-4" />
+                      </Button>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="h-8 w-8 p-0"
+                        onClick={() => setPage((p) => Math.max(1, p - 1))}
+                        disabled={safePage === 1}
+                        title="Previous page"
+                      >
+                        <ChevronLeft className="w-4 h-4" />
+                      </Button>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="h-8 w-8 p-0"
+                        onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+                        disabled={safePage >= totalPages}
+                        title="Next page"
+                      >
+                        <ChevronRight className="w-4 h-4" />
+                      </Button>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="h-8 w-8 p-0"
+                        onClick={() => setPage(totalPages)}
+                        disabled={safePage >= totalPages}
+                        title="Last page"
+                      >
+                        <ChevronsRight className="w-4 h-4" />
+                      </Button>
+                    </div>
+                  </div>
+                </>
               )}
             </div>
           )}
