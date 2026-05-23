@@ -42,6 +42,14 @@ export type TechnicianCompleteJobDraft = {
   serviceBrand: ServiceBrand | null;
   selectedQrCodeName?: string;
   selectedQrCodeUrl?: string;
+  /** Timestamp when Phase A (data save) succeeded on the server. If set, the
+   *  data is already on the job row and only Phase B (status flip to
+   *  COMPLETED) still needs to run. Survives refresh / dialog close. */
+  phaseASavedAt?: number | null;
+  /** True when the wizard should resume in finish-only mode: a previous Phase
+   *  A succeeded but Phase B failed, so the technician only needs to retry
+   *  the status flip. Survives refresh / dialog close. */
+  retryPhaseBOnly?: boolean;
 };
 
 export function friendlyCompletionErrorMessage(raw: unknown): string {
@@ -85,6 +93,10 @@ function draftKey(jobId: string): string {
  */
 export function isCompleteJobDraftMeaningful(draft: TechnicianCompleteJobDraft | null): boolean {
   if (!draft) return false;
+  // Phase A already saved on the server / retry-only mode is a "meaningful"
+  // state on its own — the user must finish or explicitly start over.
+  if (draft.phaseASavedAt) return true;
+  if (draft.retryPhaseBOnly) return true;
   if ((draft.completeJobStep ?? 1) > 1) return true;
   if ((draft.billAmount ?? '').trim() !== '') return true;
   if ((draft.completionNotes ?? '').trim() !== '') return true;

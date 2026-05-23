@@ -336,6 +336,46 @@ function emptyTechnicianQrLiveRef(): TechnicianQrLiveRef {
   };
 }
 
+/**
+ * Allow only a clean money string: digits + at most one '.'. Strips commas,
+ * spaces, currency symbols, and trailing letters like "rs". Empty stays
+ * empty. Used by bill / partial-cash / partial-online inputs to stop typos
+ * like "1,200", "12.5.0", or "1200rs" from entering state and being saved
+ * to the server. (#6)
+ */
+function sanitizeMoneyInput(raw: string): string {
+  if (raw == null) return '';
+  // Drop everything except digits and dots.
+  let cleaned = String(raw).replace(/[^0-9.]/g, '');
+  // Collapse multiple dots: keep only the first.
+  const firstDot = cleaned.indexOf('.');
+  if (firstDot !== -1) {
+    cleaned =
+      cleaned.slice(0, firstDot + 1) +
+      cleaned.slice(firstDot + 1).replace(/\./g, '');
+  }
+  // Cap to 2 decimals so partial cash/online don't drift below paise.
+  const dotIdx = cleaned.indexOf('.');
+  if (dotIdx !== -1 && cleaned.length - dotIdx - 1 > 2) {
+    cleaned = cleaned.slice(0, dotIdx + 3);
+  }
+  return cleaned;
+}
+
+/**
+ * Parse a sanitized money string. Returns NaN if not a finite non-negative
+ * number. Callers MUST treat NaN as "invalid input" rather than silently
+ * substituting 0 (which is what `parseFloat('1,200rs') || 0 === 1` did).
+ */
+function parseMoneyAmount(raw: string): number {
+  if (raw == null) return NaN;
+  const trimmed = String(raw).trim();
+  if (trimmed === '') return NaN;
+  const n = Number(trimmed);
+  if (!Number.isFinite(n) || n < 0) return NaN;
+  return n;
+}
+
 const TechnicianDashboard = () => {
   const { user, logout, isTechnician, authInitializing } = useAuth();
   const [authGraceExpired, setAuthGraceExpired] = useState(false);
@@ -1497,8 +1537,8 @@ const TechnicianDashboard = () => {
       return;
     }
 
-    const n = parseFloat(billAmount);
-    const billOk = billAmount !== '' && !Number.isNaN(n) && n !== 0;
+    const n = parseMoneyAmount(billAmount);
+    const billOk = billAmount !== '' && Number.isFinite(n) && n !== 0;
     const enteredStep4 = qrPaymentStepPrevStepRef.current !== 4;
     qrPaymentStepPrevStepRef.current = 4;
 
@@ -2869,7 +2909,94 @@ const TechnicianDashboard = () => {
     setCompletionRetryPhaseBOnly(false);
     setBillPhotosSkipConfirmOpen(false);
     setIsSubmittingJobCompletion(false);
+    phaseASavedAtRef.current = null;
+    phaseASnapshotRef.current = null;
   }, []);
+
+  const phaseASavedAtRef = useRef<number | null>(null);
+  /**
+   * Snapshot of the Phase-A payload taken right after Phase A persists. Used
+   * to detect whether the user has edited any field that affects Phase A
+   * since Phase A was saved (#4). If anything changes, retry mode flips off
+   * so the next submit re-runs Phase A + B with the new values instead of
+   * silently flipping status with stale server data.
+   */
+  const phaseASnapshotRef = useRef<string | null>(null);
+
+  const computePhaseAFingerprint = useCallback(() => {
+    return JSON.stringify([
+      billAmount,
+      [...billPhotos].sort(),
+      [...optionalCompletionPhotos].sort(),
+      [...extraPhotosStep6].sort(),
+      paymentMode,
+      partialCashAmount,
+      partialOnlineAmount,
+      selectedQrCodeId,
+      paymentScreenshot,
+      hasAMC,
+      amcYears,
+      amcDateGiven,
+      amcEndDate,
+      amcAmount,
+      amcAdditionalInfo,
+      amcServicePeriodKind,
+      amcServicePeriodCustomMonths,
+      amcIncludesPrefilter,
+      dontSendMessageToCustomer,
+      completionNotes,
+      otpInput.join(''),
+      serviceBrand,
+      // Saved on completion (afterJobCompletionSaved) — must invalidate
+      // retry-only mode if the tech goes Back and changes these (#4).
+      customerHasPrefilter,
+      rawWaterTds,
+    ]);
+  }, [
+    billAmount,
+    billPhotos,
+    optionalCompletionPhotos,
+    extraPhotosStep6,
+    paymentMode,
+    partialCashAmount,
+    partialOnlineAmount,
+    selectedQrCodeId,
+    paymentScreenshot,
+    hasAMC,
+    amcYears,
+    amcDateGiven,
+    amcEndDate,
+    amcAmount,
+    amcAdditionalInfo,
+    amcServicePeriodKind,
+    amcServicePeriodCustomMonths,
+    amcIncludesPrefilter,
+    dontSendMessageToCustomer,
+    completionNotes,
+    otpInput,
+    serviceBrand,
+    customerHasPrefilter,
+    rawWaterTds,
+  ]);
+
+  // #4 If retry mode is active and the user edits any Phase-A field, flip
+  // retry mode off so the next submit does a full save rather than only
+  // re-running Phase B with stale server data. If retry mode just turned on
+  // (e.g. after resuming a saved draft) and we don't yet have a snapshot,
+  // capture the current fingerprint so subsequent edits can be detected.
+  useEffect(() => {
+    if (!completionRetryPhaseBOnly) {
+      return;
+    }
+    if (!phaseASnapshotRef.current) {
+      phaseASnapshotRef.current = computePhaseAFingerprint();
+      return;
+    }
+    if (computePhaseAFingerprint() !== phaseASnapshotRef.current) {
+      setCompletionRetryPhaseBOnly(false);
+      setCompletionSubmitError(null);
+    }
+  }, [completionRetryPhaseBOnly, computePhaseAFingerprint]);
 
   const captureCompleteJobDraft = useCallback((): TechnicianCompleteJobDraft | null => {
     if (!selectedJobForComplete) return null;
@@ -2905,6 +3032,8 @@ const TechnicianDashboard = () => {
       serviceBrand,
       selectedQrCodeName,
       selectedQrCodeUrl: selectedQrCodeUrlState,
+      phaseASavedAt: phaseASavedAtRef.current,
+      retryPhaseBOnly: completionRetryPhaseBOnly,
     };
   }, [
     selectedJobForComplete,
@@ -2936,6 +3065,7 @@ const TechnicianDashboard = () => {
     serviceBrand,
     selectedQrCodeName,
     selectedQrCodeUrlState,
+    completionRetryPhaseBOnly,
   ]);
 
   const applyCompleteJobDraft = useCallback((draft: TechnicianCompleteJobDraft) => {
@@ -2969,7 +3099,21 @@ const TechnicianDashboard = () => {
     setOtpError('');
     setServiceBrand(draft.serviceBrand);
     setCompletionSubmitError(null);
-    setCompletionRetryPhaseBOnly(false);
+
+    // Restore Phase-A-saved / retry-only context (#3). If the previous run
+    // already saved data to the server, we want the user to land on the
+    // finish step and only re-attempt Phase B instead of redoing every step
+    // (which would re-run Phase A and overwrite what's on the server).
+    phaseASavedAtRef.current = draft.phaseASavedAt ?? null;
+    if (draft.retryPhaseBOnly) {
+      setCompletionRetryPhaseBOnly(true);
+      setCompleteJobStep(6);
+      setCompletionSubmitError(
+        'Bill and photos already saved — tap Retry finish to mark this job completed.'
+      );
+    } else {
+      setCompletionRetryPhaseBOnly(false);
+    }
   }, []);
 
   useEffect(() => {
@@ -3405,8 +3549,9 @@ const TechnicianDashboard = () => {
 
   // Helper functions to determine step flow
   const isBillAmountZero = (): boolean => {
-    const billAmountNum = parseFloat(billAmount);
-    return billAmount === '' || isNaN(billAmountNum) || billAmountNum === 0;
+    if (billAmount === '') return true;
+    const billAmountNum = parseMoneyAmount(billAmount);
+    return !Number.isFinite(billAmountNum) || billAmountNum === 0;
   };
 
   const isSoftenerService = (): boolean => {
@@ -3586,8 +3731,12 @@ const TechnicianDashboard = () => {
                 completionNotes: completionNotes.trim(),
                 completedBy: user?.id || user?.technicianId || null,
                 completedAt: new Date().toISOString(),
-                actual_cost: parseFloat(billAmount) || 0,
-                payment_amount: parseFloat(billAmount) || 0,
+                actual_cost: Number.isFinite(parseMoneyAmount(billAmount))
+                  ? parseMoneyAmount(billAmount)
+                  : 0,
+                payment_amount: Number.isFinite(parseMoneyAmount(billAmount))
+                  ? parseMoneyAmount(billAmount)
+                  : 0,
                 customer: job.customer,
               }
             : job
@@ -3635,8 +3784,8 @@ const TechnicianDashboard = () => {
         toast.error('Please select service brand');
         return;
       }
-      const billAmountNum = parseFloat(billAmount);
-      if (!billAmount || isNaN(billAmountNum) || billAmountNum < 0) {
+      const billAmountNum = parseMoneyAmount(billAmount);
+      if (!billAmount.trim() || !Number.isFinite(billAmountNum)) {
         toast.error('Please enter a valid bill amount');
         return;
       }
@@ -3699,18 +3848,21 @@ const TechnicianDashboard = () => {
         toast.error('Please answer whether the customer needs AMC or not');
         return;
       }
-      
-      // If years is 0, treat it as no AMC
-      const effectiveHasAMC = hasAMC === true && amcYears > 0;
 
-      // When AMC is selected, all AMC fields are required
-      if (effectiveHasAMC) {
+      // #7 If the technician picked "Yes, customer has AMC", we MUST collect
+      // valid AMC details. The previous code silently treated `years = 0` as
+      // "no AMC" and dropped the entire AMC block at submit time — so the
+      // tech thought AMC was recorded and admin saw nothing. Block the step
+      // until the contradiction is resolved.
+      if (hasAMC === true) {
         if (!amcDateGiven || !amcDateGiven.trim()) {
           toast.error('Please select AMC start date');
           return;
         }
-        if (amcYears < 1) {
-          toast.error('Please select number of years (1, 2, or 3)');
+        if (!amcYears || amcYears < 1) {
+          toast.error(
+            'You selected "Yes, customer has AMC" — please choose number of years (1, 2, or 3), or change the answer to No.'
+          );
           return;
         }
         const amountTrimmed = amcAmount?.trim() ?? '';
@@ -3906,6 +4058,19 @@ const TechnicianDashboard = () => {
         if (fetchRetryErr) {
           console.warn('Could not fetch job before retry finalize:', fetchRetryErr);
         }
+
+        // #2 Idempotency: if a previous retry actually reached the server but
+        // the response was lost, the job is already COMPLETED. Don't run
+        // another UPDATE — that would overwrite completed_at / completed_by
+        // with fresh values and leave the audit trail wrong. Just unblock
+        // the UI as if this attempt succeeded.
+        const latestStatus = ((latestForRetry as any)?.status || '').toString().toUpperCase();
+        if (latestStatus === 'COMPLETED') {
+          console.log('[completeJob] Phase B retry: job already COMPLETED on server, skipping update');
+          await afterJobCompletionSaved(billPhotos.filter(isUploadedMediaUrl));
+          return;
+        }
+
         const reqsForRetry = stripCompletionDraftMarkers(
           parseJobRequirementsArray(latestForRetry?.requirements)
         );
@@ -3967,7 +4132,8 @@ const TechnicianDashboard = () => {
       try {
         // Prepare update data
         let dbPaymentMethod: 'CASH' | 'CARD' | 'UPI' | 'BANK_TRANSFER' | 'PARTIAL' | null = null;
-        let paymentAmount = parseFloat(billAmount) || 0;
+        const parsedBill = parseMoneyAmount(billAmount);
+        let paymentAmount = Number.isFinite(parsedBill) ? parsedBill : 0;
         if (!isBillAmountZero()) {
           if (paymentMode === 'CASH') {
             dbPaymentMethod = 'CASH';
@@ -3975,9 +4141,10 @@ const TechnicianDashboard = () => {
             dbPaymentMethod = 'UPI';
           } else if (paymentMode === 'PARTIAL') {
             dbPaymentMethod = 'PARTIAL';
-            const cash = parseFloat(partialCashAmount) || 0;
-            const online = parseFloat(partialOnlineAmount) || 0;
-            paymentAmount = cash + online;
+            const cash = parseMoneyAmount(partialCashAmount);
+            const online = parseMoneyAmount(partialOnlineAmount);
+            paymentAmount =
+              (Number.isFinite(cash) ? cash : 0) + (Number.isFinite(online) ? online : 0);
           }
         }
         
@@ -3988,7 +4155,7 @@ const TechnicianDashboard = () => {
           completed_by: user?.id || user?.technicianId || null,
           completed_at: new Date().toISOString(),
           service_brand: serviceBrand,
-          actual_cost: parseFloat(billAmount) || 0,
+          actual_cost: Number.isFinite(parsedBill) ? parsedBill : 0,
           payment_amount: paymentAmount,
           payment_method: dbPaymentMethod || (isBillAmountZero() ? null : 'CASH'),
         };
@@ -4134,9 +4301,12 @@ const TechnicianDashboard = () => {
           console.log('✅ Added qr_photos to requirements:', qrPhotos);
         }
         if (paymentMode === 'PARTIAL') {
-          const cash = parseFloat(partialCashAmount) || 0;
-          const online = parseFloat(partialOnlineAmount) || 0;
-          requirements.push({ partial_cash_amount: cash, partial_online_amount: online });
+          const cash = parseMoneyAmount(partialCashAmount);
+          const online = parseMoneyAmount(partialOnlineAmount);
+          requirements.push({
+            partial_cash_amount: Number.isFinite(cash) ? cash : 0,
+            partial_online_amount: Number.isFinite(online) ? online : 0,
+          });
         }
         if ((paymentMode !== 'ONLINE' && paymentMode !== 'PARTIAL') && isPaymentScreenshotUploaded) {
           // For CASH payments, still save payment screenshot in requirements for easy access
@@ -4216,6 +4386,28 @@ const TechnicianDashboard = () => {
           throw new Error(phaseAError.message);
         }
 
+        // #3 Phase A is now persisted on the server. Stamp the draft so a
+        // refresh / app kill in the next few seconds resumes in retry-only
+        // mode instead of redoing every step (which would re-run Phase A).
+        phaseASavedAtRef.current = Date.now();
+        // #4 Capture a fingerprint of the data we just sent. If the user
+        // later edits anything in this set, we flip retry mode off so a
+        // subsequent submit re-runs Phase A + B with the new values.
+        phaseASnapshotRef.current = computePhaseAFingerprint();
+        try {
+          const draftAfterPhaseA = captureCompleteJobDraft();
+          if (draftAfterPhaseA) {
+            writeTechnicianCompleteJobDraft({
+              ...draftAfterPhaseA,
+              phaseASavedAt: phaseASavedAtRef.current,
+              retryPhaseBOnly: true,
+              completeJobStep: 6,
+            });
+          }
+        } catch {
+          /* never let bookkeeping break submit */
+        }
+
         const reqsForPhaseB = stripCompletionDraftMarkers(requirementsBeforeDraft);
         const phaseBData = {
           status: 'COMPLETED' as const,
@@ -4235,6 +4427,21 @@ const TechnicianDashboard = () => {
           setCompletionSubmitError(
             `${friendly} Your bill and photos are already saved — tap Retry finish to mark the job completed.`
           );
+          // Persist the retry-only flag so a refresh / dialog close lands the
+          // user back on the finish step instead of step 1.
+          try {
+            const draftRetry = captureCompleteJobDraft();
+            if (draftRetry) {
+              writeTechnicianCompleteJobDraft({
+                ...draftRetry,
+                phaseASavedAt: phaseASavedAtRef.current,
+                retryPhaseBOnly: true,
+                completeJobStep: 6,
+              });
+            }
+          } catch {
+            /* ignore */
+          }
           setIsSubmittingJobCompletion(false);
           return;
         }
@@ -6828,8 +7035,11 @@ const TechnicianDashboard = () => {
               <div className="text-center">
                 <div className="text-3xl font-bold text-gray-900 mb-2">
                   ₹{(() => {
-                    const amount = parseFloat(billAmount || '0');
-                    const formatted = amount.toLocaleString('en-IN', { minimumFractionDigits: 0, maximumFractionDigits: 2 });
+                    const amount = parseMoneyAmount(billAmount);
+                    const formatted = (Number.isFinite(amount) ? amount : 0).toLocaleString('en-IN', {
+                      minimumFractionDigits: 0,
+                      maximumFractionDigits: 2,
+                    });
                     return formatted.replace(/\.00$/, '');
                   })()}
                 </div>
@@ -7104,10 +7314,15 @@ const TechnicianDashboard = () => {
         >
           <AlertDialogContent>
             <AlertDialogHeader>
-              <AlertDialogTitle>Resume previous completion?</AlertDialogTitle>
+              <AlertDialogTitle>
+                {completeJobDraftToResume?.retryPhaseBOnly
+                  ? 'Finish previous completion?'
+                  : 'Resume previous completion?'}
+              </AlertDialogTitle>
               <AlertDialogDescription>
-                You have saved progress for this job (step {completeJobDraftToResume?.completeJobStep ?? '?'}).
-                Resume where you left off, or start over.
+                {completeJobDraftToResume?.retryPhaseBOnly
+                  ? 'Bill and photos for this job were already saved on the server last time. Tap Finish to mark it completed.'
+                  : `You have saved progress for this job (step ${completeJobDraftToResume?.completeJobStep ?? '?'}). Resume where you left off, or start over.`}
               </AlertDialogDescription>
             </AlertDialogHeader>
             <AlertDialogFooter>
@@ -7134,7 +7349,7 @@ const TechnicianDashboard = () => {
                   setCompleteDialogOpen(true);
                 }}
               >
-                Resume
+                {completeJobDraftToResume?.retryPhaseBOnly ? 'Finish' : 'Resume'}
               </AlertDialogAction>
             </AlertDialogFooter>
           </AlertDialogContent>
@@ -7400,20 +7615,19 @@ const TechnicianDashboard = () => {
                     <Label htmlFor="bill-amount">Bill Amount *</Label>
                     <Input
                       id="bill-amount"
-                      type="number"
+                      type="text"
+                      inputMode="decimal"
                       placeholder="Enter bill amount"
                       value={billAmount}
                       onChange={(e) => {
-                        setBillAmount(e.target.value);
+                        setBillAmount(sanitizeMoneyInput(e.target.value));
                       }}
                       className="mt-1"
-                      min="0"
-                      step="0.01"
                     />
-                    {billAmount && parseFloat(billAmount) > 0 && (
+                    {billAmount && Number.isFinite(parseMoneyAmount(billAmount)) && parseMoneyAmount(billAmount) > 0 && (
                       <p className="text-sm text-gray-600 mt-2">
                         Bill Amount: ₹{(() => {
-                          const amount = parseFloat(billAmount || '0');
+                          const amount = parseMoneyAmount(billAmount);
                           const formatted = amount.toLocaleString('en-IN', { minimumFractionDigits: 0, maximumFractionDigits: 2 });
                           return formatted.replace(/\.00$/, '');
                         })()}
@@ -7728,15 +7942,13 @@ const TechnicianDashboard = () => {
                             placeholder="0"
                             value={partialCashAmount}
                             onChange={(e) => {
-                              const v = e.target.value;
+                              const v = sanitizeMoneyInput(e.target.value);
                               setPartialCashAmount(v);
-                              const bill = parseFloat(billAmount) || 0;
-                              if (v !== '' && !/^\s*$/.test(v)) {
-                                const cash = parseFloat(v.replace(/,/g, '')) || 0;
-                                if (!Number.isNaN(cash) && bill >= 0) {
-                                  const online = Math.max(0, Math.round((bill - cash) * 100) / 100);
-                                  setPartialOnlineAmount(online === Math.floor(online) ? String(Math.floor(online)) : online.toFixed(2));
-                                }
+                              const bill = parseMoneyAmount(billAmount);
+                              const cash = parseMoneyAmount(v);
+                              if (v !== '' && Number.isFinite(cash) && Number.isFinite(bill)) {
+                                const online = Math.max(0, Math.round((bill - cash) * 100) / 100);
+                                setPartialOnlineAmount(online === Math.floor(online) ? String(Math.floor(online)) : online.toFixed(2));
                               }
                             }}
                             className="mt-1"
@@ -7751,21 +7963,36 @@ const TechnicianDashboard = () => {
                             placeholder="0"
                             value={partialOnlineAmount}
                             onChange={(e) => {
-                              const v = e.target.value;
+                              const v = sanitizeMoneyInput(e.target.value);
                               setPartialOnlineAmount(v);
-                              const bill = parseFloat(billAmount) || 0;
-                              if (v !== '' && !/^\s*$/.test(v)) {
-                                const online = parseFloat(v.replace(/,/g, '')) || 0;
-                                if (!Number.isNaN(online) && bill >= 0) {
-                                  const cash = Math.max(0, Math.round((bill - online) * 100) / 100);
-                                  setPartialCashAmount(cash === Math.floor(cash) ? String(Math.floor(cash)) : cash.toFixed(2));
-                                }
+                              const bill = parseMoneyAmount(billAmount);
+                              const online = parseMoneyAmount(v);
+                              if (v !== '' && Number.isFinite(online) && Number.isFinite(bill)) {
+                                const cash = Math.max(0, Math.round((bill - online) * 100) / 100);
+                                setPartialCashAmount(cash === Math.floor(cash) ? String(Math.floor(cash)) : cash.toFixed(2));
                               }
                             }}
                             className="mt-1"
                           />
                         </div>
                       </div>
+                      {(() => {
+                        const bill = parseMoneyAmount(billAmount);
+                        const cash = parseMoneyAmount(partialCashAmount);
+                        const online = parseMoneyAmount(partialOnlineAmount);
+                        // Only warn once both inputs have something usable —
+                        // the auto-fill keeps them in sync most of the time.
+                        if (!Number.isFinite(bill) || bill <= 0) return null;
+                        if (!Number.isFinite(cash) && !Number.isFinite(online)) return null;
+                        const sum = (Number.isFinite(cash) ? cash : 0) + (Number.isFinite(online) ? online : 0);
+                        if (Math.abs(sum - bill) <= 0.01) return null;
+                        return (
+                          <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded px-2 py-1">
+                            Cash + Online = ₹{sum.toFixed(2)}, but bill is ₹{bill.toFixed(2)}.
+                            Adjust the amounts so they match the bill.
+                          </p>
+                        );
+                      })()}
                     </div>
                   )}
                   
@@ -8172,8 +8399,19 @@ const TechnicianDashboard = () => {
             <DialogFooter className="px-6 py-4 flex-shrink-0 border-t">
               <Button
                 variant="outline"
+                disabled={isSubmittingJobCompletion}
                 onClick={() => {
+                  if (isSubmittingJobCompletion) return;
                   if (completeJobStep > 1) {
+                    // If we're in Phase-B-retry mode, going Back means the
+                    // technician wants to fix something. Clear retry mode so a
+                    // subsequent Submit re-runs Phase A + B with the edited
+                    // data instead of silently flipping status with the old
+                    // server-side payload (#4).
+                    if (completionRetryPhaseBOnly) {
+                      setCompletionRetryPhaseBOnly(false);
+                      setCompletionSubmitError(null);
+                    }
                     setCompleteJobStep((prev) => {
                       // If going back from step 6 and OTP is required, go to step 7, not step 5
                       if (prev === 6 && requiresOtp()) {
@@ -8203,9 +8441,14 @@ const TechnicianDashboard = () => {
               {completeJobStep === 2 && (
                 <Button
                   variant="outline"
-                  disabled={isBillPhotosUploading || billPhotos.some(hasPendingLocalOrUploadingPhoto)}
+                  disabled={
+                    isSubmittingJobCompletion ||
+                    isBillPhotosUploading ||
+                    billPhotos.some(hasPendingLocalOrUploadingPhoto)
+                  }
                   onClick={() => {
                     if (!selectedJobForComplete) return;
+                    if (isSubmittingJobCompletion) return;
                     if (isBillPhotosUploading || billPhotos.some(hasPendingLocalOrUploadingPhoto)) return;
                     setBillPhotosSkipConfirmOpen(true);
                   }}
@@ -8217,7 +8460,9 @@ const TechnicianDashboard = () => {
               {completeJobStep === 3 && !isBillAmountZero() && !isSoftenerService() && (
                 <Button
                   variant="outline"
+                  disabled={isSubmittingJobCompletion}
                   onClick={() => {
+                    if (isSubmittingJobCompletion) return;
                     // Skip AMC step - go to payment step (step 4)
                     setCompleteJobStep(4);
                   }}
@@ -8245,10 +8490,23 @@ const TechnicianDashboard = () => {
                   isSubmittingJobCompletion ||
                   completeJobNextDisabledByUploads ||
                   (completeJobStep === 1 && !serviceBrand) ||
+                  // #6 Bill amount required on step 1 — must be a valid number
+                  // (NaN-safe) so junk like "abc" can't slip through.
+                  (completeJobStep === 1 && billAmount.trim() !== '' && !Number.isFinite(parseMoneyAmount(billAmount))) ||
                   (isCompleteJobFooterSubmit() && hasAnyPendingCompletionUploads() && !completionRetryPhaseBOnly) ||
                   (completeJobStep === 6 && !isSoftenerService() && !rawWaterTds.trim() && !completionRetryPhaseBOnly) ||
                   (completeJobStep === 4 && !isBillAmountZero() && !paymentMode) ||
-                  (completeJobStep === 4 && !isBillAmountZero() && (paymentMode === 'ONLINE' || paymentMode === 'PARTIAL') && (paymentMode === 'ONLINE' ? !selectedQrCodeId : (parseFloat(partialOnlineAmount) > 0 && !selectedQrCodeId))) ||
+                  (completeJobStep === 4 && !isBillAmountZero() && (paymentMode === 'ONLINE' || paymentMode === 'PARTIAL') && (paymentMode === 'ONLINE' ? !selectedQrCodeId : (parseMoneyAmount(partialOnlineAmount) > 0 && !selectedQrCodeId))) ||
+                  // #6 Block Next on step 4 when partial cash + online don't
+                  // add up to the bill (allowing 0.01 for rounding).
+                  (completeJobStep === 4 && !isBillAmountZero() && paymentMode === 'PARTIAL' && (() => {
+                    const bill = parseMoneyAmount(billAmount);
+                    const cash = parseMoneyAmount(partialCashAmount);
+                    const online = parseMoneyAmount(partialOnlineAmount);
+                    if (!Number.isFinite(bill) || bill <= 0) return false;
+                    const sum = (Number.isFinite(cash) ? cash : 0) + (Number.isFinite(online) ? online : 0);
+                    return Math.abs(sum - bill) > 0.01;
+                  })()) ||
                   (completeJobStep === 7 && otpInput.join('').length !== 4)
                 }
               >
