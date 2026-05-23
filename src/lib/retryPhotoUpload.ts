@@ -238,8 +238,13 @@ export const stopRetryProcessing = (): void => {
 };
 
 /**
- * Process queued photos when network comes back online
- * Returns cleanup function
+ * Process queued photos when network comes back online OR when the technician
+ * brings the PWA back to foreground. Mobile data on a tech's phone is most
+ * likely to be healthy right after they unlock the device or switch back to
+ * the app, so visibilitychange + focus give us a far faster reconciliation
+ * window than waiting for the 30s interval tick.
+ *
+ * Returns a cleanup function for use in React effects.
  */
 export const setupOnlineListener = (): (() => void) => {
   const handleOnline = () => {
@@ -247,11 +252,28 @@ export const setupOnlineListener = (): (() => void) => {
     processQueuedPhotos();
   };
 
+  const handleVisibility = () => {
+    if (document.visibilityState === 'visible' && isOnline()) {
+      console.log('👀 App foregrounded - processing queued photos');
+      processQueuedPhotos();
+    }
+  };
+
+  const handleFocus = () => {
+    if (isOnline()) {
+      console.log('🎯 App focused - processing queued photos');
+      processQueuedPhotos();
+    }
+  };
+
   window.addEventListener('online', handleOnline);
-  
-  // Return cleanup function
+  document.addEventListener('visibilitychange', handleVisibility);
+  window.addEventListener('focus', handleFocus);
+
   return () => {
     window.removeEventListener('online', handleOnline);
+    document.removeEventListener('visibilitychange', handleVisibility);
+    window.removeEventListener('focus', handleFocus);
   };
 };
 
