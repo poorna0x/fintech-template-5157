@@ -6,6 +6,7 @@ import {
   getQueuedPhotos,
   removeQueuedPhoto,
   updateQueuedPhotoRetry,
+  setQueuedPhotoUploadedUrl,
   dataURLToFile,
   isOnline,
   QueuedPhoto,
@@ -21,28 +22,61 @@ let retryInterval: NodeJS.Timeout | null = null;
  */
 const processQueuedPhoto = async (photo: QueuedPhoto): Promise<boolean> => {
   try {
-    // Convert data URL back to File
-    const file = dataURLToFile(photo.fileData, photo.fileName);
-    
-    // Use as-is if already compressed (queued after compress in ImageUpload); otherwise compress
-    let fileToUpload = file;
-    if (!photo.alreadyCompressed && (photo.maxWidth || photo.quality)) {
-      const compressionWidth = photo.maxWidth || 1280;
-      const compressionQuality = photo.quality || 0.7;
-      fileToUpload = await compressImage(file, compressionWidth, compressionQuality, true);
+    let secureUrl: string;
+
+    if (photo.uploadedUrl) {
+      // Bytes already on Cloudinary from a prior tick — skip the re-upload and
+      // jump straight to (re-)patching the job. Saves bandwidth and avoids
+      // creating duplicate Cloudinary copies on repeated link failures.
+      secureUrl = photo.uploadedUrl;
+      console.log(
+        '↩️ Reusing cached Cloudinary URL for queued photo:',
+        photo.id,
+        secureUrl
+      );
+    } else {
+      // Convert data URL back to File
+      const file = dataURLToFile(photo.fileData, photo.fileName);
+
+      // Use as-is if already compressed (queued after compress in ImageUpload); otherwise compress
+      let fileToUpload = file;
+      if (!photo.alreadyCompressed && (photo.maxWidth || photo.quality)) {
+        const compressionWidth = photo.maxWidth || 1280;
+        const compressionQuality = photo.quality || 0.7;
+        fileToUpload = await compressImage(file, compressionWidth, compressionQuality, true);
+      }
+
+      // Upload to Cloudinary
+      const uploadResult = await cloudinaryService.uploadImage(
+        fileToUpload,
+        photo.folder,
+        photo.useSecondaryAccount || false
+      );
+
+      secureUrl = uploadResult.secure_url;
+      console.log('✅ Successfully uploaded queued photo:', photo.id, secureUrl);
+
+      // Cache the URL so any follow-up tick (e.g. after a job-update failure)
+      // can re-attempt the link without re-uploading the file bytes.
+      try {
+        setQueuedPhotoUploadedUrl(photo.id, secureUrl);
+      } catch {
+        /* non-fatal */
+      }
     }
-    
-    // Upload to Cloudinary
-    const uploadResult = await cloudinaryService.uploadImage(
-      fileToUpload,
-      photo.folder,
-      photo.useSecondaryAccount || false
-    );
-    
-    console.log('✅ Successfully uploaded queued photo:', photo.id, uploadResult.secure_url);
-    
+
+    const uploadResult = { secure_url: secureUrl };
+
+    // Track whether the linking step succeeded. If the photo is bound to a
+    // job but we fail to patch the job's requirements, we KEEP the photo in
+    // the queue so the next retry tick can try again. Removing it here would
+    // turn a transient DB blip into a permanent orphan.
+    let linkSucceeded = true;
+    let linkRequired = false;
+
     // If photo is linked to a job, update the job's requirements with the new photo URL
     if (photo.jobId && photo.photoType) {
+      linkRequired = true;
       try {
         const { data: jobData } = await db.jobs.getByIdFull(photo.jobId);
         if (jobData) {
@@ -115,22 +149,45 @@ const processQueuedPhoto = async (photo: QueuedPhoto): Promise<boolean> => {
           }
           
           // Update job with new requirements
-          await db.jobs.update(photo.jobId, {
+          const { error: updateError } = await db.jobs.update(photo.jobId, {
             requirements: JSON.stringify(requirements)
           });
-          
-          console.log(`✅ Added uploaded photo to job ${photo.jobId} requirements`);
+
+          if (updateError) {
+            // RLS denial / network blip / 5xx — keep the photo in the queue so
+            // the next retry tick (or app foreground) can re-attempt the patch.
+            console.warn(
+              `[retryPhotoUpload] Job update failed for ${photo.jobId}; keeping queue entry for retry`,
+              updateError
+            );
+            linkSucceeded = false;
+          } else {
+            console.log(`✅ Added uploaded photo to job ${photo.jobId} requirements`);
+          }
+        } else {
+          // Job vanished (deleted / merged / no read access). The photo is now
+          // unrecoverable for this job — let it drop so the queue doesn't grow.
+          console.warn(
+            `[retryPhotoUpload] Job ${photo.jobId} not found while linking photo; dropping queue entry`
+          );
+          linkSucceeded = true;
         }
       } catch (error) {
         console.error('Error updating job with uploaded photo:', error);
-        // Don't fail the upload if job update fails
+        linkSucceeded = false;
       }
     }
-    
-    // Remove from queue on success
-    removeQueuedPhoto(photo.id);
-    
-    return true;
+
+    // Only remove on full success. If the patch failed but the upload itself
+    // succeeded, leave the queue entry so the next retry tick can re-link it
+    // without re-uploading bytes (we'll just patch again with the same URL).
+    if (linkSucceeded) {
+      removeQueuedPhoto(photo.id);
+    } else if (linkRequired) {
+      updateQueuedPhotoRetry(photo.id);
+    }
+
+    return linkSucceeded;
   } catch (error: any) {
     console.error('❌ Failed to upload queued photo:', photo.id, error);
     

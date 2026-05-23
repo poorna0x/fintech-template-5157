@@ -16,6 +16,9 @@ export interface QueuedPhoto {
   retryCount: number;
   jobId?: string; // Optional: associate with a job
   photoType?: 'bill' | 'before' | 'after' | 'payment' | 'other';
+  /** Cloudinary URL captured on a prior successful upload. If set, the retry
+   *  worker can skip re-uploading bytes and only re-attempt the job-link step. */
+  uploadedUrl?: string;
 }
 
 const QUEUE_STORAGE_KEY = 'offline_photo_queue';
@@ -242,6 +245,24 @@ export const updateQueuedPhotoRetry = (photoId: string): void => {
     }
   } catch (error) {
     console.error('Error updating queued photo retry:', error);
+  }
+};
+
+/**
+ * Persist the Cloudinary URL of a successfully uploaded queued photo so a
+ * follow-up retry (e.g. after a job-update RLS denial) doesn't have to
+ * re-upload the file bytes — it can just re-attempt the job link step.
+ */
+export const setQueuedPhotoUploadedUrl = (photoId: string, url: string): void => {
+  try {
+    const queue = getQueuedPhotos();
+    const photo = queue.find(p => p.id === photoId);
+    if (photo) {
+      photo.uploadedUrl = url;
+      localStorage.setItem(QUEUE_STORAGE_KEY, JSON.stringify(queue));
+    }
+  } catch (error) {
+    console.error('Error caching queued photo URL:', error);
   }
 };
 
