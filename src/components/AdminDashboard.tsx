@@ -2160,7 +2160,19 @@ const AdminDashboard = () => {
           filter: 'status=eq.COMPLETED',
         },
         (payload: { new: Record<string, unknown> }) => {
-          const row = payload.new as { id: string; completed_at?: string | null; end_time?: string | null };
+          const row = payload.new as {
+            id: string;
+            customer_id?: string | null;
+            completed_at?: string | null;
+            end_time?: string | null;
+          };
+          // Flip the returning-customer map immediately so the blue indicator turns on
+          // without waiting for a manual refresh of the admin dashboard.
+          if (row.customer_id) {
+            setCustomerPriorServiceStatus((prev) =>
+              prev[row.customer_id as string] ? prev : { ...prev, [row.customer_id as string]: true }
+            );
+          }
           if (jobIdsCompletedByAdminRef.current.has(row.id)) return;
           const completedAt = row.completed_at || row.end_time;
           if (completedAt) {
@@ -11722,6 +11734,19 @@ const AdminDashboard = () => {
             setTimeout(() => {
               jobIdsCompletedByAdminRef.current.delete(completedJobId);
             }, 5000);
+            // Flip returning-customer map so the blue indicator updates without waiting for refresh.
+            const completedJob = jobs.find((j) => j.id === completedJobId);
+            const completedCustomerId =
+              (completedJob as any)?.customer_id ||
+              (completedJob as any)?.customerId ||
+              ((completedJob as any)?.customer && (completedJob as any).customer.id);
+            if (completedCustomerId) {
+              setCustomerPriorServiceStatus((prev) =>
+                prev[completedCustomerId]
+                  ? prev
+                  : { ...prev, [completedCustomerId]: true }
+              );
+            }
           }
           await loadFilteredJobs(statusFilter, currentPage);
           setSelectedTechnicianForComplete('');
