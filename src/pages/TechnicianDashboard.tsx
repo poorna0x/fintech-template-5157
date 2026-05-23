@@ -7454,6 +7454,8 @@ const TechnicianDashboard = () => {
                       maxWidth={1024}
                       quality={0.5}
                       aggressiveCompression={true}
+                      jobId={selectedJobForComplete?.id}
+                      photoType="bill"
                     />
                   </div>
                 </div>
@@ -7934,6 +7936,8 @@ const TechnicianDashboard = () => {
                           quality={0.3}
                           aggressiveCompression={true}
                           useSecondaryAccount={true}
+                          jobId={selectedJobForComplete?.id}
+                          photoType="payment"
                         />
                       </div>
                   </div>

@@ -24,6 +24,12 @@ interface ImageUploadProps {
   initialImages?: string[];
   // Callback to track upload state
   onUploadStateChange?: (isUploading: boolean) => void;
+  /** Job UUID this upload belongs to. Required so failed uploads retried by the
+   *  offline worker know which job's `requirements.{bill,payment}_photos` to patch. */
+  jobId?: string;
+  /** Slot the photo represents on the job. Drives which requirements key the retry
+   *  worker writes to (only `bill` and `payment` are auto-linked back to the job). */
+  photoType?: 'bill' | 'before' | 'after' | 'payment' | 'other';
 }
 
 interface UploadedImage {
@@ -46,6 +52,8 @@ const ImageUpload: React.FC<ImageUploadProps> = ({
   useSecondaryAccount = false,
   initialImages = [],
   onUploadStateChange,
+  jobId,
+  photoType,
 }) => {
   const [uploadedImages, setUploadedImages] = useState<UploadedImage[]>(() => {
     // Initialize with initialImages if provided
@@ -227,6 +235,8 @@ const ImageUpload: React.FC<ImageUploadProps> = ({
               aggressiveCompression,
               useSecondaryAccount,
               alreadyCompressed: true,
+              jobId,
+              photoType,
             });
             if (queuedPhotoId && !queuedPhotoId.startsWith('temp_')) {
               console.log('✅ Photo saved to local storage:', file.name);
