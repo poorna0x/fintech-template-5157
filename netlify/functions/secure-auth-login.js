@@ -2,7 +2,10 @@
 // Clients must not call signInWithPassword directly — use this endpoint + setSession.
 const { createClient } = require('@supabase/supabase-js');
 const { getCorsHeaders, isOriginAllowed, isProduction } = require('./cors-helper');
-const { enforceLoginRateLimits } = require('./auth-rate-limits');
+const {
+  checkLoginRateLimits,
+  recordLoginRateLimitFailure,
+} = require('./auth-rate-limits');
 const { addSecurityHeaders } = require('./security-headers');
 const { verifyLoginToken, consumeLoginToken, isPlaceholderKey } = require('./altcha-guard');
 const {
@@ -130,7 +133,7 @@ exports.handler = async (event) => {
   const normalizedEmail = email.toLowerCase().trim();
   const expectedPortal = portal === 'technician' ? 'technician' : 'admin';
 
-  const rateLimits = enforceLoginRateLimits(event, normalizedEmail, corsHeaders);
+  const rateLimits = checkLoginRateLimits(event, normalizedEmail, corsHeaders);
   if (rateLimits.blocked) {
     return rateLimits.response;
   }
@@ -197,6 +200,8 @@ exports.handler = async (event) => {
   );
 
   if (!authResult.ok) {
+    recordLoginRateLimitFailure(event, normalizedEmail);
+
     if (authResult.status === 429) {
       const retrySec = parseInt(authResult.headers?.get?.('retry-after') || '300', 10);
       return {
@@ -268,6 +273,7 @@ exports.handler = async (event) => {
   const session = authResult.body;
   const user = session?.user;
   if (!session?.access_token || !user) {
+    recordLoginRateLimitFailure(event, normalizedEmail);
     await recordLoginFailure(admin, normalizedEmail);
     return {
       statusCode: 401,

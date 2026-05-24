@@ -45,81 +45,28 @@ function getClientIdentifier(event) {
   return ip;
 }
 
-/**
- * Check rate limit for a request
- * @param {Object} event - Netlify function event
- * @param {Object} options - Rate limit options
- * @param {number} options.maxRequests - Maximum requests allowed
- * @param {number} options.windowMs - Time window in milliseconds
- * @param {string} options.endpoint - Endpoint name (for separate limits per endpoint)
- * @returns {Object} { allowed: boolean, remaining: number, resetTime: number }
- */
-function checkRateLimit(event, options = {}) {
-  const {
-    maxRequests = 10,
-    windowMs = 60000, // 1 minute default
-    endpoint = 'default'
-  } = options;
-
-  const clientId = getClientIdentifier(event);
-  const key = `${endpoint}:${clientId}`;
-  const now = Date.now();
-
-  // Get or create rate limit entry
-  let entry = rateLimitStore.get(key);
-
-  if (!entry || entry.resetTime < now) {
-    // Create new entry or reset expired entry
-    entry = {
-      count: 0,
-      resetTime: now + windowMs
-    };
-    rateLimitStore.set(key, entry);
-  }
-
-  // Increment count
-  entry.count++;
-
-  const remaining = Math.max(0, maxRequests - entry.count);
-  const allowed = entry.count <= maxRequests;
-
-  // Debug logging (only in development)
-  if (process.env.NODE_ENV !== 'production') {
-    console.log(`[Rate Limiter] ${endpoint}:${clientId} - Count: ${entry.count}/${maxRequests}, Allowed: ${allowed}, Remaining: ${remaining}`);
-  }
-
-  return {
-    allowed,
-    remaining,
-    resetTime: entry.resetTime,
-    limit: maxRequests
-  };
-}
-
-/**
- * Rate limit by arbitrary key (e.g. normalized email for auth)
- */
-/** Per-email auth limits — always on (localhost + production). */
-function checkRateLimitForKey(key, options = {}) {
-  const clientId = key;
-  const endpoint = options.endpoint || 'key';
+function evaluateRateLimit(storeKey, options, increment) {
   const {
     maxRequests = 10,
     windowMs = 60000,
   } = options;
 
-  const fullKey = `${endpoint}:${clientId}`;
   const now = Date.now();
-  let entry = rateLimitStore.get(fullKey);
+  let entry = rateLimitStore.get(storeKey);
 
   if (!entry || entry.resetTime < now) {
     entry = { count: 0, resetTime: now + windowMs };
-    rateLimitStore.set(fullKey, entry);
+    rateLimitStore.set(storeKey, entry);
   }
 
-  entry.count++;
+  if (increment) {
+    entry.count++;
+  }
+
+  const allowed = increment
+    ? entry.count <= maxRequests
+    : entry.count < maxRequests;
   const remaining = Math.max(0, maxRequests - entry.count);
-  const allowed = entry.count <= maxRequests;
 
   return {
     allowed,
@@ -127,6 +74,66 @@ function checkRateLimitForKey(key, options = {}) {
     resetTime: entry.resetTime,
     limit: maxRequests,
   };
+}
+
+/**
+ * Check rate limit for a request (increments count — use for non-auth endpoints).
+ */
+function checkRateLimit(event, options = {}) {
+  const {
+    maxRequests = 10,
+    windowMs = 60000,
+    endpoint = 'default',
+  } = options;
+
+  const clientId = getClientIdentifier(event);
+  const key = `${endpoint}:${clientId}`;
+  const result = evaluateRateLimit(key, { maxRequests, windowMs }, true);
+
+  if (process.env.NODE_ENV !== 'production') {
+    console.log(
+      `[Rate Limiter] ${endpoint}:${clientId} - Count: ${rateLimitStore.get(key)?.count}/${maxRequests}, Allowed: ${result.allowed}`
+    );
+  }
+
+  return result;
+}
+
+/** Peek IP limit without incrementing (auth: count failures only). */
+function peekRateLimit(event, options = {}) {
+  const { endpoint = 'default', ...rest } = options;
+  const clientId = getClientIdentifier(event);
+  return evaluateRateLimit(`${endpoint}:${clientId}`, rest, false);
+}
+
+/** Record one failed attempt against an IP limit. */
+function incrementRateLimit(event, options = {}) {
+  const { endpoint = 'default', ...rest } = options;
+  const clientId = getClientIdentifier(event);
+  return evaluateRateLimit(`${endpoint}:${clientId}`, rest, true);
+}
+
+/**
+ * Rate limit by arbitrary key (increments count).
+ */
+function checkRateLimitForKey(key, options = {}) {
+  const endpoint = options.endpoint || 'key';
+  const { maxRequests = 10, windowMs = 60000 } = options;
+  return evaluateRateLimit(`${endpoint}:${key}`, { maxRequests, windowMs }, true);
+}
+
+/** Peek key limit without incrementing. */
+function peekRateLimitForKey(key, options = {}) {
+  const endpoint = options.endpoint || 'key';
+  const { maxRequests = 10, windowMs = 60000 } = options;
+  return evaluateRateLimit(`${endpoint}:${key}`, { maxRequests, windowMs }, false);
+}
+
+/** Record one failed attempt against a key limit. */
+function incrementRateLimitForKey(key, options = {}) {
+  const endpoint = options.endpoint || 'key';
+  const { maxRequests = 10, windowMs = 60000 } = options;
+  return evaluateRateLimit(`${endpoint}:${key}`, { maxRequests, windowMs }, true);
 }
 
 function rateLimitResponseForKey(result) {
@@ -271,6 +278,10 @@ function enforceSendEmailRateLimits(event, recipientEmail) {
 module.exports = {
   checkRateLimit,
   checkRateLimitForKey,
+  peekRateLimit,
+  peekRateLimitForKey,
+  incrementRateLimit,
+  incrementRateLimitForKey,
   rateLimitResponseForKey,
   createRateLimiter,
   rateLimiters,

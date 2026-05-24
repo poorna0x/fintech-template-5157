@@ -1,14 +1,20 @@
-// Shared brute-force limits for admin + technician login (secure-auth-login & provision).
-const { checkRateLimit, checkRateLimitForKey, getClientIdentifier } = require('./rate-limiter');
+// Shared brute-force limits for admin + technician login (secure-auth-login).
+// IP + email counters increment only on failed password attempts (successful
+// logins do not consume quota). Turnstile + per-account lockout are primary gates.
+const {
+  peekRateLimit,
+  peekRateLimitForKey,
+  incrementRateLimit,
+  incrementRateLimitForKey,
+  getClientIdentifier,
+} = require('./rate-limiter');
 const { addSecurityHeaders } = require('./security-headers');
 
 const LIMITS = {
-  /** Per IP — blocks rapid proxy password attempts (tightened 10→5/hour 2026-05-24
-   *  to lift the proxy floor closer to the per-account limit; the raw Supabase
-   *  /auth/v1/token endpoint is guarded separately by Supabase Dashboard CAPTCHA). */
-  ip: { maxRequests: 5, windowMs: 60 * 60 * 1000, endpoint: 'auth-ip' },
-  /** Per email — blocks password guessing on one account */
-  email: { maxRequests: 5, windowMs: 15 * 60 * 1000, endpoint: 'auth-email' },
+  /** Per IP — failed login attempts only */
+  ip: { maxRequests: 10, windowMs: 60 * 60 * 1000, endpoint: 'auth-ip-fail' },
+  /** Per email — failed login attempts only */
+  email: { maxRequests: 5, windowMs: 15 * 60 * 1000, endpoint: 'auth-email-fail' },
 };
 
 function rateLimitHttpResponse(result, corsHeaders, userMessage) {
@@ -34,12 +40,12 @@ function rateLimitHttpResponse(result, corsHeaders, userMessage) {
 }
 
 /**
- * Enforce IP + email login rate limits (always active — localhost and production).
+ * Check IP + email limits without incrementing (call at start of login).
  * @returns {{ blocked: boolean, response?: object }}
  */
-function enforceLoginRateLimits(event, normalizedEmail, corsHeaders) {
+function checkLoginRateLimits(event, normalizedEmail, corsHeaders) {
   const ip = getClientIdentifier(event);
-  const ipResult = checkRateLimit(event, LIMITS.ip);
+  const ipResult = peekRateLimit(event, LIMITS.ip);
   if (!ipResult.allowed) {
     if (ip === 'unknown' && process.env.NODE_ENV !== 'production') {
       console.warn('[auth-rate-limits] IP is unknown — ensure dev-server sets x-forwarded-for');
@@ -49,7 +55,7 @@ function enforceLoginRateLimits(event, normalizedEmail, corsHeaders) {
       response: rateLimitHttpResponse(
         ipResult,
         corsHeaders,
-        `Too many login attempts from this network. Try again in ${Math.ceil(
+        `Too many failed login attempts from this network. Try again in ${Math.ceil(
           (ipResult.resetTime - Date.now()) / 60000
         )} minute(s).`
       ),
@@ -57,14 +63,14 @@ function enforceLoginRateLimits(event, normalizedEmail, corsHeaders) {
   }
 
   if (normalizedEmail) {
-    const emailResult = checkRateLimitForKey(`email:${normalizedEmail}`, LIMITS.email);
+    const emailResult = peekRateLimitForKey(`email:${normalizedEmail}`, LIMITS.email);
     if (!emailResult.allowed) {
       return {
         blocked: true,
         response: rateLimitHttpResponse(
           emailResult,
           corsHeaders,
-          `Too many login attempts for this email. Try again in ${Math.ceil(
+          `Too many failed login attempts for this email. Try again in ${Math.ceil(
             (emailResult.resetTime - Date.now()) / 60000
           )} minute(s).`
         ),
@@ -75,8 +81,23 @@ function enforceLoginRateLimits(event, normalizedEmail, corsHeaders) {
   return { blocked: false };
 }
 
+/** Increment IP + email failure counters after a failed password attempt. */
+function recordLoginRateLimitFailure(event, normalizedEmail) {
+  incrementRateLimit(event, LIMITS.ip);
+  if (normalizedEmail) {
+    incrementRateLimitForKey(`email:${normalizedEmail}`, LIMITS.email);
+  }
+}
+
+/** @deprecated Use checkLoginRateLimits + recordLoginRateLimitFailure */
+function enforceLoginRateLimits(event, normalizedEmail, corsHeaders) {
+  return checkLoginRateLimits(event, normalizedEmail, corsHeaders);
+}
+
 module.exports = {
   LIMITS,
+  checkLoginRateLimits,
+  recordLoginRateLimitFailure,
   enforceLoginRateLimits,
   rateLimitHttpResponse,
 };
