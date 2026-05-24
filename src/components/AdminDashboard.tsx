@@ -64,9 +64,11 @@ import {
   Navigation,
   ShoppingCart,
   ChevronDown,
-  ChevronUp
+  ChevronUp,
+  Lock
 } from 'lucide-react';
 import { db, supabase, fetchCustomerIdsWithCompletedJobsMap, CUSTOMER_ROW_COLUMNS, CUSTOMER_ADMIN_LIST_PATCH_COLUMNS } from '@/lib/supabase';
+import { useAdminRole } from '@/lib/useAdminRole';
 import { registerAdminPWA } from '@/lib/pwa';
 import { Customer, Job, Technician } from '@/types';
 import { cloudinaryService, compressImage, validateImageFile } from '@/lib/cloudinary';
@@ -175,6 +177,8 @@ function AdminScreenLoader({ message }: { message: string }) {
 const AdminDashboard = () => {
   const navigate = useNavigate();
   const { user, isAdmin, authInitializing, logout } = useAuth();
+  const { isManager } = useAdminRole();
+  const managerRestrictedTitle = 'Restricted for Manager role';
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [jobs, setJobs] = useState<Job[]>([]);
   const [allFollowUpJobs, setAllFollowUpJobs] = useState<Job[]>([]); // All follow-up jobs for glow effect
@@ -265,9 +269,19 @@ const AdminDashboard = () => {
   // Preserve scroll position when WhatsApp dialog opens after assign/reassign (so page doesn't jump to top)
   const scrollPositionBeforeWhatsAppRef = useRef(0);
   const handleViewChange = (view: 'dashboard' | 'payments' | 'billing' | 'analytics' | 'inventory') => {
+    if (isManager && view !== 'dashboard') {
+      // Manager role cannot enter payments / billing / analytics / inventory.
+      return;
+    }
     hapticSwitch();
     setCurrentView(view);
   };
+
+  useEffect(() => {
+    if (isManager && currentView !== 'dashboard') {
+      setCurrentView('dashboard');
+    }
+  }, [isManager, currentView]);
 
   // bangaloreAreas imported from @/lib/adminUtils
 
@@ -9072,10 +9086,11 @@ const AdminDashboard = () => {
                 <Button
                   variant={(currentView as string) === 'payments' ? 'default' : 'outline'}
                   onClick={() => handleViewChange('payments')}
+                  disabled={isManager}
                   className="flex items-center justify-center gap-2 w-full sm:w-auto sm:px-3"
-                  title="Payments"
+                  title={isManager ? managerRestrictedTitle : 'Payments'}
                 >
-                  <DollarSign className="w-4 h-4" />
+                  {isManager ? <Lock className="w-4 h-4" /> : <DollarSign className="w-4 h-4" />}
                   <span className="hidden sm:inline">Payments</span>
                 </Button>
                 
@@ -9083,28 +9098,31 @@ const AdminDashboard = () => {
                 <Button
                   variant={(currentView as string) === 'billing' ? 'default' : 'outline'}
                   onClick={() => handleViewChange('billing')}
+                  disabled={isManager}
                   className="flex items-center justify-center gap-2 w-full sm:w-auto sm:px-3"
-                  title="Billing"
+                  title={isManager ? managerRestrictedTitle : 'Billing'}
                 >
-                  <Receipt className="w-4 h-4" />
+                  {isManager ? <Lock className="w-4 h-4" /> : <Receipt className="w-4 h-4" />}
                   <span className="hidden sm:inline">Billing</span>
                 </Button>
                 <Button
                   variant={(currentView as string) === 'analytics' ? 'default' : 'outline'}
                   onClick={() => handleViewChange('analytics')}
+                  disabled={isManager}
                   className="flex items-center justify-center gap-2 w-full sm:w-auto sm:px-3"
-                  title="Analytics"
+                  title={isManager ? managerRestrictedTitle : 'Analytics'}
                 >
-                  <BarChart3 className="w-4 h-4" />
+                  {isManager ? <Lock className="w-4 h-4" /> : <BarChart3 className="w-4 h-4" />}
                   <span className="hidden sm:inline">Analytics</span>
                 </Button>
                 <Button
                   variant={(currentView as string) === 'inventory' ? 'default' : 'outline'}
                   onClick={() => handleViewChange('inventory')}
+                  disabled={isManager}
                   className="flex items-center justify-center gap-2 w-full sm:w-auto sm:px-3"
-                  title="Inventory"
+                  title={isManager ? managerRestrictedTitle : 'Inventory'}
                 >
-                  <ShoppingCart className="w-4 h-4" />
+                  {isManager ? <Lock className="w-4 h-4" /> : <ShoppingCart className="w-4 h-4" />}
                   <span className="hidden sm:inline">Inventory</span>
                 </Button>
               </div>

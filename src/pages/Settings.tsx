@@ -34,10 +34,12 @@ import {
   PhoneCall,
   RefreshCw,
   DollarSign,
-  Bell
+  Bell,
+  Lock
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { db, supabase } from '@/lib/supabase';
+import { useAdminRole } from '@/lib/useAdminRole';
 import { ensureAdminSupabaseSession } from '@/lib/auth';
 import { deleteTechnicianCompletely } from '@/lib/deleteTechnician';
 import { buildTechnicianSalaryPayload, getCurrentMonthKey } from '@/lib/technicianSalaryForPeriod';
@@ -112,6 +114,8 @@ const DATABASE_EXPORT_TABLES: {
 
 const Settings = () => {
   const { user, isAdmin, logout, authInitializing } = useAuth();
+  const { isManager } = useAdminRole();
+  const managerRestrictedTitle = 'Restricted for Manager role';
   const navigate = useNavigate();
 
   useEffect(() => {
@@ -1199,6 +1203,10 @@ const Settings = () => {
 
   // Function to download all table data (paginated so we get every row)
   const handleDownloadAllData = async () => {
+    if (isManager) {
+      toast.error(managerRestrictedTitle);
+      return;
+    }
     setIsDownloading(true);
 
     try {
@@ -2182,12 +2190,21 @@ const Settings = () => {
                 </div>
                 <Button 
                   onClick={handleDownloadAllData}
-                  disabled={isDownloading}
+                  disabled={isDownloading || isManager}
+                  title={isManager ? managerRestrictedTitle : undefined}
                   className="bg-green-600 hover:bg-green-700 w-full sm:w-auto disabled:opacity-50 disabled:cursor-not-allowed"
                   size="sm"
                 >
-                  <Download className="w-4 h-4 mr-2" />
-                  {isDownloading ? 'Downloading...' : 'Download All Data'}
+                  {isManager ? (
+                    <Lock className="w-4 h-4 mr-2" />
+                  ) : (
+                    <Download className="w-4 h-4 mr-2" />
+                  )}
+                  {isManager
+                    ? 'Restricted'
+                    : isDownloading
+                      ? 'Downloading...'
+                      : 'Download All Data'}
                 </Button>
               </div>
             </CardHeader>
