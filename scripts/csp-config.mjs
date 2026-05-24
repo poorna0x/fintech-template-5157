@@ -40,7 +40,6 @@ export const PRODUCTION_CSP = [
     'https://goo.gl',
     'https://hydrogenro.com',
     'https://www.hydrogenro.com',
-    'https://hydrogenro.netlify.app',
     'https://challenges.cloudflare.com',
   ].join(' '),
   "frame-src 'self' https://www.google.com https://maps.google.com https://challenges.cloudflare.com",
