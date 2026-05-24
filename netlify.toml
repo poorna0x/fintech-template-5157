@@ -24,6 +24,28 @@
   status = 301
   force = true
 
+# Canonical host enforcement — redirect Netlify-provided subdomain to custom domain
+# so scanners and stragglers do not see a different (potentially stale) bundle on
+# https://hydrogenro.netlify.app/*. force=true overrides any matching static asset.
+[[redirects]]
+  from = "https://hydrogenro.netlify.app/*"
+  to = "https://hydrogenro.com/:splat"
+  status = 301
+  force = true
+
+[[redirects]]
+  from = "http://hydrogenro.netlify.app/*"
+  to = "https://hydrogenro.com/:splat"
+  status = 301
+  force = true
+
+# Same for the www variant, defensively
+[[redirects]]
+  from = "http://www.hydrogenro.com/*"
+  to = "https://www.hydrogenro.com/:splat"
+  status = 301
+  force = true
+
 # Redirect old pages to main site with 301 status
 [[redirects]]
   from = "/go"
