@@ -16,6 +16,7 @@ import TurnstileWidget, {
 } from '@/components/TurnstileWidget';
 import { registerAdminPWA } from '@/lib/pwa';
 import { formatLoginError } from '@/lib/loginResult';
+import { warmNetlifyFunctions, fetchFastLoginCaptcha } from '@/lib/loginWarmup';
 
 const AdminLogin = () => {
   const [email, setEmail] = useState('');
@@ -31,6 +32,7 @@ const AdminLogin = () => {
   const [captchaStartTime] = useState(Date.now());
   const [captchaTimeout, setCaptchaTimeout] = useState<NodeJS.Timeout | null>(null);
   const turnstileRequired = isTurnstileEnabled();
+  const [usePoWCaptcha, setUsePoWCaptcha] = useState(!isTurnstileEnabled());
   /** Prevents the auto-submit effect from firing twice for the same token combo
    *  (e.g. on failure → don't loop). Reset when the user types or a new Turnstile
    *  token arrives. */
@@ -60,7 +62,27 @@ const AdminLogin = () => {
       clearTimeout(captchaTimeout);
       setCaptchaTimeout(null);
     }
+    warmNetlifyFunctions();
   }, []);
+
+  useEffect(() => {
+    if (!turnstileRequired) return;
+    let cancelled = false;
+    void fetchFastLoginCaptcha('admin').then((result) => {
+      if (cancelled) return;
+      if (!result) {
+        setUsePoWCaptcha(true);
+        return;
+      }
+      setAltchaPayload(result.payload);
+      setAltchaLoginToken(result.loginToken);
+      setIsCaptchaVerified(true);
+      setShowSecurityStep(false);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [turnstileRequired]);
 
   useEffect(() => {
     if (authInitializing) return;
@@ -204,6 +226,7 @@ const AdminLogin = () => {
 
   // Check if security step should be shown (fallback if auto-verification fails)
   useEffect(() => {
+    if (!usePoWCaptcha) return;
     if (!isCaptchaVerified) {
       // Set timeout to show security step if verification doesn't complete in 5 seconds
       const timeout = setTimeout(() => {
@@ -226,7 +249,7 @@ const AdminLogin = () => {
         setCaptchaTimeout(null);
       }
     }
-  }, [isCaptchaVerified]);
+  }, [isCaptchaVerified, usePoWCaptcha]);
 
   // Auto-submit ONLY when CAPTCHA state changes — never on email/password keystrokes
   // (those are read from credsRef). A failed (email|password) combo is recorded so a
@@ -351,10 +374,12 @@ const AdminLogin = () => {
               </div>
 
               {/* Background ALTCHA (not display:none — widget needs layout to run) */}
-              <AltchaWidget onVerify={handleVerify} autoStart={true} hidden={true} />
+              {usePoWCaptcha && (
+                <AltchaWidget onVerify={handleVerify} autoStart={true} hidden={true} />
+              )}
 
               {/* Fallback: Show security widget if auto-verification failed or took too long */}
-              {showSecurityStep && !isCaptchaVerified && (
+              {usePoWCaptcha && showSecurityStep && !isCaptchaVerified && (
                 <div className="space-y-2 border-t pt-4 mt-4">
                   <div className="text-center mb-2">
                     <p className="text-sm font-medium text-foreground">Security Verification</p>

@@ -18,7 +18,7 @@ import { disablePWA } from "@/lib/pwa";
 // Lazy load heavy components for better performance
 import AdminPortal from "./pages/AdminPortal";
 const Booking = lazy(() => import("./pages/Booking"));
-const TechnicianLogin = lazy(() => import("./pages/TechnicianLogin"));
+import TechnicianLogin from "./pages/TechnicianLogin";
 const TechnicianDashboard = lazy(() => import("./pages/TechnicianDashboard"));
 const Settings = lazy(() => import("./pages/Settings"));
 const CallingPage = lazy(() => import("./pages/CallingPage"));
