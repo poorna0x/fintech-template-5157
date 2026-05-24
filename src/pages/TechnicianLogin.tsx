@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { Button } from '@/components/ui/button';
@@ -29,6 +29,9 @@ const TechnicianLogin = () => {
   const [captchaStartTime] = useState(Date.now());
   const [captchaTimeout, setCaptchaTimeout] = useState<NodeJS.Timeout | null>(null);
   const turnstileRequired = isTurnstileEnabled();
+  /** Prevents the auto-submit effect from firing twice for the same token combo
+   *  (e.g. on failure → don't loop). A fresh Turnstile token resets it. */
+  const autoSubmitTokenRef = useRef<string | null>(null);
 
   const { login, loading: authLoading, user, authInitializing } = useAuth();
   const navigate = useNavigate();
@@ -225,6 +228,31 @@ const TechnicianLogin = () => {
       }
     }
   }, [isCaptchaVerified]);
+
+  // Auto-submit once all gates are green and credentials are present. The ref
+  // prevents a second attempt for the same Turnstile token (avoid loop on bad
+  // password). A fresh Turnstile token (re-challenge / expiry) resets the ref.
+  useEffect(() => {
+    if (isLoading) return;
+    if (!email || !password) return;
+    if (!isCaptchaVerified || !altchaLoginToken) return;
+    if (turnstileRequired && !turnstileToken) return;
+
+    const submitKey = `${altchaLoginToken}::${turnstileToken || 'none'}`;
+    if (autoSubmitTokenRef.current === submitKey) return;
+    autoSubmitTokenRef.current = submitKey;
+
+    void performLogin();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [
+    isCaptchaVerified,
+    altchaLoginToken,
+    turnstileToken,
+    turnstileRequired,
+    email,
+    password,
+    isLoading,
+  ]);
 
   // Track verification status
   const handleVerify = (isValid: boolean, payload?: string, loginToken?: string) => {
