@@ -295,6 +295,7 @@ const EditCompletedJobDialog: React.FC<EditCompletedJobDialogProps> = ({
                   switch (leadSource) {
                     case 'Home Triangle': return '280';
                     case 'Home Triangle-Srujan': return '280';
+                    case 'Home Triangle-3': return '280';
                     case 'Direct call': return '0';
                     case 'RO care india': return '400';
                     case 'Local Ramu': return '500';
@@ -326,6 +327,7 @@ const EditCompletedJobDialog: React.FC<EditCompletedJobDialogProps> = ({
                 <SelectItem value="RO care india">RO care india</SelectItem>
                 <SelectItem value="Home Triangle">Home Triangle</SelectItem>
                 <SelectItem value="Home Triangle-Srujan">Home Triangle-Srujan</SelectItem>
+                <SelectItem value="Home Triangle-3">Home Triangle-3</SelectItem>
                 <SelectItem value="Local Ramu">Local Ramu</SelectItem>
                 <SelectItem value="Other">Other</SelectItem>
               </SelectContent>

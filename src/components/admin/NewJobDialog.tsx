@@ -72,6 +72,8 @@ const NewJobDialog: React.FC<NewJobDialogProps> = ({
         return '280';
       case 'Home Triangle-Srujan':
         return '280';
+      case 'Home Triangle-3':
+        return '280';
       case 'Direct call':
         return '0';
       case 'RO care india':
@@ -779,8 +781,12 @@ const NewJobDialog: React.FC<NewJobDialogProps> = ({
                       const defaultCost = getDefaultLeadCost(selectedLeadSource);
                       handleFormChange('lead_cost', defaultCost);
                     }
-                    // Auto-enable OTP if lead source is "Home Triangle" or "Home Triangle-Srujan"
-                    if (selectedLeadSource === 'Home Triangle' || selectedLeadSource === 'Home Triangle-Srujan') {
+                    // Auto-enable OTP for any Home Triangle variant
+                    if (
+                      selectedLeadSource === 'Home Triangle' ||
+                      selectedLeadSource === 'Home Triangle-Srujan' ||
+                      selectedLeadSource === 'Home Triangle-3'
+                    ) {
                       handleFormChange('require_otp', true);
                     }
                   }}
@@ -794,6 +800,7 @@ const NewJobDialog: React.FC<NewJobDialogProps> = ({
                   <option value="RO care india">RO care india</option>
                   <option value="Home Triangle">Home Triangle</option>
                   <option value="Home Triangle-Srujan">Home Triangle-Srujan</option>
+                  <option value="Home Triangle-3">Home Triangle-3</option>
                   <option value="Local Ramu">Local Ramu</option>
                   <option value="Other">Other</option>
                 </select>

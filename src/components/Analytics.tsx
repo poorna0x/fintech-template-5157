@@ -573,6 +573,8 @@ const Analytics = () => {
         'hometriangle': 'Home Triangle',
         'hometriangle-srujan': 'Home Triangle-Srujan',
         'hometrianglesrujan': 'Home Triangle-Srujan',
+        'hometriangle-3': 'Home Triangle-3',
+        'hometriangle3': 'Home Triangle-3',
         'localramu': 'Local Ramu',
         'admincreated': 'Admin Created',
         'unknown': 'Direct call',

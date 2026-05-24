@@ -50,6 +50,8 @@ const EditJobDialog: React.FC<EditJobDialogProps> = ({
         return '280';
       case 'Home Triangle-Srujan':
         return '280';
+      case 'Home Triangle-3':
+        return '280';
       case 'Direct call':
         return '0';
       case 'RO care india':
@@ -135,6 +137,9 @@ const EditJobDialog: React.FC<EditJobDialogProps> = ({
           'home triangle-srujan': 'Home Triangle-Srujan',
           'hometriangle-srujan': 'Home Triangle-Srujan',
           'hometrianglesrujan': 'Home Triangle-Srujan',
+          'home triangle-3': 'Home Triangle-3',
+          'hometriangle-3': 'Home Triangle-3',
+          'hometriangle3': 'Home Triangle-3',
           'local ramu': 'Local Ramu',
           'localramu': 'Local Ramu',
           'other': 'Other'
@@ -146,7 +151,7 @@ const EditJobDialog: React.FC<EditJobDialogProps> = ({
         }
         
         // Check if it's already one of the valid options (case-insensitive)
-        const validOptions = ['Website', 'Direct call', 'Google-Leads', 'RO care india', 'Home Triangle', 'Home Triangle-Srujan', 'Local Ramu', 'Other'];
+        const validOptions = ['Website', 'Direct call', 'Google-Leads', 'RO care india', 'Home Triangle', 'Home Triangle-Srujan', 'Home Triangle-3', 'Local Ramu', 'Other'];
         const matchedOption = validOptions.find(opt => opt.toLowerCase() === sourceLower);
         if (matchedOption) {
           return matchedOption;
@@ -624,6 +629,7 @@ const EditJobDialog: React.FC<EditJobDialogProps> = ({
                   <SelectItem value="RO care india">RO care india</SelectItem>
                   <SelectItem value="Home Triangle">Home Triangle</SelectItem>
                   <SelectItem value="Home Triangle-Srujan">Home Triangle-Srujan</SelectItem>
+                  <SelectItem value="Home Triangle-3">Home Triangle-3</SelectItem>
                   <SelectItem value="Local Ramu">Local Ramu</SelectItem>
                   <SelectItem value="Other">Other</SelectItem>
                 </SelectContent>

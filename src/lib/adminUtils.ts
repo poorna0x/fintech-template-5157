@@ -542,6 +542,7 @@ const LEAD_TYPE_NORMALIZE_MAP: Record<string, string> = {
   rocareindia: 'RO care india',
   hometriangle: 'Home Triangle',
   hometrianglesrujan: 'Home Triangle-Srujan',
+  hometriangle3: 'Home Triangle-3',
   localramu: 'Local Ramu',
   other: 'Other',
 };
