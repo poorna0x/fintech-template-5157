@@ -2981,8 +2981,15 @@ export const db = {
     },
     
     async getNextInvoiceNumber() {
-      // Call the database function to get next invoice number
       const { data, error } = await supabase.rpc('get_next_invoice_number');
+      if (error) {
+        const msg = (error.message || '').toLowerCase();
+        const generic =
+          msg.includes('admin access') || msg.includes('42501')
+            ? 'You do not have permission to create invoices.'
+            : 'Could not generate invoice number. Please try again or contact support.';
+        return { data: null, error: { ...error, message: generic } };
+      }
       return { data, error };
     },
     

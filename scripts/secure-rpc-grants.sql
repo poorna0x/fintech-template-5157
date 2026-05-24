@@ -138,10 +138,7 @@ DECLARE
     'get_last_contact_per_customer()',
     'get_next_invoice_number()',
     'get_technician_payment_summary()',
-    'backfill_technician_payments()',
-    'get_all_banner_messages()',
-    'get_banner_messages()',
-    'get_technician_banner_messages(uuid)'
+    'backfill_technician_payments()'
   ];
 BEGIN
   FOREACH fn IN ARRAY anon_only
@@ -170,10 +167,7 @@ BEGIN
         'get_last_contact_per_customer',
         'get_next_invoice_number',
         'get_technician_payment_summary',
-        'backfill_technician_payments',
-        'get_all_banner_messages',
-        'get_banner_messages',
-        'get_technician_banner_messages'
+        'backfill_technician_payments'
       )
   LOOP
     EXECUTE format('REVOKE EXECUTE ON FUNCTION %s FROM anon', r.sig);
