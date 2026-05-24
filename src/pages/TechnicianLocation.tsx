@@ -7,6 +7,10 @@ import { toast } from 'sonner';
 import DraggableMap from '@/components/DraggableMap';
 import { useAuth } from '@/contexts/AuthContext';
 import { db } from '@/lib/supabase';
+import {
+  ensureSupabaseSessionForWrite,
+  locationUploadErrorMessage,
+} from '@/lib/ensureSupabaseSession';
 import { isIOS } from '@/lib/cameraUtils';
 
 interface LocationData {
@@ -162,6 +166,25 @@ const TechnicianLocation = () => {
 
         if (user?.technicianId) {
           try {
+            const sessionReady = await ensureSupabaseSessionForWrite();
+            if (!sessionReady.ok) {
+              console.warn(
+                '⚠️ [TechnicianLocation] Skipping location upload — no valid auth session:',
+                sessionReady.reason
+              );
+              if (!autoUpdate) {
+                const sessionErrorMsg = locationUploadErrorMessage(null, {
+                  autoUpdate: false,
+                  sessionExpired: true,
+                });
+                setError(sessionErrorMsg);
+                setErrorType('upload');
+                toast.error(sessionErrorMsg, { duration: 8000 });
+              }
+              setIsLoading(false);
+              return;
+            }
+
             const locationUpdateData = {
               latitude: position.coords.latitude,
               longitude: position.coords.longitude,
@@ -176,13 +199,13 @@ const TechnicianLocation = () => {
 
             if (updateError) {
               console.error('❌ [TechnicianLocation] Error updating location in database:', updateError);
-              const dbErrorMsg = `Location captured but failed to upload to server. Please check your internet connection and try again. Error: ${updateError.message}`;
-              setError(dbErrorMsg);
-              setErrorType('upload');
+              const dbErrorMsg = locationUploadErrorMessage(updateError, { autoUpdate });
               if (!autoUpdate) {
+                setError(dbErrorMsg);
+                setErrorType('upload');
                 toast.error(dbErrorMsg, { duration: 8000 });
               } else {
-                toast.error('Failed to upload location. Please try again.', { duration: 6000 });
+                console.warn('⚠️ [TechnicianLocation] Background location upload failed:', dbErrorMsg);
               }
             } else {
               console.log('✅ [TechnicianLocation] Location updated in database successfully:', {
@@ -197,13 +220,13 @@ const TechnicianLocation = () => {
             }
           } catch (dbError) {
             console.error('Error updating location in database:', dbError);
-            const dbErrorMsg = `Location captured but failed to upload to server. Please check your internet connection and try again. Error: ${dbError instanceof Error ? dbError.message : 'Unknown error'}`;
-            setError(dbErrorMsg);
-            setErrorType('upload');
+            const dbErrorMsg = locationUploadErrorMessage(dbError, { autoUpdate });
             if (!autoUpdate) {
+              setError(dbErrorMsg);
+              setErrorType('upload');
               toast.error(dbErrorMsg, { duration: 8000 });
             } else {
-              toast.error('Failed to upload location. Please try again.', { duration: 6000 });
+              console.warn('⚠️ [TechnicianLocation] Background location upload failed:', dbErrorMsg);
             }
           }
         } else {

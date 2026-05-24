@@ -58,7 +58,14 @@ export const supabase = createClient(buildTimeUrl, buildTimeKey, {
       if (!headers.has('apikey') && actualKey) {
         headers.set('apikey', actualKey);
       }
-      if (!headers.has('Authorization') && actualKey) {
+      // Do not fall back to the anon JWT on PostgREST / Realtime when the user JWT
+      // is missing — that silently runs as `anon` and yields "permission denied"
+      // on tables like technicians after RLS lockdown. Auth + Storage still get the
+      // anon bearer when supabase-js omits Authorization.
+      const requestUrl = String(url);
+      const isDataApi =
+        requestUrl.includes('/rest/v1/') || requestUrl.includes('/realtime/v1/');
+      if (!headers.has('Authorization') && actualKey && !isDataApi) {
         headers.set('Authorization', `Bearer ${actualKey}`);
       }
 

@@ -55,6 +55,10 @@ import { formatCompletedWhen } from '@/lib/relativeTime';
 import { getJobEquipmentDisplay, parseJobRequirements } from '@/lib/adminUtils';
 import { canVibrate, hapticConfirm, hapticTap } from '@/lib/haptics';
 import { db, supabase, fetchCustomerIdsWithCompletedJobsMap } from '@/lib/supabase';
+import {
+  ensureSupabaseSessionForWrite,
+  locationUploadErrorMessage,
+} from '@/lib/ensureSupabaseSession';
 import { Job, JobAssignmentRequest } from '@/types';
 import { sendNotification, createJobCompletedNotification, createJobAssignmentRequestNotification, createJobAssignmentAcceptedNotification, createJobAssignmentRejectedNotification, requestNotificationPermission } from '@/lib/notifications';
 import FollowUpModal from '@/components/FollowUpModal';
@@ -2038,8 +2042,8 @@ const TechnicianDashboard = () => {
   }, [user?.technicianId]);
 
   // Get current location and update in database
-  const getCurrentLocation = useCallback(async () => {
-    console.log('📍 [TechnicianDashboard] getCurrentLocation called');
+  const getCurrentLocation = useCallback(async (autoUpdate: boolean = false) => {
+    console.log('📍 [TechnicianDashboard] getCurrentLocation called', { autoUpdate });
     
     // Check if location tracking is enabled - block ALL updates when disabled
     const locationTrackingEnabled = localStorage.getItem('technician_location_tracking_enabled') !== 'false';
@@ -2154,6 +2158,24 @@ const TechnicianDashboard = () => {
 
         if (user?.technicianId) {
           try {
+            const sessionReady = await ensureSupabaseSessionForWrite();
+            if (!sessionReady.ok) {
+              console.warn(
+                '⚠️ [TechnicianDashboard] Skipping location upload — no valid auth session:',
+                sessionReady.reason
+              );
+              if (!autoUpdate) {
+                const errorMsg = locationUploadErrorMessage(null, {
+                  autoUpdate: false,
+                  sessionExpired: true,
+                });
+                setLocationError(errorMsg);
+                setLocationErrorType('upload');
+                toast.error(errorMsg, { duration: 8000 });
+              }
+              return;
+            }
+
             const locationData = {
               latitude: position.coords.latitude,
               longitude: position.coords.longitude,
@@ -2169,10 +2191,14 @@ const TechnicianDashboard = () => {
 
             if (error) {
               console.error('❌ [TechnicianDashboard] Error updating technician location in database:', error);
-              const errorMsg = `Location captured but failed to upload to server. Please check your internet connection and try again. Error: ${error.message}`;
-              setLocationError(errorMsg);
-              setLocationErrorType('upload');
-              toast.error(errorMsg, { duration: 8000 });
+              const errorMsg = locationUploadErrorMessage(error, { autoUpdate });
+              if (!autoUpdate) {
+                setLocationError(errorMsg);
+                setLocationErrorType('upload');
+                toast.error(errorMsg, { duration: 8000 });
+              } else {
+                console.warn('⚠️ [TechnicianDashboard] Background location upload failed:', errorMsg);
+              }
             } else {
               console.log('✅ [TechnicianDashboard] Technician location and status updated successfully in database:', {
                 location: locationData,
@@ -2185,10 +2211,14 @@ const TechnicianDashboard = () => {
             }
           } catch (error) {
             console.error('Error updating technician location:', error);
-            const errorMsg = `Location captured but failed to upload to server. Please check your internet connection and try again. Error: ${error instanceof Error ? error.message : 'Unknown error'}`;
-            setLocationError(errorMsg);
-            setLocationErrorType('upload');
-            toast.error(errorMsg, { duration: 8000 });
+            const errorMsg = locationUploadErrorMessage(error, { autoUpdate });
+            if (!autoUpdate) {
+              setLocationError(errorMsg);
+              setLocationErrorType('upload');
+              toast.error(errorMsg, { duration: 8000 });
+            } else {
+              console.warn('⚠️ [TechnicianDashboard] Background location upload failed:', errorMsg);
+            }
           }
         }
       },
@@ -2361,7 +2391,7 @@ const TechnicianDashboard = () => {
     // Update location immediately on mount (only if page is visible)
     if (!document.hidden) {
       console.log('🔄 [TechnicianDashboard] Page visible on mount - triggering initial location update');
-      getCurrentLocation();
+      getCurrentLocation(true);
     } else {
       console.log('⏸️ [TechnicianDashboard] Page hidden on mount - skipping initial location update');
     }
@@ -2378,7 +2408,7 @@ const TechnicianDashboard = () => {
       
       if (stillEnabled && !document.hidden) {
         console.log('🔄 [TechnicianDashboard] 5-minute interval - triggering location update');
-        getCurrentLocation();
+        getCurrentLocation(true);
       } else if (!stillEnabled) {
         console.log('🚫 [TechnicianDashboard] Location tracking was disabled - stopping interval updates');
       }
@@ -2395,7 +2425,7 @@ const TechnicianDashboard = () => {
       
       if (!document.hidden && user?.technicianId && stillEnabled) {
         console.log('🔄 [TechnicianDashboard] Page became visible - triggering location update');
-        getCurrentLocation();
+        getCurrentLocation(true);
       } else if (!stillEnabled) {
         console.log('🚫 [TechnicianDashboard] Location tracking disabled - skipping visibility update');
       }
@@ -2407,7 +2437,7 @@ const TechnicianDashboard = () => {
         const isEnabled = e.newValue !== 'false';
         if (isEnabled && !document.hidden && user?.technicianId) {
           console.log('Location tracking enabled - requesting location update');
-          getCurrentLocation();
+          getCurrentLocation(true);
         }
       }
     };
@@ -2424,7 +2454,7 @@ const TechnicianDashboard = () => {
       
       if (isEnabled && !document.hidden && user?.technicianId) {
         console.log('✅ [TechnicianDashboard] Location tracking ENABLED - requesting location update');
-        getCurrentLocation();
+        getCurrentLocation(true);
       } else if (!isEnabled) {
         console.log('🚫 [TechnicianDashboard] Location tracking DISABLED - no updates will be made');
       }
