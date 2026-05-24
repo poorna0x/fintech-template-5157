@@ -12,7 +12,7 @@ export interface SecureAuthLoginResult {
 }
 
 function loginFetchTimeoutMs(): number {
-  if (typeof window !== 'undefined' && isPWAMode()) return 35_000;
+  if (typeof window !== 'undefined' && isPWAMode()) return 60_000;
   return 25_000;
 }
 

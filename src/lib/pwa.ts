@@ -1,3 +1,5 @@
+import { ensureTechnicianSwUpdated } from './pwaSwMigration';
+
 interface RegisterOptions {
   swUrl: string;
   scope: string;
@@ -112,11 +114,17 @@ export const registerTechnicianPWA = () => {
     console.log('[PWA] Technician manifest link set to /technician-manifest.json');
   }
   
-  return registerPWA({
+  const registration = registerPWA({
     swUrl: '/technician-sw.js',
     scope: '/technician',
     label: 'Technician PWA',
   });
+
+  void registration.then(() => {
+    ensureTechnicianSwUpdated();
+  });
+
+  return registration;
 };
 
 export const registerAdminPWA = () => {
