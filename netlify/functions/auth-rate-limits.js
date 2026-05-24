@@ -55,7 +55,7 @@ function checkLoginRateLimits(event, normalizedEmail, corsHeaders) {
       response: rateLimitHttpResponse(
         ipResult,
         corsHeaders,
-        `Too many failed login attempts from this network. Try again in ${Math.ceil(
+        `Too many login attempts. Try again in ${Math.ceil(
           (ipResult.resetTime - Date.now()) / 60000
         )} minute(s).`
       ),
@@ -70,7 +70,7 @@ function checkLoginRateLimits(event, normalizedEmail, corsHeaders) {
         response: rateLimitHttpResponse(
           emailResult,
           corsHeaders,
-          `Too many failed login attempts for this email. Try again in ${Math.ceil(
+          `Too many login attempts. Try again in ${Math.ceil(
             (emailResult.resetTime - Date.now()) / 60000
           )} minute(s).`
         ),

@@ -213,7 +213,6 @@ exports.handler = async (event) => {
         message: `Too many failed login attempts. Try again in ${lockMins} minute(s).`,
         retryAfter: retrySec,
         locked: true,
-        lockoutCount: lockStatus.lockout_count,
       }),
     };
   }
@@ -255,7 +254,6 @@ exports.handler = async (event) => {
     const failureMeta = shouldRecordCredentialFailure(authResult)
       ? await recordLoginFailure(admin, normalizedEmail)
       : null;
-    const remaining = failureMeta?.remaining_attempts;
     const locked = failureMeta?.locked === true;
 
     if (locked) {
@@ -279,25 +277,14 @@ exports.handler = async (event) => {
           retryAfter: retrySec,
           locked: true,
           lockMinutes: lockMins,
-          lockoutCount,
         }),
       };
     }
 
-    const attemptsMsg =
-      typeof remaining === 'number' && remaining > 0
-        ? ` Invalid email or password. ${remaining} attempt(s) remaining before lockout.`
-        : typeof remaining === 'number' && remaining === 0
-          ? ' Invalid email or password. Account will be locked on the next failed attempt.'
-          : ` ${GENERIC_AUTH_ERROR}`;
-
     return {
       statusCode: 401,
       headers: addSecurityHeaders({ ...corsHeaders, 'Content-Type': 'application/json' }),
-      body: JSON.stringify({
-        error: attemptsMsg.trim(),
-        ...(typeof remaining === 'number' ? { remainingAttempts: remaining } : {}),
-      }),
+      body: JSON.stringify({ error: GENERIC_AUTH_ERROR }),
     };
   }
 
