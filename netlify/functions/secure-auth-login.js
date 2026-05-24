@@ -14,7 +14,16 @@ const { signPortalCookie, cookieHeader } = require('./portal-session');
 
 const GENERIC_AUTH_ERROR = 'Invalid email or password';
 
-async function signInWithPasswordServer(supabaseUrl, anonKey, email, password) {
+async function signInWithPasswordServer(supabaseUrl, anonKey, email, password, captchaToken) {
+  const payload = { email, password };
+  // Required once Supabase Dashboard → Authentication → Bot and Abuse Protection
+  // is enabled (Cloudflare Turnstile or hCaptcha). Supabase verifies the token
+  // server-side BEFORE checking the password, blocking direct brute force on
+  // /auth/v1/token (which bypasses this proxy entirely).
+  if (captchaToken && typeof captchaToken === 'string') {
+    payload.gotrue_meta_security = { captcha_token: captchaToken };
+  }
+
   const res = await fetch(`${supabaseUrl}/auth/v1/token?grant_type=password`, {
     method: 'POST',
     headers: {
@@ -22,7 +31,7 @@ async function signInWithPasswordServer(supabaseUrl, anonKey, email, password) {
       apikey: anonKey,
       Authorization: `Bearer ${anonKey}`,
     },
-    body: JSON.stringify({ email, password }),
+    body: JSON.stringify(payload),
   });
 
   const body = await res.json().catch(() => ({}));
@@ -96,7 +105,7 @@ exports.handler = async (event) => {
     };
   }
 
-  const { email, password, altchaLoginToken, altchaPayload, portal } = body;
+  const { email, password, altchaLoginToken, altchaPayload, portal, captchaToken } = body;
   if (
     !email ||
     !password ||
@@ -110,6 +119,13 @@ exports.handler = async (event) => {
       body: JSON.stringify({ error: 'Missing email, password, or security verification' }),
     };
   }
+
+  // Defense in depth: cap captcha token length (Turnstile tokens are ~600 chars,
+  // never multi-KB). Drops oversized payloads before forwarding to Supabase.
+  const normalizedCaptchaToken =
+    typeof captchaToken === 'string' && captchaToken.length > 0 && captchaToken.length <= 4096
+      ? captchaToken
+      : '';
 
   const normalizedEmail = email.toLowerCase().trim();
   const expectedPortal = portal === 'technician' ? 'technician' : 'admin';
@@ -134,6 +150,25 @@ exports.handler = async (event) => {
 
   const lockStatus = await checkLoginAllowed(admin, normalizedEmail);
   if (lockStatus.allowed === false) {
+    // Fail-closed degraded state from auth-lockout when the DB RPC is unreachable
+    // (audit F-08). Surface as 503 so the UI doesn't tell the user they're "locked"
+    // when in reality the lockout service is just unavailable.
+    if (lockStatus.reason === 'lockout_service_unavailable') {
+      const retrySec = lockStatus.retry_after_seconds || 60;
+      return {
+        statusCode: 503,
+        headers: addSecurityHeaders({
+          ...corsHeaders,
+          'Content-Type': 'application/json',
+          'Retry-After': String(retrySec),
+        }),
+        body: JSON.stringify({
+          error: 'Login service temporarily unavailable. Please try again shortly.',
+          retryAfter: retrySec,
+        }),
+      };
+    }
+
     const retrySec = lockStatus.retry_after_seconds || 900;
     const lockMins = Math.max(1, Math.ceil(retrySec / 60));
     return {
@@ -157,7 +192,8 @@ exports.handler = async (event) => {
     supabaseUrl,
     anonKey,
     normalizedEmail,
-    password
+    password,
+    normalizedCaptchaToken
   );
 
   if (!authResult.ok) {

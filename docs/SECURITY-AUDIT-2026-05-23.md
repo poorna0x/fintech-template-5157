@@ -2,9 +2,10 @@
 
 **Project:** `fintech-template-5157` (Hydrogen RO CRM)
 **Assessment date:** 2026-05-23
+**Last update:** 2026-05-24 — rescan response: address direct `/auth/v1/token` brute force (see §10)
 **Assessor mode:** White-box (static source code review) — no active scanning of the live host was performed
 **Repository commit base:** working tree at time of assessment
-**Stack:** Vite + React 18 + TypeScript, Supabase (Postgres + Auth + RLS), Netlify Functions + Edge Functions, Cloudinary (primary + secondary), Hostinger SMTP via Nodemailer, ALTCHA PoW captcha, PWA
+**Stack:** Vite + React 18 + TypeScript, Supabase (Postgres + Auth + RLS), Netlify Functions + Edge Functions, Cloudinary (primary + secondary), Hostinger SMTP via Nodemailer, ALTCHA PoW captcha, Cloudflare Turnstile (Supabase Auth gate), PWA
 
 > All PoCs in this document are **safe and non-destructive**. They are intended for the maintainer to run against their own infrastructure to confirm findings. No live exploitation was performed during the assessment.
 >
@@ -891,6 +892,87 @@ These could not be verified from static review alone — please confirm against 
 | **Current** | **53 / 100 (D)** |
 | After Immediate Fixes Checklist (§5) | ~80 / 100 (B) |
 | After Long-Term Hardening (§6) | ~92 / 100 (A) |
+
+---
+
+## 10. 2026-05-24 Rescan Response — Direct `/auth/v1/token` brute force
+
+### Finding (rescan, 2026-05-24)
+
+> RESCAN: The authentication endpoint still has no rate limiting. Eight rapid failed login attempts all returned HTTP 400 without any 429 Too Many Requests or account lockout response. Brute-force attacks against admin accounts remain feasible without throttling. CVSS 6.5 (Medium).
+
+### Root cause
+
+`secure-auth-login` proxy defenses (ALTCHA, 5/IP/hr, 5/email/15 min, escalating
+15→30→60 min lockout) are not on the path when an attacker calls
+`https://cgpjfmbyxjetmzehkumo.supabase.co/auth/v1/token?grant_type=password`
+directly with the public `VITE_SUPABASE_ANON_KEY` (which has to ship in the
+browser bundle by Supabase design). Supabase's own per-project rate limit
+defaults to **30 / 5 min / IP** for password sign-in — plenty of headroom for
+brute force.
+
+### Fix shipped (code, 2026-05-24)
+
+| Change | File(s) | Effect |
+|---|---|---|
+| Cloudflare Turnstile widget on admin + technician login forms | `src/components/TurnstileWidget.tsx`, `src/components/AdminLogin.tsx`, `src/pages/TechnicianLogin.tsx` | Captures `captcha_token` to forward to Supabase |
+| `captchaToken` plumbed through entire auth chain | `src/contexts/AuthContext.tsx`, `src/lib/secureAuthLogin.ts`, `src/lib/auth.ts` | Token reaches the proxy unchanged |
+| Proxy forwards token to Supabase via `gotrue_meta_security.captcha_token` | `netlify/functions/secure-auth-login.js` | Supabase verifies Turnstile server-side BEFORE password check |
+| Proxy IP rate limit tightened **10/hr → 5/hr** | `netlify/functions/auth-rate-limits.js` | Lifts proxy floor to match per-account limit |
+| Lockout RPC now **fails closed** instead of falling back to per-Lambda memory (addresses §3 F-08) | `netlify/functions/auth-lockout.js`, `netlify/functions/secure-auth-login.js` | Removes ~20× multi-instance bypass; returns 503 (not 429) when degraded so UI doesn't claim "locked" |
+| CSP allows `https://challenges.cloudflare.com` in `script-src` + `frame-src` | `scripts/csp-config.mjs`, `netlify.toml` | Turnstile script/iframe loads in production |
+
+The Turnstile path is **soft-deployable**: when `VITE_TURNSTILE_SITE_KEY` is
+not set the widget renders nothing and login is unchanged. Once the key is
+set and Supabase Dashboard CAPTCHA is enabled, every `/auth/v1/token` call
+(proxy OR direct) requires a valid token or Supabase 400s the request before
+ever touching the password.
+
+### Dashboard config still required (owner action)
+
+Without these the code change has no effect on the direct `/auth/v1/token`
+attack surface — they are **what actually closes the finding**.
+
+1. **Cloudflare Turnstile** → https://dash.cloudflare.com → Turnstile → Add Widget
+   - Hostnames: `hydrogenro.com`, `www.hydrogenro.com`, `hydrogenro.netlify.app`, `localhost`
+   - Mode: Managed (recommended)
+   - Copy **site key** → set `VITE_TURNSTILE_SITE_KEY` in Netlify (Production scope) → redeploy.
+   - Copy **secret key** → step 2 below.
+2. **Supabase Dashboard → Authentication → Bot and Abuse Protection** → enable CAPTCHA
+   - Provider: Cloudflare Turnstile
+   - Paste the secret key from step 1 → Save.
+3. **Supabase Dashboard → Authentication → Rate Limits** — lower from defaults:
+   - Sign in / sign ups: 30 → **10 per 5 min**
+   - Token verifications: 30 → **10 per 5 min**
+   - (Keep token refresh + recovery email at defaults.)
+
+### Verification PoC (run after dashboard config)
+
+```bash
+# 1. With no captcha_token (simulates direct scanner hit) → expect 400 "captcha"
+curl -i -X POST \
+  "https://cgpjfmbyxjetmzehkumo.supabase.co/auth/v1/token?grant_type=password" \
+  -H "Content-Type: application/json" \
+  -H "apikey: $VITE_SUPABASE_ANON_KEY" \
+  -H "Authorization: Bearer $VITE_SUPABASE_ANON_KEY" \
+  -d '{"email":"poorna@hydrogenro.com","password":"wrong"}'
+# Before fix: HTTP 400 {"error_code":"invalid_credentials"} — usable for brute force.
+# After fix: HTTP 400 with "captcha_token" mention — brute force unusable.
+
+# 2. Hit our proxy 6 times rapidly from same IP → expect HTTP 429 on attempt 6
+for i in 1 2 3 4 5 6; do
+  curl -i -X POST https://hydrogenro.com/.netlify/functions/secure-auth-login \
+    -H "Origin: https://hydrogenro.com" -H "Content-Type: application/json" \
+    -d '{"email":"x@x","password":"x","altchaLoginToken":"x"}'
+done
+```
+
+### Items still open from §5 (not addressed by this change)
+
+F-01, F-02, F-03, F-05, F-06, F-07, F-09, F-12, F-13, F-14, F-18, F-19, F-20.
+F-04 (dependency CVEs) and F-15 (CSP tighten) untouched. F-08 partially addressed
+(lockout RPC now fails closed; per-instance rate-limit `Map` still in memory —
+move to Upstash/Redis as a follow-up).
 
 ---
 

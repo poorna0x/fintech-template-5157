@@ -106,7 +106,19 @@ async function checkLoginAllowed(admin, email) {
   }
 
   if (error) {
-    console.warn('[auth-lockout] check_auth_login_allowed RPC:', error.message);
+    // Fail closed (audit F-08): per-Lambda in-memory fallback resets when the
+    // container cycles, giving brute-forcers ~N× the attempts. When the DB-backed
+    // lockout RPC is unreachable, refuse rather than trust local memory. The
+    // caller should surface this as 503 so the client knows it's degraded, not
+    // wrong credentials.
+    console.error('[auth-lockout] check_auth_login_allowed RPC failed — failing closed:', error.message);
+    return {
+      allowed: false,
+      reason: 'lockout_service_unavailable',
+      retry_after_seconds: 60,
+      source: 'fail-closed',
+      degraded: true,
+    };
   }
 
   return memoryCheck(normalized);
@@ -124,7 +136,11 @@ async function recordLoginFailure(admin, email) {
   }
 
   if (error) {
-    console.warn('[auth-lockout] record_auth_login_failure RPC:', error.message);
+    // Always log loudly so monitoring catches RPC outages. Falling back to
+    // memory here is the safer side: it lets legitimate logins keep working
+    // when checkLoginAllowed succeeded but recording the failure didn't —
+    // the next checkLoginAllowed call will re-evaluate from the DB.
+    console.error('[auth-lockout] record_auth_login_failure RPC failed:', error.message);
   }
 
   return memoryRecordFailure(normalized);
@@ -137,7 +153,7 @@ async function recordLoginSuccess(admin, email) {
     p_email: normalized,
   });
   if (error) {
-    console.warn('[auth-lockout] record_auth_login_success RPC:', error.message);
+    console.error('[auth-lockout] record_auth_login_success RPC failed:', error.message);
   }
 
   memoryRecordSuccess(normalized);

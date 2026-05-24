@@ -10,6 +10,7 @@ import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Shield, Eye, EyeOff, Droplets } from 'lucide-react';
 import { toast } from 'sonner';
 import AltchaWidget from '@/components/AltchaWidget';
+import TurnstileWidget, { isTurnstileEnabled } from '@/components/TurnstileWidget';
 import { registerAdminPWA } from '@/lib/pwa';
 import { formatLoginError } from '@/lib/loginResult';
 
@@ -22,9 +23,11 @@ const AdminLogin = () => {
   const [isCaptchaVerified, setIsCaptchaVerified] = useState(false);
   const [altchaLoginToken, setAltchaLoginToken] = useState('');
   const [altchaPayload, setAltchaPayload] = useState('');
+  const [turnstileToken, setTurnstileToken] = useState('');
   const [showSecurityStep, setShowSecurityStep] = useState(false);
   const [captchaStartTime] = useState(Date.now());
   const [captchaTimeout, setCaptchaTimeout] = useState<NodeJS.Timeout | null>(null);
+  const turnstileRequired = isTurnstileEnabled();
 
   const navigate = useNavigate();
   const { user, authInitializing, login } = useAuth();
@@ -111,7 +114,13 @@ const AdminLogin = () => {
     }
 
     try {
-      const result = await login(email, password, altchaLoginToken, altchaPayload);
+      const result = await login(
+        email,
+        password,
+        altchaLoginToken,
+        altchaPayload,
+        turnstileToken
+      );
       if (result.ok) {
         navigate('/admin', { replace: true });
       } else {
@@ -138,7 +147,7 @@ const AdminLogin = () => {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
-    
+
     // Check if CAPTCHA is verified before proceeding
     if (!isCaptchaVerified || !altchaLoginToken) {
       // Show security step if not verified yet (fallback)
@@ -147,7 +156,15 @@ const AdminLogin = () => {
       toast.error('Security verification required');
       return;
     }
-    
+
+    // Turnstile guards the raw Supabase /auth/v1/token endpoint (which bypasses
+    // our proxy). Only enforce when a site key is configured.
+    if (turnstileRequired && !turnstileToken) {
+      setError('Please complete the Cloudflare security check before logging in.');
+      toast.error('Security check required');
+      return;
+    }
+
     await performLogin();
   };
 
@@ -287,10 +304,27 @@ const AdminLogin = () => {
                 </div>
               )}
 
+              {/* Cloudflare Turnstile — guards the raw Supabase /auth/v1/token endpoint.
+                  Renders only when VITE_TURNSTILE_SITE_KEY is set. */}
+              {turnstileRequired && (
+                <div className="pt-2">
+                  <TurnstileWidget
+                    onToken={setTurnstileToken}
+                    action="admin-login"
+                    size="flexible"
+                  />
+                </div>
+              )}
+
               <Button
                 type="submit"
                 className="w-full font-semibold shadow-lg hover:shadow-xl transition-all duration-300"
-                disabled={isLoading || !isCaptchaVerified || !altchaLoginToken}
+                disabled={
+                  isLoading ||
+                  !isCaptchaVerified ||
+                  !altchaLoginToken ||
+                  (turnstileRequired && !turnstileToken)
+                }
               >
                 {isLoading ? (
                   <div className="flex items-center">

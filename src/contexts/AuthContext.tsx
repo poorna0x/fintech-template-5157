@@ -47,7 +47,8 @@ interface AuthContextType {
     email: string,
     password: string,
     altchaLoginToken: string,
-    altchaPayload?: string
+    altchaPayload?: string,
+    captchaToken?: string
   ) => Promise<AuthLoginResult>;
   logout: () => Promise<void>;
   reconcileAuthPortal: (pathname: string) => Promise<void>;
@@ -297,7 +298,8 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     email: string,
     password: string,
     altchaLoginToken: string,
-    altchaPayload?: string
+    altchaPayload?: string,
+    captchaToken?: string
   ): Promise<AuthLoginResult> => {
     try {
       setLoading(true);
@@ -320,7 +322,8 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
           email,
           password,
           altchaLoginToken,
-          altchaPayload
+          altchaPayload,
+          captchaToken
         );
         if (!techResult.ok || !techResult.user) {
           const err =
@@ -354,7 +357,8 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         password,
         altchaLoginToken,
         'admin',
-        altchaPayload
+        altchaPayload,
+        captchaToken
       );
 
       if (!authResult.ok) {

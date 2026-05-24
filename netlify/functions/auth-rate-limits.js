@@ -3,8 +3,10 @@ const { checkRateLimit, checkRateLimitForKey, getClientIdentifier } = require('.
 const { addSecurityHeaders } = require('./security-headers');
 
 const LIMITS = {
-  /** Per IP — blocks rapid direct/proxy password attempts */
-  ip: { maxRequests: 10, windowMs: 60 * 60 * 1000, endpoint: 'auth-ip' },
+  /** Per IP — blocks rapid proxy password attempts (tightened 10→5/hour 2026-05-24
+   *  to lift the proxy floor closer to the per-account limit; the raw Supabase
+   *  /auth/v1/token endpoint is guarded separately by Supabase Dashboard CAPTCHA). */
+  ip: { maxRequests: 5, windowMs: 60 * 60 * 1000, endpoint: 'auth-ip' },
   /** Per email — blocks password guessing on one account */
   email: { maxRequests: 5, windowMs: 15 * 60 * 1000, endpoint: 'auth-email' },
 };

@@ -9,6 +9,7 @@ export const PRODUCTION_CSP = [
     'https://maps.gstatic.com',
     'https://*.gstatic.com',
     'https://cdn.jsdelivr.net',
+    'https://challenges.cloudflare.com',
   ].join(' '),
   [
     "style-src 'self' 'unsafe-inline'",
@@ -41,7 +42,7 @@ export const PRODUCTION_CSP = [
     'https://www.hydrogenro.com',
     'https://hydrogenro.netlify.app',
   ].join(' '),
-  "frame-src 'self' https://www.google.com https://maps.google.com",
+  "frame-src 'self' https://www.google.com https://maps.google.com https://challenges.cloudflare.com",
   "frame-ancestors 'none'",
   "base-uri 'self'",
   "form-action 'self'",
@@ -60,6 +61,7 @@ export const DEVELOPMENT_CSP = [
     'https://maps.gstatic.com',
     'https://*.gstatic.com',
     'https://cdn.jsdelivr.net',
+    'https://challenges.cloudflare.com',
   ].join(' '),
   [
     "style-src 'self' 'unsafe-inline'",
@@ -92,7 +94,7 @@ export const DEVELOPMENT_CSP = [
     'https://www.google.com',
     'https://*.google.com',
   ].join(' '),
-  "frame-src 'self' https://www.google.com https://maps.google.com",
+  "frame-src 'self' https://www.google.com https://maps.google.com https://challenges.cloudflare.com",
   "base-uri 'self'",
   "form-action 'self'",
   "object-src 'none'",

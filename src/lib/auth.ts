@@ -21,14 +21,16 @@ export const loginTechnicianWithSupabase = async (
   email: string,
   password: string,
   altchaLoginToken: string,
-  altchaPayload?: string
+  altchaPayload?: string,
+  captchaToken?: string
 ): Promise<TechnicianLoginResult> => {
   const result = await secureAuthLogin(
     email,
     password,
     altchaLoginToken,
     'technician',
-    altchaPayload
+    altchaPayload,
+    captchaToken
   );
 
   if (!result.ok) {
@@ -107,14 +109,21 @@ export const loginTechnician = async (
   email: string,
   password: string,
   altchaLoginToken: string,
-  altchaPayload?: string
+  altchaPayload?: string,
+  captchaToken?: string
 ): Promise<TechnicianLoginResult> => {
   const configError = getSupabaseConfigError();
   if (configError) {
     throw new Error(configError);
   }
 
-  return loginTechnicianWithSupabase(email, password, altchaLoginToken, altchaPayload);
+  return loginTechnicianWithSupabase(
+    email,
+    password,
+    altchaLoginToken,
+    altchaPayload,
+    captchaToken
+  );
 };
 
 /** True when the current Supabase session is a technician linked to technicians.id */

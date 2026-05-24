@@ -19,13 +19,19 @@ function loginFetchTimeoutMs(): number {
 /**
  * Password login via rate-limited Netlify proxy (requires ALTCHA login token).
  * Sets Supabase session on success — do not call signInWithPassword from the client.
+ *
+ * @param captchaToken Cloudflare Turnstile token forwarded to Supabase as
+ *   `gotrue_meta_security.captcha_token`. Required once Supabase Dashboard →
+ *   Authentication → Bot and Abuse Protection is enabled. Pass '' / undefined
+ *   when Turnstile is not configured (soft-off).
  */
 export async function secureAuthLogin(
   email: string,
   password: string,
   altchaLoginToken: string,
   portal: AuthPortal,
-  altchaPayload?: string
+  altchaPayload?: string,
+  captchaToken?: string
 ): Promise<SecureAuthLoginResult> {
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), loginFetchTimeoutMs());
@@ -41,6 +47,7 @@ export async function secureAuthLogin(
         altchaLoginToken,
         altchaPayload,
         portal,
+        captchaToken: captchaToken || undefined,
       }),
       signal: controller.signal,
     });
