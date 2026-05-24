@@ -37,6 +37,11 @@ const AdminLogin = () => {
   const autoSubmitTokenRef = useRef<string | null>(null);
   const loginInFlightRef = useRef(false);
   const turnstileRef = useRef<TurnstileWidgetHandle>(null);
+  /** Latest creds, read by the auto-submit effect without re-firing on every keystroke. */
+  const credsRef = useRef({ email: '', password: '' });
+  /** (email|password) combos that have already failed this page session — skip auto-submit
+   *  so a Turnstile auto-pass doesn't spam Supabase with the same wrong password. */
+  const failedCredsRef = useRef<Set<string>>(new Set());
 
   const navigate = useNavigate();
   const { user, authInitializing, login } = useAuth();
@@ -105,8 +110,8 @@ const AdminLogin = () => {
 
 
   useEffect(() => {
-    autoSubmitTokenRef.current = null;
-  }, [password]);
+    credsRef.current = { email, password };
+  }, [email, password]);
 
   const resetTurnstileAfterFailure = () => {
     if (!turnstileRequired) return;
@@ -148,6 +153,7 @@ const AdminLogin = () => {
       if (result.ok) {
         navigate('/admin', { replace: true });
       } else {
+        failedCredsRef.current.add(`${email}::${password}`);
         autoSubmitTokenRef.current = null;
         resetTurnstileAfterFailure();
         setError(
@@ -222,14 +228,17 @@ const AdminLogin = () => {
     }
   }, [isCaptchaVerified]);
 
-  // Auto-submit once all gates are green and credentials are present. The ref
-  // prevents a second attempt for the same Turnstile token (avoid loop on bad
-  // password). A fresh Turnstile token (re-challenge / expiry) resets the ref.
+  // Auto-submit ONLY when CAPTCHA state changes — never on email/password keystrokes
+  // (those are read from credsRef). A failed (email|password) combo is recorded so a
+  // Turnstile auto-pass after failure does not re-submit the same wrong password.
   useEffect(() => {
     if (isLoading || loginInFlightRef.current) return;
-    if (!email || !password) return;
     if (!isCaptchaVerified || !altchaLoginToken) return;
     if (turnstileRequired && !turnstileToken) return;
+
+    const { email: e, password: p } = credsRef.current;
+    if (!e || !p) return;
+    if (failedCredsRef.current.has(`${e}::${p}`)) return;
 
     const submitKey = `${altchaLoginToken}::${turnstileToken || 'none'}`;
     if (autoSubmitTokenRef.current === submitKey) return;
@@ -242,8 +251,6 @@ const AdminLogin = () => {
     altchaLoginToken,
     turnstileToken,
     turnstileRequired,
-    email,
-    password,
     isLoading,
   ]);
 
