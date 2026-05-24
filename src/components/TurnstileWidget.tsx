@@ -129,7 +129,11 @@ const TurnstileWidget: React.FC<TurnstileWidgetProps> = ({
         action,
         theme,
         size,
-        appearance: 'interaction-only',
+        // 'always' = render the checkbox even when Cloudflare auto-passes the user
+        // (interaction-only would auto-token invisibly for low-risk traffic, which
+        // is great UX but hides that the protection is there — visibility helps
+        // both users and auditors confirm the gate is in place).
+        appearance: 'always',
         callback: (token: string) => {
           setError(null);
           onTokenRef.current(token);

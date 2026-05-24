@@ -342,6 +342,10 @@ const AltchaWidget: React.FC<AltchaWidgetProps> = ({
       if (state === 'verified' && payload) {
         // Widget verified client-side, now verify with server
         console.log('[ALTCHA] Client-side verification complete, verifying with server...');
+        if (verifyingTimeoutRef.current) {
+          clearTimeout(verifyingTimeoutRef.current);
+          verifyingTimeoutRef.current = null;
+        }
         verifyWithServer(payload);
       } else if (state === 'error') {
         console.error('[ALTCHA] Widget error:', e.detail?.error);
