@@ -139,6 +139,7 @@ import AddressDialog from './admin/AddressDialog';
 import DenyJobDialog from './admin/DenyJobDialog';
 import ReassignJobDialog from './admin/ReassignJobDialog';
 import EditCompletedJobDialog from './admin/EditCompletedJobDialog';
+import EditAMCDialog from './admin/EditAMCDialog';
 import WhatsAppDialog from './admin/WhatsAppDialog';
 import {
   broadcastTechnicianJobListRefresh,
@@ -205,6 +206,7 @@ const AdminDashboard = () => {
   const [amcInfoDialogOpen, setAmcInfoDialogOpen] = useState(false);
   const [amcInfo, setAmcInfo] = useState<any>(null);
   const [loadingAMCInfo, setLoadingAMCInfo] = useState(false);
+  const [amcEditDialogOpen, setAmcEditDialogOpen] = useState(false);
   const [taxInvoiceModalOpen, setTaxInvoiceModalOpen] = useState(false);
   const [selectedCustomerForTaxInvoice, setSelectedCustomerForTaxInvoice] = useState<Customer | null>(null);
   const [showGSTInvoicesPage, setShowGSTInvoicesPage] = useState(false);
@@ -11599,7 +11601,7 @@ const AdminDashboard = () => {
               <p>No active AMC contract found for this customer</p>
             </div>
           )}
-          <DialogFooter>
+          <DialogFooter className="gap-2 sm:gap-2">
             <Button
               variant="outline"
               onClick={() => {
@@ -11610,9 +11612,38 @@ const AdminDashboard = () => {
             >
               Close
             </Button>
+            {amcInfo && !loadingAMCInfo && (
+              <Button
+                onClick={() => {
+                  setAmcInfoDialogOpen(false);
+                  setAmcEditDialogOpen(true);
+                }}
+                className="bg-green-600 hover:bg-green-700 text-white"
+              >
+                <Edit className="w-4 h-4 mr-2" />
+                Edit AMC
+              </Button>
+            )}
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* Edit AMC Dialog (opens from inside AMC Info) */}
+      <EditAMCDialog
+        open={amcEditDialogOpen}
+        onOpenChange={(open) => {
+          setAmcEditDialogOpen(open);
+          if (!open && !amcInfoDialogOpen) {
+            setSelectedCustomerForAMC(null);
+          }
+        }}
+        amcContract={amcInfo}
+        technicians={technicians as any}
+        onSaved={(updated) => {
+          if (updated) setAmcInfo(updated);
+          void reloadAMCStatus();
+        }}
+      />
 
       {/* Follow-up Modal */}
         <FollowUpModal

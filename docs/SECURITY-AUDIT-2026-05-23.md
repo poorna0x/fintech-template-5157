@@ -7,6 +7,8 @@
 **Stack:** Vite + React 18 + TypeScript, Supabase (Postgres + Auth + RLS), Netlify Functions + Edge Functions, Cloudinary (primary + secondary), Hostinger SMTP via Nodemailer, ALTCHA PoW captcha, PWA
 
 > All PoCs in this document are **safe and non-destructive**. They are intended for the maintainer to run against their own infrastructure to confirm findings. No live exploitation was performed during the assessment.
+>
+> **Redaction notice:** an earlier revision of this report quoted real secret values (Supabase service-role JWT, Cloudinary API key/secret, Hostinger SMTP password, third-party verification token) verbatim. All such values have been replaced with `<REDACTED — …>` placeholders. The real values still live in the on-disk `.env` and must be treated as compromised and rotated (see §5 Immediate Fixes Checklist, item 1). If this document was committed to git, distributed, or pasted anywhere with the old values, treat those copies as a secret leak: rotate first, then purge from history.
 
 ---
 
@@ -107,20 +109,20 @@ Each finding includes:
 - `src/lib/cloudinary.ts` lines 30–48
 - `vite.config.ts`
 
-**What I found** (verbatim from the repo):
+**What I found** (values redacted in this report — the real, live values are present in the on-disk `.env` and must be rotated):
 
 ```5:5:.env
-SUPABASE_SERVICE_ROLE_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...crQ1Hutr07PH2nNPSDer5lObtQ4g3HJZEKzUzTtgirk
+SUPABASE_SERVICE_ROLE_KEY=<REDACTED — live JWT present in .env; rotate immediately>
 ```
 
 ```17:18:.env
-VITE_CLOUDINARY_API_KEY=377121376427577
-VITE_CLOUDINARY_API_SECRET=3FAZorwPFuImoqrW1DoVHIsPmrY
+VITE_CLOUDINARY_API_KEY=<REDACTED — live key in .env>
+VITE_CLOUDINARY_API_SECRET=<REDACTED — live secret in .env; rotate immediately>
 ```
 
 ```45:46:.env
-HOSTINGER_EMAIL_USER=mail@hydrogenro.com
-HOSTINGER_EMAIL_PASS=Mvh6sbpm@
+HOSTINGER_EMAIL_USER=<REDACTED — SMTP user in .env>
+HOSTINGER_EMAIL_PASS=<REDACTED — live SMTP password in .env; rotate immediately>
 ```
 
 And the client code reads those `VITE_*` secrets:
@@ -151,7 +153,8 @@ Vite **inlines every `import.meta.env.VITE_*` reference at build time**. The cur
 ```bash
 grep -nE "VITE_CLOUDINARY_API_SECRET|VITE_CLOUDINARY_SECONDARY_API_SECRET" -r src/
 npm run build
-grep -lE "3FAZorwPFuImoqrW1DoVHIsPmrY|BbKTT-bqmCD_OsbGTZJYr9v_3qQ" dist/assets/*.js
+grep -lE "$VITE_CLOUDINARY_API_SECRET|$VITE_CLOUDINARY_SECONDARY_API_SECRET" dist/assets/*.js
+# (run with the real secret values exported in your shell; do not paste them into committed files)
 ```
 
 **Remediation:**
@@ -613,7 +616,7 @@ The check **only** rejects role === `'technician'`. If a future Supabase user ha
 **Affected file:** `index.html` line 7, lines 81–85
 
 ```html
-<meta name="breachme-verify" content="breachme-verify=147d66b5f0ec802e7c0bc401afc80176" />
+<meta name="breachme-verify" content="breachme-verify=<REDACTED — real token in index.html>" />
 <meta name="google-site-verification" content="YOUR_GOOGLE_VERIFICATION_CODE" />
 <meta name="yandex-verification" content="YOUR_YANDEX_VERIFICATION_CODE" />
 ```
